@@ -282,14 +282,24 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
         vn.created_vlan = True
         changed += ["vlan", "created_vlan"]
     vn.save(update_fields=changed)
-    # Blank-fill the interface's access VLAN (never overwrite operator intent).
-    if vlan is not None and iface_name:
+    # The direct NIC-to-network statement. The VM page renders from this, not
+    # from a shared VLAN - vCenter never supplies a VLAN on the NIC, so the
+    # VLAN inference left every vCenter VM looking unmapped (#46).
+    if iface_name:
         iface = VMInterface.objects.filter(vm=guest.vm, name=iface_name).first()
-        if iface is not None and iface.vlan_id is None:
-            iface.vlan = vlan
-            if not iface.mode:
-                iface.mode = "access"
-            iface.save(update_fields=["vlan", "mode"])
+        if iface is not None:
+            from .models import VirtNetworkLink
+
+            VirtNetworkLink.objects.update_or_create(
+                network=vn, vm_interface=iface,
+                defaults={"last_seen_at": now},
+            )
+            # Blank-fill the access VLAN (never overwrite operator intent).
+            if vlan is not None and iface.vlan_id is None:
+                iface.vlan = vlan
+                if not iface.mode:
+                    iface.mode = "access"
+                iface.save(update_fields=["vlan", "mode"])
     return 1
 
 
@@ -455,7 +465,7 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
     """
     from api.models import Site
 
-    from .models import VirtChange, VirtGuest
+    from .models import VirtChange, VirtGuest, VirtNetworkLink
 
     apply = source.sync_mode == "auto"
     # Load the tenant's prefixes once for the whole pass - this used to be a
@@ -572,6 +582,13 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                 # tracking row, never the VM.
                 gone.delete()
 
+        if source.sync_networks:
+            # Links the hypervisor stopped stating this pass are gone. Guarded
+            # on the toggle: with networks sync off nothing is refreshed, and
+            # pruning then would silently disconnect every VM.
+            VirtNetworkLink.objects.filter(network__source=source).exclude(
+                last_seen_at=now
+            ).delete()
         _prune_changes(source, fresh_changes)
         counts["pending"] = VirtChange.objects.filter(
             source=source, ignored=False
@@ -1522,14 +1539,38 @@ def sync_vcenter(source) -> dict:
         maps = _vcenter_placement_maps(client, source, datacenters, hosts)
         # Port-group type tells a distributed switch from a standard one.
         net_kinds: dict = {}
+        net_names: dict = {}
         if source.sync_networks:
             try:
                 for net in client.get("vcenter/network") or []:
                     kind = _VC_PORTGROUP_KIND.get(net.get("type") or "")
                     if kind and net.get("name"):
                         net_kinds[net["name"]] = kind
+                    # A distributed port group's NIC backing omits the name
+                    # and carries only this MoRef - without the map, switch
+                    # rows end up called "dvportgroup-1010" (#46).
+                    if net.get("network") and net.get("name"):
+                        net_names[net["network"]] = net["name"]
             except VirtAPIError:
                 pass  # fall back to the connector default
+
+        # Port-group VLANs exist only in the SOAP API - REST states them
+        # nowhere, which is why vCenter VMs never got VLAN links (#46). Best
+        # effort: without pyvmomi (or with SOAP unreachable) the mapping still
+        # works through the direct links, just without VLANs.
+        net_vlans: dict = {}
+        host_warnings: list[str] = []
+        if source.sync_networks:
+            from .vsphere_soap import VSphereSoap
+
+            soap_nets = VSphereSoap(source)
+            try:
+                soap_nets.connect()
+                net_vlans = soap_nets.portgroup_vlans()
+            except VirtAPIError as exc:
+                host_warnings.append(f"Port-group VLANs unavailable: {exc}")
+            finally:
+                soap_nets.close()
 
         # Fallback name for guests that belong to no cluster (standalone hosts).
         cluster_name = clusters[0]["name"] if len(clusters) == 1 else source.name
@@ -1574,7 +1615,6 @@ def sync_vcenter(source) -> dict:
                   "networks": 0, "pending": 0}
 
         # Hosts first, so the VM pass can link each guest to its ESXi Device.
-        host_warnings: list[str] = []
         if source.sync_hosts:
             from api.models import Site
 
@@ -1668,11 +1708,14 @@ def sync_vcenter(source) -> dict:
                              "meta": {"notes": info.get("notes")}}
 
         return _run_pass(source, cluster_name, resources, details, now, counts,
-                         _sync_vcenter_interfaces, _sync_vcenter_ips,
+                         _sync_vcenter_interfaces,
+                         partial(_sync_vcenter_ips, net_names=net_names),
                          extra_warnings=host_warnings,
                          sync_disks_fn=_sync_vcenter_disks,
                          sync_nets_fn=partial(_sync_networks_vcenter,
-                                              net_kinds=net_kinds),
+                                              net_kinds=net_kinds,
+                                              net_names=net_names,
+                                              net_vlans=net_vlans),
                          sync_meta_fn=_sync_meta_vcenter, label="vcenter")
     finally:
         client.close()
@@ -1714,7 +1757,8 @@ _VC_PORTGROUP_KIND = {
 
 
 def _sync_networks_vcenter(source, cluster, guest, nics, now,
-                           net_kinds=None) -> int:
+                           net_kinds=None, net_names=None,
+                           net_vlans=None) -> int:
     """vCenter NIC backings → VirtualSwitch + VirtNetwork. VLAN tags live on the
     port-group (not the VM NIC), so a VLAN is only linked when the backing
     exposes one; otherwise the network is recorded without a VLAN."""
@@ -1724,10 +1768,21 @@ def _sync_networks_vcenter(source, cluster, guest, nics, now,
     for key, nic in nics.items():
         nic = nic or {}
         backing = nic.get("backing") or {}
-        network = backing.get("network_name") or backing.get("network") or ""
+        # Distributed port groups state only the MoRef here; resolve it to the
+        # port group's real name so the switch isn't called "dvportgroup-NNN".
+        network = (
+            backing.get("network_name")
+            or (net_names or {}).get(backing.get("network"))
+            or backing.get("network")
+            or ""
+        )
         if not network:
             continue
+        # The backing never actually carries vlan_id (kept as a first look for
+        # forward compatibility); the real source is the SOAP port-group read.
         tag = backing.get("vlan_id")
+        if tag is None:
+            tag = (net_vlans or {}).get(network)
         iface_name = nic.get("label") or f"nic-{key}"
         n += _link_network(
             source, cluster, guest, iface_name, network,
@@ -1767,7 +1822,8 @@ def _sync_vcenter_interfaces(guest, nics) -> tuple[int, list]:
 
 
 def _sync_vcenter_ips(source, guest, guest_nets, *, nets=None, prefixes=None,
-                      warnings=None, net_vrfs=None) -> tuple[int, int]:
+                      warnings=None, net_vrfs=None,
+                      net_names=None) -> tuple[int, int]:
     """vCenter guest-tools IPs → the shared attach path (matched by MAC).
 
     ``nets`` is the NIC map the interface/network passes already fetched, so
@@ -1779,7 +1835,12 @@ def _sync_vcenter_ips(source, guest, guest_nets, *, nets=None, prefixes=None,
         nic = nic or {}
         mac = (nic.get("mac_address") or "").lower()
         backing = nic.get("backing") or {}
-        network = backing.get("network_name") or backing.get("network") or ""
+        network = (
+            backing.get("network_name")
+            or (net_names or {}).get(backing.get("network"))
+            or backing.get("network")
+            or ""
+        )
         if not mac or not network:
             continue
         tag = backing.get("vlan_id")

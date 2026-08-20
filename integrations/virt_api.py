@@ -65,24 +65,36 @@ class VirtNetworkSerializer(serializers.ModelSerializer):
                 "color": obj.vlan.color or (zone.color if zone else None)}
 
     def get_vms(self, obj):
-        if not obj.vlan_id:
-            return []
         from api.models import VMInterface
 
         seen: dict = {}
-        for i in (
-            VMInterface.objects.filter(vlan_id=obj.vlan_id)
-            .select_related("vm", "vm__status")
-        ):
-            vm = i.vm
+
+        def _add(iface):
+            vm = iface.vm
             if vm.id not in seen:
                 seen[vm.id] = {
                     "id": str(vm.id), "name": vm.name,
                     "status": vm.status.name if vm.status_id else None,
                     # Which VM interface rides this network - the topology
                     # labels the connector leg with it.
-                    "iface": i.name,
+                    "iface": iface.name,
                 }
+
+        # The direct links the sync records are the truth - vCenter never
+        # states a VLAN on the NIC, so link-less inference misses every
+        # vCenter VM (#46).
+        for link in obj.links.select_related(
+            "vm_interface__vm", "vm_interface__vm__status"
+        ):
+            _add(link.vm_interface)
+        # VLAN inference kept as a union: operator-modelled interfaces with a
+        # matching VLAN but no sync link still belong on the rail.
+        if obj.vlan_id:
+            for i in (
+                VMInterface.objects.filter(vlan_id=obj.vlan_id)
+                .select_related("vm", "vm__status")
+            ):
+                _add(i)
         return list(seen.values())
 
 
@@ -110,6 +122,16 @@ class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         src = self.request.query_params.get("source")
         if src:
             qs = qs.filter(source_id=src)
+        vm = self.request.query_params.get("vm")
+        if vm:
+            # Networks this VM touches: the sync's direct links, plus VLAN
+            # inference for operator-modelled interfaces.
+            from django.db.models import Q
+
+            qs = qs.filter(
+                Q(links__vm_interface__vm_id=vm)
+                | Q(vlan__isnull=False, vlan__vm_interfaces__vm_id=vm)
+            ).distinct()
         return qs
 
 

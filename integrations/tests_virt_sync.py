@@ -529,15 +529,20 @@ VC_DETAIL = {
         "disks": {"2000": {"capacity": 40 * 1024**3}},
         "nics": {"4000": {"label": "Network adapter 1",
                           "mac_address": "00:50:56:AA:BB:CC",
-                          "backing": {"network_name": "VM Network"}}},
+                          "backing": {"type": "STANDARD_PORTGROUP",
+                                      "network": "network-1",
+                                      "network_name": "VM Network"}}},
     },
     "vm-101": {
         "name": "db01", "power_state": "POWERED_OFF",
         "cpu": {"count": 2}, "memory": {"size_MiB": 4096},
         "disks": {"2000": {"capacity": 20 * 1024**3}},
+        # A real vDS backing has no network_name - only the MoRef. That
+        # omission is the whole #46 vDS naming bug, so the fixture keeps it.
         "nics": {"4000": {"label": "Network adapter 1",
                           "mac_address": "00:50:56:DD:EE:FF",
-                          "backing": {"network_name": "DSwitch-Prod"}}},
+                          "backing": {"type": "DISTRIBUTED_PORTGROUP",
+                                      "network": "dvpg-1"}}},
     },
 }
 VC_GUEST_NET = {
@@ -1517,6 +1522,109 @@ class SwitchKindTests(TestCase):
 
         sw.refresh_from_db()
         self.assertEqual(sw.kind, "bond")
+
+
+class VmNetworkLinkTests(SwitchKindTests):
+    """Issue #46: the VM page renders networks from direct links, not VLANs.
+
+    vCenter never states a VLAN on the NIC, so VLAN inference showed every
+    vCenter VM as unmapped - even the reporter's standard vSwitch with a
+    tagged port group full of VMs.
+    """
+
+    def _links(self):
+        from integrations.models import VirtNetworkLink
+
+        return VirtNetworkLink.objects.select_related(
+            "network", "vm_interface__vm"
+        )
+
+    def test_sync_records_the_nic_to_network_link(self):
+        self.sync()
+        by_vm = {
+            l.vm_interface.vm.name: l.network.name or l.network.ext_key
+            for l in self._links()
+        }
+        self.assertEqual(by_vm, {"web01": "VM Network", "db01": "DSwitch-Prod"})
+
+    def test_vds_network_gets_its_real_name_not_the_moref(self):
+        """The backing carries only dvpg-1; the name comes from the network
+        listing already fetched for the kind."""
+        self.sync()
+        from integrations.models import VirtNetwork
+
+        names = set(VirtNetwork.objects.values_list("ext_key", flat=True))
+        self.assertIn("DSwitch-Prod", names)
+        self.assertNotIn("dvpg-1", names)
+        self.assertFalse(
+            VirtualSwitch.objects.filter(name="dvpg-1").exists(),
+            "the switch must be named after the port group, not its MoRef",
+        )
+
+    def test_a_removed_nic_prunes_its_link(self):
+        self.sync()
+        self.assertEqual(self._links().count(), 2)
+        trimmed = dict(VC_DETAIL)
+        trimmed["vm-101"] = {**VC_DETAIL["vm-101"], "nics": {}}
+        with mock.patch.dict(VC_DETAIL, trimmed, clear=True):
+            self.sync()
+        self.assertEqual(
+            [l.vm_interface.vm.name for l in self._links()], ["web01"]
+        )
+
+    def test_networks_off_never_prunes(self):
+        """Turning the toggle off must read as "stop syncing", not "everything
+        disconnected"."""
+        self.sync()
+        self.assertEqual(self._links().count(), 2)
+        self.source.sync_networks = False
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        self.assertEqual(self._links().count(), 2)  # untouched
+
+    def test_soap_portgroup_vlans_blank_fill_the_interface(self):
+        """The reporter's case: a standard port group tagged VLAN 50. REST
+        never states the tag; the SOAP read supplies it and the interface's
+        access VLAN blank-fills like Proxmox."""
+        with mock.patch(
+            "integrations.vsphere_soap.VSphereSoap.connect"
+        ), mock.patch(
+            "integrations.vsphere_soap.VSphereSoap.portgroup_vlans",
+            return_value={"VM Network": 50},
+        ):
+            self.sync()
+        iface = VMInterface.objects.get(vm__name="web01")
+        self.assertIsNotNone(iface.vlan_id)
+        self.assertEqual(iface.vlan.vlan_id, 50)
+        self.assertEqual(iface.mode, "access")
+
+    def test_soap_unreachable_still_maps_networks(self):
+        """No pyvmomi / SOAP down = links without VLANs, never a dead sync."""
+        self.sync()  # FakeVCenter host is unreachable for SOAP
+        self.assertEqual(self._links().count(), 2)
+
+    def test_vm_filter_returns_linked_networks(self):
+        from api.models import VirtualMachine
+        from django.contrib.auth import get_user_model
+
+        from integrations.models import IntegrationSettings
+
+        self.sync()
+        IntegrationSettings.objects.create(
+            tenant=self.tenant, virtualization_enabled=True
+        )
+        admin = get_user_model().objects.create_superuser("a", "a@x.dk", "pw")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        vm = VirtualMachine.objects.get(name="db01")
+        r = self.client.get(f"/api/virt-networks/?vm={vm.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        rows = r.json()["results"]
+        self.assertEqual([x["name"] for x in rows], ["DSwitch-Prod"])
+        # ...and the serializer names the connecting interface.
+        self.assertEqual(rows[0]["vms"][0]["iface"], "Network adapter 1")
 
 
 class DuplicateVmNameTests(TestCase):

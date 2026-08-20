@@ -399,7 +399,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <KvCard title="Management" rows={managementRows} />
       </div>
       {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
-      <VmTopologyCard vmId={vm.id} vmName={vm.name} />
+      <VmTopologyCard vmId={vm.id} vmName={vm.name} syncedFromId={vm.synced_from_id} />
       <CustomFieldValues model="virtualmachine" values={vm.custom_fields} />
     </div>
   )

@@ -193,6 +193,66 @@ class VSphereSoap:
             })
         return out
 
+    def portgroup_vlans(self) -> dict:
+        """``{port group name: vlan id}`` for every port group with a plain tag.
+
+        The REST API never exposes a port group's VLAN - not on the NIC
+        backing, not on ``vcenter/network`` - which is why vCenter VMs never
+        got VLAN links (#46). SOAP has it in two places:
+
+        * standard switches: each host's ``config.network.portgroup`` carries
+          ``spec.vlanId``;
+        * distributed switches: each ``DistributedVirtualPortgroup``'s
+          ``defaultPortConfig.vlan`` (only ``VlanIdSpec`` - a trunk range is
+          not an access VLAN and is deliberately skipped).
+
+        Tag 0 means untagged on both, so it is omitted rather than minting a
+        "VLAN 0" the operator never made.
+        """
+        if self._si is None:
+            self.connect()
+        from pyVmomi import vim
+
+        out: dict = {}
+        content = self._si.RetrieveContent()
+
+        view = content.viewManager.CreateContainerView(
+            content.rootFolder, [vim.HostSystem], True
+        )
+        try:
+            for host in view.view:
+                net = getattr(getattr(host, "config", None), "network", None)
+                for pg in getattr(net, "portgroup", None) or []:
+                    name = getattr(pg.spec, "name", "") or ""
+                    vlan = getattr(pg.spec, "vlanId", None)
+                    if name and isinstance(vlan, int) and 0 < vlan < 4095:
+                        out.setdefault(name, vlan)
+        finally:
+            try:
+                view.Destroy()
+            except Exception:
+                pass
+
+        view = content.viewManager.CreateContainerView(
+            content.rootFolder, [vim.dvs.DistributedVirtualPortgroup], True
+        )
+        try:
+            for pg in view.view:
+                cfg = getattr(pg, "config", None)
+                vlan_spec = getattr(
+                    getattr(cfg, "defaultPortConfig", None), "vlan", None
+                )
+                vid = getattr(vlan_spec, "vlanId", None)
+                # TrunkVlanSpec's vlanId is a range list, not an int - skip.
+                if pg.name and isinstance(vid, int) and 0 < vid < 4095:
+                    out.setdefault(pg.name, vid)
+        finally:
+            try:
+                view.Destroy()
+            except Exception:
+                pass
+        return out
+
     def close(self) -> None:
         if self._si is None:
             return

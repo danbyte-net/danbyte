@@ -982,6 +982,42 @@ class VirtNetwork(TimestampedModel):
         return self.name or self.ext_key
 
 
+class VirtNetworkLink(TimestampedModel):
+    """Which VM interface sits on which synced network - stated directly.
+
+    Before this, the VM page inferred connections through a shared VLAN, and
+    vCenter never supplies a VLAN on the NIC (it lives on the port group), so
+    every vCenter VM looked unmapped even with networks syncing (#46). The
+    hypervisor states the NIC-to-port-group relation outright; record it
+    rather than reconstruct it.
+
+    Pure sync bookkeeping like the ``created_*`` flags: refreshed each pass,
+    pruned when the hypervisor stops reporting it, never operator data - so
+    not audited.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    network = models.ForeignKey(
+        VirtNetwork, on_delete=models.CASCADE, related_name="links"
+    )
+    vm_interface = models.ForeignKey(
+        "api.VMInterface", on_delete=models.CASCADE,
+        related_name="virt_network_links",
+    )
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["network", "vm_interface"],
+                name="uniq_virtnetworklink_network_iface",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vm_interface_id} on {self.network_id}"
+
+
 class DnsRecord(TimestampedModel):
     """An address record (A/AAAA/PTR) mirrored from a reconciled DNS zone,
     linked to the IPAddress it concerns.
