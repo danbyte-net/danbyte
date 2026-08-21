@@ -158,3 +158,40 @@ class ImageAttachmentTests(APITestCase):
         listed = self.client.get(f"/api/devices/{self.device.id}/images/").json()
         row = [x for x in listed["results"] if x["thumbnail"] is None]
         self.assertEqual(len(row), 1)
+
+    def test_upload_records_type_size_and_dimensions(self):
+        """The image LIST names each file (#60), so type, byte size and pixel
+        size are recorded at upload rather than read per request."""
+        from PIL import Image as PilImage
+
+        self._login(self._user(["view", "change"]))
+        base = f"/api/devices/{self.device.id}"
+        buf = io.BytesIO()
+        PilImage.new("RGB", (120, 80), "blue").save(buf, format="PNG")
+        buf.seek(0)
+        buf.name = "rack-front.png"
+        r = self.client.post(
+            f"{base}/images/", {"image": buf}, format="multipart"
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual((body["width"], body["height"]), (120, 80))
+        self.assertGreater(body["size"], 0)
+        self.assertEqual(body["extension"], "png")
+        self.assertTrue(body["filename"].endswith(".png"))
+
+    def test_unreadable_file_still_uploads_without_metadata(self):
+        # A file PIL can't parse must not fail the upload - the list just
+        # shows dashes for it.
+        self._login(self._user(["view", "change"]))
+        base = f"/api/devices/{self.device.id}"
+        junk = io.BytesIO(b"\x89PNG\r\n\x1a\nnot-really-an-image")
+        junk.name = "broken.png"
+        r = self.client.post(
+            f"{base}/images/", {"image": junk}, format="multipart"
+        )
+        self.assertIn(r.status_code, (201, 400), r.content)
+        if r.status_code == 201:
+            body = r.json()
+            self.assertIsNone(body["width"])
+            self.assertEqual(body["extension"], "png")

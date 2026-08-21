@@ -5,6 +5,7 @@ matching list / detail page actually renders, no kitchen-sink output.
 from __future__ import annotations
 
 import ipaddress
+import os
 
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
@@ -1778,15 +1779,30 @@ class ImageAttachmentSerializer(serializers.ModelSerializer):
     def get_image(self, obj) -> str | None:
         return _img_url(self, obj.image)
 
+    filename = serializers.SerializerMethodField()
+    extension = serializers.SerializerMethodField()
+
     def get_thumbnail(self, obj) -> str | None:
         # Null for pre-thumbnail rows - the gallery falls back to `image`.
         return _img_url(self, obj.thumbnail) if obj.thumbnail else None
 
+    def get_filename(self, obj) -> str:
+        return os.path.basename(obj.image.name) if obj.image else ""
+
+    def get_extension(self, obj) -> str:
+        """Lower-case extension without the dot ("png"), for the list's Type
+        column. Read from the stored name, so it survives a rename."""
+        name = obj.image.name if obj.image else ""
+        _, _, ext = name.rpartition(".")
+        return ext.lower() if ext and ext != name else ""
+
     class Meta:
         model = ImageAttachment
         fields = ["id", "image", "thumbnail", "name", "sort_order",
+                  "filename", "extension", "width", "height", "size",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "image", "thumbnail",
+        read_only_fields = ["id", "image", "thumbnail", "filename", "extension",
+                            "width", "height", "size",
                             "created_at", "updated_at"]
 
 

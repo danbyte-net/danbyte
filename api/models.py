@@ -1725,6 +1725,12 @@ class ImageAttachment(TimestampedModel):
     sort_order = models.PositiveSmallIntegerField(
         default=0, help_text="Display order; lower sorts first."
     )
+    #: Recorded at upload so the image list can show dimensions and size
+    #: without opening every file on every request. Null on rows written
+    #: before the fields existed, and on files PIL cannot parse.
+    width = models.PositiveIntegerField(null=True, blank=True)
+    height = models.PositiveIntegerField(null=True, blank=True)
+    size = models.PositiveBigIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["sort_order", "created_at"]
@@ -1735,7 +1741,25 @@ class ImageAttachment(TimestampedModel):
     def save(self, *args, **kwargs):
         if self.image and not self.thumbnail:
             self._make_thumbnail()
+        elif self.image and self.size is None:
+            self._read_metadata()
         super().save(*args, **kwargs)
+
+    def _read_metadata(self) -> None:
+        """Dimensions + byte size, best-effort (a file PIL can't parse keeps
+        nulls and the list simply shows a dash)."""
+        import io
+
+        try:
+            from PIL import Image as PilImage
+
+            self.image.seek(0)
+            data = self.image.read()
+            self.image.seek(0)
+            self.width, self.height = PilImage.open(io.BytesIO(data)).size
+            self.size = len(data)
+        except Exception:  # noqa: BLE001 - metadata is a nicety, not a gate
+            pass
 
     def _make_thumbnail(self, size: int = 640) -> None:
         """A bounded JPEG beside the original. Best-effort: an image PIL
@@ -1754,6 +1778,8 @@ class ImageAttachment(TimestampedModel):
             data = self.image.read()
             self.image.seek(0)
             img = PilImage.open(io.BytesIO(data))
+            self.width, self.height = img.size
+            self.size = len(data)
             img = img.convert("RGB")
             img.thumbnail((size, size))
             buf = io.BytesIO()

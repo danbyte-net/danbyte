@@ -1188,6 +1188,15 @@ export interface ImageAttachment {
   thumbnail: string | null
   name: string
   sort_order: number
+  /** Stored file name, e.g. "rack-front.png". */
+  filename: string
+  /** Lower-case extension without the dot, e.g. "png". */
+  extension: string
+  /** Pixel size and byte size, recorded at upload. Null when the file could
+   * not be parsed, and on rows uploaded before they were recorded. */
+  width: number | null
+  height: number | null
+  size: number | null
   created_at: string
   updated_at: string
 }

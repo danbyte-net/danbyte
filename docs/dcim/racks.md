@@ -205,4 +205,5 @@ Every device's own page shows its rack with the device **highlighted**.
 The rack's Overview has an **Images** gallery - attach any number of captioned
 photos (front/rear shots, cabling, labels). Uploading and removing require
 **change** permission on racks; viewers see it read-only. It's the same shared
-attachment system used on [devices](devices.md#images), sites, and locations.
+attachment system used on [devices](devices.md#images), sites, and locations -
+including the grid/list toggle and the file details the list shows.

@@ -143,7 +143,14 @@ rack-face image, that front/rear photo shows below the cards too.
 Uploaded photos and diagrams live on their own **Images** tab (rack shots,
 labels, cabling pictures, faceplate close-ups). Click **Add image** to upload;
 hover an image and click the trash icon to remove it, or click an image to open
-the full-size original in a new tab. Uploading and removing require **change**
+the full-size original in a new tab.
+
+Two layouts, chosen with the toggle beside **Add image**: the **grid** of
+thumbnails, and a **list** naming each file with its type, size, dimensions and
+when it changed - easier to scan once an object carries a lot of photos, and
+each row still previews and opens its image. The choice is on the page's
+address (`?images=list`), so a link keeps it. Galleries load generated
+thumbnails rather than originals, so a page of photos stays quick. Uploading and removing require **change**
 permission on devices; everyone who can view the device sees the gallery
 read-only. Files are stored under `/media/` and served same-origin.
 

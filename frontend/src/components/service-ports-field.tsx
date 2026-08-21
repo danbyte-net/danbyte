@@ -79,7 +79,9 @@ export function parseServicePorts(v: ServicePortsValue): ParsedServicePorts {
       tcp: bad(tcp.invalid),
       udp: bad(udp.invalid),
       form:
-        Object.keys(map).length === 0 && !tcp.invalid.length && !udp.invalid.length
+        Object.keys(map).length === 0 &&
+        !tcp.invalid.length &&
+        !udp.invalid.length
           ? "Enter at least one port between 1 and 65535."
           : null,
     },
