@@ -84,6 +84,13 @@ import {
   parseLevels,
   type LevelsState,
 } from "@/components/topology/levels-param"
+import {
+  mergePositions,
+  migratePositions,
+  viewPositions,
+  type PosByStyle,
+  type PosMap,
+} from "@/components/topology/view-positions"
 
 const TopologyCanvas = lazy(() =>
   import("@/components/topology/topology-canvas").then((m) => ({
@@ -241,26 +248,9 @@ function PopoverField({
 }
 
 // Dragged node positions for the DEFAULT (no saved view) topology, kept in the
-// browser so a manual arrangement survives a reload.
-//
-// Positions are held PER VIEW STYLE. The node ids are the same in every style
-// (`dev:<uuid>`), but the cards are not: a Wiring stencil sized to its ports,
-// a Hierarchy card as tall as its port list, and a Flat chip need completely
-// different coordinates. One shared map meant arranging Flat silently
-// overwrote the Hierarchy arrangement - and then re-applied Flat's spacing to
-// Hierarchy's much larger cards.
-type PosMap = Record<string, [number, number]>
-type PosByStyle = Partial<Record<NodeStyle, PosMap>>
+// browser so a manual arrangement survives a reload. The per-style split and
+// the saved-view readers live in `view-positions.ts`.
 const POS_KEY = "danbyte-topology-positions"
-
-/** Old stores held one flat map for every style; read it as the style it was
- * most likely arranged in, so nobody loses an arrangement to this change. */
-function migratePositions(raw: unknown, style: NodeStyle): PosByStyle {
-  if (!raw || typeof raw !== "object") return {}
-  const obj = raw as Record<string, unknown>
-  const isNew = ["stencil", "hierarchy", "flat"].some((k) => k in obj)
-  return isNew ? (obj as PosByStyle) : { [style]: obj as PosMap }
-}
 
 function readStoredPositions(style: NodeStyle): PosByStyle {
   try {
@@ -283,21 +273,6 @@ function clearStoredPositions() {
   } catch {
     /* non-fatal */
   }
-}
-
-/** A saved view's arrangements, per style. Views written before positions were
- * split carry one map under `positions`; it belongs to the style the view was
- * saved in. */
-function viewPositions(v: TopologyViewSaved): PosByStyle {
-  const byStyle = (v.state as { positions_by_style?: PosByStyle })
-    .positions_by_style
-  if (byStyle && typeof byStyle === "object") return byStyle
-  const style = sanitizeViewStyle(
-    (v.state.filters as { viewStyle?: unknown } | undefined)?.viewStyle
-  )
-  return v.state.positions && style !== "logical"
-    ? { [style]: v.state.positions }
-    : {}
 }
 
 // Display settings (Levels order/bonds/distances, direction, colour mode,
@@ -782,20 +757,14 @@ function TopologyPage() {
       view: v.id,
       ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
     })
-    const f = (v.state.filters ?? {}) as ViewFilters
-    // A tiered view (Levels) is defined by its role order + distances, so
-    // regenerate it instead of re-pinning saved coordinates - otherwise the
-    // pinned positions would suppress the tiers, distance dots, and routing.
-    // Bumping the tick marks this as a deliberate relayout so the canvas uses
-    // the fresh layout rather than keeping the previous view's node positions.
-    if (f.roleOrder?.length) {
-      setPosByStyle({})
-      setLayoutTick((t) => t + 1)
-    } else {
-      // Each style gets back the arrangement it was saved with.
-      setPosByStyle(viewPositions(v))
-      setLayoutTick(0)
-    }
+    // Every style gets back exactly the arrangement it was saved with. A view
+    // used to DISCARD them when it had Levels set, on the theory that a tiered
+    // view should regenerate from its tiers - but discarding them here also
+    // emptied what a later Save wrote back, so saving from one view deleted
+    // the other views' arrangements. Tiers still drive anything unpinned, and
+    // Re-layout regenerates on demand.
+    setPosByStyle(viewPositions(v, sanitizeViewStyle))
+    setLayoutTick((t) => t + 1)
   }
 
   /** Back to the personal default map: no view, no overrides. */
@@ -821,12 +790,11 @@ function TopologyPage() {
     // on screen - a view is the whole map, and switching to Hierarchy must not
     // hand you the Flat spacing.
     const live = logical ? undefined : canvas.current?.positions()
-    const byStyle: PosByStyle = {
-      ...posByStyle,
-      ...(live && Object.keys(live).length
-        ? { [viewStyle as NodeStyle]: live }
-        : {}),
-    }
+    const byStyle = mergePositions(
+      posByStyle,
+      logical ? null : (viewStyle as NodeStyle),
+      live
+    )
     return {
       filters: {
         ...filters,

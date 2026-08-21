@@ -221,10 +221,11 @@ The **color mode** select paints edges by:
 ## Levels (role tiers)
 
 The panel-lane and distance behaviour below is part of **Levels**, so it needs
-the tier order set (at least one role dragged into the list). A **saved view
-that has a Level order regenerates from its tiers** when reopened (so its
-distance dots and panel lanes apply straight away); a saved view *without*
-tiers restores its exact pinned arrangement instead. With **Show patch panels**
+the tier order set (at least one role dragged into the list). A saved view
+restores the arrangement it was saved with, tiers or not; the tier order still
+places anything you never dragged, and changing a tier order, bond or distance
+re-runs the layout. **Re-layout** regenerates the view you're on from its tiers
+whenever you want it back. With **Show patch panels**
 on and tiers active, each panel gets its
 **own lane between the two device tiers it joins** - so panels never land on a
 device row and the fabric spaces out by a layer. Each tier's **distance dot**
