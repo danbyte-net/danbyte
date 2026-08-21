@@ -1773,15 +1773,21 @@ class ImageAttachmentSerializer(serializers.ModelSerializer):
     ordering)."""
 
     image = serializers.SerializerMethodField()
+    thumbnail = serializers.SerializerMethodField()
 
     def get_image(self, obj) -> str | None:
         return _img_url(self, obj.image)
 
+    def get_thumbnail(self, obj) -> str | None:
+        # Null for pre-thumbnail rows - the gallery falls back to `image`.
+        return _img_url(self, obj.thumbnail) if obj.thumbnail else None
+
     class Meta:
         model = ImageAttachment
-        fields = ["id", "image", "name", "sort_order",
+        fields = ["id", "image", "thumbnail", "name", "sort_order",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "image", "created_at", "updated_at"]
+        read_only_fields = ["id", "image", "thumbnail",
+                            "created_at", "updated_at"]
 
 
 # Document uploads: cap size and restrict to a safe extension allowlist. Files

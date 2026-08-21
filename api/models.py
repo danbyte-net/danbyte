@@ -1706,6 +1706,12 @@ class ImageAttachment(TimestampedModel):
     object_id = models.UUIDField()
     parent = GenericForeignKey("content_type", "object_id")
     image = models.ImageField(upload_to="image-attachments/")
+    #: Small JPEG generated at upload so galleries don't download originals
+    #: (issue #60). Blank on rows from before the field existed - readers
+    #: fall back to the full image.
+    thumbnail = models.ImageField(
+        upload_to="image-attachments/thumbs/", blank=True, null=True
+    )
     name = models.CharField(
         max_length=128, blank=True, default="",
         help_text="Optional caption shown under the image.",
@@ -1719,6 +1725,38 @@ class ImageAttachment(TimestampedModel):
         indexes = [
             models.Index(fields=["content_type", "object_id", "sort_order"]),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.image and not self.thumbnail:
+            self._make_thumbnail()
+        super().save(*args, **kwargs)
+
+    def _make_thumbnail(self, size: int = 640) -> None:
+        """A bounded JPEG beside the original. Best-effort: an image PIL
+        can't parse still uploads fine, it just has no thumb (readers fall
+        back to the full file)."""
+        import io
+
+        from django.core.files.base import ContentFile
+
+        try:
+            from PIL import Image as PilImage
+
+            # Read fully first: PIL's lazy load over the FieldFile wrapper
+            # chokes on chunked/partial streams ("broken data stream").
+            self.image.seek(0)
+            data = self.image.read()
+            self.image.seek(0)
+            img = PilImage.open(io.BytesIO(data))
+            img = img.convert("RGB")
+            img.thumbnail((size, size))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=82)
+            self.thumbnail = ContentFile(
+                buf.getvalue(), name=f"{uuid.uuid4().hex}.jpg"
+            )
+        except Exception:  # noqa: BLE001 - thumbs are an optimisation only
+            self.thumbnail = None
 
     def __str__(self) -> str:
         return self.name or f"Image {self.pk}"

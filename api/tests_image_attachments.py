@@ -117,3 +117,44 @@ class ImageAttachmentTests(APITestCase):
         self._upload(f"/api/racks/{self.rack.id}", name="rack only")
         res = self.client.get(f"/api/devices/{self.device.id}/images/")
         self.assertEqual(res.json()["count"], 0)
+
+    def test_upload_generates_a_thumbnail(self):
+        # #60: galleries load small JPEGs, not originals. Needs a genuinely
+        # decodable image - the shared _png_bytes stub is header-only.
+        from PIL import Image as PilImage
+
+        self._login(self._user(["view", "change"]))
+        base = f"/api/devices/{self.device.id}"
+        buf = io.BytesIO()
+        PilImage.new("RGB", (32, 32), "red").save(buf, format="PNG")
+        buf.seek(0)
+        buf.name = "real.png"
+        r = self.client.post(
+            f"{base}/images/", {"image": buf, "name": "front"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertTrue(body["thumbnail"], body)
+        self.assertIn("thumbs/", body["thumbnail"])
+        listed = self.client.get(f"{base}/images/").json()["results"][0]
+        self.assertTrue(listed["thumbnail"])
+
+    def test_pre_thumbnail_rows_return_null(self):
+        from django.contrib.contenttypes.models import ContentType
+        from django.core.files.base import ContentFile
+
+        from .models import ImageAttachment
+
+        self._login(self._user(["view", "change"]))
+        img = ImageAttachment(
+            tenant=self.tenant,
+            content_type=ContentType.objects.get_for_model(self.device),
+            object_id=self.device.pk,
+        )
+        img.image.save("old.png", ContentFile(_png_bytes()), save=False)
+        img.thumbnail = None  # simulate a row from before the field
+        super(ImageAttachment, img).save()
+        listed = self.client.get(f"/api/devices/{self.device.id}/images/").json()
+        row = [x for x in listed["results"] if x["thumbnail"] is None]
+        self.assertEqual(len(row), 1)

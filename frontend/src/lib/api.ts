@@ -1153,6 +1153,8 @@ export interface DeviceTypeOption {
 export interface ImageAttachment {
   id: string
   image: string
+  /** Small generated JPEG; null on uploads from before thumbnails. */
+  thumbnail: string | null
   name: string
   sort_order: number
   created_at: string

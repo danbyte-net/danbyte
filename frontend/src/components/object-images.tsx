@@ -119,8 +119,12 @@ export function ObjectImages({
                 className="block aspect-[4/3] w-full overflow-hidden bg-muted"
               >
                 <img
-                  src={img.image}
+                  // The generated thumb keeps a big gallery from downloading
+                  // originals (#60); pre-thumbnail uploads fall back.
+                  src={img.thumbnail ?? img.image}
                   alt={img.name || "Image"}
+                  loading="lazy"
+                  decoding="async"
                   className="h-full w-full object-cover"
                 />
               </a>
