@@ -2,9 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
+import { CornerDownRight } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Region, type Paginated } from "@/lib/api"
+import { nestByParent } from "@/lib/nest"
 import { useMe } from "@/lib/use-me"
 import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
@@ -28,14 +30,19 @@ function RegionsPage() {
   })
 
   const allRows = query.data?.results ?? []
+  // Filter first, then nest (issue #70): sub-regions group under their
+  // parent, depth-first, and a filtered-out parent's children surface at
+  // the root - the same tree treatment as the Locations and prefix lists.
   const rows = useMemo(() => {
     const n = q.trim().toLowerCase()
-    if (!n) return allRows
-    return allRows.filter(
-      (r) =>
-        r.name.toLowerCase().includes(n) ||
-        r.description.toLowerCase().includes(n)
-    )
+    const filtered = !n
+      ? allRows
+      : allRows.filter(
+          (r) =>
+            r.name.toLowerCase().includes(n) ||
+            r.description.toLowerCase().includes(n)
+        )
+    return nestByParent(filtered)
   }, [allRows, q])
 
   const onDelete = useCallback((r: Region) => setDeleting(r), [])
@@ -46,15 +53,28 @@ function RegionsPage() {
         id: "name",
         accessorKey: "name",
         header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/regions/$id"
-            params={{ id: row.original.id }}
-            className="link font-medium"
-          >
-            {row.original.name}
-          </Link>
-        ),
+        cell: ({ row }) => {
+          const depth =
+            (row.original as Region & { _depth?: number })._depth ?? 0
+          return (
+            <div className="flex items-center gap-0.5">
+              {Array.from({ length: depth }, (_, i) => (
+                <CornerDownRight
+                  key={i}
+                  aria-hidden
+                  className="h-3 w-3 shrink-0 text-muted-foreground/40"
+                />
+              ))}
+              <Link
+                to="/regions/$id"
+                params={{ id: row.original.id }}
+                className="link font-medium"
+              >
+                {row.original.name}
+              </Link>
+            </div>
+          )
+        },
       },
       {
         id: "parent",

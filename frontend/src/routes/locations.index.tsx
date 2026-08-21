@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from "react"
 
 import { api, type Location, type Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { nestByParent } from "@/lib/nest"
 import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -23,35 +24,8 @@ export const Route = createFileRoute("/locations/")({
   component: LocationsPage,
 })
 
-/** A location annotated with its depth in the parent tree (0 = root). */
-type NestedLocation = Location & { _depth: number }
-
-// Order depth-first (parents before their children, siblings by name) and
-// stamp each row's depth so the Name cell can indent - same tree treatment
-// as the prefix list. Orphans (parent filtered out or not loaded) surface
-// at the root rather than disappearing.
-function nestLocations(rows: Location[]): NestedLocation[] {
-  const byParent = new Map<string | null, Location[]>()
-  const ids = new Set(rows.map((r) => r.id))
-  for (const r of rows) {
-    const key = r.parent && ids.has(r.parent.id) ? r.parent.id : null
-    const bucket = byParent.get(key)
-    if (bucket) bucket.push(r)
-    else byParent.set(key, [r])
-  }
-  for (const bucket of byParent.values())
-    bucket.sort((a, b) => a.name.localeCompare(b.name))
-
-  const out: NestedLocation[] = []
-  const walk = (parentId: string | null, depth: number) => {
-    for (const r of byParent.get(parentId) ?? []) {
-      out.push({ ...r, _depth: depth })
-      walk(r.id, depth + 1)
-    }
-  }
-  walk(null, 0)
-  return out
-}
+// Depth-first tree order + `_depth` markers - shared with the Regions list
+// (frontend/src/lib/nest.ts), same treatment as the prefix tree.
 
 function LocationsPage() {
   const { canDo } = useMe()
@@ -164,7 +138,7 @@ function LocationsPage() {
   // instead of dangling indented under nothing.
   const { rail, filteredRows, snapshot, restore, activeCount } =
     useTableFilters(columns, allRows)
-  const rows = useMemo(() => nestLocations(filteredRows), [filteredRows])
+  const rows = useMemo(() => nestByParent(filteredRows), [filteredRows])
 
   return (
     <ListPageShell
