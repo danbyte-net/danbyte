@@ -165,11 +165,14 @@ function PortCell({
     >
       <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
       <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
+      {/* topo-port* classes are LOD hooks: far zoom hides the text/dot via
+          CSS (visibility) while the cell geometry - and the edge handles on
+          it - stays exactly where it was. */}
       <span
-        className={`h-1 w-1 shrink-0 rounded-full ${KIND_DOT[port.kind]}`}
+        className={`topo-portdot h-1 w-1 shrink-0 rounded-full ${KIND_DOT[port.kind]}`}
       />
       {/* Full port name - no truncation; cells are sized to fit it. */}
-      <span className="font-mono text-[9px] leading-none whitespace-nowrap">
+      <span className="topo-portname font-mono text-[9px] leading-none whitespace-nowrap">
         {port.name}
       </span>
     </div>

@@ -245,6 +245,7 @@ function TopologyPage() {
     null
   )
   const [selBundle, setSelBundle] = useState<BundleMember[] | null>(null)
+  const [hintDismissed, setHintDismissed] = useState(false)
 
   const set = (patch: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -870,6 +871,32 @@ function TopologyPage() {
           </Suspense>
         )}
 
+        {graph && viewStyle === "stencil" && count > 80 && !hintDismissed && (
+          <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
+            <span className="text-muted-foreground">
+              Large graph - the Flat view reads better at this size.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[11px]"
+              onClick={() => {
+                setViewStyle("flat")
+                setPositions(undefined)
+                setLayoutTick((t) => t + 1)
+              }}
+            >
+              Switch
+            </Button>
+            <button
+              onClick={() => setHintDismissed(true)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Dismiss"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
         {selNode && (
           <NodePanel
             data={selNode}

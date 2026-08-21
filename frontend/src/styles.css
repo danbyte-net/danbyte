@@ -657,3 +657,16 @@
 .react-grid-item > .react-resizable-handle.dash-resize-grip:hover::after {
   opacity: 1;
 }
+
+/* Topology zoom level-of-detail. The React Flow wrapper carries data-lod
+   (0 = close, 1 = mid, 2 = far). Far zooms hide edge labels, then port text -
+   visibility only, so cell geometry and edge handles never move. The hovered
+   edge (.topo-hot) keeps its label at any distance. */
+[data-lod="1"] .react-flow__edge:not(.topo-hot) .react-flow__edge-textwrapper,
+[data-lod="2"] .react-flow__edge:not(.topo-hot) .react-flow__edge-textwrapper {
+  display: none;
+}
+[data-lod="2"] .topo-portname,
+[data-lod="2"] .topo-portdot {
+  visibility: hidden;
+}

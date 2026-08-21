@@ -606,6 +606,17 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges)
+  // Zoom level-of-detail: far out, edge labels (and further out, port text)
+  // hide via CSS keyed on the wrapper's data-lod - pure paint, no re-layout,
+  // so a big graph reads as clean boxes-and-lines until you zoom in.
+  const [lod, setLod] = useState(0)
+  const onMove = useCallback(
+    (_: unknown, vp: { zoom: number }) => {
+      const next = vp.zoom < 0.3 ? 2 : vp.zoom < 0.55 ? 1 : 0
+      setLod((cur) => (cur === next ? cur : next))
+    },
+    []
+  )
   // Hover/select emphasis: the active edge thickens and rises; every other
   // edge fades - the only way crossings stay readable in a dense mesh.
   const [hotEdge, setHotEdge] = useState<string | null>(null)
@@ -615,6 +626,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       if (e.id === hotEdge)
         return {
           ...e,
+          // The hot edge keeps its label at any LOD (CSS exempts .topo-hot).
+          className: "topo-hot",
           zIndex: 1000,
           style: {
             ...e.style,
@@ -801,7 +814,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     )
 
   return (
-    <div ref={wrapper} className="h-full w-full">
+    <div ref={wrapper} className="h-full w-full" data-lod={lod}>
       <ReactFlow
         nodes={nodes}
         edges={shownEdges}
@@ -819,6 +832,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         onEdgeMouseEnter={(_, e) => setHotEdge(e.id)}
         onEdgeMouseLeave={() => setHotEdge(null)}
         onPaneClick={onCanvasClick}
+        onMove={onMove}
         onlyRenderVisibleElements
         minZoom={0.05}
       >
