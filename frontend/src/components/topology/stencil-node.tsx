@@ -114,12 +114,44 @@ function stripW(ports: FlatPort[]): number {
   return ports.reduce((sum, p) => sum + chipW(p.name), 0)
 }
 
+// ── Dense cards ─────────────────────────────────────────────────────────────
+// Above this many cabled ports the card stops rendering one text row per
+// port (a 100-port switch would be ~1600px tall) and switches to compact
+// anchor stubs: every cable keeps its own attachment point, but the card
+// stays bounded. Port names live on the cable's hover label and edge panel.
+export const DENSE_PORTS = 24
+const DENSE_STUB_W = 14 // side column width in dense mode
+const DENSE_STRIP_H = 10 // top/bottom strip height in dense mode
+const DENSE_MAX_MAIN = 360 // cap: side column extent
+const DENSE_MAX_STRIP = 640 // cap: top/bottom strip extent
+
+function isDense(d: StencilData): boolean {
+  return flatPorts(d).length > DENSE_PORTS
+}
+
+function densePitch(count: number, cap: number): number {
+  return Math.max(4, Math.min(16, cap / Math.max(count, 1)))
+}
+
 export function stencilSize(d: StencilData): { width: number; height: number } {
   const s = bySide(d)
   const hasL = s.L.length > 0
   const hasR = s.R.length > 0
   const hasT = s.T.length > 0
   const hasB = s.B.length > 0
+  if (isDense(d)) {
+    const pv = densePitch(Math.max(s.L.length, s.R.length), DENSE_MAX_MAIN)
+    const ph = densePitch(Math.max(s.T.length, s.B.length), DENSE_MAX_STRIP)
+    const lW = hasL ? DENSE_STUB_W : 0
+    const rW = hasR ? DENSE_STUB_W : 0
+    const width =
+      lW + rW + Math.max(CENTER_W, s.T.length * ph, s.B.length * ph)
+    const height =
+      (hasT ? DENSE_STRIP_H : 0) +
+      (hasB ? DENSE_STRIP_H : 0) +
+      Math.max(CENTER_H, s.L.length * pv, s.R.length * pv)
+    return { width, height }
+  }
   const lW = hasL ? colWFor(s.L) : 0
   const rW = hasR ? colWFor(s.R) : 0
   const width =
@@ -179,6 +211,37 @@ function PortCell({
   )
 }
 
+/** Dense-mode anchor: a tiny tick carrying the port's handles - no text
+ * (the port names it on the cable's hover label and in the edge panel). */
+function DenseStub({
+  port,
+  side,
+  pitch,
+  vertical,
+}: {
+  port: FlatPort
+  side: PortSide
+  pitch: number
+  vertical: boolean
+}) {
+  const id = handleId(port.name, side)
+  return (
+    <div
+      className="relative flex items-center justify-center"
+      style={vertical ? { height: pitch } : { width: pitch }}
+      title={port.name}
+    >
+      <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
+      <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
+      <span
+        className={
+          "bg-muted-foreground/40 " + (vertical ? "h-px w-2" : "h-2 w-px")
+        }
+      />
+    </div>
+  )
+}
+
 /**
  * Adaptive wiring-diagram device card. Each cabled port renders **once**, on
  * whichever of the four card edges faces its neighbour - so HA links between
@@ -192,6 +255,7 @@ export function StencilNode({ data, selected }: NodeProps) {
   const s = bySide(d)
   const total = flatPorts(d).length
   const extra = (d.interface_count ?? 0) - total
+  const dense = isDense(d)
   const hasL = s.L.length > 0
   const hasR = s.R.length > 0
   const hasT = s.T.length > 0
@@ -199,8 +263,11 @@ export function StencilNode({ data, selected }: NodeProps) {
   const { width } = stencilSize(d)
   // Side columns size to their widest full port name (matches stencilSize, so
   // dagre's reserved box and the DOM agree and handles land correctly).
-  const lW = hasL ? colWFor(s.L) : 0
-  const rW = hasR ? colWFor(s.R) : 0
+  const lW = hasL ? (dense ? DENSE_STUB_W : colWFor(s.L)) : 0
+  const rW = hasR ? (dense ? DENSE_STUB_W : colWFor(s.R)) : 0
+  const stripH = dense ? DENSE_STRIP_H : STRIP_H
+  const pv = densePitch(Math.max(s.L.length, s.R.length), DENSE_MAX_MAIN)
+  const ph = densePitch(Math.max(s.T.length, s.B.length), DENSE_MAX_STRIP)
 
   const ring = selected
     ? "border-primary ring-2 ring-primary/30"
@@ -216,7 +283,7 @@ export function StencilNode({ data, selected }: NodeProps) {
       style={{
         width,
         gridTemplateColumns: `${lW}px minmax(0,1fr) ${rW}px`,
-        gridTemplateRows: `${hasT ? STRIP_H : 0}px minmax(0,1fr) ${hasB ? STRIP_H : 0}px`,
+        gridTemplateRows: `${hasT ? stripH : 0}px minmax(0,1fr) ${hasB ? stripH : 0}px`,
       }}
     >
       {/* Whole-card fallbacks for edges with no port handle (LLDP ghosts). */}
@@ -233,18 +300,34 @@ export function StencilNode({ data, selected }: NodeProps) {
 
       {/* Top strip */}
       {hasT && (
-        <div className="col-start-2 row-start-1 flex divide-x divide-border border-b border-border">
-          {s.T.map((p) => (
-            <PortCell key={"T" + p.name} port={p} side="T" vertical={false} />
-          ))}
+        <div
+          className={`col-start-2 row-start-1 flex border-b border-border ${
+            dense ? "" : "divide-x divide-border"
+          }`}
+        >
+          {s.T.map((p) =>
+            dense ? (
+              <DenseStub key={"T" + p.name} port={p} side="T" pitch={ph} vertical={false} />
+            ) : (
+              <PortCell key={"T" + p.name} port={p} side="T" vertical={false} />
+            )
+          )}
         </div>
       )}
       {/* Left column */}
       {hasL && (
-        <div className="col-start-1 row-start-2 flex flex-col justify-center divide-y divide-border border-r border-border">
-          {s.L.map((p) => (
-            <PortCell key={"L" + p.name} port={p} side="L" vertical />
-          ))}
+        <div
+          className={`col-start-1 row-start-2 flex flex-col justify-center border-r border-border ${
+            dense ? "" : "divide-y divide-border"
+          }`}
+        >
+          {s.L.map((p) =>
+            dense ? (
+              <DenseStub key={"L" + p.name} port={p} side="L" pitch={pv} vertical />
+            ) : (
+              <PortCell key={"L" + p.name} port={p} side="L" vertical />
+            )
+          )}
         </div>
       )}
 
@@ -279,9 +362,11 @@ export function StencilNode({ data, selected }: NodeProps) {
                 d.site ||
                 "-"}
           </div>
-          {extra > 0 && (
+          {(dense || extra > 0) && (
             <div className="text-[9px] text-muted-foreground">
-              +{extra} uncabled
+              {dense ? `${total} cabled` : ""}
+              {dense && extra > 0 ? " · " : ""}
+              {extra > 0 ? `+${extra} uncabled` : ""}
             </div>
           )}
         </div>
@@ -289,18 +374,34 @@ export function StencilNode({ data, selected }: NodeProps) {
 
       {/* Right column */}
       {hasR && (
-        <div className="col-start-3 row-start-2 flex flex-col justify-center divide-y divide-border border-l border-border">
-          {s.R.map((p) => (
-            <PortCell key={"R" + p.name} port={p} side="R" vertical />
-          ))}
+        <div
+          className={`col-start-3 row-start-2 flex flex-col justify-center border-l border-border ${
+            dense ? "" : "divide-y divide-border"
+          }`}
+        >
+          {s.R.map((p) =>
+            dense ? (
+              <DenseStub key={"R" + p.name} port={p} side="R" pitch={pv} vertical />
+            ) : (
+              <PortCell key={"R" + p.name} port={p} side="R" vertical />
+            )
+          )}
         </div>
       )}
       {/* Bottom strip */}
       {hasB && (
-        <div className="col-start-2 row-start-3 flex divide-x divide-border border-t border-border">
-          {s.B.map((p) => (
-            <PortCell key={"B" + p.name} port={p} side="B" vertical={false} />
-          ))}
+        <div
+          className={`col-start-2 row-start-3 flex border-t border-border ${
+            dense ? "" : "divide-x divide-border"
+          }`}
+        >
+          {s.B.map((p) =>
+            dense ? (
+              <DenseStub key={"B" + p.name} port={p} side="B" pitch={ph} vertical={false} />
+            ) : (
+              <PortCell key={"B" + p.name} port={p} side="B" vertical={false} />
+            )
+          )}
         </div>
       )}
     </div>
