@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { Edge, Node } from "@xyflow/react"
 
 import { edgeWaypoints, layoutNodes } from "./layout"
+import { stencilSize } from "./stencil-node"
 
 // Scale guard: the layout pipeline must stay interactive on a ~150-device
 // fabric (3 sites × core pair + 4 dist + 12 access + 24 servers). A
@@ -113,5 +114,51 @@ describe("topology layout at scale", () => {
     const ms = performance.now() - t0
     expect(laid).toHaveLength(nodes.length)
     expect(ms).toBeLessThan(1000)
+  })
+})
+
+describe("density-adaptive gaps and lanes", () => {
+  it("widens the tier gap for a 40-cable comb and gives each cable a lane", () => {
+    const port = (name: string) => ({ name, kind: "interface" as const })
+    const hubPorts = Array.from({ length: 40 }, (_, i) => `p${i}`)
+    const nodes: Node[] = [
+      {
+        id: "hub",
+        type: "device",
+        position: { x: 0, y: 0 },
+        data: { name: "hub", ports: hubPorts.map(port) },
+      },
+      ...Array.from({ length: 40 }, (_, i) => ({
+        id: `leaf${i}`,
+        type: "device",
+        position: { x: 0, y: 0 },
+        data: { name: `leaf${i}`, ports: [port("eno1")] },
+      })),
+    ]
+    const edges: Edge[] = hubPorts.map(
+      (pn, i) =>
+        ({
+          id: `e${i}`,
+          source: "hub",
+          target: `leaf${i}`,
+          sourceHandle: pn,
+          targetHandle: "eno1",
+          data: { sem: "cable", baseS: pn, baseT: "eno1" },
+        }) as Edge
+    )
+    const { nodes: laid, waypoints } = layoutNodes(nodes, edges, undefined, "LR")
+    const hub = laid.find((n) => n.id === "hub")!
+    const hubRight = hub.position.x + stencilSize(hub.data as never).width
+    const leafLeft = Math.min(
+      ...laid.filter((n) => n.id !== "hub").map((n) => n.position.x)
+    )
+    // One lane per cable (14px) + clearance - the gap must scale with volume.
+    expect(leafLeft - hubRight).toBeGreaterThanOrEqual(40 * 14)
+    // Every cable rides its own distinct lane coordinate.
+    const lanes = edges
+      .map((e) => waypoints.get(`hub>${e.target}`)?.[0][0])
+      .filter((x): x is number => x !== undefined)
+    expect(lanes.length).toBe(40)
+    expect(new Set(lanes).size).toBe(40)
   })
 })

@@ -126,6 +126,87 @@ function channelRoute(
   return null
 }
 
+// ── Density-adaptive banding ────────────────────────────────────────────────
+// One lane per cable crossing a tier gap. The gap between two ranks must be
+// wide enough for every cable to have its own line (plus stub clearance) -
+// fixed distances collapse the moment a device carries dozens of links.
+const LANE_PITCH = 14
+const GAP_HEADROOM = 64
+const BAND_TOL = 40 // main-axis start positions within this cluster into one band
+
+interface Bands {
+  bandOf: Map<string, number>
+  list: { lo: number; hi: number }[]
+}
+
+/** Cluster rectangles into main-axis bands (rank rows/columns). */
+function bandize(rect: Map<string, Rect>, tb: boolean): Bands {
+  const items = [...rect.entries()]
+    .map(([id, r]) => ({
+      id,
+      lo: tb ? r.y : r.x,
+      hi: tb ? r.y + r.h : r.x + r.w,
+    }))
+    .sort((a, b) => a.lo - b.lo)
+  const bandOf = new Map<string, number>()
+  const list: { lo: number; hi: number }[] = []
+  for (const it of items) {
+    const cur = list[list.length - 1]
+    if (!cur || it.lo > cur.lo + BAND_TOL) list.push({ lo: it.lo, hi: it.hi })
+    else cur.hi = Math.max(cur.hi, it.hi)
+    bandOf.set(it.id, list.length - 1)
+  }
+  return { bandOf, list }
+}
+
+/** Widen every inter-band gap to fit its cable lanes (never shrink - Level
+ * distances and panel lanes keep whatever extra room they already made).
+ * Pinned (user-dragged / saved) nodes are left exactly where they are. */
+function respaceBands(
+  laid: Node[],
+  edges: Edge[],
+  sizeOf: (id: string) => { width: number; height: number },
+  tb: boolean,
+  pinned?: Set<string>
+): Node[] {
+  const rect = new Map<string, Rect>()
+  for (const n of laid) {
+    if (pinned?.has(n.id)) continue
+    const s = sizeOf(n.id)
+    rect.set(n.id, { x: n.position.x, y: n.position.y, w: s.width, h: s.height })
+  }
+  if (rect.size < 2) return laid
+  const { bandOf, list } = bandize(rect, tb)
+  if (list.length < 2) return laid
+  // Lane demand per gap: an edge from band i to band j crosses gaps i..j-1.
+  const lanes = new Array(list.length - 1).fill(0)
+  for (const e of edges) {
+    const a = bandOf.get(e.source)
+    const b = bandOf.get(e.target)
+    if (a === undefined || b === undefined || a === b) continue
+    for (let g = Math.min(a, b); g < Math.max(a, b); g++) lanes[g] += 1
+  }
+  // Cumulative shift so every gap meets its minimum.
+  const shift = new Array(list.length).fill(0)
+  for (let g = 0; g < list.length - 1; g++) {
+    const current = list[g + 1].lo + shift[g + 1] - (list[g].hi + shift[g])
+    const required = GAP_HEADROOM + lanes[g] * LANE_PITCH
+    const extra = Math.max(0, required - current)
+    for (let b = g + 1; b < list.length; b++) shift[b] += extra
+  }
+  if (shift.every((s) => s === 0)) return laid
+  return laid.map((n) => {
+    const band = bandOf.get(n.id)
+    if (band === undefined || !shift[band]) return n
+    return {
+      ...n,
+      position: tb
+        ? { x: n.position.x, y: n.position.y + shift[band] }
+        : { x: n.position.x + shift[band], y: n.position.y },
+    }
+  })
+}
+
 /** Node-avoiding routes for every edge, from the laid-out node rectangles.
  * Cables sharing a channel are FANNED OUT - each gets its own parallel line so
  * a bundle doesn't collapse onto one shared run. */
@@ -151,7 +232,83 @@ function computeWaypoints(
   // Detour routes (no channel existed - endpoints aligned with a card dead
   // between them): fixed waypoints around the side, not fan-out managed.
   const detours = new Map<string, [number, number][]>()
+  // Deterministic lanes (adjacent-band edges): one line per cable.
+  const laned = new Map<string, [number, number][]>()
+
+  const cross = (r: Rect) => (tb ? r.x + r.w / 2 : r.y + r.h / 2)
+  const { bandOf, list: bandList } = bandize(rect, tb)
+  // Bucket adjacent-band edges per gap; everything else keeps the scanned
+  // channel route (+ side detour) - lanes only make sense between two
+  // consecutive ranks, which is where the dense combs live.
+  type LaneEdge = { key: string; a: Rect; b: Rect; mid: number }
+  const gapBuckets = new Map<number, LaneEdge[]>()
+  const scanned: Edge[] = []
   for (const e of edges) {
+    const a = rect.get(e.source)
+    const b = rect.get(e.target)
+    if (!a || !b) continue
+    const ba = bandOf.get(e.source)
+    const bb = bandOf.get(e.target)
+    if (ba !== undefined && bb !== undefined && Math.abs(ba - bb) === 1) {
+      const g = Math.min(ba, bb)
+      const item = {
+        key: `${e.source}>${e.target}`,
+        a,
+        b,
+        mid: (cross(a) + cross(b)) / 2,
+      }
+      ;(gapBuckets.get(g) ?? gapBuckets.set(g, []).get(g)!).push(item)
+      continue
+    }
+    if (ba !== undefined && bb !== undefined && ba === bb) continue
+    scanned.push(e)
+  }
+  for (const [g, bucket] of gapBuckets) {
+    const gapLo = bandList[g].hi + 10
+    const gapHi = bandList[g + 1].lo - 10
+    const avail = Math.max(gapHi - gapLo, 8)
+    // Cards squatting inside this gap (panel lanes)? Fall back to the
+    // obstacle-scanned router for its edges - lanes assume a clear gap.
+    const dirty = [...bandOf.entries()].some(([id, bd]) => {
+      void bd
+      const r = rect.get(id)!
+      const lo = tb ? r.y : r.x
+      const hi = tb ? r.y + r.h : r.x + r.w
+      return lo > gapLo && hi < gapHi
+    })
+    if (dirty) {
+      for (const it of bucket)
+        scanned.push(
+          edges.find((e) => `${e.source}>${e.target}` === it.key)!
+        )
+      continue
+    }
+    bucket.sort((x, y) => x.mid - y.mid)
+    const n = bucket.length
+    const pitch = Math.max(4, Math.min(LANE_PITCH, avail / Math.max(n, 1)))
+    const start = (gapLo + gapHi) / 2 - ((n - 1) / 2) * pitch
+    bucket.forEach((it, i) => {
+      // A single, straight-clear cable keeps its plain line.
+      if (n === 1 && Math.abs(cross(it.a) - cross(it.b)) < 1) return
+      const m = Math.min(gapHi, Math.max(gapLo, start + i * pitch))
+      const aC = cross(it.a)
+      const bC = cross(it.b)
+      laned.set(
+        it.key,
+        tb
+          ? [
+              [aC, m],
+              [bC, m],
+            ]
+          : [
+              [m, aC],
+              [m, bC],
+            ]
+      )
+    })
+  }
+
+  for (const e of scanned) {
     const a = rect.get(e.source)
     const b = rect.get(e.target)
     if (!a || !b) continue
@@ -198,6 +355,7 @@ function computeWaypoints(
     const p2: [number, number] = tb ? [ch.bCross, ch.m] : [ch.m, ch.bCross]
     wp.set(key, [p1, p2])
   }
+  for (const [key, pts] of laned) wp.set(key, pts)
   for (const [key, pts] of detours) wp.set(key, pts)
   return wp
 }
@@ -296,6 +454,16 @@ export function layoutNodes(
   // gaps so hundreds of nodes stay compact; stencil cards keep the roomy
   // spacing their port-anchored cables need.
   const compact = !!sizeOfNode
+  // A card's cable comb needs shoulder room: scale sibling separation with
+  // the densest card's port count instead of a blind constant.
+  const maxFan = nodes.reduce(
+    (m, n) =>
+      Math.max(
+        m,
+        ((n.data as { ports?: unknown[] }).ports?.length ?? 0)
+      ),
+    0
+  )
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({
@@ -303,7 +471,7 @@ export function layoutNodes(
     // More cross-axis room between siblings + an explicit edge gap so parallel
     // cables get their own lane and are less likely to overlap or be forced to
     // route under a neighbouring card.
-    nodesep: compact ? 36 : 96,
+    nodesep: compact ? 36 : Math.min(96 + Math.max(0, maxFan - 8) * 4, 320),
     edgesep: compact ? 12 : 24,
     ranksep: compact ? 110 : 220,
     ranker: "network-simplex",
@@ -436,14 +604,20 @@ export function layoutNodes(
       const d = g.node(id)
       return tb ? d.width : d.height
     }
+    // Extra shoulder room for cards with big cable combs.
+    const fanExtra = (id: string) => {
+      const n = nodes.find((x) => x.id === id)
+      const ports = (n?.data as { ports?: unknown[] } | undefined)?.ports
+      return Math.max(0, (ports?.length ?? 0) - 8) * 8
+    }
     // Lay a set of ids along the cross axis at a fixed main coord, centred on 0.
     const layLane = (ids: string[], main: number) => {
       let span = -CROSS_GAP
-      for (const id of ids) span += crossSize(id) + CROSS_GAP
+      for (const id of ids) span += crossSize(id) + CROSS_GAP + fanExtra(id)
       let cur = -span / 2
       for (const id of ids) {
         placed.set(id, tb ? { x: cur, y: main } : { x: main, y: cur })
-        cur += crossSize(id) + CROSS_GAP
+        cur += crossSize(id) + CROSS_GAP + fanExtra(id)
       }
     }
 
@@ -532,7 +706,12 @@ export function layoutNodes(
         position: { x: g0.x - g0.width / 2, y: g0.y - g0.height / 2 },
       }
     })
-    return { nodes: laid, waypoints: computeWaypoints(laid, edges, sizeOf, tb) }
+    const pinnedIds = positions ? new Set(Object.keys(positions)) : undefined
+    const spaced = respaceBands(laid, edges, sizeOf, tb, pinnedIds)
+    return {
+      nodes: spaced,
+      waypoints: computeWaypoints(spaced, edges, sizeOf, tb),
+    }
   }
 
   const laid = nodes.map((n) => {
@@ -542,5 +721,10 @@ export function layoutNodes(
     // Centre-anchor using dagre's own computed w/h (varies per node).
     return { ...n, position: { x: p.x - p.width / 2, y: p.y - p.height / 2 } }
   })
-  return { nodes: laid, waypoints: computeWaypoints(laid, edges, sizeOf, tb) }
+  const pinnedIds = positions ? new Set(Object.keys(positions)) : undefined
+  const spaced = respaceBands(laid, edges, sizeOf, tb, pinnedIds)
+  return {
+    nodes: spaced,
+    waypoints: computeWaypoints(spaced, edges, sizeOf, tb),
+  }
 }
