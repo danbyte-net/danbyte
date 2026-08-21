@@ -1,4 +1,4 @@
-import { BaseEdge, Position } from "@xyflow/react"
+import { BaseEdge, Position, useStore } from "@xyflow/react"
 import type { EdgeProps } from "@xyflow/react"
 
 // How far a cable travels straight out of its port before it may turn. Keeping
@@ -90,6 +90,100 @@ function roundedPath(pts: [number, number][], r: number): string {
   return d
 }
 
+// ── Keeping the label on screen ─────────────────────────────────────────────
+// A cable's name belongs at its middle, but on a long run that middle is
+// often panned out of sight - so the label rides the visible stretch of the
+// cable instead. The viewport rect is quantised before it reaches the edges:
+// re-labelling every edge on every pan frame would cost more than the label
+// is worth, and a step of one grid square is invisible in use.
+
+const VIEW_STEP = 64
+/** Inset so a clamped label never sits half-off the window edge. */
+const VIEW_PAD = 40
+
+type Rect = { x0: number; y0: number; x1: number; y1: number }
+
+function useVisibleRect(): Rect | null {
+  const key = useStore((s) => {
+    const [tx, ty, zoom] = s.transform
+    if (!s.width || !s.height) return ""
+    const q = (v: number) => Math.round(v / VIEW_STEP) * VIEW_STEP
+    return `${q(-tx / zoom)},${q(-ty / zoom)},${Math.round(s.width / zoom)},${Math.round(
+      s.height / zoom
+    )}`
+  })
+  if (!key) return null
+  const [x, y, w, h] = key.split(",").map(Number)
+  const padX = Math.min(VIEW_PAD, w / 4)
+  const padY = Math.min(VIEW_PAD, h / 4)
+  return { x0: x + padX, y0: y + padY, x1: x + w - padX, y1: y + h - padY }
+}
+
+/** Liang-Barsky: the [t0,t1] slice of a segment that lies inside the rect,
+ * or null when the segment misses it entirely. */
+function clipSegment(
+  a: [number, number],
+  b: [number, number],
+  r: Rect
+): [number, number] | null {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  let t0 = 0
+  let t1 = 1
+  const edges: [number, number][] = [
+    [-dx, a[0] - r.x0],
+    [dx, r.x1 - a[0]],
+    [-dy, a[1] - r.y0],
+    [dy, r.y1 - a[1]],
+  ]
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return null
+      continue
+    }
+    const t = q / p
+    if (p < 0) {
+      if (t > t1) return null
+      if (t > t0) t0 = t
+    } else {
+      if (t < t0) return null
+      if (t < t1) t1 = t
+    }
+  }
+  return [t0, t1]
+}
+
+/** Where to put the label: its natural spot when that is on screen, else the
+ * middle of the cable's longest visible stretch. */
+export function labelPoint(
+  pts: [number, number][],
+  natural: [number, number],
+  rect: Rect | null
+): [number, number] {
+  if (!rect) return natural
+  const inside =
+    natural[0] >= rect.x0 &&
+    natural[0] <= rect.x1 &&
+    natural[1] >= rect.y0 &&
+    natural[1] <= rect.y1
+  if (inside) return natural
+  let best: [number, number] | null = null
+  let bestLen = 0
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i]
+    const b = pts[i + 1]
+    const slice = clipSegment(a, b, rect)
+    if (!slice) continue
+    const [t0, t1] = slice
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) * (t1 - t0)
+    if (len <= bestLen) continue
+    bestLen = len
+    const t = (t0 + t1) / 2
+    best = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+  }
+  return best ?? natural
+}
+
 /**
  * An edge that routes along Dagre's node-avoiding waypoints (passed in
  * `data.waypoints`, flow coords), so a long cable bends around intervening
@@ -115,6 +209,7 @@ export function RoutedEdge({
   labelBgBorderRadius,
 }: EdgeProps) {
   const wp = (data?.waypoints as [number, number][] | undefined) ?? []
+  const rect = useVisibleRect()
 
   if (wp.length < 2) {
     // No node-avoiding waypoints: build a stubbed orthogonal path so the cable
@@ -130,7 +225,11 @@ export function RoutedEdge({
       stagger(id)
     )
     const path = roundedPath(pts, 10)
-    const [lx, ly] = pts[Math.floor(pts.length / 2)]
+    const [lx, ly] = labelPoint(
+      pts,
+      pts[Math.floor(pts.length / 2)],
+      rect
+    )
     return (
       <BaseEdge
         id={id}
@@ -185,7 +284,7 @@ export function RoutedEdge({
         [targetX, targetY],
       ]
   const path = roundedPath(pts, 8)
-  const [lx, ly] = pts[2]
+  const [lx, ly] = labelPoint(pts, pts[2], rect)
 
   return (
     <BaseEdge

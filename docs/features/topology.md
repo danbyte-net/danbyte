@@ -52,10 +52,11 @@ Three mechanisms keep a large fabric legible:
   servers, cameras) stacks them in a compact grid beside it instead of
   stringing them along one endless row; each cable drops down its column's
   street.
-- **Dense cards** - past ~24 cabled ports a card stops listing port rows and
-  renders compact anchor ticks (bounded size, a cabled-port count in the
-  middle); each cable keeps its own attachment point, and the port names
-  are on the cable's hover label and its panel.
+- **Dense cards** - past ~24 cabled ports a card stops sizing every row to
+  its port name and renders as a faceplate bar: one slot per cabled port,
+  a cabled-port count in the middle. Names stay horizontal, staggered
+  across label rows on the top and bottom bands and truncated on the side
+  bands; the full name is always on the cable's hover label and its panel.
 - **Group by site / location** (Display popover) - the graph aggregates to
   **one card per site** (or location): device count, role breakdown, and
   one edge per group pair labelled with its cable count (click it for the
