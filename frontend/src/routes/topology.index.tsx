@@ -48,6 +48,7 @@ import {
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
+import { LogicalTopologyView } from "@/components/topology/logical-view"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
@@ -182,11 +183,13 @@ interface StoredDisplay {
   roleBonds?: string[]
   roleDistance?: Record<string, number>
   edgeRouting?: "routed" | "straight"
-  viewStyle?: NodeStyle
+  viewStyle?: ViewStyle
   groupBy?: GroupBy
 }
 
 type GroupBy = "none" | "site" | "location"
+/** The page's three views: the two canvas styles + the VLAN-rail diagram. */
+type ViewStyle = NodeStyle | "logical"
 function readStoredDisplay(): StoredDisplay {
   try {
     const raw = localStorage.getItem(DISPLAY_KEY)
@@ -233,9 +236,10 @@ function TopologyPage() {
   )
   // Wiring (stencil cards, port-to-port) or Flat (compact chips, bundled
   // edges) - the big-graph escape hatch. The Logical view is its own tab.
-  const [viewStyle, setViewStyle] = useState<NodeStyle>(
+  const [viewStyle, setViewStyle] = useState<ViewStyle>(
     stored.viewStyle ?? "stencil"
   )
+  const logical = viewStyle === "logical"
   // Aggregate the graph to one card per site/location; double-click a card
   // (or its panel's button) drills into that group's device view.
   const [groupBy, setGroupBy] = useState<GroupBy>(stored.groupBy ?? "none")
@@ -367,9 +371,11 @@ function TopologyPage() {
   const q = useQuery({
     queryKey: ["topology", graphQs],
     queryFn: () => api<TopologyGraph>(`/api/topology/?${graphQs}`),
+    enabled: !logical,
   })
   const ghosts = useQuery({
     queryKey: ["topology-ghosts", filters.site],
+    enabled: !logical,
     queryFn: () =>
       api<{ edges: TopoEdge[] }>(
         `/api/monitoring/topology/ghosts/${
@@ -416,7 +422,7 @@ function TopologyPage() {
         roleBonds: string[]
         roleDistance: Record<string, number>
         edgeRouting: "routed" | "straight"
-        viewStyle: NodeStyle
+        viewStyle: ViewStyle
         groupBy: GroupBy
       }
     >
@@ -566,7 +572,7 @@ function TopologyPage() {
             </button>
           </Badge>
         )}
-        <SegmentedTabs<NodeStyle>
+        <SegmentedTabs<ViewStyle>
           value={viewStyle}
           onValueChange={(v) => {
             setViewStyle(v)
@@ -578,6 +584,7 @@ function TopologyPage() {
           items={[
             { value: "stencil", label: "Wiring" },
             { value: "flat", label: "Flat" },
+            { value: "logical", label: "Logical" },
           ]}
         />
         {focus && (
@@ -595,6 +602,8 @@ function TopologyPage() {
         )}
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {!logical && (
+          <>
           <Input
             placeholder="Find device…"
             value={search}
@@ -801,11 +810,15 @@ function TopologyPage() {
               />
             </PopoverContent>
           </Popover>
+          </>
+          )}
         </div>
       </header>
 
       {/* Second bar: saved views + actions. Scrolls within itself on
-          narrow screens (scrollbar hidden) instead of panning the page. */}
+          narrow screens (scrollbar hidden) instead of panning the page.
+          The Logical view has its own toolbar - no saved views/PNG there. */}
+      {!logical && (
       <div className="flex h-10 shrink-0 [scrollbar-width:none] items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden">
         <Select
           value={viewId}
@@ -903,16 +916,19 @@ function TopologyPage() {
         </div>
       </div>
 
+      )}
+
       <div className="relative min-h-0 flex-1">
-        {q.isLoading && (
+        {logical && <LogicalTopologyView />}
+        {!logical && q.isLoading && (
           <p className="p-6 text-sm text-muted-foreground">Loading…</p>
         )}
-        {q.isError && (
+        {!logical && q.isError && (
           <div className="p-6">
             <QueryError error={q.error} />
           </div>
         )}
-        {graph && (
+        {!logical && graph && (
           <Suspense fallback={<Skeleton />}>
             <TopologyCanvas
               ref={canvas}

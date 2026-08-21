@@ -505,3 +505,63 @@ class GroupByTests(_Base):
         names = {n["data"]["name"] for n in g["nodes"]}
         self.assertEqual(names, {"DC1"})
         self.assertEqual(g["edges"], [])
+
+
+class LogicalTopologyTests(_Base):
+    """GET /api/topology/logical/ - VLAN rails with hybrid attachments."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Cluster, ClusterType, VLAN, VirtualMachine, VMInterface
+
+        self.v10 = VLAN.objects.create(tenant=self.tenant, vlan_id=10, name="prod")
+        self.v20 = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=20, name="mgmt", color="#f59e0b"
+        )
+        self.sw = Device.objects.create(tenant=self.tenant, name="sw-1")
+        access = Interface.objects.create(
+            device=self.sw, name="Gi0/1", vlan=self.v10
+        )
+        del access
+        trunk = Interface.objects.create(device=self.sw, name="Gi0/48")
+        trunk.tagged_vlans.set([self.v10, self.v20])
+        ct = ClusterType.objects.create(tenant=self.tenant, name="pve")
+        cl = Cluster.objects.create(tenant=self.tenant, name="c1", type=ct)
+        self.vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="web-01", cluster=cl
+        )
+        VMInterface.objects.create(vm=self.vm, name="net0", vlan=self.v10)
+
+    def _logical(self, qs=""):
+        return self.client.get(f"/api/topology/logical/?{qs}").json()
+
+    def test_rails_and_hybrid_nodes(self):
+        body = self._logical()
+        self.assertEqual([r["vlan_id"] for r in body["rails"]], [10, 20])
+        self.assertEqual(body["rails"][1]["color"], "#f59e0b")
+        kinds = {(n["kind"], n["name"]) for n in body["nodes"]}
+        self.assertEqual(kinds, {("device", "sw-1"), ("vm", "web-01")})
+
+    def test_tagged_vs_untagged_attachments(self):
+        body = self._logical()
+        sw = next(n for n in body["nodes"] if n["name"] == "sw-1")
+        by_iface = {}
+        for a in sw["attachments"]:
+            by_iface.setdefault(a["iface"], []).append(a["tagged"])
+        self.assertEqual(by_iface["Gi0/1"], [False])
+        self.assertEqual(sorted(by_iface["Gi0/48"]), [True, True])
+
+    def test_include_vms_toggle(self):
+        body = self._logical("include_vms=0")
+        self.assertEqual({n["kind"] for n in body["nodes"]}, {"device"})
+
+    def test_foreign_tenant_invisible(self):
+        from .models import VLAN
+
+        other = Tenant.objects.create(org=self.org, name="B", slug="b")
+        v = VLAN.objects.create(tenant=other, vlan_id=99, name="x")
+        d = Device.objects.create(tenant=other, name="ghost")
+        Interface.objects.create(device=d, name="e0", vlan=v)
+        body = self._logical()
+        self.assertNotIn(99, [r["vlan_id"] for r in body["rails"]])
+        self.assertNotIn("ghost", [n["name"] for n in body["nodes"]])

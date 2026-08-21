@@ -2594,6 +2594,31 @@ export interface TopologyGraph {
   edges: TopoEdge[]
 }
 
+/** GET /api/topology/logical/ - VLANs as rails, devices + VMs attached. */
+export interface LogicalRail {
+  id: string
+  vlan_id: number
+  name: string
+  /** VLAN's own color, else its zone's; "" = palette shade. */
+  color: string
+  group: string | null
+}
+
+export interface LogicalNode {
+  kind: "device" | "vm"
+  id: string
+  name: string
+  status: string | null
+  /** Role name (devices) or cluster name (VMs). */
+  sub: string | null
+  attachments: { rail: string; iface: string; tagged: boolean }[]
+}
+
+export interface LogicalTopology {
+  rails: LogicalRail[]
+  nodes: LogicalNode[]
+}
+
 /** Trace adds an origin + a completeness flag to the same graph shape. */
 export interface TraceGraph extends TopologyGraph {
   origin: { type: string; id: string }

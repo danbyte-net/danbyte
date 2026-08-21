@@ -132,7 +132,7 @@ from .presence_views import (
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
 from .terraform_views import vm_render_view
-from .topology_views import topology_view
+from .topology_views import topology_logical_view, topology_view
 from .viewsets import (
     AggregateViewSet,
     ASNViewSet,
@@ -436,6 +436,7 @@ urlpatterns = [
     # Content-Security-Policy report-uri set at the nginx edge).
     path("csp-report/", csp_report, name="csp-report"),
     path("topology/", topology_view, name="topology"),
+    path("topology/logical/", topology_logical_view, name="topology-logical"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
     path("macs/", mac_list_view, name="macs"),

@@ -415,6 +415,137 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
     return {"nodes": nodes, "edges": edge_list}
 
 
+@extend_schema(
+    summary="Logical (VLAN-rail) topology - devices and VMs on their VLANs",
+    tags=["topology"],
+    request=None,
+    parameters=[
+        OpenApiParameter(name="site", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Limit physical devices to a site id."),
+        OpenApiParameter(name="role", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Limit physical devices to a role id."),
+        OpenApiParameter(name="vlan_group", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Limit rails to one VLAN group id."),
+        OpenApiParameter(name="include_vms", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="'0' hides virtual machines (default on)."),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{rails, nodes}` - VLANs as rails (id, vlan_id, name, effective "
+            "color, group) and attached devices/VMs with per-interface "
+            "attachments ({rail, iface, tagged}). Hybrid physical + virtual, "
+            "RBAC-scoped."
+        ),
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def topology_logical_view(request):
+    """The L2 picture: VLANs as rails, everything attached to them - physical
+    devices via Interface.vlan/tagged_vlans, VMs via VMInterface -
+    on one hybrid diagram. Rail color = the VLAN's own color, else its
+    zone's."""
+    from .models import VLAN, Device, Interface, VirtualMachine, VMInterface
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"rails": [], "nodes": []})
+    dev_q = rbac.row_filter(request.user, tenant, "device", "view")
+    if dev_q is None:
+        return Response({"detail": "device.view required."}, status=403)
+
+    p = request.query_params
+    devs = Device.objects.filter(tenant=tenant)
+    if dev_q is not True:
+        devs = devs.filter(dev_q)
+    if p.get("site"):
+        devs = devs.filter(site_id=p["site"])
+    if p.get("role"):
+        devs = devs.filter(role_id=p["role"])
+
+    nodes: dict = {}
+    rail_ids: set = set()
+
+    def add(kind, obj_id, name, status, sub, vlan_id, iface, tagged):
+        key = f"{kind}:{obj_id}"
+        n = nodes.setdefault(key, {
+            "kind": kind, "id": str(obj_id), "name": name,
+            "status": status, "sub": sub, "attachments": [],
+        })
+        n["attachments"].append(
+            {"rail": str(vlan_id), "iface": iface, "tagged": tagged}
+        )
+        rail_ids.add(vlan_id)
+
+    ifaces = (
+        Interface.objects.filter(device__in=devs)
+        .filter(Q(vlan__isnull=False) | Q(tagged_vlans__isnull=False))
+        .select_related("device__role", "device__status")
+        .prefetch_related("tagged_vlans")
+        .distinct()
+    )
+    for i in ifaces:
+        d = i.device
+        status = d.status.name if d.status_id else None
+        sub = d.role.name if d.role_id else None
+        if i.vlan_id:
+            add("device", d.id, d.name, status, sub, i.vlan_id, i.name, False)
+        for v in i.tagged_vlans.all():
+            add("device", d.id, d.name, status, sub, v.id, i.name, True)
+
+    if p.get("include_vms", "1") != "0":
+        vms = rbac.restrict_queryset(
+            VirtualMachine.objects.filter(tenant=tenant),
+            request.user, tenant, "virtualmachine", "view",
+        )
+        vifs = (
+            VMInterface.objects.filter(vm__in=vms)
+            .filter(Q(vlan__isnull=False) | Q(tagged_vlans__isnull=False))
+            .select_related("vm__status", "vm__cluster")
+            .prefetch_related("tagged_vlans")
+            .distinct()
+        )
+        for i in vifs:
+            vm = i.vm
+            status = vm.status.name if vm.status_id else None
+            sub = vm.cluster.name if vm.cluster_id else None
+            if i.vlan_id:
+                add("vm", vm.id, vm.name, status, sub, i.vlan_id, i.name, False)
+            for v in i.tagged_vlans.all():
+                add("vm", vm.id, vm.name, status, sub, v.id, i.name, True)
+
+    vlans = (
+        VLAN.objects.filter(id__in=rail_ids)
+        .select_related("zone", "group")
+        .order_by("vlan_id")
+    )
+    if p.get("vlan_group"):
+        vlans = vlans.filter(group_id=p["vlan_group"])
+    kept = {str(v.id) for v in vlans}
+    rails = [
+        {
+            "id": str(v.id),
+            "vlan_id": v.vlan_id,
+            "name": v.name,
+            "color": v.color or (v.zone.color if v.zone_id else ""),
+            "group": v.group.name if v.group_id else None,
+        }
+        for v in vlans
+    ]
+    out_nodes = []
+    for n in nodes.values():
+        n["attachments"] = [a for a in n["attachments"] if a["rail"] in kept]
+        if n["attachments"]:
+            out_nodes.append(n)
+    out_nodes.sort(key=lambda n: (n["kind"], n["name"].lower()))
+    return Response({"rails": rails, "nodes": out_nodes})
+
+
 def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
                    scope_q=None):
     """The device graph aggregated by site or location: one node per group

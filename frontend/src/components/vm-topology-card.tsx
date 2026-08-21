@@ -7,7 +7,7 @@ import {
   type VMInterface,
   type VirtNetwork,
 } from "@/lib/api"
-import { railText } from "@/routes/virtual-topology.index"
+import { railText } from "@/components/topology/rail-diagram"
 
 // Mirrors the main topology view's language at VM scale: the VM box on top,
 // its networks as solid coloured rails below, one coloured leg per attachment.
