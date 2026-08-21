@@ -222,6 +222,14 @@ without the grant see no plant geography.
 
 For splice closures and PON splitters, see [fibre](../dcim/fiber.md).
 
+## Placing a site from its address
+
+Besides dragging a pin in Layout mode or typing coordinates, the site form
+can geocode the **Address** line: press **Find on OSM** next to it and pick
+the right match - the candidate's coordinates fill the latitude/longitude
+fields (you still save the form). Powered by OpenStreetMap's Nominatim, one
+lookup per click, © OpenStreetMap contributors.
+
 ## Region boundaries
 
 Regions that carry an [OpenStreetMap boundary](regions-locations.md#map-boundary-from-openstreetmap)

@@ -1067,6 +1067,14 @@ export interface BoundaryCandidate {
   boundary: GeoBoundary
 }
 
+/** One result row from /api/sites/geocode/ (Nominatim address search). */
+export interface GeocodeCandidate {
+  label: string
+  kind: string
+  latitude: number
+  longitude: number
+}
+
 /** Derived, most-severe-passed-milestone lifecycle state. "" = no dates. */
 export type LifecycleState = "" | "supported" | "eos" | "security_ended" | "eol"
 

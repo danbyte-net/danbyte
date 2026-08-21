@@ -14,7 +14,8 @@ import { CHECK_COLOR } from "./status-colors"
 
 export interface IconOpts {
   selected?: boolean
-  /** MiniMap variant: smaller pin, no label chip (a tooltip stands in). */
+  /** MiniMap variant: the same full-size pin, but no label chip (a tooltip
+   * stands in - a mini-map has no zoom-based label declutter). */
   mini?: boolean
 }
 
@@ -26,11 +27,10 @@ export function escapeHtml(s: string): string {
     .replaceAll('"', "&quot;")
 }
 
-function healthRing(check: string | null, mini = false): string {
+function healthRing(check: string | null): string {
   if (!check) return ""
   const c = CHECK_COLOR[check] ?? CHECK_COLOR.unknown
-  const cls = mini ? "sm-health sm-health-mini" : "sm-health"
-  return `<span class="${cls}" style="background:${c}"></span>`
+  return `<span class="sm-health" style="background:${c}"></span>`
 }
 
 // A user-supplied color lands inside a style attribute - only let an actual
@@ -57,12 +57,9 @@ export function siteIcon(s: SiteMapSite, opts: IconOpts = {}): L.DivIcon {
     : `<span class="sm-label">${escapeHtml(s.name)}${count}</span>`
   return L.divIcon({
     className: "sm-marker" + (selected ? " sm-sel" : ""),
-    html:
-      `<span class="sm-pin${mini ? " sm-pin-mini" : ""}"${style}>${glyph}</span>` +
-      healthRing(s.check, mini) +
-      label,
+    html: `<span class="sm-pin"${style}>${glyph}</span>` + healthRing(s.check) + label,
     iconSize: undefined as unknown as L.PointExpression,
-    iconAnchor: mini ? [9, 9] : [14, 14],
+    iconAnchor: [14, 14],
   })
 }
 
@@ -80,8 +77,7 @@ export function deviceIcon(d: SiteMapDevice, opts: IconOpts = {}): L.DivIcon {
   return L.divIcon({
     className: "sm-marker" + (selected ? " sm-sel" : ""),
     html:
-      `<span class="sm-badge">${badge}</span>${healthRing(d.check, mini)}` +
-      label,
+      `<span class="sm-badge">${badge}</span>${healthRing(d.check)}` + label,
     iconAnchor: [12, 12],
   })
 }

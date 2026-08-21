@@ -5,6 +5,7 @@ import { Check, ChevronsUpDown } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
+  GeocodeCandidate,
   Paginated,
   RegionOption,
   Site,
@@ -143,6 +144,23 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
     staleTime: 60_000,
   })
 
+  // Address → coordinates. One Nominatim request per explicit click (OSM
+  // usage policy) - the picked candidate just fills the lat/lng inputs.
+  const [geoCandidates, setGeoCandidates] = useState<
+    GeocodeCandidate[] | null
+  >(null)
+  const geocode = useMutation({
+    mutationFn: (q: string) =>
+      api<{ results: GeocodeCandidate[] }>(
+        `/api/sites/geocode/?${new URLSearchParams({ q })}`
+      ),
+    onSuccess: (data) => setGeoCandidates(data.results),
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
+  })
+
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: SiteWritePayload = {
@@ -227,11 +245,50 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
       )}
 
       <Field label="Address" hint="optional" error={fieldErrors.location}>
-        <Input
-          placeholder="Frankfurt, DE"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-        />
+        <div className="flex gap-2">
+          <Input
+            placeholder="Frankfurt, DE"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0"
+            title="Look up coordinates on OpenStreetMap - fills latitude/longitude below"
+            disabled={!location.trim() || geocode.isPending}
+            onClick={() => geocode.mutate(location.trim())}
+          >
+            {geocode.isPending ? "Searching…" : "Find on OSM"}
+          </Button>
+        </div>
+        {geoCandidates && geoCandidates.length === 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            No match - try adding a city or country to the address.
+          </p>
+        )}
+        {geoCandidates && geoCandidates.length > 0 && (
+          <div className="mt-1.5 grid gap-1">
+            {geoCandidates.map((c, i) => (
+              <button
+                key={i}
+                type="button"
+                className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
+                onClick={() => {
+                  setLatitude(c.latitude.toFixed(6))
+                  setLongitude(c.longitude.toFixed(6))
+                  setGeoCandidates(null)
+                }}
+              >
+                <span className="min-w-0 truncate">{c.label}</span>
+                <span className="ml-auto shrink-0 text-muted-foreground">
+                  {c.kind}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </Field>
 
       <Field

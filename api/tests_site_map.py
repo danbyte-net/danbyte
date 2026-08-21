@@ -321,3 +321,52 @@ class SiteMarkerTests(SiteMapHealthTests.__bases__[0]):
         self.assertEqual(d["fov"], {
             "direction": 270, "deg": 35, "distance_m": 80, "ptz": False,
         })
+
+
+class SiteGeocodeTests(SiteMapTests.__bases__[0]):
+    """GET /api/sites/geocode/ - address → coordinates via Nominatim."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=self.org, name="T", slug="t")
+        self.admin = User.objects.create_superuser("geo-admin", password="x")
+        self.client_api = APIClient()
+        self.client_api.force_authenticate(self.admin)
+        s = self.client_api.session
+        s["tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_requires_query(self):
+        r = self.client_api.get("/api/sites/geocode/")
+        self.assertEqual(r.status_code, 400)
+
+    def test_returns_coordinates(self):
+        from unittest.mock import patch
+
+        rows = [
+            {"display_name": "Rådhuspladsen, København", "category": "place",
+             "type": "square", "lat": "55.675618", "lon": "12.569628"},
+            {"display_name": "broken row", "category": "place", "type": "x"},
+        ]
+        fake = type("R", (), {
+            "raise_for_status": lambda self: None,
+            "json": lambda self: rows,
+        })()
+        with patch("core.ssrf.safe_get", return_value=fake) as mock_get:
+            r = self.client_api.get("/api/sites/geocode/?q=R%C3%A5dhuspladsen")
+        self.assertEqual(r.status_code, 200, r.content)
+        results = r.json()["results"]
+        self.assertEqual(len(results), 1)
+        self.assertAlmostEqual(results[0]["latitude"], 55.675618)
+        self.assertAlmostEqual(results[0]["longitude"], 12.569628)
+        _, kwargs = mock_get.call_args
+        self.assertIn("Danbyte/", kwargs["headers"]["User-Agent"])
+        # Address geocoding needs no polygons - keep the request light.
+        self.assertNotIn("polygon_geojson", kwargs["params"])
+
+    def test_upstream_failure_is_502(self):
+        from unittest.mock import patch
+
+        with patch("core.ssrf.safe_get", side_effect=OSError("boom")):
+            r = self.client_api.get("/api/sites/geocode/?q=x")
+        self.assertEqual(r.status_code, 502)

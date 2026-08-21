@@ -1618,6 +1618,38 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             qs = qs.filter(region_id=region)
         return qs
 
+    @action(detail=False, methods=["get"], url_path="geocode")
+    def geocode(self, request):
+        """Address → coordinates via OpenStreetMap (Nominatim), so the site
+        form can fill latitude/longitude from the address line. Same policy
+        posture as the region boundary lookup: one request per operator
+        click, identifying User-Agent, result stored on the site."""
+        from .nominatim import nominatim_search
+
+        q = (request.query_params.get("q") or "").strip()
+        if not q:
+            raise ValidationError({"q": "Type an address."})
+        try:
+            rows = nominatim_search(q)
+        except Exception as exc:  # noqa: BLE001 - surfaced, not raised
+            return Response(
+                {"detail": f"OpenStreetMap lookup failed: {exc}"},
+                status=502,
+            )
+        candidates = []
+        for row in rows:
+            try:
+                lat, lon = float(row["lat"]), float(row["lon"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            candidates.append({
+                "label": row.get("display_name") or q,
+                "kind": f"{row.get('category', '')}/{row.get('type', '')}",
+                "latitude": lat,
+                "longitude": lon,
+            })
+        return Response({"results": candidates})
+
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
         ids = request.data.get("ids") or []
@@ -6365,40 +6397,20 @@ class RegionViewSet(TenantScopedViewSet):
         """
         import json as _json
 
-        from core.ssrf import safe_get
-        from core.version import system_version
+        from .nominatim import nominatim_search
 
         q = (request.query_params.get("q") or "").strip()
         if not q:
             raise ValidationError({"q": "Type a place or postal code."})
         try:
-            resp = safe_get(
-                "https://nominatim.openstreetmap.org/search",
-                params={
-                    "q": q,
-                    "format": "jsonv2",
-                    "polygon_geojson": 1,
-                    # ~simplified enough that a whole country stays small.
-                    "polygon_threshold": 0.003,
-                    "limit": 5,
-                },
-                headers={
-                    "User-Agent": (
-                        f"Danbyte/{system_version()['version']} "
-                        "(+https://danbyte.net)"
-                    )
-                },
-                timeout=15,
-            )
-            resp.raise_for_status()
-            rows = resp.json()
+            rows = nominatim_search(q, polygons=True)
         except Exception as exc:  # noqa: BLE001 - surfaced, not raised
             return Response(
                 {"detail": f"OpenStreetMap lookup failed: {exc}"},
                 status=502,
             )
         candidates = []
-        for row in rows if isinstance(rows, list) else []:
+        for row in rows:
             geom = row.get("geojson") or {}
             if geom.get("type") not in ("Polygon", "MultiPolygon"):
                 continue  # points/lines can't shade a region

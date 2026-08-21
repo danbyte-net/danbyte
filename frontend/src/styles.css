@@ -213,22 +213,10 @@
   width: 15px;
   height: 15px;
 }
-.sm-pin-mini {
-  width: 18px;
-  height: 18px;
-}
-.sm-pin-mini .sm-pin-icon {
-  width: 11px;
-  height: 11px;
-}
-/* The health dot rides the pin's top-right corner, whatever the pin size. */
+/* The health dot rides the pin's top-right corner. */
 .sm-pin + .sm-health {
   top: -3px;
   left: 21px;
-}
-.sm-pin-mini + .sm-health {
-  top: -3px;
-  left: 12px;
 }
 .sm-label {
   position: absolute;
@@ -406,12 +394,6 @@
   height: 9px;
   border-radius: 9999px;
   border: 1.5px solid var(--background);
-}
-.sm-health-mini {
-  top: -3px;
-  left: 7px;
-  width: 8px;
-  height: 8px;
 }
 
 .sm-vertex {
