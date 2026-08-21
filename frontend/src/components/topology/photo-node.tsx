@@ -85,7 +85,7 @@ export function PhotoNode({ data, selected }: NodeProps) {
         {markers.map((m) => (
           <div
             key={m.name}
-            className="absolute rounded-[2px] border-2 border-sky-400/80 bg-sky-400/10"
+            className="absolute rounded-[2px] border border-sky-400/60 hover:border-sky-400"
             style={{
               left: `${(m.x - m.w / 2) * 100}%`,
               top: `${(m.y - m.h / 2) * 100}%`,

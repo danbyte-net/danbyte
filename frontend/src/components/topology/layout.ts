@@ -878,7 +878,7 @@ function packComponents(
 // the visio/NetBox look - with each cable dropping down a per-column
 // "street" on its own small lane. Structural layouts only; Levels places
 // every role by its tier.
-const LEAF_GRID_MIN = 8
+const LEAF_GRID_MIN = 2
 const STREET_W = 22
 const GRID_GAP = 36
 const CELL_GAP = 10
