@@ -227,10 +227,13 @@ For splice closures and PON splitters, see [fibre](../dcim/fiber.md).
 ## Placing a site from its address
 
 Besides dragging a pin in Layout mode or typing coordinates, the site form
-can geocode the **Address** line: press **Find on OSM** next to it and pick
-the right match - the candidate's coordinates fill the latitude/longitude
-fields (you still save the form). Powered by OpenStreetMap's Nominatim, one
-lookup per click, © OpenStreetMap contributors.
+can geocode the **Address** line. Type an address and leave the field: while
+the coordinate fields are empty, the best match fills them automatically (a
+toast names the place it chose). **Find on OSM** next to the field does the
+same on demand and lists the candidates, for when the automatic match picks
+the wrong one - and coordinates you typed yourself are never overwritten.
+Powered by OpenStreetMap's Nominatim, one lookup per action,
+© OpenStreetMap contributors.
 
 ## Region boundaries
 

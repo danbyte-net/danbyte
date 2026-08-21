@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Check, ChevronsUpDown } from "lucide-react"
@@ -149,13 +149,28 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
   const [geoCandidates, setGeoCandidates] = useState<
     GeocodeCandidate[] | null
   >(null)
+  // `auto` is the leave-the-field flow: the top candidate fills the
+  // coordinates directly (only ever attempted while they are empty), and
+  // errors stay silent - blurring a half-typed address must not nag.
+  const autoGeoRef = useRef("")
   const geocode = useMutation({
-    mutationFn: (q: string) =>
+    mutationFn: ({ q }: { q: string; auto?: boolean }) =>
       api<{ results: GeocodeCandidate[] }>(
         `/api/sites/geocode/?${new URLSearchParams({ q })}`
       ),
-    onSuccess: (data) => setGeoCandidates(data.results),
-    onError: (err) => {
+    onSuccess: (data, vars) => {
+      if (vars.auto) {
+        const c = data.results[0]
+        if (!c) return
+        setLatitude(c.latitude.toFixed(6))
+        setLongitude(c.longitude.toFixed(6))
+        toast.success(`Placed at ${c.label}`)
+      } else {
+        setGeoCandidates(data.results)
+      }
+    },
+    onError: (err, vars) => {
+      if (vars.auto) return
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
     },
@@ -250,6 +265,16 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
             placeholder="Frankfurt, DE"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
+            onBlur={() => {
+              // Auto-place: one lookup per distinct address, and never
+              // while coordinates are already set (typed or auto-filled).
+              const q = location.trim()
+              if (!q || String(latitude).trim() || String(longitude).trim())
+                return
+              if (autoGeoRef.current === q || geocode.isPending) return
+              autoGeoRef.current = q
+              geocode.mutate({ q, auto: true })
+            }}
           />
           <Button
             type="button"
@@ -258,7 +283,7 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
             className="h-9 shrink-0"
             title="Look up coordinates on OpenStreetMap - fills latitude/longitude below"
             disabled={!location.trim() || geocode.isPending}
-            onClick={() => geocode.mutate(location.trim())}
+            onClick={() => geocode.mutate({ q: location.trim() })}
           >
             {geocode.isPending ? "Searching…" : "Find on OSM"}
           </Button>

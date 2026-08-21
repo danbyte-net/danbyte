@@ -77,11 +77,15 @@ function SiteRow({
           : "hover:bg-muted/60"
       )}
     >
-      <span
-        aria-hidden
-        className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-        style={{ background: s.color || "var(--primary)" }}
-      />
+      {/* A dot only when the operator chose a marker color - default-tinted
+          dots on every row are noise, not signal. */}
+      {s.color && (
+        <span
+          aria-hidden
+          className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
+          style={{ background: s.color }}
+        />
+      )}
       <span className="min-w-0 truncate">{s.name}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
         <CheckChip check={s.check} />
@@ -408,10 +412,12 @@ export function MapObjectsSidebar({
                   count={g.rows.length}
                   storageId={FOLDS}
                   badge={
-                    <span
-                      className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-                      style={{ background: g.color || "var(--muted-foreground)" }}
-                    />
+                    g.color ? (
+                      <span
+                        className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
+                        style={{ background: g.color }}
+                      />
+                    ) : undefined
                   }
                   extra={
                     <>
@@ -448,11 +454,13 @@ export function MapObjectsSidebar({
               className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
               title="Fit the map to this region"
             >
-              <span
-                aria-hidden
-                className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-                style={{ background: r.color || "#71717a" }}
-              />
+              {r.color && (
+                <span
+                  aria-hidden
+                  className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
+                  style={{ background: r.color }}
+                />
+              )}
               <span className="min-w-0 truncate">{r.name}</span>
             </button>
           ))}
