@@ -8,6 +8,7 @@ import { api, type DeviceRole } from "@/lib/api"
 import { cssColor } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { TileBadge } from "@/components/floorplan/tile-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -178,6 +179,17 @@ function DeviceRoleOverview({ role: r }: { role: DeviceRole }) {
             style={{ backgroundColor: cssColor(r.color) }}
           />
           <span className="font-mono">{r.color}</span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Icon",
+      value: r.icon ? (
+        <span className="inline-flex items-center gap-1.5">
+          <TileBadge color={r.color} icon={r.icon} className="size-4" />
+          <span className="font-mono">{r.icon}</span>
         </span>
       ) : (
         dash
