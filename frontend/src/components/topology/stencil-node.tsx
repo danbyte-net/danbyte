@@ -115,21 +115,14 @@ function stripW(ports: FlatPort[]): number {
 }
 
 // ── Dense cards: the faceplate bar ──────────────────────────────────────────
-// Above this many cabled ports the card stops sizing every row to its full
-// port name and renders as a switch FACEPLATE instead: a long slim bar with
-// one 16px slot per port, the name kept - truncated on the left/right
-// bands, rotated 90° on the top/bottom bands - exactly how a patch schedule
-// reads. The bar's length is unbounded on the port axis (that is the
-// point); the leaf grid beneath aligns its columns to it.
+// Above this many cabled ports the side COLUMNS stop sizing every row to its
+// full port name and render as a switch faceplate instead: 16px slots with
+// truncated names, so a 48-port stack doesn't grow a card taller than the
+// screen. Top and bottom strips always keep full horizontal names - that is
+// the axis with room for them.
 export const DENSE_PORTS = 24
 const DENSE_PITCH = 16 // one port slot
-const DENSE_BAND = 58 // label band depth
-// Top/bottom bands read like a patch schedule: names stay HORIZONTAL and
-// stagger across four label rows, so a 16px slot can still carry a full
-// `ethernet1/13` (every 4th slot shares a row - 64px of clear width).
-const DENSE_ROWS = 4
-const DENSE_ROW_H = 13
-const DENSE_LABEL_W = 62
+const DENSE_BAND = 58 // side-band depth (truncated names)
 
 function isDense(d: StencilData): boolean {
   return flatPorts(d).length > DENSE_PORTS
@@ -144,13 +137,10 @@ export function stencilSize(d: StencilData): { width: number; height: number } {
   if (isDense(d)) {
     const lW = hasL ? DENSE_BAND : 0
     const rW = hasR ? DENSE_BAND : 0
-    const width =
-      lW +
-      rW +
-      Math.max(centerW(d), s.T.length * DENSE_PITCH, s.B.length * DENSE_PITCH)
+    const width = lW + rW + Math.max(centerW(d), stripW(s.T), stripW(s.B))
     const height =
-      (hasT ? DENSE_BAND : 0) +
-      (hasB ? DENSE_BAND : 0) +
+      (hasT ? STRIP_H : 0) +
+      (hasB ? STRIP_H : 0) +
       Math.max(CENTER_H, s.L.length * DENSE_PITCH, s.R.length * DENSE_PITCH)
     return { width, height }
   }
@@ -213,75 +203,23 @@ function PortCell({
   )
 }
 
-/** Faceplate slot: a 16px port slot with its name - truncated on the
- * left/right bands, staggered horizontally on the top/bottom bands. */
-function DensePort({
-  port,
-  side,
-  vertical,
-  idx,
-  count = 1,
-}: {
-  port: FlatPort
-  side: PortSide
-  vertical: boolean
-  idx: number
-  count?: number
-}) {
+/** Faceplate slot: a 16px row on a side column, name truncated to the band. */
+function DensePort({ port, side }: { port: FlatPort; side: PortSide }) {
   const id = handleId(port.name, side)
-  // Which of the four staggered label rows this slot writes on, measured
-  // from the band's outer edge inwards.
-  const row = idx % DENSE_ROWS
-  // Centre the (over-wide) label on its slot, then clamp it inside the band
-  // so the first and last few names can't spill off the card.
-  const bandW = count * DENSE_PITCH
-  const at = idx * DENSE_PITCH
-  const left = Math.max(
-    -at,
-    Math.min(
-      (DENSE_PITCH - DENSE_LABEL_W) / 2,
-      bandW - DENSE_LABEL_W - at
-    )
-  )
   return (
     <div
       className={
-        "relative flex items-center " +
-        (vertical
-          ? side === "L"
-            ? "justify-end pr-1 pl-1"
-            : "justify-start pr-1 pl-1"
-          : "justify-center")
+        "relative flex items-center pr-1 pl-1 " +
+        (side === "L" ? "justify-end" : "justify-start")
       }
-      style={
-        vertical
-          ? { height: DENSE_PITCH, width: DENSE_BAND }
-          : { width: DENSE_PITCH, height: DENSE_BAND }
-      }
+      style={{ height: DENSE_PITCH, width: DENSE_BAND }}
       title={port.name}
     >
       <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
       <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
-      {vertical ? (
-        <span className="topo-portname min-w-0 truncate font-mono text-[8px] leading-none text-muted-foreground">
-          {port.name}
-        </span>
-      ) : (
-        // Wider than its slot on purpose - centred on the slot so the name
-        // still points at its own port, on a row no neighbour shares.
-        <span
-          className="topo-portname pointer-events-none absolute text-center font-mono text-[8px] leading-none whitespace-nowrap text-muted-foreground"
-          style={{
-            width: DENSE_LABEL_W,
-            left,
-            ...(side === "T"
-              ? { top: row * DENSE_ROW_H + 2 }
-              : { bottom: row * DENSE_ROW_H + 2 }),
-          }}
-        >
-          {port.name}
-        </span>
-      )}
+      <span className="topo-portname min-w-0 truncate font-mono text-[8px] leading-none text-muted-foreground">
+        {port.name}
+      </span>
     </div>
   )
 }
@@ -309,7 +247,6 @@ export function StencilNode({ data, selected }: NodeProps) {
   // dagre's reserved box and the DOM agree and handles land correctly).
   const lW = hasL ? (dense ? DENSE_BAND : colWFor(s.L)) : 0
   const rW = hasR ? (dense ? DENSE_BAND : colWFor(s.R)) : 0
-  const stripH = dense ? DENSE_BAND : STRIP_H
 
   const ring = selected
     ? "border-primary ring-2 ring-primary/30"
@@ -325,7 +262,7 @@ export function StencilNode({ data, selected }: NodeProps) {
       style={{
         width,
         gridTemplateColumns: `${lW}px minmax(0,1fr) ${rW}px`,
-        gridTemplateRows: `${hasT ? stripH : 0}px minmax(0,1fr) ${hasB ? stripH : 0}px`,
+        gridTemplateRows: `${hasT ? STRIP_H : 0}px minmax(0,1fr) ${hasB ? STRIP_H : 0}px`,
       }}
     >
       {/* Whole-card fallbacks for edges with no port handle (LLDP ghosts). */}
@@ -345,20 +282,9 @@ export function StencilNode({ data, selected }: NodeProps) {
         <div
           className="col-start-2 row-start-1 flex divide-x divide-border border-b border-border"
         >
-          {s.T.map((p, i) =>
-            dense ? (
-              <DensePort
-                key={"T" + p.name}
-                port={p}
-                side="T"
-                vertical={false}
-                idx={i}
-                count={s.T.length}
-              />
-            ) : (
-              <PortCell key={"T" + p.name} port={p} side="T" vertical={false} />
-            )
-          )}
+          {s.T.map((p) => (
+            <PortCell key={"T" + p.name} port={p} side="T" vertical={false} />
+          ))}
         </div>
       )}
       {/* Left column */}
@@ -368,7 +294,7 @@ export function StencilNode({ data, selected }: NodeProps) {
         >
           {s.L.map((p) =>
             dense ? (
-              <DensePort key={"L" + p.name} port={p} side="L" vertical idx={0} />
+              <DensePort key={"L" + p.name} port={p} side="L" />
             ) : (
               <PortCell key={"L" + p.name} port={p} side="L" vertical />
             )
@@ -424,7 +350,7 @@ export function StencilNode({ data, selected }: NodeProps) {
         >
           {s.R.map((p) =>
             dense ? (
-              <DensePort key={"R" + p.name} port={p} side="R" vertical idx={0} />
+              <DensePort key={"R" + p.name} port={p} side="R" />
             ) : (
               <PortCell key={"R" + p.name} port={p} side="R" vertical />
             )
@@ -436,20 +362,9 @@ export function StencilNode({ data, selected }: NodeProps) {
         <div
           className="col-start-2 row-start-3 flex divide-x divide-border border-t border-border"
         >
-          {s.B.map((p, i) =>
-            dense ? (
-              <DensePort
-                key={"B" + p.name}
-                port={p}
-                side="B"
-                vertical={false}
-                idx={i}
-                count={s.B.length}
-              />
-            ) : (
-              <PortCell key={"B" + p.name} port={p} side="B" vertical={false} />
-            )
-          )}
+          {s.B.map((p) => (
+            <PortCell key={"B" + p.name} port={p} side="B" vertical={false} />
+          ))}
         </div>
       )}
     </div>
