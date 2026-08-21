@@ -384,6 +384,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           id: string
           name: string
           color: string
+          icon: string
           has_fov?: boolean
         }>
       >("/api/device-roles/"),
@@ -404,7 +405,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
         id: r.id,
         name: r.name,
         color: r.color,
-        icon: "",
+        icon: r.icon,
         kind: "role" as const,
         has_fov: r.has_fov,
       })),

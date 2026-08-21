@@ -112,7 +112,7 @@ export function MapObjectsSidebar({
   const deviceGroups = useMemo(() => {
     const map = new Map<
       string,
-      { title: string; color: string; rows: SiteMapDevice[] }
+      { title: string; color: string; icon: string; rows: SiteMapDevice[] }
     >()
     for (const d of devices) {
       if (!match(d.name) || !matchStatus(d.check)) continue
@@ -120,6 +120,7 @@ export function MapObjectsSidebar({
       const g = map.get(key) ?? {
         title: key,
         color: d.role?.color ?? "",
+        icon: d.role?.icon ?? "",
         rows: [],
       }
       g.rows.push(d)
@@ -341,7 +342,7 @@ export function MapObjectsSidebar({
               key={g.title}
               title={g.title}
               count={g.rows.length}
-              badge={<TileBadge color={g.color} />}
+              badge={<TileBadge color={g.color} icon={g.icon} />}
               storageId={FOLDS}
               extra={
                 <>

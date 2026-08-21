@@ -968,7 +968,7 @@ export interface SiteMapDeviceInfo {
   id: string
   name: string
   site: { id: string; name: string } | null
-  role: { name: string; color: string } | null
+  role: { name: string; color: string; icon: string } | null
   status: { name: string; color: string } | null
   device_type: string | null
   numid: number | null
@@ -1214,7 +1214,13 @@ export interface Device {
     lifecycle_state?: LifecycleState
   } | null
   site: { id: string; name: string } | null
-  role: { id: string; name: string; slug: string; color: string } | null
+  role: {
+    id: string
+    name: string
+    slug: string
+    color: string
+    icon: string
+  } | null
   platform: {
     id: string
     name: string
@@ -1376,6 +1382,7 @@ export interface DeviceRole {
   name: string
   slug: string
   color: string
+  icon: string
   is_patch_panel: boolean
   has_fov: boolean
   config_template: { id: string; name: string } | null
@@ -1394,6 +1401,7 @@ export interface DeviceRoleWritePayload {
   name: string
   slug?: string
   color?: string
+  icon?: string
   config_template_id?: string | null
   description?: string
   custom_fields?: Record<string, unknown>
@@ -1586,7 +1594,13 @@ export interface Rack {
   name: string
   facility_id: string
   site: { id: string; name: string }
-  role: { id: string; name: string; slug: string; color: string } | null
+  role: {
+    id: string
+    name: string
+    slug: string
+    color: string
+    icon: string
+  } | null
   rack_type: RackTypeOption | null
   status: StatusMini | null
   location: { id: string; name: string } | null
@@ -3241,7 +3255,13 @@ export interface VirtualMachine {
   cluster: { id: string; name: string; status: StatusMini | null }
   device: { id: string; name: string } | null
   site: { id: string; name: string } | null
-  role: { id: string; name: string; slug: string; color: string } | null
+  role: {
+    id: string
+    name: string
+    slug: string
+    color: string
+    icon: string
+  } | null
   platform: { id: string; name: string; slug: string } | null
   status: StatusMini | null
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".

@@ -68,16 +68,20 @@ export function siteIcon(s: SiteMapSite, opts: IconOpts = {}): L.DivIcon {
 
 export function deviceIcon(d: SiteMapDevice, opts: IconOpts = {}): L.DivIcon {
   const { selected = false, mini = false } = opts
-  // The floorplan badge - a tinted square with the role colour (a centred dot,
-  // since device roles carry no icon). Same visual language as the palette,
-  // the sidebar, and free markers.
-  const badge = renderToStaticMarkup(<TileBadge color={d.role?.color} />)
+  // The floorplan badge - a tinted square with the role's colour and icon
+  // (a centred dot when the role has no icon). Same visual language as the
+  // palette, the sidebar, and free markers.
+  const badge = renderToStaticMarkup(
+    <TileBadge color={d.role?.color} icon={d.role?.icon} />
+  )
   const label = mini
     ? ""
     : `<span class="sm-devlabel" style="left:27px;top:2px">${escapeHtml(d.name)}</span>`
   return L.divIcon({
     className: "sm-marker" + (selected ? " sm-sel" : ""),
-    html: `<span class="sm-badge">${badge}</span>${healthRing(d.check, mini)}` + label,
+    html:
+      `<span class="sm-badge">${badge}</span>${healthRing(d.check, mini)}` +
+      label,
     iconAnchor: [12, 12],
   })
 }

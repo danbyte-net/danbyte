@@ -2032,7 +2032,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     def get_role(self, obj):
         r = obj.role
         return {"id": str(r.id), "name": r.name, "slug": r.slug,
-                "color": r.color} if r else None
+                "color": r.color, "icon": r.icon} if r else None
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
@@ -3766,7 +3766,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     def get_role(self, obj):
         r = obj.role
         return {"id": str(r.id), "name": r.name, "slug": r.slug,
-                "color": r.color} if r else None
+                "color": r.color, "icon": r.icon} if r else None
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
@@ -4205,7 +4205,8 @@ class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin,
 
     class Meta:
         model = DeviceRole
-        fields = ["id", "name", "slug", "color", "is_patch_panel", "has_fov",
+        fields = ["id", "name", "slug", "color", "icon", "is_patch_panel",
+                  "has_fov",
                   "description", "custom_fields", "tags", "tag_ids",
                   "config_template", "config_template_id",
                   "device_count", "vm_count", "created_at", "updated_at"]

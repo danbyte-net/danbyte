@@ -16,7 +16,9 @@ for a popup with counts and a jump-off to the site or device page.
   worst monitoring status across the site's device IPs (green/amber/red), so
   the map doubles as a NOC view.
 - **Devices** - any device with GPS coordinates, role-colored, with the same
-  health ring. Camera-ish devices (roles with *has FOV*) render a
+  health ring. A role can also carry a **Lucide icon** (set on the role form
+  next to its color) - it shows inside the device's badge on the map, the
+  sidebar, and the floor planner's palette. Camera-ish devices (roles with *has FOV*) render a
   **field-of-view cone** - direction, angle, and reach in meters, or a full
   PTZ coverage ring - edited with live preview from the sidebar inspector.
 - **Free markers** - anything else worth pinning (generators, gates, masts):

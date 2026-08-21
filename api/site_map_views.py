@@ -190,7 +190,8 @@ def site_map(request):
             "name": d.name,
             "site": {"id": str(d.site_id), "name": d.site.name}
             if d.site_id else None,
-            "role": {"name": d.role.name, "color": d.role.color}
+            "role": {"name": d.role.name, "color": d.role.color,
+                     "icon": d.role.icon}
             if d.role_id else None,
             "status": {"name": d.status.name, "color": d.status.color}
             if d.status_id else None,

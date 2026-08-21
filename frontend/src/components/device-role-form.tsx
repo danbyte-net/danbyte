@@ -11,6 +11,7 @@ import type {
 } from "@/lib/api"
 import {
   FormColor,
+  FormIcon,
   FormCombobox,
   FormCheckbox,
   FormFooter,
@@ -51,6 +52,7 @@ export function DeviceRoleForm({
   const [slug, setSlug] = useState(role?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
   const [color, setColor] = useState(role?.color ?? "")
+  const [icon, setIcon] = useState(role?.icon ?? "")
   const [configTemplateId, setConfigTemplateId] = useState<string | null>(
     role?.config_template?.id ?? null
   )
@@ -72,6 +74,7 @@ export function DeviceRoleForm({
     setSlug(role.slug)
     setSlugDirty(true)
     setColor(role.color)
+    setIcon(role.icon ?? "")
     setIsPatchPanel(role.is_patch_panel)
     setHasFov(role.has_fov)
     setConfigTemplateId(role.config_template?.id ?? null)
@@ -101,6 +104,7 @@ export function DeviceRoleForm({
         name: name.trim(),
         slug: slug.trim() || slugify(name),
         color: color || "",
+        icon: icon || "",
         is_patch_panel: isPatchPanel,
         has_fov: hasFov,
         config_template_id: configTemplateId,
@@ -159,11 +163,20 @@ export function DeviceRoleForm({
           mono
           error={fieldErrors.slug}
         />
+      </FormRow>
+      <FormRow>
         <FormColor
           label="Color"
           value={color}
           onChange={setColor}
           error={fieldErrors.color}
+        />
+        <FormIcon
+          label="Icon"
+          hint="shown in the role's badge on maps"
+          value={icon}
+          onChange={setIcon}
+          error={fieldErrors.icon}
         />
       </FormRow>
       <FormCheckbox

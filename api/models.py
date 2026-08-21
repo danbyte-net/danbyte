@@ -3943,6 +3943,13 @@ class DeviceRole(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
     name = models.CharField(max_length=128)
     slug = models.SlugField(max_length=128)
     color = models.CharField(max_length=7, blank=True, default="")
+    icon = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. server, router, cctv) - shown in "
+                  "the role's badge on maps and floor plans.",
+    )
     has_fov = models.BooleanField(
         default=False,
         help_text="Floor-plan tiles typed by this role get camera "
