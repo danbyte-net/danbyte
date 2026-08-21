@@ -28,7 +28,7 @@ the UUID.
 
 | Place | What it shows |
 |---|---|
-| **Governance → Audit log** | The global feed across the whole tenant. Filter by action, object type, or user, and search. Click any entry to expand its diff. |
+| **Governance → Audit log** | The global feed across the whole tenant. Filter by action, object type, user, or **source** - UI (a browser session), API (a token request), or System (workers and shell) - and search. Click any entry to expand its diff. |
 | **History tab** on a detail page | Just that one object's history. |
 
 Every object you can edit has a **History** tab on its detail page - prefixes, IP

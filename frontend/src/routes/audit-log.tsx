@@ -7,6 +7,7 @@ import { ChevronRight } from "lucide-react"
 import { api } from "@/lib/api"
 import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -49,9 +50,24 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "api.iprole", label: "IP role" },
 ]
 
+const VIA_OPTIONS = [
+  { value: "all", label: "All sources" },
+  { value: "ui", label: "UI" },
+  { value: "api", label: "API" },
+  { value: "system", label: "System" },
+]
+
+const VIA_LABEL: Record<string, string> = {
+  ui: "UI",
+  api: "API",
+  system: "System",
+}
+
 function AuditLogPage() {
   const [action, setAction] = useState<ChangeAction | "all">("all")
   const [type, setType] = useState("all")
+  const [via, setVia] = useState("all")
+  const [user, setUser] = useState("")
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
 
@@ -64,10 +80,12 @@ function AuditLogPage() {
   })
   if (action !== "all") params.set("action", action)
   if (type !== "all") params.set("object_type", type)
+  if (via !== "all") params.set("via", via)
+  if (user.trim()) params.set("user", user.trim())
   if (search.trim()) params.set("search", search.trim())
 
   const q = useQuery({
-    queryKey: ["changelog", action, type, search, page],
+    queryKey: ["changelog", action, type, via, user, search, page],
     queryFn: () => api<Paginated<ChangeLogEntry>>(`/api/changelog/?${params}`),
     placeholderData: keepPreviousData,
   })
@@ -119,6 +137,43 @@ function AuditLogPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {TYPE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                User
+              </h3>
+              <Input
+                value={user}
+                onChange={(e) => {
+                  setUser(e.target.value)
+                  reset()
+                }}
+                placeholder="Filter by user…"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div>
+              <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Source
+              </h3>
+              <Select
+                value={via}
+                onValueChange={(v) => {
+                  setVia(v)
+                  reset()
+                }}
+              >
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VIA_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
                       {o.label}
                     </SelectItem>
@@ -180,6 +235,17 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
       accessorFn: (r) => r.user_name || "",
       header: ({ column }) => <SortHeader column={column} label="User" />,
       cell: ({ row }) => row.original.user_name || "-",
+    },
+    {
+      id: "via",
+      accessorFn: (r) => r.via,
+      header: ({ column }) => <SortHeader column={column} label="Via" />,
+      cell: ({ row }) =>
+        row.original.via ? (
+          <Badge variant="outline">{VIA_LABEL[row.original.via]}</Badge>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        ),
     },
     {
       id: "action",

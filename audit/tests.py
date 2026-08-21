@@ -56,3 +56,54 @@ class ChangeLogTests(TestCase):
         self.assertTrue(
             ChangeLogEntry.objects.filter(object_id=pid, action="delete").exists()
         )
+
+
+class ViaCaptureTests(TestCase):
+    """The `via` column: how a change arrived (session UI, API token header,
+    or a non-request write), plus the changelog `?via=` filter."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+
+    def test_non_request_write_is_system(self):
+        p = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.9.0.0/24", status=status_for(self.tenant)
+        )
+        e = ChangeLogEntry.objects.get(object_id=str(p.id))
+        self.assertEqual(e.via, "system")
+
+    def test_middleware_marks_ui_and_api(self):
+        from audit.context import current_via
+        from audit.middleware import AuditContextMiddleware
+
+        seen: list[str] = []
+        mw = AuditContextMiddleware(lambda request: seen.append(current_via()))
+
+        class Req:
+            META: dict = {}
+            user = None
+
+        mw(Req())
+        Req.META = {"HTTP_AUTHORIZATION": "Token abc"}
+        mw(Req())
+        self.assertEqual(seen, ["ui", "api"])
+
+    def test_changelog_via_filter(self):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+
+        Prefix.objects.create(
+            tenant=self.tenant, cidr="10.8.0.0/24", status=status_for(self.tenant)
+        )
+        admin = get_user_model().objects.create_superuser("a", "a@x.com", "x")
+        c = APIClient()
+        c.force_login(admin)
+        s = c.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        body = c.get("/api/changelog/?via=system").json()
+        self.assertTrue(
+            all(r["via"] == "system" for r in body["results"]) and body["count"] >= 1
+        )
+        self.assertEqual(c.get("/api/changelog/?via=api").json()["count"], 0)

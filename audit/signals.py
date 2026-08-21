@@ -17,7 +17,7 @@ from django.db.models.fields.files import FieldFile
 from django.db.models.signals import post_delete, post_save, pre_save
 
 
-from .context import current_request_id, current_user, is_suspended
+from .context import current_request_id, current_user, current_via, is_suspended
 from .models import ChangeAction, ChangeLogEntry
 
 _SKIP_FIELDS = {"created_at", "updated_at"}
@@ -89,6 +89,7 @@ def _record(instance, action, changes, pre=None, post=None):
         pre_change=pre,
         post_change=post,
         request_id=current_request_id(),
+        via=current_via() or "system",
     )
 
 

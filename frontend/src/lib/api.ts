@@ -4816,6 +4816,8 @@ export interface ChangeLogEntry {
   changes: Record<string, FieldChange>
   change_count: number
   request_id: string
+  /** How the change arrived: "ui", "api", "system", or "" on old rows. */
+  via: string
   /** Full row snapshots - only present on the detail endpoint. Pre is null
    * for a create, post is null for a delete. */
   pre_change?: Record<string, unknown> | null

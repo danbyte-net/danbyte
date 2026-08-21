@@ -12,7 +12,10 @@ class AuditContextMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        set_context(getattr(request, "user", None), uuid.uuid4().hex)
+        # Token-authenticated requests carry an Authorization header; browser
+        # sessions don't. Good enough to tell "via API" from "via UI".
+        via = "api" if request.META.get("HTTP_AUTHORIZATION") else "ui"
+        set_context(getattr(request, "user", None), uuid.uuid4().hex, via)
         try:
             return self.get_response(request)
         finally:

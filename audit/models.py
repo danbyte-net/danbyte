@@ -71,6 +71,14 @@ class ChangeLogEntry(models.Model):
     post_change = models.JSONField(null=True, blank=True)
     # Groups every entry produced within a single request.
     request_id = models.CharField(max_length=36, blank=True, default="")
+    # How the change arrived: session UI, API token, or a non-request write
+    # (shell/worker). "" on rows from before the field existed.
+    via = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        choices=[("ui", "UI"), ("api", "API"), ("system", "System")],
+    )
 
     class Meta:
         ordering = ["-timestamp"]

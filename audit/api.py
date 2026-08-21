@@ -268,7 +268,7 @@ class ChangeLogSerializer(serializers.ModelSerializer):
         fields = [
             "id", "timestamp", "user_name", "action", "action_display",
             "object_type", "object_label", "object_id", "object_repr",
-            "changes", "change_count", "request_id",
+            "changes", "change_count", "request_id", "via",
         ]
 
     def get_change_count(self, obj) -> int:
@@ -384,7 +384,7 @@ class ChangeLogViewSet(viewsets.ReadOnlyModelViewSet):
 
         # Global list: tenant-scoped.
         qs = self.queryset.filter(tenant=tenant) if tenant else self.queryset.none()
-        for key in ("action", "object_type"):
+        for key in ("action", "object_type", "via"):
             v = p.get(key)
             if v:
                 qs = qs.filter(**{key: v})

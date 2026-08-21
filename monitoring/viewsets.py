@@ -593,7 +593,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
         """Record who revealed which credential's secret, when - revealing a
         secret writes no model change, so nothing else logs it (mirrors the
         certificate-request key-reveal trail)."""
-        from audit.context import current_request_id
+        from audit.context import current_request_id, current_via
         from audit.models import ChangeAction, ChangeLogEntry
         from audit.site_capture import entry_site_id
 
@@ -611,6 +611,7 @@ class DeviceCredentialViewSet(TenantScopedViewSet):
             object_site_id=entry_site_id(cred),
             changes={"revealed": "secret"},
             request_id=current_request_id(),
+            via=current_via() or "system",
         )
 
     @action(detail=True, methods=["post"], url_path="reveal")
@@ -904,7 +905,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
         """Leave a trail whenever stored private-key material is handed out -
         who, which request, when (revealing a secret writes no model change, so
         nothing else logs it)."""
-        from audit.context import current_request_id
+        from audit.context import current_request_id, current_via
         from audit.models import ChangeAction, ChangeLogEntry
         from audit.site_capture import entry_site_id
 
@@ -922,6 +923,7 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             object_site_id=entry_site_id(req),
             changes={"revealed": "private_key"},
             request_id=current_request_id(),
+            via=current_via() or "system",
         )
 
     def create(self, request, *args, **kwargs):

@@ -12,6 +12,9 @@ _user: contextvars.ContextVar = contextvars.ContextVar("audit_user", default=Non
 _request_id: contextvars.ContextVar = contextvars.ContextVar(
     "audit_request_id", default=""
 )
+# How the change arrived: "ui" (session), "api" (token header), or "" for
+# writes outside a request (shell, workers) - recorded as "system".
+_via: contextvars.ContextVar = contextvars.ContextVar("audit_via", default="")
 _suspended: contextvars.ContextVar = contextvars.ContextVar(
     "audit_suspended", default=False
 )
@@ -41,14 +44,20 @@ def is_suspended() -> bool:
     return _suspended.get()
 
 
-def set_context(user, request_id: str) -> None:
+def set_context(user, request_id: str, via: str = "") -> None:
     _user.set(user)
     _request_id.set(request_id)
+    _via.set(via)
 
 
 def clear_context() -> None:
     _user.set(None)
     _request_id.set("")
+    _via.set("")
+
+
+def current_via() -> str:
+    return _via.get()
 
 
 def current_user():

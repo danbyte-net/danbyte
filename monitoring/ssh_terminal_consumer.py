@@ -401,7 +401,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _audit_connect(self, ctx):
-        from audit.context import current_request_id
+        from audit.context import current_request_id, current_via
         from audit.models import ChangeAction, ChangeLogEntry
 
         ChangeLogEntry.objects.create(
@@ -416,6 +416,7 @@ class SshTerminalConsumer(AsyncWebsocketConsumer):
             object_site_id=ctx.get("site_id"),
             changes={"connected": "ssh_terminal", "host": ctx["host"]},
             request_id=current_request_id(),
+            via=current_via() or "system",
         )
 
 
