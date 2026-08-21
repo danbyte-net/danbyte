@@ -55,6 +55,7 @@ export const DEVICE_FIELD_OPTIONS: { key: string; label: string }[] = [
   { key: "interfaces", label: "Interface count" },
   { key: "ips", label: "IP count" },
   { key: "coordinates", label: "Coordinates" },
+  { key: "description", label: "Description" },
   { key: "tags", label: "Tags" },
   { key: "custom_fields", label: "Custom fields" },
 ]
@@ -154,6 +155,14 @@ export function SiteDetailRows({
       ),
       copy: `${s.latitude.toFixed(6)}, ${s.longitude.toFixed(6)}`,
     })
+  if (on("description") && d?.description)
+    rows.push({
+      label: "Description",
+      node: d.description,
+      copy: d.description,
+    })
+  if (on("tags") && d && d.tags.length > 0)
+    rows.push({ label: "Tags", node: <TagList tags={d.tags} /> })
   if (on("custom_fields"))
     rows.push(...customFieldRows(cfDefs, d?.custom_fields))
   return (
@@ -162,12 +171,6 @@ export function SiteDetailRows({
         <p className="text-[12px] text-muted-foreground">Loading…</p>
       )}
       <DetailRowList rows={rows} />
-      {on("description") && d?.description && (
-        <p className="text-[12px] wrap-anywhere text-muted-foreground">
-          {d.description}
-        </p>
-      )}
-      {on("tags") && d && d.tags.length > 0 && <TagList tags={d.tags} />}
     </>
   )
 }
@@ -293,6 +296,12 @@ export function DeviceExtraRows({
         </span>
       ),
       copy: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+    })
+  if (on("description") && !has("linked_description") && d.description)
+    rows.push({
+      label: "Description",
+      node: d.description,
+      copy: d.description,
     })
   if (on("tags") && !has("tags") && !has("linked_tags") && d.tags.length > 0)
     rows.push({ label: "Tags", node: <TagList tags={d.tags} /> })
