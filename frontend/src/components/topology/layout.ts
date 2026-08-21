@@ -3,7 +3,7 @@ import type { Edge, Node } from "@xyflow/react"
 
 import { stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
-import { flatHeight, flatW } from "./flat-node"
+import { flatHeight, flatWidth } from "./flat-node"
 import { GROUP_H, GROUP_W } from "./group-node"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
@@ -501,7 +501,7 @@ export function edgeWaypoints(
       // Fixed-size card types size themselves; stencil cards by their ports.
       if (n.type === "flat") {
         const d = n.data as Parameters<typeof flatHeight>[0] & { name?: string }
-        return { width: flatW(d), height: flatHeight(d) }
+        return { width: flatWidth(d), height: flatHeight(d) }
       }
       if (n.type === "sitegroup") return { width: GROUP_W, height: GROUP_H }
       if (n.type === "hier") {

@@ -35,7 +35,7 @@ import {
   handleId,
 } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
-import { FLAT_H, FlatNode, flatHeight, flatW } from "./flat-node"
+import { FLAT_H, FlatNode, flatHeight, flatW, flatWidth } from "./flat-node"
 import type { FlatAnchor, FlatData } from "./flat-node"
 import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
 import { HierarchyNode, hierarchyWidth } from "./hierarchy-node"
@@ -664,17 +664,21 @@ function build(
         )
       }
       const anchorsOf = new Map<string, FlatAnchor[]>()
-      const fanOf = new Map<string, number>()
+      const fanH = new Map<string, number>()
+      const fanW = new Map<string, number>()
       const patched = new Map<Edge, { s?: string; t?: string }>()
       for (const [nid, slots] of perNode) {
         const bySide = new Map<PortSide, Slot[]>()
         for (const s of slots)
           (bySide.get(s.side) ?? bySide.set(s.side, []).get(s.side)!).push(s)
         const anchors: FlatAnchor[] = []
-        let fan = 0
         for (const [side, list] of bySide) {
           list.sort((a, b) => a.order - b.order)
-          fan = Math.max(fan, list.length)
+          // The card grows along the axis the fan occupies: left/right
+          // fans stretch it down, top/bottom fans stretch it wide.
+          if (side === "L" || side === "R")
+            fanH.set(nid, Math.max(fanH.get(nid) ?? 0, list.length))
+          else fanW.set(nid, Math.max(fanW.get(nid) ?? 0, list.length))
           list.forEach((s, i) => {
             const id = `a${side}${i}`
             anchors.push({ id, side, frac: (i + 1) / (list.length + 1) })
@@ -684,7 +688,6 @@ function build(
           })
         }
         anchorsOf.set(nid, anchors)
-        fanOf.set(nid, fan)
       }
       outEdges = sided.map((e) => {
         const rec = patched.get(e)
@@ -700,7 +703,8 @@ function build(
         data: {
           ...n.data,
           flatAnchors: anchorsOf.get(n.id) ?? [],
-          flatFan: fanOf.get(n.id) ?? 0,
+          flatFanH: fanH.get(n.id) ?? 0,
+          flatFanW: fanW.get(n.id) ?? 0,
         },
       }))
       const grown = layoutNodes(
@@ -711,7 +715,7 @@ function build(
         levels,
         mainOffsets,
         (n) => ({
-          width: flatW(n.data as { name?: string }),
+          width: flatWidth(n.data as FlatData),
           height: flatHeight(n.data as FlatData),
         })
       )

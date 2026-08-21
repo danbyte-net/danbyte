@@ -26,12 +26,20 @@ export interface FlatAnchor {
 export type FlatData = {
   name?: string
   flatAnchors?: FlatAnchor[]
-  /** Busiest side's link count - the card grows to give them room. */
-  flatFan?: number
+  /** Busiest left/right side's link count - grows the card DOWN. */
+  flatFanH?: number
+  /** Busiest top/bottom side's link count - grows the card WIDE (tree
+   * direction: the fan sits on the bottom edge, so the card must extend
+   * horizontally, never into a skyscraper). */
+  flatFanW?: number
 }
 
 export function flatHeight(d: FlatData): number {
-  return FLAT_H + Math.max(0, (d.flatFan ?? 0) - 2) * 9
+  return FLAT_H + Math.max(0, (d.flatFanH ?? 0) - 2) * 9
+}
+
+export function flatWidth(d: FlatData): number {
+  return Math.max(flatW(d), 36 + (d.flatFanW ?? 0) * 9)
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -71,7 +79,10 @@ export function FlatNode({ data, selected }: NodeProps) {
             ? "border-dashed border-border"
             : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
-      style={{ width: flatW(d), height: flatHeight(d as FlatData) }}
+      style={{
+        width: flatWidth(d as FlatData),
+        height: flatHeight(d as FlatData),
+      }}
     >
       {(d as unknown as FlatData).flatAnchors?.map((a) => (
         <span
