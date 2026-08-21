@@ -3491,6 +3491,9 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     name = models.CharField(max_length=64)
     enabled = models.BooleanField(default=True)
+    #: Virtualization sync must not record this NIC's guest-reported IPs
+    #: (e.g. a Docker bridge that asserts a new address per container).
+    sync_ignore_ips = models.BooleanField(default=False)
     mac_address = models.CharField(max_length=17, blank=True)
     mtu = models.IntegerField(null=True, blank=True)
     # Virtual NICs have a real link speed: a VMXNET3 negotiates 10G where an

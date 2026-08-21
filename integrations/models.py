@@ -495,6 +495,11 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     # Granular sync scope (under the tenant's virtualization master toggle).
     #: Per-disk inventory (VirtualDisk rows) in addition to aggregate disk_gb.
     sync_disks = models.BooleanField(default=True)
+    #: CIDRs guest-reported IPs must fall inside to be recorded; empty = all.
+    #: The Docker guard (issue #61): a VM running containers reports dozens of
+    #: bridge/overlay addresses nobody wants in IPAM - out-of-list addresses
+    #: are skipped silently instead of raising unmatched-prefix warnings.
+    sync_allowed_networks = models.JSONField(default=list, blank=True)
     #: Virtual switches + networks (port-groups/bridges → VLANs).
     sync_networks = models.BooleanField(default=False)
     #: Map the guest OS onto a Platform. Off by default: it mints rows in a

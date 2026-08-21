@@ -187,8 +187,8 @@ export function VMInterfacesPane({
                 </TooltipTrigger>
                 <TooltipContent variant="panel" className="max-w-72">
                   This interface isn&rsquo;t on the hypervisor. Nothing was
-                  changed or deleted. Either delete it here, or create it on
-                  the hypervisor - the flag clears on the next sync.
+                  changed or deleted. Either delete it here, or create it on the
+                  hypervisor - the flag clears on the next sync.
                 </TooltipContent>
               </Tooltip>
             )}
@@ -490,6 +490,7 @@ function VMInterfaceForm({
 
   const [name, setName] = useState(iface?.name ?? "")
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
+  const [ignoreIps, setIgnoreIps] = useState(iface?.sync_ignore_ips ?? false)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
   const [mtu, setMtu] = useState(iface?.mtu != null ? String(iface.mtu) : "")
   const [speed, setSpeed] = useState(iface?.speed ?? "")
@@ -518,6 +519,7 @@ function VMInterfaceForm({
         vm_id: vmId,
         name: name.trim(),
         enabled,
+        sync_ignore_ips: ignoreIps,
         mac_address: mac.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
         speed: speed.trim(),
@@ -664,6 +666,12 @@ function VMInterfaceForm({
         error={fieldErrors.description}
       />
       <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
+      <FormCheckbox
+        label="Ignore IPs from sync"
+        hint="the hypervisor's guest-reported addresses on this NIC are noise (e.g. a Docker bridge)"
+        checked={ignoreIps}
+        onChange={setIgnoreIps}
+      />
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

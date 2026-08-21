@@ -3845,6 +3845,7 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = VMInterface
         fields = ["id", "vm", "vm_id", "name", "enabled", "mac_address",
+                  "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",
                   "vlan", "vlan_id", "mode", "mode_display",
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",

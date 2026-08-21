@@ -3379,6 +3379,8 @@ export interface VMInterface {
   vm: { id: string; name: string; status: StatusMini | null }
   name: string
   enabled: boolean
+  /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
+  sync_ignore_ips: boolean
   mac_address: string
   mtu: number | null
   speed: string
@@ -3399,6 +3401,7 @@ export interface VMInterfaceWritePayload {
   vm_id: string
   name: string
   enabled?: boolean
+  sync_ignore_ips?: boolean
   mac_address?: string
   mtu?: number | null
   speed?: string
@@ -7164,6 +7167,9 @@ export interface VirtualizationSource {
   /** Map the guest OS onto a Platform, creating rows on demand. Off by
    * default - it writes into a catalog you curate. */
   sync_platforms: boolean
+  /** CIDRs guest-reported IPs must fall inside to be recorded; [] = all.
+   * Container guests (Docker) otherwise flood the sync with bridge IPs. */
+  sync_allowed_networks: string[]
   /** Where addresses this connection discovers may land. Empty vrf_id =
    * the Global VRF, a real routing context rather than "unset". */
   vrf_id: string | null

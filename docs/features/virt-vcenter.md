@@ -36,6 +36,21 @@ under **Integrations → Virtualization sources**; see
 
 Guest identity uses the VM **MoRef**, whose numeric part is the stable id.
 
+
+### Allowed networks - keeping container noise out
+
+A guest running containers (Docker, Podman) reports every bridge and overlay
+address it owns - easily 50-100 per host - and each one either lands in IPAM
+or raises an unmatched-prefix warning. Two guards:
+
+- **Allowed networks** on the source: a CIDR list (one per line). When set,
+  guest-reported IPs are only recorded when they fall inside one of the
+  networks; everything else is dropped **silently** - no warnings, no sync
+  errors. Empty = record everything a prefix matches, as before.
+- **Ignore IPs from sync** on a VM interface: the per-NIC hammer for when the
+  noisy addresses share a subnet with real ones - sync records nothing from
+  that NIC, whatever the allow-list says.
+
 ## Disks, switches, networks and hosts (opt-in)
 
 Per-source switches widen what a source imports:

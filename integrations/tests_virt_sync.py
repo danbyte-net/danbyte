@@ -2175,3 +2175,73 @@ class ProxmoxPlatformTests(TestCase):
         self.sync()
         vm = VirtualMachine.objects.get(name="router-vm")
         self.assertIsNone(vm.platform_id)
+
+
+DOCKER_AGENT = {
+    "result": [
+        {"name": "eth0", "hardware-address": "aa:bb:cc:00:11:22",
+         "ip-addresses": [
+             {"ip-address": "10.77.0.30", "prefix": 24},
+             {"ip-address": "172.17.0.5", "prefix": 16},  # docker bridge
+         ]},
+    ]
+}
+
+
+def docker_fake_get(source, path):
+    if path == "nodes/pve1/qemu/100/agent/network-get-interfaces":
+        return DOCKER_AGENT
+    return fake_get(source, path)
+
+
+class AllowedNetworksTests(TestCase):
+    """#61: the source's CIDR allow-list drops container noise silently."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"},
+            sync_mode="auto",
+        )
+        self.prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+        # A prefix that WOULD match the docker address - the allow-list must
+        # beat prefix matching, not depend on its absence.
+        Prefix.objects.create(tenant=self.tenant, cidr="172.17.0.0/16")
+
+    def sync(self):
+        with mock.patch.object(virt_sync, "proxmox_get",
+                               side_effect=docker_fake_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def test_out_of_list_addresses_are_dropped_silently(self):
+        self.source.sync_allowed_networks = ["10.77.0.0/24"]
+        self.source.save(update_fields=["sync_allowed_networks"])
+        self.sync()
+        self.assertTrue(
+            IPAddress.objects.filter(ip_address="10.77.0.30").exists()
+        )
+        self.assertFalse(
+            IPAddress.objects.filter(ip_address="172.17.0.5").exists()
+        )
+        self.source.refresh_from_db()
+        self.assertNotIn("172.17.0.5", self.source.last_sync_log or "")
+
+    def test_empty_list_keeps_everything(self):
+        self.sync()
+        self.assertTrue(
+            IPAddress.objects.filter(ip_address="172.17.0.5").exists()
+        )
+
+    def test_interface_ignore_flag_skips_its_ips(self):
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        iface = vm.interfaces.get(mac_address__iexact="aa:bb:cc:00:11:22")
+        IPAddress.objects.all().delete()
+        iface.sync_ignore_ips = True
+        iface.save(update_fields=["sync_ignore_ips"])
+        self.sync()
+        self.assertFalse(
+            IPAddress.objects.filter(ip_address="10.77.0.30").exists()
+        )

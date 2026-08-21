@@ -238,6 +238,25 @@ class VirtualizationSourceSerializer(
                 )
         return attrs
 
+    def validate_sync_allowed_networks(self, value):
+        import ipaddress
+
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Provide a list of CIDRs.")
+        cleaned = []
+        for raw in value:
+            text = str(raw).strip()
+            if not text:
+                continue
+            try:
+                cleaned.append(str(ipaddress.ip_network(text, strict=False)))
+            except ValueError:
+                raise serializers.ValidationError(
+                    f"{text!r} is not a valid network (use CIDR, e.g. "
+                    "10.0.9.0/24)."
+                )
+        return cleaned
+
     class Meta:
         model = VirtualizationSource
         fields = ["id", "name", "kind", "kind_display", "host", "port",
@@ -245,6 +264,7 @@ class VirtualizationSourceSerializer(
                   "credentials_set", "sync_mode", "poll_interval_minutes",
                   "sync_disks", "sync_networks", "sync_hosts",
                   "sync_host_hardware", "sync_platforms",
+                  "sync_allowed_networks",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
                   "enabled", "pending_count", "last_sync_at", "last_sync_status",
                   "last_sync_error", "last_sync_log",

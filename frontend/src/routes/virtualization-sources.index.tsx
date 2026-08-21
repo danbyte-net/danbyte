@@ -28,7 +28,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  FormTextarea,
+  FormCheckbox,
+  FormSelect,
+  FormText,
+} from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -316,7 +321,9 @@ function VirtualizationSourcesPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={del.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={del.isPending}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={del.isPending}
@@ -382,6 +389,9 @@ export function SourceDialog({
   const [syncPlatforms, setSyncPlatforms] = useState(
     source?.sync_platforms ?? false
   )
+  const [allowedNetworks, setAllowedNetworks] = useState(
+    (source?.sync_allowed_networks ?? []).join("\n")
+  )
   const [enabled, setEnabled] = useState(source?.enabled ?? true)
   // Where discovered addresses may land. Empty = the Global VRF, which is a
   // real routing context here, not "unset".
@@ -389,9 +399,8 @@ export function SourceDialog({
   const [vrfMode, setVrfMode] = useState(source?.vrf_mode ?? "pinned")
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>(
-      "/api/vrfs/?picker=1"
-    ),
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
 
@@ -410,6 +419,10 @@ export function SourceDialog({
         sync_hosts: syncHosts,
         sync_host_hardware: syncHostHw,
         sync_platforms: syncPlatforms,
+        sync_allowed_networks: allowedNetworks
+          .split(/[\n,]+/)
+          .map((s) => s.trim())
+          .filter(Boolean),
         vrf_id: vrfId || null,
         vrf_mode: vrfMode,
         enabled,
@@ -574,6 +587,15 @@ export function SourceDialog({
               hint="Fill in each VM's platform from what the hypervisor reports, creating the platform on demand. Rename it afterwards if you like - the match survives."
               checked={syncPlatforms}
               onChange={setSyncPlatforms}
+            />
+            <FormTextarea
+              label="Allowed networks"
+              hint="optional - one CIDR per line"
+              info="Guest-reported IPs are only recorded when they fall inside one of these networks. Keeps container guests (Docker) from flooding the sync with bridge addresses. Empty = record everything a prefix matches."
+              value={allowedNetworks}
+              onChange={setAllowedNetworks}
+              rows={3}
+              placeholder={"10.0.9.0/24\n192.168.110.0/24"}
             />
             {isVcenter && syncHosts && (
               <FormCheckbox

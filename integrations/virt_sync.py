@@ -1457,12 +1457,25 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
         for i in VMInterface.objects.filter(vm=guest.vm)
         if i.mac_address
     }
+    # The allow-list guard (issue #61): a containerised guest reports dozens
+    # of bridge/overlay addresses nobody wants in IPAM. Out-of-list addresses
+    # are dropped SILENTLY - the whole point is no unmatched-prefix warnings.
+    allowed = []
+    for cidr in source.sync_allowed_networks or []:
+        try:
+            allowed.append(ipaddress.ip_network(str(cidr), strict=False))
+        except ValueError:
+            logger.warning("%s: bad allowed network %r ignored",
+                           source.name, cidr)
     n = 0
     skipped = 0
     first_v4 = None
     for entry in entries:
         mac = (entry.get("mac") or "").lower()
         iface = by_mac.get(mac)
+        if iface is not None and iface.sync_ignore_ips:
+            # Operator said this NIC's guest IPs are noise (Docker bridge).
+            continue
         # Most specific statement wins. Each layer is a hard scope: naming a
         # VRF that turns out to hold nothing skips the address rather than
         # quietly filing it in Global.
@@ -1478,6 +1491,8 @@ def _attach_ips(source, guest, entries, *, prefixes=None, warnings=None,
             except ValueError:
                 continue
             if addr.is_loopback or addr.is_link_local:
+                continue
+            if allowed and not any(addr in net for net in allowed):
                 continue
             row, note = vrf_placement.existing_row(
                 source.tenant, str(addr), placement
