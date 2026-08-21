@@ -219,3 +219,55 @@ class SsoUserEditTests(TestCase):
         self.assertEqual(
             UserProfile.objects.get(user=self.sso_user).auth_source, "sso"
         )
+
+
+class EntraUsernameTests(TestCase):
+    """Entra external accounts carry "#EXT#" in the username; edits of such a
+    user must not 400 on the untouched username field."""
+
+    ENTRA = "hello_user.com#EXT#@tenant.onmicrosoft.com"
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="One", slug="one")
+        admin = User.objects.create_superuser("admin", "a@x.com", "x")
+        self.client_api = APIClient()
+        self.client_api.force_login(admin)
+        s = self.client_api.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_editing_an_ext_user_round_trips(self):
+        u = User.objects.create_user(self.ENTRA)
+        UserProfile.objects.create(user=u, auth_source="sso")
+        r = self.client_api.patch(
+            f"/api/users/{u.id}/",
+            {"username": self.ENTRA, "is_superuser": True,
+             "set_auth_source": "sso"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        u.refresh_from_db()
+        self.assertTrue(u.is_superuser)
+        self.assertEqual(u.username, self.ENTRA)
+
+    def test_whitespace_username_still_rejected(self):
+        r = self.client_api.post(
+            "/api/users/",
+            {"username": "bad name", "password": "x-9-y-8-z"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("username", r.json())
+
+    def test_duplicate_username_still_rejected(self):
+        User.objects.create_user(self.ENTRA)
+        r = self.client_api.post(
+            "/api/users/",
+            {"username": self.ENTRA, "password": "x-9-y-8-z"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("username", r.json())

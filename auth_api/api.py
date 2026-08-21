@@ -15,7 +15,7 @@ from drf_spectacular.utils import (
     extend_schema,
     inline_serializer,
 )
-from rest_framework import serializers, status, viewsets
+from rest_framework import serializers, status, viewsets, validators
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -28,6 +28,24 @@ from .object_types import ACTIONS, registry_payload
 
 # ─── Users ───────────────────────────────────────────────────────────────────
 class UserSerializer(serializers.ModelSerializer):
+    # Django's default username charset plus "#": Entra external accounts are
+    # provisioned as "user_domain#EXT#@tenant.onmicrosoft.com", and the stock
+    # validator made every EDIT of such a user 400 on a field nobody touched
+    # (the account itself was created past validators by SSO JIT).
+    username = serializers.RegexField(
+        regex=r"^[\w.@+#-]+\Z",
+        max_length=150,
+        validators=[
+            validators.UniqueValidator(
+                queryset=User.objects.all(),
+                message="A user with that username already exists.",
+            )
+        ],
+        error_messages={
+            "invalid": "Enter a valid username: letters, digits and "
+                       "@/./+/-/_/# only.",
+        },
+    )
     groups = serializers.SerializerMethodField()
     tenants = serializers.SerializerMethodField()
     auth_source = serializers.SerializerMethodField()
