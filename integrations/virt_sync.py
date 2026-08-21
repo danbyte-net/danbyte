@@ -383,6 +383,78 @@ def _sync_proxmox_uplinks(source, cluster_name, nodes) -> int:
     return added
 
 
+def _sync_vcenter_host_nics(source, cluster_name, hw_by_name,
+                            cluster_of_host=None) -> tuple[int, int]:
+    """Host pNICs (vmnic0…) as Interface rows on the host Device, and each
+    virtual switch's uplinks linked to them (issue #55) - the vCenter
+    counterpart of :func:`_sync_proxmox_uplinks`.
+
+    Additive and blank-fill only: missing interfaces are created, an empty
+    MAC/speed is filled, and uplinks are added - nothing is removed.
+    """
+    from api.models import Cluster, Device, Interface, VirtualSwitch
+
+    nics_created = 0
+    uplinks_added = 0
+    for host_name, hw in hw_by_name.items():
+        # Switches are keyed per cluster - use the host's own when known.
+        cluster = Cluster.objects.filter(
+            tenant=source.tenant,
+            name=(cluster_of_host or {}).get(host_name) or cluster_name,
+        ).first()
+        dev = Device.objects.filter(
+            tenant=source.tenant, name__iexact=host_name
+        ).first()
+        if dev is None:
+            continue
+        by_name = {i.name: i for i in dev.interfaces.all()}
+        for pnic in hw.get("pnics") or []:
+            name = pnic.get("name") or ""
+            if not name:
+                continue
+            speed_mb = pnic.get("speed_mb")
+            speed = (
+                f"{speed_mb // 1000}G" if speed_mb and speed_mb >= 1000
+                else f"{speed_mb}M" if speed_mb else ""
+            )
+            iface = by_name.get(name)
+            if iface is None:
+                iface = Interface.objects.create(
+                    device=dev, name=name,
+                    mac_address=pnic.get("mac") or "",
+                    speed=speed,
+                    description=f"Synced from «{source.name}»",
+                )
+                by_name[name] = iface
+                nics_created += 1
+            else:
+                changed = []
+                if not iface.mac_address and pnic.get("mac"):
+                    iface.mac_address = pnic["mac"]
+                    changed.append("mac_address")
+                if not iface.speed and speed:
+                    iface.speed = speed
+                    changed.append("speed")
+                if changed:
+                    iface.save(update_fields=changed)
+        if cluster is None:
+            continue
+        for sw_name, pnic_names in (hw.get("switch_uplinks") or {}).items():
+            sw = VirtualSwitch.objects.filter(
+                tenant=source.tenant, cluster=cluster, name=sw_name
+            ).first()
+            if sw is None:
+                continue  # only link switches the networks pass created
+            existing = set(sw.uplink_interfaces.values_list("id", flat=True))
+            for pnic_name in pnic_names:
+                iface = by_name.get(pnic_name)
+                if iface is not None and iface.id not in existing:
+                    sw.uplink_interfaces.add(iface)
+                    existing.add(iface.id)
+                    uplinks_added += 1
+    return nics_created, uplinks_added
+
+
 def sync_proxmox(source) -> dict:
     # cluster/status needs Sys.Audit on / - a narrowly-scoped token may be
     # denied it while still seeing VMs. Fall back to /nodes + the source name.
@@ -1714,7 +1786,9 @@ def sync_vcenter(source) -> dict:
             # retrieval. Skipped entirely when neither feature is asked for.
             wants_ips = any(r.scope == "ip" for r in rules)
             hw_by_name: dict = {}
-            if source.sync_host_hardware or wants_ips:
+            # sync_hosts also wants SOAP now: host pNICs + switch uplinks
+            # (issue #55) ride the same single retrieval.
+            if source.sync_host_hardware or source.sync_hosts or wants_ips:
                 from .vsphere_soap import VSphereSoap
 
                 soap = VSphereSoap(source)
@@ -1754,6 +1828,14 @@ def sync_vcenter(source) -> dict:
                  for h in hosts],
                 placements=places, warnings=host_warnings,
             )
+            if hw_by_name:
+                nics, uplinks = _sync_vcenter_host_nics(
+                    source, cluster_name, hw_by_name,
+                    {h.get("name") or "": host_cluster.get(h.get("host")) or ""
+                     for h in hosts},
+                )
+                counts["host_nics"] = nics
+                counts["uplinks"] = uplinks
 
         resources: list = []
         details: dict = {}

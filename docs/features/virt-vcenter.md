@@ -94,15 +94,19 @@ Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Virtualization → Network topology** draws the whole picture - switches,
 their networks (VLANs) as bars, and the VMs on each.
 
-### Uplinks - assigned by hand (for now)
+### Host pNICs and uplinks - filled automatically
 
-A switch's **Uplinks · physical adapters** link the switch to the real host
-NICs - the ESXi host is a Device, and you assign its physical interfaces as
-the switch's uplinks. This is the vCenter "Physical Adapters" layer: the
-uplink traces straight through to its cabled port, and the topology shows the
-adapters feeding each switch. The vSphere REST API doesn't expose
-standard-switch pNICs cleanly, so assign uplinks **inline on the switch
-page** for now.
+With **Create hosts as devices** on, the sync reads each ESXi host's
+physical NICs over the vSphere SOAP API (the same retrieval the hardware
+enrichment uses - no extra round trip) and creates them as **Interfaces**
+(`vmnic0`…) on the host Device, with MAC and link speed blank-filled. Each
+virtual switch's **Uplinks · physical adapters** then link themselves:
+standard vSwitches from their bridge spec, distributed switches from the
+host's proxy-switch backing. This is the vCenter "Physical Adapters" layer -
+the uplink traces straight through to its cabled port, and the topology
+shows the adapters feeding each switch. Linking is **additive** and
+blank-fill only: uplinks or NIC values you set are never removed or
+overwritten.
 
 ## Sync mode - who is the source of truth
 

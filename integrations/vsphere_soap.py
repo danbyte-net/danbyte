@@ -65,6 +65,44 @@ def _esxi_version(product) -> str:
     return " ".join(p for p in (name, version) if p)
 
 
+def _pnics(val) -> list:
+    """[{name, mac, speed_mb}] from config.network.pnic."""
+    out = []
+    for p in val or []:
+        device = (getattr(p, "device", "") or "").strip()
+        if not device:
+            continue
+        speed = getattr(getattr(p, "linkSpeed", None), "speedMb", None)
+        out.append({
+            "name": device,
+            "mac": (getattr(p, "mac", "") or "").lower(),
+            "speed_mb": int(speed) if speed else None,
+        })
+    return out
+
+
+def _switch_uplinks(vswitches, proxies) -> dict:
+    """{switch name: [pnic device names]} - standard vSwitches from the
+    bridge spec, distributed ones from the host's proxy-switch backing."""
+    links: dict = {}
+    for vs in vswitches or []:
+        name = (getattr(vs, "name", "") or "").strip()
+        bridge = getattr(getattr(vs, "spec", None), "bridge", None)
+        nics = [str(n) for n in (getattr(bridge, "nicDevice", None) or [])]
+        if name:
+            links[name] = nics
+    for ps in proxies or []:
+        name = (getattr(ps, "dvsName", "") or "").strip()
+        backing = getattr(getattr(ps, "spec", None), "backing", None)
+        nics = [
+            (getattr(s, "pnicDevice", "") or "")
+            for s in (getattr(backing, "pnicSpec", None) or [])
+        ]
+        if name:
+            links[name] = [n for n in nics if n]
+    return links
+
+
 def _vnic_ips(vnics) -> list:
     """Management addresses of an ESXi host, IPv4 and IPv6.
 
@@ -145,6 +183,11 @@ class VSphereSoap:
             # Management addresses, for ip-scope placement rules. Free: it is
             # one more path on a retrieval already being made, not a new call.
             "config.network.vnic",
+            # Physical NICs + switch uplink specs (issue #55) - same
+            # retrieval, no extra round trip.
+            "config.network.pnic",
+            "config.network.vswitch",
+            "config.network.proxySwitch",
         ]
         content = self._si.RetrieveContent()
         view = content.viewManager.CreateContainerView(
@@ -191,6 +234,11 @@ class VSphereSoap:
                 "serial": _serial_from(props.get("summary.hardware")),
                 "platform": _esxi_version(props.get("summary.config.product")),
                 "ips": _vnic_ips(props.get("config.network.vnic")),
+                "pnics": _pnics(props.get("config.network.pnic")),
+                "switch_uplinks": _switch_uplinks(
+                    props.get("config.network.vswitch"),
+                    props.get("config.network.proxySwitch"),
+                ),
             })
         return out
 

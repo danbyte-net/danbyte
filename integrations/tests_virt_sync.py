@@ -2245,3 +2245,76 @@ class AllowedNetworksTests(TestCase):
         self.assertFalse(
             IPAddress.objects.filter(ip_address="10.77.0.30").exists()
         )
+
+
+class VcenterHostNicTests(TestCase):
+    """#55: host pNICs become Interface rows and switch uplinks self-link."""
+
+    HW = {
+        "name": "esxi-lab-01",
+        "vendor": "Dell Inc.",
+        "model": "PowerEdge R640",
+        "serial": "ABC1234",
+        "platform": "VMware ESXi 8.0.3",
+        "pnics": [
+            {"name": "vmnic0", "mac": "aa:bb:cc:dd:00:00", "speed_mb": 10000},
+            {"name": "vmnic1", "mac": "aa:bb:cc:dd:00:01", "speed_mb": 1000},
+        ],
+        "switch_uplinks": {"vSwitch0": ["vmnic0", "vmnic1"]},
+    }
+
+    def setUp(self):
+        from api.status_registry import seed_builtin_statuses
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        seed_builtin_statuses(self.tenant)
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vc", host="192.0.2.20", kind="vcenter",
+            credentials={"username": "u", "password": "p"}, sync_mode="auto",
+            sync_hosts=True,
+        )
+
+    def sync(self):
+        fake = mock.MagicMock()
+        fake.hosts.return_value = [self.HW]
+        with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter), \
+             mock.patch("integrations.vsphere_soap.VSphereSoap",
+                        return_value=fake):
+            return virt_sync.sync_vcenter(self.source)
+
+    def test_pnics_become_interfaces(self):
+        self.sync()
+        dev = Device.objects.get(name="esxi-lab-01")
+        nic = dev.interfaces.get(name="vmnic0")
+        self.assertEqual(nic.mac_address, "aa:bb:cc:dd:00:00")
+        self.assertEqual(nic.speed, "10G")
+        self.assertEqual(dev.interfaces.get(name="vmnic1").speed, "1G")
+
+    def test_uplinks_link_to_the_switch(self):
+        from api.models import Cluster, VirtualSwitch
+
+        self.sync()  # creates the cluster + host device + pnics
+        cluster = Cluster.objects.get(
+            tenant=self.tenant, name="Lab-Cluster"
+        )
+        sw = VirtualSwitch.objects.create(
+            tenant=self.tenant, cluster=cluster, name="vSwitch0",
+            kind="standard",
+        )
+        self.sync()
+        names = set(sw.uplink_interfaces.values_list("name", flat=True))
+        self.assertEqual(names, {"vmnic0", "vmnic1"})
+        # Idempotent: another pass adds nothing twice.
+        self.sync()
+        self.assertEqual(sw.uplink_interfaces.count(), 2)
+
+    def test_operator_values_survive(self):
+        self.sync()
+        dev = Device.objects.get(name="esxi-lab-01")
+        nic = dev.interfaces.get(name="vmnic0")
+        nic.speed = "25G"
+        nic.save(update_fields=["speed"])
+        self.sync()
+        nic.refresh_from_db()
+        self.assertEqual(nic.speed, "25G")
