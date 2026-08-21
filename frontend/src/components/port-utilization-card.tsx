@@ -11,6 +11,8 @@ interface KindRow {
   connected: number
   reserved: number
   free: number
+  /** Undocumented subset of connected (mark_connected, no cable row). */
+  marked: number
 }
 
 interface Payload {
@@ -79,6 +81,14 @@ export function PortUtilizationCard({ deviceId }: { deviceId: string }) {
             <span className="size-2 rounded-full border border-border bg-muted" />
             <span className="num">{d.combined.free}</span> free
           </span>
+          {d.combined.marked > 0 && (
+            <span
+              className="flex items-center gap-1"
+              title="Marked connected without a documented cable"
+            >
+              <span className="num">{d.combined.marked}</span> undocumented
+            </span>
+          )}
         </div>
         {kinds.length > 1 && (
           <div className="mt-3 grid gap-1 border-t border-border pt-2 text-[12px]">

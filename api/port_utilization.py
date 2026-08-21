@@ -1,9 +1,12 @@
 """Port-utilization counting, shared by the device API and the alert sweep.
 
-Connected = the port terminates a cable; reserved = that cable's status is
-"planned" (earmarked but not yet patched); free = no cable. Nine GROUP BY
-aggregates total (three port kinds x three metrics) - never per-device
-queries, however many devices are in scope.
+Connected = the port terminates a cable, or carries ``mark_connected`` (a
+cable is in the port, just not documented yet); reserved = its cable's
+status is "planned" (earmarked but not yet patched); free = no cable.
+Twelve GROUP BY aggregates total (three port kinds x four metrics) - never
+per-device queries, however many devices are in scope. ``marked`` is the
+undocumented subset of connected, kept separate so the number stays honest
+about documentation debt.
 """
 from __future__ import annotations
 
@@ -11,8 +14,8 @@ from django.db.models import Count, Exists, OuterRef
 
 
 def device_port_counts(devices) -> dict:
-    """{device_id: {"total", "connected", "reserved"}} for every device in
-    ``devices`` (a queryset) that has at least one port."""
+    """{device_id: {"total", "connected", "reserved", "marked"}} for every
+    device in ``devices`` (a queryset) that has at least one port."""
     from .models import CableTermination, FrontPort, Interface, RearPort
 
     def kind_counts(model, term_field):
@@ -28,6 +31,7 @@ def device_port_counts(devices) -> dict:
             group(base),
             group(ann.filter(_c=True, _p=False)),
             group(ann.filter(_p=True)),
+            group(ann.filter(_c=False, mark_connected=True)),
         )
 
     out: dict = {}
@@ -36,17 +40,23 @@ def device_port_counts(devices) -> dict:
         (FrontPort, "front_port"),
         (RearPort, "rear_port"),
     ):
-        totals, connected, reserved = kind_counts(model, term_field)
+        totals, connected, reserved, marked = kind_counts(model, term_field)
         for metric, counts in (
             ("total", totals),
             ("connected", connected),
             ("reserved", reserved),
+            ("marked", marked),
         ):
             for device_id, n in counts.items():
                 row = out.setdefault(
-                    device_id, {"total": 0, "connected": 0, "reserved": 0}
+                    device_id,
+                    {"total": 0, "connected": 0, "reserved": 0, "marked": 0},
                 )
                 row[metric] += n
+    # Marked ports count as connected - the cable exists, only the row is
+    # missing - while `marked` itself stays visible as the documentation gap.
+    for row in out.values():
+        row["connected"] += row["marked"]
     return out
 
 

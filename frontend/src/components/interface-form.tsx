@@ -62,6 +62,9 @@ export function InterfaceForm({
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
   const [mgmtOnly, setMgmtOnly] = useState(iface?.mgmt_only ?? false)
+  const [markConnected, setMarkConnected] = useState(
+    iface?.mark_connected ?? false
+  )
   const [comboGroup, setComboGroup] = useState(iface?.combo_group ?? "")
   // The name SNMP reports for this port; clearing it unlinks discovery.
   const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
@@ -100,6 +103,7 @@ export function InterfaceForm({
     setEnabled(iface.enabled)
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
+    setMarkConnected(iface.mark_connected ?? false)
     setComboGroup(iface.combo_group ?? "")
     setSnmpName(iface.snmp_name ?? "")
     setSnmpIgnore(iface.snmp_ignore ?? false)
@@ -156,6 +160,7 @@ export function InterfaceForm({
         enabled,
         mac_address: mac.trim(),
         mgmt_only: mgmtOnly,
+        mark_connected: markConnected,
         combo_group: comboGroup.trim(),
         snmp_name: snmpName.trim(),
         snmp_ignore: snmpIgnore,
@@ -463,6 +468,12 @@ export function InterfaceForm({
           label="Management only"
           checked={mgmtOnly}
           onChange={setMgmtOnly}
+        />
+        <FormCheckbox
+          label="Mark connected"
+          hint="a cable is in the port, just not documented yet"
+          checked={markConnected}
+          onChange={setMarkConnected}
         />
         <FormCheckbox
           label="Virtual interface (sub-interface / LAG / loopback)"

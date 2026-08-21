@@ -1868,6 +1868,7 @@ export interface Interface {
   mtu: number | null
   enabled: boolean
   mgmt_only: boolean
+  mark_connected: boolean
   combo_group: string
   duplex: string
   poe_mode: string
@@ -1919,6 +1920,7 @@ export interface InterfaceWritePayload {
   snmp_ignore?: boolean
   is_uplink?: boolean
   mgmt_only?: boolean
+  mark_connected?: boolean
   combo_group?: string
   duplex?: string
   poe_mode?: string
@@ -1951,6 +1953,7 @@ export interface RearPort {
   name: string
   positions: number
   is_splitter?: boolean
+  mark_connected?: boolean
   type: string
   description: string
   tags: Tag[]
@@ -1965,6 +1968,7 @@ export interface RearPortWritePayload {
   name: string
   positions?: number
   is_splitter?: boolean
+  mark_connected?: boolean
   type?: string
   description?: string
   tag_ids?: number[]
@@ -1981,6 +1985,7 @@ export interface FrontPort {
     positions: number
   }
   rear_port_position: number
+  mark_connected: boolean
   positions: number
   type: string
   description: string
@@ -1995,6 +2000,7 @@ export interface FrontPortWritePayload {
   name: string
   rear_port_id: string
   rear_port_position?: number
+  mark_connected?: boolean
   positions?: number
   type?: string
   description?: string

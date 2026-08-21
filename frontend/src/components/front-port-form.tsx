@@ -11,6 +11,7 @@ import {
   type TagOption,
 } from "@/lib/api"
 import {
+  FormCheckbox,
   Field,
   FormFooter,
   FormSelect,
@@ -55,6 +56,9 @@ export function FrontPortForm({
   const [positions, setPositions] = useState(
     port?.positions != null ? String(port.positions) : "1"
   )
+  const [markConnected, setMarkConnected] = useState(
+    port?.mark_connected ?? false
+  )
   const [description, setDescription] = useState(port?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     port?.tags.map((t) => t.id) ?? []
@@ -70,6 +74,7 @@ export function FrontPortForm({
     setPosition(String(port.rear_port_position))
     setType(port.type)
     setPositions(String(port.positions))
+    setMarkConnected(port.mark_connected ?? false)
     setDescription(port.description ?? "")
     setTagIds(port.tags.map((t) => t.id))
     reset()
@@ -125,6 +130,7 @@ export function FrontPortForm({
         rear_port_position: position.trim() === "" ? 1 : Number(position),
         positions: positions.trim() === "" ? 1 : Number(positions),
         type: type.trim(),
+        mark_connected: markConnected,
         description: description.trim(),
         tag_ids: tagIds,
       }
@@ -261,6 +267,12 @@ export function FrontPortForm({
           />
         )}
       </div>
+      <FormCheckbox
+        label="Mark connected"
+        hint="a cable is in the port, just not documented yet"
+        checked={markConnected}
+        onChange={setMarkConnected}
+      />
       <FormText
         label="Description"
         value={description}

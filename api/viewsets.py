@@ -2883,10 +2883,10 @@ class DeviceViewSet(
     def port_utilization(self, request, pk=None):
         """Connected / reserved / free counts per port kind (issue #64).
 
-        Connected = the port terminates a cable; reserved = that cable's
-        status is "planned" (earmarked but not yet patched); free = no
-        cable. Rides the existing cable Status catalog - no new per-port
-        tracking field.
+        Connected = the port terminates a cable or carries mark_connected
+        (undocumented cable); reserved = its cable's status is "planned"
+        (earmarked but not yet patched); free = no cable. ``marked`` is the
+        undocumented subset of connected.
         """
         from django.db.models import Exists
 
@@ -2899,7 +2899,9 @@ class DeviceViewSet(
             "rear_ports": ("rear_ports", "rear_port"),
         }
         out: dict = {}
-        combined = {"total": 0, "connected": 0, "reserved": 0, "free": 0}
+        combined = {
+            "total": 0, "connected": 0, "reserved": 0, "free": 0, "marked": 0,
+        }
         for key, (relation, term_field) in kinds.items():
             rel = getattr(device, relation)
             cabled = CableTermination.objects.filter(
@@ -2909,12 +2911,16 @@ class DeviceViewSet(
             qs = rel.annotate(_cabled=Exists(cabled), _planned=Exists(planned))
             total = rel.count()
             reserved = qs.filter(_planned=True).count()
-            connected = qs.filter(_cabled=True, _planned=False).count()
+            marked = qs.filter(_cabled=False, mark_connected=True).count()
+            connected = (
+                qs.filter(_cabled=True, _planned=False).count() + marked
+            )
             row = {
                 "total": total,
                 "connected": connected,
                 "reserved": reserved,
                 "free": total - connected - reserved,
+                "marked": marked,
             }
             out[key] = row
             for k in combined:
@@ -2952,6 +2958,7 @@ class DeviceViewSet(
                 "connected": conn,
                 "reserved": res,
                 "free": total - conn - res,
+                "marked": row["marked"],
                 "pct": used_pct(row),
             })
         rows.sort(key=lambda r: (-r["pct"], r["name"]))

@@ -66,19 +66,19 @@ class PortUtilizationTests(APITestCase):
         body = r.json()
         self.assertEqual(
             body["interfaces"],
-            {"total": 3, "connected": 1, "reserved": 1, "free": 1},
+            {"total": 3, "connected": 1, "reserved": 1, "free": 1, "marked": 0},
         )
         self.assertEqual(
             body["front_ports"],
-            {"total": 2, "connected": 1, "reserved": 0, "free": 1},
+            {"total": 2, "connected": 1, "reserved": 0, "free": 1, "marked": 0},
         )
         self.assertEqual(
             body["rear_ports"],
-            {"total": 1, "connected": 0, "reserved": 0, "free": 1},
+            {"total": 1, "connected": 0, "reserved": 0, "free": 1, "marked": 0},
         )
         self.assertEqual(
             body["combined"],
-            {"total": 6, "connected": 2, "reserved": 1, "free": 3},
+            {"total": 6, "connected": 2, "reserved": 1, "free": 3, "marked": 0},
         )
 
     def test_statusless_cable_counts_as_connected(self):
@@ -96,6 +96,29 @@ class PortUtilizationTests(APITestCase):
             f"/api/devices/{self.dev.id}/port-utilization/"
         ).json()
         self.assertEqual(body["combined"]["total"], 0)
+
+    def test_marked_counts_as_connected_and_clears_on_cable(self):
+        # Two interfaces: one mark_connected (undocumented), one free.
+        i1 = Interface.objects.create(
+            device=self.dev, name="Gi1", mark_connected=True
+        )
+        Interface.objects.create(device=self.dev, name="Gi2")
+        body = self.client.get(
+            f"/api/devices/{self.dev.id}/port-utilization/"
+        ).json()
+        self.assertEqual(
+            body["interfaces"],
+            {"total": 2, "connected": 1, "reserved": 0, "free": 1, "marked": 1},
+        )
+        # Documenting a real cable retires the placeholder flag.
+        self._cable(interface=i1)
+        i1.refresh_from_db()
+        self.assertFalse(i1.mark_connected)
+        body = self.client.get(
+            f"/api/devices/{self.dev.id}/port-utilization/"
+        ).json()
+        self.assertEqual(body["interfaces"]["marked"], 0)
+        self.assertEqual(body["interfaces"]["connected"], 1)
 
     def test_rollup_lists_port_devices_fullest_first(self):
         # pp-01: 1 of 2 interfaces cabled (50%); sw-01: 1 of 1 (100%).

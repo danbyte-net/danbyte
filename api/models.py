@@ -2511,6 +2511,12 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     mgmt_only = models.BooleanField(
         default=False, help_text="Out-of-band management interface."
     )
+    mark_connected = models.BooleanField(
+        default=False,
+        help_text="There is a cable in this port, it just isn't documented "
+                  "yet. Counts as connected in port utilization; cleared "
+                  "automatically when a real cable is attached.",
+    )
     combo_group = models.CharField(
         max_length=64, blank=True, default="",
         help_text="Combo/shared port: interfaces on this device with the same "
@@ -2670,6 +2676,12 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "position 1 and carries the same signal (PON). Requires positions=1.",
     )
     type = models.CharField(max_length=64, blank=True)
+    mark_connected = models.BooleanField(
+        default=False,
+        help_text="There is a cable in this port, it just isn't documented "
+                  "yet. Counts as connected in port utilization; cleared "
+                  "automatically when a real cable is attached.",
+    )
     description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
@@ -2713,6 +2725,12 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "rear-port positions from the start.",
     )
     type = models.CharField(max_length=64, blank=True)
+    mark_connected = models.BooleanField(
+        default=False,
+        help_text="There is a cable in this port, it just isn't documented "
+                  "yet. Counts as connected in port utilization; cleared "
+                  "automatically when a real cable is attached.",
+    )
     description = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
@@ -3225,6 +3243,18 @@ class CableTermination(TimestampedModel):
             ),
         ]
         indexes = [models.Index(fields=["cable", "end"])]
+
+    def save(self, *args, **kwargs):
+        creating = self._state.adding
+        super().save(*args, **kwargs)
+        # A documented cable retires the port's "cable exists but isn't
+        # documented yet" placeholder - the flag stood in for this row.
+        if creating:
+            for f in ("interface", "front_port", "rear_port"):
+                port = getattr(self, f, None)
+                if port is not None and getattr(port, "mark_connected", False):
+                    port.mark_connected = False
+                    port.save(update_fields=["mark_connected"])
 
     @property
     def point(self):

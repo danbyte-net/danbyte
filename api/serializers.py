@@ -2512,7 +2512,8 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "device", "device_id", "name", "snmp_name", "snmp_ignore", "is_uplink", "type",
                   "type_display",
                   "speed", "mtu",
-                  "enabled", "mgmt_only", "combo_group", "duplex", "poe_mode",
+                  "enabled", "mgmt_only", "combo_group", "mark_connected",
+                  "duplex", "poe_mode",
                   "poe_type",
                   "wwn", "mac_address", "mac_addresses", "description",
                   "mode", "mode_display", "vlan", "vlan_id",
@@ -2636,7 +2637,7 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = RearPort
         fields = ["id", "device", "device_id", "name", "positions",
-                  "is_splitter", "type", "description",
+                  "is_splitter", "type", "mark_connected", "description",
                   "tags", "tag_ids", "cable", "front_port_count",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
@@ -2689,6 +2690,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         model = FrontPort
         fields = ["id", "device", "device_id", "name", "rear_port",
                   "rear_port_id", "rear_port_position", "positions", "type",
+                  "mark_connected",
                   "description", "tags", "tag_ids", "cable",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

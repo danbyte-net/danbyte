@@ -99,7 +99,11 @@ Devices with ports also get a **Port utilization** card: a segmented bar plus
 counts of **connected** (the port terminates a cable), **reserved** (its cable
 carries the *Planned* status - earmarked for a cross-connect that isn't
 patched yet), and **free** ports, broken down per kind (interfaces, front
-ports, rear ports). Reserved rides the existing cable Status catalog - create
+ports, rear ports). A port can also be **marked connected** (a checkbox on
+the interface / front-port / rear-port forms) when a cable is physically in
+it but nobody has documented the cable yet - it counts as connected, the
+legend shows how many are *undocumented*, and the flag clears itself the
+moment a real cable is attached to the port. Reserved rides the existing cable Status catalog - create
 the cable ahead of time as *Planned* and the port counts as held; flip the
 status once patched. Most useful on patch panels and access switches, where
 "how full is this thing" is the recurring question

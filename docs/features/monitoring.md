@@ -459,7 +459,8 @@ tenant). They ride the periodic utilization sweep and notify through the
 tenant's channels with hysteresis - a rule fires once per crossing and
 re-arms when the condition stops holding, exactly like prefix-utilization
 alerts. Counting matches the device page's Port utilization card: connected
-or *Planned*-reserved ports over total interfaces, front ports and rear
+(including ports *marked connected* without a documented cable) or
+*Planned*-reserved ports over total interfaces, front ports and rear
 ports.
 
 ### Acknowledge an alert

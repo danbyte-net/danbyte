@@ -47,6 +47,9 @@ export function RearPortForm({
   )
   const [type, setType] = useState(port?.type ?? "")
   const [isSplitter, setIsSplitter] = useState(port?.is_splitter ?? false)
+  const [markConnected, setMarkConnected] = useState(
+    port?.mark_connected ?? false
+  )
   const [description, setDescription] = useState(port?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     port?.tags.map((t) => t.id) ?? []
@@ -58,6 +61,7 @@ export function RearPortForm({
     setPositions(String(port.positions))
     setType(port.type)
     setIsSplitter(port.is_splitter ?? false)
+    setMarkConnected(port.mark_connected ?? false)
     setDescription(port.description ?? "")
     setTagIds(port.tags.map((t) => t.id))
     reset()
@@ -76,6 +80,7 @@ export function RearPortForm({
         name: name.trim(),
         positions: positions.trim() === "" ? 1 : Number(positions),
         is_splitter: isSplitter,
+        mark_connected: markConnected,
         type: type.trim(),
         description: description.trim(),
         tag_ids: tagIds,
@@ -177,6 +182,14 @@ export function RearPortForm({
             setIsSplitter(v)
             if (v) setPositions("1")
           }}
+        />
+      </Field>
+      <Field label="Cabling">
+        <FormCheckbox
+          label="Mark connected"
+          hint="a cable is in the port, just not documented yet"
+          checked={markConnected}
+          onChange={setMarkConnected}
         />
       </Field>
       <FormText
