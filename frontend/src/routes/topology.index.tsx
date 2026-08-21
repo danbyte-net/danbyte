@@ -53,8 +53,10 @@ import { QueryError } from "@/components/query-error"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
 import {
   typeColor,
+  type BundleMember,
   type CanvasHandle,
   type EdgeColorMode,
+  type NodeStyle,
 } from "@/components/topology/topology-canvas"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -176,6 +178,7 @@ interface StoredDisplay {
   roleBonds?: string[]
   roleDistance?: Record<string, number>
   edgeRouting?: "routed" | "straight"
+  viewStyle?: NodeStyle
 }
 function readStoredDisplay(): StoredDisplay {
   try {
@@ -221,6 +224,11 @@ function TopologyPage() {
   const [edgeRouting, setEdgeRouting] = useState<"routed" | "straight">(
     stored.edgeRouting ?? "routed"
   )
+  // Wiring (stencil cards, port-to-port) or Flat (compact chips, bundled
+  // edges) - the big-graph escape hatch. The Logical view is its own tab.
+  const [viewStyle, setViewStyle] = useState<NodeStyle>(
+    stored.viewStyle ?? "stencil"
+  )
   const [search, setSearch] = useState("")
   const [focus, setFocus] = useState<{ id: string; depth: number } | null>(
     deepLinkDevice ? { id: deepLinkDevice, depth: 1 } : null
@@ -236,6 +244,7 @@ function TopologyPage() {
   const [selEdge, setSelEdge] = useState<NonNullable<TopoEdge["data"]> | null>(
     null
   )
+  const [selBundle, setSelBundle] = useState<BundleMember[] | null>(null)
 
   const set = (patch: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...patch }))
@@ -254,6 +263,7 @@ function TopologyPage() {
       roleBonds,
       roleDistance,
       edgeRouting,
+      viewStyle,
     })
   }, [
     viewId,
@@ -263,6 +273,7 @@ function TopologyPage() {
     roleBonds,
     roleDistance,
     edgeRouting,
+    viewStyle,
   ])
 
   // ── Option lists (shared picker caches) ──
@@ -364,6 +375,7 @@ function TopologyPage() {
         roleBonds: string[]
         roleDistance: Record<string, number>
         edgeRouting: "routed" | "straight"
+        viewStyle: NodeStyle
       }
     >
     setFilters({
@@ -376,6 +388,7 @@ function TopologyPage() {
     if (f.colorMode) setColorMode(f.colorMode)
     if (f.direction) setDirection(f.direction)
     if (f.edgeRouting) setEdgeRouting(f.edgeRouting)
+    setViewStyle(f.viewStyle ?? "stencil")
     setRoleOrder(f.roleOrder ?? [])
     setRoleBonds(f.roleBonds ?? [])
     setRoleDistance(f.roleDistance ?? {})
@@ -403,6 +416,7 @@ function TopologyPage() {
       roleBonds,
       roleDistance,
       edgeRouting,
+      viewStyle,
     },
     positions: canvas.current?.positions() ?? {},
   })
@@ -483,6 +497,20 @@ function TopologyPage() {
             {count} device{count === 1 ? "" : "s"}
           </Badge>
         )}
+        <SegmentedTabs<NodeStyle>
+          value={viewStyle}
+          onValueChange={(v) => {
+            setViewStyle(v)
+            // Chip and card sizes differ completely - fresh layout, but the
+            // wiring arrangement stays stored for when you switch back.
+            setPositions(undefined)
+            setLayoutTick((t) => t + 1)
+          }}
+          items={[
+            { value: "stencil", label: "Wiring" },
+            { value: "flat", label: "Flat" },
+          ]}
+        />
         {focus && (
           <Badge variant="default" className="shrink-0 gap-1">
             <Crosshair className="h-3 w-3" />
@@ -648,16 +676,18 @@ function TopologyPage() {
                   ]}
                 />
               </PopoverField>
-              <PopoverField label="Cables">
-                <SegmentedTabs<"routed" | "straight">
-                  value={edgeRouting}
-                  onValueChange={setEdgeRouting}
-                  items={[
-                    { value: "routed", label: "Routed" },
-                    { value: "straight", label: "Straight" },
-                  ]}
-                />
-              </PopoverField>
+              {viewStyle === "stencil" && (
+                <PopoverField label="Cables">
+                  <SegmentedTabs<"routed" | "straight">
+                    value={edgeRouting}
+                    onValueChange={setEdgeRouting}
+                    items={[
+                      { value: "routed", label: "Routed" },
+                      { value: "straight", label: "Straight" },
+                    ]}
+                  />
+                </PopoverField>
+              )}
               <PopoverField label="Colour by">
                 <Select
                   value={colorMode}
@@ -702,6 +732,7 @@ function TopologyPage() {
               setRoleBonds(d.roleBonds ?? [])
               setRoleDistance(d.roleDistance ?? {})
               setEdgeRouting(d.edgeRouting ?? "routed")
+              setViewStyle(d.viewStyle ?? "stencil")
               setViewId("none")
               setPositions(readStoredPositions())
               if (d.roleOrder?.length) setLayoutTick((t) => t + 1)
@@ -801,6 +832,7 @@ function TopologyPage() {
               roleBonds={roleBonds}
               roleDistance={roleDistance}
               edgeRouting={edgeRouting}
+              nodeStyle={viewStyle}
               positions={positions}
               layoutTick={layoutTick}
               matchedIds={matchedIds}
@@ -808,14 +840,22 @@ function TopologyPage() {
               onSelectNode={(d) => {
                 setSelNode(d)
                 setSelEdge(null)
+                setSelBundle(null)
               }}
               onSelectEdge={(d) => {
                 setSelEdge(d)
                 setSelNode(null)
+                setSelBundle(null)
+              }}
+              onSelectBundle={(cables) => {
+                setSelBundle(cables)
+                setSelNode(null)
+                setSelEdge(null)
               }}
               onCanvasClick={() => {
                 setSelNode(null)
                 setSelEdge(null)
+                setSelBundle(null)
               }}
               onDragEnd={() => {
                 const p = canvas.current?.positions()
@@ -842,6 +882,9 @@ function TopologyPage() {
         )}
         {selEdge && (
           <EdgePanel data={selEdge} onClose={() => setSelEdge(null)} />
+        )}
+        {selBundle && (
+          <BundlePanel cables={selBundle} onClose={() => setSelBundle(null)} />
         )}
       </div>
 
@@ -1030,6 +1073,67 @@ function EdgePanel({
           </Link>
         </Button>
       )}
+    </PanelShell>
+  )
+}
+
+/** Flat view: the member cables of a bundled edge, each openable. */
+function BundlePanel({
+  cables,
+  onClose,
+}: {
+  cables: BundleMember[]
+  onClose: () => void
+}) {
+  return (
+    <PanelShell
+      title={`${cables.length} cable${cables.length === 1 ? "" : "s"}`}
+      onClose={onClose}
+    >
+      <div className="space-y-1.5">
+        {cables.map((c, i) => (
+          <div
+            key={c.cable_id ?? i}
+            className="rounded-md border border-border px-2 py-1.5"
+          >
+            <div className="flex items-center gap-1.5">
+              {c.cable_type && (
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: c.color || typeColor(c.cable_type) }}
+                />
+              )}
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {c.cable_label ||
+                  (c.cable_numid ? `Cable #${c.cable_numid}` : "Cable")}
+              </span>
+              {c.cable_type && (
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                  {c.cable_type}
+                </span>
+              )}
+            </div>
+            {!!c.pairs?.length && (
+              <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                {c.pairs[0].a} ↔ {c.pairs[0].b}
+                {c.pairs.length > 1 ? `  ·  ×${c.pairs.length}` : ""}
+              </div>
+            )}
+            {c.cable_id && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-1.5 h-6 w-full text-[11px]"
+                asChild
+              >
+                <Link to="/cables/$id" params={{ id: c.cable_id }}>
+                  Open cable
+                </Link>
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
     </PanelShell>
   )
 }

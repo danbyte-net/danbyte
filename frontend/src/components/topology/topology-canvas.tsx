@@ -28,6 +28,7 @@ import type { GhostEdgeData, TopoEdge, TopologyGraph } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
 import { PortNode, StencilNode, handleId } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
+import { FLAT_H, FLAT_W, FlatNode } from "./flat-node"
 import { edgeWaypoints, layoutNodes } from "./layout"
 import { resolveLevels } from "./level-organiser"
 import { RoutedEdge } from "./routed-edge"
@@ -36,6 +37,7 @@ import { RoutedEdge } from "./routed-edge"
 // re-mounts every node - a classic React Flow footgun).
 const nodeTypes = {
   device: StencilNode,
+  flat: FlatNode,
   interface: PortNode,
   front_port: PortNode,
   rear_port: PortNode,
@@ -43,6 +45,15 @@ const nodeTypes = {
 const edgeTypes = { routed: RoutedEdge }
 
 export type EdgeColorMode = "cable" | "type" | "status" | "none"
+
+/** "stencil" = wiring cards with port rows; "flat" = barebones fixed chips
+ * with parallel cables bundled into one ×N edge. */
+export type NodeStyle = "stencil" | "flat"
+
+/** One member of a Flat-view bundled edge (the underlying cable's data). */
+export type BundleMember = NonNullable<TopoEdge["data"]>
+
+const flatSize = () => ({ width: FLAT_W, height: FLAT_H })
 
 export interface CanvasHandle {
   /** Current node positions (for saving a view). */
@@ -198,15 +209,17 @@ function build(
     roleDistance?: Record<string, number>
     edgeRouting?: "routed" | "straight"
     colorMode: EdgeColorMode
+    nodeStyle?: NodeStyle
     positions?: Record<string, [number, number]>
     matched?: Set<string> | null
     hiddenPorts?: Set<string>
     originId?: string
   }
 ) {
+  const flat = opts.nodeStyle === "flat"
   const nodes: Node[] = graph.nodes.map((n) => ({
     id: n.id,
-    type: n.type ?? "device",
+    type: flat && (n.type ?? "device") === "device" ? "flat" : (n.type ?? "device"),
     position: { x: 0, y: 0 },
     selected: opts.focusNodeId === n.id,
     data: {
@@ -217,6 +230,11 @@ function build(
   const nodeIds = new Set(nodes.map((n) => n.id))
 
   const allEdges: Edge[] = []
+  // Flat view: parallel cables between a device pair collapse into one edge.
+  const bundles = new Map<
+    string,
+    { source: string; target: string; cables: BundleMember[] }
+  >()
   for (const e of graph.edges) {
     if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) continue
 
@@ -291,6 +309,17 @@ function build(
     )
       continue
 
+    if (flat) {
+      const key = [e.source, e.target].sort().join(">")
+      let b = bundles.get(key)
+      if (!b) {
+        b = { source: e.source, target: e.target, cables: [] }
+        bundles.set(key, b)
+      }
+      if (e.data) b.cables.push(e.data)
+      continue
+    }
+
     const via = e.data?.via ?? []
     const count = pairs.length
     const labelBits: string[] = []
@@ -324,6 +353,35 @@ function build(
     } as Edge)
   }
 
+  if (flat) {
+    for (const [key, b] of bundles) {
+      const n = b.cables.length
+      // The bundle keeps a colour only when every member agrees under the
+      // active mode - a mixed bundle stays neutral rather than lying.
+      const strokes = new Set(
+        b.cables.map((c) => edgeStroke(c, opts.colorMode) ?? "")
+      )
+      const stroke = strokes.size === 1 ? [...strokes][0] || undefined : undefined
+      allEdges.push({
+        id: `f:${key}`,
+        source: b.source,
+        target: b.target,
+        sourceHandle: "n",
+        targetHandle: "n",
+        type: "smoothstep",
+        pathOptions: { borderRadius: 10 },
+        label: n > 1 ? `×${n}` : undefined,
+        data: { sem: "bundle", cables: b.cables, baseS: "n", baseT: "n" },
+        style: {
+          strokeWidth: n > 1 ? 2.25 : 1.5,
+          ...(stroke ? { stroke } : {}),
+        },
+        labelStyle: { fontSize: 9 },
+        labelBgStyle: { fill: "var(--card)" },
+      } as Edge)
+    }
+  }
+
   // Role tiers from the Level organiser, if any: node id → level index.
   let levels: Map<string, number> | undefined
   let mainOffsets: number[] | undefined
@@ -350,6 +408,28 @@ function build(
     mainOffsets = [0]
     for (let i = 1; i <= last; i++)
       mainOffsets[i] = mainOffsets[i - 1] + gapOf(groups[i]?.[0] ?? "")
+  }
+
+  // Flat view: one compact dagre pass with fixed chip sizes - no per-port
+  // side split, no channel routing. Edges still snap to the card side facing
+  // their neighbour via the single "n" pseudo-port.
+  if (flat) {
+    const laidFlat = layoutNodes(
+      nodes,
+      allEdges,
+      opts.positions,
+      opts.direction,
+      levels,
+      mainOffsets,
+      flatSize
+    ).nodes
+    const posFlat = new Map(laidFlat.map((n) => [n.id, n.position]))
+    const { edges: flatEdges } = assignSides(
+      allEdges,
+      (id) => posFlat.get(id),
+      opts.direction ?? "LR"
+    )
+    return { nodes: laidFlat, edges: flatEdges }
   }
 
   // Pass 1: a nominal layout (no port sides yet) just to learn each card's
@@ -432,6 +512,9 @@ export interface TopologyCanvasProps {
   /** "routed" bends cables around cards (where the auto-layout supplies a
    * node-avoiding route); "straight" forces the plain smoothstep line. */
   edgeRouting?: "routed" | "straight"
+  /** "stencil" (default) wiring cards; "flat" barebones chips with bundled
+   * edges - the view for big graphs. */
+  nodeStyle?: NodeStyle
   colorMode?: EdgeColorMode
   /** Saved-view node positions; nodes not listed get the auto layout. */
   positions?: Record<string, [number, number]>
@@ -444,6 +527,8 @@ export interface TopologyCanvasProps {
   originId?: string
   onSelectNode?: (data: TopologyGraph["nodes"][number]["data"]) => void
   onSelectEdge?: (data: NonNullable<TopoEdge["data"]>) => void
+  /** Flat view: a bundled edge was clicked - its member cables. */
+  onSelectBundle?: (cables: BundleMember[]) => void
   onGhostEdge?: (ghost: GhostEdgeData) => void
   onCanvasClick?: () => void
   /** Fired after a node drag settles - the parent can persist positions(). */
@@ -460,6 +545,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     roleBonds,
     roleDistance,
     edgeRouting = "routed",
+    nodeStyle = "stencil",
     positions,
     layoutTick = 0,
     matchedIds,
@@ -467,6 +553,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     originId,
     onSelectNode,
     onSelectEdge,
+    onSelectBundle,
     onGhostEdge,
     onCanvasClick,
     onDragEnd,
@@ -479,6 +566,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
+  // Channel routing only exists for stencil cards - flat chips draw plain
+  // smoothstep lines whatever the routing setting says.
+  const routingActive = edgeRouting === "routed" && nodeStyle !== "flat"
+
   const built = useMemo(
     () =>
       build(graph, {
@@ -489,6 +580,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         roleDistance,
         edgeRouting,
         colorMode,
+        nodeStyle,
         positions: layoutTick > 0 ? undefined : positions,
         matched: matchedIds,
         hiddenPorts,
@@ -503,6 +595,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       roleDistance,
       edgeRouting,
       colorMode,
+      nodeStyle,
       positions,
       layoutTick,
       matchedIds,
@@ -561,7 +654,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // When we kept dragged positions, `built.edges` were routed for the
     // layout's positions, not the kept ones - re-route from the actual
     // rendered positions so cables always match their cards.
-    if (edgeRouting === "routed" && keepingDrags) {
+    if (routingActive && keepingDrags) {
       const wp = edgeWaypoints(nextNodes, built.edges, direction)
       setEdges(
         built.edges.map((e) => {
@@ -580,7 +673,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     } else {
       setEdges(built.edges)
     }
-  }, [built, setNodes, setEdges, layoutTick, positions, direction, edgeRouting])
+  }, [built, setNodes, setEdges, layoutTick, positions, direction, routingActive])
   useEffect(() => {
     prevNodes.current = nodes
   }, [nodes])
@@ -638,12 +731,19 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const onEdgeClick = useCallback(
     (_: unknown, edge: Edge) => {
       const data = edge.data as
-        | { sem?: string; ghost?: GhostEdgeData; raw?: TopoEdge["data"] }
+        | {
+            sem?: string
+            ghost?: GhostEdgeData
+            raw?: TopoEdge["data"]
+            cables?: BundleMember[]
+          }
         | undefined
       if (data?.sem === "ghost" && data.ghost) onGhostEdge?.(data.ghost)
+      else if (data?.sem === "bundle" && data.cables)
+        onSelectBundle?.(data.cables)
       else if (data?.raw) onSelectEdge?.(data.raw)
     },
-    [onGhostEdge, onSelectEdge]
+    [onGhostEdge, onSelectEdge, onSelectBundle]
   )
 
   // Dragging a card changes which side of it faces each neighbour - re-snap
@@ -672,8 +772,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             : n
         )
       )
-      // Straight mode: only re-snapped sides, nothing to route.
-      if (edgeRouting !== "routed") return next
+      // Straight mode (and the flat view): only re-snapped sides, nothing
+      // to route.
+      if (!routingActive) return next
       const wp = edgeWaypoints(liveNodes, next, direction)
       return next.map((e) => {
         if ((e.data as { sem?: string } | undefined)?.sem !== "cable") return e
@@ -688,7 +789,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       })
     })
     onDragEnd?.()
-  }, [flow, setEdges, setNodes, direction, edgeRouting, onDragEnd])
+  }, [flow, setEdges, setNodes, direction, routingActive, onDragEnd])
 
   if (!mounted)
     return <div className="h-full w-full animate-pulse bg-muted/30" />

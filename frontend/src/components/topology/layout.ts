@@ -220,8 +220,17 @@ export function layoutNodes(
   levels?: Map<string, number>,
   /** main-axis coordinate per tier index (from the Level distances); when
    * absent, tiers use a uniform gap. */
-  mainOffsets?: number[]
+  mainOffsets?: number[],
+  /** Node dimensions; defaults to the stencil card. The Flat view passes a
+   * fixed-size function so its chips lay out tight. */
+  sizeOfNode?: (n: Node) => { width: number; height: number }
 ): LayoutResult {
+  const sizer =
+    sizeOfNode ?? ((n: Node) => stencilSize(n.data as StencilData))
+  // A custom sizer means small fixed chips (the Flat view) - tighten the
+  // gaps so hundreds of nodes stay compact; stencil cards keep the roomy
+  // spacing their port-anchored cables need.
+  const compact = !!sizeOfNode
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({
@@ -229,16 +238,16 @@ export function layoutNodes(
     // More cross-axis room between siblings + an explicit edge gap so parallel
     // cables get their own lane and are less likely to overlap or be forced to
     // route under a neighbouring card.
-    nodesep: 96,
-    edgesep: 24,
-    ranksep: 220,
+    nodesep: compact ? 36 : 96,
+    edgesep: compact ? 12 : 24,
+    ranksep: compact ? 110 : 220,
     ranker: "network-simplex",
     align: "UL",
   })
   for (const n of nodes) {
     // Card dimensions follow its per-side port split (see stencilSize); the
     // rank axis is set by `direction` on the graph above, not the node size.
-    const { width, height } = stencilSize(n.data as StencilData)
+    const { width, height } = sizer(n)
     g.setNode(n.id, { width, height })
   }
   for (const e of edges) {
