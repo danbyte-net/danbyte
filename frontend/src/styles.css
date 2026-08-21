@@ -484,7 +484,9 @@
 }
 .fp-glow[data-glow="free"] [data-cable-state]:not([data-cable-state="free"]),
 .fp-glow[data-glow="connected"]
-  [data-cable-state]:not([data-cable-state="connected"]),
+  [data-cable-state]:not([data-cable-state="connected"]):not(
+    [data-cable-state="marked"]
+  ),
 .fp-glow[data-glow="reserved"]
   [data-cable-state]:not([data-cable-state="reserved"]),
 .fp-glow[data-glow="marked"]
@@ -493,6 +495,7 @@
 }
 .fp-glow[data-glow="free"] [data-cable-state="free"],
 .fp-glow[data-glow="connected"] [data-cable-state="connected"],
+.fp-glow[data-glow="connected"] [data-cable-state="marked"],
 .fp-glow[data-glow="reserved"] [data-cable-state="reserved"],
 .fp-glow[data-glow="marked"] [data-cable-state="marked"] {
   opacity: 1;

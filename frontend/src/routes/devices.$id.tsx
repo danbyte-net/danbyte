@@ -58,7 +58,11 @@ import {
   PortUtilizationCard,
   type PortKind,
 } from "@/components/port-utilization-card"
-import { CABLE_STATES, type CableState } from "@/lib/cable-state"
+import {
+  CABLE_STATES,
+  cableStateMatches,
+  type CableState,
+} from "@/lib/cable-state"
 import { CabledFilterChips } from "@/components/cabled-filter"
 import { cableState } from "@/lib/cable-state"
 import type { KvRow } from "@/components/kv-card"
@@ -1554,14 +1558,18 @@ function DeviceInterfacesPane({
   const allIfaces = q.data?.results
   const cabledCounts = useMemo(() => {
     const c: Partial<Record<CableState, number>> = {}
-    for (const i of allIfaces ?? [])
-      c[cableState(i)] = (c[cableState(i)] ?? 0) + 1
+    for (const s of CABLE_STATES)
+      c[s] = (allIfaces ?? []).filter((i) =>
+        cableStateMatches(cableState(i), s)
+      ).length
     return c
   }, [allIfaces])
   const rows = useMemo(
     () =>
       nestInterfaces(
-        (allIfaces ?? []).filter((i) => !cabled || cableState(i) === cabled)
+        (allIfaces ?? []).filter(
+          (i) => !cabled || cableStateMatches(cableState(i), cabled)
+        )
       ),
     [allIfaces, cabled]
   )

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CabledFilterChips } from "@/components/cabled-filter"
-import { cableState, type CableState } from "@/lib/cable-state"
+import {
+  CABLE_STATES,
+  cableState,
+  cableStateMatches,
+  type CableState,
+} from "@/lib/cable-state"
 import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Pencil, Trash2, Waypoints } from "lucide-react"
@@ -320,13 +325,15 @@ export function DevicePortsPane({
   const [cabled, setCabled] = useState<CableState | null>(initialCabled ?? null)
   useEffect(() => setCabled(initialCabled ?? null), [initialCabled])
   const byState = <T extends Parameters<typeof cableState>[0]>(rows: T[]) =>
-    rows.filter((r) => !cabled || cableState(r) === cabled)
+    rows.filter((r) => !cabled || cableStateMatches(cableState(r), cabled))
   const allRear = rear.data?.results ?? []
   const allFront = front.data?.results ?? []
   const cabledCounts = useMemo(() => {
     const c: Partial<Record<CableState, number>> = {}
-    for (const r of [...allRear, ...allFront])
-      c[cableState(r)] = (c[cableState(r)] ?? 0) + 1
+    for (const s of CABLE_STATES)
+      c[s] = [...allRear, ...allFront].filter((r) =>
+        cableStateMatches(cableState(r), s)
+      ).length
     return c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rear.data, front.data])

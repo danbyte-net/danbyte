@@ -17,6 +17,16 @@ export const CABLE_STATE_LABEL: Record<CableState, string> = {
   free: "Free",
 }
 
+/** Does a port's state satisfy a filter/glow selection? "Connected" is a
+ * superset: it includes undocumented (marked) ports, matching the card's
+ * connected count; "Undocumented" selects just that subset. */
+export function cableStateMatches(
+  state: CableState,
+  filter: CableState
+): boolean {
+  return state === filter || (filter === "connected" && state === "marked")
+}
+
 /** free | connected | reserved | marked for any port-ish row that carries the
  * cable summary (+ optional mark_connected). Reserved = the cable's status is
  * the Planned catalog entry. */
