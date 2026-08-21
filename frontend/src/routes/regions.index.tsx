@@ -10,7 +10,8 @@ import { nestByParent } from "@/lib/nest"
 import { useMe } from "@/lib/use-me"
 import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { RegionDeleteDialog } from "@/components/region-delete-dialog"
@@ -21,8 +22,10 @@ function RegionsPage() {
   const { humanIds } = useMe()
   const { canDo } = useMe()
   const canAdd = canDo("region", "add")
+  const canEdit = canDo("region", "change")
   const [q, setQ] = useState("")
   const [deleting, setDeleting] = useState<Region | null>(null)
+  const [sel, setSel] = useState<Region[]>([])
 
   const query = useQuery({
     queryKey: ["regions"],
@@ -48,6 +51,7 @@ function RegionsPage() {
   const onDelete = useCallback((r: Region) => setDeleting(r), [])
   const columns = useMemo<ColumnDef<Region>[]>(
     () => [
+      ...(canEdit ? [selectionColumn<Region>()] : []),
       ...(humanIds ? [numidColumn<Region>({ get: (r) => r.numid })] : []),
       {
         id: "name",
@@ -124,7 +128,7 @@ function RegionsPage() {
         ),
       },
     ],
-    [onDelete, humanIds]
+    [onDelete, humanIds, canEdit]
   )
 
   return (
@@ -153,6 +157,23 @@ function RegionsPage() {
         columns={columns}
         flexColumn="description"
         tableId="regions"
+        onSelectedRowsChange={setSel}
+      />
+      <ComponentBulkBar
+        endpoint="/api/regions/"
+        kindLabel="region"
+        selected={sel}
+        onCleared={() => setSel([])}
+        invalidate={[["regions"]]}
+        canDelete={false}
+        fields={[
+          {
+            key: "parent_id",
+            label: "Parent region",
+            kind: "object",
+            object_model: "region",
+          },
+        ]}
       />
       <RegionDeleteDialog
         item={deleting}

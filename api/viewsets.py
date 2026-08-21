@@ -6352,6 +6352,41 @@ class RegionViewSet(TenantScopedViewSet):
     serializer_class = RegionSerializer
     pagination_class = StandardPagination
 
+    @action(detail=False, methods=["post"], url_path="bulk-update")
+    def bulk_update(self, request):
+        """Bulk parent assignment (issue: build the tree without opening N
+        edit forms). {ids: [...], fields: {parent_id: <id|null>}} - the one
+        field bulk makes sense for here. Cycle-guarded: the new parent may
+        not be one of the selected rows nor sit beneath any of them."""
+        ids = request.data.get("ids") or []
+        if not isinstance(ids, list) or not ids:
+            raise ValidationError({"ids": "Provide a non-empty list."})
+        fields = request.data.get("fields") or {}
+        unknown = set(fields) - {"parent_id"}
+        if unknown or "parent_id" not in fields:
+            raise ValidationError(
+                {"fields": "Only parent_id is bulk-editable here."}
+            )
+        rows = list(self.get_queryset().filter(id__in=ids))
+        parent = None
+        if fields["parent_id"] is not None:
+            parent = self.get_queryset().filter(pk=fields["parent_id"]).first()
+            if parent is None:
+                raise ValidationError({"parent_id": "Unknown region."})
+            selected = {str(r.id) for r in rows}
+            node = parent
+            while node is not None:
+                if str(node.id) in selected:
+                    raise ValidationError(
+                        {"parent_id": "That parent is (or sits beneath) one "
+                                      "of the selected regions."}
+                    )
+                node = node.parent
+        for r in rows:
+            r.parent = parent
+            r.save(update_fields=["parent"])
+        return Response({"updated": len(rows)})
+
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
                 self.request.query_params.get("picker") == "1":

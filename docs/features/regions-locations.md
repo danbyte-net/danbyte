@@ -24,7 +24,10 @@ To put a site in a region, open the site's form and pick the **region** there.
 
 The Regions list renders as a **tree**: sub-regions sit indented directly
 under their parent (any nesting depth), the same way locations and prefixes
-do - no reading the Parent column to reconstruct the hierarchy.
+do - no reading the Parent column to reconstruct the hierarchy. Rows are
+**bulk-editable**: select several regions and set (or clear) their parent in
+one action - cycle-guarded, so a selection can never become its own
+ancestor.
 
 Click a region's name to open its **detail page** - the pencil in the header
 edits it. It shows the parent region plus a **Sites** tab (the sites that sit
