@@ -263,8 +263,12 @@ function Cage({
             cabled
               ? { ...style, ...portTintStyle(portHex(tint)) }
               : capability
-                ? { ...style, borderColor: `${capability}73` }
-                : style
+                ? {
+                    ...style,
+                    borderColor: `${capability}73`,
+                    ["--port-color" as never]: capability,
+                  }
+                : { ...style, ["--port-color" as never]: "#a1a1aa" }
           }
           className={cn(
             "num relative flex items-center justify-center rounded-[3px] border text-[9px] leading-none font-medium transition-colors hover:border-primary hover:text-foreground",
@@ -1435,7 +1439,11 @@ export function ImagePortsFaceplate({
           const connectable = !fp.connected && !!termKind && canConnect
           const portStyle = fp.connected
             ? { ...style, ...portOverlayStyle(hex) }
-            : { ...style, borderColor: `${hex}59` }
+            : {
+                ...style,
+                borderColor: `${hex}59`,
+                ["--port-color" as never]: hex,
+              }
           const portClass = cn(
             "absolute rounded-[2px] border-2",
             fp.drift &&
@@ -1524,6 +1532,7 @@ export function ImagePortsFaceplate({
                         ...style,
                         borderColor: `${capability ?? "#a1a1aa"}59`, // ~35%
                         backgroundColor: "transparent",
+                        ["--port-color" as never]: capability ?? "#a1a1aa",
                       }
                 }
                 className={cn(

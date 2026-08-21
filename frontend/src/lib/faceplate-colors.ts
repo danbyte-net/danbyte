@@ -176,6 +176,9 @@ export function portTintStyle(hex: string): CSSProperties {
     borderColor: hex,
     backgroundColor: `${hex}26`, // 15%
     color: hex,
+    // The utilization-card glow rings a matching port in its OWN tier
+    // colour - published here so CSS can reach it.
+    ["--port-color" as never]: hex,
   }
 }
 
@@ -185,6 +188,7 @@ export function portOverlayStyle(hex: string): CSSProperties {
   return {
     borderColor: hex,
     backgroundColor: `${hex}59`, // 35%
+    ["--port-color" as never]: hex,
   }
 }
 

@@ -499,8 +499,12 @@
 .fp-glow[data-glow="reserved"] [data-cable-state="reserved"],
 .fp-glow[data-glow="marked"] [data-cable-state="marked"] {
   opacity: 1;
-  outline: 2px solid var(--primary);
+  /* The ring extends the port's OWN tier/capability colour (published as
+     --port-color by the tint styles) - a blue ring on a green 1G port read
+     as a third state. Primary only as the fallback. */
+  outline: 2px solid var(--port-color, var(--primary));
   outline-offset: 1px;
+  box-shadow: 0 0 6px 0 var(--port-color, var(--primary));
 }
 
 /* Cluster chip - N colliding markers collapsed into a count pill. The border
