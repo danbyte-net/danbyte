@@ -426,6 +426,10 @@ def sync_proxmox(source) -> dict:
         except VirtAPIError as exc:
             logger.warning("config fetch %s/%s failed: %s", node, vmid, exc)
             cfg = {}
+        # Readable platform from the config's ostype (issue #57) - QEMU's
+        # short enum via the fixed table, LXC's distro names title-cased.
+        # Rides the same match-existing-before-minting path as vCenter.
+        r["os_name"] = _proxmox_platform_name(cfg.get("ostype"))
         agent_ifaces = []
         if kind == "qemu" and r.get("status") == "running":
             try:
@@ -1086,6 +1090,37 @@ def _apply_placement(obj, place, changed: list) -> None:
 # characters is the cut-off that keeps RHEL and SLES while letting OTHER and
 # LINUX read normally.
 _OS_TRAILING_BITS = {"64": "(64-bit)", "32": "(32-bit)"}
+
+
+# Proxmox QEMU ostype enum → readable platform names. The value set is short
+# and stable (matching the Proxmox UI's own labels); "other" maps to nothing
+# rather than minting an "Other" platform row.
+_PROXMOX_OSTYPE = {
+    "l24": "Linux 2.4 Kernel",
+    "l26": "Linux 6.x/2.6 Kernel",
+    "wxp": "Windows XP",
+    "w2k": "Windows 2000",
+    "w2k3": "Windows Server 2003",
+    "w2k8": "Windows Server 2008",
+    "wvista": "Windows Vista",
+    "win7": "Windows 7",
+    "win8": "Windows 8/8.1",
+    "win10": "Windows 10/2016/2019",
+    "win11": "Windows 11/2022/2025",
+    "solaris": "Solaris/OpenSolaris",
+    "other": "",
+}
+
+
+def _proxmox_platform_name(ostype) -> str:
+    """Readable name for a Proxmox ostype - QEMU enum via the table, LXC
+    distro identifiers ("debian", "alpine", …) title-cased."""
+    value = str(ostype or "").strip().lower()
+    if not value:
+        return ""
+    if value in _PROXMOX_OSTYPE:
+        return _PROXMOX_OSTYPE[value]
+    return value.title()
 
 
 def _platform_name(guest_os: str, full_name: str = "") -> str:

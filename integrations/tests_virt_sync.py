@@ -40,6 +40,7 @@ RESOURCES = [
 ]
 
 QEMU_CONFIG = {
+    "ostype": "l26",
     "net0": "virtio=AA:BB:CC:00:11:22,bridge=vmbr0,tag=10",
     "scsi0": "local-lvm:vm-100-disk-0,size=32G,ssd=1",
     "scsi1": "ceph-vm:vm-100-disk-1,size=100G",
@@ -48,7 +49,10 @@ QEMU_CONFIG = {
     "tags": "prod;web",
     "description": "Frontend router",
 }
-LXC_CONFIG = {"net0": "name=eth0,bridge=vmbr0,hwaddr=AA:BB:CC:00:11:33,ip=dhcp"}
+LXC_CONFIG = {
+    "ostype": "debian",
+    "net0": "name=eth0,bridge=vmbr0,hwaddr=AA:BB:CC:00:11:33,ip=dhcp",
+}
 AGENT = {
     "result": [
         {"name": "lo", "hardware-address": "00:00:00:00:00:00",
@@ -2131,3 +2135,43 @@ class VmHostFilterTests(SwitchKindTests):
             [x["name"] for x in r.json()["results"]], ["web01"]
         )
         self.assertEqual(r.json()["count"], 1)
+
+
+class ProxmoxPlatformTests(TestCase):
+    """#57: Proxmox ostype de-enums into readable platforms - QEMU via the
+    fixed table, LXC distro identifiers title-cased."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", host="192.0.2.30",
+            credentials={"token_id": "a@pam!t", "secret": "s"},
+            sync_mode="auto", sync_platforms=True,
+        )
+
+    def sync(self):
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=fake_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def test_qemu_and_lxc_get_readable_platforms(self):
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual(vm.platform.name, "Linux 6.x/2.6 Kernel")
+        lxc = VirtualMachine.objects.get(name="lxc-dns")
+        self.assertEqual(lxc.platform.name, "Debian")
+
+    def test_mapping_table(self):
+        f = virt_sync._proxmox_platform_name
+        self.assertEqual(f("win11"), "Windows 11/2022/2025")
+        self.assertEqual(f("w2k22"), "W2K22")  # unknown enum falls through
+        self.assertEqual(f("other"), "")
+        self.assertEqual(f(""), "")
+        self.assertEqual(f("alpine"), "Alpine")
+
+    def test_toggle_off_sets_nothing(self):
+        self.source.sync_platforms = False
+        self.source.save(update_fields=["sync_platforms"])
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertIsNone(vm.platform_id)

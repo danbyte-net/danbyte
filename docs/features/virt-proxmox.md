@@ -33,6 +33,7 @@ sources**; see [External sync](external-sync.md) for the shared ground rules.
 | Bridge + VLAN tag (`vmbr0,tag=42`) | **VLAN** (in the source's VLAN group) + the interface's access VLAN - *opt-in* |
 | Bridge / OVS switch | **Virtual switch** - *opt-in* |
 | Guest-agent IP | **IP address** assigned to the interface |
+| `ostype` | **Platform** - *opt-in* (*Set platform from the guest OS*). QEMU's enum maps to readable names (`l26` → *Linux 6.x/2.6 Kernel*, `win11` → *Windows 11/2022/2025*); LXC distro identifiers are title-cased (`debian` → *Debian*). Matches an existing platform before minting one, and `other` sets nothing. |
 | Node | linked to the **Device** of the same name |
 
 Guest identity uses the Proxmox integer **VMID** as the stable id.
