@@ -37,8 +37,8 @@ export type StencilData = TopoNode["data"] & {
 }
 
 // Sizing - dagre reserves these; the DOM must match so handles land right.
-export const CENTER_W = 148
-export const CENTER_H = 36
+export const CENTER_W = 178
+export const CENTER_H = 46
 // The device name is the most important text on the map - the identity
 // centre widens to fit it (11px mono ≈ 6.6px/char + spine/padding), capped
 // so one hostname can't blow up a card.
@@ -48,16 +48,16 @@ function centerW(d: StencilData): number {
     Math.min(268, 34 + (d.name?.length ?? 0) * 6.6)
   )
 }
-const STRIP_H = 17 // top / bottom horizontal strip
-const COL_W = 54 // left / right vertical column MINIMUM
-const CHIP_W = 50 // one port in a horizontal strip MINIMUM
-const ROW_H = 13 // one port in a vertical column
+const STRIP_H = 20 // top / bottom horizontal strip
+const COL_W = 64 // left / right vertical column MINIMUM
+const CHIP_W = 58 // one port in a horizontal strip MINIMUM
+const ROW_H = 16 // one port in a vertical column
 export const STENCIL_FOOTER = 14
 
 // Port names render in full (no truncation) - cells size to their text.
-// 9px monospace ≈ 5.5px/char; padding = px-1.5 (12) + dot (4) + gap (4).
+// 9px monospace ≈ 5.5px/char; padding = px-1.5 (12) + slack.
 const CHAR_W = 5.5
-const CELL_PAD = 22
+const CELL_PAD = 16
 function chipW(name: string): number {
   return Math.max(CHIP_W, Math.ceil(name.length * CHAR_W) + CELL_PAD)
 }
@@ -65,15 +65,6 @@ function colWFor(ports: FlatPort[]): number {
   let w = COL_W
   for (const p of ports) w = Math.max(w, chipW(p.name))
   return w
-}
-
-const KIND_DOT: Record<TopoPortKind, string> = {
-  interface: "bg-zinc-400 dark:bg-zinc-500",
-  front: "bg-zinc-300 dark:bg-zinc-600",
-  rear: "bg-zinc-300 dark:bg-zinc-600",
-  console: "bg-amber-400",
-  power: "bg-red-400",
-  aux: "bg-violet-400",
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -202,12 +193,9 @@ function PortCell({
     >
       <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
       <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
-      {/* topo-port* classes are LOD hooks: far zoom hides the text/dot via
-          CSS (visibility) while the cell geometry - and the edge handles on
+      {/* topo-portname is a LOD hook: far zoom hides the text via CSS
+          (visibility) while the cell geometry - and the edge handles on
           it - stays exactly where it was. */}
-      <span
-        className={`topo-portdot h-1 w-1 shrink-0 rounded-full ${KIND_DOT[port.kind]}`}
-      />
       {/* Full port name - no truncation; cells are sized to fit it. */}
       <span className="topo-portname font-mono text-[9px] leading-none whitespace-nowrap">
         {port.name}

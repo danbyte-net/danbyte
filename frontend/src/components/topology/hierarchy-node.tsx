@@ -1,6 +1,5 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
-import type { TopoPortKind } from "@/lib/api"
 import { handleId, type StencilData } from "./stencil-node"
 import {
   HIER_HEADER,
@@ -20,15 +19,6 @@ export type HierData = StencilData & {
   portSpan?: number
 }
 
-const KIND_DOT: Record<TopoPortKind, string> = {
-  interface: "bg-zinc-400 dark:bg-zinc-500",
-  front: "bg-zinc-300 dark:bg-zinc-600",
-  rear: "bg-zinc-300 dark:bg-zinc-600",
-  console: "bg-amber-400",
-  power: "bg-red-400",
-  aux: "bg-violet-400",
-}
-
 const STATUS_DOT: Record<string, string> = {
   active: "bg-emerald-500",
   planned: "bg-amber-500",
@@ -44,11 +34,6 @@ export function HierarchyNode({ data, selected }: NodeProps) {
   const d = data as HierData
   const width = hierarchyWidth(d)
   const height = hierHeight(d.portSpan ?? 0)
-  const kindOf = new Map<string, TopoPortKind>()
-  for (const p of d.ports ?? []) {
-    kindOf.set(p.name, p.kind)
-    if (p.pair) kindOf.set(p.pair, p.kind)
-  }
   const ring = selected
     ? "border-primary ring-2 ring-primary/30"
     : d.panel
@@ -123,11 +108,6 @@ export function HierarchyNode({ data, selected }: NodeProps) {
               id={id}
               position={pos.side === "L" ? Position.Left : Position.Right}
               className={HANDLE}
-            />
-            <span
-              className={`h-1 w-1 shrink-0 rounded-full ${
-                KIND_DOT[kindOf.get(name) ?? "interface"]
-              }`}
             />
             <span className="topo-portname max-w-28 truncate font-mono text-[9px] leading-none">
               {name}

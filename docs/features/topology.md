@@ -94,9 +94,8 @@ cable draws it emphasized in the accent color while its panel is open.
 ## Reading the map
 
 - **Cards** - the colored spine is the device's role color; the dot before
-  the name is its status. Patch panels get a dashed border. Ports show a tiny
-  kind dot: amber = console, red = power, violet = aux, zinc = data/panel.
-  A cabled front port and its strand's rear port render as **one continuous
+  the name is its status. Patch panels get a dashed border. Port cells show
+  the full port name. A cabled front port and its strand's rear port render as **one continuous
   row** (`front1 ⇄ rear`) - the cable enters on the left and leaves on the
   right, the way the light actually travels through a fiber panel.
 - **Edges** - solid lines are cables; a **long-dashed** line is a collapsed

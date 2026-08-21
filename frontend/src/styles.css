@@ -666,8 +666,7 @@
 [data-lod="2"] .react-flow__edge:not(.topo-hot) .react-flow__edge-textwrapper {
   display: none;
 }
-[data-lod="2"] .topo-portname,
-[data-lod="2"] .topo-portdot {
+[data-lod="2"] .topo-portname {
   visibility: hidden;
 }
 
