@@ -929,7 +929,7 @@ function NavGroup({
         <button
           type="button"
           onClick={() => onOpenChange(!open)}
-          className="flex w-full items-center gap-2 hover:text-foreground"
+          className="flex w-full items-center gap-2 text-[13px] hover:text-foreground"
         >
           {Icon && <Icon className="size-4 shrink-0 opacity-60" />}
           <span>{label}</span>
@@ -1075,7 +1075,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       Object.fromEntries(labels.map((l) => [l, !anyOpen]))
                     )
                   }
-                  className="flex w-full items-center gap-2 hover:text-foreground"
+                  className="flex w-full items-center gap-2 text-[13px] hover:text-foreground"
                   title={anyOpen ? "Collapse all" : "Expand all"}
                 >
                   {anyOpen ? (
@@ -1099,7 +1099,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-6"
+                  className="h-7 text-[13px]"
                   tooltip="Dashboard"
                 >
                   <Link to="/" activeOptions={{ exact: true }}>
@@ -1127,7 +1127,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     there's no room for text) and omitted for unlabelled
                     clusters so short sections stay flat. */}
                 {cluster.label && (
-                  <div className="px-2 pt-1.5 pb-0 text-[10px] font-semibold tracking-[0.08em] text-primary uppercase group-data-[collapsible=icon]:hidden">
+                  <div className="px-2 pt-1.5 pb-0 text-[11px] font-semibold tracking-[0.08em] text-primary uppercase group-data-[collapsible=icon]:hidden">
                     {cluster.label}
                   </div>
                 )}
@@ -1137,7 +1137,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       <SidebarMenuButton
                         asChild
                         size="sm"
-                        className="h-6"
+                        className="h-7 text-[13px]"
                         tooltip={item.title}
                       >
                         <Link to={item.url}>
@@ -1171,7 +1171,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <SidebarMenuButton
                     asChild
                     size="sm"
-                    className="h-6"
+                    className="h-7 text-[13px]"
                     tooltip={item.title}
                   >
                     <Link to={item.url as never}>
@@ -1206,7 +1206,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-6"
+                  className="h-7 text-[13px]"
                   tooltip="Users"
                 >
                   <Link to="/users">
@@ -1219,7 +1219,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-6"
+                  className="h-7 text-[13px]"
                   tooltip="Groups"
                 >
                   <Link to="/groups">
@@ -1232,7 +1232,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-6"
+                  className="h-7 text-[13px]"
                   tooltip="Permissions"
                 >
                   <Link to="/permissions">
@@ -1531,7 +1531,7 @@ function FavoriteBookmark({ bookmark }: { bookmark: BookmarkRow }) {
       <SidebarMenuButton
         asChild
         size="sm"
-        className="h-6"
+        className="h-7 text-[13px]"
         tooltip={bookmark.label}
       >
         <FavoriteLink bookmark={bookmark} />
@@ -1572,7 +1572,7 @@ function FavoriteFolder({
       <SidebarMenuButton
         type="button"
         size="sm"
-        className="h-6"
+        className="h-7 text-[13px]"
         tooltip={folder.name}
         onClick={() => setOpen((v) => !v)}
       >
