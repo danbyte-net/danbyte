@@ -274,6 +274,7 @@ def _apply_profile_and_groups(provider, user, claims, subject="") -> None:
     wanted = {str(g).strip().lower() for g in raw if str(g).strip()}
     tenant = provider.tenant  # tenant-scoped provider guards mapped groups
     groups = []
+    grant_superuser = False
     for m in SsoGroupMapping.objects.filter(provider=provider).select_related("group"):
         if m.idp_group.strip().lower() not in wanted:
             continue
@@ -283,6 +284,17 @@ def _apply_profile_and_groups(provider, user, claims, subject="") -> None:
                 m.idp_group, provider.slug, m.group.name,
             )
             continue
+        if m.grants_superuser:
+            if tenant is None:
+                grant_superuser = True
+            else:
+                # Superuser is global; a tenant-scoped provider must not be
+                # able to mint one.
+                log.warning(
+                    "SSO: ignoring grants_superuser on mapping %r for "
+                    "tenant-scoped provider %s",
+                    m.idp_group, provider.slug,
+                )
         groups.append(m.group)
     # A baseline group (if configured) so a new SSO user always has some access,
     # not just whatever the mappings grant - but a tenant-scoped provider may not
@@ -297,6 +309,17 @@ def _apply_profile_and_groups(provider, user, claims, subject="") -> None:
                 dg.name, provider.slug,
             )
     user.groups.set(groups)
+
+    # Grant-only by design: an IdP momentarily omitting the groups claim must
+    # never silently de-admin the estate. Revocation stays a manual act on
+    # the user record.
+    if grant_superuser and not user.is_superuser:
+        user.is_superuser = True
+        user.save(update_fields=["is_superuser"])
+        log.info(
+            "SSO: %s granted superuser via mapped group (provider %s)",
+            user.get_username(), provider.slug,
+        )
 
     prov_tenant = provider.provisioning_tenant()
     if prov_tenant is not None:

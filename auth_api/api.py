@@ -48,7 +48,9 @@ class UserSerializer(serializers.ModelSerializer):
     )
     # profile-backed writeable fields
     set_auth_source = serializers.ChoiceField(
-        choices=["local", "ldap"], write_only=True, required=False
+        # All three model choices - the form round-trips an SSO user's value,
+        # so rejecting "sso" made every edit of an SSO account 400 (#69).
+        choices=["local", "ldap", "sso"], write_only=True, required=False
     )
     set_require_mfa = serializers.BooleanField(write_only=True, required=False)
     # One-click site scoping: {role: "editor"|"viewer", site_ids: [...],

@@ -49,7 +49,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
   const [isActive, setIsActive] = useState(user?.is_active ?? true)
   const [isSuperuser, setIsSuperuser] = useState(user?.is_superuser ?? false)
   const [requireMfa, setRequireMfa] = useState(user?.require_mfa ?? false)
-  const [authSource, setAuthSource] = useState<"local" | "ldap">(
+  const [authSource, setAuthSource] = useState<"local" | "ldap" | "sso">(
     user?.auth_source ?? "local"
   )
   const [groupIds, setGroupIds] = useState<number[]>(
@@ -210,15 +210,18 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
       <FormSelect
         label="Authentication"
         value={authSource}
-        onChange={(v) => setAuthSource(v as "local" | "ldap")}
+        onChange={(v) => setAuthSource(v as "local" | "ldap" | "sso")}
         options={[
           { value: "local", label: "Local password" },
           { value: "ldap", label: "LDAP / directory" },
+          { value: "sso", label: "SSO / SAML" },
         ]}
         hint={
           authSource === "ldap"
             ? "The directory holds the credential - no password is set here."
-            : undefined
+            : authSource === "sso"
+              ? "The identity provider holds the credential - the account binds on first SSO login."
+              : undefined
         }
         error={fieldErrors.set_auth_source}
       />

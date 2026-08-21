@@ -215,7 +215,9 @@ function buildColumns({
       accessorKey: "protocol",
       header: "Protocol",
       cell: ({ row }) => (
-        <Badge variant="secondary">{protocolLabel(row.original.protocol)}</Badge>
+        <Badge variant="secondary">
+          {protocolLabel(row.original.protocol)}
+        </Badge>
       ),
     },
     {
@@ -681,6 +683,7 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
   const qc = useQueryClient()
   const [idpGroup, setIdpGroup] = useState("")
   const [groupId, setGroupId] = useState<string | null>(null)
+  const [grantsSuperuser, setGrantsSuperuser] = useState(false)
 
   const mappingsKey = ["sso-group-mappings", provider.id]
   const mappings = useQuery({
@@ -704,12 +707,14 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
           provider: provider.id,
           idp_group: idpGroup.trim(),
           group: Number(groupId),
+          grants_superuser: grantsSuperuser,
         }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: mappingsKey })
       setIdpGroup("")
       setGroupId(null)
+      setGrantsSuperuser(false)
       toast.success("Mapping added")
     },
     onError: (err) => apiErrorToast(err),
@@ -756,7 +761,14 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
                 {m.idp_group}
               </span>
               <span className="text-muted-foreground">→</span>
-              <span className="min-w-0 flex-1 truncate">{m.group_name}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {m.group_name}
+                {m.grants_superuser && (
+                  <Badge variant="destructive" className="ml-2">
+                    superuser
+                  </Badge>
+                )}
+              </span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -775,10 +787,7 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
 
       <div className="grid gap-3 rounded-lg border border-border bg-card p-3">
         <span className="text-xs font-medium">Add a mapping</span>
-        <Field
-          label="IdP group"
-          hint="For Entra ID, the group's object ID"
-        >
+        <Field label="IdP group" hint="For Entra ID, the group's object ID">
           <Input
             placeholder="Network Admins"
             value={idpGroup}
@@ -793,6 +802,14 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
           options={groupOptions}
           placeholder="Pick a group"
         />
+        {!provider.tenant && (
+          <FormCheckbox
+            label="Grants superuser"
+            hint="grant-only: revoking is a manual act on the user"
+            checked={grantsSuperuser}
+            onChange={setGrantsSuperuser}
+          />
+        )}
         <div>
           <Button
             type="button"

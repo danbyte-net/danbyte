@@ -417,6 +417,13 @@ class SsoGroupMapping(TimestampedModel):
         "auth.Group", on_delete=models.CASCADE, related_name="sso_mappings",
         help_text="The Danbyte group whose permissions members receive.",
     )
+    grants_superuser = models.BooleanField(
+        default=False,
+        help_text="Members of this IdP group become Danbyte superusers on "
+                  "login. Grant-only: removal from the group never strips the "
+                  "flag - revoke manually on the user. Ignored (with a log "
+                  "warning) on tenant-scoped providers.",
+    )
 
     class Meta:
         ordering = ["idp_group"]

@@ -142,3 +142,80 @@ class SsoProvisioningTests(TestCase):
             email_verified=True, sub="s2",
         ))
         self.assertEqual(user.pk, existing.pk)
+
+
+class SsoSuperuserGrantTests(TestCase):
+    """grants_superuser on a mapping: grant-only superuser via the IdP."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="One", slug="one")
+        self.provider = IdentityProvider.objects.create(
+            name="Entra", slug="entra", protocol="oidc",
+            oidc_issuer="https://issuer.example", oidc_client_id="cid",
+            jit_provisioning=True, default_tenant=self.tenant,
+        )
+        self.admins = Group.objects.create(name="Danbyte Admins")
+        SsoGroupMapping.objects.create(
+            provider=self.provider, idp_group="DanbyteAdmins",
+            group=self.admins, grants_superuser=True,
+        )
+
+    def _claims(self, groups):
+        return {
+            "preferred_username": "root-ish",
+            "email": "root@example.com",
+            "groups": groups,
+        }
+
+    def test_mapped_group_grants_superuser(self):
+        user = resolve_user(self.provider, self._claims(["DanbyteAdmins"]))
+        self.assertTrue(user.is_superuser)
+
+    def test_grant_is_not_revoked_when_group_disappears(self):
+        resolve_user(self.provider, self._claims(["DanbyteAdmins"]))
+        user = resolve_user(self.provider, self._claims([]))
+        # Grant-only: an IdP omitting the claim must not de-admin anyone.
+        self.assertTrue(user.is_superuser)
+
+    def test_unmatched_group_grants_nothing(self):
+        user = resolve_user(self.provider, self._claims(["Others"]))
+        self.assertFalse(user.is_superuser)
+
+    def test_tenant_scoped_provider_cannot_mint_superuser(self):
+        self.provider.tenant = self.tenant
+        self.provider.save(update_fields=["tenant"])
+        user = resolve_user(self.provider, self._claims(["DanbyteAdmins"]))
+        self.assertFalse(user.is_superuser)
+
+
+class SsoUserEditTests(TestCase):
+    """#69: editing an SSO user through the users API must round-trip."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="One", slug="one")
+        self.admin = User.objects.create_superuser("admin", "a@x.com", "x")
+        self.client_api = APIClient()
+        self.client_api.force_login(self.admin)
+        s = self.client_api.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+        self.sso_user = User.objects.create_user("saml-user")
+        UserProfile.objects.create(user=self.sso_user, auth_source="sso")
+
+    def test_patch_sso_user_to_superuser_keeps_auth_source(self):
+        r = self.client_api.patch(
+            f"/api/users/{self.sso_user.id}/",
+            {"is_superuser": True, "set_auth_source": "sso"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.sso_user.refresh_from_db()
+        self.assertTrue(self.sso_user.is_superuser)
+        self.assertEqual(
+            UserProfile.objects.get(user=self.sso_user).auth_source, "sso"
+        )

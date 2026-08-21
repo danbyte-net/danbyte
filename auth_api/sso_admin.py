@@ -142,9 +142,26 @@ class SsoGroupMappingSerializer(serializers.ModelSerializer):
         model = SsoGroupMapping
         fields = [
             "id", "provider", "idp_group", "group", "group_name",
+            "grants_superuser",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "group_name", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        # Superuser is global - a tenant-scoped provider may not mint one.
+        provider = attrs.get(
+            "provider", getattr(self.instance, "provider", None)
+        )
+        grants = attrs.get(
+            "grants_superuser",
+            getattr(self.instance, "grants_superuser", False),
+        )
+        if grants and provider is not None and provider.tenant_id:
+            raise serializers.ValidationError(
+                {"grants_superuser":
+                 "Not available on a tenant-scoped provider."}
+            )
+        return attrs
 
 
 class SsoGroupMappingViewSet(viewsets.ModelViewSet):

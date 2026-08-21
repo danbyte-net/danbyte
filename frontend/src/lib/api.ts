@@ -388,7 +388,7 @@ export interface RBACUser {
   date_joined: string
   groups: { id: number; name: string }[]
   tenants: { id: string; name: string }[]
-  auth_source: "local" | "ldap"
+  auth_source: "local" | "ldap" | "sso"
   require_mfa: boolean
   mfa_active: boolean
 }
@@ -405,7 +405,7 @@ export interface RBACUserWritePayload {
   send_invite?: boolean
   group_ids?: number[]
   tenant_ids?: string[]
-  set_auth_source?: "local" | "ldap"
+  set_auth_source?: "local" | "ldap" | "sso"
   set_require_mfa?: boolean
   /** One-click site scoping - assembles the ObjectPermission combo server-side. */
   site_role?: SiteRolePayload
@@ -5225,6 +5225,8 @@ export interface SsoGroupMapping {
   idp_group: string
   group: number
   group_name: string
+  /** Members of the IdP group become superusers on login (grant-only). */
+  grants_superuser: boolean
 }
 
 export type ChannelKind =

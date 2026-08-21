@@ -76,6 +76,15 @@ On a saved provider, add mappings: the **group value the IdP asserts** → a
 Keycloak/Okta it's usually the group name. Members of a mapped group receive that
 Danbyte group's permissions on their next login.
 
+A mapping can also **grant superuser**: members of that IdP group become
+Danbyte superusers when they log in. This is deliberately **grant-only** - an
+IdP that momentarily omits the groups claim must never silently de-admin
+anyone, so leaving the IdP group does **not** strip the flag; revoke it
+manually on the user's edit page. The option is unavailable on tenant-scoped
+providers (superuser is global), and each grant is logged. Superuser can of
+course also be set directly on **Users → edit** - including for SSO and LDAP
+accounts.
+
 ## SAML 2.0
 
 SAML uses the same provider model, JIT provisioning, default group, and group
