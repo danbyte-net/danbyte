@@ -2,7 +2,14 @@ import { Handle, Position, type NodeProps } from "@xyflow/react"
 
 import type { TopoPortKind } from "@/lib/api"
 import { handleId, type StencilData } from "./stencil-node"
-import { HIER_HEADER, hierHeight, type HierPortPos } from "./layout"
+import {
+  HIER_HEADER,
+  hierHeight,
+  hierarchyWidth,
+  type HierPortPos,
+} from "./layout"
+
+export { hierarchyWidth } from "./layout"
 
 // The Hierarchy view's card: a tall rounded container with the device name
 // on a header row and port chips floating at the exact heights the layout
@@ -11,10 +18,6 @@ import { HIER_HEADER, hierHeight, type HierPortPos } from "./layout"
 export type HierData = StencilData & {
   portPos?: Record<string, HierPortPos>
   portSpan?: number
-}
-
-export function hierarchyWidth(d: { name?: string }): number {
-  return Math.max(190, Math.min(300, 70 + (d.name?.length ?? 0) * 6.6))
 }
 
 const KIND_DOT: Record<TopoPortKind, string> = {

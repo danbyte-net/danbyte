@@ -14,6 +14,26 @@ export function flatW(d: { name?: string }): number {
   return Math.max(FLAT_W, Math.min(250, 40 + (d.name?.length ?? 0) * 6.6))
 }
 
+/** A distributed connection point on the chip's edge - the card extends and
+ * spreads its links toward their neighbours instead of funnelling every
+ * cable into one spot. */
+export interface FlatAnchor {
+  id: string
+  side: "L" | "R" | "T" | "B"
+  frac: number
+}
+
+export type FlatData = {
+  name?: string
+  flatAnchors?: FlatAnchor[]
+  /** Busiest side's link count - the card grows to give them room. */
+  flatFan?: number
+}
+
+export function flatHeight(d: FlatData): number {
+  return FLAT_H + Math.max(0, (d.flatFan ?? 0) - 2) * 9
+}
+
 const STATUS_DOT: Record<string, string> = {
   active: "bg-emerald-500",
   planned: "bg-amber-500",
@@ -26,6 +46,13 @@ const STATUS_DOT: Record<string, string> = {
 // Four invisible handles named after the single pseudo-port "n" - the canvas
 // re-points each edge at the side facing its neighbour (same side machinery
 // the stencil ports use, collapsed to one port per card).
+const POS_OF = {
+  L: Position.Left,
+  R: Position.Right,
+  T: Position.Top,
+  B: Position.Bottom,
+} as const
+
 const SIDES = [
   { side: "L", pos: Position.Left },
   { side: "R", pos: Position.Right },
@@ -44,8 +71,36 @@ export function FlatNode({ data, selected }: NodeProps) {
             ? "border-dashed border-border"
             : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
-      style={{ width: flatW(d), height: FLAT_H }}
+      style={{ width: flatW(d), height: flatHeight(d as FlatData) }}
     >
+      {(d as unknown as FlatData).flatAnchors?.map((a) => (
+        <span
+          key={a.id}
+          className="absolute"
+          style={
+            a.side === "L"
+              ? { left: 0, top: `${a.frac * 100}%` }
+              : a.side === "R"
+                ? { right: 0, top: `${a.frac * 100}%` }
+                : a.side === "T"
+                  ? { top: 0, left: `${a.frac * 100}%` }
+                  : { bottom: 0, left: `${a.frac * 100}%` }
+          }
+        >
+          <Handle
+            type="target"
+            id={a.id}
+            position={POS_OF[a.side]}
+            className="!h-1.5 !w-1.5 !border-0 !bg-muted-foreground/50"
+          />
+          <Handle
+            type="source"
+            id={a.id}
+            position={POS_OF[a.side]}
+            className="!h-1.5 !w-1.5 !border-0 !bg-muted-foreground/50"
+          />
+        </span>
+      ))}
       {SIDES.map(({ side, pos }) => (
         <span key={side}>
           <Handle

@@ -26,15 +26,29 @@ import { toPng } from "html-to-image"
 
 import type { GhostEdgeData, TopoEdge, TopologyGraph } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
-import { PortNode, StencilNode, handleId, stencilSize } from "./stencil-node"
+import {
+  ABOVE,
+  BELOW,
+  PortNode,
+  RIGHT,
+  StencilNode,
+  handleId,
+  stencilSize,
+} from "./stencil-node"
 import type { StencilData } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
-import { FLAT_H, FlatNode, flatW } from "./flat-node"
+import { FLAT_H, FlatNode, flatHeight, flatW } from "./flat-node"
+import type { FlatAnchor, FlatData } from "./flat-node"
 import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
 import { HierarchyNode, hierarchyWidth } from "./hierarchy-node"
 import { PhotoNode, photoSize } from "./photo-node"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
-import { edgeWaypoints, layoutHierarchy, layoutNodes } from "./layout"
+import {
+  edgeWaypoints,
+  layoutHierarchy,
+  layoutNodes,
+  realignHierPorts,
+} from "./layout"
 import { resolveLevels } from "./level-organiser"
 import { RoutedEdge } from "./routed-edge"
 
@@ -501,7 +515,7 @@ function build(
         type: "smoothstep",
         pathOptions: { borderRadius: 10 },
         label: n > 1 ? `×${n}` : undefined,
-        data: { sem: "bundle", cables: b.cables, baseS: "n", baseT: "n" },
+        data: { sem: "bundle", cables: b.cables },
         style: {
           strokeWidth: n > 1 ? 1.75 : 1.25,
           ...(stroke ? { stroke } : {}),
@@ -568,7 +582,19 @@ function build(
         data: { ...e.data, baseS, baseT },
       }
     })
-    return { nodes: laid, edges: hedges }
+    // Obstacle avoidance only (no lanes - aligned chips already separate
+    // parallel runs): a cable must never draw through a card between its
+    // endpoints.
+    const hwp = edgeWaypoints(laid, hedges, "LR", false)
+    const hrouted = hedges.map((e) => {
+      const sem = (e.data as { sem?: string } | undefined)?.sem
+      if (sem !== "cable") return e
+      const pts = hwp.get(e.id)
+      return pts?.length
+        ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
+        : e
+    })
+    return { nodes: laid, edges: hrouted }
   }
 
   // Role tiers from the Level organiser, if any: node id → level index.
@@ -599,37 +625,124 @@ function build(
       mainOffsets[i] = mainOffsets[i - 1] + gapOf(groups[i]?.[0] ?? "")
   }
 
-  // Flat + grouped views: one compact dagre pass with fixed card sizes and
-  // no per-port side split. Edges snap to the card side facing their
-  // neighbour via the single "n" pseudo-port, and still route around (or
-  // detour past) cards in the way - a straight line hiding behind a card
-  // between its endpoints is exactly what these views must not do.
+  // Flat + grouped views: compact dagre passes with fixed card sizes and no
+  // per-port split. Flat chips EXTEND with their fan and spread distributed
+  // anchors along the side facing each neighbour (ordered so links don't
+  // cross); grouped cards keep single-point edges. Both still route around
+  // cards in the way.
   if (flat || grouped) {
-    const { nodes: laidFlat, waypoints: flatWp } = layoutNodes(
+    const dir = opts.direction ?? "LR"
+    const pre = layoutNodes(
       nodes,
       allEdges,
       opts.positions,
-      opts.direction,
+      dir,
       levels,
       mainOffsets,
       grouped ? groupSize : flatSize
     )
-    const posFlat = new Map(laidFlat.map((n) => [n.id, n.position]))
-    const { edges: flatEdges } = assignSides(
+    const posPre = new Map(pre.nodes.map((n) => [n.id, n.position]))
+    const { edges: sided } = assignSides(
       allEdges,
-      (id) => posFlat.get(id),
-      opts.direction ?? "LR"
+      (id) => posPre.get(id),
+      dir
     )
+    let outNodes = pre.nodes
+    let outEdges = sided
+    let wpMap = pre.waypoints
+    if (flat) {
+      const sideOf = (h?: string | null): PortSide =>
+        h?.endsWith(RIGHT)
+          ? "R"
+          : h?.endsWith(ABOVE)
+            ? "T"
+            : h?.endsWith(BELOW)
+              ? "B"
+              : "L"
+      type Slot = { e: Edge; end: "s" | "t"; side: PortSide; order: number }
+      const perNode = new Map<string, Slot[]>()
+      const crossOf = (id: string, side: PortSide) => {
+        const p = posPre.get(id)
+        if (!p) return 0
+        return side === "L" || side === "R" ? p.y : p.x
+      }
+      for (const e of sided) {
+        const sem = (e.data as { sem?: string } | undefined)?.sem
+        if (!sem || !ROUTABLE.has(sem)) continue
+        const sS = sideOf(e.sourceHandle as string | undefined)
+        const tS = sideOf(e.targetHandle as string | undefined)
+        ;(perNode.get(e.source) ?? perNode.set(e.source, []).get(e.source)!).push(
+          { e, end: "s", side: sS, order: crossOf(e.target, sS) }
+        )
+        ;(perNode.get(e.target) ?? perNode.set(e.target, []).get(e.target)!).push(
+          { e, end: "t", side: tS, order: crossOf(e.source, tS) }
+        )
+      }
+      const anchorsOf = new Map<string, FlatAnchor[]>()
+      const fanOf = new Map<string, number>()
+      const patched = new Map<Edge, { s?: string; t?: string }>()
+      for (const [nid, slots] of perNode) {
+        const bySide = new Map<PortSide, Slot[]>()
+        for (const s of slots)
+          (bySide.get(s.side) ?? bySide.set(s.side, []).get(s.side)!).push(s)
+        const anchors: FlatAnchor[] = []
+        let fan = 0
+        for (const [side, list] of bySide) {
+          list.sort((a, b) => a.order - b.order)
+          fan = Math.max(fan, list.length)
+          list.forEach((s, i) => {
+            const id = `a${side}${i}`
+            anchors.push({ id, side, frac: (i + 1) / (list.length + 1) })
+            const rec = patched.get(s.e) ?? patched.set(s.e, {}).get(s.e)!
+            if (s.end === "s") rec.s = id
+            else rec.t = id
+          })
+        }
+        anchorsOf.set(nid, anchors)
+        fanOf.set(nid, fan)
+      }
+      outEdges = sided.map((e) => {
+        const rec = patched.get(e)
+        if (!rec) return e
+        return {
+          ...e,
+          sourceHandle: rec.s ?? e.sourceHandle,
+          targetHandle: rec.t ?? e.targetHandle,
+        }
+      })
+      const nodes2 = pre.nodes.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          flatAnchors: anchorsOf.get(n.id) ?? [],
+          flatFan: fanOf.get(n.id) ?? 0,
+        },
+      }))
+      const grown = layoutNodes(
+        nodes2,
+        outEdges,
+        opts.positions,
+        dir,
+        levels,
+        mainOffsets,
+        (n) => ({
+          width: flatW(n.data as { name?: string }),
+          height: flatHeight(n.data as FlatData),
+        })
+      )
+      outNodes = grown.nodes
+      wpMap = grown.waypoints
+    }
     const routeThem = opts.edgeRouting !== "straight"
-    const routedFlat = flatEdges.map((e) => {
+    const routedOut = outEdges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
       if (!routeThem || !sem || !ROUTABLE.has(sem)) return e
-      const wp = flatWp.get(e.id)
+      const wp = wpMap.get(e.id)
       return wp?.length
         ? { ...e, type: "routed", data: { ...e.data, waypoints: wp } }
         : e
     })
-    return { nodes: laidFlat, edges: routedFlat }
+    return { nodes: outNodes, edges: routedOut }
   }
 
   // Photo mode: photo nodes keep bare marker handles + their fixed sizes.
@@ -1050,7 +1163,50 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // node re-bends its cables around cards instead of leaving them straight).
   const onNodeDragStop = useCallback(() => {
     if (nodeStyle === "hierarchy") {
-      // Ports keep their aligned offsets; handles move with the card.
+      // Both ends of every moved cable re-align: chips re-stack toward
+      // their peers' current positions, handles follow, blocked cables
+      // re-route around cards.
+      const liveNodes = flow.getNodes()
+      setEdges((cur) => {
+        const res = realignHierPorts(liveNodes, cur)
+        const nextNodes = liveNodes.map((n) =>
+          res.portPos.has(n.id)
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  portPos: res.portPos.get(n.id),
+                  portSpan: res.span.get(n.id) ?? 0,
+                },
+              }
+            : n
+        )
+        setNodes(nextNodes)
+        const next = cur.map((e) => {
+          const d = e.data as { sem?: string; baseS?: string; baseT?: string }
+          if (d?.sem !== "cable" || !d.baseS || !d.baseT) return e
+          const sS = res.sides.get(e.source)?.[d.baseS] ?? "R"
+          const tS = res.sides.get(e.target)?.[d.baseT] ?? "L"
+          return {
+            ...e,
+            sourceHandle: handleId(d.baseS, sS),
+            targetHandle: handleId(d.baseT, tS),
+          }
+        })
+        const wp = edgeWaypoints(nextNodes, next, "LR", false)
+        return next.map((e) => {
+          const sem = (e.data as { sem?: string } | undefined)?.sem
+          if (sem !== "cable") return e
+          const pts = wp.get(e.id)
+          return pts?.length
+            ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
+            : {
+                ...e,
+                type: "smoothstep",
+                data: { ...e.data, waypoints: undefined },
+              }
+        })
+      })
       onDragEnd?.()
       return
     }

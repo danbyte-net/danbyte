@@ -3,7 +3,7 @@ import type { Edge, Node } from "@xyflow/react"
 
 import { stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
-import { FLAT_H, flatW } from "./flat-node"
+import { flatHeight, flatW } from "./flat-node"
 import { GROUP_H, GROUP_W } from "./group-node"
 import { photoSize } from "./photo-node"
 
@@ -226,7 +226,8 @@ function computeWaypoints(
   laid: Node[],
   edges: Edge[],
   sizeOf: (id: string) => { width: number; height: number },
-  tb: boolean
+  tb: boolean,
+  lanes = true
 ): Map<string, [number, number][]> {
   const rect = new Map<string, Rect>()
   for (const n of laid) {
@@ -303,7 +304,24 @@ function computeWaypoints(
     for (const it of bucket) {
       ;(byPair.get(it.pair) ?? byPair.set(it.pair, []).get(it.pair)!).push(it)
     }
-    const parallel = [...byPair.values()].filter((g2) => g2.length > 1)
+    // A plain single cable still may not draw THROUGH a card sitting in its
+    // corridor - hand those to the scanned router.
+    for (const group of byPair.values()) {
+      if (lanes && group.length > 1) continue
+      for (const it of group) {
+        const obstacles = all
+          .filter(([id2]) => {
+            const r = rect.get(id2)!
+            return r !== it.a && r !== it.b
+          })
+          .map(([, r]) => r)
+        if (corridorBlocked(it.a, it.b, obstacles, tb))
+          scanned.push(edges.find((e) => e.id === it.key)!)
+      }
+    }
+    const parallel = lanes
+      ? [...byPair.values()].filter((g2) => g2.length > 1)
+      : []
     const total = parallel.reduce((s, g2) => s + g2.length, 0)
     if (!total) continue
     parallel.sort(
@@ -397,6 +415,31 @@ function computeWaypoints(
  * just past the blocking cards, which RoutedEdge renders as source → out to
  * the side → along → back into the target.
  */
+/** Any card sitting in the straight corridor between a and b? */
+function corridorBlocked(
+  a: Rect,
+  b: Rect,
+  obstacles: Rect[],
+  tb: boolean
+): boolean {
+  const mainLo = tb
+    ? Math.min(a.y + a.h, b.y + b.h)
+    : Math.min(a.x + a.w, b.x + b.w)
+  const mainHi = tb ? Math.max(a.y, b.y) : Math.max(a.x, b.x)
+  if (mainHi - mainLo < 8) return false
+  const aCross = tb ? a.x + a.w / 2 : a.y + a.h / 2
+  const bCross = tb ? b.x + b.w / 2 : b.y + b.h / 2
+  const laneLo = Math.min(aCross, bCross) - 12
+  const laneHi = Math.max(aCross, bCross) + 12
+  return obstacles.some((o) => {
+    const m1 = tb ? o.y : o.x
+    const m2 = tb ? o.y + o.h : o.x + o.w
+    const c1 = tb ? o.x : o.y
+    const c2 = tb ? o.x + o.w : o.y + o.h
+    return m2 > mainLo && m1 < mainHi && c2 > laneLo && c1 < laneHi
+  })
+}
+
 function sideDetour(
   a: Rect,
   b: Rect,
@@ -445,7 +488,10 @@ function sideDetour(
 export function edgeWaypoints(
   nodes: Node[],
   edges: Edge[],
-  direction: "LR" | "TB"
+  direction: "LR" | "TB",
+  /** false = obstacle avoidance only, no parallel-run lanes (hierarchy:
+   * aligned parallel cables are already separated by their chips). */
+  lanes = true
 ): Map<string, [number, number][]> {
   return computeWaypoints(
     nodes,
@@ -454,14 +500,21 @@ export function edgeWaypoints(
       const n = nodes.find((x) => x.id === id)
       if (!n) return { width: 0, height: 0 }
       // Fixed-size card types size themselves; stencil cards by their ports.
-      if (n.type === "flat")
-        return { width: flatW(n.data as { name?: string }), height: FLAT_H }
+      if (n.type === "flat") {
+        const d = n.data as Parameters<typeof flatHeight>[0] & { name?: string }
+        return { width: flatW(d), height: flatHeight(d) }
+      }
       if (n.type === "sitegroup") return { width: GROUP_W, height: GROUP_H }
       if (n.type === "photo")
         return photoSize(n.data as Parameters<typeof photoSize>[0])
+      if (n.type === "hier") {
+        const d = n.data as { name?: string; portSpan?: number }
+        return { width: hierarchyWidth(d), height: hierHeight(d.portSpan ?? 0) }
+      }
       return stencilSize(n.data as StencilData)
     },
-    direction === "TB"
+    direction === "TB",
+    lanes
   )
 }
 
@@ -482,6 +535,10 @@ export interface HierPortPos {
 
 export function hierHeight(span: number): number {
   return HIER_HEADER + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
+}
+
+export function hierarchyWidth(d: { name?: string }): number {
+  return Math.max(190, Math.min(300, 70 + (d.name?.length ?? 0) * 6.6))
 }
 
 export interface HierResult {
@@ -648,6 +705,78 @@ export function layoutHierarchy(
     pinned
   )
   return { nodes: laid, portPos, span, sides }
+}
+
+/** Re-align hierarchy port chips to the CURRENT card positions after a
+ * drag - every card stays where the user put it; only the chips re-stack
+ * toward their peers (both sides of every moved cable). */
+export function realignHierPorts(
+  nodes: Node[],
+  edges: Edge[]
+): {
+  portPos: Map<string, Record<string, HierPortPos>>
+  span: Map<string, number>
+  sides: Map<string, Record<string, "L" | "R">>
+} {
+  type P = { name: string; peer: string; peerPort: string }
+  const ports = new Map<string, P[]>()
+  const add = (id: string, name: string, peer: string, peerPort: string) => {
+    const list = ports.get(id) ?? ports.set(id, []).get(id)!
+    if (!list.some((x) => x.name === name)) list.push({ name, peer, peerPort })
+  }
+  for (const e of edges) {
+    const d = e.data as { baseS?: string; baseT?: string } | undefined
+    if (!d?.baseS || !d?.baseT) continue
+    add(e.source, d.baseS, e.target, d.baseT)
+    add(e.target, d.baseT, e.source, d.baseS)
+  }
+  const pos = new Map(nodes.map((n) => [n.id, n.position]))
+  const sides = new Map<string, Record<string, "L" | "R">>()
+  const portY = new Map<string, number>()
+  for (const [id, list] of ports) {
+    const sd: Record<string, "L" | "R"> = {}
+    for (const pt of list)
+      sd[pt.name] =
+        (pos.get(pt.peer)?.x ?? 0) >= (pos.get(id)?.x ?? 0) ? "R" : "L"
+    sides.set(id, sd)
+    list.forEach((pt, i) =>
+      portY.set(
+        `${id}:${pt.name}`,
+        (pos.get(id)?.y ?? 0) + HIER_HEADER + HIER_PAD + i * HIER_PORT_PITCH
+      )
+    )
+  }
+  const span = new Map<string, number>()
+  for (let sweep = 0; sweep < 2; sweep++) {
+    for (const [id, list] of ports) {
+      const base = (pos.get(id)?.y ?? 0) + HIER_HEADER + HIER_PAD
+      const targets = list
+        .map((pt) => ({
+          pt,
+          t: portY.get(`${pt.peer}:${pt.peerPort}`) ?? pos.get(pt.peer)?.y ?? 0,
+        }))
+        .sort((a2, b2) => a2.t - b2.t)
+      let prev = base - HIER_PORT_PITCH
+      for (const { pt, t } of targets) {
+        const y = Math.max(base, t, prev + HIER_PORT_PITCH)
+        portY.set(`${id}:${pt.name}`, y)
+        prev = y
+      }
+      span.set(id, prev - base)
+    }
+  }
+  const portPos = new Map<string, Record<string, HierPortPos>>()
+  for (const [id, list] of ports) {
+    const base = pos.get(id)?.y ?? 0
+    const rec: Record<string, HierPortPos> = {}
+    for (const pt of list)
+      rec[pt.name] = {
+        side: sides.get(id)![pt.name],
+        off: (portY.get(`${id}:${pt.name}`) ?? base) - base,
+      }
+    portPos.set(id, rec)
+  }
+  return { portPos, span, sides }
 }
 
 // ── Component packing ───────────────────────────────────────────────────────
