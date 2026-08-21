@@ -128,9 +128,12 @@ Sites get coordinates two ways:
 - **In the form** - Site and Device forms both accept decimal-degree
   *Latitude* / *Longitude*, for pasting coordinates from elsewhere.
 
-Devices appear on the map through their coordinates (set them on the device
-form, or stamp a role marker and link the device from the placement dialog);
-dragging a placed device or removing it from the map needs `device.change`.
+Devices appear on the map through their coordinates - set them on the device
+form, stamp a role marker and link the device from the placement dialog, or
+use the palette's **Devices** tab: search for any device (the sliders open
+the advanced filter), then click its spot. Picking an already-placed device
+moves it. Dragging a placed device or removing it from the map needs
+`device.change`.
 
 Danbyte never geocodes addresses - there's no lookup of your street addresses
 against an external service. You place things yourself.

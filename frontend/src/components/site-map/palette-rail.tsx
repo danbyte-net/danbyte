@@ -1,11 +1,13 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
 import { Building2, Plus } from "lucide-react"
 
-import type { SiteMapSite } from "@/lib/api"
+import { api, type Device, type SiteMapSite } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
+import { DevicePicker } from "@/components/device-picker"
 import type { MarkerTypeOption } from "@/components/site-map/map-sidebar"
 import { cn } from "@/lib/utils"
 
@@ -19,15 +21,39 @@ export function MapPaletteRail({
   onPlaceSite,
   markerTypes,
   onArmMarkerType,
+  onArmDevice,
 }: {
   sites: SiteMapSite[]
   placing: { kind: string; id: string; name: string } | null
   onPlaceSite: (s: SiteMapSite) => void
   markerTypes: MarkerTypeOption[]
   onArmMarkerType: (t: MarkerTypeOption) => void
+  /** Arm a picked device for click-to-place. */
+  onArmDevice: (id: string, name: string) => void
 }) {
-  const [tab, setTab] = useState<"sites" | "markers">("sites")
+  const [tab, setTab] = useState<"sites" | "devices" | "markers">("sites")
   const unplaced = sites.filter((s) => s.latitude === null)
+
+  // Quick-add a device: search (or use the picker's advanced filter dialog),
+  // then click the map. The device's coordinates are simply set - picking an
+  // already-placed device moves it.
+  const [deviceId, setDeviceId] = useState<string | null>(null)
+  const dev = useQuery({
+    queryKey: ["device", deviceId],
+    queryFn: () => api<Device>(`/api/devices/${deviceId}/`),
+    enabled: !!deviceId,
+    staleTime: 60_000,
+  })
+  useEffect(() => {
+    if (deviceId && dev.data && dev.data.id === deviceId)
+      onArmDevice(deviceId, dev.data.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, dev.data])
+  useEffect(() => {
+    // Placement done or cancelled (Esc) - clear the picker for the next one.
+    if (!placing && deviceId) setDeviceId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placing])
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-border">
@@ -42,7 +68,7 @@ export function MapPaletteRail({
         </Button>
       </div>
       <div className="px-2 pb-1">
-        <SegmentedTabs<"sites" | "markers">
+        <SegmentedTabs<"sites" | "devices" | "markers">
           value={tab}
           onValueChange={setTab}
           items={[
@@ -51,6 +77,7 @@ export function MapPaletteRail({
               label: "Sites",
               count: unplaced.length || null,
             },
+            { value: "devices", label: "Devices" },
             { value: "markers", label: "Markers" },
           ]}
         />
@@ -84,6 +111,16 @@ export function MapPaletteRail({
               </button>
             ))
           ))}
+
+        {tab === "devices" && (
+          <div className="px-1 py-1">
+            <DevicePicker
+              value={deviceId}
+              onChange={setDeviceId}
+              info="Pick a device (the sliders open the advanced filter), then click its spot on the map. Picking a placed device moves it."
+            />
+          </div>
+        )}
 
         {tab === "markers" && (
           <>

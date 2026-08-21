@@ -85,6 +85,8 @@ export interface ObjectPickerProps {
   onChange: (v: string | null) => void
   label: string
   hint?: string
+  /** Explanation via the (i) info-icon popover beside the label. */
+  info?: React.ReactNode
   error?: string
   disabled?: boolean
   /** Clear-to-null row label in the combobox (e.g. "No device"). */
@@ -123,6 +125,7 @@ export function ObjectPicker<
   onChange,
   label,
   hint,
+  info,
   error,
   disabled,
   noneLabel,
@@ -199,7 +202,7 @@ export function ObjectPicker<
   }, [options, missingSelected, selected.data, spec])
 
   return (
-    <Field label={label} hint={hint} error={error}>
+    <Field label={label} hint={hint} info={info} error={error}>
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <Combobox

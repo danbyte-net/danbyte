@@ -165,6 +165,7 @@ function SiteMapPage() {
 
 type Placing =
   | { kind: "site"; id: string; name: string }
+  | { kind: "device"; id: string; name: string }
   | { kind: "marker"; id: string; name: string; type: MarkerTypeOption }
 
 function MapBody({ data }: { data: SiteMapPayload }) {
@@ -682,6 +683,12 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       if (editingRef.current && target) {
         if (target.kind === "site") {
           moveSiteRef.current.mutate({
+            id: target.id,
+            lat: e.latlng.lat,
+            lng: e.latlng.lng,
+          })
+        } else if (target.kind === "device") {
+          moveDeviceRef.current.mutate({
             id: target.id,
             lat: e.latlng.lat,
             lng: e.latlng.lng,
@@ -1421,6 +1428,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             onArmMarkerType={(t) =>
               setPlacing({ kind: "marker", id: t.id, name: t.name, type: t })
             }
+            onArmDevice={(id, name) => setPlacing({ kind: "device", id, name })}
           />
         )}
 
