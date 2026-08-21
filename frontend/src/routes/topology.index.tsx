@@ -1,10 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Camera,
   Crosshair,
   Filter,
   LayoutGrid,
+  Plus,
   Save,
   SlidersHorizontal,
   Trash2,
@@ -207,6 +208,7 @@ function writeStoredDisplay(d: StoredDisplay) {
 
 function TopologyPage() {
   const { device: deepLinkDevice } = Route.useSearch()
+  const nav = useNavigate()
   const { canDo } = useMe()
   const qc = useQueryClient()
   const canvas = useRef<CanvasHandle>(null)
@@ -248,6 +250,17 @@ function TopologyPage() {
     name: string
   } | null>(null)
   const grouped = groupBy !== "none" && !drill
+  // Custom-map builder: a hand-picked device set (right-click to grow it,
+  // the + button to seed it). null = normal mode.
+  const [custom, setCustom] = useState<string[] | null>(null)
+  const builder = custom !== null
+  const [menu, setMenu] = useState<{
+    x: number
+    y: number
+    node?: TopoNode["data"]
+    group?: TopoGroupData
+  } | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [focus, setFocus] = useState<{ id: string; depth: number } | null>(
     deepLinkDevice ? { id: deepLinkDevice, depth: 1 } : null
@@ -284,11 +297,32 @@ function TopologyPage() {
     setLayoutTick((t) => t + 1)
   }
 
+  /** Builder: merge ids into the custom set (starting it if needed). */
+  const addToCustom = (ids: string[]) =>
+    setCustom((prev) => [...new Set([...(prev ?? []), ...ids])])
+
+  /** Builder: pull one device's 1-hop neighbourhood into the set. */
+  const addNeighbors = async (deviceId: string) => {
+    try {
+      const g = await api<TopologyGraph>(
+        `/api/topology/?device=${deviceId}&depth=1`
+      )
+      addToCustom(
+        g.nodes
+          .map((n) => n.data.device_id)
+          .filter((x): x is string => !!x)
+      )
+    } catch (err) {
+      apiErrorToast(err)
+    }
+  }
+
   const set = (patch: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...patch }))
     setViewId("none")
     setPositions(undefined)
     setDrill(null)
+    setCustom(null)
   }
 
   // Persist the DEFAULT view's display settings across reloads. Only while no
@@ -351,6 +385,12 @@ function TopologyPage() {
   // ── Graph ──
   const graphQs = useMemo(() => {
     const p = new URLSearchParams()
+    if (custom !== null) {
+      // Builder mode: exactly this set, nothing else.
+      p.set("devices", custom.join(","))
+      p.set("collapse_panels", filters.collapse ? "1" : "0")
+      return p.toString()
+    }
     if (focus && !grouped) {
       p.set("device", focus.id)
       p.set("depth", String(focus.depth))
@@ -365,7 +405,7 @@ function TopologyPage() {
     }
     p.set("collapse_panels", filters.collapse ? "1" : "0")
     return p.toString()
-  }, [filters, focus, grouped, groupBy, drill])
+  }, [filters, focus, grouped, groupBy, drill, custom])
 
   const q = useQuery({
     queryKey: ["topology", graphQs],
@@ -423,6 +463,7 @@ function TopologyPage() {
         edgeRouting: "routed" | "straight"
         viewStyle: ViewStyle
         groupBy: GroupBy
+        devices: string[]
       }
     >
     setFilters({
@@ -438,6 +479,7 @@ function TopologyPage() {
     setViewStyle(f.viewStyle ?? "stencil")
     setGroupBy(f.groupBy ?? "none")
     setDrill(null)
+    setCustom(f.devices ?? null)
     setRoleOrder(f.roleOrder ?? [])
     setRoleBonds(f.roleBonds ?? [])
     setRoleDistance(f.roleDistance ?? {})
@@ -467,6 +509,7 @@ function TopologyPage() {
       edgeRouting,
       viewStyle,
       groupBy,
+      ...(custom !== null ? { devices: custom } : {}),
     },
     positions: canvas.current?.positions() ?? {},
   })
@@ -571,6 +614,23 @@ function TopologyPage() {
             </button>
           </Badge>
         )}
+        {builder && (
+          <Badge variant="default" className="shrink-0 gap-1">
+            Custom map · <span className="num">{custom?.length ?? 0}</span>
+            <button
+              className="ml-0.5 opacity-80 hover:opacity-100"
+              onClick={() => {
+                setCustom(null)
+                clearSel()
+                setPositions(undefined)
+                setLayoutTick((t) => t + 1)
+              }}
+              aria-label="Exit custom map"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        )}
         <SegmentedTabs<ViewStyle>
           value={viewStyle}
           onValueChange={(v) => {
@@ -613,7 +673,7 @@ function TopologyPage() {
             }}
             className="h-8 w-40 text-xs"
           />
-          {focus ? (
+          {builder ? null : focus ? (
             <Select
               value={String(focus.depth)}
               onValueChange={(v) =>
@@ -797,6 +857,7 @@ function TopologyPage() {
                     <SelectItem value="cable">Cable color</SelectItem>
                     <SelectItem value="type">By type</SelectItem>
                     <SelectItem value="status">By status</SelectItem>
+                    <SelectItem value="speed">By speed</SelectItem>
                     <SelectItem value="none">No color</SelectItem>
                   </SelectContent>
                 </Select>
@@ -836,6 +897,7 @@ function TopologyPage() {
               setViewStyle(d.viewStyle ?? "stencil")
               setGroupBy(d.groupBy ?? "none")
               setDrill(null)
+              setCustom(null)
               setViewId("none")
               setPositions(readStoredPositions())
               if (d.roleOrder?.length) setLayoutTick((t) => t + 1)
@@ -891,6 +953,15 @@ function TopologyPage() {
           </>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setAddOpen(true)}
+            title="Add a device to the map - starts a custom map you grow by right-clicking nodes"
+          >
+            <Plus className="h-3 w-3" /> Add device
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -965,6 +1036,13 @@ function TopologyPage() {
                 setSelGroupEdge(d)
               }}
               onDrillGroup={drillInto}
+              onNodeContext={(node, x, y) => {
+                if (node.type === "sitegroup")
+                  setMenu({ x, y, group: node.data as unknown as TopoGroupData })
+                else if (node.type === "device" || node.type === "flat")
+                  setMenu({ x, y, node: node.data as TopoNode["data"] })
+              }}
+              onPaneContext={(x, y) => setMenu({ x, y })}
               onCanvasClick={clearSel}
               onDragEnd={() => {
                 const p = canvas.current?.positions()
@@ -1046,6 +1124,127 @@ function TopologyPage() {
         )}
       </div>
 
+      {menu && (
+        <>
+          <div
+            className="fixed inset-0 z-[999]"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenu(null)
+            }}
+          />
+          <div
+            className="fixed z-[1000] w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+            style={{
+              left: Math.min(menu.x, window.innerWidth - 240),
+              top: Math.min(menu.y, window.innerHeight - 220),
+            }}
+          >
+            {menu.node && (
+              <>
+                {menu.node.device_id && (
+                  <MenuItem
+                    onClick={() => {
+                      setMenu(null)
+                      nav({
+                        to: "/devices/$id",
+                        params: { id: menu.node!.device_id! },
+                      })
+                    }}
+                  >
+                    Open device
+                  </MenuItem>
+                )}
+                {menu.node.device_id && (
+                  <MenuItem
+                    onClick={() => {
+                      setMenu(null)
+                      setCustom(null)
+                      setFocus({ id: menu.node!.device_id!, depth: 1 })
+                    }}
+                  >
+                    Focus here (1 hop)
+                  </MenuItem>
+                )}
+                {builder && menu.node.device_id && (
+                  <MenuItem
+                    onClick={() => {
+                      setMenu(null)
+                      void addNeighbors(menu.node!.device_id!)
+                    }}
+                  >
+                    Add connected devices
+                  </MenuItem>
+                )}
+                {builder && menu.node.device_id && (
+                  <MenuItem
+                    onClick={() => {
+                      setMenu(null)
+                      setCustom(
+                        (prev) =>
+                          prev?.filter((x) => x !== menu.node!.device_id) ??
+                          prev
+                      )
+                    }}
+                  >
+                    Remove from map
+                  </MenuItem>
+                )}
+                {!builder && menu.node.device_id && (
+                  <MenuItem
+                    onClick={() => {
+                      setMenu(null)
+                      setFocus(null)
+                      setCustom([menu.node!.device_id!])
+                    }}
+                  >
+                    Start custom map here
+                  </MenuItem>
+                )}
+              </>
+            )}
+            {menu.group && (
+              <MenuItem
+                onClick={() => {
+                  setMenu(null)
+                  drillInto(menu.group!)
+                }}
+              >
+                Open group
+              </MenuItem>
+            )}
+            {!menu.node && !menu.group && (
+              <>
+                <MenuItem
+                  onClick={() => {
+                    setMenu(null)
+                    setAddOpen(true)
+                  }}
+                >
+                  Add device…
+                </MenuItem>
+                {builder && (
+                  <MenuItem
+                    onClick={() => {
+                      setMenu(null)
+                      setCustom(null)
+                    }}
+                  >
+                    Exit custom map
+                  </MenuItem>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      <AddDeviceDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onPick={(id) => addToCustom([id])}
+      />
       <MaterializeCableDialog ghost={ghost} onClose={() => setGhost(null)} />
       <SaveAsDialog
         open={saveAsOpen}
@@ -1232,6 +1431,72 @@ function EdgePanel({
         </Button>
       )}
     </PanelShell>
+  )
+}
+
+/** One row of the right-click context menu. */
+function MenuItem({
+  onClick,
+  children,
+}: {
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Device picker for the custom-map builder's + button. */
+function AddDeviceDialog({
+  open,
+  onOpenChange,
+  onPick,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  onPick: (deviceId: string) => void
+}) {
+  const devices = useQuery({
+    queryKey: ["devices-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/devices/?picker=1"),
+    staleTime: 60_000,
+    enabled: open,
+  })
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Add device to the map</DialogTitle>
+        </DialogHeader>
+        <Combobox
+          value={null}
+          onChange={(v) => {
+            if (!v) return
+            onPick(v)
+            onOpenChange(false)
+          }}
+          options={(devices.data?.results ?? []).map((d) => ({
+            value: d.id,
+            label: d.name,
+          }))}
+          placeholder="Pick a device…"
+          searchPlaceholder="Search devices…"
+          emptyText={devices.isLoading ? "Loading…" : "No devices."}
+        />
+        <p className="text-xs text-muted-foreground">
+          Starts (or grows) a custom map. Right-click a device on the map to
+          pull in its connected devices, or to remove it again.
+        </p>
+      </DialogContent>
+    </Dialog>
   )
 }
 

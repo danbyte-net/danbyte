@@ -632,3 +632,37 @@ class TopologySummaryTests(_Base):
         self.assertEqual(body["device_count"], 3)
         names = {a["device"] for a in body["adjacency"]}
         self.assertIn("pp-1", names)
+
+
+class DeviceSetAndSpeedTests(_Base):
+    """devices=<ids> induced subgraph + link speed on edges."""
+
+    def setUp(self):
+        super().setUp()
+        self.a = Device.objects.create(tenant=self.tenant, name="sw-a")
+        self.b = Device.objects.create(tenant=self.tenant, name="sw-b")
+        self.c = Device.objects.create(tenant=self.tenant, name="sw-c")
+        ia = Interface.objects.create(device=self.a, name="e1", speed="10G")
+        ib = Interface.objects.create(device=self.b, name="e1")
+        self._cable(ia, ib)
+        self._cable(
+            Interface.objects.create(device=self.b, name="e2"),
+            Interface.objects.create(device=self.c, name="e1"),
+        )
+
+    def test_devices_param_induces_subgraph(self):
+        g = self._graph(f"devices={self.a.id},{self.b.id}")
+        self.assertEqual(
+            {n["data"]["name"] for n in g["nodes"]}, {"sw-a", "sw-b"}
+        )
+        self.assertEqual(len(g["edges"]), 1)
+
+    def test_edge_carries_interface_speed(self):
+        g = self._graph()
+        by_pair = {
+            frozenset((e["source"], e["target"])): e["data"] for e in g["edges"]
+        }
+        ab = by_pair[frozenset((f"dev:{self.a.id}", f"dev:{self.b.id}"))]
+        bc = by_pair[frozenset((f"dev:{self.b.id}", f"dev:{self.c.id}"))]
+        self.assertEqual(ab["speed"], "10G")
+        self.assertIsNone(bc["speed"])

@@ -124,6 +124,18 @@ server-to-switch run through two patch panels is **one edge**, annotated
 `via panel-a, panel-b`. Untick it to see the raw physical hops with the
 panels as nodes - the truth on the wall vs the truth in the racks.
 
+## Custom maps - build exactly the diagram you want
+
+Right-click is the builder. **Right-click a device** and pick *Start custom
+map here* - the map reduces to just that device - then grow it: right-click →
+**Add connected devices** pulls in a node's cabled neighbours, **Remove from
+map** prunes, and the **Add device** button (also on right-clicking empty
+canvas) inserts any device by name - including onto an empty map. A header
+chip shows the set size and exits the builder. The hand-picked set saves
+with a [saved view](#saved-views), so a curated diagram ("core row",
+"customer X hand-off") is one select away. Right-click also offers *Open
+device* and *Focus here* in any mode.
+
 ## Filters, focus, search
 
 Filter by **site / role / status / tag** - the filter fields are searchable
@@ -175,6 +187,7 @@ The **color mode** select paints edges by:
 | **Cable color** | the literal color recorded on each cable (default) |
 | **By type** | a stable hue per media type (cat6, OM4, DAC…) |
 | **By status** | green = active/connected, amber = planned, red = failed |
+| **By speed** | link speed from the endpoint interface's **speed** field - green 1G, blue 10G, violet 25G, amber 40G, red 100G+ - with the speed as the edge label |
 | **No color** | monochrome |
 
 ## Levels (role tiers)
@@ -225,7 +238,9 @@ sized to the diagram - ready for a wiki page or a change ticket.
 
 `GET /api/topology/` - parameters: `site`, `location`, `role`, `status`,
 `tag`, `collapse_panels=0|1`, `device=<id>&depth=1..6` for a focused
-neighbourhood, and `group_by=site|location` for the aggregated group graph
+neighbourhood, `devices=<id,id,…>` for the induced subgraph on an explicit
+device set (the custom-map builder), and `group_by=site|location` for the
+aggregated group graph
 (one node per group with device count + role breakdown, cable-count edges).
 Nodes carry the cabled ports + role/IP used by the stencil; edges carry the
 cable id/type/label/length, every port pair, and the `via` panel list when

@@ -47,6 +47,8 @@ const COLOR_MODE_NOTE: Record<EdgeColorMode, string> = {
   cable: "Line color = the cable's recorded color",
   type: "Line color = media type (stable hue per type)",
   status: "Line color = status (green up · amber planned · red failed)",
+  speed:
+    "Line color = link speed (green 1G · blue 10G · violet 25G · amber 40G · red 100G+), labelled with the speed",
   none: "Lines uncolored",
 }
 

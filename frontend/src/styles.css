@@ -670,3 +670,18 @@
 [data-lod="2"] .topo-portdot {
   visibility: hidden;
 }
+
+/* React Flow's stock-styled builtin node types (default/input/output/group)
+   must never paint behind Danbyte's custom cards - the grouped topology once
+   used the reserved type name "group" and inherited a grey 150px box. The
+   custom types avoid those names now; this reset is the belt-and-braces. */
+.react-flow__node-default,
+.react-flow__node-input,
+.react-flow__node-output,
+.react-flow__node-group {
+  background: none;
+  border: none;
+  padding: 0;
+  width: auto;
+  box-shadow: none;
+}

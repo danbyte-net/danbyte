@@ -40,14 +40,16 @@ import { RoutedEdge } from "./routed-edge"
 const nodeTypes = {
   device: StencilNode,
   flat: FlatNode,
-  group: GroupNode,
+  // "sitegroup", not "group": React Flow reserves "group" and paints its own
+  // grey stock box behind it.
+  sitegroup: GroupNode,
   interface: PortNode,
   front_port: PortNode,
   rear_port: PortNode,
 }
 const edgeTypes = { routed: RoutedEdge }
 
-export type EdgeColorMode = "cable" | "type" | "status" | "none"
+export type EdgeColorMode = "cable" | "type" | "status" | "speed" | "none"
 
 /** "stencil" = wiring cards with port rows; "flat" = barebones fixed chips
  * with parallel cables bundled into one ×N edge. */
@@ -90,6 +92,29 @@ export function typeColor(type: string): string {
   return TYPE_PALETTE[Math.abs(h) % TYPE_PALETTE.length]
 }
 
+/** "10G" / "2.5 Gbps" / "1000" (Mbps) → Mbps, or null when unparsable. */
+function speedMbps(s: string): number | null {
+  const m = /([\d.]+)\s*([tgm]?)/i.exec(s.trim())
+  if (!m) return null
+  const n = parseFloat(m[1])
+  if (!isFinite(n)) return null
+  const u = m[2].toLowerCase()
+  return u === "t" ? n * 1e6 : u === "g" ? n * 1000 : n
+}
+
+/** Speed tier hue - faster = hotter. Unparsable/absent speeds stay zinc. */
+export function speedColor(s?: string | null): string | undefined {
+  if (!s) return undefined
+  const mb = speedMbps(s)
+  if (mb == null) return "#71717a"
+  if (mb >= 100000) return "#e11d48" // 100G+
+  if (mb >= 40000) return "#f59e0b" // 40G
+  if (mb >= 25000) return "#8b5cf6" // 25G
+  if (mb >= 10000) return "#0ea5e9" // 10G
+  if (mb >= 1000) return "#10b981" // 1G
+  return "#71717a"
+}
+
 function statusColor(slug?: string | null): string | undefined {
   if (!slug) return undefined
   if (/(active|connected|up)/.test(slug)) return "#10b981"
@@ -104,6 +129,7 @@ function edgeStroke(
 ): string | undefined {
   if (mode === "type" && data?.cable_type) return typeColor(data.cable_type)
   if (mode === "status") return statusColor(data?.status)
+  if (mode === "speed") return speedColor(data?.speed)
   if (mode === "cable" && data?.color) return data.color
   return undefined
 }
@@ -226,7 +252,12 @@ function build(
   const grouped = graph.nodes.some((n) => n.type === "group")
   const nodes: Node[] = graph.nodes.map((n) => ({
     id: n.id,
-    type: flat && (n.type ?? "device") === "device" ? "flat" : (n.type ?? "device"),
+    type:
+      n.type === "group"
+        ? "sitegroup"
+        : flat && (n.type ?? "device") === "device"
+          ? "flat"
+          : (n.type ?? "device"),
     position: { x: 0, y: 0 },
     selected: opts.focusNodeId === n.id,
     data: {
@@ -353,6 +384,8 @@ function build(
     const count = pairs.length
     const labelBits: string[] = []
     if (count > 1) labelBits.push(`×${count}`)
+    if (opts.colorMode === "speed" && e.data?.speed)
+      labelBits.push(e.data.speed)
     if (via.length) labelBits.push(`via ${via.join(", ")}`)
     if (e.data?.cable_label) labelBits.push(e.data.cable_label)
 
@@ -408,6 +441,32 @@ function build(
         labelStyle: { fontSize: 9 },
         labelBgStyle: { fill: "var(--card)" },
       } as Edge)
+    }
+  }
+
+  // Orient hub → leaf: dagre ranks along edge direction, and the backend's
+  // uuid-sorted endpoints put leaves on random sides of their switch. Making
+  // the higher-degree device the source ranks cores before distribution
+  // before access before servers - consistently one direction.
+  {
+    const deg = new Map<string, number>()
+    for (const ed of allEdges) {
+      deg.set(ed.source, (deg.get(ed.source) ?? 0) + 1)
+      deg.set(ed.target, (deg.get(ed.target) ?? 0) + 1)
+    }
+    for (let i = 0; i < allEdges.length; i++) {
+      const ed = allEdges[i]
+      const sem = (ed.data as { sem?: string } | undefined)?.sem
+      if (sem !== "cable" && sem !== "bundle" && sem !== "groupedge") continue
+      if ((deg.get(ed.target) ?? 0) > (deg.get(ed.source) ?? 0)) {
+        allEdges[i] = {
+          ...ed,
+          source: ed.target,
+          target: ed.source,
+          sourceHandle: ed.targetHandle,
+          targetHandle: ed.sourceHandle,
+        }
+      }
     }
   }
 
@@ -569,6 +628,11 @@ export interface TopologyCanvasProps {
   onSelectGroupEdge?: (data: GroupEdgeInfo) => void
   /** Grouped mode: a group card was double-clicked - drill into it. */
   onDrillGroup?: (data: TopoGroupData) => void
+  /** Right-click on a node - screen coords + the raw RF node for branching
+   * on type (device/flat vs sitegroup). */
+  onNodeContext?: (node: Node, x: number, y: number) => void
+  /** Right-click on empty canvas. */
+  onPaneContext?: (x: number, y: number) => void
   onGhostEdge?: (ghost: GhostEdgeData) => void
   onCanvasClick?: () => void
   /** Fired after a node drag settles - the parent can persist positions(). */
@@ -598,6 +662,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onSelectGroup,
     onSelectGroupEdge,
     onDrillGroup,
+    onNodeContext,
+    onPaneContext,
     onGhostEdge,
     onCanvasClick,
     onDragEnd,
@@ -796,7 +862,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node) => {
-      if (node.type === "group")
+      if (node.type === "sitegroup")
         onSelectGroup?.(node.data as unknown as TopoGroupData)
       else onSelectNode?.(node.data as TopologyGraph["nodes"][number]["data"])
     },
@@ -804,7 +870,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   )
   const onNodeDoubleClick = useCallback(
     (_: unknown, node: Node) => {
-      if (node.type !== "group") return
+      if (node.type !== "sitegroup") return
       const d = node.data as unknown as TopoGroupData
       if (d.group_id) onDrillGroup?.(d)
     },
@@ -900,6 +966,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         nodesConnectable={false}
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
+        onNodeContextMenu={(ev, node) => {
+          ev.preventDefault()
+          onNodeContext?.(node, ev.clientX, ev.clientY)
+        }}
+        onPaneContextMenu={(ev) => {
+          ev.preventDefault()
+          onPaneContext?.(ev.clientX, ev.clientY)
+        }}
         onNodeDragStop={onNodeDragStop}
         onEdgeClick={onEdgeClick}
         onEdgeMouseEnter={(_, e) => setHotEdge(e.id)}

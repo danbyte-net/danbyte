@@ -320,6 +320,7 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
                     "status": cab.status.slug if cab.status_id else None,
                     "length": str(cab.length) if cab.length is not None else None,
                     "length_unit": cab.length_unit,
+                    "speed": None,
                     "via": vias,
                     "pairs": [],
                 },
@@ -333,6 +334,12 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
             "a_port": a_port,
             "b_port": b_port,
         })
+        # Link speed from either endpoint interface (first non-empty wins) -
+        # front/rear panel ports have no speed.
+        if not e["data"].get("speed"):
+            spd = getattr(pa, "speed", "") or getattr(pb, "speed", "")
+            if spd:
+                e["data"]["speed"] = spd
 
     edge_list = list(edges.values())
 
@@ -822,6 +829,15 @@ def _filter_q(params):
                 "between groups. Ignores device/depth focus."
             ),
         ),
+        OpenApiParameter(
+            name="devices",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Comma-separated device ids: the induced subgraph on exactly "
+                "this set (the custom-map builder). Overrides focus/filters."
+            ),
+        ),
     ],
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
@@ -864,9 +880,20 @@ def topology_view(request):
             scope_q=scope_q,
         ))
 
+    # Explicit device set - the custom-map builder's induced subgraph. The
+    # parameter's PRESENCE selects the mode: an empty value is an empty map
+    # (a builder you just opened), never a fall-through to the full graph.
+    custom_set = "devices" in p
+    device_ids = [x for x in (p.get("devices") or "").split(",") if x]
+    if custom_set:
+        focus = None
+
     graph = _build_graph(
         tenant,
-        device_filter_q=_filter_q(p) if not focus else None,
+        device_filter_q=(
+            Q(id__in=device_ids) if custom_set
+            else (_filter_q(p) if not focus else None)
+        ),
         focus_id=focus,
         depth=depth,
         collapse=collapse,

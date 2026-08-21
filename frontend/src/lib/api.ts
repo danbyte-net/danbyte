@@ -2521,6 +2521,8 @@ export interface TopoEdge {
     cable_label?: string
     length?: string | null
     length_unit?: string
+    /** Link speed from an endpoint interface (free-form, e.g. "10G"). */
+    speed?: string | null
     /** Panels this collapsed end-to-end link passes through. */
     via?: string[]
     /** Trace map: this cable is part of the traced run. */
