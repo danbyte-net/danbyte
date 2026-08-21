@@ -43,14 +43,22 @@ function RowItem({ swatch, label }: { swatch: React.ReactNode; label: string }) 
   )
 }
 
+// One terse line per mode - the docs explain, the legend just labels.
 const COLOR_MODE_NOTE: Record<EdgeColorMode, string> = {
-  cable: "Line color = the cable's recorded color",
-  type: "Line color = media type (stable hue per type)",
-  status: "Line color = status (green up · amber planned · red failed)",
-  speed:
-    "Line color = link speed (green 1G · blue 10G · violet 25G · amber 40G · red 100G+), labelled with the speed",
-  none: "Lines uncolored",
+  cable: "Color: cable",
+  type: "Color: media type",
+  status: "Color: status",
+  speed: "",
+  none: "",
 }
+
+const SPEED_TIERS: [string, string][] = [
+  ["#10b981", "1G"],
+  ["#0ea5e9", "10G"],
+  ["#8b5cf6", "25G"],
+  ["#f59e0b", "40G"],
+  ["#e11d48", "100G"],
+]
 
 export function CanvasLegend({
   viewStyle,
@@ -98,48 +106,55 @@ export function CanvasLegend({
       <div className="space-y-1">
         {grouped ? (
           <>
-            <RowItem swatch={<Line />} label="Cables between groups (×count)" />
+            <RowItem swatch={<Line />} label="Cables between groups" />
             <RowItem
               swatch={
                 <span className="h-3 w-6 shrink-0 rounded-sm border-2 border-border bg-card" />
               }
-              label="Site/location — double-click to open"
+              label="Site / location"
             />
           </>
         ) : viewStyle === "flat" ? (
           <>
-            <RowItem
-              swatch={<Line />}
-              label="Cable bundle — ×N parallel cables, click to list"
-            />
+            <RowItem swatch={<Line />} label="Cable bundle (×N)" />
             <RowItem
               swatch={<Line dash="6 4" width={1.5} />}
-              label="LLDP-seen link, no cable — click to create"
+              label="LLDP, no cable"
             />
           </>
         ) : (
           <>
-            <RowItem swatch={<Line />} label="Cable (×N = N port pairs)" />
-            <RowItem
-              swatch={<Line dash="10 4" />}
-              label="End-to-end run via patch panels"
-            />
+            <RowItem swatch={<Line />} label="Cable" />
+            <RowItem swatch={<Line dash="10 4" />} label="Via patch panels" />
             <RowItem
               swatch={<Line dash="6 4" width={1.5} />}
-              label="LLDP-seen link, no cable — click to create"
+              label="LLDP, no cable"
             />
             <RowItem
               swatch={
                 <span className="h-3 w-6 shrink-0 rounded-sm border border-dashed border-muted-foreground/60 bg-card" />
               }
-              label="Patch panel (dashed card)"
+              label="Patch panel"
             />
           </>
         )}
-        <p className="pt-1 text-muted-foreground">
-          {COLOR_MODE_NOTE[colorMode]}. Hover a line to name the cable, raise
-          it, and fade the rest.
-        </p>
+        {colorMode === "speed" ? (
+          <div className="flex items-center gap-2 pt-1">
+            {SPEED_TIERS.map(([c, l]) => (
+              <span key={l} className="flex items-center gap-1">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: c }}
+                />
+                <span className="text-muted-foreground">{l}</span>
+              </span>
+            ))}
+          </div>
+        ) : COLOR_MODE_NOTE[colorMode] ? (
+          <p className="pt-1 text-muted-foreground">
+            {COLOR_MODE_NOTE[colorMode]}
+          </p>
+        ) : null}
       </div>
     </div>
   )
@@ -151,7 +166,7 @@ export function LogicalLegend() {
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
       <RowItem
         swatch={<span className="h-2.5 w-6 shrink-0 rounded-sm bg-[#1d63ed]" />}
-        label="VLAN rail (VLAN or zone color)"
+        label="VLAN"
       />
       <RowItem
         swatch={
@@ -163,17 +178,13 @@ export function LogicalLegend() {
         swatch={
           <span className="h-3 w-6 shrink-0 rounded-sm border border-dashed border-muted-foreground/60 bg-card" />
         }
-        label="Virtual machine"
+        label="VM"
       />
-      <RowItem
-        swatch={<Line width={3} color="#1d63ed" />}
-        label="Untagged / access"
-      />
+      <RowItem swatch={<Line width={3} color="#1d63ed" />} label="Untagged" />
       <RowItem
         swatch={<Line dash="5 5" width={3} color="#1d63ed" />}
-        label="Tagged (trunk)"
+        label="Tagged"
       />
-      <span>Click any rail or box to open it.</span>
     </div>
   )
 }

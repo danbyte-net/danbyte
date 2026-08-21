@@ -1501,10 +1501,6 @@ function AddDeviceDialog({
           searchPlaceholder="Search devices…"
           emptyText={devices.isLoading ? "Loading…" : "No devices."}
         />
-        <p className="text-xs text-muted-foreground">
-          Starts (or grows) a custom map. Right-click a device on the map to
-          pull in its connected devices, or to remove it again.
-        </p>
       </DialogContent>
     </Dialog>
   )

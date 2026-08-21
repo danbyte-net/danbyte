@@ -23,10 +23,10 @@ const natural = (a: string, b: string) =>
 
 export interface LayoutResult {
   nodes: Node[]
-  /** `${source}>${target}` → interior bend points (flow coords) that bend a
-   * cable around the cards between its ends. Computed from the FINAL node
-   * positions, so it works for the auto layout, role tiers, AND pinned/saved
-   * views. Empty for edges where a straight line is already clear. */
+  /** edge id → interior bend points (flow coords) that bend a cable around
+   * the cards between its ends. Computed from the FINAL node positions, so
+   * it works for the auto layout, role tiers, AND pinned/saved views. Empty
+   * for edges where a straight line is already clear. */
   waypoints: Map<string, [number, number][]>
 }
 
@@ -178,14 +178,25 @@ function respaceBands(
   if (rect.size < 2) return laid
   const { bandOf, list } = bandize(rect, tb)
   if (list.length < 2) return laid
-  // Lane demand per gap: an edge from band i to band j crosses gaps i..j-1.
+  // Lane demand per gap: only cables that actually occupy a lane - parallel
+  // runs between one pair, and long spans routed through the gap. A fan of
+  // singleton cables draws plain direct lines and needs no lane space.
   const lanes = new Array(list.length - 1).fill(0)
+  const pairCount = new Map<string, { g: number; n: number }>()
   for (const e of edges) {
     const a = bandOf.get(e.source)
     const b = bandOf.get(e.target)
     if (a === undefined || b === undefined || a === b) continue
-    for (let g = Math.min(a, b); g < Math.max(a, b); g++) lanes[g] += 1
+    if (Math.abs(a - b) === 1) {
+      const pk = [e.source, e.target].sort().join("|")
+      const ent = pairCount.get(pk) ?? { g: Math.min(a, b), n: 0 }
+      ent.n += 1
+      pairCount.set(pk, ent)
+    } else {
+      for (let g = Math.min(a, b); g < Math.max(a, b); g++) lanes[g] += 1
+    }
   }
+  for (const { g, n } of pairCount.values()) if (n > 1) lanes[g] += n
   // Cumulative shift so every gap meets its minimum.
   const shift = new Array(list.length).fill(0)
   for (let g = 0; g < list.length - 1; g++) {
@@ -240,7 +251,7 @@ function computeWaypoints(
   // Bucket adjacent-band edges per gap; everything else keeps the scanned
   // channel route (+ side detour) - lanes only make sense between two
   // consecutive ranks, which is where the dense combs live.
-  type LaneEdge = { key: string; a: Rect; b: Rect; mid: number }
+  type LaneEdge = { key: string; pair: string; a: Rect; b: Rect; mid: number }
   const gapBuckets = new Map<number, LaneEdge[]>()
   const scanned: Edge[] = []
   for (const e of edges) {
@@ -252,7 +263,8 @@ function computeWaypoints(
     if (ba !== undefined && bb !== undefined && Math.abs(ba - bb) === 1) {
       const g = Math.min(ba, bb)
       const item = {
-        key: `${e.source}>${e.target}`,
+        key: e.id,
+        pair: [e.source, e.target].sort().join("|"),
         a,
         b,
         mid: (cross(a) + cross(b)) / 2,
@@ -278,34 +290,50 @@ function computeWaypoints(
     })
     if (dirty) {
       for (const it of bucket)
-        scanned.push(
-          edges.find((e) => `${e.source}>${e.target}` === it.key)!
-        )
+        scanned.push(edges.find((e) => e.id === it.key)!)
       continue
     }
-    bucket.sort((x, y) => x.mid - y.mid)
-    const n = bucket.length
-    const pitch = Math.max(4, Math.min(LANE_PITCH, avail / Math.max(n, 1)))
-    const start = (gapLo + gapHi) / 2 - ((n - 1) / 2) * pitch
-    bucket.forEach((it, i) => {
-      // A single, straight-clear cable keeps its plain line.
-      if (n === 1 && Math.abs(cross(it.a) - cross(it.b)) < 1) return
-      const m = Math.min(gapHi, Math.max(gapLo, start + i * pitch))
-      const aC = cross(it.a)
-      const bC = cross(it.b)
-      laned.set(
-        it.key,
-        tb
-          ? [
-              [aC, m],
-              [bC, m],
-            ]
-          : [
-              [m, aC],
-              [m, bC],
-            ]
-      )
-    })
+    // Lanes are for cables that genuinely run PARALLEL - several between the
+    // same two cards. A hub fanning out to many distinct leaves is drawn
+    // plain: its stub order matches the leaf order (portOrder), so direct
+    // lines don't cross, and forcing each onto a full-width lane turns the
+    // fan into a solid wall of lines.
+    const byPair = new Map<string, LaneEdge[]>()
+    for (const it of bucket) {
+      ;(byPair.get(it.pair) ?? byPair.set(it.pair, []).get(it.pair)!).push(it)
+    }
+    const parallel = [...byPair.values()].filter((g2) => g2.length > 1)
+    const total = parallel.reduce((s, g2) => s + g2.length, 0)
+    if (!total) continue
+    parallel.sort(
+      (x, y) =>
+        x.reduce((s, it) => s + it.mid, 0) / x.length -
+        y.reduce((s, it) => s + it.mid, 0) / y.length
+    )
+    const pitch = Math.max(4, Math.min(LANE_PITCH, avail / Math.max(total, 1)))
+    const start = (gapLo + gapHi) / 2 - ((total - 1) / 2) * pitch
+    let lane = 0
+    for (const group of parallel) {
+      group.sort((x, y) => x.mid - y.mid)
+      for (const it of group) {
+        const m = Math.min(gapHi, Math.max(gapLo, start + lane * pitch))
+        lane += 1
+        const aC = cross(it.a)
+        const bC = cross(it.b)
+        laned.set(
+          it.key,
+          tb
+            ? [
+                [aC, m],
+                [bC, m],
+              ]
+            : [
+                [m, aC],
+                [m, bC],
+              ]
+        )
+      }
+    }
   }
 
   for (const e of scanned) {
@@ -317,11 +345,11 @@ function computeWaypoints(
       .map(([, r]) => r)
     const ch = channelRoute(a, b, obstacles, tb)
     if (ch) {
-      routes.push({ key: `${e.source}>${e.target}`, ch, staggered: false })
+      routes.push({ key: e.id, ch, staggered: false })
       continue
     }
     const det = sideDetour(a, b, obstacles, tb)
-    if (det) detours.set(`${e.source}>${e.target}`, det)
+    if (det) detours.set(e.id, det)
   }
   // Fan out bundles: cables whose channels fall in the same band AND overlap on
   // the cross axis are spread apart so each reads as its own line.

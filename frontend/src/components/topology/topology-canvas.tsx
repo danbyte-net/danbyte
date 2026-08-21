@@ -571,7 +571,7 @@ function build(
     const routedFlat = flatEdges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
       if (!routeThem || !sem || !ROUTABLE.has(sem)) return e
-      const wp = flatWp.get(`${e.source}>${e.target}`)
+      const wp = flatWp.get(e.id)
       return wp?.length
         ? { ...e, type: "routed", data: { ...e.data, waypoints: wp } }
         : e
@@ -627,7 +627,7 @@ function build(
   // the port handles). Skipped in "straight" mode.
   const routeEdges = opts.edgeRouting !== "straight"
   const routed = edges.map((e) => {
-    const wp = routeEdges ? waypoints.get(`${e.source}>${e.target}`) : undefined
+    const wp = routeEdges ? waypoints.get(e.id) : undefined
     if (
       (e.data as { sem?: string } | undefined)?.sem === "cable" &&
       wp &&
@@ -850,7 +850,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         built.edges.map((e) => {
           const sem = (e.data as { sem?: string } | undefined)?.sem
           if (!sem || !ROUTABLE.has(sem)) return e
-          const pts = wp.get(`${e.source}>${e.target}`)
+          const pts = wp.get(e.id)
           return pts?.length
             ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
             : {
@@ -992,7 +992,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       return next.map((e) => {
         const sem = (e.data as { sem?: string } | undefined)?.sem
         if (!sem || !ROUTABLE.has(sem)) return e
-        const pts = wp.get(`${e.source}>${e.target}`)
+        const pts = wp.get(e.id)
         return pts?.length
           ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
           : {

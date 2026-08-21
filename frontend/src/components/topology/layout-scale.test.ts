@@ -72,7 +72,7 @@ describe("aligned-card detour", () => {
       { id: "ac", source: "a", target: "c", data: { sem: "cable" } } as Edge,
     ]
     const wp = edgeWaypoints(nodes, edges, "TB")
-    const detour = wp.get("a>c")
+    const detour = wp.get("ac")
     expect(detour).toBeDefined()
     // Both waypoints share an X clear of the cards' 100..~256 span.
     expect(detour![0][0]).toBe(detour![1][0])
@@ -118,8 +118,9 @@ describe("topology layout at scale", () => {
 })
 
 describe("density-adaptive gaps and lanes", () => {
-  it("widens the tier gap for a 40-cable comb and gives each cable a lane", () => {
-    const port = (name: string) => ({ name, kind: "interface" as const })
+  const port = (name: string) => ({ name, kind: "interface" as const })
+
+  it("draws a 40-leaf fan plain - no lane wall, modest gap", () => {
     const hubPorts = Array.from({ length: 40 }, (_, i) => `p${i}`)
     const nodes: Node[] = [
       {
@@ -147,19 +148,43 @@ describe("density-adaptive gaps and lanes", () => {
         }) as Edge
     )
     const { nodes: laid, waypoints } = layoutNodes(nodes, edges, undefined, "LR")
+    // Distinct leaves = direct lines: no waypoint per cable, no wall.
+    expect(waypoints.size).toBe(0)
     const hub = laid.find((n) => n.id === "hub")!
     const hubRight = hub.position.x + stencilSize(hub.data as never).width
     const leafLeft = Math.min(
       ...laid.filter((n) => n.id !== "hub").map((n) => n.position.x)
     )
-    // One lane per cable (14px) + clearance - the gap must scale with volume.
-    expect(leafLeft - hubRight).toBeGreaterThanOrEqual(40 * 14)
-    // Every cable rides its own distinct lane coordinate.
+    // And the gap stays modest - fan cables need no lane space.
+    expect(leafLeft - hubRight).toBeLessThan(400)
+  })
+
+  it("gives parallel cables between ONE pair their own lanes + gap room", () => {
+    const ports = Array.from({ length: 12 }, (_, i) => `p${i}`)
+    const nodes: Node[] = ["a", "b"].map((id) => ({
+      id,
+      type: "device",
+      position: { x: 0, y: 0 },
+      data: { name: id, ports: ports.map(port) },
+    }))
+    const edges: Edge[] = ports.map(
+      (pn, i) =>
+        ({
+          id: `e${i}`,
+          source: "a",
+          target: "b",
+          sourceHandle: pn,
+          targetHandle: pn,
+          data: { sem: "cable", baseS: pn, baseT: pn },
+        }) as Edge
+    )
+    const { waypoints } = layoutNodes(nodes, edges, undefined, "LR")
+    // Every parallel cable rides its own distinct lane (keyed by edge id).
     const lanes = edges
-      .map((e) => waypoints.get(`hub>${e.target}`)?.[0][0])
+      .map((e) => waypoints.get(e.id)?.[0][0])
       .filter((x): x is number => x !== undefined)
-    expect(lanes.length).toBe(40)
-    expect(new Set(lanes).size).toBe(40)
+    expect(lanes.length).toBe(12)
+    expect(new Set(lanes).size).toBe(12)
   })
 })
 
