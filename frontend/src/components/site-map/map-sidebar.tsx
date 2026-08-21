@@ -77,15 +77,8 @@ function SiteRow({
           : "hover:bg-muted/60"
       )}
     >
-      {/* A dot only when the operator chose a marker color - default-tinted
-          dots on every row are noise, not signal. */}
-      {s.color && (
-        <span
-          aria-hidden
-          className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-          style={{ background: s.color }}
-        />
-      )}
+      {/* No color dot: the pin on the map carries the site's color; in the
+          list it's noise. Status chips are the only color here. */}
       <span className="min-w-0 truncate">{s.name}</span>
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
         <CheckChip check={s.check} />
@@ -159,21 +152,12 @@ export function MapObjectsSidebar({
   )
   const shownRegions = regions.filter((r) => match(r.name))
 
-  // Sites fold by region - the same treatment devices get by role. The
-  // group carries the region's boundary color when one is set.
+  // Sites fold by region - the same treatment devices get by role.
   const siteGroups = useMemo(() => {
-    const colorByRegion = new Map(regions.map((r) => [r.id, r.color]))
-    const map = new Map<
-      string,
-      { title: string; color: string; rows: SiteMapSite[] }
-    >()
+    const map = new Map<string, { title: string; rows: SiteMapSite[] }>()
     for (const s of shownSites) {
       const key = s.region?.name ?? "No region"
-      const g = map.get(key) ?? {
-        title: key,
-        color: (s.region && colorByRegion.get(s.region.id)) || "",
-        rows: [],
-      }
+      const g = map.get(key) ?? { title: key, rows: [] }
       g.rows.push(s)
       map.set(key, g)
     }
@@ -411,14 +395,6 @@ export function MapObjectsSidebar({
                   title={g.title}
                   count={g.rows.length}
                   storageId={FOLDS}
-                  badge={
-                    g.color ? (
-                      <span
-                        className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-                        style={{ background: g.color }}
-                      />
-                    ) : undefined
-                  }
                   extra={
                     <>
                       <CheckCountChip check="down" n={g.down} />
@@ -454,13 +430,6 @@ export function MapObjectsSidebar({
               className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
               title="Fit the map to this region"
             >
-              {r.color && (
-                <span
-                  aria-hidden
-                  className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-                  style={{ background: r.color }}
-                />
-              )}
               <span className="min-w-0 truncate">{r.name}</span>
             </button>
           ))}
