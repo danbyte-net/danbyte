@@ -64,12 +64,14 @@ The page is a clone of the floor-plan editor's shell:
   default), and the sliders button in its header picks exactly **which
   detail rows to show** - also remembered per browser.
 - **"On this map"** (Objects) - the far-right objects sidebar: one search
-  box over foldable groups - sites, devices by role, markers, and links
-  grouped by kind. Click a row to fly to it; Enter in the search box jumps
+  box over foldable groups - sites by region (a flat list until regions are
+  in use), devices by role, markers, links grouped by kind, and a
+  **Regions** list (regions with a stored boundary; click one to fit the
+  map to it). Click a row to fly to it; Enter in the search box jumps
   to the first hit. Every site/device row carries its status as a small
   tinted badge, a **Problems** section at the top collects everything down
   or degraded (worst first), and the `all · down · degraded · up` chips
-  under the search box filter the whole list. Role-group headers show
+  under the search box filter the whole list. Group headers show
   down/degraded counts even when folded, and fold state is remembered per
   browser.
 

@@ -22,6 +22,7 @@ import {
 } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { InfoTip } from "@/components/ui/info-tip"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface RegionFormProps {
@@ -187,13 +188,14 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
         onChange={setColor}
       />
       <div className="grid gap-1.5">
-        <div className="text-sm font-medium">Map boundary</div>
-        <p className="text-xs text-muted-foreground">
-          Look up the region's outline on OpenStreetMap - a country, a
-          municipality, a postal code ("Fyn", "6950 Denmark"). The polygon is
-          stored on the region. Boundary data © OpenStreetMap contributors
-          (ODbL).
-        </p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium">Map boundary</span>
+          <InfoTip>
+            Searches OpenStreetMap for the region's outline - a country,
+            municipality, or postal code - and stores the selected boundary
+            on the region. Boundary data © OpenStreetMap contributors, ODbL.
+          </InfoTip>
+        </div>
         {boundary ? (
           <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs">
             <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -240,8 +242,7 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
             </div>
             {candidates && candidates.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                No boundary found - try the official name or add the country
-                ("Ringkøbing-Skjern Kommune", "5000 Denmark").
+                No boundary found. Try the official name, or add the country.
               </p>
             )}
             {candidates && candidates.length > 0 && (

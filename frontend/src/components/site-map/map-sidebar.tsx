@@ -6,6 +6,7 @@ import type {
   SiteMapConnection,
   SiteMapDevice,
   SiteMapMarker,
+  SiteMapRegion,
   SiteMapSite,
 } from "@/lib/api"
 import { Input } from "@/components/ui/input"
@@ -48,6 +49,50 @@ const LINK_KIND_TITLE: Record<string, string> = {
 
 const FOLDS = "site-map:groups"
 
+function SiteRow({
+  site: s,
+  indent = false,
+  selected,
+  onFocus,
+  onSelect,
+}: {
+  site: SiteMapSite
+  indent?: boolean
+  selected: MapSelected | null
+  onFocus: (lat: number, lng: number) => void
+  onSelect: (sel: MapSelected | null) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onFocus(s.latitude!, s.longitude!)
+        onSelect({ kind: "site", id: s.id })
+      }}
+      className={cn(
+        "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
+        indent && "pl-6",
+        selected?.kind === "site" && selected.id === s.id
+          ? "bg-muted font-medium"
+          : "hover:bg-muted/60"
+      )}
+    >
+      <span
+        aria-hidden
+        className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
+        style={{ background: s.color || "var(--primary)" }}
+      />
+      <span className="min-w-0 truncate">{s.name}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-1.5">
+        <CheckChip check={s.check} />
+        <span className="num text-[11px] text-muted-foreground/70">
+          {s.device_count}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 /** down < degraded < everything else - the sidebar's triage order. */
 function checkRank(check: string | null | undefined): number {
   return check === "down" ? 0 : check === "degraded" ? 1 : 2
@@ -61,18 +106,22 @@ export function MapObjectsSidebar({
   markers,
   connections,
   routes,
+  regions,
   selectedRouteId,
   selected,
   onSelect,
   onFocus,
   onFocusConnection,
   onPickRoute,
+  onFocusRegion,
 }: {
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
   markers: SiteMapMarker[]
   connections: SiteMapConnection[]
   routes: CableRoute[]
+  /** Regions with a stored boundary - listed with a fit-to jump. */
+  regions: SiteMapRegion[]
   selectedRouteId: string | null
   selected: MapSelected | null
   onSelect: (sel: MapSelected | null) => void
@@ -80,6 +129,8 @@ export function MapObjectsSidebar({
   onFocusConnection: (id: string) => void
   /** Fly to + select a route; a cableId also highlights that cable. */
   onPickRoute: (routeId: string, cableId: string | null) => void
+  /** Fit the map to a region's boundary. */
+  onFocusRegion: (region: SiteMapRegion) => void
 }) {
   const [q, setQ] = useState("")
   const [status, setStatus] = useState<StatusFilter>(null)
@@ -102,6 +153,41 @@ export function MapObjectsSidebar({
   const shownMarkers = markers.filter((m) =>
     match(m.label || m.device?.name || m.type?.name || "")
   )
+  const shownRegions = regions.filter((r) => match(r.name))
+
+  // Sites fold by region - the same treatment devices get by role. The
+  // group carries the region's boundary color when one is set.
+  const siteGroups = useMemo(() => {
+    const colorByRegion = new Map(regions.map((r) => [r.id, r.color]))
+    const map = new Map<
+      string,
+      { title: string; color: string; rows: SiteMapSite[] }
+    >()
+    for (const s of shownSites) {
+      const key = s.region?.name ?? "No region"
+      const g = map.get(key) ?? {
+        title: key,
+        color: (s.region && colorByRegion.get(s.region.id)) || "",
+        rows: [],
+      }
+      g.rows.push(s)
+      map.set(key, g)
+    }
+    return [...map.values()]
+      .map((g) => ({
+        ...g,
+        down: g.rows.filter((s) => s.check === "down").length,
+        degraded: g.rows.filter((s) => s.check === "degraded").length,
+      }))
+      .sort((a, b) =>
+        a.title === "No region"
+          ? 1
+          : b.title === "No region"
+            ? -1
+            : a.title.localeCompare(b.title)
+      )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sites, regions, filter, status])
   const shownConnections = connections.filter(
     (c) => match(c.name) || match(c.site_a.name) || match(c.site_z.name)
   )
@@ -197,7 +283,10 @@ export function MapObjectsSidebar({
     deviceGroups.reduce((n, g) => n + g.rows.length, 0) +
     (status
       ? 0
-      : shownMarkers.length + shownConnections.length + shownRoutes.length)
+      : shownMarkers.length +
+        shownConnections.length +
+        shownRoutes.length +
+        shownRegions.length)
 
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border p-3">
@@ -300,33 +389,71 @@ export function MapObjectsSidebar({
           <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Sites
           </p>
-          {shownSites.map((s) => (
+          {/* One flat list while no site has a region; region folds (like
+              the device role folds) as soon as regions are in use. */}
+          {siteGroups.length === 1 && siteGroups[0].title === "No region"
+            ? siteGroups[0].rows.map((s) => (
+                <SiteRow
+                  key={s.id}
+                  site={s}
+                  selected={selected}
+                  onFocus={onFocus}
+                  onSelect={onSelect}
+                />
+              ))
+            : siteGroups.map((g) => (
+                <FoldableGroup
+                  key={g.title}
+                  title={g.title}
+                  count={g.rows.length}
+                  storageId={FOLDS}
+                  badge={
+                    <span
+                      className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
+                      style={{ background: g.color || "var(--muted-foreground)" }}
+                    />
+                  }
+                  extra={
+                    <>
+                      <CheckCountChip check="down" n={g.down} />
+                      <CheckCountChip check="degraded" n={g.degraded} />
+                    </>
+                  }
+                >
+                  {g.rows.map((s) => (
+                    <SiteRow
+                      key={s.id}
+                      site={s}
+                      indent
+                      selected={selected}
+                      onFocus={onFocus}
+                      onSelect={onSelect}
+                    />
+                  ))}
+                </FoldableGroup>
+              ))}
+        </div>
+      )}
+
+      {shownRegions.length > 0 && !status && (
+        <div className="mb-3">
+          <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            Regions
+          </p>
+          {shownRegions.map((r) => (
             <button
-              key={s.id}
+              key={r.id}
               type="button"
-              onClick={() => {
-                onFocus(s.latitude!, s.longitude!)
-                onSelect({ kind: "site", id: s.id })
-              }}
-              className={cn(
-                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
-                selected?.kind === "site" && selected.id === s.id
-                  ? "bg-muted font-medium"
-                  : "hover:bg-muted/60"
-              )}
+              onClick={() => onFocusRegion(r)}
+              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-muted/60"
+              title="Fit the map to this region"
             >
               <span
                 aria-hidden
                 className="size-2.5 shrink-0 rounded-full border border-background shadow-[0_0_0_1px_var(--border)]"
-                style={{ background: s.color || "var(--primary)" }}
+                style={{ background: r.color || "#71717a" }}
               />
-              <span className="min-w-0 truncate">{s.name}</span>
-              <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                <CheckChip check={s.check} />
-                <span className="num text-[11px] text-muted-foreground/70">
-                  {s.device_count}
-                </span>
-              </span>
+              <span className="min-w-0 truncate">{r.name}</span>
             </button>
           ))}
         </div>

@@ -955,6 +955,7 @@ export interface SiteMapSite {
   color: string
   /** Lucide icon name shown in the pin, or "". */
   icon: string
+  region: { id: string; name: string } | null
   device_count: number
   floor_plan_count: number
   /** First few floor plans - popover jump-offs into the drill-down. */

@@ -1722,6 +1722,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             markers={data.markers}
             connections={connections}
             routes={routes}
+            regions={data.regions ?? []}
+            onFocusRegion={(r) => {
+              const map = mapRef.current
+              if (!map) return
+              const b = L.geoJSON(
+                r.boundary as unknown as GeoJSON.GeoJsonObject
+              ).getBounds()
+              if (b.isValid()) map.fitBounds(b.pad(0.05))
+            }}
             selectedRouteId={selectedRouteId}
             selected={selected}
             onSelect={setSelected}

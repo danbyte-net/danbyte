@@ -92,6 +92,7 @@ def site_map(request):
             Site.objects.filter(tenant=tenant),
             request.user, tenant, "site", "view",
         )
+        .select_related("region")
         .annotate(
             _devices=Count("device", distinct=True),
             _floor_plans=Count("locations__floor_plans", distinct=True),
@@ -153,6 +154,10 @@ def site_map(request):
             "longitude": float(s.longitude) if s.longitude is not None else None,
             "color": s.color,
             "icon": s.icon,
+            "region": (
+                {"id": str(s.region_id), "name": s.region.name}
+                if s.region_id else None
+            ),
             "device_count": s._devices,
             "floor_plan_count": s._floor_plans,
             "floor_plans": plans_by_site.get(s.id, []),
