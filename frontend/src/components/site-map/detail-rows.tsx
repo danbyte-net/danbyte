@@ -2,9 +2,19 @@ import { type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type Device, type Site, type SiteMapSite } from "@/lib/api"
+import {
+  api,
+  type CustomField,
+  type Device,
+  type Site,
+  type SiteMapSite,
+} from "@/lib/api"
 import { CopyButton } from "@/components/kv-card"
 import { TagList } from "@/components/cells/tag-list"
+import {
+  formatCustomValue,
+  useCustomFieldDefs,
+} from "@/components/custom-field-display"
 import { cn } from "@/lib/utils"
 
 // The map's kv detail rows - the same label/value shape the detail pages'
@@ -17,6 +27,55 @@ export interface DetailRow {
   node: ReactNode
   /** When set, a copy-to-clipboard button trails the value. */
   copy?: string
+}
+
+// Row catalogs for the inspector's field chooser. Absent choice = all rows.
+export const SITE_FIELD_OPTIONS: { key: string; label: string }[] = [
+  { key: "region", label: "Region" },
+  { key: "address", label: "Address" },
+  { key: "time_zone", label: "Time zone" },
+  { key: "counts", label: "Counts (prefixes, VLANs, …)" },
+  { key: "coordinates", label: "Coordinates" },
+  { key: "description", label: "Description" },
+  { key: "tags", label: "Tags" },
+  { key: "custom_fields", label: "Custom fields" },
+]
+
+export const DEVICE_FIELD_OPTIONS: { key: string; label: string }[] = [
+  { key: "primary_ip", label: "Primary IP" },
+  { key: "dns", label: "DNS name" },
+  { key: "oob_ip", label: "OOB IP" },
+  { key: "manufacturer", label: "Manufacturer" },
+  { key: "platform", label: "Platform" },
+  { key: "serial", label: "Serial" },
+  { key: "asset_tag", label: "Asset tag" },
+  { key: "rack", label: "Rack" },
+  { key: "location", label: "Location" },
+  { key: "cluster", label: "Cluster" },
+  { key: "interfaces", label: "Interface count" },
+  { key: "ips", label: "IP count" },
+  { key: "coordinates", label: "Coordinates" },
+  { key: "tags", label: "Tags" },
+  { key: "custom_fields", label: "Custom fields" },
+]
+
+function customFieldRows(
+  defs: CustomField[] | undefined,
+  values: Record<string, unknown> | undefined
+): DetailRow[] {
+  if (!defs || !values) return []
+  const rows: DetailRow[] = []
+  for (const def of defs) {
+    const v = values[def.key]
+    if (v === null || v === undefined || v === "") continue
+    rows.push({
+      label: def.label ?? def.key,
+      node: formatCustomValue(def, v),
+      copy:
+        typeof v === "string" || typeof v === "number" ? String(v) : undefined,
+    })
+  }
+  return rows
 }
 
 export function DetailRowList({ rows }: { rows: DetailRow[] }) {
@@ -35,7 +94,9 @@ export function DetailRowList({ rows }: { rows: DetailRow[] }) {
         >
           <span className="shrink-0 text-muted-foreground">{r.label}</span>
           <span className="flex min-w-0 items-baseline justify-end gap-1">
-            <span className="min-w-0 text-right break-words">{r.node}</span>
+            {/* wrap-anywhere: serials, DNS names and CF strings have no
+                natural break points and must not push the panel wide. */}
+            <span className="min-w-0 text-right wrap-anywhere">{r.node}</span>
             {r.copy ? <CopyButton value={r.copy} /> : null}
           </span>
         </div>
@@ -46,31 +107,44 @@ export function DetailRowList({ rows }: { rows: DetailRow[] }) {
 
 /** The site page's facts, fetched lazily on selection (same query key as the
  * detail route, so the cache is shared both ways). */
-export function SiteDetailRows({ site: s }: { site: SiteMapSite }) {
+export function SiteDetailRows({
+  site: s,
+  enabledKeys,
+}: {
+  site: SiteMapSite
+  /** Which SITE_FIELD_OPTIONS keys to render; absent = all. */
+  enabledKeys?: string[]
+}) {
   const detail = useQuery({
     queryKey: ["site", s.id],
     queryFn: () => api<Site>(`/api/sites/${s.id}/`),
     staleTime: 60_000,
   })
+  const cfDefs = useCustomFieldDefs("site").data?.results
   const d = detail.data
+  const on = (k: string) => !enabledKeys || enabledKeys.includes(k)
   const rows: DetailRow[] = []
   if (d) {
-    if (d.region) rows.push({ label: "Region", node: d.region.name })
-    if (d.address)
+    if (on("region") && d.region)
+      rows.push({ label: "Region", node: d.region.name })
+    if (on("address") && d.address)
       rows.push({ label: "Address", node: d.address, copy: d.address })
-    if (d.time_zone) rows.push({ label: "Time zone", node: d.time_zone })
-    const counts: [string, number][] = [
-      ["Prefixes", d.prefix_count],
-      ["VLANs", d.vlan_count],
-      ["VMs", d.vm_count],
-      ["Racks", d.rack_count],
-      ["Circuits", d.circuit_count],
-      ["Contacts", d.contact_count],
-    ]
-    for (const [label, n] of counts)
-      if (n > 0) rows.push({ label, node: <span className="num">{n}</span> })
+    if (on("time_zone") && d.time_zone)
+      rows.push({ label: "Time zone", node: d.time_zone })
+    if (on("counts")) {
+      const counts: [string, number][] = [
+        ["Prefixes", d.prefix_count],
+        ["VLANs", d.vlan_count],
+        ["VMs", d.vm_count],
+        ["Racks", d.rack_count],
+        ["Circuits", d.circuit_count],
+        ["Contacts", d.contact_count],
+      ]
+      for (const [label, n] of counts)
+        if (n > 0) rows.push({ label, node: <span className="num">{n}</span> })
+    }
   }
-  if (s.latitude !== null && s.longitude !== null)
+  if (on("coordinates") && s.latitude !== null && s.longitude !== null)
     rows.push({
       label: "Coordinates",
       node: (
@@ -80,16 +154,20 @@ export function SiteDetailRows({ site: s }: { site: SiteMapSite }) {
       ),
       copy: `${s.latitude.toFixed(6)}, ${s.longitude.toFixed(6)}`,
     })
+  if (on("custom_fields"))
+    rows.push(...customFieldRows(cfDefs, d?.custom_fields))
   return (
     <>
       {detail.isLoading && (
         <p className="text-[12px] text-muted-foreground">Loading…</p>
       )}
       <DetailRowList rows={rows} />
-      {d?.description && (
-        <p className="text-[12px] text-muted-foreground">{d.description}</p>
+      {on("description") && d?.description && (
+        <p className="text-[12px] wrap-anywhere text-muted-foreground">
+          {d.description}
+        </p>
       )}
-      {d && d.tags.length > 0 && <TagList tags={d.tags} />}
+      {on("tags") && d && d.tags.length > 0 && <TagList tags={d.tags} />}
     </>
   )
 }
@@ -101,11 +179,14 @@ export function SiteDetailRows({ site: s }: { site: SiteMapSite }) {
 export function DeviceExtraRows({
   id,
   shownKeys,
+  enabledKeys,
   lat,
   lng,
 }: {
   id: string
   shownKeys: string[]
+  /** Which DEVICE_FIELD_OPTIONS keys to render; absent = all. */
+  enabledKeys?: string[]
   lat?: number
   lng?: number
 }) {
@@ -114,13 +195,15 @@ export function DeviceExtraRows({
     queryFn: () => api<Device>(`/api/devices/${id}/`),
     staleTime: 60_000,
   })
+  const cfDefs = useCustomFieldDefs("device").data?.results
   const d = q.data
   if (q.isLoading)
     return <p className="text-[12px] text-muted-foreground">Loading…</p>
   if (!d) return null
   const has = (k: string) => shownKeys.includes(k)
+  const on = (k: string) => !enabledKeys || enabledKeys.includes(k)
   const rows: DetailRow[] = []
-  if (!has("linked_primary_ip") && d.primary_ip)
+  if (on("primary_ip") && !has("linked_primary_ip") && d.primary_ip)
     rows.push({
       label: "Primary IP",
       node: (
@@ -134,35 +217,35 @@ export function DeviceExtraRows({
       ),
       copy: d.primary_ip.ip_address,
     })
-  if (d.primary_ip?.dns_name)
+  if (on("dns") && d.primary_ip?.dns_name)
     rows.push({
       label: "DNS",
       node: <span className="font-mono">{d.primary_ip.dns_name}</span>,
       copy: d.primary_ip.dns_name,
     })
-  if (d.oob_ip)
+  if (on("oob_ip") && d.oob_ip)
     rows.push({
       label: "OOB IP",
       node: <span className="font-mono">{d.oob_ip.ip_address}</span>,
       copy: d.oob_ip.ip_address,
     })
-  if (d.device_type?.manufacturer)
+  if (on("manufacturer") && d.device_type?.manufacturer)
     rows.push({ label: "Manufacturer", node: d.device_type.manufacturer })
-  if (d.effective_platform)
+  if (on("platform") && d.effective_platform)
     rows.push({ label: "Platform", node: d.effective_platform.name })
-  if (!has("linked_serial") && d.serial_number)
+  if (on("serial") && !has("linked_serial") && d.serial_number)
     rows.push({
       label: "Serial",
       node: <span className="font-mono">{d.serial_number}</span>,
       copy: d.serial_number,
     })
-  if (!has("linked_asset_tag") && d.asset_tag)
+  if (on("asset_tag") && !has("linked_asset_tag") && d.asset_tag)
     rows.push({
       label: "Asset tag",
       node: <span className="font-mono">{d.asset_tag}</span>,
       copy: d.asset_tag,
     })
-  if (d.rack)
+  if (on("rack") && d.rack)
     rows.push({
       label: "Rack",
       node: (
@@ -172,7 +255,7 @@ export function DeviceExtraRows({
         </Link>
       ),
     })
-  if (d.location)
+  if (on("location") && d.location)
     rows.push({
       label: "Location",
       node: (
@@ -185,7 +268,7 @@ export function DeviceExtraRows({
         </Link>
       ),
     })
-  if (d.cluster)
+  if (on("cluster") && d.cluster)
     rows.push({
       label: "Cluster",
       node: (
@@ -194,14 +277,14 @@ export function DeviceExtraRows({
         </Link>
       ),
     })
-  if (d.interface_count > 0)
+  if (on("interfaces") && d.interface_count > 0)
     rows.push({
       label: "Interfaces",
       node: <span className="num">{d.interface_count}</span>,
     })
-  if (d.ip_count > 0)
+  if (on("ips") && d.ip_count > 0)
     rows.push({ label: "IPs", node: <span className="num">{d.ip_count}</span> })
-  if (lat != null && lng != null)
+  if (on("coordinates") && lat != null && lng != null)
     rows.push({
       label: "Coordinates",
       node: (
@@ -211,7 +294,9 @@ export function DeviceExtraRows({
       ),
       copy: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
     })
-  if (!has("tags") && !has("linked_tags") && d.tags.length > 0)
+  if (on("tags") && !has("tags") && !has("linked_tags") && d.tags.length > 0)
     rows.push({ label: "Tags", node: <TagList tags={d.tags} /> })
+  if (on("custom_fields"))
+    rows.push(...customFieldRows(cfDefs, d.custom_fields))
   return <DetailRowList rows={rows} />
 }

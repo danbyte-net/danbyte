@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useQueries } from "@tanstack/react-query"
 import {
@@ -6,6 +6,8 @@ import {
   ExternalLink,
   MapPinOff,
   Plus,
+  RotateCcw,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react"
@@ -37,9 +39,17 @@ import { Field } from "@/components/forms"
 import { CableForm } from "@/components/cable-form"
 import { DevicePathsList } from "@/components/device-paths-list"
 import {
+  DEVICE_FIELD_OPTIONS,
   DeviceExtraRows,
+  SITE_FIELD_OPTIONS,
   SiteDetailRows,
 } from "@/components/site-map/detail-rows"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { FormCheckbox } from "@/components/forms"
 import { cn } from "@/lib/utils"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
 
@@ -51,19 +61,59 @@ function num(v: number | string) {
   return Number(v).toFixed(4)
 }
 
+const INSPECTOR_W_KEY = "site-map:inspector-w"
+const INSPECTOR_W_DEFAULT = 288 // = the old fixed w-72
+const clampW = (w: number) => Math.min(640, Math.max(INSPECTOR_W_DEFAULT, w))
+
 function InspectorShell({
   kind,
   coords,
+  actions,
   onClose,
   children,
 }: {
   kind: string
   coords?: string
+  /** Extra header buttons (e.g. the field chooser), before the close X. */
+  actions?: React.ReactNode
   onClose: () => void
   children: React.ReactNode
 }) {
+  // Width is draggable via the left-edge handle and remembered per browser.
+  // The map's ResizeObserver picks the change up, so tiles reflow live.
+  const [w, setW] = useState(() => {
+    const stored = Number(localStorage.getItem(INSPECTOR_W_KEY))
+    return Number.isFinite(stored) && stored > 0
+      ? clampW(stored)
+      : INSPECTOR_W_DEFAULT
+  })
+  const drag = useRef<{ x: number; w: number } | null>(null)
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4">
+    <aside
+      style={{ width: w }}
+      className="relative flex shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4"
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onPointerDown={(e) => {
+          e.preventDefault()
+          ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+          drag.current = { x: e.clientX, w }
+        }}
+        onPointerMove={(e) => {
+          if (!drag.current) return
+          setW(clampW(drag.current.w + (drag.current.x - e.clientX)))
+        }}
+        onPointerUp={() => {
+          drag.current = null
+          setW((v) => {
+            localStorage.setItem(INSPECTOR_W_KEY, String(v))
+            return v
+          })
+        }}
+        className="absolute inset-y-0 left-0 w-1.5 cursor-col-resize touch-none hover:bg-border active:bg-border"
+      />
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
           {kind}
@@ -73,6 +123,20 @@ function InspectorShell({
             <span className="num text-[11px] text-muted-foreground">
               {coords}
             </span>
+          )}
+          {actions}
+          {w !== INSPECTOR_W_DEFAULT && (
+            <button
+              onClick={() => {
+                localStorage.removeItem(INSPECTOR_W_KEY)
+                setW(INSPECTOR_W_DEFAULT)
+              }}
+              className="text-muted-foreground hover:text-foreground"
+              title="Reset panel width"
+              aria-label="Reset panel width"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
           )}
           <button
             onClick={onClose}
@@ -88,6 +152,75 @@ function InspectorShell({
   )
 }
 
+/** Per-browser choice of which detail rows the inspector shows; null = all. */
+function useStoredKeys(
+  storageKey: string
+): [string[] | null, (v: string[] | null) => void] {
+  const [value, setValue] = useState<string[] | null>(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem(storageKey)!)
+      return Array.isArray(p) ? p : null
+    } catch {
+      return null
+    }
+  })
+  const set = (v: string[] | null) => {
+    if (v === null) localStorage.removeItem(storageKey)
+    else localStorage.setItem(storageKey, JSON.stringify(v))
+    setValue(v)
+  }
+  return [value, set]
+}
+
+function FieldsButton({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: string; label: string }[]
+  value: string[] | null
+  onChange: (v: string[] | null) => void
+}) {
+  const current = value ?? options.map((o) => o.key)
+  const toggle = (k: string, on: boolean) => {
+    const next = on ? [...current, k] : current.filter((x) => x !== k)
+    // Everything ticked = no preference stored; future rows appear by default.
+    onChange(next.length === options.length ? null : next)
+  }
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className="text-muted-foreground hover:text-foreground"
+          title="Choose which details to show"
+          aria-label="Choose which details to show"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-56 gap-1 p-2">
+        {options.map((o) => (
+          <FormCheckbox
+            key={o.key}
+            label={o.label}
+            checked={current.includes(o.key)}
+            onChange={(v) => toggle(o.key, v)}
+            className="items-center rounded px-2 py-1 text-[12px] hover:bg-muted/60"
+          />
+        ))}
+        {value !== null && (
+          <button
+            onClick={() => onChange(null)}
+            className="mt-1 w-full rounded px-2 py-1 text-left text-[12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          >
+            Show all
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function SiteInspector({
   site: s,
   onClose,
@@ -95,11 +228,19 @@ export function SiteInspector({
   site: SiteMapSite
   onClose: () => void
 }) {
+  const [fields, setFields] = useStoredKeys("site-map:inspector-site-fields")
   return (
     <InspectorShell
       kind="Site"
       coords={
         s.latitude !== null ? `${num(s.latitude)}, ${num(s.longitude!)}` : ""
+      }
+      actions={
+        <FieldsButton
+          options={SITE_FIELD_OPTIONS}
+          value={fields}
+          onChange={setFields}
+        />
       }
       onClose={onClose}
     >
@@ -119,7 +260,7 @@ export function SiteInspector({
         <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
           Details
         </span>
-        <SiteDetailRows site={s} />
+        <SiteDetailRows site={s} enabledKeys={fields ?? undefined} />
       </div>
       {s.floor_plans.length > 0 && (
         <div className="grid gap-2">
@@ -171,10 +312,18 @@ export function DeviceInspector({
   onRemove: () => void
   onClose: () => void
 }) {
+  const [fields, setFields] = useStoredKeys("site-map:inspector-device-fields")
   return (
     <InspectorShell
       kind="Device"
       coords={`${num(d.latitude)}, ${num(d.longitude)}`}
+      actions={
+        <FieldsButton
+          options={DEVICE_FIELD_OPTIONS}
+          value={fields}
+          onChange={setFields}
+        />
+      }
       onClose={onClose}
     >
       <div className="flex items-center gap-2 text-sm">
@@ -219,6 +368,7 @@ export function DeviceInspector({
         <DeviceExtraRows
           id={d.id}
           shownKeys={[]}
+          enabledKeys={fields ?? undefined}
           lat={d.latitude}
           lng={d.longitude}
         />
@@ -283,10 +433,22 @@ export function MarkerInspector({
   onDelete: () => void
   onClose: () => void
 }) {
+  // The linked device honours the same per-browser field choice as the
+  // device inspector.
+  const [fields, setFields] = useStoredKeys("site-map:inspector-device-fields")
   return (
     <InspectorShell
       kind="Marker"
       coords={`${num(m.latitude)}, ${num(m.longitude)}`}
+      actions={
+        m.device ? (
+          <FieldsButton
+            options={DEVICE_FIELD_OPTIONS}
+            value={fields}
+            onChange={setFields}
+          />
+        ) : undefined
+      }
       onClose={onClose}
     >
       <div className="flex items-center gap-2 text-sm">
@@ -309,7 +471,11 @@ export function MarkerInspector({
           <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
             Linked device
           </span>
-          <DeviceExtraRows id={m.device.id} shownKeys={[]} />
+          <DeviceExtraRows
+            id={m.device.id}
+            shownKeys={[]}
+            enabledKeys={fields ?? undefined}
+          />
         </div>
       )}
       {m.device && (

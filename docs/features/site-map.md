@@ -56,7 +56,11 @@ The page is a clone of the floor-plan editor's shell:
   device, FOV, delete); links show their endpoints and metadata. Site and
   device inspectors carry a **Details** section with the same detail-page
   rows (and copy buttons) as the popovers - serial, DNS, rack, location,
-  cluster, counts, coordinates - so the answer is on the map either way.
+  cluster, counts, coordinates, and **custom fields** - so the answer is on
+  the map either way. The panel is **resizable**: drag its left edge (the
+  width is remembered per browser; a small reset button restores the
+  default), and the sliders button in its header picks exactly **which
+  detail rows to show** - also remembered per browser.
 - **"On this map"** (Objects) - the far-right objects sidebar: one search
   box over foldable groups - sites, devices by role, markers, and links
   grouped by kind. Click a row to fly to it; Enter in the search box jumps
