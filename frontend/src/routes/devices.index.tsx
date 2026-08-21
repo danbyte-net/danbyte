@@ -99,6 +99,22 @@ function DevicesPage() {
   const handleDelete = useCallback((d: Device) => setDeleting(d), [])
   const driftMap = useDriftMap()
   const plannedMap = usePlannedChangeMap()
+  // One roll-up request feeds the whole table's "Ports" bars.
+  const portUtilQuery = useQuery({
+    queryKey: ["port-utilization-rollup"],
+    queryFn: () =>
+      api<{ results: { id: string; pct: number }[] }>(
+        "/api/devices/port-utilization/"
+      ),
+    staleTime: 60_000,
+  })
+  const portUtil = useMemo(
+    () =>
+      new Map(
+        (portUtilQuery.data?.results ?? []).map((r) => [r.id, r.pct] as const)
+      ),
+    [portUtilQuery.data]
+  )
   const columns = useMemo<ColumnDef<Device>[]>(
     () =>
       buildDeviceColumns<Device>({
@@ -108,6 +124,7 @@ function DevicesPage() {
         drift: driftMap,
         planned: plannedMap,
         monitoring,
+        portUtil,
         actions: {
           editTo: "/devices/$id/edit",
           editParams: (d) => ({ id: d.id }),
@@ -116,7 +133,7 @@ function DevicesPage() {
           canDelete: (d) => objCan(d, "delete", canDelete),
         },
       }),
-    [handleDelete, canEdit, canDelete, monitoring, humanIds]
+    [handleDelete, canEdit, canDelete, monitoring, humanIds, portUtil]
   )
   const {
     type: typeFilter,

@@ -35,6 +35,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { AlertRulesList } from "@/components/monitoring/alert-rules"
+import { PortRulesList } from "@/components/monitoring/port-rules"
 import { ChannelsList } from "@/components/monitoring/channels-list"
 import { SilencesList } from "@/components/monitoring/silences-list"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -171,7 +172,10 @@ function AlertsPage() {
 
   const secondaryTab =
     tab === "rules" ? (
-      <AlertRulesList />
+      <div className="space-y-8">
+        <AlertRulesList />
+        <PortRulesList />
+      </div>
     ) : tab === "channels" ? (
       <ChannelsList />
     ) : tab === "silences" ? (

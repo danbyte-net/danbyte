@@ -19,6 +19,7 @@ from api.serializers import TenantScopedPrimaryKeyRelatedField
 from .checkers import CheckConfigError, get_checker
 from .worker import _split_resolver
 from .models import (
+    PortUtilizationRule,
     Alert,
     AlertRule,
     AcmeOrder,
@@ -948,6 +949,63 @@ class SilenceSerializer(serializers.ModelSerializer):
                 f"Only down/stale/degraded apply; got {bad}."
             )
         return value
+
+
+class PortUtilizationRuleSerializer(serializers.ModelSerializer):
+    device = serializers.SerializerMethodField()
+    device_type = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    device_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="device_type", queryset=DeviceType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    role_id = TenantScopedPrimaryKeyRelatedField(
+        source="role", queryset=DeviceRole.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    class Meta:
+        model = PortUtilizationRule
+        fields = [
+            "id", "name", "enabled", "condition", "threshold_pct",
+            "device", "device_id", "device_type", "device_type_id",
+            "role", "role_id",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_device(self, obj):
+        d = obj.device
+        return {"id": str(d.id), "name": d.name} if d else None
+
+    def get_device_type(self, obj):
+        t = obj.device_type
+        return {"id": str(t.id), "name": t.name} if t else None
+
+    def get_role(self, obj):
+        r = obj.role
+        return {"id": str(r.id), "name": r.name, "color": r.color} if r else None
+
+    def validate(self, attrs):
+        condition = attrs.get(
+            "condition", getattr(self.instance, "condition", None)
+        )
+        threshold = attrs.get(
+            "threshold_pct", getattr(self.instance, "threshold_pct", None)
+        )
+        if condition in ("above", "below") and threshold is None:
+            raise serializers.ValidationError(
+                {"threshold_pct": "Required for above/below conditions."}
+            )
+        if threshold is not None and threshold > 100:
+            raise serializers.ValidationError(
+                {"threshold_pct": "Must be 0-100."}
+            )
+        return attrs
 
 
 class AlertRuleSerializer(serializers.ModelSerializer):

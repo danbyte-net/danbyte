@@ -1,5 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
+import { UtilCell } from "@/components/cells/util-cell"
 
 import type { BulkStatusEntry, ComplianceViolation, Device } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
@@ -47,6 +48,7 @@ export type DeviceColumnId =
   | "site"
   | "serial"
   | "ips"
+  | "ports"
   | "monitoring"
   | "primary_ip"
   | "secondary_ip"
@@ -66,6 +68,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "site",
   "serial",
   "ips",
+  "ports",
   "monitoring",
   "primary_ip",
   "secondary_ip",
@@ -96,6 +99,9 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   planned?: Map<string, PlannedTargetRow>
   /** Monitoring status per device id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** Port utilization % per device id (null = has ports table entry but no
+   * ports) - enables the "Ports" bar column. One roll-up request per table. */
+  portUtil?: Map<string, number>
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
@@ -139,6 +145,7 @@ export function buildDeviceColumns<T extends Device = Device>(
   // Monitoring column only where the page fetched bulk status.
   if (!opts.humanIds) omit.add("numid")
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.portUtil) omit.add("ports")
   const keep = (id: DeviceColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -331,6 +338,14 @@ export function buildDeviceColumns<T extends Device = Device>(
         ) : (
           dash
         ),
+    }),
+    ports: () => ({
+      id: "ports",
+      accessorFn: (d) => opts.portUtil?.get(d.id) ?? -1,
+      header: ({ column }) => <SortHeader column={column} label="Ports" />,
+      cell: ({ row }) => (
+        <UtilCell pct={opts.portUtil?.get(row.original.id) ?? null} />
+      ),
     }),
     ips: () => ({
       id: "ips",

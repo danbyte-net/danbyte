@@ -451,6 +451,17 @@ matched against your enabled rules in priority order, and the first match sets t
 severity. With **no rules**, a sensible default applies (down/stale → critical,
 degraded → warning), so alerting works out of the box.
 
+The same tab also holds **port utilization rules**: warn when a device's port
+fill reaches (or drops to) a threshold, or when a device has **no ports at
+all**. Each rule scopes to a specific device, a device type, and/or a device
+role (all set conditions AND together; nothing set = every device in the
+tenant). They ride the periodic utilization sweep and notify through the
+tenant's channels with hysteresis - a rule fires once per crossing and
+re-arms when the condition stops holding, exactly like prefix-utilization
+alerts. Counting matches the device page's Port utilization card: connected
+or *Planned*-reserved ports over total interfaces, front ports and rear
+ports.
+
 ### Acknowledge an alert
 
 You can **acknowledge** a firing alert so the team knows someone owns it (with an

@@ -11,6 +11,7 @@ from .maintenance_api import EventImpactViewSet, MaintenanceEventViewSet
 from .viewsets import (
     AcmeOrderViewSet,
     AlertRuleViewSet,
+    PortUtilizationRuleViewSet,
     CertificateAssignmentViewSet,
     CertificateBindingViewSet,
     CertificateRequestViewSet,
@@ -92,6 +93,11 @@ router.register(
     basename="notification-subscription",
 )
 router.register(r"alert-rules", AlertRuleViewSet, basename="alert-rule")
+router.register(
+    r"port-utilization-rules",
+    PortUtilizationRuleViewSet,
+    basename="port-utilization-rule",
+)
 router.register(r"silences", SilenceViewSet, basename="silence")
 router.register(
     r"maintenance-events", MaintenanceEventViewSet, basename="maintenance-event"

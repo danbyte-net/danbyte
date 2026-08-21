@@ -109,7 +109,11 @@ The estate-wide view lives at **DCIM → Connections → Port utilization**:
 every device with ports, fullest first, with the same
 connected/reserved/free split, site/role/type facets, search and export -
 so the patch panel about to run out is the first row you see
-(`GET /api/devices/port-utilization/`).
+(`GET /api/devices/port-utilization/`). The **Devices list** carries the same
+number as a **Ports** bar column (like the prefix utilization bar), and
+**port utilization rules** on the Alerts → Rules tab can notify when a
+device's fill crosses a threshold - see
+[Monitoring](../features/monitoring.md#alert-rules).
 
 Any **custom fields** you've defined for devices appear below the cards. If any of the device's IPs are
 monitored, a **Monitoring** summary (roll-up badge + per-IP grid) appears at the

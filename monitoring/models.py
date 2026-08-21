@@ -1309,6 +1309,79 @@ class AlertRule(TimestampedModel):
         return f"{self.name} → {self.severity}"
 
 
+class PortUtilizationRule(TimestampedModel):
+    """Warn when a device's port fill crosses a line (issue follow-up to the
+    port-utilization views).
+
+    Scope is the AND of whichever of device / device type / role are set;
+    all empty = every device in the tenant. Fired through ``notify_event``
+    with cache hysteresis, exactly like prefix-utilization alerts - no
+    second notification mechanism.
+    """
+
+    CONDITIONS = [
+        ("above", "Utilization at or above threshold"),
+        ("below", "Utilization at or below threshold"),
+        ("no_ports", "Device has no ports at all"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="port_utilization_rules"
+    )
+    name = models.CharField(max_length=120)
+    enabled = models.BooleanField(default=True)
+
+    device = models.ForeignKey(
+        "api.Device",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="port_utilization_rules",
+        help_text="Only this device.",
+    )
+    device_type = models.ForeignKey(
+        "api.DeviceType",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="port_utilization_rules",
+        help_text="Only devices of this type.",
+    )
+    role = models.ForeignKey(
+        "api.DeviceRole",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="port_utilization_rules",
+        help_text="Only devices with this role.",
+    )
+
+    condition = models.CharField(max_length=8, choices=CONDITIONS)
+    threshold_pct = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Percent used that trips the rule (above/below conditions).",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["tenant", "enabled"])]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.condition in ("above", "below") and self.threshold_pct is None:
+            raise ValidationError(
+                {"threshold_pct": "Required for above/below conditions."}
+            )
+        if self.threshold_pct is not None and self.threshold_pct > 100:
+            raise ValidationError({"threshold_pct": "Must be 0-100."})
+
+
 class Alert(TimestampedModel):
     """An open (or resolved) alerting condition - an *incident*, distinct from
     the raw transition log.

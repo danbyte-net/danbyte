@@ -24,6 +24,7 @@ from auth_api import rbac
 from auth_api.permissions import can_manage_admin
 
 from .models import (
+    PortUtilizationRule,
     AlertRule,
     Certificate,
     AcmeOrder,
@@ -49,6 +50,7 @@ from .models import (
     WatchedEndpoint,
 )
 from .serializers import (
+    PortUtilizationRuleSerializer,
     AlertRuleSerializer,
     AcmeOrderSerializer,
     CertificateAssignmentSerializer,
@@ -2002,6 +2004,17 @@ def notifications_unwatch(request):
     ):
         channel.delete()
     return Response({"ok": True, "watching": False})
+
+
+class PortUtilizationRuleViewSet(TenantScopedViewSet):
+    queryset = (
+        PortUtilizationRule.objects.select_related(
+            "device", "device_type", "role"
+        )
+        .all()
+        .order_by("name")
+    )
+    serializer_class = PortUtilizationRuleSerializer
 
 
 class AlertRuleViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSet):

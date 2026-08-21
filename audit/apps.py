@@ -110,6 +110,7 @@ AUDITED_MODELS = [
     "monitoring.WatchedEndpoint",
     "monitoring.CheckAssignment",
     "monitoring.AlertRule",
+    "monitoring.PortUtilizationRule",
     "monitoring.NotificationChannel",
     "monitoring.NotificationSubscription",
     "monitoring.Silence",
