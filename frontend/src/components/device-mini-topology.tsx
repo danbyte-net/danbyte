@@ -17,6 +17,9 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
 import { DevicePathsList } from "@/components/device-paths-list"
+import { useUrlSubTab } from "@/lib/use-url-tab"
+
+const MINI_VIEWS = ["paths", "map"] as const
 
 const TopologyCanvas = lazy(() =>
   import("@/components/topology/topology-canvas").then((m) => ({
@@ -36,7 +39,9 @@ export function DeviceMiniTopology({
   /** Floor-plan deep-view: trace a whole run, or one cable, on the plan. */
   onTraceCables?: (cableIds: string[]) => void
 }) {
-  const [view, setView] = useState<"paths" | "map">("paths")
+  // `?sub=` on the device page, so a link can point straight at the map
+  // instead of the paths list it opens on.
+  const [view, setView] = useUrlSubTab<"paths" | "map">("paths", MINI_VIEWS)
   const [ghost, setGhost] = useState<GhostEdgeData | null>(null)
   const navigate = useNavigate()
 

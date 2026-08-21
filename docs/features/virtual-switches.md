@@ -94,6 +94,9 @@ shows the same diagram scoped to that VM.
 Switches, networks and the topology are populated when **Sync virtual switches
 & networks** is enabled on a source; you can also create switches by hand.
 
+Scoping the diagram to one source is on the address (`?source=<id>`), so a
+single cluster's picture is a link.
+
 The same rail diagram drives the [topology page's **Logical**
 view](topology.md), which widens the picture to the whole L2 domain -
 physical device interfaces and VM interfaces on shared VLAN rails.

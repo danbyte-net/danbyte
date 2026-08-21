@@ -252,6 +252,7 @@ function Body({ iface: i }: { iface: Interface }) {
             url={`/api/interfaces/${i.id}/trace/`}
             queryKey={["trace", "interface", i.id]}
             focusNodeId={`dev:${i.device.id}`}
+            urlKey="dir"
           />
         </div>
       </DetailTab>

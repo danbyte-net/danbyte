@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Network, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import {
@@ -90,6 +90,14 @@ function Body({ location: l }: { location: Location }) {
           <Button variant="outline" size="sm" asChild>
             <Link to="/racks/elevations" search={{ location: l.id }}>
               Rack elevations
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link
+              to="/topology"
+              search={{ group: "location" as const, location: l.id }}
+            >
+              <Network className="h-3.5 w-3.5" /> Topology
             </Link>
           </Button>
           {floorPlan ? (

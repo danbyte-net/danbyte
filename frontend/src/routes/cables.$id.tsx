@@ -191,6 +191,7 @@ function Body({ cable: c }: { cable: Cable }) {
         <TraceSection
           url={`/api/cables/${c.id}/trace/`}
           queryKey={["trace", "cable", c.id]}
+          urlKey="dir"
         />
       </DetailTab>
       <DetailTab value="journal">

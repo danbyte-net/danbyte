@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
+
+import { useUrlText } from "@/lib/use-url-state"
 import { Cloud } from "lucide-react"
 
 import {
@@ -27,6 +29,8 @@ import {
 
 export const Route = createFileRoute("/virtual-topology/")({
   component: VirtualTopologyPage,
+  validateSearch: (s: Record<string, unknown>): { source?: string } =>
+    typeof s.source === "string" && s.source ? { source: s.source } : {},
 })
 
 // OpenStack-style rails, drawn by the shared RailDiagram (also behind the
@@ -35,7 +39,8 @@ export const Route = createFileRoute("/virtual-topology/")({
 // network they attach to.
 
 function VirtualTopologyPage() {
-  const [source, setSource] = useState("")
+  // URL-backed, so one source's diagram is a link.
+  const [source, setSource] = useUrlText("source")
   const nav = useNavigate()
 
   const sources = useQuery({

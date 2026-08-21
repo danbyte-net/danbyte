@@ -5,6 +5,9 @@ import { api, type TraceGraph } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { useUrlEnum } from "@/lib/use-url-state"
+
+const AXES = ["LR", "TB"] as const
 
 const TopologyCanvas = lazy(() =>
   import("./topology-canvas").then((m) => ({ default: m.TopologyCanvas }))
@@ -17,13 +20,20 @@ export function TraceSection({
   url,
   queryKey,
   focusNodeId,
+  urlKey,
 }: {
   url: string
   queryKey: unknown[]
   focusNodeId?: string
+  /** Put the axis on the page URL under this param, so a trace can be linked
+   * the way it is being read. Omitted inside a dialog: a dialog must not
+   * rewrite the address of the page behind it. */
+  urlKey?: string
 }) {
   const q = useQuery({ queryKey, queryFn: () => api<TraceGraph>(url) })
-  const [direction, setDirection] = useState<"LR" | "TB">("LR")
+  const local = useState<"LR" | "TB">("LR")
+  const linked = useUrlEnum<"LR" | "TB">(urlKey ?? "dir", "LR", AXES)
+  const [direction, setDirection] = urlKey ? linked : local
 
   return (
     <div>

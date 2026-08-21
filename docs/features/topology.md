@@ -87,7 +87,10 @@ Every **device page** carries the same language: its Topology card defaults
 to **Paths** - one flat end-to-end strip per cabled port (linked chips,
 panels crossed `front ⇄ rear`, segments in the cable's color) - with a
 **Map** tab for the React Flow 1-hop neighbourhood and "Full map" jumping
-here focused. The **cable page** hero draws its own run the same way.
+here focused. That choice is on the address (`?sub=map`), so a link can open
+the device straight on its map. The **cable page** hero draws its own run the
+same way. Site and location pages have a **Topology** button that opens this
+map scoped to them.
 
 A collapsible **Legend** in the map's corner explains the line styles for
 whichever view is active (the Logical view carries its own under the
@@ -127,6 +130,10 @@ walks *through* a device's internal pass-throughs to find the true far end:
 
 On the **map**, PDUs stay visible as their own nodes (they're only a partial
 pass-through); only patch panels collapse away.
+
+A trace map's axis is on the page's own address (`?dir=tb`), so a link opens
+it read the way you left it. The same trace inside a dialog keeps its axis to
+itself - a dialog doesn't rewrite the page behind it.
 
 ## Patch panels
 

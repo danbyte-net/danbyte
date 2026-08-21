@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Network, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import {
@@ -107,6 +107,11 @@ function SiteDetailBody({ site: s }: { site: Site }) {
           <Button variant="outline" size="sm" asChild>
             <Link to="/racks/elevations" search={{ site: s.id }}>
               Rack elevations
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/topology" search={{ site: s.id }}>
+              <Network className="h-3.5 w-3.5" /> Topology
             </Link>
           </Button>
           {canDo("site", "change") && (
