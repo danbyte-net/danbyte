@@ -653,6 +653,7 @@ function TopologyPage() {
           items={[
             { value: "stencil", label: "Wiring" },
             { value: "hierarchy", label: "Hierarchy" },
+            { value: "photo", label: "Faceplates" },
             { value: "flat", label: "Flat" },
             { value: "logical", label: "Logical" },
           ]}

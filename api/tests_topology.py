@@ -666,3 +666,40 @@ class DeviceSetAndSpeedTests(_Base):
         bc = by_pair[frozenset((f"dev:{self.b.id}", f"dev:{self.c.id}"))]
         self.assertEqual(ab["speed"], "10G")
         self.assertIsNone(bc["speed"])
+
+
+class PhotoPayloadTests(_Base):
+    """Faceplate-photo view payload: front image + matching port markers."""
+
+    def test_front_image_and_matching_markers(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import DeviceType
+
+        png = SimpleUploadedFile(
+            "face.png", b"\x89PNG\r\n\x1a\n0000", content_type="image/png"
+        )
+        dt = DeviceType.objects.create(
+            tenant=self.tenant, name="SW-48", u_height=2, front_image=png,
+            image_ports={"front": [
+                {"kind": "interface", "name": "eth0",
+                 "x": 0.1, "y": 0.4, "w": 0.05, "h": 0.2},
+                {"kind": "interface", "name": "eth9",
+                 "x": 0.9, "y": 0.4, "w": 0.05, "h": 0.2},
+            ]},
+        )
+        a = Device.objects.create(tenant=self.tenant, name="sw-a", device_type=dt)
+        b = Device.objects.create(tenant=self.tenant, name="sw-b")
+        self._cable(
+            Interface.objects.create(device=a, name="eth0"),
+            Interface.objects.create(device=b, name="eth7"),
+        )
+        g = self._graph()
+        na = next(n for n in g["nodes"] if n["data"]["name"] == "sw-a")
+        nb = next(n for n in g["nodes"] if n["data"]["name"] == "sw-b")
+        self.assertTrue(na["data"]["front_image"].endswith(".png"))
+        self.assertEqual(na["data"]["u_height"], 2)
+        # Only the cabled port's marker ships; eth9 is uncabled.
+        self.assertEqual(
+            [m["name"] for m in na["data"]["image_ports"]], ["eth0"]
+        )
+        self.assertIsNone(nb["data"]["front_image"])

@@ -5,6 +5,7 @@ import { stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
 import { FLAT_H, flatW } from "./flat-node"
 import { GROUP_H, GROUP_W } from "./group-node"
+import { photoSize } from "./photo-node"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
 // height follows the stencil card (header + one row per cabled port) so
@@ -456,6 +457,8 @@ export function edgeWaypoints(
       if (n.type === "flat")
         return { width: flatW(n.data as { name?: string }), height: FLAT_H }
       if (n.type === "sitegroup") return { width: GROUP_W, height: GROUP_H }
+      if (n.type === "photo")
+        return photoSize(n.data as Parameters<typeof photoSize>[0])
       return stencilSize(n.data as StencilData)
     },
     direction === "TB"
@@ -812,14 +815,17 @@ export function layoutNodes(
   mainOffsets?: number[],
   /** Node dimensions; defaults to the stencil card. The Flat view passes a
    * fixed-size function so its chips lay out tight. */
-  sizeOfNode?: (n: Node) => { width: number; height: number }
+  sizeOfNode?: (n: Node) => { width: number; height: number },
+  /** Overrides the compact-spacing inference (custom sizer ⇒ compact) - the
+   * photo view sizes its own nodes but wants normal spacing. */
+  spacing?: "compact" | "normal"
 ): LayoutResult {
   const sizer =
     sizeOfNode ?? ((n: Node) => stencilSize(n.data as StencilData))
   // A custom sizer means small fixed chips (the Flat view) - tighten the
   // gaps so hundreds of nodes stay compact; stencil cards keep the roomy
   // spacing their port-anchored cables need.
-  const compact = !!sizeOfNode
+  const compact = spacing ? spacing === "compact" : !!sizeOfNode
   const tbDir = direction === "TB"
   const pinnedIds = positions
     ? new Set(Object.keys(positions))

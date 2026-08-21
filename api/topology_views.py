@@ -57,6 +57,24 @@ def _devices_qs(tenant):
 def _device_node(d, ports, panel=False):
     """``ports`` = ordered [{name, kind, pair?}] of this device's cabled ends
     - ``pair`` names the rear port sharing the row (front ⇄ rear strand)."""
+    # Faceplate-photo view inputs: the device type's front image and the
+    # image-port markers matching this node's cabled ports, so a cable can
+    # plug into its true position on the photo.
+    dt = d.device_type if d.device_type_id else None
+    front_image = None
+    markers = []
+    if dt is not None and dt.front_image:
+        try:
+            front_image = dt.front_image.url
+        except ValueError:
+            front_image = None
+    if front_image:
+        cabled = {p["name"] for p in ports}
+        cabled |= {p["pair"] for p in ports if p.get("pair")}
+        markers = [
+            m for m in (dt.image_ports or {}).get("front", []) or []
+            if m.get("name") in cabled
+        ]
     return {
         "id": f"dev:{d.id}",
         "type": "device",
@@ -77,6 +95,9 @@ def _device_node(d, ports, panel=False):
             "interface_count": getattr(d, "ic", 0),
             "panel": panel,
             "ports": ports,
+            "u_height": dt.u_height if dt is not None else 1,
+            "front_image": front_image,
+            "image_ports": markers,
         },
     }
 

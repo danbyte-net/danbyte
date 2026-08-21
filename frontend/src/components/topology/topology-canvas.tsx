@@ -26,11 +26,13 @@ import { toPng } from "html-to-image"
 
 import type { GhostEdgeData, TopoEdge, TopologyGraph } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
-import { PortNode, StencilNode, handleId } from "./stencil-node"
+import { PortNode, StencilNode, handleId, stencilSize } from "./stencil-node"
+import type { StencilData } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
 import { FLAT_H, FlatNode, flatW } from "./flat-node"
 import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
 import { HierarchyNode, hierarchyWidth } from "./hierarchy-node"
+import { PhotoNode, photoSize } from "./photo-node"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import { edgeWaypoints, layoutHierarchy, layoutNodes } from "./layout"
 import { resolveLevels } from "./level-organiser"
@@ -45,6 +47,7 @@ const nodeTypes = {
   // grey stock box behind it.
   sitegroup: GroupNode,
   hier: HierarchyNode,
+  photo: PhotoNode,
   interface: PortNode,
   front_port: PortNode,
   rear_port: PortNode,
@@ -56,7 +59,7 @@ export type EdgeColorMode = "cable" | "type" | "status" | "speed" | "none"
 /** "stencil" = wiring cards with port rows; "hierarchy" = tall cards with
  * peer-aligned port chips (near-straight cables); "flat" = barebones fixed
  * chips with parallel cables bundled into one ×N edge. */
-export type NodeStyle = "stencil" | "hierarchy" | "flat"
+export type NodeStyle = "stencil" | "hierarchy" | "photo" | "flat"
 
 /** One member of a Flat-view bundled edge (the underlying cable's data). */
 export type BundleMember = NonNullable<TopoEdge["data"]>
@@ -199,7 +202,8 @@ const ADJACENCY = 120
 function assignSides(
   edges: Edge[],
   posOf: PosOf,
-  direction: "LR" | "TB"
+  direction: "LR" | "TB",
+  skip?: Set<string>
 ): {
   edges: Edge[]
   sides: Map<string, Record<string, PortSide>>
@@ -236,6 +240,9 @@ function assignSides(
     const baseT =
       data?.baseT ?? (e.targetHandle ? String(e.targetHandle) : null)
     if (!a || !b || !baseS || !baseT) return e
+    const sSkip = skip?.has(e.source) ?? false
+    const tSkip = skip?.has(e.target) ?? false
+    if (sSkip && tSkip) return { ...e, data: { ...e.data, baseS, baseT } }
     const dx = b.x - a.x
     const dy = b.y - a.y
     // Main axis follows the layout direction (x in side-to-side, y in tree);
@@ -266,14 +273,18 @@ function assignSides(
         tSide = crossD >= 0 ? "T" : "B"
       }
     }
-    set(e.source, baseS, sSide)
-    set(e.target, baseT, tSide)
-    order(e.source, baseS, sSide, b) // source port faces its target
-    order(e.target, baseT, tSide, a) // target port faces its source
+    if (!sSkip) {
+      set(e.source, baseS, sSide)
+      order(e.source, baseS, sSide, b) // source port faces its target
+    }
+    if (!tSkip) {
+      set(e.target, baseT, tSide)
+      order(e.target, baseT, tSide, a) // target port faces its source
+    }
     return {
       ...e,
-      sourceHandle: handleId(baseS, sSide),
-      targetHandle: handleId(baseT, tSide),
+      sourceHandle: sSkip ? baseS : handleId(baseS, sSide),
+      targetHandle: tSkip ? baseT : handleId(baseT, tSide),
       data: { ...e.data, baseS, baseT },
     }
   })
@@ -299,6 +310,7 @@ function build(
 ) {
   const flat = opts.nodeStyle === "flat"
   const hier = opts.nodeStyle === "hierarchy"
+  const photo = opts.nodeStyle === "photo"
   // A grouped payload (group_by=site|location) renders like the flat view:
   // fixed-size cards, whole-node edges, one compact layout pass.
   const grouped = graph.nodes.some((n) => n.type === "group")
@@ -313,7 +325,9 @@ function build(
             ? "flat"
             : hier
               ? "hier"
-              : "device",
+              : photo && n.data.front_image
+                ? "photo"
+                : "device",
     position: { x: 0, y: 0 },
     selected: opts.focusNodeId === n.id,
     data: {
@@ -618,6 +632,17 @@ function build(
     return { nodes: laidFlat, edges: routedFlat }
   }
 
+  // Photo mode: photo nodes keep bare marker handles + their fixed sizes.
+  const photoIds = photo
+    ? new Set(nodes.filter((n) => n.type === "photo").map((n) => n.id))
+    : undefined
+  const mixedSize = photo
+    ? (n: Node) =>
+        n.type === "photo"
+          ? photoSize(n.data as Parameters<typeof photoSize>[0])
+          : stencilSize(n.data as StencilData)
+    : undefined
+
   // Pass 1: a nominal layout (no port sides yet) just to learn each card's
   // rank/position, so we can decide which side of a card faces each neighbour.
   const pass1 = layoutNodes(
@@ -626,7 +651,9 @@ function build(
     opts.positions,
     opts.direction,
     levels,
-    mainOffsets
+    mainOffsets,
+    mixedSize,
+    photo ? "normal" : undefined
   ).nodes
   const pos1 = new Map(pass1.map((n) => [n.id, n.position]))
 
@@ -636,7 +663,8 @@ function build(
   const { edges, sides, orders } = assignSides(
     allEdges,
     (id) => pos1.get(id),
-    opts.direction ?? "LR"
+    opts.direction ?? "LR",
+    photoIds
   )
 
   // Inject the sides + port order so each card sizes to its per-side port
@@ -660,7 +688,9 @@ function build(
     opts.positions,
     opts.direction,
     levels,
-    mainOffsets
+    mainOffsets,
+    mixedSize,
+    photo ? "normal" : undefined
   )
   // Route cable edges along the node-avoiding interior bends (the ends snap to
   // the port handles). Skipped in "straight" mode.
@@ -1027,11 +1057,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     const liveNodes = flow.getNodes()
     const live = new Map(liveNodes.map((n) => [n.id, n.position]))
     setEdges((cur) => {
+      const photoSkip = new Set(
+        liveNodes.filter((n) => n.type === "photo").map((n) => n.id)
+      )
       const {
         edges: next,
         sides,
         orders,
-      } = assignSides(cur, (id) => live.get(id), direction)
+      } = assignSides(cur, (id) => live.get(id), direction, photoSkip)
       setNodes((ns) =>
         ns.map((n) =>
           sides.has(n.id)
