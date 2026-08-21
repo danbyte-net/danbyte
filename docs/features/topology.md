@@ -259,6 +259,13 @@ the views select; **Save** updates it in place after you rearrange;
 left-to-right layout. Views are plain API objects
 (`/api/topology-views/`), change-logged like everything else.
 
+Arrangements are kept **per view** - Wiring, Hierarchy and Flat each remember
+their own. The cards are different sizes in each, so one shared set of
+coordinates would hand Hierarchy the spacing you tuned for Flat. Arrange a view,
+switch away, come back: it's as you left it, and **Save** writes all of them.
+**Re-layout** only re-runs the view you're looking at. Views saved before this
+keep their arrangement under the style they were saved in.
+
 A view is addressable: `?view=<id>` opens it. Change anything afterwards and
 the toolbar says **edited** - what you're looking at is no longer what the
 view describes. **Save** writes it back and the address collapses to the plain

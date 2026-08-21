@@ -2873,12 +2873,31 @@ class ModuleBayTemplateSerializer(_ComponentTemplateSerializer):
 class TopologyViewSerializer(NumIdModelSerializer):
     state = serializers.JSONField(required=False)
 
+    # The map's cards are sized differently in each view style, so a view
+    # keeps one arrangement per style. Each is bounded like the single map
+    # this grew out of.
+    POSITION_STYLES = ("stencil", "hierarchy", "flat")
+
     def validate_state(self, v):
         if not isinstance(v, dict):
             raise serializers.ValidationError("state must be an object")
         pos = v.get("positions", {})
         if not isinstance(pos, dict) or len(pos) > 5000:
             raise serializers.ValidationError("positions must be an object (≤5000 nodes)")
+        by_style = v.get("positions_by_style", {})
+        if not isinstance(by_style, dict):
+            raise serializers.ValidationError(
+                "positions_by_style must be an object"
+            )
+        for style, entry in by_style.items():
+            if style not in self.POSITION_STYLES:
+                raise serializers.ValidationError(
+                    f"positions_by_style: unknown view style '{style}'"
+                )
+            if not isinstance(entry, dict) or len(entry) > 5000:
+                raise serializers.ValidationError(
+                    f"positions_by_style.{style} must be an object (≤5000 nodes)"
+                )
         return v
 
     class Meta:

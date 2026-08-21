@@ -2579,6 +2579,11 @@ export interface DevicePathRun {
 
 export interface TopologyViewState {
   filters?: Record<string, unknown>
+  /** Node arrangements per view style - the cards differ in size between
+   * styles, so each keeps its own coordinates. */
+  positions_by_style?: Record<string, Record<string, [number, number]>>
+  /** The style-on-save arrangement. Predates `positions_by_style`; still
+   * written so older readers keep working. */
   positions?: Record<string, [number, number]>
 }
 

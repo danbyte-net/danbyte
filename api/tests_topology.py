@@ -288,6 +288,45 @@ class SavedViewTests(_Base):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_positions_are_kept_per_view_style(self):
+        """A view holds one arrangement per style: the cards differ in size,
+        so Flat's coordinates must never be handed to Hierarchy."""
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "per style", "state": {
+                "filters": {"viewStyle": "flat"},
+                "positions_by_style": {
+                    "flat": {"dev:abc": [10, 20]},
+                    "hierarchy": {"dev:abc": [900, 40]},
+                },
+                "positions": {"dev:abc": [10, 20]},
+            }},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        state = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]
+        self.assertEqual(
+            state["positions_by_style"]["hierarchy"]["dev:abc"], [900, 40]
+        )
+        self.assertEqual(
+            state["positions_by_style"]["flat"]["dev:abc"], [10, 20]
+        )
+
+    def test_bad_positions_by_style_rejected(self):
+        for bad in (
+            {"positions_by_style": "nope"},
+            {"positions_by_style": {"photo": {}}},
+            {"positions_by_style": {"flat": "nope"}},
+        ):
+            resp = self.client.post(
+                "/api/topology-views/",
+                {"name": f"bad {list(bad.values())[0]}", "state": bad},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 400, resp.content)
+
 
 class PassThroughAndCrashTests(_Base):
     """Feature A: trace no longer crashes on console/power/aux terminations,

@@ -242,18 +242,35 @@ function PopoverField({
 
 // Dragged node positions for the DEFAULT (no saved view) topology, kept in the
 // browser so a manual arrangement survives a reload.
+//
+// Positions are held PER VIEW STYLE. The node ids are the same in every style
+// (`dev:<uuid>`), but the cards are not: a Wiring stencil sized to its ports,
+// a Hierarchy card as tall as its port list, and a Flat chip need completely
+// different coordinates. One shared map meant arranging Flat silently
+// overwrote the Hierarchy arrangement - and then re-applied Flat's spacing to
+// Hierarchy's much larger cards.
+type PosMap = Record<string, [number, number]>
+type PosByStyle = Partial<Record<NodeStyle, PosMap>>
 const POS_KEY = "danbyte-topology-positions"
-function readStoredPositions(): Record<string, [number, number]> | undefined {
+
+/** Old stores held one flat map for every style; read it as the style it was
+ * most likely arranged in, so nobody loses an arrangement to this change. */
+function migratePositions(raw: unknown, style: NodeStyle): PosByStyle {
+  if (!raw || typeof raw !== "object") return {}
+  const obj = raw as Record<string, unknown>
+  const isNew = ["stencil", "hierarchy", "flat"].some((k) => k in obj)
+  return isNew ? (obj as PosByStyle) : { [style]: obj as PosMap }
+}
+
+function readStoredPositions(style: NodeStyle): PosByStyle {
   try {
     const raw = localStorage.getItem(POS_KEY)
-    return raw
-      ? (JSON.parse(raw) as Record<string, [number, number]>)
-      : undefined
+    return raw ? migratePositions(JSON.parse(raw), style) : {}
   } catch {
-    return undefined
+    return {}
   }
 }
-function writeStoredPositions(p: Record<string, [number, number]>) {
+function writeStoredPositions(p: PosByStyle) {
   try {
     localStorage.setItem(POS_KEY, JSON.stringify(p))
   } catch {
@@ -266,6 +283,21 @@ function clearStoredPositions() {
   } catch {
     /* non-fatal */
   }
+}
+
+/** A saved view's arrangements, per style. Views written before positions were
+ * split carry one map under `positions`; it belongs to the style the view was
+ * saved in. */
+function viewPositions(v: TopologyViewSaved): PosByStyle {
+  const byStyle = (v.state as { positions_by_style?: PosByStyle })
+    .positions_by_style
+  if (byStyle && typeof byStyle === "object") return byStyle
+  const style = sanitizeViewStyle(
+    (v.state.filters as { viewStyle?: unknown } | undefined)?.viewStyle
+  )
+  return v.state.positions && style !== "logical"
+    ? { [style]: v.state.positions }
+    : {}
 }
 
 // Display settings (Levels order/bonds/distances, direction, colour mode,
@@ -463,9 +495,30 @@ function TopologyPage() {
       device: f ? f.id : undefined,
       depth: f && f.depth !== 1 ? String(f.depth) : undefined,
     })
-  const [positions, setPositions] = useState<
-    Record<string, [number, number]> | undefined
-  >(readStoredPositions)
+  // One arrangement per view style - see PosByStyle. The canvas only ever
+  // sees the style it is currently drawing.
+  const [posByStyle, setPosByStyle] = useState<PosByStyle>(() =>
+    readStoredPositions(styleOfTab(dflt.tab) as NodeStyle)
+  )
+  const positions = logical ? undefined : posByStyle[viewStyle as NodeStyle]
+  /** Replace the arrangement of the style on screen (undefined = re-layout
+   * it); every other style keeps the one the user tuned. */
+  const setPositions = (p: PosMap | undefined) => {
+    if (logical) return
+    const next = { ...posByStyle }
+    if (p) next[viewStyle as NodeStyle] = p
+    else delete next[viewStyle as NodeStyle]
+    setPosByStyle(next)
+    // Only the default map persists to the browser; a saved view's
+    // arrangements are written by Save.
+    if (viewId === "none") writeStoredPositions(next)
+  }
+  /** Every style's arrangement is stale - the map is about to hold a
+   * different set of devices. */
+  const dropAllPositions = () => {
+    setPosByStyle({})
+    if (viewId === "none") clearStoredPositions()
+  }
   const [layoutTick, setLayoutTick] = useState(0)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [ghost, setGhost] = useState<GhostEdgeData | null>(null)
@@ -494,14 +547,14 @@ function TopologyPage() {
     if (!d.group_id) return
     patch({ [d.kind]: d.group_id })
     clearSel()
-    setPositions(undefined)
+    dropAllPositions()
     setLayoutTick((t) => t + 1)
   }
 
   const leaveDrill = () => {
     patch({ [groupBy === "location" ? "location" : "site"]: "all" })
     clearSel()
-    setPositions(undefined)
+    dropAllPositions()
     setLayoutTick((t) => t + 1)
   }
 
@@ -514,7 +567,7 @@ function TopologyPage() {
   const exitBuilder = () => {
     patch({ devices: undefined, ...(vf.devices ? { view: undefined } : {}) })
     clearSel()
-    setPositions(undefined)
+    dropAllPositions()
     setLayoutTick((t) => t + 1)
   }
 
@@ -563,7 +616,7 @@ function TopologyPage() {
           }
         : {}),
     })
-    setPositions(undefined)
+    dropAllPositions()
   }
 
   // Persist the DEFAULT view's display settings across reloads. Only while no
@@ -736,10 +789,11 @@ function TopologyPage() {
     // Bumping the tick marks this as a deliberate relayout so the canvas uses
     // the fresh layout rather than keeping the previous view's node positions.
     if (f.roleOrder?.length) {
-      setPositions(undefined)
+      setPosByStyle({})
       setLayoutTick((t) => t + 1)
     } else {
-      setPositions(v.state.positions)
+      // Each style gets back the arrangement it was saved with.
+      setPosByStyle(viewPositions(v))
       setLayoutTick(0)
     }
   }
@@ -750,7 +804,7 @@ function TopologyPage() {
       view: undefined,
       ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
     })
-    setPositions(readStoredPositions())
+    setPosByStyle(readStoredPositions(viewStyle as NodeStyle))
     setLayoutTick((t) => t + 1)
   }
 
@@ -762,21 +816,35 @@ function TopologyPage() {
       (k) => (urlSearch as Record<string, unknown>)[k] !== undefined
     )
 
-  const currentState = () => ({
-    filters: {
-      ...filters,
-      colorMode,
-      direction,
-      roleOrder,
-      roleBonds,
-      roleDistance,
-      edgeRouting,
-      viewStyle,
-      groupBy,
-      ...(custom !== null ? { devices: custom } : {}),
-    },
-    positions: canvas.current?.positions() ?? {},
-  })
+  const currentState = () => {
+    // Save the arrangement of every style the user has tuned, not just the one
+    // on screen - a view is the whole map, and switching to Hierarchy must not
+    // hand you the Flat spacing.
+    const live = logical ? undefined : canvas.current?.positions()
+    const byStyle: PosByStyle = {
+      ...posByStyle,
+      ...(live && Object.keys(live).length
+        ? { [viewStyle as NodeStyle]: live }
+        : {}),
+    }
+    return {
+      filters: {
+        ...filters,
+        colorMode,
+        direction,
+        roleOrder,
+        roleBonds,
+        roleDistance,
+        edgeRouting,
+        viewStyle,
+        groupBy,
+        ...(custom !== null ? { devices: custom } : {}),
+      },
+      positions_by_style: byStyle,
+      // Kept in step for anything still reading the single-map field.
+      positions: byStyle[viewStyle as NodeStyle] ?? {},
+    }
+  }
 
   const saveView = useMutation({
     mutationFn: (args: { id?: string; name?: string }) => {
@@ -809,7 +877,6 @@ function TopologyPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["topology-views"] })
       clearView()
-      setPositions(undefined)
       toast.success("View deleted")
     },
     onError: (err) => apiErrorToast(err),
@@ -900,11 +967,12 @@ function TopologyPage() {
         <SegmentedTabs<ViewStyle>
           value={viewStyle}
           onValueChange={(v) => {
+            // Each style keeps its OWN arrangement: switching away doesn't
+            // discard it, and switching back restores it. A style you have
+            // never arranged lays itself out.
             setViewStyle(v)
-            // Chip and card sizes differ completely - fresh layout, but the
-            // wiring arrangement stays stored for when you switch back.
-            setPositions(undefined)
-            setLayoutTick((t) => t + 1)
+            if (v !== "logical" && !posByStyle[v as NodeStyle])
+              setLayoutTick((t) => t + 1)
           }}
           items={[
             { value: "stencil", label: "Wiring" },
@@ -1030,8 +1098,7 @@ function TopologyPage() {
             order={roleOrder}
             onChange={(o) => {
               setRoleOrder(o)
-              setPositions(undefined)
-              clearStoredPositions()
+              dropAllPositions()
               setLayoutTick((t) => t + 1)
             }}
             bonds={roleBonds}
@@ -1039,15 +1106,13 @@ function TopologyPage() {
               setRoleBonds(b)
               // Bonding changes the tiers, so drop pinned coordinates and
               // relayout - same as reordering.
-              setPositions(undefined)
-              clearStoredPositions()
+              dropAllPositions()
               setLayoutTick((t) => t + 1)
             }}
             distance={roleDistance}
             onDistance={(role, step) => {
               setRoleDistance({ ...roleDistance, [role]: step })
-              setPositions(undefined)
-              clearStoredPositions()
+              dropAllPositions()
               setLayoutTick((t) => t + 1)
             }}
           />
@@ -1071,8 +1136,7 @@ function TopologyPage() {
                   onValueChange={(d) => {
                     setDirection(d)
                     // A saved LR layout doesn't fit TB - re-run the layout.
-                    setPositions(undefined)
-                    clearStoredPositions()
+                    dropAllPositions()
                     setLayoutTick((t) => t + 1)
                   }}
                   items={[
@@ -1232,10 +1296,9 @@ function TopologyPage() {
             className="h-7 text-xs"
             onClick={() => {
               setPositions(undefined)
-              clearStoredPositions()
               setLayoutTick((t) => t + 1)
             }}
-            title="Discard dragged positions, re-run the auto layout"
+            title="Discard this view's dragged positions, re-run the auto layout"
           >
             <LayoutGrid className="h-3 w-3" /> Re-layout
           </Button>
@@ -1328,7 +1391,6 @@ function TopologyPage() {
                 // colour/search - doesn't snap cards back) and, on the default
                 // view, persist it across reloads. Saved views persist via Save.
                 setPositions(p)
-                if (viewId === "none") writeStoredPositions(p)
               }}
             />
           </Suspense>
@@ -1345,8 +1407,7 @@ function TopologyPage() {
               className="h-6 px-2 text-[11px]"
               onClick={() => {
                 setViewStyle("stencil")
-                setPositions(undefined)
-                setLayoutTick((t) => t + 1)
+                if (!posByStyle.stencil) setLayoutTick((t) => t + 1)
               }}
             >
               Switch
@@ -1371,8 +1432,7 @@ function TopologyPage() {
               className="h-6 px-2 text-[11px]"
               onClick={() => {
                 setViewStyle("flat")
-                setPositions(undefined)
-                setLayoutTick((t) => t + 1)
+                if (!posByStyle.flat) setLayoutTick((t) => t + 1)
               }}
             >
               Switch
