@@ -461,6 +461,66 @@ export function edgeWaypoints(
   )
 }
 
+// ── Leaf grids ──────────────────────────────────────────────────────────────
+// A hub with many single-cable neighbours (an aggregation switch and its 96
+// blades) must not string them out along one endless rank. Its leaves leave
+// the rank system entirely and stack in a compact grid beside the hub -
+// the visio/NetBox look - with each cable dropping down a per-column
+// "street" on its own small lane. Structural layouts only; Levels places
+// every role by its tier.
+const LEAF_GRID_MIN = 8
+const STREET_W = 28
+const GRID_GAP = 56
+const CELL_GAP = 18
+
+interface LeafClusters {
+  byHub: Map<string, string[]>
+  leafSet: Set<string>
+  leafEdgeIds: Set<string>
+  edgeOf: Map<string, string>
+}
+
+function findLeafClusters(
+  edges: Edge[],
+  pinnedIds?: Set<string>
+): LeafClusters {
+  const deg = new Map<string, number>()
+  for (const e of edges) {
+    deg.set(e.source, (deg.get(e.source) ?? 0) + 1)
+    deg.set(e.target, (deg.get(e.target) ?? 0) + 1)
+  }
+  const nbrOf = new Map<string, { hub: string; edgeId: string }>()
+  for (const e of edges) {
+    if (deg.get(e.source) === 1)
+      nbrOf.set(e.source, { hub: e.target, edgeId: e.id })
+    if (deg.get(e.target) === 1)
+      nbrOf.set(e.target, { hub: e.source, edgeId: e.id })
+  }
+  const byHub = new Map<string, string[]>()
+  const edgeOf = new Map<string, string>()
+  for (const [leaf, { hub, edgeId }] of nbrOf) {
+    if (pinnedIds?.has(leaf)) continue
+    if (deg.get(hub) === 1) continue // two-node island - nothing to stack
+    ;(byHub.get(hub) ?? byHub.set(hub, []).get(hub)!).push(leaf)
+    edgeOf.set(leaf, edgeId)
+  }
+  const leafSet = new Set<string>()
+  const leafEdgeIds = new Set<string>()
+  for (const [hub, leaves] of [...byHub]) {
+    if (leaves.length < LEAF_GRID_MIN || pinnedIds?.has(hub)) {
+      byHub.delete(hub)
+      continue
+    }
+    leaves.sort(natural)
+    for (const l of leaves) {
+      leafSet.add(l)
+      leafEdgeIds.add(edgeOf.get(l)!)
+    }
+  }
+  for (const l of edgeOf.keys()) if (!leafSet.has(l)) edgeOf.delete(l)
+  return { byHub, leafSet, leafEdgeIds, edgeOf }
+}
+
 export function layoutNodes(
   nodes: Node[],
   edges: Edge[],
@@ -482,6 +542,132 @@ export function layoutNodes(
   // gaps so hundreds of nodes stay compact; stencil cards keep the roomy
   // spacing their port-anchored cables need.
   const compact = !!sizeOfNode
+  const tbDir = direction === "TB"
+  const pinnedIds = positions
+    ? new Set(Object.keys(positions))
+    : undefined
+  // Leaf grids (structural mode only - Levels owns every tier placement).
+  const clusters: LeafClusters = levels
+    ? {
+        byHub: new Map(),
+        leafSet: new Set(),
+        leafEdgeIds: new Set(),
+        edgeOf: new Map(),
+      }
+    : findLeafClusters(edges, pinnedIds)
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  // Grid geometry per hub, shared by size inflation and placement.
+  const gridMeta = new Map<
+    string,
+    {
+      crossPitch: number
+      mainPitch: number
+      across: number
+      deep: number
+      crossExtent: number
+      mainExtent: number
+    }
+  >()
+  for (const [hubId, leaves] of clusters.byHub) {
+    let crossCell = 0
+    let mainCell = 0
+    for (const lid of leaves) {
+      const s = sizer(byId.get(lid)!)
+      crossCell = Math.max(crossCell, tbDir ? s.width : s.height)
+      mainCell = Math.max(mainCell, tbDir ? s.height : s.width)
+    }
+    const crossPitch = crossCell + CELL_GAP + STREET_W
+    const mainPitch = mainCell + CELL_GAP
+    // ~2.5:1 along the cross axis, so the grid hugs its hub.
+    const across = Math.max(
+      1,
+      Math.ceil(Math.sqrt((2.5 * leaves.length * mainPitch) / crossPitch))
+    )
+    const deep = Math.ceil(leaves.length / across)
+    gridMeta.set(hubId, {
+      crossPitch,
+      mainPitch,
+      across,
+      deep,
+      crossExtent: across * crossPitch,
+      mainExtent: deep * mainPitch,
+    })
+  }
+  // Hubs reserve room for their grid, so ranks and siblings keep clear.
+  const inflated = new Map<string, { width: number; height: number }>()
+  for (const [hubId, meta] of gridMeta) {
+    const card = sizer(byId.get(hubId)!)
+    inflated.set(
+      hubId,
+      tbDir
+        ? {
+            width: Math.max(card.width, meta.crossExtent),
+            height: card.height + GRID_GAP + meta.mainExtent,
+          }
+        : {
+            width: card.width + GRID_GAP + meta.mainExtent,
+            height: Math.max(card.height, meta.crossExtent),
+          }
+    )
+  }
+  const sizeFor = (n: Node) => inflated.get(n.id) ?? sizer(n)
+  const mainEdges = edges.filter((e) => !clusters.leafEdgeIds.has(e.id))
+
+  // Place a laid hub's leaves in its grid + route their street cables.
+  const placeLeafGrids = (
+    laidArr: Node[]
+  ): { out: Node[]; streets: Map<string, [number, number][]> } => {
+    const streets = new Map<string, [number, number][]>()
+    if (!clusters.byHub.size) return { out: laidArr, streets }
+    const laidById = new Map(laidArr.map((n) => [n.id, n]))
+    const pos = new Map<string, { x: number; y: number }>()
+    for (const [hubId, leaves] of clusters.byHub) {
+      const hub = laidById.get(hubId)
+      if (!hub) continue
+      const meta = gridMeta.get(hubId)!
+      const card = sizer(hub)
+      const originCross = tbDir ? hub.position.x : hub.position.y
+      const originMain =
+        (tbDir
+          ? hub.position.y + card.height
+          : hub.position.x + card.width) + GRID_GAP
+      const laneStep = Math.max(
+        2,
+        Math.min(4, (STREET_W - 10) / Math.max(meta.deep, 1))
+      )
+      leaves.forEach((lid, i) => {
+        const street = Math.floor(i / meta.deep)
+        const row = i % meta.deep
+        const crossPos = originCross + street * meta.crossPitch + STREET_W
+        const mainPos = originMain + row * meta.mainPitch
+        pos.set(
+          lid,
+          tbDir ? { x: crossPos, y: mainPos } : { x: mainPos, y: crossPos }
+        )
+        const laneCross =
+          originCross + street * meta.crossPitch + 4 + row * laneStep
+        streets.set(
+          clusters.edgeOf.get(lid)!,
+          tbDir
+            ? [
+                [laneCross, 0],
+                [laneCross, 100],
+              ]
+            : [
+                [0, laneCross],
+                [100, laneCross],
+              ]
+        )
+      })
+    }
+    return {
+      out: laidArr.map((n) => {
+        const p2 = pos.get(n.id)
+        return p2 ? { ...n, position: p2 } : n
+      }),
+      streets,
+    }
+  }
   // A card's cable comb needs shoulder room: scale sibling separation with
   // the densest card's port count instead of a blind constant.
   const maxFan = nodes.reduce(
@@ -508,10 +694,12 @@ export function layoutNodes(
   for (const n of nodes) {
     // Card dimensions follow its per-side port split (see stencilSize); the
     // rank axis is set by `direction` on the graph above, not the node size.
-    const { width, height } = sizer(n)
+    // Grid leaves skip the rank system; their hub reserves their room.
+    if (clusters.leafSet.has(n.id)) continue
+    const { width, height } = sizeFor(n)
     g.setNode(n.id, { width, height })
   }
-  for (const e of edges) {
+  for (const e of mainEdges) {
     g.setEdge(e.source, e.target, { weight: 1, minlen: 1 })
   }
   dagre.layout(g)
@@ -746,13 +934,22 @@ export function layoutNodes(
     const pinned = positions?.[n.id]
     if (pinned) return { ...n, position: { x: pinned[0], y: pinned[1] } }
     const p = g.node(n.id)
+    if (!p) return n // grid leaf - placed relative to its hub below
     // Centre-anchor using dagre's own computed w/h (varies per node).
     return { ...n, position: { x: p.x - p.width / 2, y: p.y - p.height / 2 } }
   })
-  const pinnedIds = positions ? new Set(Object.keys(positions)) : undefined
-  const spaced = respaceBands(laid, edges, sizeOf, tb, pinnedIds)
-  return {
-    nodes: spaced,
-    waypoints: computeWaypoints(spaced, edges, sizeOf, tb),
-  }
+  const exempt = new Set([
+    ...(pinnedIds ?? []),
+    ...clusters.leafSet,
+  ])
+  const spaced = respaceBands(laid, mainEdges, sizeOf, tb, exempt)
+  const { out, streets } = placeLeafGrids(spaced)
+  const wp = computeWaypoints(
+    out.filter((n) => !clusters.leafSet.has(n.id)),
+    mainEdges,
+    sizeOf,
+    tb
+  )
+  for (const [k, v] of streets) wp.set(k, v)
+  return { nodes: out, waypoints: wp }
 }

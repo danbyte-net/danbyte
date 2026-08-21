@@ -148,15 +148,19 @@ describe("density-adaptive gaps and lanes", () => {
         }) as Edge
     )
     const { nodes: laid, waypoints } = layoutNodes(nodes, edges, undefined, "LR")
-    // Distinct leaves = direct lines: no waypoint per cable, no wall.
-    expect(waypoints.size).toBe(0)
-    const hub = laid.find((n) => n.id === "hub")!
-    const hubRight = hub.position.x + stencilSize(hub.data as never).width
-    const leafLeft = Math.min(
-      ...laid.filter((n) => n.id !== "hub").map((n) => n.position.x)
-    )
-    // And the gap stays modest - fan cables need no lane space.
-    expect(leafLeft - hubRight).toBeLessThan(400)
+    // Leaves stack in a compact grid beside the hub (NetBox/visio style),
+    // never strung out along one endless rank...
+    const leaves = laid.filter((n) => n.id !== "hub")
+    const xs = leaves.map((n) => n.position.x)
+    const ys = leaves.map((n) => n.position.y)
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(2000)
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(2000)
+    // ...and every cable rides its own street lane into the grid.
+    const lanes = edges
+      .map((e) => waypoints.get(e.id)?.[0])
+      .filter((x): x is [number, number] => !!x)
+    expect(lanes.length).toBe(40)
+    expect(new Set(lanes.map((l) => l[1])).size).toBe(40)
   })
 
   it("gives parallel cables between ONE pair their own lanes + gap room", () => {
