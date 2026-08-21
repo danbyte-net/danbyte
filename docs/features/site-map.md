@@ -44,8 +44,8 @@ The page is a clone of the floor-plan editor's shell:
 
 - **Header** - View / Edit tabs, a *Find on map…* search (sites, devices,
   markers - jump + select), **Fit to view**, the **Satellite** toggle, the
-  **Objects** sidebar toggle, and a **View** menu (Sites / Devices / Links
-  layers + camera FOV cones).
+  **Objects** sidebar toggle, and a **View** menu (Sites / Devices / Links /
+  Cable routes / Region boundaries layers + camera FOV cones).
 - **Left palette rail** (Edit mode) - tabbed **Sites / Markers**, exactly
   like the plan's palette: click to arm, then click the map. Marker types
   stay armed so you can stamp several; Esc disarms. Stamping a marker opens
@@ -221,6 +221,15 @@ cable is routed. Routes are a registered RBAC type (`cableroute`) - users
 without the grant see no plant geography.
 
 For splice closures and PON splitters, see [fibre](../dcim/fiber.md).
+
+## Region boundaries
+
+Regions that carry an [OpenStreetMap boundary](regions-locations.md#map-boundary-from-openstreetmap)
+shade their outline under the markers, tinted by the region's map color
+(muted zinc when no color is set). The polygons are decoration, not
+controls - clicks pass straight through to pins and the map. Toggle them
+under **View → Region boundaries** (remembered per browser, like the other
+layers). Boundary data © OpenStreetMap contributors, ODbL.
 
 ## Satellite view
 

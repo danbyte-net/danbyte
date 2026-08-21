@@ -203,9 +203,16 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     devices: boolean
     links: boolean
     routes: boolean
+    regions: boolean
   }
   const [layers, setLayers] = useState<LayerToggles>(() => {
-    const all = { sites: true, devices: true, links: true, routes: true }
+    const all = {
+      sites: true,
+      devices: true,
+      links: true,
+      routes: true,
+      regions: true,
+    }
     try {
       const stored = JSON.parse(
         localStorage.getItem("site-map:layers")!
@@ -437,6 +444,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   )
   const selectedRoute = routes.find((r) => r.id === selectedRouteId) ?? null
   const routesRef = useRef<L.LayerGroup | null>(null)
+  const regionsRef = useRef<L.Layer | null>(null)
   const draftRef = useRef<L.LayerGroup | null>(null)
   const reshapeRef = useRef<L.LayerGroup | null>(null)
   const drawnCablesRef = useRef<L.LayerGroup | null>(null)
@@ -783,6 +791,35 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     data.tiles.satellite.url,
     data.tiles.satellite.attribution,
   ])
+
+  // Region boundaries - OSM-sourced polygons shaded under everything else.
+  // Non-interactive so clicks fall through to markers and the map itself;
+  // SVG attributes can't resolve CSS vars, so the no-color fallback is a
+  // literal muted zinc (same constraint as the cluster spider legs).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    regionsRef.current?.remove()
+    regionsRef.current = null
+    const regions = data.regions ?? []
+    if (!layers.regions || regions.length === 0) return
+    const group = L.layerGroup()
+    for (const r of regions) {
+      const color = r.color || "#71717a"
+      L.geoJSON(r.boundary as unknown as GeoJSON.GeoJsonObject, {
+        interactive: false,
+        style: {
+          color,
+          weight: 1.5,
+          opacity: 0.55,
+          fillColor: color,
+          fillOpacity: 0.08,
+        },
+      }).addTo(group)
+    }
+    group.addTo(map)
+    regionsRef.current = group
+  }, [data.regions, layers.regions, mapReady])
 
   // Connection arcs.
   useEffect(() => {
@@ -1371,6 +1408,12 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 label="Cable routes"
                 checked={layers.routes}
                 onChange={(v) => setLayers((l) => ({ ...l, routes: v }))}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Region boundaries"
+                checked={layers.regions}
+                onChange={(v) => setLayers((l) => ({ ...l, regions: v }))}
                 className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
               />
               <div className="my-1 h-px bg-border" />

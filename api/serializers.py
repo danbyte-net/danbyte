@@ -5373,9 +5373,28 @@ class RegionSerializer(NumIdModelSerializer):
             raise serializers.ValidationError("A region can't be its own parent.")
         return value
 
+    def validate_boundary(self, value):
+        if value is None:
+            return None
+        import json as _json
+
+        geom = value.get("geometry", value) if isinstance(value, dict) else None
+        if not isinstance(geom, dict) or geom.get("type") not in (
+            "Polygon", "MultiPolygon"
+        ) or not isinstance(geom.get("coordinates"), list):
+            raise serializers.ValidationError(
+                "Provide a GeoJSON Polygon or MultiPolygon geometry."
+            )
+        if len(_json.dumps(geom)) > 400_000:
+            raise serializers.ValidationError(
+                "Boundary too large - fetch it with a higher simplification."
+            )
+        return geom
+
     class Meta:
         model = Region
         fields = ["id", "name", "slug", "parent", "parent_id", "description",
+                  "color", "boundary", "boundary_label",
                   "site_count", "child_count", "created_at", "updated_at"]
         read_only_fields = ["id", "site_count", "child_count",
                             "created_at", "updated_at"]

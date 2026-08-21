@@ -7,6 +7,7 @@ import "leaflet/dist/leaflet.css"
 import {
   api,
   type CableRoute,
+  type GeoBoundary,
   type Paginated,
   type SiteMapCable,
   type SiteMapConnection,
@@ -40,6 +41,7 @@ export function MiniMap({
   highlightSiteId,
   onlyConnectionsOf,
   focusDeviceId,
+  boundary,
   className,
 }: {
   /** Emphasize + fit to one site (locator on site detail pages). */
@@ -48,12 +50,15 @@ export function MiniMap({
   onlyConnectionsOf?: string
   /** Center + fit to one device (device detail pages). */
   focusDeviceId?: string
+  /** Shade + fit to a region's OSM boundary (region detail pages). */
+  boundary?: { geometry: GeoBoundary; color: string } | null
   className?: string
 }) {
   const nav = useNavigate()
   const el = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const layersRef = useRef<L.LayerGroup | null>(null)
+  const boundaryRef = useRef<L.GeoJSON | null>(null)
 
   const mapQ = useQuery({
     queryKey: ["site-map"],
@@ -183,13 +188,40 @@ export function MiniMap({
       if (focusDeviceId ? focused : true) bounds.push([d.latitude, d.longitude])
     }
 
+    // Region boundary (region locator): shaded under the pins,
+    // non-interactive so pin clicks still land. Added to the map directly -
+    // a polygon has no business inside the marker clusterer.
+    boundaryRef.current?.remove()
+    boundaryRef.current = null
+    let boundaryLayer: L.GeoJSON | null = null
+    if (boundary) {
+      const color = boundary.color || "#71717a"
+      boundaryLayer = L.geoJSON(
+        boundary.geometry as unknown as GeoJSON.GeoJsonObject,
+        {
+          interactive: false,
+          style: {
+            color,
+            weight: 1.5,
+            opacity: 0.55,
+            fillColor: color,
+            fillOpacity: 0.08,
+          },
+        }
+      ).addTo(map)
+      boundaryRef.current = boundaryLayer
+    }
+
     group.addTo(map)
     layersRef.current = group
 
-    // Fit - to the focused device, the located site + its arcs, or everything.
+    // Fit - to the focused device, the boundary, the located site + its
+    // arcs, or everything.
     if (focusDeviceId) {
       const d = data.devices.find((x) => x.id === focusDeviceId)
       if (d) map.setView([d.latitude, d.longitude], 15)
+    } else if (boundaryLayer) {
+      map.fitBounds(boundaryLayer.getBounds().pad(0.1), { maxZoom: 12 })
     } else if (bounds.length === 1) {
       map.setView(bounds[0], 13)
     } else if (bounds.length > 1) {
@@ -211,11 +243,13 @@ export function MiniMap({
     highlightSiteId,
     onlyConnectionsOf,
     focusDeviceId,
+    boundary,
     nav,
   ])
 
   const nonesPlaced =
     data &&
+    !boundary &&
     data.sites.every((s) => s.latitude === null) &&
     data.devices.length === 0
 

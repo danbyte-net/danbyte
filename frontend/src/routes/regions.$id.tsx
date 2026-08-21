@@ -20,6 +20,7 @@ import {
 } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { MiniMap } from "@/components/site-map/mini-map"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/regions/$id")({
@@ -179,9 +180,39 @@ function RegionOverview({ region: r }: { region: Region }) {
   ]
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <KvCard title="Region" rows={details} />
-      <KvCard title="Record" rows={record} />
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <KvCard title="Region" rows={details} />
+        <KvCard title="Record" rows={record} />
+      </div>
+      {r.boundary && (
+        <section>
+          <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+            Boundary
+          </h2>
+          <div className="relative h-64 overflow-hidden rounded-lg border border-border">
+            <MiniMap
+              className="h-full w-full"
+              boundary={{ geometry: r.boundary, color: r.color }}
+            />
+            <Link
+              to="/site-map"
+              className="absolute right-2 bottom-2 z-[500] rounded-md border border-border bg-background/85 px-2 py-1 text-[11px] backdrop-blur hover:bg-background"
+              title="Open the Site map"
+            >
+              Open map →
+            </Link>
+          </div>
+          {r.boundary_label && (
+            <p
+              className="mt-1.5 truncate text-xs text-muted-foreground"
+              title={r.boundary_label}
+            >
+              {r.boundary_label} · © OpenStreetMap contributors
+            </p>
+          )}
+        </section>
+      )}
     </div>
   )
 }

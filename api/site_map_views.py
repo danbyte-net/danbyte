@@ -273,11 +273,27 @@ def site_map(request):
         .prefetch_related("device__tags")
     ]
 
+    # Region boundaries - OSM-sourced polygons shaded under the markers.
+    # Regions are tenant structure (like the marker vocabulary above), so
+    # tenancy is the scope; only regions that actually have a boundary ship.
+    from .models import Region
+
+    regions = [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "color": r.color,
+            "boundary": r.boundary,
+        }
+        for r in Region.objects.filter(tenant=tenant, boundary__isnull=False)
+    ]
+
     return Response({
         "tiles": effective_tiles(),
         "sites": sites,
         "devices": devices,
         "markers": markers,
+        "regions": regions,
     })
 
 

@@ -5384,6 +5384,14 @@ class Region(NumIdMixin, TimestampedModel):
     name = models.CharField(max_length=128)
     slug = models.SlugField(max_length=128)
     description = models.TextField(blank=True, default="")
+    # Map appearance. Boundary is a GeoJSON Polygon/MultiPolygon geometry,
+    # looked up from OpenStreetMap (Nominatim) at the operator's click and
+    # cached here - © OpenStreetMap contributors, ODbL. Simplified at fetch
+    # time and size-capped at the serializer, so payloads stay sane.
+    color = models.CharField(max_length=7, blank=True, default="")
+    boundary = models.JSONField(null=True, blank=True)
+    # Provenance label for the boundary (the Nominatim display name).
+    boundary_label = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["name"]

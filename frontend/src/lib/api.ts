@@ -1043,6 +1043,28 @@ export interface SiteMapPayload {
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
   markers: SiteMapMarker[]
+  regions: SiteMapRegion[]
+}
+
+/** GeoJSON Polygon/MultiPolygon geometry - an OSM-sourced region boundary. */
+export interface GeoBoundary {
+  type: "Polygon" | "MultiPolygon"
+  coordinates: unknown[]
+}
+
+/** A region with a stored boundary, shaded under the site-map markers. */
+export interface SiteMapRegion {
+  id: string
+  name: string
+  color: string
+  boundary: GeoBoundary
+}
+
+/** One result row from /api/regions/boundary-lookup/ (Nominatim search). */
+export interface BoundaryCandidate {
+  label: string
+  kind: string
+  boundary: GeoBoundary
 }
 
 /** Derived, most-severe-passed-milestone lifecycle state. "" = no dates. */
@@ -3123,6 +3145,9 @@ export interface Region {
   slug: string
   parent: RegionOption | null
   description: string
+  color: string
+  boundary: GeoBoundary | null
+  boundary_label: string
   site_count: number
   child_count: number
   created_at: string
@@ -3134,6 +3159,9 @@ export interface RegionWritePayload {
   slug?: string
   parent_id?: string | null
   description?: string
+  color?: string
+  boundary?: GeoBoundary | null
+  boundary_label?: string
 }
 
 export type LocationStatus =

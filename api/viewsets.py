@@ -6352,6 +6352,65 @@ class RegionViewSet(TenantScopedViewSet):
     serializer_class = RegionSerializer
     pagination_class = StandardPagination
 
+    @action(detail=False, methods=["get"], url_path="boundary-lookup")
+    def boundary_lookup(self, request):
+        """Search OpenStreetMap (Nominatim) for a boundary polygon by name or
+        postal code - "Fyn", "Ringkøbing Kommune", "6900 Denmark".
+
+        Policy-compliant by construction: fired only by an operator's click
+        (never autocomplete), one request per click, an identifying
+        User-Agent, and the chosen result is STORED on the region so it is
+        fetched once. Geometry is pre-simplified via polygon_threshold.
+        Boundary data © OpenStreetMap contributors, ODbL.
+        """
+        import json as _json
+
+        from core.ssrf import safe_get
+        from core.version import system_version
+
+        q = (request.query_params.get("q") or "").strip()
+        if not q:
+            raise ValidationError({"q": "Type a place or postal code."})
+        try:
+            resp = safe_get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": q,
+                    "format": "jsonv2",
+                    "polygon_geojson": 1,
+                    # ~simplified enough that a whole country stays small.
+                    "polygon_threshold": 0.003,
+                    "limit": 5,
+                },
+                headers={
+                    "User-Agent": (
+                        f"Danbyte/{system_version()['version']} "
+                        "(+https://danbyte.net)"
+                    )
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            rows = resp.json()
+        except Exception as exc:  # noqa: BLE001 - surfaced, not raised
+            return Response(
+                {"detail": f"OpenStreetMap lookup failed: {exc}"},
+                status=502,
+            )
+        candidates = []
+        for row in rows if isinstance(rows, list) else []:
+            geom = row.get("geojson") or {}
+            if geom.get("type") not in ("Polygon", "MultiPolygon"):
+                continue  # points/lines can't shade a region
+            if len(_json.dumps(geom)) > 400_000:
+                continue  # cap payloads; a finer polygon helps nobody here
+            candidates.append({
+                "label": row.get("display_name") or q,
+                "kind": f"{row.get('category', '')}/{row.get('type', '')}",
+                "boundary": geom,
+            })
+        return Response({"results": candidates})
+
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         """Bulk parent assignment (issue: build the tree without opening N

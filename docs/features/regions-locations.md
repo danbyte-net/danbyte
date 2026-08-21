@@ -29,6 +29,27 @@ do - no reading the Parent column to reconstruct the hierarchy. Rows are
 one action - cycle-guarded, so a selection can never become its own
 ancestor.
 
+### Map boundary from OpenStreetMap
+
+A region can carry a real geographic outline - no drawing required. On the
+region form, type a place or postal code into **Map boundary** ("Fyn",
+"Ringkøbing-Skjern Kommune", "6950 Denmark") and press **Search OSM**: Danbyte
+asks OpenStreetMap's Nominatim geocoder for matching administrative
+boundaries and lists the candidates. Pick one and the polygon is **stored on
+the region** - it is fetched once, at your click, never on a schedule.
+
+- The boundary (with the region's **map color**) is shaded on the
+  [Site map](site-map.md) - toggle it under **View → Region boundaries** -
+  and as a mini-map on the region's overview page.
+- **Clear** removes the stored polygon; searching again replaces it.
+- Geometry is simplified at fetch time and size-capped, so payloads stay
+  small; results without an area outline (plain points) are filtered out.
+
+Boundary data **© OpenStreetMap contributors**, licensed under the
+[ODbL](https://www.openstreetmap.org/copyright). Lookups are single,
+operator-triggered requests with an identifying user agent, per the
+[Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/).
+
 Click a region's name to open its **detail page** - the pencil in the header
 edits it. It shows the parent region plus a **Sites** tab (the sites that sit
 directly in the region) and a **Sub-regions** tab, each with counts, backed by

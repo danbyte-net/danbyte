@@ -34,6 +34,21 @@ class SiteMapTests(TestCase):
         self.assertIsNone(names["Unplaced"]["latitude"])
         self.assertTrue(names["Placed"]["can_edit"])
 
+    def test_regions_with_boundaries_ship_with_payload(self):
+        from api.models import Region
+
+        poly = {"type": "Polygon",
+                "coordinates": [[[8.0, 55.0], [9.0, 55.0], [8.5, 56.0], [8.0, 55.0]]]}
+        Region.objects.create(
+            tenant=self.tenant, name="Fyn", slug="fyn",
+            color="#2563eb", boundary=poly,
+        )
+        Region.objects.create(tenant=self.tenant, name="Bare", slug="bare")
+        regions = self.client_api.get("/api/site-map/").json()["regions"]
+        self.assertEqual([r["name"] for r in regions], ["Fyn"])
+        self.assertEqual(regions[0]["color"], "#2563eb")
+        self.assertEqual(regions[0]["boundary"]["type"], "Polygon")
+
     def test_default_tiles_are_osm_with_attribution(self):
         r = self.client_api.get("/api/site-map/")
         tiles = r.json()["tiles"]
