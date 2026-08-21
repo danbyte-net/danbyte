@@ -131,7 +131,7 @@ function stripW(ports: FlatPort[]): number {
 // reads. The bar's length is unbounded on the port axis (that is the
 // point); the leaf grid beneath aligns its columns to it.
 export const DENSE_PORTS = 24
-const DENSE_PITCH = 14 // one port slot
+const DENSE_PITCH = 16 // one port slot
 const DENSE_BAND = 58 // label band depth (truncated / rotated names)
 
 function isDense(d: StencilData): boolean {
@@ -200,16 +200,22 @@ function PortCell({
           : { height: STRIP_H, width: chipW(port.name) }
       }
     >
+      {/* Each port in its own box - the separation that keeps a strip of
+          names readable (geometry untouched: the box is an inset ring). */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-[1.5px] rounded-[3px] bg-muted/25 ring-1 ring-border/70 ring-inset"
+      />
       <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
       <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
       {/* topo-port* classes are LOD hooks: far zoom hides the text/dot via
           CSS (visibility) while the cell geometry - and the edge handles on
           it - stays exactly where it was. */}
       <span
-        className={`topo-portdot h-1 w-1 shrink-0 rounded-full ${KIND_DOT[port.kind]}`}
+        className={`topo-portdot relative h-1 w-1 shrink-0 rounded-full ${KIND_DOT[port.kind]}`}
       />
       {/* Full port name - no truncation; cells are sized to fit it. */}
-      <span className="topo-portname font-mono text-[9px] leading-none whitespace-nowrap">
+      <span className="topo-portname relative font-mono text-[9px] leading-none whitespace-nowrap">
         {port.name}
       </span>
     </div>
@@ -247,15 +253,19 @@ function DensePort({
       }
       title={port.name}
     >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-[1px] rounded-[2px] bg-muted/25 ring-1 ring-border/60 ring-inset"
+      />
       <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
       <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
       {vertical ? (
-        <span className="topo-portname min-w-0 truncate font-mono text-[8px] leading-none text-muted-foreground">
+        <span className="topo-portname relative min-w-0 truncate font-mono text-[8px] leading-none text-muted-foreground">
           {port.name}
         </span>
       ) : (
         <span
-          className="topo-portname min-h-0 truncate font-mono text-[8px] leading-none text-muted-foreground"
+          className="topo-portname relative min-h-0 truncate font-mono text-[8px] leading-none text-muted-foreground"
           style={{
             writingMode: "vertical-rl",
             maxHeight: DENSE_BAND - 6,
@@ -325,9 +335,7 @@ export function StencilNode({ data, selected }: NodeProps) {
       {/* Top strip */}
       {hasT && (
         <div
-          className={`col-start-2 row-start-1 flex border-b border-border ${
-            dense ? "" : "divide-x divide-border"
-          }`}
+          className="col-start-2 row-start-1 flex border-b border-border"
         >
           {s.T.map((p) =>
             dense ? (
@@ -341,9 +349,7 @@ export function StencilNode({ data, selected }: NodeProps) {
       {/* Left column */}
       {hasL && (
         <div
-          className={`col-start-1 row-start-2 flex flex-col justify-center border-r border-border ${
-            dense ? "" : "divide-y divide-border"
-          }`}
+          className="col-start-1 row-start-2 flex flex-col justify-center border-r border-border"
         >
           {s.L.map((p) =>
             dense ? (
@@ -399,9 +405,7 @@ export function StencilNode({ data, selected }: NodeProps) {
       {/* Right column */}
       {hasR && (
         <div
-          className={`col-start-3 row-start-2 flex flex-col justify-center border-l border-border ${
-            dense ? "" : "divide-y divide-border"
-          }`}
+          className="col-start-3 row-start-2 flex flex-col justify-center border-l border-border"
         >
           {s.R.map((p) =>
             dense ? (
@@ -415,9 +419,7 @@ export function StencilNode({ data, selected }: NodeProps) {
       {/* Bottom strip */}
       {hasB && (
         <div
-          className={`col-start-2 row-start-3 flex border-t border-border ${
-            dense ? "" : "divide-x divide-border"
-          }`}
+          className="col-start-2 row-start-3 flex border-t border-border"
         >
           {s.B.map((p) =>
             dense ? (
