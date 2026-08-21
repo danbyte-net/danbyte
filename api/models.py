@@ -1082,10 +1082,16 @@ def materialize_device_components(device) -> dict[str, int]:
     made = [
         Service(tenant=device.tenant, device=device, name=t.name,
                 protocol=t.protocol, ports=list(t.ports or []),
+                protocol_ports=dict(t.protocol_ports or {}),
                 monitored=t.monitor, description=t.description)
         for t in dt.service_templates.all()
         if t.name not in have
     ]
+    # bulk_create skips save(), so mirror the legacy pair here - a template
+    # that speaks several protocols must materialise as one service, not lose
+    # every block but the first.
+    for svc in made:
+        svc._mirror_protocol_ports()
     Service.objects.bulk_create(made)
     created["services"] = len(made)
     # Wire up any monitored ones. No-ops on a fresh device with no IP yet; the
@@ -4125,7 +4131,53 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
         return self.name
 
 
-class Service(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+class ProtocolPortsMixin(models.Model):
+    """A service's ports, per protocol.
+
+    ``protocol`` + ``ports`` describe a service that speaks ONE protocol, which
+    is most of them. A DNS server does not: it answers on TCP 53 *and* UDP 53,
+    and forcing that into two records splits one service in two. So a service
+    may instead carry ``protocol_ports`` - ``{"tcp": [53, 443], "udp": [53]}``.
+
+    ``protocol``/``ports`` stay in step with it (they mirror the first block),
+    so every existing reader, filter and export keeps working; ``port_map()``
+    is the one accessor everything else should use.
+    """
+
+    protocol_ports = models.JSONField(
+        default=dict, blank=True,
+        help_text='Ports per protocol, e.g. {"tcp": [53, 443], "udp": [53]}. '
+                  "Empty means the single protocol/ports pair applies.",
+    )
+
+    class Meta:
+        abstract = True
+
+    def port_map(self) -> dict:
+        """``{protocol: [ports]}`` - the one shape callers should read."""
+        pm = self.protocol_ports or {}
+        if pm:
+            return {k: list(v or []) for k, v in pm.items() if v}
+        return {self.protocol: list(self.ports or [])} if self.ports else {}
+
+    def _mirror_protocol_ports(self) -> None:
+        """Keep the single-protocol pair pointing at the first block, so a
+        reader that predates protocol_ports still sees a coherent service."""
+        pm = {k: list(v or []) for k, v in (self.protocol_ports or {}).items() if v}
+        if not pm:
+            return
+        first = next(
+            (p for p, _ in self.PROTOCOL_CHOICES if p in pm), next(iter(pm))
+        )
+        self.protocol = first
+        self.ports = pm[first]
+
+    def save(self, *args, **kwargs):
+        self._mirror_protocol_ports()
+        super().save(*args, **kwargs)
+
+
+class Service(ProtocolPortsMixin, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A network service exposed by a device or VM - a name + protocol + one or
     more ports. Can spawn a monitoring check on its port (the Danbyte twist)."""
 
@@ -4169,7 +4221,7 @@ class Service(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return f"{self.name} ({self.protocol}/{','.join(map(str, self.ports or []))})"
 
 
-class ServiceTemplate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+class ServiceTemplate(ProtocolPortsMixin, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A reusable service definition (e.g. "HTTPS - TCP 443"). Define a
     name + protocol + ports once, then reuse it when creating Services."""
 
@@ -4199,7 +4251,7 @@ class ServiceTemplate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
         return self.name
 
 
-class DeviceTypeService(_ComponentTemplate):
+class DeviceTypeService(ProtocolPortsMixin, _ComponentTemplate):
     """A service template on a device type - like an interface/port template,
     but for a network service. Materialises a ``Service`` onto every new device
     of the type (see ``materialize_device_components``). ``monitor`` carries

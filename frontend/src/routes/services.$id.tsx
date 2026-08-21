@@ -18,6 +18,7 @@ import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
+import { servicePortsLabel } from "@/components/service-ports-field"
 import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
 import { ServiceFormDialog } from "@/components/services-pane"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -107,6 +108,10 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
     onError: (err) => apiErrorToast(err),
   })
 
+  // Every protocol this service answers on, e.g. "TCP 443 · UDP 53" - a
+  // single Protocol row can't describe a service that speaks two.
+  const portsLabel = servicePortsLabel(s.protocol_ports, s.protocol, s.ports)
+
   const detailRows: KvRow[] = [
     ...(humanIds && s.numid != null
       ? [
@@ -117,19 +122,15 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
         ]
       : []),
     {
-      label: "Protocol",
-      value: <Badge variant="secondary">{s.protocol_display}</Badge>,
-      copy: s.protocol_display,
-    },
-    {
       label: "Ports",
-      value: s.ports.length ? (
-        <span className="font-mono text-[13px]">{s.ports.join(", ")}</span>
+      value: portsLabel ? (
+        <span className="font-mono text-[13px]">{portsLabel}</span>
       ) : (
         dash
       ),
-      copy: s.ports.join(", "),
+      copy: portsLabel,
     },
+
     {
       label: "IP",
       value: s.ip_address ? (
@@ -224,10 +225,9 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
           title={s.name}
           badges={
             <>
-              <Badge variant="secondary">{s.protocol_display}</Badge>
-              {s.ports.length > 0 && (
+              {portsLabel && (
                 <span className="font-mono text-sm text-muted-foreground">
-                  {s.ports.join(", ")}
+                  {portsLabel}
                 </span>
               )}
             </>

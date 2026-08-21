@@ -299,7 +299,7 @@ function ServicesSection() {
           pendingLabel="Restarting…"
           title="Restart Danbyte?"
           body="This restarts the core Danbyte services (web, workers, websocket). Active users will briefly lose connectivity."
-          onConfirm={() => restart.mutate("/api/services/restart-all/")}
+          onConfirm={() => restart.mutate("/api/system/services/restart-all/")}
           disabled={restart.isPending}
           destructive
           icon
@@ -320,7 +320,7 @@ function ServicesSection() {
               key={s.key}
               service={s}
               onRestart={() =>
-                restart.mutate(`/api/services/${s.key}/restart/`)
+                restart.mutate(`/api/system/services/${s.key}/restart/`)
               }
               disabled={restart.isPending}
             />
@@ -338,7 +338,7 @@ function WorkersControl({ workers }: { workers: WorkerConfig }) {
   const apply = useMutation({
     mutationFn: () =>
       api<{ ok: boolean; detail?: string; rq_workers?: number }>(
-        "/api/services/workers/",
+        "/api/system/services/workers/",
         { method: "POST", body: JSON.stringify({ count: Number(count) }) }
       ),
     onSuccess: (r) => {

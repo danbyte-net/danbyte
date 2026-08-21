@@ -41,7 +41,15 @@ def sync_service_checks(service, *, created_by=None) -> dict:
     from .scheduler import materialise_ip
 
     target = service_target_ip(service)
-    ports = service.ports or []
+    # {protocol: [ports]} - a service may answer on TCP *and* UDP (DNS), so
+    # each port is checked with ITS OWN protocol rather than the service's
+    # first one.
+    port_map = {
+        proto: list(ports)
+        for proto, ports in service.port_map().items()
+        if proto in ("tcp", "udp") and ports
+    }
+    ports = [p for plist in port_map.values() for p in plist]
 
     # Teardown: flag off, no target IP, or no ports. Only remove what this
     # service owns; manual assignments (service IS NULL) are untouched.
@@ -53,7 +61,6 @@ def sync_service_checks(service, *, created_by=None) -> dict:
             materialise_ip(ip)
         return {"monitored": 0, "ip": target.ip_address if target else None}
 
-    kind = service.protocol if service.protocol in ("tcp", "udp") else "tcp"
     # Drop any owned assignments that no longer match (IP changed, or a port was
     # removed) before (re)creating the current set.
     stale = CheckAssignment.objects.filter(service=service).exclude(
@@ -63,27 +70,29 @@ def sync_service_checks(service, *, created_by=None) -> dict:
     stale.delete()
 
     n = 0
-    for port in ports:
-        tmpl, _ = CheckTemplate.objects.get_or_create(
-            tenant=service.tenant,
-            slug=f"{kind}-{port}",
-            defaults={
-                "name": f"{kind.upper()} {port}",
-                "kind": kind,
-                "params": {"port": port},
-                "secret_params": {},
-            },
-        )
-        CheckAssignment.objects.get_or_create(
-            tenant=service.tenant,
-            template=tmpl,
-            ip_address=target,
-            defaults={"created_by": created_by, "service": service},
-        )
-        n += 1
+    keep_slugs = set()
+    for kind, kind_ports in port_map.items():
+        for port in kind_ports:
+            tmpl, _ = CheckTemplate.objects.get_or_create(
+                tenant=service.tenant,
+                slug=f"{kind}-{port}",
+                defaults={
+                    "name": f"{kind.upper()} {port}",
+                    "kind": kind,
+                    "params": {"port": port},
+                    "secret_params": {},
+                },
+            )
+            CheckAssignment.objects.get_or_create(
+                tenant=service.tenant,
+                template=tmpl,
+                ip_address=target,
+                defaults={"created_by": created_by, "service": service},
+            )
+            keep_slugs.add(f"{kind}-{port}")
+            n += 1
 
     # Remove owned assignments for ports this service no longer exposes.
-    keep_slugs = {f"{kind}-{p}" for p in ports}
     dropped = CheckAssignment.objects.filter(
         service=service, ip_address=target
     ).exclude(template__slug__in=keep_slugs)

@@ -455,12 +455,17 @@ urlpatterns = [
     path("jobs/", include("jobs.api_urls")),
     # Plugin framework: installed-plugin inventory + each plugin's own API.
     path("plugins/", include("plugins.api_urls")),
-    # Service control (restart units, apply plugins) - superuser only.
-    path("services/", service_api.services_list, name="services-list"),
-    path("services/workers/", service_api.set_workers, name="services-workers"),
-    path("services/restart-all/", service_api.restart_danbyte,
+    # Host service control (restart units, apply plugins) - superuser only.
+    # Lives under system/ because /api/services/ is the SERVICE resource (a
+    # network service on a device or VM). These paths are declared before the
+    # router, so while they sat on "services/" they shadowed its list route and
+    # POST /api/services/ answered 405 - services could not be created at all.
+    path("system/services/", service_api.services_list, name="services-list"),
+    path("system/services/workers/", service_api.set_workers,
+         name="services-workers"),
+    path("system/services/restart-all/", service_api.restart_danbyte,
          name="services-restart-all"),
-    path("services/<str:key>/restart/", service_api.service_restart,
+    path("system/services/<str:key>/restart/", service_api.service_restart,
          name="service-restart"),
     # Identity + per-table column preferences for the React frontend. The
     # auth_api HTML urlconf isn't mounted (archived), so these JSON views are

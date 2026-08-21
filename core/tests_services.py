@@ -18,28 +18,28 @@ class ServiceControlApiTests(APITestCase):
 
     def test_list_requires_superuser(self):
         self.client.force_login(self.plain)
-        self.assertEqual(self.client.get("/api/services/").status_code, 403)
+        self.assertEqual(self.client.get("/api/system/services/").status_code, 403)
 
     def test_list_ok_for_superuser(self):
         self.client.force_login(self.superuser)
-        r = self.client.get("/api/services/")
+        r = self.client.get("/api/system/services/")
         self.assertEqual(r.status_code, 200)
         self.assertIn("services", r.json())
 
     def test_restart_one_requires_superuser(self):
         self.client.force_login(self.plain)
         self.assertEqual(
-            self.client.post("/api/services/web/restart/").status_code, 403
+            self.client.post("/api/system/services/web/restart/").status_code, 403
         )
 
     def test_restart_all_requires_superuser(self):
         self.client.force_login(self.plain)
         self.assertEqual(
-            self.client.post("/api/services/restart-all/").status_code, 403
+            self.client.post("/api/system/services/restart-all/").status_code, 403
         )
 
     def test_anonymous_denied(self):
-        self.assertIn(self.client.get("/api/services/").status_code, (401, 403))
+        self.assertIn(self.client.get("/api/system/services/").status_code, (401, 403))
 
 
 class PluginApplyApiTests(APITestCase):

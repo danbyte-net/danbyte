@@ -133,14 +133,18 @@ attributes to any of these objects.
 
 ## Service templates
 
-A **service template** is a reusable service definition - a name plus a protocol
-(TCP or UDP) and one or more ports - that you define once and reuse when adding
-**Services** to devices and VMs. Following the **zero pre-filled data** rule, no
+A **service template** is a reusable service definition - a name plus its ports
+- that you define once and reuse when adding **Services** to devices and VMs.
+
+Ports are entered **per protocol**: a **TCP ports** field and a **UDP ports**
+field, either of which may be left empty. Most services fill in one (*HTTPS -
+TCP 443*), but a service that answers on both is one definition, not two:
+*DNS - TCP 53 · UDP 53*. Each port is monitored with its own protocol. Following the **zero pre-filled data** rule, no
 templates ship with the product: you create exactly the ones your network uses
 (for example *HTTPS - TCP 443* or *DNS - UDP 53*).
 
 Templates are tenant-scoped, carry an auto-generated slug (unique per tenant),
-and require at least one valid port (1–65535). Like Services they support
+and require at least one valid port (1-65535) across the two fields. Like Services they support
 custom fields and tags - a NetBox import carries both over. They are exposed at
 `/api/service-templates/` (add `?picker=1` for a lightweight id/name/protocol/
 ports list used by the service form).

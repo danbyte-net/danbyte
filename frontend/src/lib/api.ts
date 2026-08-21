@@ -3489,6 +3489,10 @@ export interface VMInterfaceWritePayload {
 
 export type ServiceProtocol = "tcp" | "udp"
 
+/** Ports per protocol - a service may answer on both (DNS is TCP 53 and UDP
+ * 53). Empty/absent means the single `protocol` + `ports` pair applies. */
+export type ProtocolPorts = Partial<Record<ServiceProtocol, number[]>>
+
 export interface Service {
   id: string
   numid: number | null
@@ -3496,6 +3500,7 @@ export interface Service {
   protocol: ServiceProtocol
   protocol_display: string
   ports: number[]
+  protocol_ports?: ProtocolPorts
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null
   ip_address: { id: string; ip_address: string } | null
@@ -3514,6 +3519,7 @@ export interface ServiceWritePayload {
   name: string
   protocol?: ServiceProtocol
   ports?: number[]
+  protocol_ports?: ProtocolPorts
   device_id?: string | null
   virtual_machine_id?: string | null
   ip_address_id?: string | null
@@ -3536,6 +3542,7 @@ export interface DeviceTypeService {
   protocol: ServiceProtocol
   protocol_display: string
   ports: number[]
+  protocol_ports?: ProtocolPorts
   monitor: boolean
   description: string
   created_at: string
@@ -3547,6 +3554,7 @@ export interface DeviceTypeServiceWritePayload {
   name: string
   protocol: ServiceProtocol
   ports: number[]
+  protocol_ports?: ProtocolPorts
   monitor: boolean
   description: string
 }
@@ -3579,6 +3587,7 @@ export interface ServiceTemplate {
   protocol: ServiceProtocol
   protocol_display: string
   ports: number[]
+  protocol_ports?: ProtocolPorts
   description: string
   service_count?: number
   created_at: string
@@ -3589,6 +3598,7 @@ export interface ServiceTemplateWritePayload {
   name: string
   protocol: ServiceProtocol
   ports: number[]
+  protocol_ports?: ProtocolPorts
   description: string
 }
 

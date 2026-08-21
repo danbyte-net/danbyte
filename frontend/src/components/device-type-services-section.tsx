@@ -9,7 +9,6 @@ import {
   type DeviceTypeService,
   type DeviceTypeServiceWritePayload,
   type Paginated,
-  type ServiceProtocol,
   type ServiceTemplate,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -35,7 +34,6 @@ import {
   FormCheckbox,
   FormCombobox,
   FormFooter,
-  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -44,14 +42,25 @@ import { DataTable } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
 import { dash } from "@/components/cells/dash"
-import { parsePorts } from "@/components/services-pane"
 import { useSaveObject } from "@/lib/save-object"
+import {
+  EMPTY_SERVICE_PORTS,
+  parseServicePorts,
+  ServicePortsField,
+  servicePortsFromApi,
+  servicePortsLabel,
+  type ServicePortsValue,
+} from "@/components/service-ports-field"
 
 const QUERY_KEY = "dt-service-templates"
 
 /** The "Services" tab on a device type - service templates that materialise a
  * Service onto every new device of the type. Ticking Monitor starts those
  * services watched. See docs/architecture/service-monitoring.md. */
+// Thrown to abort the save when a port field is wrong: the message is already
+// on the field, so onError skips its generic toast.
+const CLIENT_INVALID_PORTS = "client-invalid-ports"
+
 export function DeviceTypeServicesSection({
   deviceTypeId,
   canWrite,
@@ -90,7 +99,11 @@ export function DeviceTypeServicesSection({
       header: "Protocol / Ports",
       cell: ({ row }) => (
         <span className="font-mono text-xs">
-          {row.original.protocol.toUpperCase()} {row.original.ports.join(", ")}
+          {servicePortsLabel(
+            row.original.protocol_ports,
+            row.original.protocol,
+            row.original.ports
+          )}
         </span>
       ),
     },
@@ -234,10 +247,19 @@ function ServiceTemplateForm({
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(service?.name ?? "")
-  const [protocol, setProtocol] = useState<ServiceProtocol>(
-    service?.protocol ?? "tcp"
+  const [ports, setPorts] = useState<ServicePortsValue>(
+    service
+      ? servicePortsFromApi(
+          service.protocol_ports,
+          service.protocol,
+          service.ports
+        )
+      : EMPTY_SERVICE_PORTS
   )
-  const [portsText, setPortsText] = useState(service?.ports.join(", ") ?? "")
+  const [portErrors, setPortErrors] = useState<{
+    tcp: string | null
+    udp: string | null
+  }>({ tcp: null, udp: null })
   const [monitor, setMonitor] = useState(service?.monitor ?? false)
   const [description, setDescription] = useState(service?.description ?? "")
   const [templateId, setTemplateId] = useState<string | null>(null)
@@ -255,7 +277,11 @@ function ServiceTemplateForm({
     () =>
       (templates.data?.results ?? []).map((t) => ({
         value: t.id,
-        label: `${t.name} · ${t.protocol.toUpperCase()} ${t.ports.join(", ")}`,
+        label: `${t.name} · ${servicePortsLabel(
+          t.protocol_ports,
+          t.protocol,
+          t.ports
+        )}`,
       })),
     [templates.data]
   )
@@ -264,18 +290,25 @@ function ServiceTemplateForm({
     const t = templates.data?.results.find((x) => x.id === id)
     if (!t) return
     setName(t.name)
-    setProtocol(t.protocol)
-    setPortsText(t.ports.join(", "))
+    setPorts(servicePortsFromApi(t.protocol_ports, t.protocol, t.ports))
     if (t.description) setDescription(t.description)
   }
 
   const mutation = useMutation({
     mutationFn: () => {
+      const parsed = parseServicePorts(ports)
+      setPortErrors({ tcp: parsed.errors.tcp, udp: parsed.errors.udp })
+      if (parsed.errors.tcp || parsed.errors.udp || parsed.errors.form) {
+        if (parsed.errors.form)
+          setPortErrors({ tcp: parsed.errors.form, udp: null })
+        throw new Error(CLIENT_INVALID_PORTS)
+      }
       const payload: DeviceTypeServiceWritePayload = {
         device_type_id: deviceTypeId,
         name: name.trim(),
-        protocol,
-        ports: parsePorts(portsText),
+        protocol: parsed.protocol,
+        ports: parsed.ports,
+        protocol_ports: parsed.protocol_ports,
         monitor,
         description: description.trim(),
       }
@@ -292,6 +325,7 @@ function ServiceTemplateForm({
       onDone()
     },
     onError: (err) => {
+      if ((err as Error).message === CLIENT_INVALID_PORTS) return
       const msg = handleApiError(err)
       if (msg) toast.error(msg)
     },
@@ -327,27 +361,17 @@ function ServiceTemplateForm({
         placeholder="HTTPS"
         error={fieldErrors.name}
       />
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Protocol"
-          value={protocol}
-          onChange={(v) => setProtocol((v as ServiceProtocol) ?? "tcp")}
-          options={[
-            { value: "tcp", label: "TCP" },
-            { value: "udp", label: "UDP" },
-          ]}
-          error={fieldErrors.protocol}
-        />
-        <FormText
-          label="Ports"
-          value={portsText}
-          onChange={setPortsText}
-          mono
-          placeholder="443, 8443"
-          hint="comma-separated"
-          error={fieldErrors.ports}
-        />
-      </div>
+      <ServicePortsField
+        value={ports}
+        onChange={(v) => {
+          setPorts(v)
+          setPortErrors({ tcp: null, udp: null })
+        }}
+        errors={{
+          tcp: portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
+          udp: portErrors.udp,
+        }}
+      />
       <FormCheckbox
         label="Monitor on new devices"
         checked={monitor}

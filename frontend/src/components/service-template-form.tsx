@@ -3,19 +3,23 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  type ServiceProtocol,
   type ServiceTemplate,
   type ServiceTemplateWritePayload,
 } from "@/lib/api"
 import {
   FormFooter,
-  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
-import { parsePorts } from "@/components/services-pane"
+import {
+  EMPTY_SERVICE_PORTS,
+  parseServicePorts,
+  ServicePortsField,
+  servicePortsFromApi,
+  type ServicePortsValue,
+} from "@/components/service-ports-field"
 
 // Sentinel thrown to abort the mutation on client-side validation failure so
 // onError can skip the generic toast (the field error is already surfaced).
@@ -38,47 +42,52 @@ export function ServiceTemplateForm({
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(template?.name ?? "")
-  const [protocol, setProtocol] = useState<ServiceProtocol>(
-    template?.protocol ?? "tcp"
+  const [ports, setPorts] = useState<ServicePortsValue>(
+    template
+      ? servicePortsFromApi(
+          template.protocol_ports,
+          template.protocol,
+          template.ports
+        )
+      : EMPTY_SERVICE_PORTS
   )
-  const [portsText, setPortsText] = useState(template?.ports.join(", ") ?? "")
   const [description, setDescription] = useState(template?.description ?? "")
-  const [portsError, setPortsError] = useState<string | null>(null)
+  const [portErrors, setPortErrors] = useState<{
+    tcp: string | null
+    udp: string | null
+  }>({ tcp: null, udp: null })
 
   useEffect(() => {
     if (!template) return
     setName(template.name)
-    setProtocol(template.protocol)
-    setPortsText(template.ports.join(", "))
+    setPorts(
+      servicePortsFromApi(
+        template.protocol_ports,
+        template.protocol,
+        template.ports
+      )
+    )
     setDescription(template.description)
-    setPortsError(null)
+    setPortErrors({ tcp: null, udp: null })
     reset()
   }, [template, reset])
 
   const mutation = useMutation({
     mutationFn: () => {
-      // parsePorts silently drops non-integer / out-of-range tokens, so
-      // re-tokenize the raw input here and surface anything that would vanish
-      // instead of quietly submitting a shorter list.
-      const tokens = portsText.split(/[,\s]+/).filter((t) => t !== "")
-      const invalid = tokens.filter((t) => {
-        const n = Number(t)
-        return !Number.isInteger(n) || n < 1 || n > 65535
-      })
-      const ports = parsePorts(portsText)
-      if (invalid.length > 0) {
-        setPortsError(`Not a valid port (1–65535): ${invalid.join(", ")}`)
+      // A bad token is reported rather than silently dropped, so a typo can't
+      // submit a shorter port list than the one on screen.
+      const parsed = parseServicePorts(ports)
+      setPortErrors({ tcp: parsed.errors.tcp, udp: parsed.errors.udp })
+      if (parsed.errors.tcp || parsed.errors.udp || parsed.errors.form) {
+        if (parsed.errors.form)
+          setPortErrors({ tcp: parsed.errors.form, udp: null })
         throw new Error(CLIENT_INVALID)
       }
-      if (ports.length === 0) {
-        setPortsError("Enter at least one port between 1 and 65535.")
-        throw new Error(CLIENT_INVALID)
-      }
-      setPortsError(null)
       const payload: ServiceTemplateWritePayload = {
         name: name.trim(),
-        protocol,
-        ports,
+        protocol: parsed.protocol,
+        ports: parsed.ports,
+        protocol_ports: parsed.protocol_ports,
         description: description.trim(),
       }
       return saveObject<ServiceTemplate>({
@@ -118,30 +127,17 @@ export function ServiceTemplateForm({
         placeholder="HTTPS"
         error={fieldErrors.name}
       />
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Protocol"
-          value={protocol}
-          onChange={(v) => setProtocol((v as ServiceProtocol) ?? "tcp")}
-          options={[
-            { value: "tcp", label: "TCP" },
-            { value: "udp", label: "UDP" },
-          ]}
-          error={fieldErrors.protocol}
-        />
-        <FormText
-          label="Ports"
-          value={portsText}
-          onChange={(v) => {
-            setPortsText(v)
-            setPortsError(null)
-          }}
-          mono
-          placeholder="443, 8443"
-          hint="comma-separated"
-          error={portsError ?? fieldErrors.ports}
-        />
-      </div>
+      <ServicePortsField
+        value={ports}
+        onChange={(v) => {
+          setPorts(v)
+          setPortErrors({ tcp: null, udp: null })
+        }}
+        errors={{
+          tcp: portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
+          udp: portErrors.udp,
+        }}
+      />
       <FormTextarea
         label="Description"
         value={description}

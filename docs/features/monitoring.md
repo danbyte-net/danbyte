@@ -247,10 +247,11 @@ materialisation pass (within a minute or two) and appear on each IP's
 
 ### Monitoring a service
 
-A **Service** (a device/VM's name + protocol + ports - e.g. "HTTPS · TCP 443")
-carries a **Monitored** flag. Turn it on from the device's **Services** tab and
-each port is watched by a TCP/UDP check against the service's target IP (its own
-IP, else the parent's primary IP). The row's **Monitoring** badge reflects the
+A **Service** (a device/VM's name + its ports - e.g. "HTTPS · TCP 443", or
+"DNS · TCP 53 · UDP 53") carries a **Monitored** flag. Turn it on from the
+device's **Services** tab and each port is watched against the service's target
+IP (its own IP, else the parent's primary IP) **with that port's own protocol**
+- so a DNS service raises a TCP check on 53 and a UDP check on 53. The row's **Monitoring** badge reflects the
 live state - *Monitored* (green) once checks are scheduled, *No IP* (amber) if
 the flag is on but no target IP exists yet (it activates automatically when one
 appears).

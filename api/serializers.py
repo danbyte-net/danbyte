@@ -4341,7 +4341,59 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
 
 # ─── Services ────────────────────────────────────────────────────────────────
-class ServiceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+# ─── Services ────────────────────────────────────────────────────────────────
+
+class ProtocolPortsSerializerMixin:
+    """Validation for the per-protocol port map shared by services, service
+    templates and device-type services.
+
+    ``ports`` stays required and single-protocol - that is what most services
+    are, and every existing client writes it. ``protocol_ports`` is the
+    optional richer form for a service that answers on more than one protocol
+    (DNS on TCP 53 *and* UDP 53); when given, it wins, and the model mirrors
+    its first block back onto ``protocol``/``ports``.
+    """
+
+    def _clean_ports(self, value, label="Ports"):
+        if not isinstance(value, list) or not value:
+            raise serializers.ValidationError(f"{label}: list at least one port.")
+        out = []
+        for p in value:
+            if isinstance(p, bool) or not isinstance(p, int) or not (
+                1 <= p <= 65535
+            ):
+                raise serializers.ValidationError(f"{label} must be 1-65535.")
+            if p not in out:
+                out.append(p)
+        return out
+
+    def validate_ports(self, value):
+        return self._clean_ports(value)
+
+    def validate_protocol_ports(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError(
+                'protocol_ports must be an object, e.g. {"tcp": [53], "udp": [53]}.'
+            )
+        valid = {p for p, _ in Service.PROTOCOL_CHOICES}
+        out = {}
+        for proto, ports in value.items():
+            if proto not in valid:
+                raise serializers.ValidationError(
+                    f"Unknown protocol '{proto}'. Use one of: "
+                    + ", ".join(sorted(valid))
+                    + "."
+                )
+            cleaned = self._clean_ports(ports, label=f"{proto.upper()} ports")
+            out[proto] = cleaned
+        if not out:
+            raise serializers.ValidationError("List at least one port.")
+        return out
+
+
+class ServiceSerializer(ProtocolPortsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     protocol_display = serializers.CharField(
         source="get_protocol_display", read_only=True
     )
@@ -4369,14 +4421,6 @@ class ServiceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     # IP yet (set the service's IP or the parent's primary IP).
     check_count = serializers.SerializerMethodField()
 
-    def validate_ports(self, value):
-        if not isinstance(value, list) or not value:
-            raise serializers.ValidationError("List at least one port.")
-        for p in value:
-            if not isinstance(p, int) or not (1 <= p <= 65535):
-                raise serializers.ValidationError("Ports must be 1–65535.")
-        return value
-
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_device(self, obj):
         d = obj.device
@@ -4399,6 +4443,7 @@ class ServiceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = Service
         fields = ["id", "name", "protocol", "protocol_display", "ports",
+                  "protocol_ports",
                   "device", "device_id", "virtual_machine", "virtual_machine_id",
                   "ip_address", "ip_address_id", "monitored", "check_count",
                   "description",
@@ -4410,10 +4455,10 @@ class ServiceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 class ServiceTemplateMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = ServiceTemplate
-        fields = ["id", "name", "protocol", "ports"]
+        fields = ["id", "name", "protocol", "ports", "protocol_ports"]
 
 
-class ServiceTemplateSerializer(NumIdModelSerializer):
+class ServiceTemplateSerializer(ProtocolPortsSerializerMixin, NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
     protocol_display = serializers.CharField(
         source="get_protocol_display", read_only=True
@@ -4427,23 +4472,16 @@ class ServiceTemplateSerializer(NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
-    def validate_ports(self, value):
-        if not isinstance(value, list) or not value:
-            raise serializers.ValidationError("List at least one port.")
-        for p in value:
-            if not isinstance(p, int) or not (1 <= p <= 65535):
-                raise serializers.ValidationError("Ports must be 1–65535.")
-        return value
-
     class Meta:
         model = ServiceTemplate
         fields = ["id", "name", "slug", "protocol", "protocol_display", "ports",
+                  "protocol_ports",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class DeviceTypeServiceSerializer(NumIdModelSerializer):
+class DeviceTypeServiceSerializer(ProtocolPortsSerializerMixin, NumIdModelSerializer):
     """A service defined on a device type - materialises a Service onto every
     new device of the type. ``?device_type=`` scoped, like the component
     templates."""
@@ -4456,18 +4494,11 @@ class DeviceTypeServiceSerializer(NumIdModelSerializer):
         source="device_type", queryset=DeviceType.objects.all(), write_only=True,
     )
 
-    def validate_ports(self, value):
-        if not isinstance(value, list) or not value:
-            raise serializers.ValidationError("List at least one port.")
-        for p in value:
-            if not isinstance(p, int) or not (1 <= p <= 65535):
-                raise serializers.ValidationError("Ports must be 1–65535.")
-        return value
-
     class Meta:
         model = DeviceTypeService
         fields = ["id", "device_type_id", "name", "protocol", "protocol_display",
-                  "ports", "monitor", "description", "created_at", "updated_at"]
+                  "ports", "protocol_ports", "monitor", "description",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 

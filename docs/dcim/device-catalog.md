@@ -297,7 +297,7 @@ Notes:
 - Power **outlet** templates can reference the power **inlet** template that
   feeds them; front-port templates map onto rear-port template positions - the
   same relationships the concrete components carry.
-- **Service** templates (name · protocol · ports) stamp a **Service** onto each
+- **Service** templates (name · ports per protocol) stamp a **Service** onto each
   new device; tick **Monitor** and those services are watched from the moment
   the device has an IP - fleet-wide service monitoring configured in one place.
   See [service monitoring](../../architecture/service-monitoring.md).

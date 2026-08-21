@@ -15,6 +15,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { ServiceTemplateDeleteDialog } from "@/components/service-template-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { servicePortsLabel } from "@/components/service-ports-field"
 
 export const Route = createFileRoute("/service-templates/")({
   component: ServiceTemplatesPage,
@@ -135,7 +136,11 @@ function buildColumns({
       header: "Ports",
       cell: ({ row }) => (
         <span className="font-mono text-xs">
-          {row.original.ports.join(", ") || "-"}
+          {servicePortsLabel(
+            row.original.protocol_ports,
+            row.original.protocol,
+            row.original.ports
+          ) || "-"}
         </span>
       ),
     },

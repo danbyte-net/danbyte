@@ -22,18 +22,18 @@ class WorkerControlTests(APITestCase):
     def test_requires_superuser(self):
         plain = User.objects.create_user("plain", "p@a.c", "pw")
         self._login(plain)
-        r = self.client.post("/api/services/workers/", {"count": 4}, format="json")
+        r = self.client.post("/api/system/services/workers/", {"count": 4}, format="json")
         self.assertEqual(r.status_code, 403)
 
     def test_rejects_out_of_range(self):
         self._login(self.admin)
-        r = self.client.post("/api/services/workers/", {"count": 999}, format="json")
+        r = self.client.post("/api/system/services/workers/", {"count": 999}, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(DeploymentSettings.load().rq_workers, 8)  # unchanged
 
     def test_saves_the_count(self):
         self._login(self.admin)
-        r = self.client.post("/api/services/workers/", {"count": 12}, format="json")
+        r = self.client.post("/api/system/services/workers/", {"count": 12}, format="json")
         # In the test env systemd isn't reachable, so it can't restart - but the
         # setting is persisted regardless (saved=true), returned as 200.
         self.assertEqual(r.status_code, 200, r.content)
@@ -41,7 +41,7 @@ class WorkerControlTests(APITestCase):
 
     def test_services_list_includes_worker_config(self):
         self._login(self.admin)
-        r = self.client.get("/api/services/")
+        r = self.client.get("/api/system/services/")
         self.assertEqual(r.status_code, 200, r.content)
         w = r.json()["workers"]
         self.assertEqual(w["rq_workers"], 8)

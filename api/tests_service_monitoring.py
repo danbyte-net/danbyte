@@ -155,3 +155,111 @@ class ServiceMonitoringTests(APITestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(CheckAssignment.objects.filter(service=svc).count(), 1)
+
+
+class MixedProtocolServiceTests(ServiceMonitoringTests):
+    """A service may answer on several protocols at once - DNS is TCP 53 *and*
+    UDP 53 - so ports carry their own protocol instead of the service having
+    exactly one."""
+
+    def test_each_port_is_checked_with_its_own_protocol(self):
+        dev, ip = self._device_with_ip()
+        svc = Service.objects.create(
+            tenant=self.tenant, device=dev, name="DNS",
+            protocol_ports={"tcp": [53, 443], "udp": [53, 445]},
+            monitored=True,
+        )
+        sync_service_checks(svc)
+        slugs = set(
+            CheckAssignment.objects.filter(service=svc).values_list(
+                "template__slug", flat=True
+            )
+        )
+        self.assertEqual(slugs, {"tcp-53", "tcp-443", "udp-53", "udp-445"})
+        kinds = dict(
+            CheckAssignment.objects.filter(service=svc).values_list(
+                "template__slug", "template__kind"
+            )
+        )
+        self.assertEqual(kinds["udp-53"], "udp")
+        self.assertEqual(kinds["tcp-53"], "tcp")
+
+    def test_single_protocol_service_is_unchanged(self):
+        dev, ip = self._device_with_ip()
+        svc = Service.objects.create(
+            tenant=self.tenant, device=dev, name="HTTPS", protocol="tcp",
+            ports=[443], monitored=True,
+        )
+        sync_service_checks(svc)
+        self.assertEqual(svc.port_map(), {"tcp": [443]})
+        self.assertEqual(
+            CheckAssignment.objects.filter(service=svc).count(), 1
+        )
+
+    def test_legacy_pair_mirrors_the_first_block(self):
+        # Readers that predate protocol_ports still see a coherent service.
+        svc = Service.objects.create(
+            tenant=self.tenant, name="DNS",
+            protocol_ports={"udp": [53], "tcp": [53, 853]},
+        )
+        svc.refresh_from_db()
+        self.assertEqual(svc.protocol, "tcp")
+        self.assertEqual(svc.ports, [53, 853])
+
+    def test_dropping_a_protocol_removes_only_its_checks(self):
+        dev, ip = self._device_with_ip()
+        svc = Service.objects.create(
+            tenant=self.tenant, device=dev, name="DNS",
+            protocol_ports={"tcp": [53], "udp": [53]}, monitored=True,
+        )
+        sync_service_checks(svc)
+        self.assertEqual(CheckAssignment.objects.filter(service=svc).count(), 2)
+        svc.protocol_ports = {"udp": [53]}
+        svc.save()
+        sync_service_checks(svc)
+        slugs = set(
+            CheckAssignment.objects.filter(service=svc).values_list(
+                "template__slug", flat=True
+            )
+        )
+        self.assertEqual(slugs, {"udp-53"})
+
+    def test_api_round_trip_and_validation(self):
+        dev, ip = self._device_with_ip()
+        r = self.client.post(
+            "/api/services/",
+            {"name": "DNS", "device_id": str(dev.id), "ports": [53],
+             "protocol_ports": {"tcp": [53], "udp": [53]}},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["protocol_ports"], {"tcp": [53], "udp": [53]})
+        # Junk protocol and out-of-range ports are refused.
+        for bad in (
+            {"sctp": [53]},
+            {"tcp": [0]},
+            {"tcp": []},
+            "nonsense",
+        ):
+            r = self.client.post(
+                "/api/services/",
+                {"name": "bad", "device_id": str(dev.id), "ports": [53],
+                 "protocol_ports": bad},
+                format="json",
+            )
+            self.assertEqual(r.status_code, 400, f"{bad}: {r.content}")
+
+    def test_device_type_service_materialises_every_protocol(self):
+        DeviceTypeService.objects.create(
+            device_type=self.dt, name="DNS",
+            protocol_ports={"tcp": [53], "udp": [53]}, monitor=True,
+        )
+        dev = Device.objects.create(
+            tenant=self.tenant, name="dns1", device_type=self.dt
+        )
+        materialize_device_components(dev)
+        svc = Service.objects.get(device=dev, name="DNS")
+        self.assertEqual(svc.port_map(), {"tcp": [53], "udp": [53]})
+        # bulk_create skips save(), so the legacy pair is mirrored explicitly.
+        self.assertEqual(svc.protocol, "tcp")
+        self.assertEqual(svc.ports, [53])

@@ -5,7 +5,6 @@ import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type ServiceTemplate } from "@/lib/api"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, type KvRow } from "@/components/kv-card"
@@ -14,6 +13,7 @@ import { ServiceTemplateDeleteDialog } from "@/components/service-template-delet
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
+import { servicePortsLabel } from "@/components/service-ports-field"
 
 export const Route = createFileRoute("/service-templates/$id")({
   component: ServiceTemplateDetail,
@@ -76,14 +76,10 @@ function Body({ template: t }: { template: ServiceTemplate }) {
       hero={
         <DetailHero
           title={t.name}
-          badges={
-            <Badge variant="secondary">
-              {t.protocol_display || t.protocol.toUpperCase()}
-            </Badge>
-          }
           subtitle={
             <span className="font-mono">
-              {t.ports.length ? t.ports.join(", ") : "no ports"}
+              {servicePortsLabel(t.protocol_ports, t.protocol, t.ports) ||
+                "no ports"}
             </span>
           }
           description={t.description}

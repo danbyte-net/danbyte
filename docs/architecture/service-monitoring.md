@@ -99,3 +99,24 @@ on a host; monitoring is a flag on the service.**
   goes to whichever created it first. Rare in practice (distinct services expose
   distinct ports). Documented rather than modelled around.
 - Deleting a Service cascades its owned checks (`on_delete=CASCADE`).
+
+## Ports per protocol
+
+A service's ports live in `protocol_ports` - `{"tcp": [53, 443], "udp": [53]}`
+- because one service can answer on more than one protocol. `sync_service_checks`
+walks that map and raises each port's check with **that port's** protocol, so a
+DNS service produces `tcp-53` *and* `udp-53`.
+
+`protocol` + `ports` remain on the model and in the API for readers that
+predate the map; the model mirrors the first block onto them on save, so they
+always describe a real part of the service. `port_map()` is the accessor
+everything else should use - it returns the map, falling back to the single
+pair for rows written before the split.
+
+!!! note "The host-service endpoints moved"
+    `/api/services/` is the **network service** resource. The superuser
+    endpoints that restart systemd units now live under `/api/system/services/`
+    (`workers/`, `restart-all/`, `<key>/restart/`). They previously sat on
+    `/api/services/` and, being declared before the router, shadowed its list
+    route - `POST /api/services/` answered `405`, so a service could not be
+    created through the API at all.

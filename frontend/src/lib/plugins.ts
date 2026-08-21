@@ -128,7 +128,7 @@ export interface PluginConfigState {
   default_enabled: boolean
 }
 
-// ─── Service control - mirrors /api/services/ ───────────────────────────────
+// ─── Host service control - mirrors /api/system/services/ ──────────────────
 
 export interface ServiceInfo {
   key: string
@@ -150,7 +150,7 @@ export function useServices(enabled = true) {
   return useQuery({
     queryKey: ["services"],
     queryFn: () =>
-      api<{ services: ServiceInfo[]; workers: WorkerConfig }>("/api/services/"),
+      api<{ services: ServiceInfo[]; workers: WorkerConfig }>("/api/system/services/"),
     enabled,
   })
 }
