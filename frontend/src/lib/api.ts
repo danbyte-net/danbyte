@@ -709,6 +709,9 @@ export interface ASNWritePayload {
 export interface StatusMini {
   id: string
   name: string
+  /** Behavior key (e.g. "planned" = reserved port); optional because some
+   * embedded payloads predate it. */
+  slug?: string
   color: string
   text_color: string
 }
@@ -1725,6 +1728,8 @@ export interface FacePort {
   kind: TerminationKind | null
   id: string | null
   connected: boolean
+  /** free | connected | reserved | marked (mark_connected, no cable). */
+  cable_state?: string
   cable_id: string | null
   /** Interface admin state - feeds the shared portState colouring. */
   enabled: boolean

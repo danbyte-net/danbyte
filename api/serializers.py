@@ -826,7 +826,9 @@ class StatusMiniSerializer(NumIdModelSerializer):
 
     class Meta:
         model = Status
-        fields = ["id", "name", "color", "text_color"]
+        # slug: lets clients key behavior (e.g. "planned" = reserved port)
+        # without matching on the editable display name.
+        fields = ["id", "name", "slug", "color", "text_color"]
 
 
 class StatusSerializerMixin(serializers.Serializer):

@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { CabledFilterChips } from "@/components/cabled-filter"
+import { cableState, type CableState } from "@/lib/cable-state"
 import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Pencil, Trash2, Waypoints } from "lucide-react"
@@ -48,7 +50,14 @@ function CableCell({ cable }: { cable: RearPort["cable"] }) {
   )
 }
 
-export function DevicePortsPane({ deviceId }: { deviceId: string }) {
+export function DevicePortsPane({
+  deviceId,
+  initialCabled,
+}: {
+  deviceId: string
+  /** Seed for the cabled-state chips (the utilization card drill-down). */
+  initialCabled?: CableState | null
+}) {
   const { canDo } = useMe()
   const canAddRear = canDo("rearport", "add")
   const canEditRear = canDo("rearport", "change")
@@ -308,8 +317,21 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
     [canEditFront, canDeleteFront, canEditCable]
   )
 
-  const rearRows = rear.data?.results ?? []
-  const frontRows = front.data?.results ?? []
+  const [cabled, setCabled] = useState<CableState | null>(initialCabled ?? null)
+  useEffect(() => setCabled(initialCabled ?? null), [initialCabled])
+  const byState = <T extends Parameters<typeof cableState>[0]>(rows: T[]) =>
+    rows.filter((r) => !cabled || cableState(r) === cabled)
+  const allRear = rear.data?.results ?? []
+  const allFront = front.data?.results ?? []
+  const cabledCounts = useMemo(() => {
+    const c: Partial<Record<CableState, number>> = {}
+    for (const r of [...allRear, ...allFront])
+      c[cableState(r)] = (c[cableState(r)] ?? 0) + 1
+    return c
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rear.data, front.data])
+  const rearRows = byState(allRear)
+  const frontRows = byState(allFront)
 
   useRegisterAddActions("ports", [
     ...(canAddRear
@@ -322,6 +344,11 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
 
   return (
     <div className="space-y-8">
+      <CabledFilterChips
+        value={cabled}
+        onChange={setCabled}
+        counts={cabledCounts}
+      />
       <section className="space-y-3">
         <h3 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
           Rear ports
@@ -332,8 +359,10 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : rearRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No rear ports. Rear ports are the back of a patch panel - add one,
-            then map front ports to its strands.
+            {cabled
+              ? "No rear ports match this filter."
+              : "No rear ports. Rear ports are the back of a patch panel - " +
+                "add one, then map front ports to its strands."}
           </p>
         ) : (
           <DataTable
@@ -445,6 +474,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
         onCleared={() => setSelRear([])}
         invalidate={[["device-rear-ports", deviceId]]}
         fields={[
+          { key: "mark_connected", label: "Mark connected", kind: "bool" },
           // Free text, matching RearPortForm - RearPort.type carries no model
           // choices, so a closed list would block values the single-port form
           // accepts.
@@ -461,6 +491,7 @@ export function DevicePortsPane({ deviceId }: { deviceId: string }) {
         onCleared={() => setSelFront([])}
         invalidate={[["device-front-ports", deviceId]]}
         fields={[
+          { key: "mark_connected", label: "Mark connected", kind: "bool" },
           {
             key: "type",
             label: "Type",

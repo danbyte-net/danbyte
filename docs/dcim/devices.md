@@ -109,6 +109,16 @@ status once patched. Most useful on patch panels and access switches, where
 "how full is this thing" is the recurring question
 (`GET /api/devices/<id>/port-utilization/`).
 
+The card is interactive: **hovering** a legend entry (connected / reserved /
+free / undocumented) highlights the matching ports on the Panel above it -
+on the photo faceplate and the rendered one alike - and **clicking** it
+jumps to the Components tab with the port list pre-filtered
+(`?tab=components&sub=interfaces&cabled=free` is linkable). The interface
+and front/rear-port tables carry the same **cabled-state chips**
+(All · Connected · Reserved · Undocumented · Free) for filtering by hand,
+and *Mark connected* is bulk-editable, so ticking a whole undocumented
+panel is one selection.
+
 The estate-wide view lives at **DCIM → Connections → Port utilization**:
 every device with ports, fullest first, with the same
 connected/reserved/free split, site/role/type facets, search and export -

@@ -2829,6 +2829,19 @@ def _region_and_descendant_ids(region_id):
     return ids
 
 
+def _cable_state(comp, term) -> str:
+    """free | connected | reserved | marked - the utilization card's
+    vocabulary, per port, for the face-panel glow."""
+    if term is not None:
+        status = term.cable.status if term.cable_id else None
+        if status is not None and status.slug == "planned":
+            return "reserved"
+        return "connected"
+    if getattr(comp, "mark_connected", False):
+        return "marked"
+    return "free"
+
+
 class DeviceViewSet(
     FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
 ):
@@ -3048,7 +3061,7 @@ class DeviceViewSet(
                 # carry a status instead, and a module bay's occupancy is the
                 # reverse Module relation (there is no field on the bay).
                 if cabled:
-                    comps = comps.prefetch_related("terminations")
+                    comps = comps.prefetch_related("terminations__cable__status")
                 elif relation == "module_bays":
                     comps = comps.select_related("module__module_type")
                 else:
@@ -3137,6 +3150,7 @@ class DeviceViewSet(
                             "kind": term_kind,
                             "id": str(comp.id),
                             "connected": term is not None,
+                            "cable_state": _cable_state(comp, term),
                             "cable_id": str(term.cable_id) if term else None,
                             "enabled": bool(getattr(comp, "enabled", True)),
                             "speed": speed if isinstance(speed, str) else "",
@@ -3166,6 +3180,7 @@ class DeviceViewSet(
                     "marker": comp.name, "name": comp.name,
                     "kind": term_kind, "id": str(comp.id),
                     "connected": term is not None,
+                    "cable_state": _cable_state(comp, term),
                     "cable_id": str(term.cable_id) if term else None,
                     "enabled": True, "speed": "",
                     "type": ctype if isinstance(ctype, str) else "",
@@ -3499,7 +3514,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
 
     bulk_str_fields = ("type", "mode", "speed", "duplex", "description")
-    bulk_bool_fields = ("enabled", "mgmt_only")
+    bulk_bool_fields = ("enabled", "mgmt_only", "mark_connected")
     bulk_int_fields = ("mtu",)
     bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF}
     bulk_name_scope_field = "device_id"
@@ -4110,6 +4125,7 @@ class RearPortViewSet(_DevicePortViewSet):
     )
     serializer_class = RearPortSerializer
     bulk_int_fields = ("positions",)
+    bulk_bool_fields = ("mark_connected",)
 
 
 class FrontPortViewSet(_DevicePortViewSet):
@@ -4119,6 +4135,7 @@ class FrontPortViewSet(_DevicePortViewSet):
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
+    bulk_bool_fields = ("mark_connected",)
 
 
 class ConsolePortViewSet(_DevicePortViewSet):

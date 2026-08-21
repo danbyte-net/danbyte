@@ -473,6 +473,33 @@
   padding: 1px;
 }
 
+/* Faceplate glow - while a utilization-card legend entry is hovered, the
+   panel dims every port that doesn't match the hovered state and rings the
+   ones that do. Driven purely by data attributes, so it works on the photo
+   and the rendered faceplate alike. */
+.fp-glow[data-glow] [data-cable-state] {
+  transition:
+    opacity 0.15s,
+    outline-color 0.15s;
+}
+.fp-glow[data-glow="free"] [data-cable-state]:not([data-cable-state="free"]),
+.fp-glow[data-glow="connected"]
+  [data-cable-state]:not([data-cable-state="connected"]),
+.fp-glow[data-glow="reserved"]
+  [data-cable-state]:not([data-cable-state="reserved"]),
+.fp-glow[data-glow="marked"]
+  [data-cable-state]:not([data-cable-state="marked"]) {
+  opacity: 0.15;
+}
+.fp-glow[data-glow="free"] [data-cable-state="free"],
+.fp-glow[data-glow="connected"] [data-cable-state="connected"],
+.fp-glow[data-glow="reserved"] [data-cable-state="reserved"],
+.fp-glow[data-glow="marked"] [data-cable-state="marked"] {
+  opacity: 1;
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
 /* Cluster chip - N colliding markers collapsed into a count pill. The border
    takes the dominant site colour; the corner dot carries the worst child
    status. Styled here, never by the plugin's Default.css. */

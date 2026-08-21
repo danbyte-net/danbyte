@@ -15,7 +15,7 @@ import {
   Trash2,
   Cable as CableIcon,
 } from "lucide-react"
-import { useCallback, useContext, useMemo, useState } from "react"
+import { useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
@@ -54,7 +54,13 @@ import {
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { KvCard, mono, dash } from "@/components/kv-card"
-import { PortUtilizationCard } from "@/components/port-utilization-card"
+import {
+  PortUtilizationCard,
+  type PortKind,
+} from "@/components/port-utilization-card"
+import { CABLE_STATES, type CableState } from "@/lib/cable-state"
+import { CabledFilterChips } from "@/components/cabled-filter"
+import { cableState } from "@/lib/cable-state"
 import type { KvRow } from "@/components/kv-card"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Section } from "@/components/ui/section"
@@ -183,13 +189,18 @@ export const Route = createFileRoute("/devices/$id")({
   // search and the page falls back to its default instead of an empty pane.
   validateSearch: (
     s: Record<string, unknown>
-  ): { tab?: DeviceTab; sub?: DeviceComponentSub } => ({
+  ): { tab?: DeviceTab; sub?: DeviceComponentSub; cabled?: CableState } => ({
     ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
       : {}),
     ...(typeof s.sub === "string" &&
     DEVICE_COMPONENT_SUBS.includes(s.sub as DeviceComponentSub)
       ? { sub: s.sub as DeviceComponentSub }
+      : {}),
+    // The utilization card's drill-down: pre-filter port tables by state.
+    ...(typeof s.cabled === "string" &&
+    CABLE_STATES.includes(s.cabled as CableState)
+      ? { cabled: s.cabled as CableState }
       : {}),
   }),
   component: DeviceDetail,
@@ -494,6 +505,7 @@ function DeviceComponents({
   canAddIp: boolean
   canAssignIp: boolean
 }) {
+  const { cabled } = Route.useSearch()
   // In the URL (`?sub=power`), so a sub-tab is linkable and survives a reload,
   // back/forward, and leaving the Components tab and coming back.
   const [sub, setSub] = useUrlSubTab<DeviceComponentSub>(
@@ -605,7 +617,7 @@ function DeviceComponents({
                 <DeviceBaysPane deviceId={d.id} />
                 <DeviceModulesPane deviceId={d.id} />
                 <DeviceInventoryPane deviceId={d.id} />
-                <DevicePortsPane deviceId={d.id} />
+                <DevicePortsPane deviceId={d.id} initialCabled={cabled} />
               </div>
             )}
           </div>
@@ -623,6 +635,19 @@ function DeviceOverview({
   onTab: (tab: "ips" | "components") => void
 }) {
   const { humanIds } = useMe()
+  const nav = useNavigate({ from: "/devices/$id" })
+  // Hovered utilization-card state - lights matching ports on the panel.
+  const [portGlow, setPortGlow] = useState<CableState | null>(null)
+  const openPorts = (state: CableState | null, kind: PortKind) => {
+    void nav({
+      search: (prev) => ({
+        ...prev,
+        tab: "components",
+        sub: kind === "interfaces" ? "interfaces" : "hardware",
+        ...(state ? { cabled: state } : { cabled: undefined }),
+      }),
+    })
+  }
   // Admin-controlled field visibility - falls back to documented defaults if
   // the endpoint isn't up yet (404) or the request fails.
   const visibilityQuery = useQuery({
@@ -977,8 +1002,12 @@ function DeviceOverview({
         <div className="grid items-start gap-6 lg:grid-cols-2">
           <div className="min-w-0 space-y-6">{attributeCards}</div>
           <div className="min-w-0 space-y-6">
-            <DeviceFrontPanel device={d} />
-            <PortUtilizationCard deviceId={d.id} />
+            <DeviceFrontPanel device={d} glow={portGlow} />
+            <PortUtilizationCard
+              deviceId={d.id}
+              onHoverState={setPortGlow}
+              onPick={openPorts}
+            />
             {locationMap}
             <DeviceMiniTopology deviceId={d.id} />
             <DeviceTunnelsCard deviceId={d.id} />
@@ -989,7 +1018,11 @@ function DeviceOverview({
         // No panel - the original auto-balanced masonry.
         <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
           {attributeCards}
-          <PortUtilizationCard deviceId={d.id} />
+          <PortUtilizationCard
+            deviceId={d.id}
+            onHoverState={setPortGlow}
+            onPick={openPorts}
+          />
           {locationMap}
           <DeviceMiniTopology deviceId={d.id} />
           <DeviceTunnelsCard deviceId={d.id} />
@@ -1051,7 +1084,13 @@ function DeviceRackCard({ device }: { device: Device }) {
  * hidden when the device has no physical interfaces. */
 type PanelView = "photo" | "rendered" | "bare"
 
-function DeviceFrontPanel({ device }: { device: Device }) {
+function DeviceFrontPanel({
+  device,
+  glow,
+}: {
+  device: Device
+  glow?: CableState | null
+}) {
   const deviceId = device.id
   const dt = device.device_type
   const frontImg = dt?.front_image ?? ""
@@ -1123,7 +1162,10 @@ function DeviceFrontPanel({ device }: { device: Device }) {
         </div>
       }
     >
-      <div className="rounded-lg border border-border bg-card p-4 lg:p-5">
+      <div
+        className="fp-glow rounded-lg border border-border bg-card p-4 lg:p-5"
+        data-glow={glow ?? undefined}
+      >
         {showRear && !hasRear ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             No rear panel defined for this device type.
@@ -1504,7 +1546,25 @@ function DeviceInterfacesPane({
     },
     onError: (e) => apiErrorToast(e),
   })
-  const rows = useMemo(() => nestInterfaces(q.data?.results ?? []), [q.data])
+  // The utilization card's drill-down (?cabled=free) seeds the chip filter;
+  // the chips stay usable on their own afterwards.
+  const { cabled: cabledParam } = Route.useSearch()
+  const [cabled, setCabled] = useState<CableState | null>(cabledParam ?? null)
+  useEffect(() => setCabled(cabledParam ?? null), [cabledParam])
+  const allIfaces = q.data?.results
+  const cabledCounts = useMemo(() => {
+    const c: Partial<Record<CableState, number>> = {}
+    for (const i of allIfaces ?? [])
+      c[cableState(i)] = (c[cableState(i)] ?? 0) + 1
+    return c
+  }, [allIfaces])
+  const rows = useMemo(
+    () =>
+      nestInterfaces(
+        (allIfaces ?? []).filter((i) => !cabled || cableState(i) === cabled)
+      ),
+    [allIfaces, cabled]
+  )
   const [selIfaces, setSelIfaces] = useState<NestedInterface[]>([])
   // SNMP drift → badge the affected interface rows so drift is easy to spot
   // (review/accept stays manual in the Drift panel - source of truth wins).
@@ -1625,6 +1685,13 @@ function DeviceInterfacesPane({
           </>,
           barSlot
         )}
+      {(!virtualChassis || scope === "member") && (
+        <CabledFilterChips
+          value={cabled}
+          onChange={setCabled}
+          counts={cabledCounts}
+        />
+      )}
       {virtualChassis && scope === "stack" ? (
         <StackInterfacesTable
           rows={stackIfaces.rows}
@@ -1645,7 +1712,9 @@ function DeviceInterfacesPane({
         />
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No interfaces on this device yet.
+          {cabled
+            ? "No interfaces match this filter."
+            : "No interfaces on this device yet."}
         </p>
       ) : (
         <DataTable
@@ -1664,6 +1733,7 @@ function DeviceInterfacesPane({
         invalidate={[["device-interfaces", deviceId]]}
         fields={[
           { key: "enabled", label: "Enabled", kind: "bool" },
+          { key: "mark_connected", label: "Mark connected", kind: "bool" },
           {
             key: "type",
             label: "Type",

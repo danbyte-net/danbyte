@@ -74,6 +74,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
+import { cableState } from "@/lib/cable-state"
 import { cn } from "@/lib/utils"
 
 /**
@@ -257,6 +258,7 @@ function Cage({
         <Link
           to="/interfaces/$id"
           params={{ id: i.id }}
+          data-cable-state={cableState(i)}
           style={
             cabled
               ? { ...style, ...portTintStyle(portHex(tint)) }
@@ -1446,6 +1448,7 @@ export function ImagePortsFaceplate({
                   <button
                     type="button"
                     style={portStyle}
+                    data-cable-state={fp.cable_state}
                     title={`${fp.name} - free, click to connect a cable`}
                     onClick={() =>
                       fp.id &&
@@ -1457,7 +1460,11 @@ export function ImagePortsFaceplate({
                     )}
                   />
                 ) : (
-                  <span style={portStyle} className={portClass} />
+                  <span
+                    style={portStyle}
+                    data-cable-state={fp.cable_state}
+                    className={portClass}
+                  />
                 )}
               </HoverCardTrigger>
               <HoverCardContent
@@ -1505,6 +1512,7 @@ export function ImagePortsFaceplate({
               <Link
                 to="/interfaces/$id"
                 params={{ id: iface.id }}
+                data-cable-state={cableState(iface)}
                 style={
                   // On a photo: cabled markers get an OPAQUE tier border +
                   // solid-enough fill; idle markers are a VERY faint outline
