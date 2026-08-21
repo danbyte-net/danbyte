@@ -69,6 +69,10 @@ panels crossed `front ⇄ rear`, segments in the cable's color) - with a
 **Map** tab for the React Flow 1-hop neighbourhood and "Full map" jumping
 here focused. The **cable page** hero draws its own run the same way.
 
+A collapsible **Legend** in the map's corner explains the line styles for
+whichever view is active (the Logical view carries its own under the
+diagram); its open/closed state is remembered per browser.
+
 ## Reading the map
 
 - **Cards** - the colored spine is the device's role color; the dot before
@@ -122,7 +126,8 @@ panels as nodes - the truth on the wall vs the truth in the racks.
 
 ## Filters, focus, search
 
-Filter by **site / role / status / tag**. Click a device → **Focus** to
+Filter by **site / role / status / tag** - the filter fields are searchable
+comboboxes, so a long site list is a keystroke away. Click a device → **Focus** to
 re-query just its neighbourhood, with a **1–4 hop** radius selector; the
 focus chip in the header clears it. The **Find device** box dims everything
 that doesn't match (name, IP, type) - press ++enter++ to zoom to the first

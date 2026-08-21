@@ -503,6 +503,10 @@ def topology_logical_view(request):
             VirtualMachine.objects.filter(tenant=tenant),
             request.user, tenant, "virtualmachine", "view",
         )
+        # A site filter bounds VMs too - and a VM with no site is NOT "every
+        # site", it's unknown, so it drops out of a site-scoped view.
+        if p.get("site"):
+            vms = vms.filter(site_id=p["site"])
         vifs = (
             VMInterface.objects.filter(vm__in=vms)
             .filter(Q(vlan__isnull=False) | Q(tagged_vlans__isnull=False))

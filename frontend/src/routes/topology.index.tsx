@@ -46,8 +46,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { Combobox } from "@/components/ui/combobox"
 import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
+import { CanvasLegend } from "@/components/topology/legend"
 import { LogicalTopologyView } from "@/components/topology/logical-view"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
@@ -98,6 +100,8 @@ const NO_FILTERS: Filters = {
   collapse: true,
 }
 
+/** Searchable filter select ("all" ↔ the combobox's null/none row) - the
+ * option lists here (41 sites and counting) want type-to-filter. */
 function FilterSelect({
   value,
   onChange,
@@ -110,19 +114,14 @@ function FilterSelect({
   options: { value: string; label: string }[]
 }) {
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-8 w-full text-xs">
-        <SelectValue placeholder={anyLabel} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">{anyLabel}</SelectItem>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <Combobox
+      value={value === "all" ? null : value}
+      onChange={(v) => onChange(v ?? "all")}
+      options={options}
+      noneLabel={anyLabel}
+      placeholder={anyLabel}
+      className="h-8 w-full text-xs"
+    />
   )
 }
 
@@ -942,6 +941,7 @@ function TopologyPage() {
               nodeStyle={viewStyle}
               positions={positions}
               layoutTick={layoutTick}
+              fitKey={graphQs}
               matchedIds={matchedIds}
               onGhostEdge={setGhost}
               onSelectNode={(d) => {
@@ -1003,6 +1003,16 @@ function TopologyPage() {
             >
               <X className="h-3 w-3" />
             </button>
+          </div>
+        )}
+        {!logical && graph && (
+          // left-16 clears React Flow's zoom controls in the corner.
+          <div className="absolute bottom-4 left-16 z-10">
+            <CanvasLegend
+              viewStyle={viewStyle === "flat" ? "flat" : "stencil"}
+              grouped={grouped}
+              colorMode={colorMode}
+            />
           </div>
         )}
         {selNode && (

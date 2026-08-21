@@ -555,6 +555,18 @@ class LogicalTopologyTests(_Base):
         body = self._logical("include_vms=0")
         self.assertEqual({n["kind"] for n in body["nodes"]}, {"device"})
 
+    def test_site_filter_drops_siteless_vms(self):
+        # sw-1 and the VM have no site: a site filter empties both out - a
+        # siteless VM must not survive a site-scoped view.
+        s = Site.objects.create(tenant=self.tenant, name="DC1")
+        self.sw.site = s
+        self.sw.save(update_fields=["site"])
+        body = self._logical(f"site={s.id}")
+        self.assertEqual(
+            {(n["kind"], n["name"]) for n in body["nodes"]},
+            {("device", "sw-1")},
+        )
+
     def test_foreign_tenant_invisible(self):
         from .models import VLAN
 

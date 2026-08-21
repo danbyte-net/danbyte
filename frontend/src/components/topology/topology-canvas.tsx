@@ -549,6 +549,11 @@ export interface TopologyCanvasProps {
   positions?: Record<string, [number, number]>
   /** Bump to discard drags/saved positions and re-run the auto layout. */
   layoutTick?: number
+  /** Identity of the underlying query (filters/focus/grouping). When it
+   * changes the camera re-fits - a reshaped graph with yesterday's viewport
+   * reads as a frozen or blank map. Incidental rebuilds (color mode, search,
+   * refetch of the same query) keep the viewport. */
+  fitKey?: string
   /** Node ids matching the search - everything else renders dimmed. */
   matchedIds?: Set<string> | null
   /** Device mini map: hide edges leaving these origin ports. */
@@ -583,6 +588,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     nodeStyle = "stencil",
     positions,
     layoutTick = 0,
+    fitKey = "",
     matchedIds,
     hiddenPorts,
     originId,
@@ -619,7 +625,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         edgeRouting,
         colorMode,
         nodeStyle,
-        positions: layoutTick > 0 ? undefined : positions,
+        // Positions pin whenever the parent supplies them. A deliberate
+        // relayout CLEARS them at the source (the page sets positions to
+        // undefined before bumping layoutTick) - gating on the tick here
+        // instead made every drag AFTER a relayout snap straight back.
+        positions,
         matched: matchedIds,
         hiddenPorts,
         originId,
@@ -684,6 +694,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // for nodes that are still present (so a color-mode flip doesn't shuffle).
   const prevNodes = useRef<Node[]>([])
   const prevTick = useRef(layoutTick)
+  const prevFitKey = useRef(fitKey)
   useEffect(() => {
     const prev = new Map(prevNodes.current.map((n) => [n.id, n.position]))
     // Keep the user's dragged positions only across INCIDENTAL rebuilds
@@ -724,7 +735,17 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     } else {
       setEdges(built.edges)
     }
-  }, [built, setNodes, setEdges, layoutTick, positions, direction, routingActive])
+    // A deliberate relayout OR a different query (filter/focus/grouping)
+    // re-fits the viewport - without this the camera keeps staring at
+    // wherever it was while the graph reshapes elsewhere, which reads as a
+    // frozen/blank map on big graphs.
+    const refit = relaidOut || fitKey !== prevFitKey.current
+    prevFitKey.current = fitKey
+    if (refit)
+      requestAnimationFrame(() =>
+        flow.fitView({ padding: 0.15, duration: 300 })
+      )
+  }, [built, setNodes, setEdges, layoutTick, positions, direction, routingActive, flow, fitKey])
   useEffect(() => {
     prevNodes.current = nodes
   }, [nodes])
