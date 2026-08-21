@@ -28,7 +28,7 @@ const STATUS_DOT: Record<string, string> = {
   decommissioning: "bg-zinc-400",
 }
 
-const HANDLE = "!h-1.5 !w-1.5 !rounded-full !border-0 !bg-muted-foreground/60"
+const HANDLE = "topo-conn"
 
 export function HierarchyNode({ data, selected }: NodeProps) {
   const d = data as HierData

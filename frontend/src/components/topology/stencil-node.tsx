@@ -161,7 +161,10 @@ export function stencilSize(d: StencilData): { width: number; height: number } {
   return { width, height }
 }
 
-const HANDLE = "!h-1.5 !w-1.5 !rounded-full !border-0 !bg-muted-foreground/60"
+// topo-conn: the connector dot. Styled in styles.css so it sits fully OUTSIDE
+// the card edge - a whole circle where the cable starts, never a half dot
+// clipped by the cell border.
+const HANDLE = "topo-conn"
 const POS: Record<PortSide, Position> = {
   L: Position.Left,
   R: Position.Right,
@@ -219,7 +222,7 @@ function DensePort({
   return (
     <div
       className={
-        "relative flex items-center overflow-hidden " +
+        "relative flex items-center " +
         (vertical
           ? side === "L"
             ? "justify-end pr-1 pl-1"

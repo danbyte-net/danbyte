@@ -670,6 +670,32 @@
   visibility: hidden;
 }
 
+/* Cable connector dot. Sits fully outside its port cell so the circle is
+   whole - centred on the border it reads as a half dot, and a cell that
+   clips its overflow cuts the inner half away entirely. */
+.react-flow__handle.topo-conn {
+  width: 5px;
+  height: 5px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--muted-foreground);
+  opacity: 0.55;
+}
+.react-flow__handle.topo-conn.react-flow__handle-left {
+  left: -6px;
+}
+.react-flow__handle.topo-conn.react-flow__handle-right {
+  right: -6px;
+}
+.react-flow__handle.topo-conn.react-flow__handle-top {
+  top: -6px;
+}
+.react-flow__handle.topo-conn.react-flow__handle-bottom {
+  bottom: -6px;
+}
+
 /* React Flow's stock-styled builtin node types (default/input/output/group)
    must never paint behind Danbyte's custom cards - the grouped topology once
    used the reserved type name "group" and inherited a grey 150px box. The

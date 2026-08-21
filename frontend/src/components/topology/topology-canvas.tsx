@@ -955,7 +955,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const [lod, setLod] = useState(0)
   const onMove = useCallback(
     (_: unknown, vp: { zoom: number }) => {
-      const next = vp.zoom < 0.3 ? 2 : vp.zoom < 0.55 ? 1 : 0
+      // Cable labels are the map's most useful text - they stay until the
+      // graph is genuinely too small to read, not at the zoom a fitted
+      // fabric happens to land on.
+      const next = vp.zoom < 0.2 ? 2 : vp.zoom < 0.32 ? 1 : 0
       setLod((cur) => (cur === next ? cur : next))
     },
     []
