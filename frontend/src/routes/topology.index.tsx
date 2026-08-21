@@ -336,7 +336,7 @@ function writeStoredDisplay(d: StoredDisplay) {
 }
 
 function TopologyPage() {
-  const search6 = Route.useSearch()
+  const urlSearch = Route.useSearch()
   const nav = useNavigate()
   const patch = useUrlPatch()
   const { canDo } = useMe()
@@ -349,7 +349,7 @@ function TopologyPage() {
     queryKey: ["topology-views"],
     queryFn: () => api<Paginated<TopologyViewSaved>>("/api/topology-views/"),
   })
-  const viewId = search6.view ?? "none"
+  const viewId = urlSearch.view ?? "none"
   const appliedView = views.data?.results.find((v) => v.id === viewId)
   const vf = (appliedView?.state.filters ?? {}) as ViewFilters
   // Personal defaults from the last unsaved session (this read is unchanged
@@ -759,7 +759,7 @@ function TopologyPage() {
   const edited =
     viewId !== "none" &&
     OVERRIDE_KEYS.some(
-      (k) => (search6 as Record<string, unknown>)[k] !== undefined
+      (k) => (urlSearch as Record<string, unknown>)[k] !== undefined
     )
 
   const currentState = () => ({
