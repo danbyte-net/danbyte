@@ -20,6 +20,7 @@ import { LinkPrefsProvider } from "@/components/link-prefs-provider"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { OnboardingWizard } from "@/components/onboarding-wizard"
+import { UpdatePrompt } from "@/components/update-prompt"
 import { PresenceProvider } from "@/lib/presence-context"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -251,6 +252,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               <TooltipProvider delayDuration={200}>
                 {children}
                 <Toaster richColors closeButton />
+                <UpdatePrompt />
               </TooltipProvider>
             </QueryClientProvider>
           </LinkPrefsProvider>

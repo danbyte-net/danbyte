@@ -93,6 +93,12 @@ current `/opt` layout.
 
     Back up the database first: `pg_dump danbyte > ~/danbyte-$(date +%F).sql`.
 
+!!! note "Open browser tabs learn about upgrades"
+    A Danbyte tab that stays open keeps running the frontend build it
+    started with. After an upgrade, every open tab detects the newer build
+    (on focus and every few minutes) and shows a *"Danbyte was updated"*
+    toast with a **Reload** button - no more stale UI without knowing it.
+
 !!! warning "Migrated but didn't restart? Danbyte will tell you."
     If the database gets migrated but the app processes keep running the old
     code (a half-finished upgrade), writes can fail in confusing ways.
