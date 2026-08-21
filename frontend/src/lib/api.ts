@@ -2484,7 +2484,8 @@ export interface TopoPort {
 
 export interface TopoNode {
   id: string
-  type: "device" | "interface" | "front_port" | "rear_port"
+  /** "group" = a group_by=site|location aggregate (data is TopoGroupData). */
+  type: "device" | "interface" | "front_port" | "rear_port" | "group"
   data: {
     name: string
     device_id?: string

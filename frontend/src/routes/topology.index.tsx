@@ -58,6 +58,10 @@ import {
   type EdgeColorMode,
   type NodeStyle,
 } from "@/components/topology/topology-canvas"
+import type {
+  GroupEdgeInfo,
+  TopoGroupData,
+} from "@/components/topology/group-node"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -179,7 +183,10 @@ interface StoredDisplay {
   roleDistance?: Record<string, number>
   edgeRouting?: "routed" | "straight"
   viewStyle?: NodeStyle
+  groupBy?: GroupBy
 }
+
+type GroupBy = "none" | "site" | "location"
 function readStoredDisplay(): StoredDisplay {
   try {
     const raw = localStorage.getItem(DISPLAY_KEY)
@@ -229,6 +236,15 @@ function TopologyPage() {
   const [viewStyle, setViewStyle] = useState<NodeStyle>(
     stored.viewStyle ?? "stencil"
   )
+  // Aggregate the graph to one card per site/location; double-click a card
+  // (or its panel's button) drills into that group's device view.
+  const [groupBy, setGroupBy] = useState<GroupBy>(stored.groupBy ?? "none")
+  const [drill, setDrill] = useState<{
+    kind: "site" | "location"
+    id: string
+    name: string
+  } | null>(null)
+  const grouped = groupBy !== "none" && !drill
   const [search, setSearch] = useState("")
   const [focus, setFocus] = useState<{ id: string; depth: number } | null>(
     deepLinkDevice ? { id: deepLinkDevice, depth: 1 } : null
@@ -245,12 +261,31 @@ function TopologyPage() {
     null
   )
   const [selBundle, setSelBundle] = useState<BundleMember[] | null>(null)
+  const [selGroup, setSelGroup] = useState<TopoGroupData | null>(null)
+  const [selGroupEdge, setSelGroupEdge] = useState<GroupEdgeInfo | null>(null)
   const [hintDismissed, setHintDismissed] = useState(false)
+
+  const clearSel = () => {
+    setSelNode(null)
+    setSelEdge(null)
+    setSelBundle(null)
+    setSelGroup(null)
+    setSelGroupEdge(null)
+  }
+
+  const drillInto = (d: TopoGroupData) => {
+    if (!d.group_id) return
+    setDrill({ kind: d.kind, id: d.group_id, name: d.name })
+    clearSel()
+    setPositions(undefined)
+    setLayoutTick((t) => t + 1)
+  }
 
   const set = (patch: Partial<Filters>) => {
     setFilters((f) => ({ ...f, ...patch }))
     setViewId("none")
     setPositions(undefined)
+    setDrill(null)
   }
 
   // Persist the DEFAULT view's display settings across reloads. Only while no
@@ -265,6 +300,7 @@ function TopologyPage() {
       roleDistance,
       edgeRouting,
       viewStyle,
+      groupBy,
     })
   }, [
     viewId,
@@ -275,6 +311,7 @@ function TopologyPage() {
     roleDistance,
     edgeRouting,
     viewStyle,
+    groupBy,
   ])
 
   // ── Option lists (shared picker caches) ──
@@ -311,7 +348,7 @@ function TopologyPage() {
   // ── Graph ──
   const graphQs = useMemo(() => {
     const p = new URLSearchParams()
-    if (focus) {
+    if (focus && !grouped) {
       p.set("device", focus.id)
       p.set("depth", String(focus.depth))
     } else {
@@ -319,10 +356,13 @@ function TopologyPage() {
       if (filters.role !== "all") p.set("role", filters.role)
       if (filters.status !== "all") p.set("status", filters.status)
       if (filters.tag !== "all") p.set("tag", filters.tag)
+      if (grouped) p.set("group_by", groupBy)
+      // Drilled into a group: the device view scoped to that one group.
+      if (drill) p.set(drill.kind, drill.id)
     }
     p.set("collapse_panels", filters.collapse ? "1" : "0")
     return p.toString()
-  }, [filters, focus])
+  }, [filters, focus, grouped, groupBy, drill])
 
   const q = useQuery({
     queryKey: ["topology", graphQs],
@@ -377,6 +417,7 @@ function TopologyPage() {
         roleDistance: Record<string, number>
         edgeRouting: "routed" | "straight"
         viewStyle: NodeStyle
+        groupBy: GroupBy
       }
     >
     setFilters({
@@ -390,6 +431,8 @@ function TopologyPage() {
     if (f.direction) setDirection(f.direction)
     if (f.edgeRouting) setEdgeRouting(f.edgeRouting)
     setViewStyle(f.viewStyle ?? "stencil")
+    setGroupBy(f.groupBy ?? "none")
+    setDrill(null)
     setRoleOrder(f.roleOrder ?? [])
     setRoleBonds(f.roleBonds ?? [])
     setRoleDistance(f.roleDistance ?? {})
@@ -418,6 +461,7 @@ function TopologyPage() {
       roleDistance,
       edgeRouting,
       viewStyle,
+      groupBy,
     },
     positions: canvas.current?.positions() ?? {},
   })
@@ -495,7 +539,31 @@ function TopologyPage() {
         <h1 className="text-base font-semibold">Topology</h1>
         {q.data && (
           <Badge variant="secondary" className="shrink-0">
-            {count} device{count === 1 ? "" : "s"}
+            {count}{" "}
+            {grouped
+              ? count === 1
+                ? "group"
+                : "groups"
+              : count === 1
+                ? "device"
+                : "devices"}
+          </Badge>
+        )}
+        {drill && (
+          <Badge variant="default" className="shrink-0 gap-1">
+            {drill.name}
+            <button
+              className="ml-0.5 opacity-80 hover:opacity-100"
+              onClick={() => {
+                setDrill(null)
+                clearSel()
+                setPositions(undefined)
+                setLayoutTick((t) => t + 1)
+              }}
+              aria-label="Back to groups"
+            >
+              <X className="h-3 w-3" />
+            </button>
           </Badge>
         )}
         <SegmentedTabs<NodeStyle>
@@ -623,6 +691,7 @@ function TopologyPage() {
               </PopoverContent>
             </Popover>
           )}
+          {!grouped && (
           <LevelOrganiser
             roles={rolesInGraph}
             order={roleOrder}
@@ -649,6 +718,7 @@ function TopologyPage() {
               setLayoutTick((t) => t + 1)
             }}
           />
+          )}
           <Popover>
             <PopoverTrigger asChild>
               <Button
@@ -674,6 +744,24 @@ function TopologyPage() {
                   items={[
                     { value: "LR", label: "Side-to-side" },
                     { value: "TB", label: "Tree" },
+                  ]}
+                />
+              </PopoverField>
+              <PopoverField label="Group by">
+                <SegmentedTabs<GroupBy>
+                  value={groupBy}
+                  onValueChange={(v) => {
+                    setGroupBy(v)
+                    setFocus(null)
+                    setDrill(null)
+                    clearSel()
+                    setPositions(undefined)
+                    setLayoutTick((t) => t + 1)
+                  }}
+                  items={[
+                    { value: "none", label: "None" },
+                    { value: "site", label: "Site" },
+                    { value: "location", label: "Location" },
                   ]}
                 />
               </PopoverField>
@@ -734,6 +822,8 @@ function TopologyPage() {
               setRoleDistance(d.roleDistance ?? {})
               setEdgeRouting(d.edgeRouting ?? "routed")
               setViewStyle(d.viewStyle ?? "stencil")
+              setGroupBy(d.groupBy ?? "none")
+              setDrill(null)
               setViewId("none")
               setPositions(readStoredPositions())
               if (d.roleOrder?.length) setLayoutTick((t) => t + 1)
@@ -839,25 +929,27 @@ function TopologyPage() {
               matchedIds={matchedIds}
               onGhostEdge={setGhost}
               onSelectNode={(d) => {
+                clearSel()
                 setSelNode(d)
-                setSelEdge(null)
-                setSelBundle(null)
               }}
               onSelectEdge={(d) => {
+                clearSel()
                 setSelEdge(d)
-                setSelNode(null)
-                setSelBundle(null)
               }}
               onSelectBundle={(cables) => {
+                clearSel()
                 setSelBundle(cables)
-                setSelNode(null)
-                setSelEdge(null)
               }}
-              onCanvasClick={() => {
-                setSelNode(null)
-                setSelEdge(null)
-                setSelBundle(null)
+              onSelectGroup={(d) => {
+                clearSel()
+                setSelGroup(d)
               }}
+              onSelectGroupEdge={(d) => {
+                clearSel()
+                setSelGroupEdge(d)
+              }}
+              onDrillGroup={drillInto}
+              onCanvasClick={clearSel}
               onDragEnd={() => {
                 const p = canvas.current?.positions()
                 if (!p) return
@@ -871,7 +963,7 @@ function TopologyPage() {
           </Suspense>
         )}
 
-        {graph && viewStyle === "stencil" && count > 80 && !hintDismissed && (
+        {graph && viewStyle === "stencil" && !grouped && count > 80 && !hintDismissed && (
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
             <span className="text-muted-foreground">
               Large graph - the Flat view reads better at this size.
@@ -912,6 +1004,19 @@ function TopologyPage() {
         )}
         {selBundle && (
           <BundlePanel cables={selBundle} onClose={() => setSelBundle(null)} />
+        )}
+        {selGroup && (
+          <GroupPanel
+            data={selGroup}
+            onClose={() => setSelGroup(null)}
+            onDrill={drillInto}
+          />
+        )}
+        {selGroupEdge && (
+          <GroupEdgePanel
+            data={selGroupEdge}
+            onClose={() => setSelGroupEdge(null)}
+          />
         )}
       </div>
 
@@ -1099,6 +1204,87 @@ function EdgePanel({
             Open cable
           </Link>
         </Button>
+      )}
+    </PanelShell>
+  )
+}
+
+/** Grouped mode: a site/location card's summary + drill-in. */
+function GroupPanel({
+  data: d,
+  onClose,
+  onDrill,
+}: {
+  data: TopoGroupData
+  onClose: () => void
+  onDrill: (d: TopoGroupData) => void
+}) {
+  return (
+    <PanelShell title={d.name} onClose={onClose}>
+      <div className="space-y-0.5">
+        <Row label="Grouped by">{d.kind}</Row>
+        <Row label="Devices">
+          <span className="num">{d.device_count}</span>
+        </Row>
+      </div>
+      {d.roles.length > 0 && (
+        <div className="mt-2 border-t border-border pt-2">
+          <div className="mb-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Roles
+          </div>
+          {d.roles.map((r) => (
+            <div key={r.name} className="flex items-center gap-1.5 py-0.5">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: r.color || "var(--border)" }}
+              />
+              <span className="min-w-0 flex-1 truncate">{r.name}</span>
+              <span className="num text-muted-foreground">{r.count}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {d.group_id && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-3 h-7 w-full text-xs"
+          onClick={() => onDrill(d)}
+        >
+          <Crosshair className="h-3 w-3" /> Open group
+        </Button>
+      )}
+    </PanelShell>
+  )
+}
+
+/** Grouped mode: an aggregated inter-group link. */
+function GroupEdgePanel({
+  data: d,
+  onClose,
+}: {
+  data: GroupEdgeInfo
+  onClose: () => void
+}) {
+  return (
+    <PanelShell
+      title={`${d.cable_count} cable${d.cable_count === 1 ? "" : "s"}`}
+      onClose={onClose}
+    >
+      {d.types.length > 0 ? (
+        <div className="space-y-0.5">
+          {d.types.map((t) => (
+            <div key={t} className="flex items-center gap-1.5 py-0.5">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: typeColor(t) }}
+              />
+              <span className="font-mono">{t}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground">No media types recorded.</p>
       )}
     </PanelShell>
   )

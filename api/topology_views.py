@@ -415,6 +415,85 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
     return {"nodes": nodes, "edges": edge_list}
 
 
+def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
+                   scope_q=None):
+    """The device graph aggregated by site or location: one node per group
+    (device count + role breakdown), one edge per group pair carrying the
+    cable count and media types. Built on the same RBAC-scoped device graph,
+    so hidden devices never leak into counts."""
+    g = _build_graph(tenant, device_filter_q=device_filter_q,
+                     collapse=collapse, scope_q=scope_q)
+    base = _devices_qs(tenant)
+    if device_filter_q is not None:
+        base = base.filter(device_filter_q)
+    if scope_q is not None:
+        base = base.filter(scope_q)
+    attr = "site" if group_by == "site" else "location"
+    info = {}
+    for d in base:
+        obj = getattr(d, attr)
+        info[str(d.id)] = (
+            (str(obj.id), obj.name) if obj is not None else ("none", "Unassigned")
+        )
+
+    groups: dict = {}
+    for n in g["nodes"]:
+        did = n["data"]["device_id"]
+        gid, gname = info.get(did, ("none", "Unassigned"))
+        grp = groups.setdefault(
+            gid, {"name": gname, "device_count": 0, "roles": {}}
+        )
+        grp["device_count"] += 1
+        role = n["data"].get("role")
+        if role:
+            r = grp["roles"].setdefault(
+                role["name"],
+                {"name": role["name"], "color": role["color"], "count": 0},
+            )
+            r["count"] += 1
+
+    agg: dict = {}
+    for e in g["edges"]:
+        a = info.get(e["source"][4:], ("none", ""))[0]
+        b = info.get(e["target"][4:], ("none", ""))[0]
+        if a == b:
+            continue  # intra-group cabling stays inside the group card
+        key = tuple(sorted((a, b)))
+        ent = agg.setdefault(key, {"cable_count": 0, "types": set()})
+        ent["cable_count"] += 1
+        t = e["data"].get("cable_type")
+        if t:
+            ent["types"].add(t)
+
+    nodes = [
+        {
+            "id": f"grp:{gid}",
+            "type": "group",
+            "data": {
+                "group_id": gid if gid != "none" else None,
+                "kind": group_by,
+                "name": v["name"],
+                "device_count": v["device_count"],
+                "roles": sorted(
+                    v["roles"].values(), key=lambda r: (-r["count"], r["name"])
+                ),
+            },
+        }
+        for gid, v in sorted(groups.items(), key=lambda kv: kv[1]["name"])
+    ]
+    edges = [
+        {
+            "id": f"ge:{a}:{b}",
+            "source": f"grp:{a}",
+            "target": f"grp:{b}",
+            "type": "group",
+            "data": {"cable_count": v["cable_count"], "types": sorted(v["types"])},
+        }
+        for (a, b), v in agg.items()
+    ]
+    return {"nodes": nodes, "edges": edges}
+
+
 def _filter_q(params):
     q = Q()
     if params.get("site"):
@@ -486,6 +565,16 @@ def _filter_q(params):
             location=OpenApiParameter.QUERY,
             description="Filter devices by tag slug.",
         ),
+        OpenApiParameter(
+            name="group_by",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "'site' or 'location': aggregate to one node per group "
+                "(device count + role breakdown) with cable-count edges "
+                "between groups. Ignores device/depth focus."
+            ),
+        ),
     ],
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
@@ -516,6 +605,17 @@ def topology_view(request):
         depth = max(1, min(MAX_DEPTH, int(p.get("depth", 1))))
     except (TypeError, ValueError):
         depth = 1
+
+    # Aggregated mode: one node per site/location. Focus is device-level and
+    # doesn't apply here.
+    group_by = p.get("group_by")
+    if group_by in ("site", "location"):
+        return Response(_grouped_graph(
+            tenant, group_by,
+            device_filter_q=_filter_q(p),
+            collapse=collapse,
+            scope_q=scope_q,
+        ))
 
     graph = _build_graph(
         tenant,

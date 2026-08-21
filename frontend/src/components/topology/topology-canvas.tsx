@@ -29,6 +29,8 @@ import { useTheme } from "@/components/theme-provider"
 import { PortNode, StencilNode, handleId } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
 import { FLAT_H, FLAT_W, FlatNode } from "./flat-node"
+import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
+import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import { edgeWaypoints, layoutNodes } from "./layout"
 import { resolveLevels } from "./level-organiser"
 import { RoutedEdge } from "./routed-edge"
@@ -38,6 +40,7 @@ import { RoutedEdge } from "./routed-edge"
 const nodeTypes = {
   device: StencilNode,
   flat: FlatNode,
+  group: GroupNode,
   interface: PortNode,
   front_port: PortNode,
   rear_port: PortNode,
@@ -54,6 +57,7 @@ export type NodeStyle = "stencil" | "flat"
 export type BundleMember = NonNullable<TopoEdge["data"]>
 
 const flatSize = () => ({ width: FLAT_W, height: FLAT_H })
+const groupSize = () => ({ width: GROUP_W, height: GROUP_H })
 
 export interface CanvasHandle {
   /** Current node positions (for saving a view). */
@@ -217,6 +221,9 @@ function build(
   }
 ) {
   const flat = opts.nodeStyle === "flat"
+  // A grouped payload (group_by=site|location) renders like the flat view:
+  // fixed-size cards, whole-node edges, one compact layout pass.
+  const grouped = graph.nodes.some((n) => n.type === "group")
   const nodes: Node[] = graph.nodes.map((n) => ({
     id: n.id,
     type: flat && (n.type ?? "device") === "device" ? "flat" : (n.type ?? "device"),
@@ -237,6 +244,28 @@ function build(
   >()
   for (const e of graph.edges) {
     if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) continue
+
+    // Aggregated group-to-group edge (group_by mode): ×N cables, width
+    // scaled gently by the bundle size.
+    if (e.type === "group") {
+      const info = e.data as unknown as GroupEdgeInfo
+      const n = info?.cable_count ?? 1
+      allEdges.push({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: "n",
+        targetHandle: "n",
+        type: "smoothstep",
+        pathOptions: { borderRadius: 10 },
+        label: `×${n}`,
+        data: { sem: "groupedge", group: info, baseS: "n", baseT: "n" },
+        style: { strokeWidth: Math.min(1.25 + Math.log2(n + 1), 4) },
+        labelStyle: { fontSize: 9 },
+        labelBgStyle: { fill: "var(--card)" },
+      } as Edge)
+      continue
+    }
 
     // Trace graphs: device→port membership + patch-panel pass-through.
     if (e.type === "membership") {
@@ -410,10 +439,10 @@ function build(
       mainOffsets[i] = mainOffsets[i - 1] + gapOf(groups[i]?.[0] ?? "")
   }
 
-  // Flat view: one compact dagre pass with fixed chip sizes - no per-port
-  // side split, no channel routing. Edges still snap to the card side facing
-  // their neighbour via the single "n" pseudo-port.
-  if (flat) {
+  // Flat + grouped views: one compact dagre pass with fixed card sizes - no
+  // per-port side split, no channel routing. Edges still snap to the card
+  // side facing their neighbour via the single "n" pseudo-port.
+  if (flat || grouped) {
     const laidFlat = layoutNodes(
       nodes,
       allEdges,
@@ -421,7 +450,7 @@ function build(
       opts.direction,
       levels,
       mainOffsets,
-      flatSize
+      grouped ? groupSize : flatSize
     ).nodes
     const posFlat = new Map(laidFlat.map((n) => [n.id, n.position]))
     const { edges: flatEdges } = assignSides(
@@ -529,6 +558,12 @@ export interface TopologyCanvasProps {
   onSelectEdge?: (data: NonNullable<TopoEdge["data"]>) => void
   /** Flat view: a bundled edge was clicked - its member cables. */
   onSelectBundle?: (cables: BundleMember[]) => void
+  /** Grouped mode: a group card was clicked. */
+  onSelectGroup?: (data: TopoGroupData) => void
+  /** Grouped mode: an aggregated group-to-group edge was clicked. */
+  onSelectGroupEdge?: (data: GroupEdgeInfo) => void
+  /** Grouped mode: a group card was double-clicked - drill into it. */
+  onDrillGroup?: (data: TopoGroupData) => void
   onGhostEdge?: (ghost: GhostEdgeData) => void
   onCanvasClick?: () => void
   /** Fired after a node drag settles - the parent can persist positions(). */
@@ -554,6 +589,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onSelectNode,
     onSelectEdge,
     onSelectBundle,
+    onSelectGroup,
+    onSelectGroupEdge,
+    onDrillGroup,
     onGhostEdge,
     onCanvasClick,
     onDragEnd,
@@ -737,9 +775,19 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node) => {
-      onSelectNode?.(node.data as TopologyGraph["nodes"][number]["data"])
+      if (node.type === "group")
+        onSelectGroup?.(node.data as unknown as TopoGroupData)
+      else onSelectNode?.(node.data as TopologyGraph["nodes"][number]["data"])
     },
-    [onSelectNode]
+    [onSelectNode, onSelectGroup]
+  )
+  const onNodeDoubleClick = useCallback(
+    (_: unknown, node: Node) => {
+      if (node.type !== "group") return
+      const d = node.data as unknown as TopoGroupData
+      if (d.group_id) onDrillGroup?.(d)
+    },
+    [onDrillGroup]
   )
   const onEdgeClick = useCallback(
     (_: unknown, edge: Edge) => {
@@ -749,14 +797,17 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             ghost?: GhostEdgeData
             raw?: TopoEdge["data"]
             cables?: BundleMember[]
+            group?: GroupEdgeInfo
           }
         | undefined
       if (data?.sem === "ghost" && data.ghost) onGhostEdge?.(data.ghost)
       else if (data?.sem === "bundle" && data.cables)
         onSelectBundle?.(data.cables)
+      else if (data?.sem === "groupedge" && data.group)
+        onSelectGroupEdge?.(data.group)
       else if (data?.raw) onSelectEdge?.(data.raw)
     },
-    [onGhostEdge, onSelectEdge, onSelectBundle]
+    [onGhostEdge, onSelectEdge, onSelectBundle, onSelectGroupEdge]
   )
 
   // Dragging a card changes which side of it faces each neighbour - re-snap
@@ -827,6 +878,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         proOptions={{ hideAttribution: true }}
         nodesConnectable={false}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onNodeDragStop={onNodeDragStop}
         onEdgeClick={onEdgeClick}
         onEdgeMouseEnter={(_, e) => setHotEdge(e.id)}

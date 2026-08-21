@@ -452,3 +452,56 @@ class TopologySplitterTests(_Base):
         self.assertNotIn("panel", names)  # consumed pass-through
         self.assertIn(("olt", "spl"), pairs)
         self.assertIn(("ont-1", "spl"), pairs)
+
+
+class GroupByTests(_Base):
+    """group_by=site aggregation - counts, inter-group edges, RBAC."""
+
+    def setUp(self):
+        super().setUp()
+        self.s1 = Site.objects.create(tenant=self.tenant, name="DC1")
+        self.s2 = Site.objects.create(tenant=self.tenant, name="DC2")
+        self.role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Switch", color="#0ea5e9"
+        )
+        mk = lambda n, s, r=None: Device.objects.create(  # noqa: E731
+            tenant=self.tenant, name=n, site=s, role=r
+        )
+        self.a = mk("dc1-sw1", self.s1, self.role)
+        self.b = mk("dc1-sw2", self.s1, self.role)
+        self.c = mk("dc2-sw1", self.s2)
+        self.homeless = mk("lab-1", None)
+        iface = lambda d, n: Interface.objects.create(device=d, name=n)  # noqa: E731
+        # Two cables inside DC1, two DC1↔DC2 cables.
+        self._cable(iface(self.a, "e1"), iface(self.b, "e1"))
+        self._cable(iface(self.a, "e2"), iface(self.b, "e2"))
+        self._cable(iface(self.a, "up1"), iface(self.c, "e1"))
+        self._cable(iface(self.b, "up1"), iface(self.c, "e2"))
+
+    def test_site_aggregation(self):
+        g = self._graph("group_by=site")
+        by_name = {n["data"]["name"]: n["data"] for n in g["nodes"]}
+        self.assertEqual(by_name["DC1"]["device_count"], 2)
+        self.assertEqual(by_name["DC2"]["device_count"], 1)
+        self.assertEqual(by_name["Unassigned"]["device_count"], 1)
+        self.assertEqual(by_name["DC1"]["roles"], [
+            {"name": "Switch", "color": "#0ea5e9", "count": 2}
+        ])
+        # One aggregated edge DC1↔DC2 carrying both cross-site cables;
+        # intra-DC1 cabling stays inside the card.
+        self.assertEqual(len(g["edges"]), 1)
+        self.assertEqual(g["edges"][0]["data"]["cable_count"], 2)
+
+    def test_group_nodes_have_group_type_and_id(self):
+        g = self._graph("group_by=site")
+        dc1 = next(n for n in g["nodes"] if n["data"]["name"] == "DC1")
+        self.assertEqual(dc1["type"], "group")
+        self.assertEqual(dc1["data"]["group_id"], str(self.s1.id))
+        none = next(n for n in g["nodes"] if n["data"]["name"] == "Unassigned")
+        self.assertIsNone(none["data"]["group_id"])
+
+    def test_filters_still_apply(self):
+        g = self._graph(f"group_by=site&site={self.s1.id}")
+        names = {n["data"]["name"] for n in g["nodes"]}
+        self.assertEqual(names, {"DC1"})
+        self.assertEqual(g["edges"], [])
