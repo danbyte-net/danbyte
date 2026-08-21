@@ -94,6 +94,10 @@ shows the same diagram scoped to that VM.
 Switches, networks and the topology are populated when **Sync virtual switches
 & networks** is enabled on a source; you can also create switches by hand.
 
+The same rail diagram drives the [topology page's **Logical**
+view](topology.md), which widens the picture to the whole L2 domain -
+physical device interfaces and VM interfaces on shared VLAN rails.
+
 ## See also
 
 - [Virtual machines](virtual-machines.md) · [Clusters](clusters.md)

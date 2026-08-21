@@ -4,11 +4,50 @@ icon: lucide/network
 
 # Topology map
 
-**DCIM → Topology** draws your cabling as a wiring diagram. Devices render as
-**stencil cards** - role-colored spine, status dot, type and primary IP, and
-one row per **cabled port** - and every cable connects **port-to-port** on the
-cards, so you can follow `asw1:Gi1/0/48 → core:Te1/1/1` visually instead of
-guessing which line is which.
+**DCIM → Topology** draws your network three ways, switched by the
+**Wiring / Flat / Logical** tabs in the header:
+
+- **Wiring** (default) - the port-accurate diagram described below: stencil
+  cards with one row per cabled port, cables drawn port-to-port.
+- **Flat** - the barebones view for big graphs: every device is a small
+  fixed-size chip (role color, status dot, name), parallel cables between
+  two devices merge into a single **×N** edge (click it to list and open
+  the member cables), and the layout packs tight. Hundreds of devices stay
+  readable; Levels, direction, color modes and saved views all still apply.
+- **Logical** - the L2 picture: **VLANs as rails** (grouped by VLAN group,
+  colored by the VLAN's own color or its zone's), with everything attached
+  to them - physical devices via their interfaces' untagged/tagged VLANs
+  **and virtual machines** via their VM interfaces, on one hybrid diagram.
+  Devices draw solid, VMs dashed; a dashed leg is a tagged (trunk)
+  attachment; leg labels are the interface names. Filter by site or VLAN
+  group, or hide VMs. Click any rail or box to open it. (The same rail
+  layout drives the [virtual network topology](virtual-switches.md).)
+
+The view choice is remembered per browser and saved with
+[saved views](#saved-views).
+
+In the Wiring view, devices render as **stencil cards** - role-colored
+spine, status dot, type and primary IP, and one row per **cabled port** -
+and every cable connects **port-to-port** on the cards, so you can follow
+`asw1:Gi1/0/48 → core:Te1/1/1` visually instead of guessing which line is
+which.
+
+## Big graphs
+
+Three mechanisms keep a large fabric legible:
+
+- **Zoom declutter** - zoomed out, edge labels hide; further out, port text
+  hides too, so the map reads as clean boxes and lines. Zoom in and the
+  detail returns; the hovered edge always keeps its label. On graphs over
+  ~80 devices a dismissible hint offers the Flat view.
+- **Group by site / location** (Display popover) - the graph aggregates to
+  **one card per site** (or location): device count, role breakdown, and
+  one edge per group pair labelled with its cable count (click it for the
+  media types). **Double-click a group** (or its panel's *Open group*) to
+  drill into that group's device view; the header chip pops back out.
+  Levels and focus pause while grouped. Devices without a site collect
+  under *Unassigned*.
+- **The Flat view** - see above.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat
 end-to-end path strip on top, and a **trace map** below - the traced devices
@@ -180,7 +219,25 @@ sized to the diagram - ready for a wiki page or a change ticket.
 ## API
 
 `GET /api/topology/` - parameters: `site`, `location`, `role`, `status`,
-`tag`, `collapse_panels=0|1`, and `device=<id>&depth=1..6` for a focused
-neighbourhood. Nodes carry the cabled ports + role/IP used by the stencil;
-edges carry the cable id/type/label/length, every port pair, and the `via`
-panel list when collapsed.
+`tag`, `collapse_panels=0|1`, `device=<id>&depth=1..6` for a focused
+neighbourhood, and `group_by=site|location` for the aggregated group graph
+(one node per group with device count + role breakdown, cable-count edges).
+Nodes carry the cabled ports + role/IP used by the stencil; edges carry the
+cable id/type/label/length, every port pair, and the `via` panel list when
+collapsed.
+
+`GET /api/topology/logical/` - the Logical view's payload: `rails` (VLANs -
+id, `vlan_id`, name, effective color, group) and `nodes` (devices and VMs
+with `attachments: [{rail, iface, tagged}]`). Parameters: `site`, `role`,
+`vlan_group`, `include_vms=0`.
+
+`GET /api/topology/summary/` - the topology as **plain facts** sized for an
+LLM context or scripted analysis: `device_count`, `cable_count`, per-site
+device rollups, `inter_site_links` (cable counts between sites), and
+`adjacency` - one row per device with its role, site, and neighbors
+(`{device, cables, types, via_panels}`), no port-level noise. Same filters
+and `collapse_panels` semantics as the graph endpoint. This is the endpoint
+to point an AI assistant at when it needs to answer "what connects to
+what" questions.
+
+All three are RBAC-scoped to the caller's `device.view` grant.

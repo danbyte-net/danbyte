@@ -565,3 +565,58 @@ class LogicalTopologyTests(_Base):
         body = self._logical()
         self.assertNotIn(99, [r["vlan_id"] for r in body["rails"]])
         self.assertNotIn("ghost", [n["name"] for n in body["nodes"]])
+
+
+class TopologySummaryTests(_Base):
+    """GET /api/topology/summary/ - adjacency + rollups, collapse honored."""
+
+    def setUp(self):
+        super().setUp()
+        self.s1 = Site.objects.create(tenant=self.tenant, name="DC1")
+        self.s2 = Site.objects.create(tenant=self.tenant, name="DC2")
+        role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Panel", is_patch_panel=True
+        )
+        self.srv = Device.objects.create(
+            tenant=self.tenant, name="srv-1", site=self.s1
+        )
+        self.sw = Device.objects.create(
+            tenant=self.tenant, name="sw-1", site=self.s2
+        )
+        panel = Device.objects.create(
+            tenant=self.tenant, name="pp-1", site=self.s1, role=role
+        )
+        rear = RearPort.objects.create(device=panel, name="r1", positions=1)
+        front = FrontPort.objects.create(
+            device=panel, name="f1", rear_port=rear, rear_port_position=1
+        )
+        i_srv = Interface.objects.create(device=self.srv, name="eth0")
+        i_sw = Interface.objects.create(device=self.sw, name="Gi0/1")
+        self._cable(i_srv, front)
+        self._cable(rear, i_sw)
+
+    def _summary(self, qs=""):
+        return self.client.get(f"/api/topology/summary/?{qs}").json()
+
+    def test_collapsed_adjacency_with_via(self):
+        body = self._summary()
+        self.assertEqual(body["device_count"], 2)  # panel collapsed away
+        srv = next(a for a in body["adjacency"] if a["device"] == "srv-1")
+        self.assertEqual(srv["site"], "DC1")
+        self.assertEqual(len(srv["neighbors"]), 1)
+        nb = srv["neighbors"][0]
+        self.assertEqual(nb["device"], "sw-1")
+        self.assertEqual(nb["via_panels"], ["pp-1"])
+        self.assertEqual(
+            body["inter_site_links"], [{"a": "DC1", "b": "DC2", "cables": 1}]
+        )
+        self.assertEqual(
+            body["sites"],
+            [{"name": "DC1", "devices": 1}, {"name": "DC2", "devices": 1}],
+        )
+
+    def test_raw_mode_keeps_panel(self):
+        body = self._summary("collapse_panels=0")
+        self.assertEqual(body["device_count"], 3)
+        names = {a["device"] for a in body["adjacency"]}
+        self.assertIn("pp-1", names)

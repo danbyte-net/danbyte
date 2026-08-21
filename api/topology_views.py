@@ -546,6 +546,118 @@ def topology_logical_view(request):
     return Response({"rails": rails, "nodes": out_nodes})
 
 
+@extend_schema(
+    summary="Compact topology summary (adjacency, site rollups) for programmatic/AI use",
+    tags=["topology"],
+    request=None,
+    parameters=[
+        OpenApiParameter(name="site", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Filter devices by site id."),
+        OpenApiParameter(name="role", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Filter devices by role id."),
+        OpenApiParameter(name="status", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Filter devices by status id."),
+        OpenApiParameter(name="tag", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Filter devices by tag slug."),
+        OpenApiParameter(name="collapse_panels", type=OpenApiTypes.STR,
+                         location=OpenApiParameter.QUERY,
+                         description="Walk patch panels through (default '1')."),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{device_count, cable_count, sites, inter_site_links, adjacency}` "
+            "- the cabling graph without port-level noise, sized for an LLM "
+            "context or scripted analysis. Same filters and RBAC scope as "
+            "`/api/topology/`."
+        ),
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def topology_summary_view(request):
+    """The topology as plain facts: per-device neighbor lists (cable counts,
+    media types, panels crossed) plus site rollups and inter-site link
+    aggregates. Built from the same collapse walk as the graph endpoint, so
+    an AI reading this sees exactly what the map shows."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"device_count": 0, "cable_count": 0, "sites": [],
+                         "inter_site_links": [], "adjacency": []})
+    dev_q = rbac.row_filter(request.user, tenant, "device", "view")
+    if dev_q is None:
+        return Response({"detail": "device.view required."}, status=403)
+    scope_q = None if dev_q is True else dev_q
+
+    p = request.query_params
+    collapse = p.get("collapse_panels", "1") != "0"
+    g = _build_graph(tenant, device_filter_q=_filter_q(p),
+                     collapse=collapse, scope_q=scope_q)
+
+    name_of, site_of, role_of = {}, {}, {}
+    for n in g["nodes"]:
+        d = n["data"]
+        name_of[n["id"]] = d["name"]
+        site_of[n["id"]] = d["site"] or "Unassigned"
+        role_of[n["id"]] = d["role"]["name"] if d.get("role") else None
+
+    # One entry per device pair, whatever the cable count.
+    pairs: dict = {}
+    for e in g["edges"]:
+        key = tuple(sorted((e["source"], e["target"])))
+        ent = pairs.setdefault(key, {"cables": 0, "types": set(), "via": set()})
+        ent["cables"] += 1
+        t = e["data"].get("cable_type")
+        if t:
+            ent["types"].add(t)
+        for v in e["data"].get("via") or []:
+            ent["via"].add(v)
+
+    neighbors: dict = {nid: [] for nid in name_of}
+    site_links: dict = {}
+    for (a, b), ent in pairs.items():
+        row = {"cables": ent["cables"], "types": sorted(ent["types"]),
+               "via_panels": sorted(ent["via"])}
+        neighbors[a].append({"device": name_of[b], **row})
+        neighbors[b].append({"device": name_of[a], **row})
+        sa, sb = site_of[a], site_of[b]
+        if sa != sb:
+            skey = tuple(sorted((sa, sb)))
+            site_links[skey] = site_links.get(skey, 0) + ent["cables"]
+
+    site_counts: dict = {}
+    for s in site_of.values():
+        site_counts[s] = site_counts.get(s, 0) + 1
+
+    adjacency = [
+        {
+            "device": name_of[nid],
+            "role": role_of[nid],
+            "site": site_of[nid],
+            "neighbors": sorted(nbrs, key=lambda r: r["device"]),
+        }
+        for nid, nbrs in neighbors.items()
+    ]
+    adjacency.sort(key=lambda r: r["device"])
+    return Response({
+        "device_count": len(name_of),
+        "cable_count": len(g["edges"]),
+        "sites": [
+            {"name": s, "devices": c}
+            for s, c in sorted(site_counts.items())
+        ],
+        "inter_site_links": [
+            {"a": a, "b": b, "cables": c}
+            for (a, b), c in sorted(site_links.items())
+        ],
+        "adjacency": adjacency,
+    })
+
+
 def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
                    scope_q=None):
     """The device graph aggregated by site or location: one node per group
