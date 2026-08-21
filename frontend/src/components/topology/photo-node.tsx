@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
 import type { TopoNode } from "@/lib/api"
+import { TypeFaceplate } from "@/components/device-faceplate"
 import type { StencilData } from "./stencil-node"
 
 // The Faceplates view: the device IS its front photo, rendered exactly like
@@ -17,9 +18,12 @@ export function photoSize(d: TopoNode["data"]): {
   width: number
   height: number
 } {
-  const imgH = d.front_image_aspect
-    ? PHOTO_W * d.front_image_aspect
-    : Math.max(1, d.u_height ?? 1) * U_PX
+  const imgH = d.front_image
+    ? d.front_image_aspect
+      ? PHOTO_W * d.front_image_aspect
+      : Math.max(1, d.u_height ?? 1) * U_PX
+    : // Rendered faceplate: roughly one 44.45mm rack unit at this width.
+      Math.max(1, d.u_height ?? 1) * 52
   return { width: PHOTO_W, height: PHOTO_HEADER + imgH }
 }
 
@@ -69,6 +73,17 @@ export function PhotoNode({ data, selected }: NodeProps) {
         </span>
       </div>
       <div className="relative" style={{ height: imgH }}>
+        {!d.front_image && d.device_type_id && (
+          // No photo: the type's RENDERED faceplate - the same renderer the
+          // device-type page uses, never hand-drawn artwork.
+          <div className="flex h-full items-center overflow-hidden px-1">
+            <TypeFaceplate
+              deviceTypeId={d.device_type_id}
+              pxPerMm={1.05}
+              compact
+            />
+          </div>
+        )}
         {d.front_image && (
           // The box's aspect IS the image's aspect - no distortion, and the
           // fractional markers land exactly where they were placed.

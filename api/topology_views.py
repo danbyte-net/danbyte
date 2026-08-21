@@ -59,6 +59,15 @@ def _devices_qs(tenant):
 _ASPECT_CACHE: dict = {}
 
 
+def _has_rendered_face(dt):
+    """Can the frontend draw the type's RENDERED faceplate? (It needs
+    interface templates.) Cached - a build asks per device, types repeat."""
+    key = ("tpl", dt.pk)
+    if key not in _ASPECT_CACHE:
+        _ASPECT_CACHE[key] = dt.interface_templates.exists()
+    return _ASPECT_CACHE[key]
+
+
 def _image_aspect(dt):
     key = (dt.pk, dt.front_image.name)
     if key not in _ASPECT_CACHE:
@@ -115,9 +124,13 @@ def _device_node(d, ports, panel=False):
             "panel": panel,
             "ports": ports,
             "u_height": dt.u_height if dt is not None else 1,
+            "device_type_id": str(dt.id) if dt is not None else None,
             "front_image": front_image,
             "front_image_aspect": aspect,
             "image_ports": markers,
+            "has_rendered_face": (
+                _has_rendered_face(dt) if dt is not None else False
+            ),
         },
     }
 

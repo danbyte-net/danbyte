@@ -339,7 +339,7 @@ function build(
             ? "flat"
             : hier
               ? "hier"
-              : photo && n.data.front_image
+              : photo && (n.data.front_image || n.data.has_rendered_face)
                 ? "photo"
                 : "device",
     position: { x: 0, y: 0 },

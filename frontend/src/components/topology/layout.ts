@@ -683,6 +683,34 @@ export function layoutHierarchy(
     }
   }
 
+  // Final convergence: cards are settled - now ONLY the ports move, chasing
+  // their peers until pairs meet face to face (the sweeps above move cards
+  // and collide, which leaves residual offsets even with room to spare).
+  for (let f = 0; f < 3; f++) {
+    const seq = f % 2 === 0 ? order : [...order].reverse()
+    for (const n of seq) {
+      const list = ports.get(n.id)
+      if (!list?.length) continue
+      const base = (top.get(n.id) ?? 0) + HIER_HEADER + HIER_PAD
+      const targets = list
+        .map((pt) => ({
+          pt,
+          t:
+            portY.get(`${pt.peer}:${pt.peerPort}`) ??
+            top.get(pt.peer) ??
+            0,
+        }))
+        .sort((a2, b2) => a2.t - b2.t)
+      let prev = base - HIER_PORT_PITCH
+      for (const { pt, t } of targets) {
+        const y = Math.max(base, t, prev + HIER_PORT_PITCH)
+        portY.set(`${n.id}:${pt.name}`, y)
+        prev = y
+      }
+      span.set(n.id, prev - base)
+    }
+  }
+
   const portPos = new Map<string, Record<string, HierPortPos>>()
   for (const [id, list] of ports) {
     const base = top.get(id) ?? 0
