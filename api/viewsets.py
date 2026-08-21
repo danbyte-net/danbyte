@@ -2922,6 +2922,78 @@ class DeviceViewSet(
         out["combined"] = combined
         return Response(out)
 
+    @action(detail=False, methods=["get"], url_path="port-utilization")
+    def port_utilization_rollup(self, request):
+        """Every device with ports + its fill level, for the capacity
+        roll-up view (issue #64). Nine GROUP BY aggregates total - never
+        per-device queries - and it rides the list queryset, so ?site= /
+        ?device_type= / ?role= narrow it like any device list.
+        """
+        from django.db.models import Count, Exists
+
+        from .models import CableTermination, FrontPort, Interface, RearPort
+
+        devices = self.get_queryset()
+
+        def kind_counts(model, term_field):
+            base = model.objects.filter(device__in=devices)
+            term = CableTermination.objects.filter(
+                **{term_field: OuterRef("pk")}
+            )
+            planned = term.filter(cable__status__slug="planned")
+            ann = base.annotate(_c=Exists(term), _p=Exists(planned))
+            group = lambda qs: {  # noqa: E731 - tiny local shaping helper
+                r["device_id"]: r["n"]
+                for r in qs.values("device_id").annotate(n=Count("id"))
+            }
+            return (
+                group(base),
+                group(ann.filter(_c=True, _p=False)),
+                group(ann.filter(_p=True)),
+            )
+
+        kinds = [
+            (Interface, "interface"),
+            (FrontPort, "front_port"),
+            (RearPort, "rear_port"),
+        ]
+        totals: dict = {}
+        connected: dict = {}
+        reserved: dict = {}
+        for model, term_field in kinds:
+            t, c, r = kind_counts(model, term_field)
+            for d, n in t.items():
+                totals[d] = totals.get(d, 0) + n
+            for d, n in c.items():
+                connected[d] = connected.get(d, 0) + n
+            for d, n in r.items():
+                reserved[d] = reserved.get(d, 0) + n
+
+        meta = devices.filter(id__in=totals).select_related(
+            "site", "role", "device_type"
+        )
+        rows = []
+        for d in meta:
+            total = totals[d.id]
+            conn = connected.get(d.id, 0)
+            res = reserved.get(d.id, 0)
+            rows.append({
+                "id": str(d.id),
+                "name": d.name,
+                "site": {"id": str(d.site_id), "name": d.site.name}
+                if d.site_id else None,
+                "role": {"name": d.role.name, "color": d.role.color}
+                if d.role_id else None,
+                "device_type": d.device_type.name if d.device_type_id else None,
+                "total": total,
+                "connected": conn,
+                "reserved": res,
+                "free": total - conn - res,
+                "pct": round((conn + res) / total * 100),
+            })
+        rows.sort(key=lambda r: (-r["pct"], r["name"]))
+        return Response({"results": rows})
+
     # Photo-port marker kind (hyphenated, as saved in DeviceType.image_ports) →
     # (device component relation, CableTermination kind). Drives face-ports.
     # Inventory items (disk bays…) and module bays (line-card slots) are

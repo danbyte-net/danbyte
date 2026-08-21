@@ -957,7 +957,6 @@ function DeviceOverview({
       <KvCard title="Device" rows={deviceRows} />
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
-      <PortUtilizationCard deviceId={d.id} />
       <KvCard title="Location" rows={locationRows} />
       <CustomFieldValues
         model="device"
@@ -979,6 +978,7 @@ function DeviceOverview({
           <div className="min-w-0 space-y-6">{attributeCards}</div>
           <div className="min-w-0 space-y-6">
             <DeviceFrontPanel device={d} />
+            <PortUtilizationCard deviceId={d.id} />
             {locationMap}
             <DeviceMiniTopology deviceId={d.id} />
             <DeviceTunnelsCard deviceId={d.id} />
@@ -989,6 +989,7 @@ function DeviceOverview({
         // No panel - the original auto-balanced masonry.
         <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
           {attributeCards}
+          <PortUtilizationCard deviceId={d.id} />
           {locationMap}
           <DeviceMiniTopology deviceId={d.id} />
           <DeviceTunnelsCard deviceId={d.id} />

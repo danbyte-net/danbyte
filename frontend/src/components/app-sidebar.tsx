@@ -23,6 +23,7 @@ import {
   FileSignature,
   Fingerprint,
   Folder,
+  Gauge,
   FolderTree,
   GitBranch,
   GitCompareArrows,
@@ -514,6 +515,12 @@ const sections: NavSection[] = [
             url: "/cables",
             icon: CableIcon,
             objectType: "cable",
+          },
+          {
+            title: "Port utilization",
+            url: "/port-utilization",
+            icon: Gauge,
+            objectType: "device",
           },
           {
             title: "Topology",

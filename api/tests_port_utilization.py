@@ -96,3 +96,22 @@ class PortUtilizationTests(APITestCase):
             f"/api/devices/{self.dev.id}/port-utilization/"
         ).json()
         self.assertEqual(body["combined"]["total"], 0)
+
+    def test_rollup_lists_port_devices_fullest_first(self):
+        # pp-01: 1 of 2 interfaces cabled (50%); sw-01: 1 of 1 (100%).
+        i1 = Interface.objects.create(device=self.dev, name="Gi1")
+        Interface.objects.create(device=self.dev, name="Gi2")
+        self._cable(interface=i1)
+        o1 = Interface.objects.create(device=self.other, name="Gi1")
+        self._cable(status=self.planned, interface=o1)
+        # A portless device stays out of the roll-up entirely.
+        Device.objects.create(tenant=self.tenant, name="cam-01")
+
+        r = self.client.get("/api/devices/port-utilization/")
+        self.assertEqual(r.status_code, 200, r.content)
+        rows = r.json()["results"]
+        self.assertEqual([x["name"] for x in rows], ["sw-01", "pp-01"])
+        self.assertEqual(rows[0]["pct"], 100)
+        self.assertEqual(rows[0]["reserved"], 1)
+        self.assertEqual(rows[1]["pct"], 50)
+        self.assertEqual(rows[1]["free"], 1)

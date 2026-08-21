@@ -103,8 +103,15 @@ ports, rear ports). Reserved rides the existing cable Status catalog - create
 the cable ahead of time as *Planned* and the port counts as held; flip the
 status once patched. Most useful on patch panels and access switches, where
 "how full is this thing" is the recurring question
-(`GET /api/devices/<id>/port-utilization/`). Any **custom fields** you've
-defined for devices appear below the cards. If any of the device's IPs are
+(`GET /api/devices/<id>/port-utilization/`).
+
+The estate-wide view lives at **DCIM → Connections → Port utilization**:
+every device with ports, fullest first, with the same
+connected/reserved/free split, site/role/type facets, search and export -
+so the patch panel about to run out is the first row you see
+(`GET /api/devices/port-utilization/`).
+
+Any **custom fields** you've defined for devices appear below the cards. If any of the device's IPs are
 monitored, a **Monitoring** summary (roll-up badge + per-IP grid) appears at the
 **top** of the tab - see [Monitoring](../features/monitoring.md#on-a-device).
 The Devices list also has a **Monitoring** column rolling that status up per
