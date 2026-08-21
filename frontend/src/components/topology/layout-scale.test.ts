@@ -192,14 +192,16 @@ describe("density-adaptive gaps and lanes", () => {
   })
 })
 
-describe("dense cards stay bounded", () => {
-  it("caps a 100-port card instead of growing a row per port", () => {
+describe("dense cards render as a faceplate bar", () => {
+  it("a 100-port card is long on the port axis, slim on the other", () => {
     const ports = Array.from({ length: 100 }, (_, i) => ({
       name: `Gi1/${i}`,
       kind: "interface" as const,
     }))
     const { width, height } = stencilSize({ name: "big", ports } as never)
-    expect(height).toBeLessThanOrEqual(420)
-    expect(width).toBeLessThanOrEqual(900)
+    // One 16px slot per port along the bar; the perpendicular stays a slim
+    // label band + identity row.
+    expect(Math.max(width, height)).toBeGreaterThanOrEqual(100 * 16)
+    expect(Math.min(width, height)).toBeLessThanOrEqual(320)
   })
 })

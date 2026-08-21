@@ -578,10 +578,20 @@ export function layoutNodes(
     }
     const crossPitch = crossCell + CELL_GAP + STREET_W
     const mainPitch = mainCell + CELL_GAP
-    // ~2.5:1 along the cross axis, so the grid hugs its hub.
+    // Columns match the hub bar's own width (a dense hub renders as a long
+    // faceplate), so cables drop nearly straight; small hubs fall back to a
+    // ~2.5:1 grid that hugs the card.
+    const hubCard0 = sizer(byId.get(hubId)!)
+    const barCross = tbDir ? hubCard0.width : hubCard0.height
     const across = Math.max(
       1,
-      Math.ceil(Math.sqrt((2.5 * leaves.length * mainPitch) / crossPitch))
+      Math.min(
+        leaves.length,
+        Math.max(
+          Math.round(barCross / crossPitch),
+          Math.ceil(Math.sqrt((2.5 * leaves.length * mainPitch) / crossPitch))
+        )
+      )
     )
     const deep = Math.ceil(leaves.length / across)
     gridMeta.set(hubId, {

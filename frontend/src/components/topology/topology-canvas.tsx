@@ -793,6 +793,17 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // cable must name itself on hover whatever the view or zoom); every other
   // edge fades - the only way crossings stay readable in a dense mesh.
   const [hotEdge, setHotEdge] = useState<string | null>(null)
+  // Cursor tooltip naming the hovered cable - follows the mouse, so on a
+  // long cable it can never sit off-screen the way a midpoint label does.
+  // Position updates go straight to the DOM (no re-render per mousemove).
+  const [tip, setTip] = useState<string | null>(null)
+  const tipRef = useRef<HTMLDivElement>(null)
+  const moveTip = useCallback((ev: { clientX: number; clientY: number }) => {
+    const el = tipRef.current
+    if (!el) return
+    el.style.left = `${ev.clientX + 14}px`
+    el.style.top = `${ev.clientY + 14}px`
+  }, [])
   const shownEdges = useMemo(() => {
     if (!hotEdge) return edges
     return edges.map((e) => {
@@ -802,9 +813,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           // The hot edge keeps its label at any LOD (CSS exempts .topo-hot).
           className: "topo-hot",
           zIndex: 1000,
-          label: hoverLabel(e) ?? e.label,
-          labelStyle: { ...e.labelStyle, fontSize: 10, fontWeight: 600 },
-          labelBgStyle: { ...e.labelBgStyle, fill: "var(--card)" },
           style: {
             ...e.style,
             strokeWidth: 3,
@@ -1039,14 +1047,32 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         }}
         onNodeDragStop={onNodeDragStop}
         onEdgeClick={onEdgeClick}
-        onEdgeMouseEnter={(_, e) => setHotEdge(e.id)}
-        onEdgeMouseLeave={() => setHotEdge(null)}
+        onEdgeMouseEnter={(ev, e) => {
+          setHotEdge(e.id)
+          setTip(
+            hoverLabel(e) ?? (typeof e.label === "string" ? e.label : null)
+          )
+          moveTip(ev)
+        }}
+        onEdgeMouseMove={(ev) => moveTip(ev)}
+        onEdgeMouseLeave={() => {
+          setHotEdge(null)
+          setTip(null)
+        }}
         onPaneClick={onCanvasClick}
         onMove={onMove}
         onlyRenderVisibleElements
         minZoom={0.05}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+        {tip && (
+          <div
+            ref={tipRef}
+            className="pointer-events-none fixed z-[1100] max-w-96 rounded-md border border-border bg-popover px-2 py-1 font-mono text-[11px] text-popover-foreground shadow-md"
+          >
+            {tip}
+          </div>
+        )}
         <Controls showInteractive={false} />
         <MiniMap
           pannable
