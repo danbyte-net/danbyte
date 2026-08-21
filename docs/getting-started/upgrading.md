@@ -93,6 +93,15 @@ current `/opt` layout.
 
     Back up the database first: `pg_dump danbyte > ~/danbyte-$(date +%F).sql`.
 
+!!! warning "Migrated but didn't restart? Danbyte will tell you."
+    If the database gets migrated but the app processes keep running the old
+    code (a half-finished upgrade), writes can fail in confusing ways.
+    Danbyte detects this: **Settings → Updates** shows a red *"running code
+    is behind the database"* banner listing the unknown migrations, the same
+    fact is in `/api/health/` as `code_behind_db`, and an error is logged at
+    startup. The fix is always the same - restart every app process (web
+    **and** workers) on the upgraded code.
+
 === "Offline bundle"
 
     Download the release bundle, unpack, and re-run the installer - it's

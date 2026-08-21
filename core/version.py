@@ -100,6 +100,60 @@ def _redis_version() -> str:
         return ""
 
 
+_drift_logged = False
+_drift_cache: tuple[float, list] | None = None
+
+
+def migration_drift() -> list[str]:
+    """Applied migrations the RUNNING CODE has never heard of - the signature
+    of a database upgraded past the processes executing against it (a
+    half-finished upgrade that migrated but never restarted the app).
+
+    Cheap: the loader knows the code's migrations, the recorder knows the
+    applied ones. Squashed history is respected (originals replaced by a
+    squash the code ships still count as known), and apps that are no longer
+    installed are ignored rather than flagged.
+    """
+    global _drift_logged, _drift_cache
+    import time
+
+    # Health probes hit this every few seconds; the answer only changes on a
+    # deploy or a migrate, so one loader build per minute is plenty.
+    if _drift_cache is not None and time.monotonic() - _drift_cache[0] < 60:
+        return _drift_cache[1]
+    try:
+        from django.db import connection
+        from django.db.migrations.loader import MigrationLoader
+        from django.db.migrations.recorder import MigrationRecorder
+
+        loader = MigrationLoader(connection, ignore_no_migrations=True)
+        known = set(loader.disk_migrations)
+        for replacement, migration in (loader.replacements or {}).items():
+            known.update(migration.replaces)
+            known.add(replacement)
+        known_apps = {app for app, _ in known}
+        applied = MigrationRecorder(connection).applied_migrations()
+        drift = sorted(
+            f"{app}.{name}"
+            for app, name in applied
+            if app in known_apps and (app, name) not in known
+        )
+    except Exception:  # noqa: BLE001 - a probe must never take the app down
+        return []
+    _drift_cache = (time.monotonic(), drift)
+    if drift and not _drift_logged:
+        _drift_logged = True
+        import logging
+
+        logging.getLogger("core.version").error(
+            "Running code is BEHIND the database: %d applied migration(s) "
+            "this code does not ship (%s). Finish the upgrade and restart "
+            "every app process (web + workers).",
+            len(drift), ", ".join(drift[:5]),
+        )
+    return drift
+
+
 def system_info() -> dict:
     """Local, network-free runtime facts for the Updates/About page.
 
@@ -121,6 +175,9 @@ def system_info() -> dict:
         "platform": platform.platform(terse=True),
         "deployment": deployment_method(),
         "self_upgrade_supported": self_upgrade_supported(),
+        # Non-empty = the database is ahead of this process's code (issue
+        # #45); the Updates page turns it into a loud banner.
+        "migration_drift": migration_drift(),
     }
 
 

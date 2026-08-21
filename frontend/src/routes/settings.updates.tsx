@@ -204,6 +204,29 @@ function UpdatesSettingsPage() {
           </span>
           .
         </p>
+        {info.data && info.data.migration_drift?.length > 0 && (
+          <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-[13px]">
+            <p className="font-medium">
+              The running code is BEHIND the database.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              The database carries{" "}
+              <span className="num">{info.data.migration_drift.length}</span>{" "}
+              applied migration
+              {info.data.migration_drift.length === 1 ? "" : "s"} this code does
+              not ship - the signature of an upgrade that migrated the database
+              but never restarted the app. Finish the upgrade and restart every
+              app process (web and workers). Until then, writes can fail in
+              confusing ways.
+            </p>
+            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+              {info.data.migration_drift.slice(0, 8).join("\n")}
+              {info.data.migration_drift.length > 8
+                ? `\n… and ${info.data.migration_drift.length - 8} more`
+                : ""}
+            </pre>
+          </div>
+        )}
         {info.data && info.data.self_upgrade_supported === false && (
           <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-[13px]">
             <p className="font-medium">
@@ -216,15 +239,21 @@ function UpdatesSettingsPage() {
               from the host:
             </p>
             <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
-{`git -C /opt/danbyte fetch --tags
+              {`git -C /opt/danbyte fetch --tags
 git -C /opt/danbyte checkout <version>
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d`}
             </pre>
             <p className="mt-2 text-muted-foreground">
               See{" "}
-              <a className="link" href="/docs/deployment/docker/" target="_blank"
-                 rel="noreferrer">Deploying with Docker</a>{" "}
+              <a
+                className="link"
+                href="/docs/deployment/docker/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Deploying with Docker
+              </a>{" "}
               for the full procedure.
             </p>
           </div>

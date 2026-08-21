@@ -4104,6 +4104,9 @@ export interface SystemInfo {
   deployment: string
   /** False in a container: self-upgrade is refused, use the compose commands. */
   self_upgrade_supported: boolean
+  /** Applied migrations this process's code does not ship - a half-finished
+   * upgrade (the DB is ahead; restart the app onto the new code). */
+  migration_drift: string[]
 }
 
 /** GET /api/system/updates - current version + the release repo's versions. */

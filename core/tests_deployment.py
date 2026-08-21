@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APITestCase
 
 from .models import DeploymentSettings
@@ -1063,3 +1063,54 @@ class HealthApiTests(APITestCase):
         self.assertEqual(d["status"], "ok")
         self.assertTrue(d["database"])
         self.assertIn("version", d)
+
+
+class MigrationDriftTests(TestCase):
+    """#45: applied migrations the running code does not ship are surfaced."""
+
+    def setUp(self):
+        # The per-process cache would otherwise serve a stale answer across
+        # tests (and that's its job in production).
+        from core import version
+
+        version._drift_cache = None
+
+    def tearDown(self):
+        from django.db.migrations.recorder import MigrationRecorder
+
+        MigrationRecorder.Migration.objects.filter(
+            name__startswith="9999_"
+        ).delete()
+
+    def test_clean_database_reports_no_drift(self):
+        from core.version import migration_drift
+
+        self.assertEqual(migration_drift(), [])
+
+    def test_unknown_applied_migration_is_flagged(self):
+        from django.db.migrations.recorder import MigrationRecorder
+
+        from core.version import migration_drift
+
+        MigrationRecorder.Migration.objects.create(
+            app="api", name="9999_from_the_future"
+        )
+        self.assertIn("api.9999_from_the_future", migration_drift())
+
+    def test_uninstalled_apps_are_ignored(self):
+        from django.db.migrations.recorder import MigrationRecorder
+
+        from core.version import migration_drift
+
+        row = MigrationRecorder.Migration.objects.create(
+            app="app_that_was_removed", name="0001_initial"
+        )
+        try:
+            self.assertEqual(migration_drift(), [])
+        finally:
+            row.delete()
+
+    def test_system_info_carries_the_drift(self):
+        from core.version import system_info
+
+        self.assertEqual(system_info()["migration_drift"], [])

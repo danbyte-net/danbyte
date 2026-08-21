@@ -709,9 +709,16 @@ def health(request):
         db_ok = True
     except Exception:  # noqa: BLE001 - any DB error → not ready
         db_ok = False
+    from .version import migration_drift
+
+    code_behind_db = bool(db_ok and migration_drift())
     return Response(
-        {"status": "ok" if db_ok else "degraded",
+        {"status": "ok" if db_ok and not code_behind_db else "degraded",
          "database": db_ok,
+         # #45: applied migrations this process's code does not ship - a
+         # half-finished upgrade. Still 200: the app IS serving; a probe
+         # restart-loop would make the situation worse, not better.
+         "code_behind_db": code_behind_db,
          "version": system_version()["version"]},
         status=200 if db_ok else 503,
     )
