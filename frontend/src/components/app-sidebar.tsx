@@ -3,7 +3,6 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   Activity,
   ArrowDownUp,
-  Bell,
   BellRing,
   BookOpen,
   Bookmark,
@@ -958,9 +957,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // Per-group open state, keyed by label and persisted per browser. A group
   // absent from the map falls back to "open when it holds the active route" -
   // exactly the old per-group default, so first load looks unchanged.
-  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>(
-    loadNavGroups
-  )
+  const [openGroups, setOpenGroups] =
+    React.useState<Record<string, boolean>>(loadNavGroups)
   const setGroupsOpen = React.useCallback(
     (patch: Record<string, boolean>) =>
       setOpenGroups((prev) => {
@@ -1019,8 +1017,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     if (section) return inGroup(sectionUrls(section))
     const plugin = pluginGroups.get(label)
     if (plugin) return inGroup(plugin.map((i) => i.url))
-    if (label === "Admin")
-      return inGroup(["/users", "/groups", "/permissions"])
+    if (label === "Admin") return inGroup(["/users", "/groups", "/permissions"])
     return false
   }
   const sectionUrls = (section: (typeof visibleSections)[number]) =>
@@ -1104,24 +1101,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  size="sm"
-                  className="h-6"
-                  tooltip="Notifications"
-                >
-                  <Link to="/notifications" search={{ tab: "you" }}>
-                    <Bell />
-                    <span>Notifications</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-
 
         {visibleSections.map((section) => (
           <NavGroup

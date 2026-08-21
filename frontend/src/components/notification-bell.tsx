@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { Bell } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -78,7 +78,16 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-96 p-0">
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-[12px] font-semibold">Notifications</span>
+          {/* The popup is the overview; the title is the way into the full
+              page (the sidebar entry moved here, issue #62). */}
+          <Link
+            to="/notifications"
+            search={{ tab: "you" }}
+            className="link text-[12px] font-semibold"
+            title="Open all notifications"
+          >
+            Notifications
+          </Link>
           {unread > 0 && (
             <button
               type="button"

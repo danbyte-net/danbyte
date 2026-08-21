@@ -55,7 +55,13 @@ function AuditLogPage() {
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
 
-  const params = new URLSearchParams({ page: String(page) })
+  // Explicit page_size: the API's default page is 10k rows (the SPA usually
+  // paginates client-side), which made this page crawl on big logs (#59).
+  const pageSize = 50
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  })
   if (action !== "all") params.set("action", action)
   if (type !== "all") params.set("object_type", type)
   if (search.trim()) params.set("search", search.trim())
@@ -67,7 +73,6 @@ function AuditLogPage() {
   })
   const rows = q.data?.results ?? []
   const total = q.data?.count ?? 0
-  const pageSize = 50
   const pages = Math.max(1, Math.ceil(total / pageSize))
 
   const reset = () => setPage(1)
