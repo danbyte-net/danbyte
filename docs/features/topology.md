@@ -44,6 +44,10 @@ Three mechanisms keep a large fabric legible:
 - **Per-cable lanes** - the gap between two tiers sizes itself to the number
   of cables crossing it, and each cable rides its own lane, ordered to
   minimize crossings - no more overlapping combs.
+- **Leaf grids** - a switch with many single-cable neighbours (blades,
+  servers, cameras) stacks them in a compact grid beside it instead of
+  stringing them along one endless row; each cable drops down its column's
+  street.
 - **Dense cards** - past ~24 cabled ports a card stops listing port rows and
   renders compact anchor ticks (bounded size, a cabled-port count in the
   middle); each cable keeps its own attachment point, and the port names
