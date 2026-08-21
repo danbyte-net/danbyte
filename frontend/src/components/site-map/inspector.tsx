@@ -39,11 +39,13 @@ import { Field } from "@/components/forms"
 import { CableForm } from "@/components/cable-form"
 import { DevicePathsList } from "@/components/device-paths-list"
 import {
+  cfOptionKey,
   DEVICE_FIELD_OPTIONS,
   DeviceExtraRows,
   SITE_FIELD_OPTIONS,
   SiteDetailRows,
 } from "@/components/site-map/detail-rows"
+import { useCustomFieldDefs } from "@/components/custom-field-display"
 import {
   Popover,
   PopoverContent,
@@ -174,18 +176,22 @@ function useStoredKeys(
 
 function FieldsButton({
   options,
+  cfOptions = [],
   value,
   onChange,
 }: {
   options: { key: string; label: string }[]
+  /** One entry per custom field on this object's model. */
+  cfOptions?: { key: string; label: string }[]
   value: string[] | null
   onChange: (v: string[] | null) => void
 }) {
-  const current = value ?? options.map((o) => o.key)
+  const allKeys = [...options, ...cfOptions].map((o) => o.key)
+  const current = value ?? allKeys
   const toggle = (k: string, on: boolean) => {
     const next = on ? [...current, k] : current.filter((x) => x !== k)
     // Everything ticked = no preference stored; future rows appear by default.
-    onChange(next.length === options.length ? null : next)
+    onChange(next.length === allKeys.length ? null : next)
   }
   return (
     <Popover>
@@ -208,6 +214,23 @@ function FieldsButton({
             className="items-center rounded px-2 py-1 text-[12px] hover:bg-muted/60"
           />
         ))}
+        {cfOptions.length > 0 && (
+          <>
+            <div className="my-1 h-px bg-border" />
+            <p className="px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              Custom fields
+            </p>
+            {cfOptions.map((o) => (
+              <FormCheckbox
+                key={o.key}
+                label={o.label}
+                checked={current.includes(o.key)}
+                onChange={(v) => toggle(o.key, v)}
+                className="items-center rounded px-2 py-1 text-[12px] hover:bg-muted/60"
+              />
+            ))}
+          </>
+        )}
         {value !== null && (
           <button
             onClick={() => onChange(null)}
@@ -229,6 +252,10 @@ export function SiteInspector({
   onClose: () => void
 }) {
   const [fields, setFields] = useStoredKeys("site-map:inspector-site-fields")
+  const siteCfs = (useCustomFieldDefs("site").data?.results ?? []).map((d) => ({
+    key: cfOptionKey(d.key),
+    label: d.label ?? d.key,
+  }))
   return (
     <InspectorShell
       kind="Site"
@@ -238,6 +265,7 @@ export function SiteInspector({
       actions={
         <FieldsButton
           options={SITE_FIELD_OPTIONS}
+          cfOptions={siteCfs}
           value={fields}
           onChange={setFields}
         />
@@ -313,6 +341,9 @@ export function DeviceInspector({
   onClose: () => void
 }) {
   const [fields, setFields] = useStoredKeys("site-map:inspector-device-fields")
+  const deviceCfs = (useCustomFieldDefs("device").data?.results ?? []).map(
+    (d) => ({ key: cfOptionKey(d.key), label: d.label ?? d.key })
+  )
   return (
     <InspectorShell
       kind="Device"
@@ -320,6 +351,7 @@ export function DeviceInspector({
       actions={
         <FieldsButton
           options={DEVICE_FIELD_OPTIONS}
+          cfOptions={deviceCfs}
           value={fields}
           onChange={setFields}
         />
@@ -436,6 +468,9 @@ export function MarkerInspector({
   // The linked device honours the same per-browser field choice as the
   // device inspector.
   const [fields, setFields] = useStoredKeys("site-map:inspector-device-fields")
+  const deviceCfs = (useCustomFieldDefs("device").data?.results ?? []).map(
+    (d) => ({ key: cfOptionKey(d.key), label: d.label ?? d.key })
+  )
   return (
     <InspectorShell
       kind="Marker"
@@ -444,6 +479,7 @@ export function MarkerInspector({
         m.device ? (
           <FieldsButton
             options={DEVICE_FIELD_OPTIONS}
+            cfOptions={deviceCfs}
             value={fields}
             onChange={setFields}
           />

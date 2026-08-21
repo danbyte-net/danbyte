@@ -38,7 +38,6 @@ export const SITE_FIELD_OPTIONS: { key: string; label: string }[] = [
   { key: "coordinates", label: "Coordinates" },
   { key: "description", label: "Description" },
   { key: "tags", label: "Tags" },
-  { key: "custom_fields", label: "Custom fields" },
 ]
 
 export const DEVICE_FIELD_OPTIONS: { key: string; label: string }[] = [
@@ -57,16 +56,23 @@ export const DEVICE_FIELD_OPTIONS: { key: string; label: string }[] = [
   { key: "coordinates", label: "Coordinates" },
   { key: "description", label: "Description" },
   { key: "tags", label: "Tags" },
-  { key: "custom_fields", label: "Custom fields" },
 ]
+
+/** One chooser entry per custom field, scoped to the object's model. */
+export function cfOptionKey(defKey: string): string {
+  return `cf_${defKey}`
+}
 
 function customFieldRows(
   defs: CustomField[] | undefined,
-  values: Record<string, unknown> | undefined
+  values: Record<string, unknown> | undefined,
+  on: (key: string) => boolean
 ): DetailRow[] {
   if (!defs || !values) return []
   const rows: DetailRow[] = []
   for (const def of defs) {
+    // Per-field choice; a legacy stored "custom_fields" tick means all.
+    if (!on(cfOptionKey(def.key)) && !on("custom_fields")) continue
     const v = values[def.key]
     if (v === null || v === undefined || v === "") continue
     rows.push({
@@ -163,8 +169,7 @@ export function SiteDetailRows({
     })
   if (on("tags") && d && d.tags.length > 0)
     rows.push({ label: "Tags", node: <TagList tags={d.tags} /> })
-  if (on("custom_fields"))
-    rows.push(...customFieldRows(cfDefs, d?.custom_fields))
+  rows.push(...customFieldRows(cfDefs, d?.custom_fields, on))
   return (
     <>
       {detail.isLoading && (
@@ -305,7 +310,6 @@ export function DeviceExtraRows({
     })
   if (on("tags") && !has("tags") && !has("linked_tags") && d.tags.length > 0)
     rows.push({ label: "Tags", node: <TagList tags={d.tags} /> })
-  if (on("custom_fields"))
-    rows.push(...customFieldRows(cfDefs, d.custom_fields))
+  rows.push(...customFieldRows(cfDefs, d.custom_fields, on))
   return <DetailRowList rows={rows} />
 }
