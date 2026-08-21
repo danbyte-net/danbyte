@@ -4,8 +4,8 @@ icon: lucide/network
 
 # Topology map
 
-**DCIM → Topology** draws your network five ways, switched by the
-**Wiring / Hierarchy / Faceplates / Flat / Logical** tabs in the header:
+**DCIM → Topology** draws your network four ways, switched by the
+**Wiring / Hierarchy / Flat / Logical** tabs in the header:
 
 - **Wiring** (default) - the port-accurate diagram described below: stencil
   cards with one row per cabled port, cables drawn port-to-port.
@@ -13,12 +13,6 @@ icon: lucide/network
   **port chips aligned to their peer's height**, so cables run
   near-straight left-to-right. The layout relaxes ports toward their far
   ends over the rank structure; drag a card and its chips ride along.
-- **Faceplates** - each device renders as its **device type's front
-  photo** (sized by rack units), and every cable plugs into the port's
-  real position on the picture via the type's [image port
-  markers](../dcim/device-catalog.md#photo-ports). Cabled ports without a marker attach
-  along the bottom edge; devices without a photo fall back to their
-  stencil card in the same diagram.
 - **Flat** - the barebones view for big graphs: every device is a small
   fixed-size chip (role color, status dot, name), parallel cables between
   two devices merge into a single **×N** edge (click it to list and open

@@ -188,8 +188,13 @@ interface StoredDisplay {
 }
 
 type GroupBy = "none" | "site" | "location"
-/** The page's three views: the two canvas styles + the VLAN-rail diagram. */
+/** The page's views: the canvas styles + the VLAN-rail diagram. */
 type ViewStyle = NodeStyle | "logical"
+const VIEW_STYLES: ViewStyle[] = ["stencil", "hierarchy", "flat", "logical"]
+/** Stored values may name a removed view (e.g. the scrapped Faceplates). */
+function sanitizeViewStyle(v: unknown): ViewStyle {
+  return VIEW_STYLES.includes(v as ViewStyle) ? (v as ViewStyle) : "stencil"
+}
 function readStoredDisplay(): StoredDisplay {
   try {
     const raw = localStorage.getItem(DISPLAY_KEY)
@@ -238,7 +243,7 @@ function TopologyPage() {
   // Wiring (stencil cards, port-to-port) or Flat (compact chips, bundled
   // edges) - the big-graph escape hatch. The Logical view is its own tab.
   const [viewStyle, setViewStyle] = useState<ViewStyle>(
-    stored.viewStyle ?? "stencil"
+    sanitizeViewStyle(stored.viewStyle)
   )
   const logical = viewStyle === "logical"
   // Aggregate the graph to one card per site/location; double-click a card
@@ -486,7 +491,7 @@ function TopologyPage() {
     if (f.colorMode) setColorMode(f.colorMode)
     if (f.direction) setDirection(f.direction)
     if (f.edgeRouting) setEdgeRouting(f.edgeRouting)
-    setViewStyle(f.viewStyle ?? "stencil")
+    setViewStyle(sanitizeViewStyle(f.viewStyle))
     setGroupBy(f.groupBy ?? "none")
     setDrill(null)
     setCustom(f.devices ?? null)
@@ -653,7 +658,6 @@ function TopologyPage() {
           items={[
             { value: "stencil", label: "Wiring" },
             { value: "hierarchy", label: "Hierarchy" },
-            { value: "photo", label: "Faceplates" },
             { value: "flat", label: "Flat" },
             { value: "logical", label: "Logical" },
           ]}
@@ -908,7 +912,7 @@ function TopologyPage() {
               setRoleBonds(d.roleBonds ?? [])
               setRoleDistance(d.roleDistance ?? {})
               setEdgeRouting(d.edgeRouting ?? "routed")
-              setViewStyle(d.viewStyle ?? "stencil")
+              setViewStyle(sanitizeViewStyle(d.viewStyle))
               setGroupBy(d.groupBy ?? "none")
               setDrill(null)
               setCustom(null)

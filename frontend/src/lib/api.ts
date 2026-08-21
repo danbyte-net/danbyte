@@ -2503,16 +2503,6 @@ export interface TopoNode {
     panel?: boolean
     /** Cabled ports, ordered - each is an edge anchor on the stencil card. */
     ports?: TopoPort[]
-    /** Faceplate-photo view: rack units, the device type's front image, and
-     * the image-port markers matching the cabled ports. */
-    u_height?: number
-    device_type_id?: string | null
-    /** The type has interface templates - its rendered faceplate can draw. */
-    has_rendered_face?: boolean
-    front_image?: string | null
-    /** height/width of the front image - the node keeps the true aspect. */
-    front_image_aspect?: number | null
-    image_ports?: ImagePortMarker[]
   }
 }
 
