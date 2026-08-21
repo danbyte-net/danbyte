@@ -339,7 +339,7 @@ function build(
         pathOptions: { borderRadius: 10 },
         label: `×${n}`,
         data: { sem: "groupedge", group: info, baseS: "n", baseT: "n" },
-        style: { strokeWidth: Math.min(1.25 + Math.log2(n + 1), 4) },
+        style: { strokeWidth: Math.min(1 + Math.log2(n + 1) * 0.6, 3) },
         labelStyle: { fontSize: 9 },
         labelBgStyle: { fill: "var(--card)" },
       } as Edge)
@@ -432,8 +432,6 @@ function build(
     const count = pairs.length
     const labelBits: string[] = []
     if (count > 1) labelBits.push(`×${count}`)
-    if (opts.colorMode === "speed" && e.data?.speed)
-      labelBits.push(e.data.speed)
     if (via.length) labelBits.push(`via ${via.join(", ")}`)
     if (e.data?.cable_label) labelBits.push(e.data.cable_label)
 
@@ -452,9 +450,9 @@ function build(
       data: { sem: "cable", raw: e.data },
       // Traced cable (trace map): thick primary stroke so the run stands out.
       style: marked
-        ? { strokeWidth: 3, stroke: "var(--primary)" }
+        ? { strokeWidth: 2.5, stroke: "var(--primary)" }
         : {
-            strokeWidth: count > 1 ? 2.25 : 1.5,
+            strokeWidth: count > 1 ? 1.75 : 1.25,
             ...(stroke ? { stroke } : {}),
             ...(via.length ? { strokeDasharray: "10 4" } : {}),
           },
@@ -483,7 +481,7 @@ function build(
         label: n > 1 ? `×${n}` : undefined,
         data: { sem: "bundle", cables: b.cables, baseS: "n", baseT: "n" },
         style: {
-          strokeWidth: n > 1 ? 2.25 : 1.5,
+          strokeWidth: n > 1 ? 1.75 : 1.25,
           ...(stroke ? { stroke } : {}),
         },
         labelStyle: { fontSize: 9 },
@@ -815,7 +813,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           zIndex: 1000,
           style: {
             ...e.style,
-            strokeWidth: 3,
+            strokeWidth: 2.5,
             opacity: 1,
           },
         }

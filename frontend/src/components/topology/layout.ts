@@ -11,9 +11,9 @@ import { GROUP_H, GROUP_W } from "./group-node"
 // port-anchored edges land on their rows without overlap. `positions`
 // (from a saved view or a user drag) win over the computed layout.
 // Fixed tier spacing when the Level organiser forces a role order.
-const LEVEL_GAP_LR = 460
-const LEVEL_GAP_TB = 280
-const CROSS_GAP = 120 // intra-tier peer spacing - wide enough that a
+const LEVEL_GAP_LR = 340
+const LEVEL_GAP_TB = 210
+const CROSS_GAP = 64 // intra-tier peer spacing - wide enough that a
 // vertical cable’s label between tiers isn’t hidden behind the next node, and
 // that fanned-out cable bundles have room between neighbouring cards.
 
@@ -130,8 +130,8 @@ function channelRoute(
 // One lane per cable crossing a tier gap. The gap between two ranks must be
 // wide enough for every cable to have its own line (plus stub clearance) -
 // fixed distances collapse the moment a device carries dozens of links.
-const LANE_PITCH = 14
-const GAP_HEADROOM = 64
+const LANE_PITCH = 10
+const GAP_HEADROOM = 44
 const BAND_TOL = 40 // main-axis start positions within this cluster into one band
 
 interface Bands {
@@ -461,6 +461,98 @@ export function edgeWaypoints(
   )
 }
 
+// ── Component packing ───────────────────────────────────────────────────────
+// Dagre strings disconnected islands along one axis, leaving half the canvas
+// empty and the rest sprawling. Pack the islands into rows instead, aiming
+// for a roughly viewport-shaped composition.
+const PACK_PAD = 90
+
+function packComponents(
+  laid: Node[],
+  edges: Edge[],
+  boxOf: (n: Node) => { width: number; height: number } | null,
+  pinned?: Set<string>
+): Node[] {
+  // Union-find over every edge (leaf edges included - a grid moves with
+  // its hub).
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    let r = x
+    while (parent.get(r) !== r) r = parent.get(r)!
+    parent.set(x, r)
+    return r
+  }
+  for (const n of laid) parent.set(n.id, n.id)
+  for (const e of edges) {
+    if (!parent.has(e.source) || !parent.has(e.target)) continue
+    parent.set(find(e.source), find(e.target))
+  }
+  const comps = new Map<string, Node[]>()
+  for (const n of laid) {
+    const r = find(n.id)
+    ;(comps.get(r) ?? comps.set(r, []).get(r)!).push(n)
+  }
+  if (comps.size < 2) return laid
+  type Box = {
+    nodes: Node[]
+    x: number
+    y: number
+    w: number
+    h: number
+    frozen: boolean
+  }
+  const boxes: Box[] = []
+  for (const members of comps.values()) {
+    let x1 = Infinity
+    let y1 = Infinity
+    let x2 = -Infinity
+    let y2 = -Infinity
+    let frozen = false
+    for (const n of members) {
+      if (pinned?.has(n.id)) frozen = true
+      const s = boxOf(n)
+      if (!s) continue // grid leaf - covered by its hub's inflated box
+      x1 = Math.min(x1, n.position.x)
+      y1 = Math.min(y1, n.position.y)
+      x2 = Math.max(x2, n.position.x + s.width)
+      y2 = Math.max(y2, n.position.y + s.height)
+    }
+    if (!isFinite(x1)) continue
+    boxes.push({ nodes: members, x: x1, y: y1, w: x2 - x1, h: y2 - y1, frozen })
+  }
+  // A pinned node anywhere freezes the whole packing - the user owns the
+  // arrangement.
+  if (boxes.some((b) => b.frozen)) return laid
+  const area = boxes.reduce((s, b) => s + (b.w + PACK_PAD) * (b.h + PACK_PAD), 0)
+  const rowW = Math.max(1800, Math.sqrt(area * 1.8), ...boxes.map((b) => b.w))
+  boxes.sort((a2, b2) => b2.h - a2.h)
+  const moved = new Map<string, { dx: number; dy: number }>()
+  let cx = 0
+  let cy = 0
+  let rowH = 0
+  for (const b of boxes) {
+    if (cx > 0 && cx + b.w > rowW) {
+      cx = 0
+      cy += rowH + PACK_PAD
+      rowH = 0
+    }
+    const dx = cx - b.x
+    const dy = cy - b.y
+    for (const n of b.nodes) moved.set(n.id, { dx, dy })
+    cx += b.w + PACK_PAD
+    rowH = Math.max(rowH, b.h)
+  }
+  return laid.map((n) => {
+    const d = moved.get(n.id)
+    return d
+      ? {
+          ...n,
+          position: { x: n.position.x + d.dx, y: n.position.y + d.dy },
+        }
+      : n
+  })
+}
+
 // ── Leaf grids ──────────────────────────────────────────────────────────────
 // A hub with many single-cable neighbours (an aggregation switch and its 96
 // blades) must not string them out along one endless rank. Its leaves leave
@@ -469,9 +561,9 @@ export function edgeWaypoints(
 // "street" on its own small lane. Structural layouts only; Levels places
 // every role by its tier.
 const LEAF_GRID_MIN = 8
-const STREET_W = 28
-const GRID_GAP = 56
-const CELL_GAP = 18
+const STREET_W = 22
+const GRID_GAP = 36
+const CELL_GAP = 10
 
 interface LeafClusters {
   byHub: Map<string, string[]>
@@ -695,9 +787,9 @@ export function layoutNodes(
     // More cross-axis room between siblings + an explicit edge gap so parallel
     // cables get their own lane and are less likely to overlap or be forced to
     // route under a neighbouring card.
-    nodesep: compact ? 36 : Math.min(96 + Math.max(0, maxFan - 8) * 4, 320),
-    edgesep: compact ? 12 : 24,
-    ranksep: compact ? 110 : 220,
+    nodesep: compact ? 28 : Math.min(56 + Math.max(0, maxFan - 8) * 3, 240),
+    edgesep: compact ? 10 : 18,
+    ranksep: compact ? 90 : 130,
     ranker: "network-simplex",
     align: "UL",
   })
@@ -953,7 +1045,16 @@ export function layoutNodes(
     ...clusters.leafSet,
   ])
   const spaced = respaceBands(laid, mainEdges, sizeOf, tb, exempt)
-  const { out, streets } = placeLeafGrids(spaced)
+  // Pack disconnected islands into a viewport-shaped arrangement; grid
+  // leaves ride with their hub (its inflated box covers them, and they are
+  // placed relative to it afterwards).
+  const packed = packComponents(
+    spaced,
+    edges,
+    (n) => (clusters.leafSet.has(n.id) ? null : sizeFor(n)),
+    pinnedIds
+  )
+  const { out, streets } = placeLeafGrids(packed)
   const wp = computeWaypoints(
     out.filter((n) => !clusters.leafSet.has(n.id)),
     mainEdges,

@@ -201,7 +201,7 @@ describe("dense cards render as a faceplate bar", () => {
     const { width, height } = stencilSize({ name: "big", ports } as never)
     // One 16px slot per port along the bar; the perpendicular stays a slim
     // label band + identity row.
-    expect(Math.max(width, height)).toBeGreaterThanOrEqual(100 * 16)
+    expect(Math.max(width, height)).toBeGreaterThanOrEqual(100 * 14)
     expect(Math.min(width, height)).toBeLessThanOrEqual(320)
   })
 })

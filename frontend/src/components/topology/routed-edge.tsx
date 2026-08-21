@@ -4,7 +4,7 @@ import type { EdgeProps } from "@xyflow/react"
 // How far a cable travels straight out of its port before it may turn. Keeping
 // this generous means a cable clears its own card edge (and its neighbours'
 // ports) before bending sideways, instead of jogging across them immediately.
-const STUB = 26
+const STUB = 14
 
 const DIR: Record<Position, [number, number]> = {
   [Position.Top]: [0, -1],
@@ -19,7 +19,7 @@ const DIR: Record<Position, [number, number]> = {
 function stagger(id: string): number {
   let h = 0
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
-  return (((h % 9) + 9) % 9) * 7 - 28 // -28..28 in 7px steps
+  return (((h % 9) + 9) % 9) * 3 - 12 // -12..12 in 3px steps
 }
 
 /** An orthogonal path that leaves the source port straight (a STUB), crosses a
@@ -149,29 +149,43 @@ export function RoutedEdge({
     )
   }
 
-  // The two interior bends encode one clear "channel" - a fixed main-axis
-  // coordinate the cable routes through. Rebuild a clean orthogonal Z anchored
-  // at the ACTUAL handle positions (not the centre-based bends), so the cable
-  // leaves its port straight instead of kinking diagonally toward a centre.
+  // The two interior bends encode one clear "channel" - a fixed coordinate
+  // the cable routes through. Build the path direction-aware: leave the
+  // source port straight along ITS side, cross the channel, enter the target
+  // straight along ITS side - anchoring bends to raw handle positions used
+  // to loop cables around their own cards.
   const [b1, b2] = wp
-  // Shared x on the two bends → a vertical channel (side-to-side layout);
-  // shared y → a horizontal channel (tree layout).
+  const sv = DIR[sourcePosition] ?? [1, 0]
+  const tv = DIR[targetPosition] ?? [-1, 0]
+  const s1: [number, number] = [
+    sourceX + sv[0] * STUB,
+    sourceY + sv[1] * STUB,
+  ]
+  const t1: [number, number] = [
+    targetX + tv[0] * STUB,
+    targetY + tv[1] * STUB,
+  ]
+  // Shared x on the two bends → a vertical channel; shared y → horizontal.
   const verticalChannel = Math.abs(b1[0] - b2[0]) < Math.abs(b1[1] - b2[1])
   const pts: [number, number][] = verticalChannel
     ? [
         [sourceX, sourceY],
-        [b1[0], sourceY],
-        [b1[0], targetY],
+        s1,
+        [b1[0], s1[1]],
+        [b1[0], t1[1]],
+        t1,
         [targetX, targetY],
       ]
     : [
         [sourceX, sourceY],
-        [sourceX, b1[1]],
-        [targetX, b1[1]],
+        s1,
+        [s1[0], b1[1]],
+        [t1[0], b1[1]],
+        t1,
         [targetX, targetY],
       ]
-  const path = roundedPath(pts, 14)
-  const [lx, ly] = pts[verticalChannel ? 1 : 2]
+  const path = roundedPath(pts, 8)
+  const [lx, ly] = pts[2]
 
   return (
     <BaseEdge

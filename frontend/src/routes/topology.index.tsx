@@ -1423,7 +1423,7 @@ function EdgePanel({
               className="py-0.5 font-mono text-[11px] leading-snug break-all"
             >
               <div>{p.a}</div>
-              <div className="text-muted-foreground">↔ {p.b}</div>
+              <div>↔ {p.b}</div>
             </div>
           ))}
         </div>
@@ -1632,7 +1632,7 @@ function BundlePanel({
                     className="font-mono text-[10px] leading-snug break-all"
                   >
                     <div>{p2.a}</div>
-                    <div className="text-muted-foreground">↔ {p2.b}</div>
+                    <div>↔ {p2.b}</div>
                   </div>
                 ))}
               </div>

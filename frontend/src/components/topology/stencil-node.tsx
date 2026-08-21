@@ -37,12 +37,12 @@ export type StencilData = TopoNode["data"] & {
 }
 
 // Sizing - dagre reserves these; the DOM must match so handles land right.
-export const CENTER_W = 178
-export const CENTER_H = 46
-const STRIP_H = 20 // top / bottom horizontal strip
-const COL_W = 64 // left / right vertical column MINIMUM
-const CHIP_W = 58 // one port in a horizontal strip MINIMUM
-const ROW_H = 16 // one port in a vertical column
+export const CENTER_W = 148
+export const CENTER_H = 36
+const STRIP_H = 17 // top / bottom horizontal strip
+const COL_W = 54 // left / right vertical column MINIMUM
+const CHIP_W = 50 // one port in a horizontal strip MINIMUM
+const ROW_H = 13 // one port in a vertical column
 export const STENCIL_FOOTER = 14
 
 // Port names render in full (no truncation) - cells size to their text.
@@ -122,8 +122,8 @@ function stripW(ports: FlatPort[]): number {
 // reads. The bar's length is unbounded on the port axis (that is the
 // point); the leaf grid beneath aligns its columns to it.
 export const DENSE_PORTS = 24
-const DENSE_PITCH = 16 // one port slot
-const DENSE_BAND = 68 // label band depth (truncated / rotated names)
+const DENSE_PITCH = 14 // one port slot
+const DENSE_BAND = 58 // label band depth (truncated / rotated names)
 
 function isDense(d: StencilData): boolean {
   return flatPorts(d).length > DENSE_PORTS
@@ -348,11 +348,11 @@ export function StencilNode({ data, selected }: NodeProps) {
 
       {/* Center identity */}
       <div
-        className="col-start-2 row-start-2 flex items-center gap-2 px-2.5"
+        className="col-start-2 row-start-2 flex items-center gap-1.5 px-2"
         style={{ minHeight: CENTER_H }}
       >
         <span
-          className="h-8 w-1 shrink-0 rounded-full"
+          className="h-6 w-1 shrink-0 rounded-full"
           style={{ background: d.role?.color || "var(--border)" }}
           title={d.role?.name}
         />
@@ -366,11 +366,11 @@ export function StencilNode({ data, selected }: NodeProps) {
                 title={d.status_display || d.status}
               />
             )}
-            <span className="truncate font-mono text-[12px] font-medium">
+            <span className="truncate font-mono text-[11px] font-medium">
               {d.name}
             </span>
           </div>
-          <div className="truncate text-[10px] text-muted-foreground">
+          <div className="truncate text-[9px] text-muted-foreground">
             {d.panel
               ? "patch panel"
               : [d.device_type, d.primary_ip].filter(Boolean).join(" · ") ||
