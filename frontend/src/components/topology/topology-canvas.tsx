@@ -733,6 +733,18 @@ function build(
       outNodes = grown.nodes
       wpMap = grown.waypoints
     }
+    if (flat) {
+      // Floating point-to-point: plain beziers between the distributed
+      // anchors, never routed or locked into channels.
+      return {
+        nodes: outNodes,
+        edges: outEdges.map((e) => {
+          const sem = (e.data as { sem?: string } | undefined)?.sem
+          if (!sem || !ROUTABLE.has(sem)) return e
+          return { ...e, type: "default", pathOptions: undefined }
+        }),
+      }
+    }
     const routeThem = opts.edgeRouting !== "straight"
     const routedOut = outEdges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
@@ -806,15 +818,15 @@ function build(
     photo ? "normal" : undefined
   )
   // Route cable edges along the node-avoiding interior bends (the ends snap to
-  // the port handles). Skipped in "straight" mode.
-  const routeEdges = opts.edgeRouting !== "straight"
+  // the port handles). Skipped in "straight" mode and in the photo view,
+  // whose cables float as beziers out of the marker sockets.
+  const routeEdges = opts.edgeRouting !== "straight" && !photo
   const routed = edges.map((e) => {
+    const sem = (e.data as { sem?: string } | undefined)?.sem
+    if (photo && sem === "cable")
+      return { ...e, type: "default", pathOptions: undefined }
     const wp = routeEdges ? waypoints.get(e.id) : undefined
-    if (
-      (e.data as { sem?: string } | undefined)?.sem === "cable" &&
-      wp &&
-      wp.length > 0
-    ) {
+    if (sem === "cable" && wp && wp.length > 0) {
       return {
         ...e,
         type: "routed",
@@ -920,8 +932,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  // Aligned hierarchy cables are already near-straight - never re-route them.
-  const routingActive = edgeRouting === "routed" && nodeStyle !== "hierarchy"
+  // Aligned hierarchy cables are already near-straight; flat + photo draw
+  // floating point-to-point beziers - none of them re-route orthogonally.
+  const routingActive =
+    edgeRouting === "routed" &&
+    nodeStyle !== "hierarchy" &&
+    nodeStyle !== "flat" &&
+    nodeStyle !== "photo"
 
   const built = useMemo(
     () =>

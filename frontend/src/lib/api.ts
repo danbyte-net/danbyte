@@ -2507,6 +2507,8 @@ export interface TopoNode {
      * the image-port markers matching the cabled ports. */
     u_height?: number
     front_image?: string | null
+    /** height/width of the front image - the node keeps the true aspect. */
+    front_image_aspect?: number | null
     image_ports?: ImagePortMarker[]
   }
 }

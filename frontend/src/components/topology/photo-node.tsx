@@ -3,27 +3,29 @@ import { Handle, Position, type NodeProps } from "@xyflow/react"
 import type { TopoNode } from "@/lib/api"
 import type { StencilData } from "./stencil-node"
 
-// The Faceplates view: the device IS its front photo. Cables plug into the
-// image-port markers' true positions on the picture (fractions of the image,
-// placed on the device type's photo in the image-ports editor); cabled ports
-// without a marker fall back to stubs along the bottom edge.
+// The Faceplates view: the device IS its front photo, rendered exactly like
+// the device page's photo faceplate - natural aspect, image-port markers as
+// center-anchored overlay rectangles (x/y are the marker's CENTER, w/h its
+// size, all fractions of the image). The cable anchors at the marker's
+// center; cabled ports without a marker fall back to bottom stubs.
 
 export const PHOTO_W = 520
 export const PHOTO_HEADER = 22
-const U_PX = 40 // 19-inch aspect at PHOTO_W: ~40px per rack unit
+const U_PX = 40 // fallback aspect when the image's own is unknown
 
 export function photoSize(d: TopoNode["data"]): {
   width: number
   height: number
 } {
-  return {
-    width: PHOTO_W,
-    height: PHOTO_HEADER + Math.max(1, d.u_height ?? 1) * U_PX,
-  }
+  const imgH = d.front_image_aspect
+    ? PHOTO_W * d.front_image_aspect
+    : Math.max(1, d.u_height ?? 1) * U_PX
+  return { width: PHOTO_W, height: PHOTO_HEADER + imgH }
 }
 
-const HANDLE =
-  "!h-2 !w-2 !rounded-full !border !border-background !bg-primary/80"
+// The edge anchors exactly at the marker's centre.
+const CENTER_HANDLE =
+  "!absolute !left-1/2 !top-1/2 !h-1 !w-1 !-translate-x-1/2 !-translate-y-1/2 !border-0 !bg-transparent"
 
 export function PhotoNode({ data, selected }: NodeProps) {
   const d = data as StencilData
@@ -39,7 +41,7 @@ export function PhotoNode({ data, selected }: NodeProps) {
   const unmarked = cabled.filter((n) => !marked.has(n))
   return (
     <div
-      className={`overflow-hidden rounded-md border bg-card transition-opacity ${
+      className={`overflow-hidden rounded-md border bg-muted/30 transition-opacity ${
         selected ? "border-primary ring-2 ring-primary/30" : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
       style={{ width, height }}
@@ -68,8 +70,8 @@ export function PhotoNode({ data, selected }: NodeProps) {
       </div>
       <div className="relative" style={{ height: imgH }}>
         {d.front_image && (
-          // Stretch to the reserved box: markers are fractions of the image,
-          // so stretching keeps them true to the photo.
+          // The box's aspect IS the image's aspect - no distortion, and the
+          // fractional markers land exactly where they were placed.
           <img
             src={d.front_image}
             alt={d.name}
@@ -78,19 +80,32 @@ export function PhotoNode({ data, selected }: NodeProps) {
             style={{ objectFit: "fill" }}
           />
         )}
-        {/* Marker ports: the cable plugs into the real spot on the photo. */}
+        {/* Center-anchored marker rectangles, /devices photo-port style:
+            an emphasized border over the artwork, cable from the middle. */}
         {markers.map((m) => (
           <div
             key={m.name}
-            className="absolute"
+            className="absolute rounded-[2px] border-2 border-sky-400/80 bg-sky-400/10"
             style={{
-              left: `${(m.x + m.w / 2) * 100}%`,
-              top: `${(m.y + m.h / 2) * 100}%`,
+              left: `${(m.x - m.w / 2) * 100}%`,
+              top: `${(m.y - m.h / 2) * 100}%`,
+              width: `${m.w * 100}%`,
+              height: `${m.h * 100}%`,
             }}
             title={m.name}
           >
-            <Handle type="target" id={m.name} position={Position.Bottom} className={HANDLE} />
-            <Handle type="source" id={m.name} position={Position.Bottom} className={HANDLE} />
+            <Handle
+              type="target"
+              id={m.name}
+              position={m.y < 0.5 ? Position.Top : Position.Bottom}
+              className={CENTER_HANDLE}
+            />
+            <Handle
+              type="source"
+              id={m.name}
+              position={m.y < 0.5 ? Position.Top : Position.Bottom}
+              className={CENTER_HANDLE}
+            />
           </div>
         ))}
         {/* Cabled ports with no marker: stubs along the bottom edge. */}
@@ -101,8 +116,18 @@ export function PhotoNode({ data, selected }: NodeProps) {
             style={{ left: `${((i + 1) / (unmarked.length + 1)) * 100}%` }}
             title={name}
           >
-            <Handle type="target" id={name} position={Position.Bottom} className={HANDLE} />
-            <Handle type="source" id={name} position={Position.Bottom} className={HANDLE} />
+            <Handle
+              type="target"
+              id={name}
+              position={Position.Bottom}
+              className="!h-2 !w-2 !rounded-full !border !border-background !bg-primary/80"
+            />
+            <Handle
+              type="source"
+              id={name}
+              position={Position.Bottom}
+              className="!h-2 !w-2 !rounded-full !border !border-background !bg-primary/80"
+            />
           </div>
         ))}
       </div>

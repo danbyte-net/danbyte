@@ -54,6 +54,22 @@ def _devices_qs(tenant):
     )
 
 
+# height/width of a type's front image, cached per file (reading dimensions
+# opens the file; a topology request repeats the same few types many times).
+_ASPECT_CACHE: dict = {}
+
+
+def _image_aspect(dt):
+    key = (dt.pk, dt.front_image.name)
+    if key not in _ASPECT_CACHE:
+        try:
+            w, h = dt.front_image.width, dt.front_image.height
+            _ASPECT_CACHE[key] = (h / w) if w else None
+        except Exception:  # noqa: BLE001 - unreadable file → no aspect
+            _ASPECT_CACHE[key] = None
+    return _ASPECT_CACHE[key]
+
+
 def _device_node(d, ports, panel=False):
     """``ports`` = ordered [{name, kind, pair?}] of this device's cabled ends
     - ``pair`` names the rear port sharing the row (front ⇄ rear strand)."""
@@ -62,12 +78,15 @@ def _device_node(d, ports, panel=False):
     # plug into its true position on the photo.
     dt = d.device_type if d.device_type_id else None
     front_image = None
+    aspect = None
     markers = []
     if dt is not None and dt.front_image:
         try:
             front_image = dt.front_image.url
         except ValueError:
             front_image = None
+        if front_image:
+            aspect = _image_aspect(dt)
     if front_image:
         cabled = {p["name"] for p in ports}
         cabled |= {p["pair"] for p in ports if p.get("pair")}
@@ -97,6 +116,7 @@ def _device_node(d, ports, panel=False):
             "ports": ports,
             "u_height": dt.u_height if dt is not None else 1,
             "front_image": front_image,
+            "front_image_aspect": aspect,
             "image_ports": markers,
         },
     }
