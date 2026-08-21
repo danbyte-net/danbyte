@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { Edge, Node } from "@xyflow/react"
 
-import { edgeWaypoints, layoutHierarchy, layoutNodes } from "./layout"
+import {
+  edgeWaypoints,
+  hierarchyWaypoints,
+  layoutHierarchy,
+  layoutNodes,
+  type HierPortPos,
+} from "./layout"
 import { stencilSize } from "./stencil-node"
 
 // Scale guard: the layout pipeline must stay interactive on a ~150-device
@@ -253,5 +259,65 @@ describe("hierarchy port alignment", () => {
     // Sides face the peer.
     expect(res.portPos.get("b")!["in"].side).toBe("L")
     expect(res.portPos.get("b")!["o1"].side).toBe("R")
+  })
+})
+
+describe("hierarchy cable routing", () => {
+  const card = (id: string, x: number, y: number, span = 200): Node => ({
+    id,
+    type: "hier",
+    position: { x, y },
+    data: { name: id, portSpan: span },
+  })
+  const cable = (id: string, a: string, b: string): Edge =>
+    ({
+      id,
+      source: a,
+      target: b,
+      data: { sem: "cable", baseS: "pa", baseT: "pb" },
+    }) as Edge
+  const ports = (
+    entries: [string, Record<string, HierPortPos>][]
+  ): Map<string, Record<string, HierPortPos>> => new Map(entries)
+
+  it("leaves a clear run straight - no waypoints to pull it off its port", () => {
+    const nodes = [card("a", 0, 0), card("b", 900, 0)]
+    const pos = ports([
+      ["a", { pa: { side: "R", off: 60 } }],
+      ["b", { pb: { side: "L", off: 60 } }],
+    ])
+    expect(hierarchyWaypoints(nodes, [cable("e", "a", "b")], pos).size).toBe(0)
+  })
+
+  it("crosses in a street at its own port levels, not the card centre", () => {
+    // A card stands between the two, and the ports sit at different heights.
+    const nodes = [card("a", 0, 0), card("mid", 500, 0), card("b", 1200, 0)]
+    const pos = ports([
+      ["a", { pa: { side: "R", off: 60 } }],
+      ["b", { pb: { side: "L", off: 260 } }],
+      ["mid", {}],
+    ])
+    const wp = hierarchyWaypoints(nodes, [cable("e", "a", "b")], pos)
+    const pts = wp.get("e")!
+    expect(pts).toBeTruthy()
+    // Waypoints keep each end at ITS port height (60 / 260 below the card
+    // top) - the old router pulled both to the card's vertical centre.
+    expect(pts[0][1]).toBe(60)
+    expect(pts[1][1]).toBe(260)
+    // And the crossing is clear of the blocking card.
+    const x = pts[0][0]
+    expect(x < 500 || x > 500 + 300).toBe(true)
+  })
+
+  it("stays straight when aligned ports have no clear way around", () => {
+    // Same port height on both ends with a card dead between them: any
+    // detour would be a full-height loop that reads as a broken cable.
+    const nodes = [card("a", 0, 0), card("mid", 500, 0), card("b", 1200, 0)]
+    const pos = ports([
+      ["a", { pa: { side: "R", off: 60 } }],
+      ["b", { pb: { side: "L", off: 60 } }],
+      ["mid", {}],
+    ])
+    expect(hierarchyWaypoints(nodes, [cable("e", "a", "b")], pos).size).toBe(0)
   })
 })

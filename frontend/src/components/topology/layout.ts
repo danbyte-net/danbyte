@@ -515,6 +515,111 @@ export function edgeWaypoints(
   )
 }
 
+/**
+ * Cable routes for the hierarchy view, anchored to the PORTS rather than the
+ * cards. The generic router reasons about card centres, which is right for
+ * stencil cards but wrong here: a hierarchy card is as tall as its whole port
+ * list, so a channel at its centre drags an aligned cable hundreds of pixels
+ * off its own port and the run stops reading as a connection at all.
+ *
+ * A cable gets waypoints only when a card genuinely sits in its corridor AND
+ * there is a clear vertical street to cross in - it then leaves its port
+ * level, crosses the street, and arrives at its peer's port level. Anything
+ * else stays straight, which is the entire point of aligning the ports.
+ */
+export function hierarchyWaypoints(
+  nodes: Node[],
+  edges: Edge[],
+  portPos: Map<string, Record<string, HierPortPos>>
+): Map<string, [number, number][]> {
+  const rect = new Map<string, Rect>()
+  for (const n of nodes) {
+    const d = n.data as { name?: string; portSpan?: number }
+    rect.set(n.id, {
+      x: n.position.x,
+      y: n.position.y,
+      w: hierarchyWidth(d),
+      h: hierHeight(d.portSpan ?? 0),
+    })
+  }
+  /** Where a port's cable actually leaves its card. */
+  const anchor = (id: string, port: string): [number, number] | null => {
+    const r = rect.get(id)
+    const p = portPos.get(id)?.[port]
+    if (!r || !p) return null
+    return [p.side === "R" ? r.x + r.w : r.x, r.y + p.off]
+  }
+  const MIN_STREET = 26
+  const PAD = 3
+  const out = new Map<string, [number, number][]>()
+  for (const e of edges) {
+    const d = e.data as
+      | { sem?: string; baseS?: string; baseT?: string }
+      | undefined
+    if (d?.sem !== "cable" || !d.baseS || !d.baseT) continue
+    const a = anchor(e.source, d.baseS)
+    const b = anchor(e.target, d.baseT)
+    if (!a || !b) continue
+    const lo = Math.min(a[0], b[0])
+    const hi = Math.max(a[0], b[0])
+    if (hi - lo < 40) continue
+    const others: Rect[] = []
+    for (const [id, r] of rect) {
+      if (id !== e.source && id !== e.target) others.push(r)
+    }
+    const hits = (x0: number, x1: number, y0: number, y1: number) =>
+      others.some(
+        (r) =>
+          r.x < Math.max(x0, x1) - PAD &&
+          r.x + r.w > Math.min(x0, x1) + PAD &&
+          r.y < Math.max(y0, y1) - PAD &&
+          r.y + r.h > Math.min(y0, y1) + PAD
+      )
+    // Nothing in the way at all: the straight line the aligned ports were
+    // laid out for.
+    if (!hits(a[0], b[0], a[1], b[1])) continue
+    // The cable has to change level anyway, so pick WHERE to do it: a
+    // vertical street clear of cards, with both horizontal legs clear too.
+    // Streets are the x-gaps left by the cards standing across the run.
+    const spans = others
+      .filter(
+        (r) =>
+          r.x + r.w > lo &&
+          r.x < hi &&
+          r.y + r.h > Math.min(a[1], b[1]) - PAD &&
+          r.y < Math.max(a[1], b[1]) + PAD
+      )
+      .map((r) => [Math.max(lo, r.x), Math.min(hi, r.x + r.w)])
+      .sort((p, q) => p[0] - q[0])
+    const candidates: number[] = []
+    let edge = lo
+    for (const [s0, s1] of spans) {
+      if (s0 - edge >= MIN_STREET) candidates.push((edge + s0) / 2)
+      edge = Math.max(edge, s1)
+    }
+    if (hi - edge >= MIN_STREET) candidates.push((edge + hi) / 2)
+    const mid = (lo + hi) / 2
+    candidates.sort((p, q) => Math.abs(p - mid) - Math.abs(q - mid))
+    // Keep only a street whose whole path is actually clear - otherwise the
+    // cable would just meet the next card instead of the first one.
+    const x = candidates.find(
+      (cx) =>
+        !hits(a[0], cx, a[1], a[1]) &&
+        !hits(cx, b[0], b[1], b[1]) &&
+        !hits(cx, cx, a[1], b[1])
+    )
+    // No clear street (two ports aligned behind a card, say): leave the cable
+    // straight. Passing behind one card still reads as a connection; a detour
+    // around a full-height card does not.
+    if (x === undefined) continue
+    out.set(e.id, [
+      [x, a[1]],
+      [x, b[1]],
+    ])
+  }
+  return out
+}
+
 // ── Hierarchy (port-aligned) layout ─────────────────────────────────────────
 // The NetBox-style renderer: tall cards whose port chips sit at the height
 // of their PEER's port, so cables run near-straight. dagre gives ranks;

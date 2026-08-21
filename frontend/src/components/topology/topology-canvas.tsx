@@ -42,6 +42,7 @@ import { HierarchyNode, hierarchyWidth } from "./hierarchy-node"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import {
   edgeWaypoints,
+  hierarchyWaypoints,
   layoutHierarchy,
   layoutNodes,
   realignHierPorts,
@@ -567,10 +568,10 @@ function build(
         data: { ...e.data, baseS, baseT },
       }
     })
-    // Obstacle avoidance only (no lanes - aligned chips already separate
-    // parallel runs): a cable must never draw through a card between its
-    // endpoints.
-    const hwp = edgeWaypoints(laid, hedges, "LR", false)
+    // Port-anchored routing: a cable bends only to get past a card that
+    // stands in its way, and always leaves and arrives at its own port
+    // level - never at the card's centre.
+    const hwp = hierarchyWaypoints(laid, hedges, res.portPos)
     const hrouted = hedges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
       if (sem !== "cable") return e
@@ -1182,7 +1183,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             targetHandle: handleId(d.baseT, tS),
           }
         })
-        const wp = edgeWaypoints(nextNodes, next, "LR", false)
+        const wp = hierarchyWaypoints(nextNodes, next, res.portPos)
         return next.map((e) => {
           const sem = (e.data as { sem?: string } | undefined)?.sem
           if (sem !== "cable") return e

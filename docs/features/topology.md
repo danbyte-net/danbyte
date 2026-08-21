@@ -13,6 +13,9 @@ icon: lucide/network
   **port chips aligned to their peer's height**, so cables run
   near-straight left-to-right. The layout relaxes ports toward their far
   ends over the rank structure; drag a card and its chips ride along.
+  Cables here are routed from the ports, not the cards: one bends only to
+  cross a card standing in its way, and only where a clear vertical street
+  exists - otherwise it stays straight at its own port level.
 - **Flat** - the barebones view for big graphs: every device is a small
   fixed-size chip (role color, status dot, name), parallel cables between
   two devices merge into a single **×N** edge (click it to list and open
