@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Edge, Node } from "@xyflow/react"
 
-import { edgeWaypoints, layoutNodes } from "./layout"
+import { edgeWaypoints, layoutHierarchy, layoutNodes } from "./layout"
 import { stencilSize } from "./stencil-node"
 
 // Scale guard: the layout pipeline must stay interactive on a ~150-device
@@ -203,5 +203,55 @@ describe("dense cards render as a faceplate bar", () => {
     // label band + identity row.
     expect(Math.max(width, height)).toBeGreaterThanOrEqual(100 * 14)
     expect(Math.min(width, height)).toBeLessThanOrEqual(320)
+  })
+})
+
+describe("hierarchy port alignment", () => {
+  const widthOf = () => 200
+  const edge = (id: string, s: string, sp: string, t: string, tp: string) =>
+    ({
+      id,
+      source: s,
+      target: t,
+      sourceHandle: sp,
+      targetHandle: tp,
+      data: { sem: "cable" },
+    }) as Edge
+  const node = (id: string): Node => ({
+    id,
+    type: "hier",
+    position: { x: 0, y: 0 },
+    data: { name: id },
+  })
+
+  it("aligns peers so cables run near-straight, ports never overlap", () => {
+    const nodes = [node("a"), node("b"), node("c1"), node("c2"), node("c3")]
+    const edges = [
+      edge("e1", "a", "p1", "b", "in"),
+      edge("e2", "b", "o1", "c1", "eth"),
+      edge("e3", "b", "o2", "c2", "eth"),
+      edge("e4", "b", "o3", "c3", "eth"),
+    ]
+    const res = layoutHierarchy(nodes, edges, widthOf)
+    const abs = (id: string, port: string) => {
+      const n = res.nodes.find((x) => x.id === id)!
+      return n.position.y + res.portPos.get(id)![port].off
+    }
+    // b's fan-out ports sit at (or within a pitch of) their leaf's port.
+    for (const [p, c] of [
+      ["o1", "c1"],
+      ["o2", "c2"],
+      ["o3", "c3"],
+    ] as const) {
+      expect(Math.abs(abs("b", p) - abs(c, "eth"))).toBeLessThanOrEqual(18)
+    }
+    // No two ports of b overlap.
+    const offs = Object.values(res.portPos.get("b")!).map((p) => p.off)
+    const sorted = [...offs].sort((x, y) => x - y)
+    for (let i = 1; i < sorted.length; i++)
+      expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(18)
+    // Sides face the peer.
+    expect(res.portPos.get("b")!["in"].side).toBe("L")
+    expect(res.portPos.get("b")!["o1"].side).toBe("R")
   })
 })

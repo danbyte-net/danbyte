@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Info, X } from "lucide-react"
 
-import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
+import { typeColor, type EdgeColorMode, type NodeStyle } from "./topology-canvas"
 
 // Line-key legend for the topology views. Collapsible, remembered per
 // browser, and its rows adapt to the active view + color mode so it only
@@ -64,10 +64,13 @@ export function CanvasLegend({
   viewStyle,
   grouped,
   colorMode,
+  types = [],
 }: {
   viewStyle: NodeStyle
   grouped: boolean
   colorMode: EdgeColorMode
+  /** Media types present on the map - swatched when coloring by type. */
+  types?: string[]
 }) {
   const [open, setOpen] = useState(
     () => localStorage.getItem(KEY) !== "closed"
@@ -138,7 +141,19 @@ export function CanvasLegend({
             />
           </>
         )}
-        {colorMode === "speed" ? (
+        {colorMode === "type" && types.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1">
+            {types.slice(0, 8).map((t) => (
+              <span key={t} className="flex items-center gap-1">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: typeColor(t) }}
+                />
+                <span className="font-mono text-muted-foreground">{t}</span>
+              </span>
+            ))}
+          </div>
+        ) : colorMode === "speed" ? (
           <div className="flex items-center gap-2 pt-1">
             {SPEED_TIERS.map(([c, l]) => (
               <span key={l} className="flex items-center gap-1">

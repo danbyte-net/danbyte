@@ -462,6 +462,191 @@ export function edgeWaypoints(
   )
 }
 
+// ── Hierarchy (port-aligned) layout ─────────────────────────────────────────
+// The NetBox-style renderer: tall cards whose port chips sit at the height
+// of their PEER's port, so cables run near-straight. dagre gives ranks;
+// relaxation sweeps pull ports (and their cards) toward their peers.
+export const HIER_PORT_PITCH = 18
+export const HIER_HEADER = 30
+export const HIER_PAD = 12
+export const HIER_MIN_SPAN = 60
+const HIER_NODE_GAP = 36
+
+export interface HierPortPos {
+  side: "L" | "R"
+  off: number
+}
+
+export function hierHeight(span: number): number {
+  return HIER_HEADER + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
+}
+
+export interface HierResult {
+  nodes: Node[]
+  portPos: Map<string, Record<string, HierPortPos>>
+  span: Map<string, number>
+  sides: Map<string, Record<string, "L" | "R">>
+}
+
+export function layoutHierarchy(
+  nodes: Node[],
+  edges: Edge[],
+  widthOf: (n: Node) => number,
+  positions?: Record<string, [number, number]>
+): HierResult {
+  const pinned = positions ? new Set(Object.keys(positions)) : undefined
+  // Port lists per node from the cable edges (base port names ride on the
+  // edge handles at this stage).
+  type P = { name: string; peer: string; peerPort: string }
+  const ports = new Map<string, P[]>()
+  const addPort = (id: string, name: string, peer: string, peerPort: string) => {
+    const list = ports.get(id) ?? ports.set(id, []).get(id)!
+    if (!list.some((x) => x.name === name)) list.push({ name, peer, peerPort })
+  }
+  for (const e of edges) {
+    const s = e.sourceHandle ? String(e.sourceHandle) : null
+    const t = e.targetHandle ? String(e.targetHandle) : null
+    if (!s || !t) continue
+    addPort(e.source, s, e.target, t)
+    addPort(e.target, t, e.source, s)
+  }
+
+  // Provisional dagre pass for ranks (x) and an initial vertical order.
+  const g = new dagre.graphlib.Graph()
+  g.setDefaultEdgeLabel(() => ({}))
+  g.setGraph({
+    rankdir: "LR",
+    nodesep: 40,
+    edgesep: 12,
+    ranksep: 170,
+    ranker: "network-simplex",
+    align: "UL",
+  })
+  const provH = (id: string) =>
+    hierHeight((ports.get(id)?.length ?? 0) * HIER_PORT_PITCH)
+  for (const n of nodes) g.setNode(n.id, { width: widthOf(n), height: provH(n.id) })
+  for (const e of edges) g.setEdge(e.source, e.target, { weight: 1, minlen: 1 })
+  dagre.layout(g)
+
+  const x = new Map<string, number>()
+  const top = new Map<string, number>()
+  for (const n of nodes) {
+    const pin = positions?.[n.id]
+    if (pin) {
+      x.set(n.id, pin[0])
+      top.set(n.id, pin[1])
+      continue
+    }
+    const d = g.node(n.id)
+    x.set(n.id, d.x - d.width / 2)
+    top.set(n.id, d.y - d.height / 2)
+  }
+
+  // Port sides from rank positions; absolute port centers, initialised
+  // stacked in peer order.
+  const sides = new Map<string, Record<string, "L" | "R">>()
+  const portY = new Map<string, number>() // "node:port" → absolute y
+  for (const [id, list] of ports) {
+    const sd: Record<string, "L" | "R"> = {}
+    for (const pt of list)
+      sd[pt.name] = (x.get(pt.peer) ?? 0) >= (x.get(id) ?? 0) ? "R" : "L"
+    sides.set(id, sd)
+    list.sort(
+      (a, b) => (top.get(a.peer) ?? 0) - (top.get(b.peer) ?? 0)
+    )
+    list.forEach((pt, i) =>
+      portY.set(`${id}:${pt.name}`, (top.get(id) ?? 0) + HIER_HEADER + HIER_PAD + i * HIER_PORT_PITCH)
+    )
+  }
+
+  const span = new Map<string, number>()
+  const place = (id: string) => {
+    // Stack this node's ports at their targets (peer port y), min pitch
+    // apart; the card follows its ports.
+    const list = ports.get(id)
+    if (!list || !list.length) return
+    const targets = list
+      .map((pt) => ({
+        pt,
+        t: portY.get(`${pt.peer}:${pt.peerPort}`) ?? top.get(pt.peer) ?? 0,
+      }))
+      .sort((a, b) => a.t - b.t)
+    let prev = -Infinity
+    const abs: { pt: P; y: number }[] = []
+    for (const { pt, t } of targets) {
+      const y = Math.max(t, prev + HIER_PORT_PITCH)
+      abs.push({ pt, y })
+      prev = y
+    }
+    const first = abs[0].y
+    const last = abs[abs.length - 1].y
+    if (!pinned?.has(id)) top.set(id, first - HIER_HEADER - HIER_PAD)
+    const base = top.get(id)!
+    // Pinned cards keep their position - ports re-stack inside from the top.
+    let off = base + HIER_HEADER + HIER_PAD
+    for (const { pt, y } of abs) {
+      const yy = pinned?.has(id) ? off : y
+      portY.set(`${id}:${pt.name}`, yy)
+      off += HIER_PORT_PITCH
+    }
+    span.set(id, last - first)
+  }
+
+  const order = [...nodes].sort((a, b) => (x.get(a.id) ?? 0) - (x.get(b.id) ?? 0))
+  for (let sweep = 0; sweep < 3; sweep++) {
+    const seq = sweep % 2 === 0 ? order : [...order].reverse()
+    for (const n of seq) place(n.id)
+    // Intra-rank collision resolve: push overlapping cards down, ports along.
+    const ranks = new Map<number, Node[]>()
+    for (const n of nodes) {
+      const r = Math.round((x.get(n.id) ?? 0) / 40)
+      ;(ranks.get(r) ?? ranks.set(r, []).get(r)!).push(n)
+    }
+    for (const group of ranks.values()) {
+      group.sort((a, b) => (top.get(a.id) ?? 0) - (top.get(b.id) ?? 0))
+      let bottom = -Infinity
+      for (const n of group) {
+        if (pinned?.has(n.id)) {
+          bottom = Math.max(bottom, (top.get(n.id) ?? 0) + hierHeight(span.get(n.id) ?? 0))
+          continue
+        }
+        let t = top.get(n.id) ?? 0
+        if (t < bottom + HIER_NODE_GAP) {
+          const delta = bottom + HIER_NODE_GAP - t
+          t += delta
+          top.set(n.id, t)
+          for (const pt of ports.get(n.id) ?? [])
+            portY.set(`${n.id}:${pt.name}`, (portY.get(`${n.id}:${pt.name}`) ?? 0) + delta)
+        }
+        bottom = t + hierHeight(span.get(n.id) ?? 0)
+      }
+    }
+  }
+
+  const portPos = new Map<string, Record<string, HierPortPos>>()
+  for (const [id, list] of ports) {
+    const base = top.get(id) ?? 0
+    const rec: Record<string, HierPortPos> = {}
+    for (const pt of list)
+      rec[pt.name] = {
+        side: sides.get(id)![pt.name],
+        off: (portY.get(`${id}:${pt.name}`) ?? base) - base,
+      }
+    portPos.set(id, rec)
+  }
+  let laid = nodes.map((n) => ({
+    ...n,
+    position: { x: x.get(n.id) ?? 0, y: top.get(n.id) ?? 0 },
+  }))
+  laid = packComponents(
+    laid,
+    edges,
+    (n) => ({ width: widthOf(n), height: hierHeight(span.get(n.id) ?? 0) }),
+    pinned
+  )
+  return { nodes: laid, portPos, span, sides }
+}
+
 // ── Component packing ───────────────────────────────────────────────────────
 // Dagre strings disconnected islands along one axis, leaving half the canvas
 // empty and the rest sprawling. Pack the islands into rows instead, aiming

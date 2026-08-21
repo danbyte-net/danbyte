@@ -30,8 +30,9 @@ import { PortNode, StencilNode, handleId } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
 import { FLAT_H, FlatNode, flatW } from "./flat-node"
 import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
+import { HierarchyNode, hierarchyWidth } from "./hierarchy-node"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
-import { edgeWaypoints, layoutNodes } from "./layout"
+import { edgeWaypoints, layoutHierarchy, layoutNodes } from "./layout"
 import { resolveLevels } from "./level-organiser"
 import { RoutedEdge } from "./routed-edge"
 
@@ -43,6 +44,7 @@ const nodeTypes = {
   // "sitegroup", not "group": React Flow reserves "group" and paints its own
   // grey stock box behind it.
   sitegroup: GroupNode,
+  hier: HierarchyNode,
   interface: PortNode,
   front_port: PortNode,
   rear_port: PortNode,
@@ -51,9 +53,10 @@ const edgeTypes = { routed: RoutedEdge }
 
 export type EdgeColorMode = "cable" | "type" | "status" | "speed" | "none"
 
-/** "stencil" = wiring cards with port rows; "flat" = barebones fixed chips
- * with parallel cables bundled into one ×N edge. */
-export type NodeStyle = "stencil" | "flat"
+/** "stencil" = wiring cards with port rows; "hierarchy" = tall cards with
+ * peer-aligned port chips (near-straight cables); "flat" = barebones fixed
+ * chips with parallel cables bundled into one ×N edge. */
+export type NodeStyle = "stencil" | "hierarchy" | "flat"
 
 /** One member of a Flat-view bundled edge (the underlying cable's data). */
 export type BundleMember = NonNullable<TopoEdge["data"]>
@@ -295,6 +298,7 @@ function build(
   }
 ) {
   const flat = opts.nodeStyle === "flat"
+  const hier = opts.nodeStyle === "hierarchy"
   // A grouped payload (group_by=site|location) renders like the flat view:
   // fixed-size cards, whole-node edges, one compact layout pass.
   const grouped = graph.nodes.some((n) => n.type === "group")
@@ -303,9 +307,13 @@ function build(
     type:
       n.type === "group"
         ? "sitegroup"
-        : flat && (n.type ?? "device") === "device"
-          ? "flat"
-          : (n.type ?? "device"),
+        : (n.type ?? "device") !== "device"
+          ? (n.type ?? "device")
+          : flat
+            ? "flat"
+            : hier
+              ? "hier"
+              : "device",
     position: { x: 0, y: 0 },
     selected: opts.focusNodeId === n.id,
     data: {
@@ -516,6 +524,39 @@ function build(
     }
   }
 
+  // Hierarchy view: port-aligned layout, near-straight cables, no channel
+  // routing (alignment removes the need). Levels don't apply here - the
+  // rank structure IS the hierarchy.
+  if (hier) {
+    const widthOf = (n: Node) => hierarchyWidth(n.data as { name?: string })
+    const res = layoutHierarchy(nodes, allEdges, widthOf, opts.positions)
+    const laid = res.nodes.map((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        portPos: res.portPos.get(n.id),
+        portSpan: res.span.get(n.id) ?? 0,
+      },
+    }))
+    const hedges = allEdges.map((e) => {
+      const sem = (e.data as { sem?: string } | undefined)?.sem
+      if (sem !== "cable") return e
+      const baseS = e.sourceHandle ? String(e.sourceHandle) : null
+      const baseT = e.targetHandle ? String(e.targetHandle) : null
+      if (!baseS || !baseT) return e
+      const sS = res.sides.get(e.source)?.[baseS] ?? "R"
+      const tS = res.sides.get(e.target)?.[baseT] ?? "L"
+      return {
+        ...e,
+        sourceHandle: handleId(baseS, sS),
+        targetHandle: handleId(baseT, tS),
+        pathOptions: { borderRadius: 4 },
+        data: { ...e.data, baseS, baseT },
+      }
+    })
+    return { nodes: laid, edges: hedges }
+  }
+
   // Role tiers from the Level organiser, if any: node id → level index.
   let levels: Map<string, number> | undefined
   let mainOffsets: number[] | undefined
@@ -672,17 +713,19 @@ export interface TopologyCanvasProps {
   fitKey?: string
   /** Node ids matching the search - everything else renders dimmed. */
   matchedIds?: Set<string> | null
+  /** The edge whose panel is open - drawn emphasized in primary. */
+  selectedEdgeId?: string | null
   /** Device mini map: hide edges leaving these origin ports. */
   hiddenPorts?: Set<string>
   originId?: string
   onSelectNode?: (data: TopologyGraph["nodes"][number]["data"]) => void
-  onSelectEdge?: (data: NonNullable<TopoEdge["data"]>) => void
+  onSelectEdge?: (data: NonNullable<TopoEdge["data"]>, edgeId: string) => void
   /** Flat view: a bundled edge was clicked - its member cables. */
-  onSelectBundle?: (cables: BundleMember[]) => void
+  onSelectBundle?: (cables: BundleMember[], edgeId: string) => void
   /** Grouped mode: a group card was clicked. */
   onSelectGroup?: (data: TopoGroupData) => void
   /** Grouped mode: an aggregated group-to-group edge was clicked. */
-  onSelectGroupEdge?: (data: GroupEdgeInfo) => void
+  onSelectGroupEdge?: (data: GroupEdgeInfo, edgeId: string) => void
   /** Grouped mode: a group card was double-clicked - drill into it. */
   onDrillGroup?: (data: TopoGroupData) => void
   /** Right-click on a node - screen coords + the raw RF node for branching
@@ -711,6 +754,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     layoutTick = 0,
     fitKey = "",
     matchedIds,
+    selectedEdgeId = null,
     hiddenPorts,
     originId,
     onSelectNode,
@@ -733,7 +777,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  const routingActive = edgeRouting === "routed"
+  // Aligned hierarchy cables are already near-straight - never re-route them.
+  const routingActive = edgeRouting === "routed" && nodeStyle !== "hierarchy"
 
   const built = useMemo(
     () =>
@@ -803,27 +848,32 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     el.style.top = `${ev.clientY + 14}px`
   }, [])
   const shownEdges = useMemo(() => {
-    if (!hotEdge) return edges
+    if (!hotEdge && !selectedEdgeId) return edges
     return edges.map((e) => {
-      if (e.id === hotEdge)
+      const isHot = e.id === hotEdge
+      const isSel = e.id === selectedEdgeId
+      if (isHot || isSel)
         return {
           ...e,
           // The hot edge keeps its label at any LOD (CSS exempts .topo-hot).
-          className: "topo-hot",
+          className: isHot ? "topo-hot" : e.className,
           zIndex: 1000,
           style: {
             ...e.style,
             strokeWidth: 2.5,
             opacity: 1,
+            ...(isSel ? { stroke: "var(--primary)" } : {}),
           },
         }
-      return {
-        ...e,
-        style: { ...e.style, opacity: 0.15 },
-        labelStyle: { ...e.labelStyle, opacity: 0.2 },
-      }
+      return hotEdge
+        ? {
+            ...e,
+            style: { ...e.style, opacity: 0.15 },
+            labelStyle: { ...e.labelStyle, opacity: 0.2 },
+          }
+        : e
     })
-  }, [edges, hotEdge])
+  }, [edges, hotEdge, selectedEdgeId])
   // Re-sync when the built graph changes, but keep user-dragged positions
   // for nodes that are still present (so a color-mode flip doesn't shuffle).
   const prevNodes = useRef<Node[]>([])
@@ -957,10 +1007,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         | undefined
       if (data?.sem === "ghost" && data.ghost) onGhostEdge?.(data.ghost)
       else if (data?.sem === "bundle" && data.cables)
-        onSelectBundle?.(data.cables)
+        onSelectBundle?.(data.cables, edge.id)
       else if (data?.sem === "groupedge" && data.group)
-        onSelectGroupEdge?.(data.group)
-      else if (data?.raw) onSelectEdge?.(data.raw)
+        onSelectGroupEdge?.(data.group, edge.id)
+      else if (data?.raw) onSelectEdge?.(data.raw, edge.id)
     },
     [onGhostEdge, onSelectEdge, onSelectBundle, onSelectGroupEdge]
   )
@@ -969,6 +1019,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // the edges, and RE-ROUTE the cables from the new positions (so moving a
   // node re-bends its cables around cards instead of leaving them straight).
   const onNodeDragStop = useCallback(() => {
+    if (nodeStyle === "hierarchy") {
+      // Ports keep their aligned offsets; handles move with the card.
+      onDragEnd?.()
+      return
+    }
     const liveNodes = flow.getNodes()
     const live = new Map(liveNodes.map((n) => [n.id, n.position]))
     setEdges((cur) => {
@@ -1009,7 +1064,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       })
     })
     onDragEnd?.()
-  }, [flow, setEdges, setNodes, direction, routingActive, onDragEnd])
+  }, [flow, setEdges, setNodes, direction, routingActive, onDragEnd, nodeStyle])
 
   if (!mounted)
     return <div className="h-full w-full animate-pulse bg-muted/30" />

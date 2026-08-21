@@ -277,6 +277,7 @@ function TopologyPage() {
     null
   )
   const [selBundle, setSelBundle] = useState<BundleMember[] | null>(null)
+  const [selEdgeId, setSelEdgeId] = useState<string | null>(null)
   const [selGroup, setSelGroup] = useState<TopoGroupData | null>(null)
   const [selGroupEdge, setSelGroupEdge] = useState<GroupEdgeInfo | null>(null)
   const [hintDismissed, setHintDismissed] = useState(false)
@@ -287,6 +288,7 @@ function TopologyPage() {
     setSelBundle(null)
     setSelGroup(null)
     setSelGroupEdge(null)
+    setSelEdgeId(null)
   }
 
   const drillInto = (d: TopoGroupData) => {
@@ -431,6 +433,14 @@ function TopologyPage() {
     )
     return { ...q.data, edges: [...q.data.edges, ...ghostEdges] }
   }, [q.data, ghosts.data])
+
+  // Media types on the map - the legend swatches them in type color mode.
+  const presentTypes = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of graph?.edges ?? [])
+      if (e.data?.cable_type) s.add(e.data.cable_type)
+    return [...s].sort()
+  }, [graph])
 
   // ── Search → dim non-matching nodes; Enter zooms to the first hit ──
   const matchedIds = useMemo(() => {
@@ -642,6 +652,7 @@ function TopologyPage() {
           }}
           items={[
             { value: "stencil", label: "Wiring" },
+            { value: "hierarchy", label: "Hierarchy" },
             { value: "flat", label: "Flat" },
             { value: "logical", label: "Logical" },
           ]}
@@ -759,7 +770,7 @@ function TopologyPage() {
               </PopoverContent>
             </Popover>
           )}
-          {!grouped && (
+          {!grouped && viewStyle !== "hierarchy" && (
           <LevelOrganiser
             roles={rolesInGraph}
             order={roleOrder}
@@ -799,6 +810,7 @@ function TopologyPage() {
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-64 space-y-3 p-3">
+              {viewStyle !== "hierarchy" && (
               <PopoverField label="Layout">
                 <SegmentedTabs<"LR" | "TB">
                   value={direction}
@@ -815,6 +827,7 @@ function TopologyPage() {
                   ]}
                 />
               </PopoverField>
+              )}
               <PopoverField label="Group by">
                 <SegmentedTabs<GroupBy>
                   value={groupBy}
@@ -1014,26 +1027,30 @@ function TopologyPage() {
               layoutTick={layoutTick}
               fitKey={graphQs}
               matchedIds={matchedIds}
+              selectedEdgeId={selEdgeId}
               onGhostEdge={setGhost}
               onSelectNode={(d) => {
                 clearSel()
                 setSelNode(d)
               }}
-              onSelectEdge={(d) => {
+              onSelectEdge={(d, id) => {
                 clearSel()
                 setSelEdge(d)
+                setSelEdgeId(id)
               }}
-              onSelectBundle={(cables) => {
+              onSelectBundle={(cables, id) => {
                 clearSel()
                 setSelBundle(cables)
+                setSelEdgeId(id)
               }}
               onSelectGroup={(d) => {
                 clearSel()
                 setSelGroup(d)
               }}
-              onSelectGroupEdge={(d) => {
+              onSelectGroupEdge={(d, id) => {
                 clearSel()
                 setSelGroupEdge(d)
+                setSelEdgeId(id)
               }}
               onDrillGroup={drillInto}
               onNodeContext={(node, x, y) => {
@@ -1087,9 +1104,10 @@ function TopologyPage() {
           // left-16 clears React Flow's zoom controls in the corner.
           <div className="absolute bottom-4 left-16 z-10">
             <CanvasLegend
-              viewStyle={viewStyle === "flat" ? "flat" : "stencil"}
+              viewStyle={viewStyle}
               grouped={grouped}
               colorMode={colorMode}
+              types={presentTypes}
             />
           </div>
         )}
