@@ -28,7 +28,7 @@ import type { GhostEdgeData, TopoEdge, TopologyGraph } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
 import { PortNode, StencilNode, handleId } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
-import { FLAT_H, FLAT_W, FlatNode } from "./flat-node"
+import { FLAT_H, FlatNode, flatW } from "./flat-node"
 import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import { edgeWaypoints, layoutNodes } from "./layout"
@@ -58,7 +58,7 @@ export type NodeStyle = "stencil" | "flat"
 /** One member of a Flat-view bundled edge (the underlying cable's data). */
 export type BundleMember = NonNullable<TopoEdge["data"]>
 
-const flatSize = () => ({ width: FLAT_W, height: FLAT_H })
+const flatSize = (n: Node) => ({ width: flatW(n.data as { name?: string }), height: FLAT_H })
 const groupSize = () => ({ width: GROUP_W, height: GROUP_H })
 
 export interface CanvasHandle {

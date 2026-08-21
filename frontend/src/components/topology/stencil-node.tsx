@@ -39,6 +39,15 @@ export type StencilData = TopoNode["data"] & {
 // Sizing - dagre reserves these; the DOM must match so handles land right.
 export const CENTER_W = 148
 export const CENTER_H = 36
+// The device name is the most important text on the map - the identity
+// centre widens to fit it (11px mono ≈ 6.6px/char + spine/padding), capped
+// so one hostname can't blow up a card.
+function centerW(d: StencilData): number {
+  return Math.max(
+    CENTER_W,
+    Math.min(268, 34 + (d.name?.length ?? 0) * 6.6)
+  )
+}
 const STRIP_H = 17 // top / bottom horizontal strip
 const COL_W = 54 // left / right vertical column MINIMUM
 const CHIP_W = 50 // one port in a horizontal strip MINIMUM
@@ -141,7 +150,7 @@ export function stencilSize(d: StencilData): { width: number; height: number } {
     const width =
       lW +
       rW +
-      Math.max(CENTER_W, s.T.length * DENSE_PITCH, s.B.length * DENSE_PITCH)
+      Math.max(centerW(d), s.T.length * DENSE_PITCH, s.B.length * DENSE_PITCH)
     const height =
       (hasT ? DENSE_BAND : 0) +
       (hasB ? DENSE_BAND : 0) +
@@ -153,7 +162,7 @@ export function stencilSize(d: StencilData): { width: number; height: number } {
   const width =
     lW +
     rW +
-    Math.max(CENTER_W, stripW(s.T), stripW(s.B))
+    Math.max(centerW(d), stripW(s.T), stripW(s.B))
   const height =
     (hasT ? STRIP_H : 0) +
     (hasB ? STRIP_H : 0) +

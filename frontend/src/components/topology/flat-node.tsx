@@ -9,6 +9,11 @@ import { handleId, type StencilData } from "./stencil-node"
 export const FLAT_W = 156
 export const FLAT_H = 46
 
+/** Chip width sized to the device name (11px mono), capped. */
+export function flatW(d: { name?: string }): number {
+  return Math.max(FLAT_W, Math.min(250, 40 + (d.name?.length ?? 0) * 6.6))
+}
+
 const STATUS_DOT: Record<string, string> = {
   active: "bg-emerald-500",
   planned: "bg-amber-500",
@@ -39,7 +44,7 @@ export function FlatNode({ data, selected }: NodeProps) {
             ? "border-dashed border-border"
             : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
-      style={{ width: FLAT_W, height: FLAT_H }}
+      style={{ width: flatW(d), height: FLAT_H }}
     >
       {SIDES.map(({ side, pos }) => (
         <span key={side}>
