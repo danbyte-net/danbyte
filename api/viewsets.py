@@ -2879,6 +2879,49 @@ class DeviceViewSet(
 
         return Response(render_config_context(self.get_object()))
 
+    @action(detail=True, methods=["get"], url_path="port-utilization")
+    def port_utilization(self, request, pk=None):
+        """Connected / reserved / free counts per port kind (issue #64).
+
+        Connected = the port terminates a cable; reserved = that cable's
+        status is "planned" (earmarked but not yet patched); free = no
+        cable. Rides the existing cable Status catalog - no new per-port
+        tracking field.
+        """
+        from django.db.models import Exists
+
+        from .models import CableTermination
+
+        device = self.get_object()
+        kinds = {
+            "interfaces": ("interfaces", "interface"),
+            "front_ports": ("front_ports", "front_port"),
+            "rear_ports": ("rear_ports", "rear_port"),
+        }
+        out: dict = {}
+        combined = {"total": 0, "connected": 0, "reserved": 0, "free": 0}
+        for key, (relation, term_field) in kinds.items():
+            rel = getattr(device, relation)
+            cabled = CableTermination.objects.filter(
+                **{term_field: OuterRef("pk")}
+            )
+            planned = cabled.filter(cable__status__slug="planned")
+            qs = rel.annotate(_cabled=Exists(cabled), _planned=Exists(planned))
+            total = rel.count()
+            reserved = qs.filter(_planned=True).count()
+            connected = qs.filter(_cabled=True, _planned=False).count()
+            row = {
+                "total": total,
+                "connected": connected,
+                "reserved": reserved,
+                "free": total - connected - reserved,
+            }
+            out[key] = row
+            for k in combined:
+                combined[k] += row[k]
+        out["combined"] = combined
+        return Response(out)
+
     # Photo-port marker kind (hyphenated, as saved in DeviceType.image_ports) →
     # (device component relation, CableTermination kind). Drives face-ports.
     # Inventory items (disk bays…) and module bays (line-card slots) are

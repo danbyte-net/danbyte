@@ -1,0 +1,98 @@
+from django.contrib.auth import get_user_model
+from rest_framework.test import APITestCase
+
+from core.models import Organization, Tenant
+
+from .models import (
+    Cable,
+    CableTermination,
+    Device,
+    FrontPort,
+    Interface,
+    RearPort,
+    Status,
+)
+
+User = get_user_model()
+
+
+class PortUtilizationTests(APITestCase):
+    """/api/devices/<id>/port-utilization/ (issue #64).
+
+    Connected = port terminates a cable; reserved = that cable's status is
+    "planned"; free = no cable.
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+        admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+
+        self.planned = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned",
+            available_to=["cable"],
+        )
+        self.dev = Device.objects.create(tenant=self.tenant, name="pp-01")
+        self.other = Device.objects.create(tenant=self.tenant, name="sw-01")
+
+    def _cable(self, status=None, **term):
+        c = Cable.objects.create(tenant=self.tenant, status=status)
+        CableTermination.objects.create(cable=c, end="A", **term)
+        return c
+
+    def test_counts_connected_reserved_free(self):
+        # 3 interfaces: one patched, one planned (reserved), one free.
+        i1 = Interface.objects.create(device=self.dev, name="Gi1")
+        i2 = Interface.objects.create(device=self.dev, name="Gi2")
+        Interface.objects.create(device=self.dev, name="Gi3")
+        self._cable(interface=i1)
+        self._cable(status=self.planned, interface=i2)
+        # 2 front ports: one patched, one free; 1 rear port, free.
+        rp = RearPort.objects.create(device=self.dev, name="R1", positions=4)
+        f1 = FrontPort.objects.create(
+            device=self.dev, name="F1", rear_port=rp, rear_port_position=1
+        )
+        FrontPort.objects.create(
+            device=self.dev, name="F2", rear_port=rp, rear_port_position=2
+        )
+        self._cable(front_port=f1)
+
+        r = self.client.get(f"/api/devices/{self.dev.id}/port-utilization/")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(
+            body["interfaces"],
+            {"total": 3, "connected": 1, "reserved": 1, "free": 1},
+        )
+        self.assertEqual(
+            body["front_ports"],
+            {"total": 2, "connected": 1, "reserved": 0, "free": 1},
+        )
+        self.assertEqual(
+            body["rear_ports"],
+            {"total": 1, "connected": 0, "reserved": 0, "free": 1},
+        )
+        self.assertEqual(
+            body["combined"],
+            {"total": 6, "connected": 2, "reserved": 1, "free": 3},
+        )
+
+    def test_statusless_cable_counts_as_connected(self):
+        i = Interface.objects.create(device=self.dev, name="Gi1")
+        self._cable(interface=i)
+        body = self.client.get(
+            f"/api/devices/{self.dev.id}/port-utilization/"
+        ).json()
+        self.assertEqual(body["interfaces"]["connected"], 1)
+        self.assertEqual(body["interfaces"]["reserved"], 0)
+
+    def test_other_devices_ports_do_not_leak_in(self):
+        Interface.objects.create(device=self.other, name="Gi1")
+        body = self.client.get(
+            f"/api/devices/{self.dev.id}/port-utilization/"
+        ).json()
+        self.assertEqual(body["combined"]["total"], 0)

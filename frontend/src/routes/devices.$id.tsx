@@ -54,6 +54,7 @@ import {
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { KvCard, mono, dash } from "@/components/kv-card"
+import { PortUtilizationCard } from "@/components/port-utilization-card"
 import type { KvRow } from "@/components/kv-card"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Section } from "@/components/ui/section"
@@ -956,6 +957,7 @@ function DeviceOverview({
       <KvCard title="Device" rows={deviceRows} />
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
+      <PortUtilizationCard deviceId={d.id} />
       <KvCard title="Location" rows={locationRows} />
       <CustomFieldValues
         model="device"
@@ -1227,8 +1229,19 @@ function DeviceIpsPane({
   const columns = useMemo<ColumnDef<IPAddress>[]>(() => {
     const cols = buildIpColumns<IPAddress>({
       include: [
-        "ip", "status", "dhcp", "role", "vlan", "zone", "scope", "dns",
-        "switch", "switch_interface", "description", "tags", "updated",
+        "ip",
+        "status",
+        "dhcp",
+        "role",
+        "vlan",
+        "zone",
+        "scope",
+        "dns",
+        "switch",
+        "switch_interface",
+        "description",
+        "tags",
+        "updated",
       ],
       copyButton: true,
     })

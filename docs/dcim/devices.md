@@ -93,7 +93,17 @@ The default tab lays the device's facts out in four cards:
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
 Technical values (name, serial, asset tag, primary IP, DNS name) have a small
-**copy button** so you can grab them in one click. Any **custom fields** you've
+**copy button** so you can grab them in one click.
+
+Devices with ports also get a **Port utilization** card: a segmented bar plus
+counts of **connected** (the port terminates a cable), **reserved** (its cable
+carries the *Planned* status - earmarked for a cross-connect that isn't
+patched yet), and **free** ports, broken down per kind (interfaces, front
+ports, rear ports). Reserved rides the existing cable Status catalog - create
+the cable ahead of time as *Planned* and the port counts as held; flip the
+status once patched. Most useful on patch panels and access switches, where
+"how full is this thing" is the recurring question
+(`GET /api/devices/<id>/port-utilization/`). Any **custom fields** you've
 defined for devices appear below the cards. If any of the device's IPs are
 monitored, a **Monitoring** summary (roll-up badge + per-IP grid) appears at the
 **top** of the tab - see [Monitoring](../features/monitoring.md#on-a-device).
