@@ -54,6 +54,32 @@ function fabric(): { nodes: Node[]; edges: Edge[] } {
   return { nodes, edges }
 }
 
+describe("aligned-card detour", () => {
+  it("routes A→C around a card sitting dead between them", () => {
+    // Three sites stacked in one column (the grouped view's triangle):
+    // the A→C cable must NOT run straight through B.
+    const mk = (id: string, y: number): Node => ({
+      id,
+      type: "flat",
+      position: { x: 100, y },
+      data: { name: id },
+    })
+    const nodes = [mk("a", 0), mk("b", 200), mk("c", 400)]
+    const edges: Edge[] = [
+      { id: "ab", source: "a", target: "b", data: { sem: "cable" } } as Edge,
+      { id: "bc", source: "b", target: "c", data: { sem: "cable" } } as Edge,
+      { id: "ac", source: "a", target: "c", data: { sem: "cable" } } as Edge,
+    ]
+    const wp = edgeWaypoints(nodes, edges, "TB")
+    const detour = wp.get("a>c")
+    expect(detour).toBeDefined()
+    // Both waypoints share an X clear of the cards' 100..~256 span.
+    expect(detour![0][0]).toBe(detour![1][0])
+    const x = detour![0][0]
+    expect(x < 100 || x > 100 + 160).toBe(true)
+  })
+})
+
 describe("topology layout at scale", () => {
   it("lays out ~150 stencil nodes fast enough to feel instant", () => {
     const { nodes, edges } = fabric()

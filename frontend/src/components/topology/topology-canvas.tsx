@@ -134,6 +134,9 @@ function edgeStroke(
   return undefined
 }
 
+/** Edge semantics that carry node-avoiding routing. */
+const ROUTABLE = new Set(["cable", "bundle", "groupedge"])
+
 type PosOf = (id: string) => { x: number; y: number } | undefined
 
 /** Point each cable edge at the port-handle side facing its neighbour, and
@@ -498,11 +501,13 @@ function build(
       mainOffsets[i] = mainOffsets[i - 1] + gapOf(groups[i]?.[0] ?? "")
   }
 
-  // Flat + grouped views: one compact dagre pass with fixed card sizes - no
-  // per-port side split, no channel routing. Edges still snap to the card
-  // side facing their neighbour via the single "n" pseudo-port.
+  // Flat + grouped views: one compact dagre pass with fixed card sizes and
+  // no per-port side split. Edges snap to the card side facing their
+  // neighbour via the single "n" pseudo-port, and still route around (or
+  // detour past) cards in the way - a straight line hiding behind a card
+  // between its endpoints is exactly what these views must not do.
   if (flat || grouped) {
-    const laidFlat = layoutNodes(
+    const { nodes: laidFlat, waypoints: flatWp } = layoutNodes(
       nodes,
       allEdges,
       opts.positions,
@@ -510,14 +515,23 @@ function build(
       levels,
       mainOffsets,
       grouped ? groupSize : flatSize
-    ).nodes
+    )
     const posFlat = new Map(laidFlat.map((n) => [n.id, n.position]))
     const { edges: flatEdges } = assignSides(
       allEdges,
       (id) => posFlat.get(id),
       opts.direction ?? "LR"
     )
-    return { nodes: laidFlat, edges: flatEdges }
+    const routeThem = opts.edgeRouting !== "straight"
+    const routedFlat = flatEdges.map((e) => {
+      const sem = (e.data as { sem?: string } | undefined)?.sem
+      if (!routeThem || !sem || !ROUTABLE.has(sem)) return e
+      const wp = flatWp.get(`${e.source}>${e.target}`)
+      return wp?.length
+        ? { ...e, type: "routed", data: { ...e.data, waypoints: wp } }
+        : e
+    })
+    return { nodes: laidFlat, edges: routedFlat }
   }
 
   // Pass 1: a nominal layout (no port sides yet) just to learn each card's
@@ -676,9 +690,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  // Channel routing only exists for stencil cards - flat chips draw plain
-  // smoothstep lines whatever the routing setting says.
-  const routingActive = edgeRouting === "routed" && nodeStyle !== "flat"
+  const routingActive = edgeRouting === "routed"
 
   const built = useMemo(
     () =>
@@ -786,8 +798,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const wp = edgeWaypoints(nextNodes, built.edges, direction)
       setEdges(
         built.edges.map((e) => {
-          if ((e.data as { sem?: string } | undefined)?.sem !== "cable")
-            return e
+          const sem = (e.data as { sem?: string } | undefined)?.sem
+          if (!sem || !ROUTABLE.has(sem)) return e
           const pts = wp.get(`${e.source}>${e.target}`)
           return pts?.length
             ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
@@ -928,7 +940,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       if (!routingActive) return next
       const wp = edgeWaypoints(liveNodes, next, direction)
       return next.map((e) => {
-        if ((e.data as { sem?: string } | undefined)?.sem !== "cable") return e
+        const sem = (e.data as { sem?: string } | undefined)?.sem
+        if (!sem || !ROUTABLE.has(sem)) return e
         const pts = wp.get(`${e.source}>${e.target}`)
         return pts?.length
           ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }

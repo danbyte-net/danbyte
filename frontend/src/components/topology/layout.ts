@@ -3,6 +3,8 @@ import type { Edge, Node } from "@xyflow/react"
 
 import { stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
+import { FLAT_H, FLAT_W } from "./flat-node"
+import { GROUP_H, GROUP_W } from "./group-node"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
 // height follows the stencil card (header + one row per cabled port) so
@@ -146,6 +148,9 @@ function computeWaypoints(
   const all = [...rect.entries()]
   type R = { key: string; ch: Channel; staggered: boolean }
   const routes: R[] = []
+  // Detour routes (no channel existed - endpoints aligned with a card dead
+  // between them): fixed waypoints around the side, not fan-out managed.
+  const detours = new Map<string, [number, number][]>()
   for (const e of edges) {
     const a = rect.get(e.source)
     const b = rect.get(e.target)
@@ -154,8 +159,12 @@ function computeWaypoints(
       .filter(([id]) => id !== e.source && id !== e.target)
       .map(([, r]) => r)
     const ch = channelRoute(a, b, obstacles, tb)
-    if (ch)
+    if (ch) {
       routes.push({ key: `${e.source}>${e.target}`, ch, staggered: false })
+      continue
+    }
+    const det = sideDetour(a, b, obstacles, tb)
+    if (det) detours.set(`${e.source}>${e.target}`, det)
   }
   // Fan out bundles: cables whose channels fall in the same band AND overlap on
   // the cross axis are spread apart so each reads as its own line.
@@ -189,7 +198,59 @@ function computeWaypoints(
     const p2: [number, number] = tb ? [ch.bCross, ch.m] : [ch.m, ch.bCross]
     wp.set(key, [p1, p2])
   }
+  for (const [key, pts] of detours) wp.set(key, pts)
   return wp
+}
+
+/**
+ * Around-the-side route for the case the channel search can't solve: source
+ * and target aligned on the cross axis with a card sitting DEAD BETWEEN them
+ * (three stacked sites, say) - a straight line would run through the middle
+ * card and hide the cable. Returns two waypoints sharing the CROSS coordinate
+ * just past the blocking cards, which RoutedEdge renders as source → out to
+ * the side → along → back into the target.
+ */
+function sideDetour(
+  a: Rect,
+  b: Rect,
+  obstacles: Rect[],
+  tb: boolean
+): [number, number][] | null {
+  const mainLo = tb
+    ? Math.min(a.y + a.h, b.y + b.h)
+    : Math.min(a.x + a.w, b.x + b.w)
+  const mainHi = tb ? Math.max(a.y, b.y) : Math.max(a.x, b.x)
+  if (mainHi - mainLo < 8) return null // same tier - nothing to route around
+  const aCross = tb ? a.x + a.w / 2 : a.y + a.h / 2
+  const bCross = tb ? b.x + b.w / 2 : b.y + b.h / 2
+  const laneLo = Math.min(aCross, bCross) - 12
+  const laneHi = Math.max(aCross, bCross) + 12
+  // Cards inside the corridor the straight line would cross.
+  const between = obstacles.filter((o) => {
+    const m1 = tb ? o.y : o.x
+    const m2 = tb ? o.y + o.h : o.x + o.w
+    const c1 = tb ? o.x : o.y
+    const c2 = tb ? o.x + o.w : o.y + o.h
+    return m2 > mainLo && m1 < mainHi && c2 > laneLo && c1 < laneHi
+  })
+  if (!between.length) return null
+  const CLEAR = 36
+  const left = Math.min(...between.map((o) => (tb ? o.x : o.y))) - CLEAR
+  const right =
+    Math.max(...between.map((o) => (tb ? o.x + o.w : o.y + o.h))) + CLEAR
+  const mid = (aCross + bCross) / 2
+  const detour = Math.abs(mid - left) <= Math.abs(right - mid) ? left : right
+  const aMain = tb ? a.y + a.h / 2 : a.x + a.w / 2
+  const bMain = tb ? b.y + b.h / 2 : b.x + b.w / 2
+  return tb
+    ? [
+        [detour, aMain],
+        [detour, bMain],
+      ]
+    : [
+        [aMain, detour],
+        [bMain, detour],
+      ]
 }
 
 /** Recompute node-avoiding routes for live (e.g. just-dragged) node positions.
@@ -204,7 +265,11 @@ export function edgeWaypoints(
     edges,
     (id) => {
       const n = nodes.find((x) => x.id === id)
-      return n ? stencilSize(n.data as StencilData) : { width: 0, height: 0 }
+      if (!n) return { width: 0, height: 0 }
+      // Fixed-size card types size themselves; stencil cards by their ports.
+      if (n.type === "flat") return { width: FLAT_W, height: FLAT_H }
+      if (n.type === "sitegroup") return { width: GROUP_W, height: GROUP_H }
+      return stencilSize(n.data as StencilData)
     },
     direction === "TB"
   )
