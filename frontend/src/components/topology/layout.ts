@@ -522,10 +522,14 @@ export function edgeWaypoints(
  * list, so a channel at its centre drags an aligned cable hundreds of pixels
  * off its own port and the run stops reading as a connection at all.
  *
- * A cable gets waypoints only when a card genuinely sits in its corridor AND
- * there is a clear vertical street to cross in - it then leaves its port
- * level, crosses the street, and arrives at its peer's port level. Anything
- * else stays straight, which is the entire point of aligning the ports.
+ * Preference order, cheapest first:
+ *   1. straight, when nothing stands in the way (what the alignment is for);
+ *   2. cross in a clear vertical STREET between cards, keeping both ends at
+ *      their own port level;
+ *   3. step out to the nearest clear horizontal CORRIDOR (usually just past
+ *      the blocking card's edge), run across, step back in;
+ *   4. only if none of that exists, straight through - a cable drawn behind
+ *      a card is the last resort, not the fallback.
  */
 export function hierarchyWaypoints(
   nodes: Node[],
@@ -551,7 +555,39 @@ export function hierarchyWaypoints(
   }
   const MIN_STREET = 26
   const PAD = 3
+  // The cable's stub: it leaves its port sideways before turning, so a
+  // vertical leg runs a little clear of the card edge.
+  const LEG = 16
+  const CORRIDOR_LANE = 9
   const out = new Map<string, [number, number][]>()
+  // Cables that have to leave their port level, resolved into lanes at the
+  // end so several crossing the same gap don't collapse onto one line.
+  const crossing: {
+    id: string
+    y: number
+    a: [number, number]
+    b: [number, number]
+    skip: [string, string]
+  }[] = []
+  const hitsExcept = (
+    x0: number,
+    x1: number,
+    y0: number,
+    y1: number,
+    skip: [string, string]
+  ) => {
+    for (const [id, r] of rect) {
+      if (id === skip[0] || id === skip[1]) continue
+      if (
+        r.x < Math.max(x0, x1) - PAD &&
+        r.x + r.w > Math.min(x0, x1) + PAD &&
+        r.y < Math.max(y0, y1) - PAD &&
+        r.y + r.h > Math.min(y0, y1) + PAD
+      )
+        return true
+    }
+    return false
+  }
   for (const e of edges) {
     const d = e.data as
       | { sem?: string; baseS?: string; baseT?: string }
@@ -563,18 +599,13 @@ export function hierarchyWaypoints(
     const lo = Math.min(a[0], b[0])
     const hi = Math.max(a[0], b[0])
     if (hi - lo < 40) continue
+    const skip: [string, string] = [e.source, e.target]
     const others: Rect[] = []
     for (const [id, r] of rect) {
       if (id !== e.source && id !== e.target) others.push(r)
     }
     const hits = (x0: number, x1: number, y0: number, y1: number) =>
-      others.some(
-        (r) =>
-          r.x < Math.max(x0, x1) - PAD &&
-          r.x + r.w > Math.min(x0, x1) + PAD &&
-          r.y < Math.max(y0, y1) - PAD &&
-          r.y + r.h > Math.min(y0, y1) + PAD
-      )
+      hitsExcept(x0, x1, y0, y1, skip)
     // Nothing in the way at all: the straight line the aligned ports were
     // laid out for.
     if (!hits(a[0], b[0], a[1], b[1])) continue
@@ -608,14 +639,80 @@ export function hierarchyWaypoints(
         !hits(cx, b[0], b[1], b[1]) &&
         !hits(cx, cx, a[1], b[1])
     )
-    // No clear street (two ports aligned behind a card, say): leave the cable
-    // straight. Passing behind one card still reads as a connection; a detour
-    // around a full-height card does not.
-    if (x === undefined) continue
-    out.set(e.id, [
-      [x, a[1]],
-      [x, b[1]],
-    ])
+    if (x !== undefined) {
+      out.set(e.id, [
+        [x, a[1]],
+        [x, b[1]],
+      ])
+      continue
+    }
+    // No street - the ports are level with each other and a card stands
+    // between them. Step out to the nearest horizontal corridor that clears
+    // the whole run (just above the blocking card, say), cross there, and
+    // step back in. Nearest keeps the excursion small enough that the cable
+    // still reads as one connection.
+    const yBlockers = others
+      .filter((r) => r.x + r.w > lo + PAD && r.x < hi - PAD)
+      .map((r) => [r.y, r.y + r.h])
+      .sort((p, q) => p[0] - q[0])
+    const merged: number[][] = []
+    for (const iv of yBlockers) {
+      const last = merged[merged.length - 1]
+      if (last && iv[0] <= last[1] + MIN_STREET) last[1] = Math.max(last[1], iv[1])
+      else merged.push([...iv])
+    }
+    const yOpts: number[] = []
+    if (merged.length) {
+      yOpts.push(merged[0][0] - MIN_STREET / 2)
+      yOpts.push(merged[merged.length - 1][1] + MIN_STREET / 2)
+      for (let i = 1; i < merged.length; i++)
+        yOpts.push((merged[i - 1][1] + merged[i][0]) / 2)
+    }
+    // Cheapest first: the least the cable has to leave its port level.
+    yOpts.sort(
+      (p, q) =>
+        Math.max(Math.abs(p - a[1]), Math.abs(p - b[1])) -
+        Math.max(Math.abs(q - a[1]), Math.abs(q - b[1]))
+    )
+    const y = yOpts.find(
+      (cy) =>
+        !hits(lo, hi, cy, cy) &&
+        !hits(a[0] - LEG, a[0] + LEG, a[1], cy) &&
+        !hits(b[0] - LEG, b[0] + LEG, b[1], cy)
+    )
+    if (y === undefined) continue // boxed in - straight is all that's left
+    crossing.push({ id: e.id, y, a, b, skip })
+  }
+  // Lanes: cables that picked the same corridor share one line unless they
+  // are spread apart. Fan them out from the corridor centre, keeping any
+  // cable whose lane would land in a card on the original line.
+  const byCorridor = new Map<number, typeof crossing>()
+  for (const c of crossing) {
+    const k = Math.round(c.y / CORRIDOR_LANE)
+    ;(byCorridor.get(k) ?? byCorridor.set(k, []).get(k)!).push(c)
+  }
+  for (const group of byCorridor.values()) {
+    group.sort((p, q) => p.a[1] - q.a[1])
+    const centre = (group.length - 1) / 2
+    group.forEach((c, i) => {
+      const lane =
+        group.length > 1 ? c.y + (i - centre) * CORRIDOR_LANE : c.y
+      const ok =
+        !hitsExcept(
+          Math.min(c.a[0], c.b[0]),
+          Math.max(c.a[0], c.b[0]),
+          lane,
+          lane,
+          c.skip
+        ) &&
+        !hitsExcept(c.a[0] - LEG, c.a[0] + LEG, c.a[1], lane, c.skip) &&
+        !hitsExcept(c.b[0] - LEG, c.b[0] + LEG, c.b[1], lane, c.skip)
+      const yy = ok ? lane : c.y
+      out.set(c.id, [
+        [c.a[0], yy],
+        [c.b[0], yy],
+      ])
+    })
   }
   return out
 }

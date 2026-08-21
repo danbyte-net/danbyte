@@ -309,15 +309,56 @@ describe("hierarchy cable routing", () => {
     expect(x < 500 || x > 500 + 300).toBe(true)
   })
 
-  it("stays straight when aligned ports have no clear way around", () => {
-    // Same port height on both ends with a card dead between them: any
-    // detour would be a full-height loop that reads as a broken cable.
+  it("steps out to a corridor rather than drawing behind a card", () => {
+    // Aligned ports with a card dead between them: there is no street to
+    // cross in, so the cable leaves its level just far enough to clear the
+    // blocking card - it must never simply run behind it.
     const nodes = [card("a", 0, 0), card("mid", 500, 0), card("b", 1200, 0)]
     const pos = ports([
       ["a", { pa: { side: "R", off: 60 } }],
       ["b", { pb: { side: "L", off: 60 } }],
       ["mid", {}],
     ])
-    expect(hierarchyWaypoints(nodes, [cable("e", "a", "b")], pos).size).toBe(0)
+    const pts = hierarchyWaypoints(nodes, [cable("e", "a", "b")], pos).get("e")!
+    expect(pts).toBeTruthy()
+    // A horizontal corridor: both waypoints share a y clear of the card,
+    // which spans 0..hierHeight(200).
+    expect(pts[0][1]).toBe(pts[1][1])
+    const y = pts[0][1]
+    expect(y < 0 || y > 200).toBe(true)
+  })
+
+  it("gives cables crossing the same corridor their own lanes", () => {
+    // Three skip-rank cables past one card: sharing a corridor line would
+    // draw them as a single cable.
+    const nodes = [
+      card("a", 0, 0),
+      card("mid", 500, 0),
+      card("b1", 1200, 0),
+      card("b2", 1200, 400),
+      card("b3", 1200, 800),
+    ]
+    const pos = ports([
+      ["a", { p1: { side: "R", off: 60 }, p2: { side: "R", off: 90 }, p3: { side: "R", off: 120 } }],
+      ["b1", { pb: { side: "L", off: 60 } }],
+      ["b2", { pb: { side: "L", off: 60 } }],
+      ["b3", { pb: { side: "L", off: 60 } }],
+      ["mid", {}],
+    ])
+    const edges = ["b1", "b2", "b3"].map(
+      (t, i) =>
+        ({
+          id: `e${i}`,
+          source: "a",
+          target: t,
+          data: { sem: "cable", baseS: `p${i + 1}`, baseT: "pb" },
+        }) as Edge
+    )
+    const wp = hierarchyWaypoints(nodes, edges, pos)
+    const ys = edges
+      .map((e) => wp.get(e.id)?.[0][1])
+      .filter((y): y is number => y !== undefined)
+    expect(ys.length).toBeGreaterThan(1)
+    expect(new Set(ys).size).toBe(ys.length)
   })
 })
