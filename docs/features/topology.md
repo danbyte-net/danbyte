@@ -38,8 +38,16 @@ Three mechanisms keep a large fabric legible:
 
 - **Zoom declutter** - zoomed out, edge labels hide; further out, port text
   hides too, so the map reads as clean boxes and lines. Zoom in and the
-  detail returns; the hovered edge always keeps its label. On graphs over
+  detail returns; **hovering any line always shows its full name** - cable,
+  media, speed, and endpoints - at any zoom, in every view. On graphs over
   ~80 devices a dismissible hint offers the Flat view.
+- **Per-cable lanes** - the gap between two tiers sizes itself to the number
+  of cables crossing it, and each cable rides its own lane, ordered to
+  minimize crossings - no more overlapping combs.
+- **Dense cards** - past ~24 cabled ports a card stops listing port rows and
+  renders compact anchor ticks (bounded size, a cabled-port count in the
+  middle); each cable keeps its own attachment point, and the port names
+  are on the cable's hover label and its panel.
 - **Group by site / location** (Display popover) - the graph aggregates to
   **one card per site** (or location): device count, role breakdown, and
   one edge per group pair labelled with its cable count (click it for the
@@ -208,9 +216,11 @@ into the tier order you want (top of the list = first level). Nodes then stack
 strictly by role: firewalls, then distribution, then access, then servers, so
 the map reads as a hierarchy instead of following raw cable structure. Roles
 left off, and devices with no role, fall to the last tier. **Clear** returns to
-the structural layout. Each tier (except the first) has a **distance** control - five dots setting the
-gap above it - so busy tiers with lots of cables get more room and the cable
-labels between levels stay readable. Tiers are centred on a common axis, so
+the structural layout. Each tier (except the first) has a **distance** control - five dots adding
+room above it. The gap's **minimum is computed, not chosen**: every cable
+crossing a gap gets its own 14px lane, so a tier fed by eighty cables opens
+up automatically and the dots only ever add space on top - a distance
+setting can no longer be "too small" for the cabling. Tiers are centred on a common axis, so
 levels even out from the middle into a symmetric tree. The tier order and
 distances are saved with the view.
 
