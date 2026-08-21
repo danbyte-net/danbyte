@@ -22,7 +22,13 @@ export interface LevelsState {
 
 export const EMPTY_LEVELS: LevelsState = { order: [], bonds: [], distance: {} }
 
+/** "No tiers" needs a spelling of its own: when a saved view HAS tiers, the
+ * link that turns them off has to say so - an absent param would just inherit
+ * the view's tiers again. */
+export const NO_LEVELS = "none"
+
 export function formatLevels(s: LevelsState): string {
+  if (!s.order.length) return NO_LEVELS
   return s.order
     .map((name) => {
       const d = s.distance[name] ?? 0
@@ -37,6 +43,7 @@ export function formatLevels(s: LevelsState): string {
 
 export function parseLevels(raw: string): LevelsState | undefined {
   if (!raw) return undefined
+  if (raw === NO_LEVELS) return EMPTY_LEVELS
   const order: string[] = []
   const bonds: string[] = []
   const distance: Record<string, number> = {}

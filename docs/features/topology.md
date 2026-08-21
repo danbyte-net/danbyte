@@ -252,6 +252,49 @@ the views select; **Save** updates it in place after you rearrange;
 left-to-right layout. Views are plain API objects
 (`/api/topology-views/`), change-logged like everything else.
 
+A view is addressable: `?view=<id>` opens it. Change anything afterwards and
+the toolbar says **edited** - what you're looking at is no longer what the
+view describes. **Save** writes it back and the address collapses to the plain
+`?view=<id>` again.
+
+## Linking and sharing
+
+The map is its address. Every control writes to the URL, so **Link** in the
+toolbar copies exactly what you're looking at - and a browser bookmark, the
+back button and a reload all keep it.
+
+| Parameter | Values |
+|---|---|
+| `tab` | `wiring` (default), `hierarchy`, `flat`, `logical` |
+| `view` | a saved view's id |
+| `site` `location` `role` `status` | an id, or `all` |
+| `tag` | a tag slug, or `all` |
+| `panels` | `1` shows patch panels |
+| `group` | `site`, `location`, `none` |
+| `dir` | `lr` (default), `tb` |
+| `color` | `cable` (default), `type`, `status`, `speed`, `none` |
+| `cables` | `routed` (default), `straight` |
+| `levels` | the tier order - see below |
+| `device` `depth` | focus on one device, 1-6 hops |
+| `devices` | a comma-separated device set (the custom map) |
+| `q` | the search box |
+| `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
+
+A setting on its default is left out, so a plain map stays `/topology`. A value
+the page doesn't recognise reads as that default rather than breaking the page.
+Grouping by site while scoped to one site *is* that site's device view, so
+`?group=site&site=<id>` is the drill-in - the same link the breadcrumb gives
+you.
+
+**Levels** ride in one parameter: the roles in tier order, `+` for a role
+bonded to the level above it and `:n` for extra distance, e.g.
+`levels=Firewall|Core%20switch+|Distribution:2|Access`. `levels=none` turns a
+saved view's tiers off.
+
+Node positions are **not** in the URL - a hand-dragged arrangement lives in the
+saved view (or your browser). A link reproduces the map's settings and lets the
+layout run.
+
 ## Export
 
 **PNG** renders the entire graph (not just the visible viewport) to an image

@@ -5,6 +5,7 @@ import {
   Crosshair,
   Filter,
   LayoutGrid,
+  Link2 as LinkIcon,
   Plus,
   Save,
   SlidersHorizontal,
@@ -68,6 +69,21 @@ import type {
 } from "@/components/topology/group-node"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { copyText } from "@/lib/clipboard"
+import {
+  useUrlCsv,
+  useUrlEnum,
+  useUrlFlag,
+  useUrlInt,
+  useUrlPatch,
+  useUrlText,
+} from "@/lib/use-url-state"
+import {
+  EMPTY_LEVELS,
+  formatLevels,
+  parseLevels,
+  type LevelsState,
+} from "@/components/topology/levels-param"
 
 const TopologyCanvas = lazy(() =>
   import("@/components/topology/topology-canvas").then((m) => ({
@@ -75,11 +91,99 @@ const TopologyCanvas = lazy(() =>
   }))
 )
 
+/**
+ * The map's whole configuration lives in the URL, so a topology is a link:
+ * `?tab=hierarchy&site=<id>&color=speed` opens exactly that picture, survives
+ * a reload, moves with back/forward, and is what a bookmark captures. A value
+ * on its default is written as no param at all, so a plain map stays
+ * `/topology`. Anything unrecognised reads back as the default rather than
+ * breaking the page - see `docs/features/topology.md` for the full table.
+ */
+export interface TopologySearch {
+  /** The view tab - public names, not the internal node style. */
+  tab?: TabStyle
+  /** Applied saved view (`/api/topology-views/`). Any other param present
+   * alongside it is an override of that view - the toolbar says "edited". */
+  view?: string
+  site?: string
+  location?: string
+  role?: string
+  status?: string
+  tag?: string
+  /** Show patch panels, i.e. don't collapse them away. */
+  panels?: boolean
+  group?: "site" | "location"
+  dir?: "lr" | "tb"
+  color?: EdgeColorMode
+  cables?: "routed" | "straight"
+  /** Levels organiser, encoded by `levels-param.ts`. */
+  levels?: string
+  /** Focused device + how many hops around it. */
+  device?: string
+  depth?: number
+  /** Custom-map builder's device set. Present but empty = an empty map. */
+  devices?: string
+  /** Search box. */
+  q?: string
+  /** Logical tab. */
+  vlangroup?: string
+  vms?: boolean
+}
+
+const str = (v: unknown): string | undefined =>
+  typeof v === "string" && v ? v : undefined
+const oneOf = <T extends string>(v: unknown, valid: readonly T[]) =>
+  typeof v === "string" && valid.includes(v as T) ? (v as T) : undefined
+const flag = (v: unknown): boolean | undefined =>
+  v === "1" || v === "true" || v === true
+    ? true
+    : v === "0" || v === "false" || v === false
+      ? false
+      : undefined
+
 export const Route = createFileRoute("/topology/")({
   component: TopologyPage,
-  validateSearch: (s: Record<string, unknown>): { device?: string } =>
-    typeof s.device === "string" ? { device: s.device } : {},
+  validateSearch: (s: Record<string, unknown>): TopologySearch => {
+    const out: TopologySearch = {}
+    const tab = oneOf(s.tab, TAB_STYLES)
+    if (tab) out.tab = tab
+    const view = str(s.view)
+    if (view) out.view = view
+    for (const k of ["site", "location", "role", "status", "tag", "q",
+      "vlangroup", "device", "levels"] as const) {
+      const v = str(s[k])
+      if (v) out[k] = v
+    }
+    const panels = flag(s.panels)
+    if (panels !== undefined) out.panels = panels
+    const vms = flag(s.vms)
+    if (vms !== undefined) out.vms = vms
+    const group = oneOf(s.group, ["site", "location"] as const)
+    if (group) out.group = group
+    const dir = oneOf(s.dir, ["lr", "tb"] as const)
+    if (dir) out.dir = dir
+    const color = oneOf(s.color, COLOR_MODES)
+    if (color) out.color = color
+    const cables = oneOf(s.cables, ["routed", "straight"] as const)
+    if (cables) out.cables = cables
+    const depth = Number(s.depth)
+    if (Number.isFinite(depth) && depth > 0)
+      out.depth = Math.min(6, Math.round(depth))
+    // "" is meaningful here (an empty builder map), so this one keeps a
+    // present-but-empty string instead of dropping it.
+    if (typeof s.devices === "string") out.devices = s.devices
+    return out
+  },
 })
+
+/** Params that describe the map itself - everything except the saved-view id.
+ * Applying a view clears them all, so any one of them present afterwards means
+ * the user has edited the view. */
+const OVERRIDE_KEYS = [
+  "tab", "site", "location", "role", "status", "tag", "panels", "group",
+  "dir", "color", "cables", "levels", "device", "depth", "devices", "q",
+  "vlangroup", "vms",
+] as const
 
 const Skeleton = () => (
   <div className="h-full w-full animate-pulse bg-muted/30" />
@@ -91,14 +195,6 @@ type Filters = {
   status: string
   tag: string
   collapse: boolean
-}
-
-const NO_FILTERS: Filters = {
-  site: "all",
-  role: "all",
-  status: "all",
-  tag: "all",
-  collapse: true,
 }
 
 /** Searchable filter select ("all" ↔ the combobox's null/none row) - the
@@ -195,6 +291,34 @@ const VIEW_STYLES: ViewStyle[] = ["stencil", "hierarchy", "flat", "logical"]
 function sanitizeViewStyle(v: unknown): ViewStyle {
   return VIEW_STYLES.includes(v as ViewStyle) ? (v as ViewStyle) : "stencil"
 }
+/** The URL says what the tab strip says. "stencil" is an internal name for
+ * the renderer; the tab - and the link - call it Wiring. */
+type TabStyle = "wiring" | "hierarchy" | "flat" | "logical"
+const TAB_STYLES = ["wiring", "hierarchy", "flat", "logical"] as const
+const COLOR_MODES = ["cable", "type", "status", "speed", "none"] as const
+const DIRS = ["lr", "tb"] as const
+const ROUTINGS = ["routed", "straight"] as const
+const GROUPS = ["none", "site", "location"] as const
+const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
+const tabOfStyle = (v: ViewStyle): TabStyle => (v === "stencil" ? "wiring" : v)
+
+/** What a saved view stores in `state.filters` - the map's settings under the
+ * page's own names. Unchanged by the URL work: a view saved before it still
+ * applies, and still supplies the fallback for anything the URL omits. */
+type ViewFilters = Partial<
+  Filters & {
+    location: string
+    colorMode: EdgeColorMode
+    direction: "LR" | "TB"
+    roleOrder: string[]
+    roleBonds: string[]
+    roleDistance: Record<string, number>
+    edgeRouting: "routed" | "straight"
+    viewStyle: ViewStyle
+    groupBy: GroupBy
+    devices: string[]
+  }
+>
 function readStoredDisplay(): StoredDisplay {
   try {
     const raw = localStorage.getItem(DISPLAY_KEY)
@@ -212,52 +336,116 @@ function writeStoredDisplay(d: StoredDisplay) {
 }
 
 function TopologyPage() {
-  const { device: deepLinkDevice } = Route.useSearch()
+  const search6 = Route.useSearch()
   const nav = useNavigate()
+  const patch = useUrlPatch()
   const { canDo } = useMe()
   const qc = useQueryClient()
   const canvas = useRef<CanvasHandle>(null)
 
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
-  // Hydrate display settings from the stored default-view display, so Levels /
-  // direction / colours survive a reload (saved views carry their own).
+  // Saved views are fetched first: an applied one supplies the fallback for
+  // every control the URL doesn't override.
+  const views = useQuery({
+    queryKey: ["topology-views"],
+    queryFn: () => api<Paginated<TopologyViewSaved>>("/api/topology-views/"),
+  })
+  const viewId = search6.view ?? "none"
+  const appliedView = views.data?.results.find((v) => v.id === viewId)
+  const vf = (appliedView?.state.filters ?? {}) as ViewFilters
+  // Personal defaults from the last unsaved session (this read is unchanged
+  // from before the URL work - same hydration behaviour).
   const stored = useRef(readStoredDisplay()).current
-  const [colorMode, setColorMode] = useState<EdgeColorMode>(
-    stored.colorMode ?? "cable"
+
+  // Value resolution for every control below:
+  //   URL param → applied saved view → stored personal default → hard default.
+  // The hooks take the fallback as a plain value, so the chain is just this
+  // object. "all" / "none" are spelled out rather than left absent, because a
+  // link that turns a saved view's filter OFF has to say so - an absent param
+  // would inherit the view's value again.
+  const dflt = {
+    tab: tabOfStyle(sanitizeViewStyle(vf.viewStyle ?? stored.viewStyle)),
+    color: vf.colorMode ?? stored.colorMode ?? "cable",
+    dir: (vf.direction ?? stored.direction ?? "LR") === "TB" ? "tb" : "lr",
+    cables: vf.edgeRouting ?? stored.edgeRouting ?? "routed",
+    group: vf.groupBy ?? stored.groupBy ?? "none",
+    panels: vf.collapse === undefined ? false : !vf.collapse,
+    site: vf.site ?? "all",
+    location: vf.location ?? "all",
+    role: vf.role ?? "all",
+    status: vf.status ?? "all",
+    tag: vf.tag ?? "all",
+    levels: formatLevels({
+      order: vf.roleOrder ?? stored.roleOrder ?? [],
+      bonds: vf.roleBonds ?? stored.roleBonds ?? [],
+      distance: vf.roleDistance ?? stored.roleDistance ?? {},
+    }),
+    devices: vf.devices ?? null,
+  } as const
+
+  const [tab, setTab] = useUrlEnum<TabStyle>("tab", dflt.tab, TAB_STYLES)
+  const viewStyle = styleOfTab(tab)
+  const setViewStyle = (v: ViewStyle) => setTab(tabOfStyle(v))
+  const [colorMode, setColorMode] = useUrlEnum<EdgeColorMode>(
+    "color",
+    dflt.color,
+    COLOR_MODES
   )
-  const [direction, setDirection] = useState<"LR" | "TB">(
-    stored.direction ?? "LR"
-  )
-  const [roleOrder, setRoleOrder] = useState<string[]>(stored.roleOrder ?? [])
-  // Roles bonded to the level of the role above them - lets several roles share
-  // one level (core switches beside routers, say).
-  const [roleBonds, setRoleBonds] = useState<string[]>(stored.roleBonds ?? [])
-  const [roleDistance, setRoleDistance] = useState<Record<string, number>>(
-    stored.roleDistance ?? {}
-  )
+  const [dirParam, setDirParam] = useUrlEnum("dir", dflt.dir, DIRS)
+  const direction: "LR" | "TB" = dirParam === "tb" ? "TB" : "LR"
+  const setDirection = (d: "LR" | "TB") => setDirParam(d === "TB" ? "tb" : "lr")
   // Edge rendering: "routed" bends cables around cards; "straight" is the plain
   // orthogonal (smoothstep) line. A user choice, not tied to layout mode.
-  const [edgeRouting, setEdgeRouting] = useState<"routed" | "straight">(
-    stored.edgeRouting ?? "routed"
-  )
-  // Wiring (stencil cards, port-to-port) or Flat (compact chips, bundled
-  // edges) - the big-graph escape hatch. The Logical view is its own tab.
-  const [viewStyle, setViewStyle] = useState<ViewStyle>(
-    sanitizeViewStyle(stored.viewStyle)
+  const [edgeRouting, setEdgeRouting] = useUrlEnum(
+    "cables",
+    dflt.cables,
+    ROUTINGS
   )
   const logical = viewStyle === "logical"
   // Aggregate the graph to one card per site/location; double-click a card
   // (or its panel's button) drills into that group's device view.
-  const [groupBy, setGroupBy] = useState<GroupBy>(stored.groupBy ?? "none")
-  const [drill, setDrill] = useState<{
-    kind: "site" | "location"
-    id: string
-    name: string
-  } | null>(null)
-  const grouped = groupBy !== "none" && !drill
+  const [groupBy] = useUrlEnum<GroupBy>("group", dflt.group, GROUPS)
+  // Levels (role tiers) travel as one compact param.
+  const [levelsParam, setLevelsParam] = useUrlText("levels", dflt.levels)
+  const levels = parseLevels(levelsParam) ?? EMPTY_LEVELS
+  const roleOrder = levels.order
+  // Roles bonded to the level of the role above them - lets several roles share
+  // one level (core switches beside routers, say).
+  const roleBonds = levels.bonds
+  const roleDistance = levels.distance
+  const setLevels = (next: Partial<LevelsState>) =>
+    setLevelsParam(formatLevels({ ...levels, ...next }))
+  const setRoleOrder = (order: string[]) => setLevels({ order })
+  const setRoleBonds = (bonds: string[]) => setLevels({ bonds })
+  const setRoleDistance = (distance: Record<string, number>) =>
+    setLevels({ distance })
+
+  const [siteF] = useUrlText("site", dflt.site)
+  const [locationF] = useUrlText("location", dflt.location)
+  const [roleF] = useUrlText("role", dflt.role)
+  const [statusF] = useUrlText("status", dflt.status)
+  const [tagF] = useUrlText("tag", dflt.tag)
+  // The UI (and the URL) talk about SHOWING panels; the API collapses them.
+  const [panels] = useUrlFlag("panels", dflt.panels)
+  const filters: Filters = {
+    site: siteF,
+    role: roleF,
+    status: statusF,
+    tag: tagF,
+    collapse: !panels,
+  }
+
+  // Drilled into one group = grouping is on AND that group's own id is set
+  // (`?group=site&site=<id>`). No third piece of state, and no separate
+  // spelling to learn: grouping by site while scoped to one site IS that
+  // site's device view. The name for the breadcrumb comes from the picker
+  // lists further down.
+  const drillId =
+    groupBy === "site" ? siteF : groupBy === "location" ? locationF : "all"
+  const drilled = groupBy !== "none" && drillId !== "all"
+  const grouped = groupBy !== "none" && !drilled
   // Custom-map builder: a hand-picked device set (right-click to grow it,
   // the + button to seed it). null = normal mode.
-  const [custom, setCustom] = useState<string[] | null>(null)
+  const [custom, setCustom] = useUrlCsv("devices", dflt.devices)
   const builder = custom !== null
   const [menu, setMenu] = useState<{
     x: number
@@ -266,11 +454,15 @@ function TopologyPage() {
     group?: TopoGroupData
   } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
-  const [search, setSearch] = useState("")
-  const [focus, setFocus] = useState<{ id: string; depth: number } | null>(
-    deepLinkDevice ? { id: deepLinkDevice, depth: 1 } : null
-  )
-  const [viewId, setViewId] = useState<string>("none")
+  const [search, setSearch] = useUrlText("q", "", { replace: true })
+  const [focusId] = useUrlText("device")
+  const [focusDepth, setFocusDepth] = useUrlInt("depth", 1, { min: 1, max: 6 })
+  const focus = focusId ? { id: focusId, depth: focusDepth } : null
+  const setFocus = (f: { id: string; depth: number } | null) =>
+    patch({
+      device: f ? f.id : undefined,
+      depth: f && f.depth !== 1 ? String(f.depth) : undefined,
+    })
   const [positions, setPositions] = useState<
     Record<string, [number, number]> | undefined
   >(readStoredPositions)
@@ -296,9 +488,18 @@ function TopologyPage() {
     setSelEdgeId(null)
   }
 
+  /** Drilling in scopes the map to that one group - which the URL already has
+   * a spelling for, so this is a filter change, not a mode. */
   const drillInto = (d: TopoGroupData) => {
     if (!d.group_id) return
-    setDrill({ kind: d.kind, id: d.group_id, name: d.name })
+    patch({ [d.kind]: d.group_id })
+    clearSel()
+    setPositions(undefined)
+    setLayoutTick((t) => t + 1)
+  }
+
+  const leaveDrill = () => {
+    patch({ [groupBy === "location" ? "location" : "site"]: "all" })
     clearSel()
     setPositions(undefined)
     setLayoutTick((t) => t + 1)
@@ -306,7 +507,16 @@ function TopologyPage() {
 
   /** Builder: merge ids into the custom set (starting it if needed). */
   const addToCustom = (ids: string[]) =>
-    setCustom((prev) => [...new Set([...(prev ?? []), ...ids])])
+    setCustom([...new Set([...(custom ?? []), ...ids])])
+
+  /** Leaving the builder. A saved view whose whole point IS its device set
+   * can't survive losing it, so that view is left behind too. */
+  const exitBuilder = () => {
+    patch({ devices: undefined, ...(vf.devices ? { view: undefined } : {}) })
+    clearSel()
+    setPositions(undefined)
+    setLayoutTick((t) => t + 1)
+  }
 
   /** Builder: pull one device's 1-hop neighbourhood into the set. */
   const addNeighbors = async (deviceId: string) => {
@@ -324,12 +534,36 @@ function TopologyPage() {
     }
   }
 
-  const set = (patch: Partial<Filters>) => {
-    setFilters((f) => ({ ...f, ...patch }))
-    setViewId("none")
+  /** A filter change writes its params in ONE navigation (separate setters in
+   * the same tick would overwrite each other) and drops hand-tuned positions,
+   * since the map is about to hold different devices. An applied saved view
+   * stays applied - the change rides on top of it as an override, which is
+   * what the toolbar's "edited" reports. */
+  const set = (next: Partial<Filters>) => {
+    // A value that already matches this map's default is written as no param,
+    // the same rule the single-value hooks follow - so a filter set back to
+    // "all" leaves a clean URL, while turning a saved view's filter off says
+    // `site=all` explicitly.
+    const w = (v: string, d: string) => (v === d ? undefined : v)
+    patch({
+      ...(next.site !== undefined ? { site: w(next.site, dflt.site) } : {}),
+      ...(next.role !== undefined ? { role: w(next.role, dflt.role) } : {}),
+      ...(next.status !== undefined
+        ? { status: w(next.status, dflt.status) }
+        : {}),
+      ...(next.tag !== undefined ? { tag: w(next.tag, dflt.tag) } : {}),
+      ...(next.collapse !== undefined
+        ? {
+            panels:
+              !next.collapse === dflt.panels
+                ? undefined
+                : next.collapse
+                  ? "0"
+                  : "1",
+          }
+        : {}),
+    })
     setPositions(undefined)
-    setDrill(null)
-    setCustom(null)
   }
 
   // Persist the DEFAULT view's display settings across reloads. Only while no
@@ -384,10 +618,28 @@ function TopologyPage() {
     queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
-  const views = useQuery({
-    queryKey: ["topology-views"],
-    queryFn: () => api<Paginated<TopologyViewSaved>>("/api/topology-views/"),
+  // Locations back the group-by-location breadcrumb: a `?group=location&
+  // location=<id>` link arrives with no name for the group it drilled into.
+  const locations = useQuery({
+    queryKey: ["locations-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/locations/?picker=1"),
+    staleTime: 10 * 60_000,
+    enabled: groupBy === "location",
   })
+  // The group we drilled into, named for the breadcrumb from the picker lists
+  // (a URL can land here cold, so the name is looked up, not remembered).
+  const drill = useMemo(() => {
+    if (!drilled) return null
+    const kind = groupBy === "location" ? "location" : "site"
+    const from =
+      kind === "site" ? sites.data?.results : locations.data?.results
+    return {
+      kind: kind as "site" | "location",
+      id: drillId,
+      name: from?.find((x) => x.id === drillId)?.name ?? "…",
+    }
+  }, [drilled, groupBy, drillId, sites.data, locations.data])
 
   // ── Graph ──
   const graphQs = useMemo(() => {
@@ -407,8 +659,9 @@ function TopologyPage() {
       if (filters.status !== "all") p.set("status", filters.status)
       if (filters.tag !== "all") p.set("tag", filters.tag)
       if (grouped) p.set("group_by", groupBy)
-      // Drilled into a group: the device view scoped to that one group.
-      if (drill) p.set(drill.kind, drill.id)
+      // Drilled into a group: the device view scoped to that one group. Its
+      // id is already on the matching filter param, so nothing extra here.
+      if (drill && drill.kind === "location") p.set("location", drill.id)
     }
     p.set("collapse_panels", filters.collapse ? "1" : "0")
     return p.toString()
@@ -466,39 +719,17 @@ function TopologyPage() {
   }, [search, graph])
 
   // ── Saved views ──
+  /** Applying a view is one navigation to `?view=<id>`, clearing every other
+   * param: the view's own settings then supply the fallbacks, so the link
+   * stays short and keeps showing the view as it is saved today. Anything the
+   * user changes afterwards lands back on the URL as an override, which is
+   * what `edited` below reports. */
   const applyView = (v: TopologyViewSaved) => {
-    setViewId(v.id)
-    const f = (v.state.filters ?? {}) as Partial<
-      Filters & {
-        colorMode: EdgeColorMode
-        direction: "LR" | "TB"
-        roleOrder: string[]
-        roleBonds: string[]
-        roleDistance: Record<string, number>
-        edgeRouting: "routed" | "straight"
-        viewStyle: ViewStyle
-        groupBy: GroupBy
-        devices: string[]
-      }
-    >
-    setFilters({
-      site: f.site ?? "all",
-      role: f.role ?? "all",
-      status: f.status ?? "all",
-      tag: f.tag ?? "all",
-      collapse: f.collapse ?? true,
+    patch({
+      view: v.id,
+      ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
     })
-    if (f.colorMode) setColorMode(f.colorMode)
-    if (f.direction) setDirection(f.direction)
-    if (f.edgeRouting) setEdgeRouting(f.edgeRouting)
-    setViewStyle(sanitizeViewStyle(f.viewStyle))
-    setGroupBy(f.groupBy ?? "none")
-    setDrill(null)
-    setCustom(f.devices ?? null)
-    setRoleOrder(f.roleOrder ?? [])
-    setRoleBonds(f.roleBonds ?? [])
-    setRoleDistance(f.roleDistance ?? {})
-    setFocus(null)
+    const f = (v.state.filters ?? {}) as ViewFilters
     // A tiered view (Levels) is defined by its role order + distances, so
     // regenerate it instead of re-pinning saved coordinates - otherwise the
     // pinned positions would suppress the tiers, distance dots, and routing.
@@ -512,6 +743,24 @@ function TopologyPage() {
       setLayoutTick(0)
     }
   }
+
+  /** Back to the personal default map: no view, no overrides. */
+  const clearView = () => {
+    patch({
+      view: undefined,
+      ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
+    })
+    setPositions(readStoredPositions())
+    setLayoutTick((t) => t + 1)
+  }
+
+  /** The applied view has been changed since it was applied - the URL carries
+   * at least one override on top of `?view=`. */
+  const edited =
+    viewId !== "none" &&
+    OVERRIDE_KEYS.some(
+      (k) => (search6 as Record<string, unknown>)[k] !== undefined
+    )
 
   const currentState = () => ({
     filters: {
@@ -543,7 +792,12 @@ function TopologyPage() {
     },
     onSuccess: (v) => {
       qc.invalidateQueries({ queryKey: ["topology-views"] })
-      setViewId(v.id)
+      // The saved view now describes the map, so the overrides that produced
+      // it are no longer overrides - the URL collapses back to just the id.
+      patch({
+        view: v.id,
+        ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
+      })
       setSaveAsOpen(false)
       toast.success(`Saved “${v.name}”`)
     },
@@ -554,12 +808,19 @@ function TopologyPage() {
       api<void>(`/api/topology-views/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["topology-views"] })
-      setViewId("none")
+      clearView()
       setPositions(undefined)
       toast.success("View deleted")
     },
     onError: (err) => apiErrorToast(err),
   })
+
+  /** This map, as a link someone else can open. */
+  const copyLink = async () => {
+    const ok = await copyText(window.location.href)
+    if (ok) toast.success("Link copied")
+    else toast.error("Couldn't copy - clipboard blocked by the browser")
+  }
 
   const exportPng = async () => {
     const url = await canvas.current?.exportPng()
@@ -617,12 +878,7 @@ function TopologyPage() {
             {drill.name}
             <button
               className="ml-0.5 opacity-80 hover:opacity-100"
-              onClick={() => {
-                setDrill(null)
-                clearSel()
-                setPositions(undefined)
-                setLayoutTick((t) => t + 1)
-              }}
+              onClick={leaveDrill}
               aria-label="Back to groups"
             >
               <X className="h-3 w-3" />
@@ -634,12 +890,7 @@ function TopologyPage() {
             Custom map · <span className="num">{custom?.length ?? 0}</span>
             <button
               className="ml-0.5 opacity-80 hover:opacity-100"
-              onClick={() => {
-                setCustom(null)
-                clearSel()
-                setPositions(undefined)
-                setLayoutTick((t) => t + 1)
-              }}
+              onClick={exitBuilder}
               aria-label="Exit custom map"
             >
               <X className="h-3 w-3" />
@@ -692,9 +943,7 @@ function TopologyPage() {
           {builder ? null : focus ? (
             <Select
               value={String(focus.depth)}
-              onValueChange={(v) =>
-                setFocus((f) => f && { ...f, depth: Number(v) })
-              }
+              onValueChange={(v) => setFocusDepth(Number(v))}
             >
               <SelectTrigger className="h-8 w-24 text-xs">
                 <SelectValue />
@@ -796,7 +1045,7 @@ function TopologyPage() {
             }}
             distance={roleDistance}
             onDistance={(role, step) => {
-              setRoleDistance((d) => ({ ...d, [role]: step }))
+              setRoleDistance({ ...roleDistance, [role]: step })
               setPositions(undefined)
               clearStoredPositions()
               setLayoutTick((t) => t + 1)
@@ -837,9 +1086,14 @@ function TopologyPage() {
                 <SegmentedTabs<GroupBy>
                   value={groupBy}
                   onValueChange={(v) => {
-                    setGroupBy(v)
-                    setFocus(null)
-                    setDrill(null)
+                    // Grouping starts from the whole estate: clear the focus
+                    // and any group we had drilled into, in one navigation.
+                    patch({
+                      group: v === dflt.group ? undefined : v,
+                      device: undefined,
+                      depth: undefined,
+                      ...(v !== "none" ? { site: "all", location: "all" } : {}),
+                    })
                     clearSel()
                     setPositions(undefined)
                     setLayoutTick((t) => t + 1)
@@ -901,24 +1155,11 @@ function TopologyPage() {
         <Select
           value={viewId}
           onValueChange={(v) => {
+            // Back to the default map: dropping the view (and its overrides)
+            // is enough - the settings fall back to the stored personal
+            // defaults on their own.
             if (v === "none") {
-              // Back to the default view - restore its stored drag arrangement
-              // AND display settings BEFORE flipping viewId, so the persist
-              // effect re-saves the restored values, not the saved view's.
-              const d = readStoredDisplay()
-              setColorMode(d.colorMode ?? "cable")
-              setDirection(d.direction ?? "LR")
-              setRoleOrder(d.roleOrder ?? [])
-              setRoleBonds(d.roleBonds ?? [])
-              setRoleDistance(d.roleDistance ?? {})
-              setEdgeRouting(d.edgeRouting ?? "routed")
-              setViewStyle(sanitizeViewStyle(d.viewStyle))
-              setGroupBy(d.groupBy ?? "none")
-              setDrill(null)
-              setCustom(null)
-              setViewId("none")
-              setPositions(readStoredPositions())
-              if (d.roleOrder?.length) setLayoutTick((t) => t + 1)
+              clearView()
               return
             }
             const view = views.data?.results.find((x) => x.id === v)
@@ -937,6 +1178,11 @@ function TopologyPage() {
             ))}
           </SelectContent>
         </Select>
+        {edited && (
+          <Badge variant="secondary" className="shrink-0">
+            edited
+          </Badge>
+        )}
         {canWriteViews && (
           <>
             {viewId !== "none" && (
@@ -992,6 +1238,15 @@ function TopologyPage() {
             title="Discard dragged positions, re-run the auto layout"
           >
             <LayoutGrid className="h-3 w-3" /> Re-layout
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={copyLink}
+            title="Copy a link to this map - views, filters and display settings included"
+          >
+            <LinkIcon className="h-3 w-3" /> Link
           </Button>
           <Button
             variant="outline"
@@ -1209,8 +1464,11 @@ function TopologyPage() {
                   <MenuItem
                     onClick={() => {
                       setMenu(null)
-                      setCustom(null)
-                      setFocus({ id: menu.node!.device_id!, depth: 1 })
+                      patch({
+                        devices: undefined,
+                        device: menu.node!.device_id!,
+                        depth: undefined,
+                      })
                     }}
                   >
                     Focus here (1 hop)
@@ -1231,9 +1489,8 @@ function TopologyPage() {
                     onClick={() => {
                       setMenu(null)
                       setCustom(
-                        (prev) =>
-                          prev?.filter((x) => x !== menu.node!.device_id) ??
-                          prev
+                        custom?.filter((x) => x !== menu.node!.device_id) ??
+                          custom
                       )
                     }}
                   >
@@ -1244,8 +1501,13 @@ function TopologyPage() {
                   <MenuItem
                     onClick={() => {
                       setMenu(null)
-                      setFocus(null)
-                      setCustom([menu.node!.device_id!])
+                      // One navigation: leaving focus and seeding the builder
+                      // are the same transition.
+                      patch({
+                        device: undefined,
+                        depth: undefined,
+                        devices: menu.node!.device_id!,
+                      })
                     }}
                   >
                     Start custom map here
@@ -1277,7 +1539,7 @@ function TopologyPage() {
                   <MenuItem
                     onClick={() => {
                       setMenu(null)
-                      setCustom(null)
+                      exitBuilder()
                     }}
                   >
                     Exit custom map

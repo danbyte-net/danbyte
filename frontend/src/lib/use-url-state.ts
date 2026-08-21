@@ -64,6 +64,32 @@ function useUrlParam<T>(spec: ParamSpec<T>): [T, (value: T) => void] {
   return [value, set]
 }
 
+/**
+ * Write several params in one navigation.
+ *
+ * Calling two setters in the same tick does NOT work: each builds its update
+ * from the URL as it is *now*, so the second silently discards the first.
+ * Compound transitions - applying a saved view, changing a filter that also
+ * has to clear something else - must go through one call.
+ *
+ *   patch({ site: "x", view: undefined, devices: undefined })
+ *
+ * `undefined` removes a param, exactly as in the single-value hooks.
+ */
+export function useUrlPatch(): (
+  values: Record<string, string | undefined>,
+  opts?: { replace?: boolean }
+) => void {
+  const navigate = useNavigate()
+  return (values, opts) => {
+    void navigate({
+      to: ".",
+      replace: opts?.replace ?? false,
+      search: (prev: Record<string, unknown>) => ({ ...prev, ...values }),
+    })
+  }
+}
+
 /** One of a fixed set of strings (`?color=speed`). */
 export function useUrlEnum<T extends string>(
   key: string,
@@ -147,11 +173,13 @@ export function useUrlCsv(
   key: string,
   fallback: string[] | null = null
 ): [string[] | null, (value: string[] | null) => void] {
+  const same = (a: string[] | null, b: string[] | null) =>
+    a === null || b === null ? a === b : a.join(",") === b.join(",")
   return useUrlParam<string[] | null>({
     key,
     parse: (raw) => (raw ? raw.split(",").filter(Boolean) : []),
     format: (v) => (v === null ? undefined : v.join(",")),
     fallback,
-    isDefault: (v) => v === null,
+    isDefault: (v) => same(v, fallback),
   })
 }

@@ -36,6 +36,11 @@ describe("levels URL param", () => {
     expect(parseLevels("|||")).toBeUndefined()
   })
 
+  it("spells 'no tiers' explicitly, so a link can turn a view's tiers off", () => {
+    expect(formatLevels(EMPTY_LEVELS)).toBe("none")
+    expect(parseLevels("none")).toEqual(EMPTY_LEVELS)
+  })
+
   it("drops duplicates - a role sits on exactly one tier", () => {
     expect(parseLevels("Core|Core|Access")?.order).toEqual(["Core", "Access"])
   })
