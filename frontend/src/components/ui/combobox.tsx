@@ -100,7 +100,9 @@ export function Combobox({
             className
           )}
         >
-          <span className="truncate">
+          {/* min-w-0: a flex child's min-width defaults to its content, so
+              truncate alone never engages and a long label spills out. */}
+          <span className="min-w-0 truncate">
             {selected ? selected.label : placeholder}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
