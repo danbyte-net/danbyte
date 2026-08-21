@@ -1268,7 +1268,7 @@ function PanelShell({
   children: React.ReactNode
 }) {
   return (
-    <div className="absolute top-3 right-3 z-10 w-72 rounded-lg border border-border bg-card shadow-sm">
+    <div className="absolute top-3 right-3 z-10 w-80 rounded-lg border border-border bg-card shadow-sm">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1 truncate text-sm font-semibold">
           {title}
@@ -1404,6 +1404,11 @@ function EdgePanel({
             </span>
           </Row>
         )}
+        {d.speed && (
+          <Row label="Speed">
+            <span className="font-mono">{d.speed}</span>
+          </Row>
+        )}
         {!!d.via?.length && <Row label="Via">{d.via.join(", ")}</Row>}
       </div>
       {!!d.pairs?.length && (
@@ -1412,8 +1417,13 @@ function EdgePanel({
             Connections
           </div>
           {d.pairs.map((p, i) => (
-            <div key={i} className="truncate py-0.5 font-mono text-[11px]">
-              {p.a} ↔ {p.b}
+            // Full endpoint names, never clipped - wrap instead of truncate.
+            <div
+              key={i}
+              className="py-0.5 font-mono text-[11px] leading-snug break-all"
+            >
+              <div>{p.a}</div>
+              <div className="text-muted-foreground">↔ {p.b}</div>
             </div>
           ))}
         </div>
@@ -1611,16 +1621,24 @@ function BundlePanel({
                 {c.cable_label ||
                   (c.cable_numid ? `Cable #${c.cable_numid}` : "Cable")}
               </span>
-              {c.cable_type && (
+              {(c.cable_type || c.speed) && (
                 <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                  {c.cable_type}
+                  {[c.cable_type, c.speed].filter(Boolean).join(" · ")}
                 </span>
               )}
             </div>
             {!!c.pairs?.length && (
-              <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-                {c.pairs[0].a} ↔ {c.pairs[0].b}
-                {c.pairs.length > 1 ? `  ·  ×${c.pairs.length}` : ""}
+              <div className="mt-1 space-y-1">
+                {c.pairs.map((p2, j) => (
+                  // Every pair, full names, wrapped - never clipped.
+                  <div
+                    key={j}
+                    className="font-mono text-[10px] leading-snug break-all"
+                  >
+                    <div>{p2.a}</div>
+                    <div className="text-muted-foreground">↔ {p2.b}</div>
+                  </div>
+                ))}
               </div>
             )}
             {c.cable_id && (

@@ -137,6 +137,51 @@ function edgeStroke(
 /** Edge semantics that carry node-avoiding routing. */
 const ROUTABLE = new Set(["cable", "bundle", "groupedge"])
 
+/** The full name a cable edge announces on hover - label/number, media,
+ * speed, and its endpoint pair(s). Bundles and group edges summarize. */
+function hoverLabel(e: Edge): string | undefined {
+  const d = e.data as
+    | {
+        sem?: string
+        raw?: TopoEdge["data"]
+        cables?: BundleMember[]
+        group?: GroupEdgeInfo
+      }
+    | undefined
+  if (!d) return undefined
+  if (d.sem === "cable" && d.raw) {
+    const r = d.raw
+    const bits = [
+      r.cable_label ||
+        (r.cable_numid ? `Cable #${r.cable_numid}` : "Cable"),
+    ]
+    if (r.cable_type) bits.push(r.cable_type)
+    if (r.speed) bits.push(r.speed)
+    const pair = r.pairs?.[0]
+    if (pair)
+      bits.push(
+        `${pair.a} ↔ ${pair.b}${
+          (r.pairs?.length ?? 0) > 1 ? `  ×${r.pairs!.length}` : ""
+        }`
+      )
+    if (r.via?.length) bits.push(`via ${r.via.join(", ")}`)
+    return bits.join(" · ")
+  }
+  if (d.sem === "bundle" && d.cables) {
+    const types = [
+      ...new Set(d.cables.map((c) => c.cable_type).filter(Boolean)),
+    ]
+    return `${d.cables.length} cable${d.cables.length === 1 ? "" : "s"}${
+      types.length ? ` · ${types.join(", ")}` : ""
+    }`
+  }
+  if (d.sem === "groupedge" && d.group)
+    return `${d.group.cable_count} cable${
+      d.group.cable_count === 1 ? "" : "s"
+    }${d.group.types.length ? ` · ${d.group.types.join(", ")}` : ""}`
+  return undefined
+}
+
 type PosOf = (id: string) => { x: number; y: number } | undefined
 
 /** Point each cable edge at the port-handle side facing its neighbour, and
@@ -743,7 +788,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     },
     []
   )
-  // Hover/select emphasis: the active edge thickens and rises; every other
+  // Hover/select emphasis: the active edge thickens, rises, and always
+  // carries a full label (synthesized when the resting edge has none - a
+  // cable must name itself on hover whatever the view or zoom); every other
   // edge fades - the only way crossings stay readable in a dense mesh.
   const [hotEdge, setHotEdge] = useState<string | null>(null)
   const shownEdges = useMemo(() => {
@@ -755,6 +802,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           // The hot edge keeps its label at any LOD (CSS exempts .topo-hot).
           className: "topo-hot",
           zIndex: 1000,
+          label: hoverLabel(e) ?? e.label,
+          labelStyle: { ...e.labelStyle, fontSize: 10, fontWeight: 600 },
+          labelBgStyle: { ...e.labelBgStyle, fill: "var(--card)" },
           style: {
             ...e.style,
             strokeWidth: 3,

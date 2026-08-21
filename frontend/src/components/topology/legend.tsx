@@ -137,8 +137,8 @@ export function CanvasLegend({
           </>
         )}
         <p className="pt-1 text-muted-foreground">
-          {COLOR_MODE_NOTE[colorMode]}. Hover a line to raise it and fade the
-          rest.
+          {COLOR_MODE_NOTE[colorMode]}. Hover a line to name the cable, raise
+          it, and fade the rest.
         </p>
       </div>
     </div>
