@@ -2627,7 +2627,13 @@ export interface LogicalNode {
   status: string | null
   /** Role name (devices) or cluster name (VMs). */
   sub: string | null
-  attachments: { rail: string; iface: string; tagged: boolean }[]
+  attachments: {
+    rail: string
+    iface: string
+    tagged: boolean
+    /** Interface id for device attachments (click-through); null for VMs. */
+    iface_id: string | null
+  }[]
 }
 
 export interface LogicalTopology {

@@ -589,6 +589,10 @@ class LogicalTopologyTests(_Base):
             by_iface.setdefault(a["iface"], []).append(a["tagged"])
         self.assertEqual(by_iface["Gi0/1"], [False])
         self.assertEqual(sorted(by_iface["Gi0/48"]), [True, True])
+        # Device attachments carry the interface id so the diagram's leg
+        # labels can click through to the interface page.
+        for a in sw["attachments"]:
+            self.assertTrue(a["iface_id"], a)
 
     def test_include_vms_toggle(self):
         body = self._logical("include_vms=0")

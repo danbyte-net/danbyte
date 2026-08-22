@@ -108,7 +108,10 @@ cable draws it emphasized in the accent color while its panel is open.
 ## Reading the map
 
 - **Cards** - the colored spine is the device's role color; the dot before
-  the name is its status. Patch panels get a dashed border. Port cells show
+  the name is its status. Clicking a card **spotlights** it - everything not
+  directly cabled to it fades until you click empty canvas.
+  **Double-clicking** a card opens its device page. Flat chips carry a small
+  `N×` cabled-port count; Hierarchy headers show the primary IP. Patch panels get a dashed border. Port cells show
   the full port name. A cabled front port and its strand's rear port render as **one continuous
   row** (`front1 ⇄ rear`) - the cable enters on the left and leaves on the
   right, the way the light actually travels through a fiber panel.
@@ -328,6 +331,8 @@ layout run.
 
 **PNG** renders the entire graph (not just the visible viewport) to an image
 sized to the diagram - ready for a wiki page or a change ticket.
+**Alt-click** exports just the visible area instead, for pasting one detail
+rather than the whole estate.
 
 ## API
 
@@ -341,9 +346,14 @@ Nodes carry the cabled ports + role/IP used by the stencil; edges carry the
 cable id/type/label/length, every port pair, and the `via` panel list when
 collapsed.
 
+In the **Logical** view, a leg's interface name clicks through to that
+interface's page (device interfaces; VM interfaces have no page). Cable
+detail pages have a **Topology** button opening a custom map of just that
+cable's two endpoint devices.
+
 `GET /api/topology/logical/` - the Logical view's payload: `rails` (VLANs -
 id, `vlan_id`, name, effective color, group) and `nodes` (devices and VMs
-with `attachments: [{rail, iface, tagged}]`). Parameters: `site`, `role`,
+with `attachments: [{rail, iface, tagged, iface_id}]`). Parameters: `site`, `role`,
 `vlan_group`, `include_vms=0`.
 
 `GET /api/topology/summary/` - the topology as **plain facts** sized for an

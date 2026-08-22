@@ -865,8 +865,8 @@ function TopologyPage() {
     else toast.error("Couldn't copy - clipboard blocked by the browser")
   }
 
-  const exportPng = async () => {
-    const url = await canvas.current?.exportPng()
+  const exportPng = async (viewportOnly = false) => {
+    const url = await canvas.current?.exportPng(viewportOnly)
     if (!url) return
     const a = document.createElement("a")
     a.href = url
@@ -1290,7 +1290,8 @@ function TopologyPage() {
             variant="outline"
             size="sm"
             className="h-7 text-xs"
-            onClick={exportPng}
+            onClick={(e) => exportPng(e.altKey)}
+            title="Export the whole diagram - Alt-click: just the visible area"
           >
             <Camera className="h-3 w-3" /> PNG
           </Button>
@@ -1351,6 +1352,9 @@ function TopologyPage() {
                 setSelEdgeId(id)
               }}
               onDrillGroup={drillInto}
+              onOpenDevice={(id) =>
+                nav({ to: "/devices/$id", params: { id } })
+              }
               onNodeContext={(node, x, y) => {
                 if (node.type === "sitegroup")
                   setMenu({ x, y, group: node.data as unknown as TopoGroupData })

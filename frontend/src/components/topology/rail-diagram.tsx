@@ -37,6 +37,8 @@ export interface LegInput {
   label?: string
   /** Dashed leg (logical view: a tagged/trunk attachment). */
   dashed?: boolean
+  /** Makes the leg's label clickable (logical view: open the interface). */
+  onClick?: () => void
 }
 
 export interface BoxInput {
@@ -155,6 +157,7 @@ interface Laid {
     label?: string
     labelX?: number
     labelY?: number
+    onClick?: () => void
   }[]
 }
 
@@ -190,7 +193,13 @@ function layout(sections: SectionInput[], boxesIn: BoxInput[]): Laid {
   const bandCols: Set<number>[] = rails.map(() => new Set())
   const placed: {
     box: BoxInput
-    legs: { railId: string; label?: string; dashed?: boolean; idx: number }[]
+    legs: {
+      railId: string
+      label?: string
+      dashed?: boolean
+      onClick?: () => void
+      idx: number
+    }[]
     col: number
     band: number
   }[] = []
@@ -285,6 +294,7 @@ function layout(sections: SectionInput[], boxesIn: BoxInput[]): Laid {
           label: leg.label,
           labelX,
           labelY: boxY - 4,
+          onClick: leg.onClick,
         })
       } else {
         lines.push({
@@ -297,6 +307,7 @@ function layout(sections: SectionInput[], boxesIn: BoxInput[]): Laid {
           label: leg.label,
           labelX,
           labelY: railY[leg.idx] - 4,
+          onClick: leg.onClick,
         })
       }
     })
@@ -369,8 +380,9 @@ export function RailDiagram({
             x={l.labelX ?? l.x + 7}
             y={l.labelY ?? Math.max(l.y1, l.y2) - 5}
             fontSize={9}
-            className="font-mono"
+            className={l.onClick ? "cursor-pointer font-mono hover:underline" : "font-mono"}
             fill="var(--muted-foreground)"
+            onClick={l.onClick}
           >
             {l.label}
           </text>

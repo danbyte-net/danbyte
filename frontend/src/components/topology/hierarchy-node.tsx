@@ -78,8 +78,8 @@ export function HierarchyNode({ data, selected }: NodeProps) {
         <span className="min-w-0 truncate font-mono text-[11px] font-medium">
           {d.name}
         </span>
-        <span className="ml-auto shrink-0 truncate text-[9px] text-muted-foreground">
-          {d.site ?? ""}
+        <span className="ml-auto min-w-0 truncate text-[9px] text-muted-foreground">
+          {[d.primary_ip, d.site].filter(Boolean).join(" · ")}
         </span>
       </div>
       {/* Port chips at their aligned offsets, riding the card's edges. */}

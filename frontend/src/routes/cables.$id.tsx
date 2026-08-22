@@ -6,7 +6,7 @@ import {
   TraceOnSiteMapButton,
 } from "@/components/trace-on-map-button"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeftRight, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeftRight, Network, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -101,6 +101,16 @@ function Body({ cable: c }: { cable: Cable }) {
   const [deleting, setDeleting] = useState<Cable | null>(null)
   const goBack = useCallback(() => nav({ to: "/cables" }), [nav])
 
+  // "Show me this pair in context": the custom-map builder scoped to the
+  // cable's two endpoint devices.
+  const topoDevices = (() => {
+    const ids = [...(c.a_terminations ?? []), ...(c.b_terminations ?? [])]
+      .map((t) => t.device?.id)
+      .filter((x): x is string => !!x)
+    const uniq = [...new Set(ids)]
+    return uniq.length >= 2 ? uniq.join(",") : null
+  })()
+
   return (
     <DetailShell
       backTo="/cables"
@@ -114,6 +124,13 @@ function Body({ cable: c }: { cable: Cable }) {
       actions={
         <>
           <AutoRouteButton cableId={c.id} />
+          {topoDevices && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/topology" search={{ devices: topoDevices }}>
+                <Network className="h-3.5 w-3.5" /> Topology
+              </Link>
+            </Button>
+          )}
           <TraceOnMapButton cableId={c.id} />
           <TraceOnSiteMapButton cableId={c.id} />
           <PrintLabelButton objectType="cable" ids={[c.id]} />

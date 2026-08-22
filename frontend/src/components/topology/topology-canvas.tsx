@@ -83,8 +83,9 @@ export interface CanvasHandle {
   positions: () => Record<string, [number, number]>
   /** Zoom/center on one node. */
   focusNode: (id: string) => void
-  /** Render the whole graph to a PNG data URL. */
-  exportPng: () => Promise<string | null>
+  /** Render the graph to a PNG data URL - the whole diagram, or just the
+   * visible viewport. */
+  exportPng: (viewportOnly?: boolean) => Promise<string | null>
 }
 
 // Deterministic palette per cable type - informational hue, not state.
@@ -901,6 +902,9 @@ export interface TopologyCanvasProps {
   onSelectGroupEdge?: (data: GroupEdgeInfo, edgeId: string) => void
   /** Grouped mode: a group card was double-clicked - drill into it. */
   onDrillGroup?: (data: TopoGroupData) => void
+  /** Double-clicking a device card opens its page (double-click on a group
+   * still drills). Disables React Flow's double-click zoom when set. */
+  onOpenDevice?: (deviceId: string) => void
   /** Right-click on a node - screen coords + the raw RF node for branching
    * on type (device/flat vs sitegroup). */
   onNodeContext?: (node: Node, x: number, y: number) => void
@@ -936,6 +940,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onSelectGroup,
     onSelectGroupEdge,
     onDrillGroup,
+    onOpenDevice,
     onNodeContext,
     onPaneContext,
     onGhostEdge,
@@ -1016,6 +1021,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // cable must name itself on hover whatever the view or zoom); every other
   // edge fades - the only way crossings stay readable in a dense mesh.
   const [hotEdge, setHotEdge] = useState<string | null>(null)
+  // Clicking a card spotlights its neighbourhood: everything not cabled to
+  // it fades, so "what does this switch touch" reads instantly on a dense
+  // map. Cleared by clicking empty canvas.
+  const [spotId, setSpotId] = useState<string | null>(null)
   // Cursor tooltip naming the hovered cable - follows the mouse, so on a
   // long cable it can never sit off-screen the way a midpoint label does.
   // Position updates go straight to the DOM (no re-render per mousemove).
@@ -1027,8 +1036,18 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     el.style.left = `${ev.clientX + 14}px`
     el.style.top = `${ev.clientY + 14}px`
   }, [])
+  // The spotlight card's direct neighbours - everything else fades.
+  const spotSet = useMemo(() => {
+    if (!spotId) return null
+    const keep = new Set([spotId])
+    for (const e of edges) {
+      if (e.source === spotId) keep.add(e.target)
+      if (e.target === spotId) keep.add(e.source)
+    }
+    return keep
+  }, [edges, spotId])
   const shownEdges = useMemo(() => {
-    if (!hotEdge && !selectedEdgeId) return edges
+    if (!hotEdge && !selectedEdgeId && !spotSet) return edges
     return edges.map((e) => {
       const isHot = e.id === hotEdge
       const isSel = e.id === selectedEdgeId
@@ -1045,7 +1064,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             ...(isSel ? { stroke: "var(--primary)" } : {}),
           },
         }
-      return hotEdge
+      const offSpot =
+        spotSet && e.source !== spotId && e.target !== spotId
+      return hotEdge || offSpot
         ? {
             ...e,
             style: { ...e.style, opacity: 0.15 },
@@ -1053,7 +1074,15 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           }
         : e
     })
-  }, [edges, hotEdge, selectedEdgeId])
+  }, [edges, hotEdge, selectedEdgeId, spotSet, spotId])
+  const shownNodes = useMemo(() => {
+    if (!spotSet) return nodes
+    return nodes.map((n) =>
+      spotSet.has(n.id) || n.type === "sitegroup"
+        ? n
+        : { ...n, data: { ...n.data, dimmed: true } }
+    )
+  }, [nodes, spotSet])
   // Re-sync when the built graph changes, but keep user-dragged positions
   // for nodes that are still present (so a color-mode flip doesn't shuffle).
   const prevNodes = useRef<Node[]>([])
@@ -1087,6 +1116,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     const relaidOut =
       layoutTick !== prevTick.current || restyled || requeried || redirected
     prevTick.current = layoutTick
+    // A new layout is a new map - a stale spotlight would dim everything
+    // with no visible cause.
+    if (relaidOut) setSpotId(null)
     const keepingDrags =
       !relaidOut && !positions && prevNodes.current.length > 0
     const nextNodes = built.nodes.map((n) => {
@@ -1148,11 +1180,28 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             duration: 500,
           })
       },
-      exportPng: async () => {
+      exportPng: async (viewportOnly = false) => {
         const el = wrapper.current?.querySelector<HTMLElement>(
           ".react-flow__viewport"
         )
         if (!el) return null
+        if (viewportOnly) {
+          // Just what's on screen - for pasting a detail into a ticket
+          // without shipping the whole estate.
+          const w = wrapper.current?.clientWidth ?? 1200
+          const h = wrapper.current?.clientHeight ?? 800
+          const vp = flow.getViewport()
+          return toPng(el, {
+            backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
+            width: w,
+            height: h,
+            style: {
+              width: `${w}px`,
+              height: `${h}px`,
+              transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
+            },
+          })
+        }
         const bounds = getNodesBounds(flow.getNodes())
         const w = Math.min(4096, Math.max(800, Math.ceil(bounds.width) + 160))
         const h = Math.min(4096, Math.max(600, Math.ceil(bounds.height) + 160))
@@ -1176,17 +1225,24 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     (_: unknown, node: Node) => {
       if (node.type === "sitegroup")
         onSelectGroup?.(node.data as unknown as TopoGroupData)
-      else onSelectNode?.(node.data as TopologyGraph["nodes"][number]["data"])
+      else {
+        setSpotId(node.id)
+        onSelectNode?.(node.data as TopologyGraph["nodes"][number]["data"])
+      }
     },
     [onSelectNode, onSelectGroup]
   )
   const onNodeDoubleClick = useCallback(
     (_: unknown, node: Node) => {
-      if (node.type !== "sitegroup") return
-      const d = node.data as unknown as TopoGroupData
-      if (d.group_id) onDrillGroup?.(d)
+      if (node.type === "sitegroup") {
+        const d = node.data as unknown as TopoGroupData
+        if (d.group_id) onDrillGroup?.(d)
+        return
+      }
+      const dev = (node.data as { device_id?: string }).device_id
+      if (dev) onOpenDevice?.(dev)
     },
-    [onDrillGroup]
+    [onDrillGroup, onOpenDevice]
   )
   const onEdgeClick = useCallback(
     (_: unknown, edge: Edge) => {
@@ -1315,7 +1371,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   return (
     <div ref={wrapper} className="h-full w-full" data-lod={lod}>
       <ReactFlow
-        nodes={nodes}
+        nodes={shownNodes}
         edges={shownEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -1327,6 +1383,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         nodesConnectable={false}
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
+        zoomOnDoubleClick={!onOpenDevice}
         onNodeContextMenu={(ev, node) => {
           ev.preventDefault()
           onNodeContext?.(node, ev.clientX, ev.clientY)
@@ -1349,7 +1406,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           setHotEdge(null)
           setTip(null)
         }}
-        onPaneClick={onCanvasClick}
+        onPaneClick={() => {
+          setSpotId(null)
+          onCanvasClick?.()
+        }}
         onMove={onMove}
         onlyRenderVisibleElements
         minZoom={0.05}

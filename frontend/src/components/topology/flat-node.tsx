@@ -146,6 +146,16 @@ export function FlatNode({ data, selected }: NodeProps) {
           <span className="truncate font-mono text-[11px] font-medium">
             {d.name}
           </span>
+          {(d.ports?.length ?? 0) > 0 && (
+            <span
+              className="num ml-auto shrink-0 text-[9px] text-muted-foreground"
+              title={`${d.ports!.length} cabled port${
+                d.ports!.length === 1 ? "" : "s"
+              }`}
+            >
+              {d.ports!.length}×
+            </span>
+          )}
         </div>
         <div className="truncate text-[9px] text-muted-foreground">
           {d.panel ? "patch panel" : d.site || d.device_type || "-"}

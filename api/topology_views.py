@@ -445,7 +445,8 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
         description=(
             "`{rails, nodes}` - VLANs as rails (id, vlan_id, name, effective "
             "color, group) and attached devices/VMs with per-interface "
-            "attachments ({rail, iface, tagged}). Hybrid physical + virtual, "
+            "attachments ({rail, iface, tagged, iface_id}). Hybrid physical + "
+            "virtual, "
             "RBAC-scoped."
         ),
     ),
@@ -478,14 +479,19 @@ def topology_logical_view(request):
     nodes: dict = {}
     rail_ids: set = set()
 
-    def add(kind, obj_id, name, status, sub, vlan_id, iface, tagged):
+    def add(kind, obj_id, name, status, sub, vlan_id, iface, tagged,
+            iface_id=None):
         key = f"{kind}:{obj_id}"
         n = nodes.setdefault(key, {
             "kind": kind, "id": str(obj_id), "name": name,
             "status": status, "sub": sub, "attachments": [],
         })
         n["attachments"].append(
-            {"rail": str(vlan_id), "iface": iface, "tagged": tagged}
+            # iface_id → the diagram's leg labels click through to the
+            # interface page (device interfaces only; VM interfaces have no
+            # page of their own).
+            {"rail": str(vlan_id), "iface": iface, "tagged": tagged,
+             "iface_id": str(iface_id) if iface_id else None}
         )
         rail_ids.add(vlan_id)
 
@@ -501,9 +507,11 @@ def topology_logical_view(request):
         status = d.status.name if d.status_id else None
         sub = d.role.name if d.role_id else None
         if i.vlan_id:
-            add("device", d.id, d.name, status, sub, i.vlan_id, i.name, False)
+            add("device", d.id, d.name, status, sub, i.vlan_id, i.name, False,
+                iface_id=i.id)
         for v in i.tagged_vlans.all():
-            add("device", d.id, d.name, status, sub, v.id, i.name, True)
+            add("device", d.id, d.name, status, sub, v.id, i.name, True,
+                iface_id=i.id)
 
     if p.get("include_vms", "1") != "0":
         vms = rbac.restrict_queryset(
