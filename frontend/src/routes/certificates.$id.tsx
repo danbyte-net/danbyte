@@ -174,7 +174,7 @@ function Body({ cert }: { cert: Certificate }) {
           count: cert.assignment_count,
         },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

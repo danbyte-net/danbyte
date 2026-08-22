@@ -119,7 +119,7 @@ function Body({ group: g }: { group: CustomFieldGroup }) {
         { value: "overview", label: "Overview" },
         { value: "fields", label: "Fields", count: g.field_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v)}

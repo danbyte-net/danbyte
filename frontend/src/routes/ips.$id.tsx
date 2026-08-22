@@ -516,7 +516,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
         { value: "monitoring", label: "Monitoring" },
         { value: "certificates", label: "Certificates" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

@@ -65,7 +65,7 @@ edits it; **Render** produces the file without leaving the page.
   created and last changed, and then the **template body itself**, rendered in a
   scrollable monospace box.
 - **Journal** - your notes on this template.
-- **History** - the change log for the row.
+- **Change log** - the automatic record of changes to the row.
 
 An export template has no reverse relations: nothing in the data model points
 back at one, and a render is produced on demand rather than stored. So the page

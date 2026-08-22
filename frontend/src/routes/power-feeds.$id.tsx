@@ -134,7 +134,7 @@ function Body({ feed: f }: { feed: PowerFeed }) {
         { value: "overview", label: "Overview" },
         { value: "terminations", label: "Terminations" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

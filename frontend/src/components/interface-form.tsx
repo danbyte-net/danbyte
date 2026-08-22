@@ -21,6 +21,8 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import { apiErrorToast } from "@/lib/api-toast"
+import { syncPortReservation } from "@/components/port-reservation-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DevicePicker } from "@/components/device-picker"
 import { VlanPicker } from "@/components/vlan-picker"
@@ -65,6 +67,10 @@ export function InterfaceForm({
   const [markConnected, setMarkConnected] = useState(
     iface?.mark_connected ?? false
   )
+  // A direct hold on the (uncabled) port - see syncPortReservation. Mutually
+  // exclusive with mark_connected: a physically present cable beats a hold.
+  const [reserved, setReserved] = useState(!!iface?.reservation)
+  const [reserveNote, setReserveNote] = useState(iface?.reservation?.note ?? "")
   const [comboGroup, setComboGroup] = useState(iface?.combo_group ?? "")
   // The name SNMP reports for this port; clearing it unlinks discovery.
   const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
@@ -104,6 +110,8 @@ export function InterfaceForm({
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
     setMarkConnected(iface.mark_connected ?? false)
+    setReserved(!!iface.reservation)
+    setReserveNote(iface.reservation?.note ?? "")
     setComboGroup(iface.combo_group ?? "")
     setSnmpName(iface.snmp_name ?? "")
     setSnmpIgnore(iface.snmp_ignore ?? false)
@@ -208,6 +216,19 @@ export function InterfaceForm({
       ).then(({ last, count }) => ({ saved: last, count }))
     },
     onSuccess: ({ saved, count }) => {
+      // Reservation rides alongside the interface row (its own API object);
+      // fan-out creates and staged plans skip it - it holds ONE real port.
+      if (count === 1 && !isPlanning && !saved.cable && !markConnected) {
+        void syncPortReservation({
+          kind: "interface",
+          portId: saved.id,
+          existing: iface?.reservation ?? null,
+          reserved,
+          note: reserveNote.trim(),
+        }).catch((err) =>
+          apiErrorToast(err, "Could not update the reservation")
+        )
+      }
       qc.invalidateQueries({ queryKey: ["interfaces"] })
       qc.invalidateQueries({ queryKey: ["interface", saved.id] })
       qc.invalidateQueries({ queryKey: ["device-interfaces"] })
@@ -473,8 +494,30 @@ export function InterfaceForm({
           label="Mark connected"
           hint="a cable is in the port, just not documented yet"
           checked={markConnected}
-          onChange={setMarkConnected}
+          onChange={(v) => {
+            setMarkConnected(v)
+            if (v) setReserved(false)
+          }}
         />
+        {!iface?.cable && (
+          <FormCheckbox
+            label="Reserved"
+            hint="hold this port before the far end is known"
+            checked={reserved}
+            onChange={(v) => {
+              setReserved(v)
+              if (v) setMarkConnected(false)
+            }}
+          />
+        )}
+        {reserved && !iface?.cable && (
+          <FormText
+            label="Reservation note"
+            value={reserveNote}
+            onChange={setReserveNote}
+            placeholder="Who or what this port is for"
+          />
+        )}
         <FormCheckbox
           label="Virtual interface (sub-interface / LAG / loopback)"
           checked={virtual}

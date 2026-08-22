@@ -77,7 +77,7 @@ down.
   Contacts page draws (minus the redundant Group column). This is the list to
   read before you rename or delete a group: it is what the delete guard counts.
 - **Journal** - your notes on this group.
-- **History** - the change log for the row.
+- **Change log** - the automatic record of changes to the row.
 
 Both counts are one hop, not a subtree total, so the numbers on the tabs and the
 rows in the tables can never disagree.
@@ -94,7 +94,7 @@ page, the same way every other object in Danbyte works.
   list to read before you rename or delete a role: it is exactly what the delete
   guard is counting.
 - **Journal** - your notes on this role.
-- **History** - the change log: who changed which field, and when. Danbyte has
+- **Change log** - who changed which field, and when. Danbyte has
   been recording this since roles were added.
 
 ## Tags & custom fields

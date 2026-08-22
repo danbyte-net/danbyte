@@ -197,7 +197,7 @@ function Body({ zone }: { zone: DnsZone }) {
         },
         { value: "live", label: "Live records" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(t) => setTab(t as Tab)}

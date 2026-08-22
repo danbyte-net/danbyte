@@ -224,7 +224,7 @@ function Body({ cable: c }: { cable: Cable }) {
         { value: "overview", label: "Overview" },
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

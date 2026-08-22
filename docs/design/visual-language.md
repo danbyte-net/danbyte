@@ -259,10 +259,10 @@ Every object detail page follows one tab convention (source of truth:
   `grid gap-6 lg:grid-cols-2`, grouped into a few sensibly-titled cards. This
   is the "read it as tables in the page body" layout.
 - After Overview come the related-object tabs (with a count where the API
-  provides one), then always **Journal** and **History** as the last two, in
+  provides one), then always **Journal** and **Change log** as the last two, in
   that order.
 
-Never render History (`ChangeLogPanel`) or Journal (`JournalPanel`) - or a
+Never render Change log (`ChangeLogPanel`) or Journal (`JournalPanel`) - or a
 wall of attribute fields - inline in the header. Attributes go in the Overview
 tab's `KvCard`s; history and journal are always their own tabs.
 

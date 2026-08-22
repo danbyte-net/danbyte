@@ -68,8 +68,8 @@ const COLUMNS: ColumnDef<ChangeLogEntry>[] = [
 ]
 
 /**
- * Per-object change history - drop into a detail-page "History" tab. Renders
- * the same table look as the global Audit log (When / User / Action / Changes
+ * Per-object change history - drop into a detail-page "Change log" tab. Renders
+ * the same table look as the global Change log (When / User / Action / Changes
  * with an expandable field-level diff) and offers a CSV export of the object's
  * full history. Reads /api/changelog filtered to one object.
  */
@@ -128,7 +128,7 @@ export function ChangeLogPanel({
 }
 
 /** Field-level diff, revealed in place from the "Changes" cell - the same
- * treatment the global Audit log uses. */
+ * treatment the global Change log uses. */
 function ChangesCell({ e }: { e: ChangeLogEntry }) {
   const [open, setOpen] = useState(false)
   const fields = Object.entries(e.changes)

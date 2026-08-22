@@ -157,7 +157,7 @@ function Body({ location: l }: { location: Location }) {
         { value: "prefixes", label: "Prefix ranges", count: rows.length },
         { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

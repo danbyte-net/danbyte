@@ -114,7 +114,7 @@ function IdentityCard() {
         />
       </Field>
       <Field
-        label="Audit log retention (days)"
+        label="Change log retention (days)"
         hint="Change-log entries older than this are pruned daily. 0 = keep forever."
       >
         <Input

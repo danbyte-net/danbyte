@@ -98,7 +98,7 @@ function Body({ group: g }: { group: TunnelGroup }) {
         { value: "overview", label: "Overview" },
         { value: "tunnels", label: "Tunnels", count: g.tunnel_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

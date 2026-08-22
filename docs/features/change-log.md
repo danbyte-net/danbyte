@@ -28,10 +28,15 @@ the UUID.
 
 | Place | What it shows |
 |---|---|
-| **Governance → Audit log** | The global feed across the whole tenant. Filter by action, object type, user, or **source** - UI (a browser session), API (a token request), or System (workers and shell) - and search. Click any entry to expand its diff. |
-| **History tab** on a detail page | Just that one object's history. |
+| **Governance → Change log** | The global feed across the whole tenant. Filter by action, object type, user, or **source** - UI (a browser session), API (a token request), or System (workers and shell) - and search. Click any entry to expand its diff. |
+| **Change log tab** on a detail page | Just that one object's history. |
 
-Every object you can edit has a **History** tab on its detail page - prefixes, IP
+One name everywhere: the global page and the per-object tab are both called
+**Change log** - the same record at two scopes (the page was previously
+"Audit log", the tab "History"; the URLs `/audit-log` and `?tab=history`
+still work).
+
+Every object you can edit has a **Change log** tab on its detail page - prefixes, IP
 addresses, devices, sites, VRFs, VLANs, manufacturers, device types, cables,
 interfaces, IP statuses and roles, route targets, custom fields, tags, tenants,
 locations, compliance rules, and the rest. If a model can be changed, its

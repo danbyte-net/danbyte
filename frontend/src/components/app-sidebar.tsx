@@ -143,7 +143,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 //   • `anyOf`       - aggregate pages that read several types (MACs, Topology,
 //                     Monitoring, Alerts); shown when ANY is viewable.
 //   • `perm`        - a flat permission slug (`useMe().can`), for pages with no
-//                     single owning object type (Audit log, External sync).
+//                     single owning object type (Change log, External sync).
 //   • none of these - genuinely universal (Dashboard landing, own Preferences);
 //                     always shown to a signed-in user.
 type NavItem = {
@@ -770,7 +770,7 @@ const sections: NavSection[] = [
             objectType: "compliancerule",
           },
           {
-            title: "Audit log",
+            title: "Change log",
             url: "/audit-log",
             icon: History,
             perm: "users.manage",
@@ -998,6 +998,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // it. An item matches if its URL is the path or a parent of it.
   const inGroup = (urls: string[]) =>
     urls.some((u) => pathname === u || pathname.startsWith(u + "/"))
+  // Active state for a nav item: its page, or any page nested under it
+  // (a device detail keeps Devices lit). Every menu button passes this -
+  // the sidebar's data-active styling otherwise never fires.
+  const isPage = (u: string) => pathname === u || pathname.startsWith(u + "/")
   // Hide any link the user can't reach - mirrors the API so the nav never
   // advertises a page that would only 403 (see NavItem for the gate kinds).
   // An item with no gate is universal and always shows.
@@ -1114,6 +1118,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   size="sm"
                   className="h-7 text-[13px]"
                   tooltip="Dashboard"
+                  isActive={pathname === "/"}
                 >
                   <Link to="/" activeOptions={{ exact: true }}>
                     <LayoutDashboard />
@@ -1152,6 +1157,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         size="sm"
                         className="h-7 text-[13px]"
                         tooltip={item.title}
+                        isActive={isPage(item.url)}
                       >
                         <Link to={item.url}>
                           {/* Icon only in the collapsed icon-rail; the expanded
@@ -1186,6 +1192,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     size="sm"
                     className="h-7 text-[13px]"
                     tooltip={item.title}
+                    isActive={isPage(item.url)}
                   >
                     <Link to={item.url as never}>
                       <DynamicIcon
@@ -1221,6 +1228,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   size="sm"
                   className="h-7 text-[13px]"
                   tooltip="Users"
+                  isActive={isPage("/users")}
                 >
                   <Link to="/users">
                     <UsersRound className="hidden group-data-[collapsible=icon]:block" />
@@ -1234,6 +1242,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   size="sm"
                   className="h-7 text-[13px]"
                   tooltip="Groups"
+                  isActive={isPage("/groups")}
                 >
                   <Link to="/groups">
                     <UserCog className="hidden group-data-[collapsible=icon]:block" />
@@ -1247,6 +1256,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   size="sm"
                   className="h-7 text-[13px]"
                   tooltip="Permissions"
+                  isActive={isPage("/permissions")}
                 >
                   <Link to="/permissions">
                     <ShieldCheck className="hidden group-data-[collapsible=icon]:block" />

@@ -116,7 +116,7 @@ function Body({ platform: p }: { platform: Platform }) {
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: p.device_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

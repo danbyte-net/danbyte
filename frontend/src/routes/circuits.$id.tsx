@@ -169,7 +169,7 @@ function Body({ circuit: c }: { circuit: Circuit }) {
           count: c.terminations.length,
         },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

@@ -39,7 +39,7 @@ diagram. Then:
 | **SNMP** | Interface tables and polling, when the VM answers SNMP. |
 | **Certificates** | TLS certificates seen on its endpoints. |
 | **Config** | The rendered config context for this VM. |
-| **Journal**, **History** | Notes you write, and the full change log. |
+| **Journal**, **Change log** | Notes you write, and the automatic change record. |
 
 ## Power state
 

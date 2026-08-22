@@ -94,7 +94,7 @@ function PluginDetailPage({ page, id }: { page: PluginPage; id: string }) {
 
   const tabs = page.tabs.map((t) => ({
     value: t,
-    label: t === "history" ? "History" : t[0].toUpperCase() + t.slice(1),
+    label: t === "history" ? "Change log" : t[0].toUpperCase() + t.slice(1),
   }))
 
   const listHref = `/p/${page.plugin}/${page.path.replace(/\/\$id$/, "")}`

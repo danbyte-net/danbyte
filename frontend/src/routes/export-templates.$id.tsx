@@ -164,7 +164,7 @@ function Body({ template: t }: { template: ExportTemplate }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

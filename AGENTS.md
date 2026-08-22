@@ -173,7 +173,7 @@ Use the active shared system; do not hand-roll another version of existing UI:
 - Lists: `ListPageShell`, `DataTable`, shared filters, and entity column
   factories under `components/columns/`.
 - Details: `DetailShell`, Overview first, then related tabs, with Journal and
-  History last. Use `KvCard` for attribute groups.
+  Change log last. Use `KvCard` for attribute groups.
 - Object selection: `ObjectPicker` or an existing domain picker preset.
 - State and errors: `QueryError`, `apiErrorToast`, and `EmptyState`.
 - Colored catalog objects: `ColorBadge`, `StatusBadge`, `RoleChip`, or the

@@ -134,8 +134,8 @@ Both tunnel lists are the same table the main Tunnels page draws, minus the
 column that repeats the object you are already looking at. They are powered by
 `GET /api/tunnels/?group=<id>` and `?ipsec_profile=<id>`.
 
-Each page also carries **Journal** and **History** tabs. Groups and profiles
-have been audited all along, so the History tab shows every recorded change to
+Each page also carries **Journal** and **Change log** tabs. Groups and profiles
+have been audited all along, so the Change log tab shows every recorded change to
 the row, including ones made before the page existed.
 
 ## L2VPN overlays

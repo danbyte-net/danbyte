@@ -208,7 +208,7 @@ the same defaults.
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config.                                                      |
 | **Journal**    | Free-form notes and a running log you write.                                                    |
-| **History**    | An automatic change log - who changed what, when.                                               |
+| **Change log** | An automatic record of changes - who changed what, when.                                               |
 
 ## Status
 

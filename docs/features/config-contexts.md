@@ -68,7 +68,7 @@ Click a context's name in the list to open it. It has three tabs:
 |---|---|
 | **Overview** | Weight, active flag, description, the assignment criteria - regions, sites, device roles, and platforms, each linking to the object it names - and the context's **Data** block, rendered as formatted JSON. A dimension with no entries reads **Any**, which is exactly how the merge treats it. |
 | **Journal** | Your notes on this context. |
-| **History** | Every create, edit, and delete of the context, from the [change log](change-log.md). |
+| **Change log** | Every create, edit, and delete of the context - see [Change log](change-log.md). |
 
 Because a context's whole purpose is the data it contributes, the Data block is
 on the Overview rather than behind a tab. Long blocks scroll inside their own

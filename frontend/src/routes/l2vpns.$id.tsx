@@ -139,7 +139,7 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
           count: v.terminations.length,
         },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(t) => setTab(t as typeof tab)}

@@ -106,7 +106,7 @@ function Body({ role: r }: { role: ContactRole }) {
           count: r.assignment_count,
         },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v)}

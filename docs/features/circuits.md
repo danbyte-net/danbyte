@@ -103,7 +103,7 @@ list to open its detail page - the pencil in the header edits it.
 - A **circuit type** page shows the type's colored badge, slug, color and
   description, with a **Circuits** tab answering "what uses this type" - the
   check to run before you edit or delete a type. It also carries **Journal**
-  and **History** tabs, so every change ever recorded against the type is
+  and **Change log** tabs, so every change ever recorded against the type is
   readable there.
 
 All three circuit lists are the same table the main Circuits page draws. They

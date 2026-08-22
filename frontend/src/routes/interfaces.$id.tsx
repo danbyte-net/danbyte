@@ -22,6 +22,8 @@ import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
 import {
   MarkConnectedToggle,
   PortReservationDialog,
+  ReservedBadge,
+  UndocumentedBadge,
 } from "@/components/port-reservation-dialog"
 import {
   AssignIpDialog,
@@ -155,25 +157,9 @@ function Body({ iface: i }: { iface: Interface }) {
                 <Badge variant="secondary">Disabled</Badge>
               )}
               {i.virtual && <Badge variant="secondary">Virtual</Badge>}
-              {!i.cable && i.mark_connected && (
-                <Badge
-                  variant="outline"
-                  title="A cable is in the port, just not documented yet"
-                >
-                  Undocumented
-                </Badge>
-              )}
+              {!i.cable && i.mark_connected && <UndocumentedBadge />}
               {!i.cable && !i.mark_connected && i.reservation && (
-                <Badge
-                  variant="warning"
-                  title={`${
-                    i.reservation.claimed_by
-                      ? `by ${i.reservation.claimed_by}`
-                      : ""
-                  }${i.reservation.note ? ` - ${i.reservation.note}` : ""}`}
-                >
-                  Reserved
-                </Badge>
+                <ReservedBadge reservation={i.reservation} />
               )}
               {i.tunnel_terminations.map((tt) => (
                 <Link
@@ -230,7 +216,7 @@ function Body({ iface: i }: { iface: Interface }) {
         },
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

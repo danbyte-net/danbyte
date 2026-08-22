@@ -133,7 +133,7 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
         },
         { value: "faceplate", label: "Faceplate" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

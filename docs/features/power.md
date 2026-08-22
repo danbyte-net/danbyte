@@ -56,7 +56,7 @@ A **power panel** page has:
   was created and last changed.
 - **Feeds** - every feed on the panel, the same row the feeds list draws.
 - **Journal** - your notes on this panel.
-- **History** - the change log: who changed which field, and when.
+- **Change log** - who changed which field, and when.
 
 A **power feed** page has:
 
@@ -65,7 +65,7 @@ A **power feed** page has:
   amperage, max utilization).
 - **Terminations** - the cables landing on this feed, usually the PDU inlet it
   powers. Follow one to trace the whole power path.
-- **Journal** and **History**, as above.
+- **Journal** and **Change log**, as above.
 
 !!! note "Max utilization is a plan, not a measurement"
     Danbyte records the ceiling you set. It does not meter the feed, so the

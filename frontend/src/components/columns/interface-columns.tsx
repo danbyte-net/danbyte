@@ -21,6 +21,8 @@ import { CableStatusControl } from "@/components/cable-status-control"
 import {
   MarkConnectedToggle,
   PortReserveAction,
+  ReservedBadge,
+  UndocumentedBadge,
 } from "@/components/port-reservation-dialog"
 import { SnmpLinkBadge } from "@/components/snmp-link-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
@@ -438,27 +440,9 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
           )
         // Uncabled ports still carry state worth seeing: an undocumented
         // cable (mark_connected) or a direct reservation.
-        if (!cable && row.original.mark_connected)
-          return (
-            <Badge
-              variant="outline"
-              title="A cable is in the port, just not documented yet"
-            >
-              Undocumented
-            </Badge>
-          )
+        if (!cable && row.original.mark_connected) return <UndocumentedBadge />
         const resv = row.original.reservation
-        if (!cable && resv)
-          return (
-            <Badge
-              variant="warning"
-              title={`${resv.claimed_by ? `by ${resv.claimed_by}` : ""}${
-                resv.note ? ` - ${resv.note}` : ""
-              }`}
-            >
-              Reserved
-            </Badge>
-          )
+        if (!cable && resv) return <ReservedBadge reservation={resv} />
         return (
           <span className="num text-xs text-muted-foreground">
             {row.original.cable_count || "-"}

@@ -150,7 +150,7 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
         { value: "vms", label: "Virtual machines", count: c.vm_count },
         { value: "devices", label: "Hosts", count: deviceCount },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

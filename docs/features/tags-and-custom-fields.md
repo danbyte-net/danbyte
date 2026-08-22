@@ -149,7 +149,7 @@ page:
 - **Fields** - the definitions filed under this heading, in the order the
   section will render them. Read it before you rename a group or move a field.
 - **Journal** - your notes on this group.
-- **History** - the change log for the group itself.
+- **Change log** - the automatic record of changes to the group itself.
 
 The **Custom fields** list also carries a **Group** column, so you can see which
 section every field belongs to without opening each one.

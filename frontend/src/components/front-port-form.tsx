@@ -24,6 +24,8 @@ import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useStrandModelling } from "@/components/fiber/use-fiber-palette"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import { apiErrorToast } from "@/lib/api-toast"
+import { syncPortReservation } from "@/components/port-reservation-dialog"
 
 export interface FrontPortFormProps {
   port?: FrontPort
@@ -59,6 +61,8 @@ export function FrontPortForm({
   const [markConnected, setMarkConnected] = useState(
     port?.mark_connected ?? false
   )
+  const [reserved, setReserved] = useState(!!port?.reservation)
+  const [reserveNote, setReserveNote] = useState(port?.reservation?.note ?? "")
   const [description, setDescription] = useState(port?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     port?.tags.map((t) => t.id) ?? []
@@ -75,6 +79,8 @@ export function FrontPortForm({
     setType(port.type)
     setPositions(String(port.positions))
     setMarkConnected(port.mark_connected ?? false)
+    setReserved(!!port.reservation)
+    setReserveNote(port.reservation?.note ?? "")
     setDescription(port.description ?? "")
     setTagIds(port.tags.map((t) => t.id))
     reset()
@@ -173,6 +179,19 @@ export function FrontPortForm({
       ).then(({ last, count }) => ({ saved: last, count }))
     },
     onSuccess: ({ saved, count }) => {
+      // The hold is its own API object riding alongside the port row;
+      // fan-out creates skip it - a reservation names ONE real port.
+      if (count === 1 && !planning && !saved.cable && !markConnected) {
+        void syncPortReservation({
+          kind: "front_port",
+          portId: saved.id,
+          existing: port?.reservation ?? null,
+          reserved,
+          note: reserveNote.trim(),
+        }).catch((err) =>
+          apiErrorToast(err, "Could not update the reservation")
+        )
+      }
       qc.invalidateQueries({ queryKey: ["device-front-ports", deviceId] })
       // A front port consumes a rear strand - refresh rear views too.
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
@@ -271,8 +290,30 @@ export function FrontPortForm({
         label="Mark connected"
         hint="a cable is in the port, just not documented yet"
         checked={markConnected}
-        onChange={setMarkConnected}
+        onChange={(v) => {
+          setMarkConnected(v)
+          if (v) setReserved(false)
+        }}
       />
+      {!port?.cable && (
+        <FormCheckbox
+          label="Reserved"
+          hint="hold this port before the far end is known"
+          checked={reserved}
+          onChange={(v) => {
+            setReserved(v)
+            if (v) setMarkConnected(false)
+          }}
+        />
+      )}
+      {reserved && !port?.cable && (
+        <FormText
+          label="Reservation note"
+          value={reserveNote}
+          onChange={setReserveNote}
+          placeholder="Who or what this port is for"
+        />
+      )}
       <FormText
         label="Description"
         value={description}

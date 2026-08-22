@@ -32,7 +32,7 @@ any. The edit and delete controls only show on notes you're allowed to change.
 
 The operational objects that have a detail page with history - **prefixes, IP
 addresses, devices, sites, VLANs, VRFs, cables, and interfaces** - each have a
-Journal tab next to their History.
+Journal tab next to their Change log.
 
 ## Related
 

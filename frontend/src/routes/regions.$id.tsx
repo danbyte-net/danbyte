@@ -115,7 +115,7 @@ function Body({ region: r }: { region: Region }) {
         { value: "sites", label: "Sites", count: r.site_count },
         { value: "sub-regions", label: "Sub-regions", count: r.child_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

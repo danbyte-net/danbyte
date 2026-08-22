@@ -63,7 +63,7 @@ delete a palette entry.
   grid cell, the size, and what the tile is linked to. Both placed tiles and
   site markers block a delete, and both are listed here.
 - **Journal** - your notes on this tile type.
-- **History** - the change log for the type itself.
+- **Change log** - the automatic record of changes to the type itself.
 
 ## Creating a plan
 

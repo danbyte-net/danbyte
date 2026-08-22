@@ -106,7 +106,7 @@ ignore prefix, so the test does not become a route):
 
 - **An entity you can create or edit must be openable.** If `<entity>.new.tsx`
   or an edit route exists, `<entity>.$id.tsx` must exist too. Without it the
-  only way to reach a record is the edit form, and any History the object is
+  only way to reach a record is the edit form, and any Change log the object is
   already accumulating has nowhere to render. Non-object screens (`settings`,
   `import`, `topology`) and the RBAC admin lists (`users`, `groups`,
   `permissions`) are allow-listed; entities that still lack a detail page are

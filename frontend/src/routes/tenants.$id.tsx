@@ -146,7 +146,7 @@ function TenantDetailBody({ tenant: t }: { tenant: Tenant }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

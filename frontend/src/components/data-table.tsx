@@ -641,13 +641,13 @@ export function DataTable<T>({
           mode the same row drives the server's page instead, and the
           rows-per-page control is dropped (the caller owns the page size). */}
       {(paged || serverPagination) && (
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="num">
+        <div className="flex items-center justify-between gap-2 text-xs whitespace-nowrap text-muted-foreground">
+          <span className="num truncate">
             {serverPagination?.totalRows ??
               table.getFilteredRowModel().rows.length}{" "}
             rows
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {!serverPagination && (
               <span className="flex items-center gap-1">
                 Rows

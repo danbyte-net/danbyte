@@ -109,7 +109,7 @@ function ChangeLogDetail() {
         <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Button variant="ghost" size="sm" asChild className="h-6 px-1">
             <Link to="/audit-log">
-              <ChevronLeft className="h-3 w-3" /> Audit log
+              <ChevronLeft className="h-3 w-3" /> Change log
             </Link>
           </Button>
           <ChevronRight className="h-3 w-3 opacity-60" />
@@ -117,7 +117,7 @@ function ChangeLogDetail() {
             {e.object_label} {e.object_repr}
           </span>
         </nav>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <Button
             size="sm"
             variant="outline"

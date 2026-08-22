@@ -48,7 +48,7 @@ Edit button is still there, next to **Test**):
 | **Overview** | Kind, enabled, endpoint, AWX job-template id, TLS verification, whether a credential is stored, auto-deploy-on-change, the object types it can deploy, and any extra vars. |
 | **Runs** | Every dispatch Danbyte handed to *this* target, newest first - the same rows as **Deploy runs**, pre-filtered (`GET /api/deploy-runs/?target=<id>`), with the same **Retry** on a failed run. |
 | **Journal** | Your notes on this target. |
-| **History** | Every create/edit/delete of the target itself, from the [change log](change-log.md). |
+| **Change log** | Every create/edit/delete of the target itself - see [Change log](change-log.md). |
 
 The stored AWX bearer token / webhook signing secret is **never** shown here.
 It is write-only on the API, so the page can only report whether one is set -

@@ -119,7 +119,7 @@ function Body({ group: g }: { group: VLANGroup }) {
               { value: "overview", label: "Overview" },
               { value: "vlans", label: "VLANs", count: g.vlan_count },
               { value: "journal", label: "Journal" },
-              { value: "history", label: "History" },
+              { value: "history", label: "Change log" },
             ]}
           />
         </div>

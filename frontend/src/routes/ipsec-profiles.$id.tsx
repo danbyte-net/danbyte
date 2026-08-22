@@ -104,7 +104,7 @@ function Body({ profile: p }: { profile: IPSecProfile }) {
         { value: "overview", label: "Overview" },
         { value: "tunnels", label: "Tunnels", count: p.tunnel_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

@@ -99,7 +99,7 @@ function Body({ type: t }: { type: CircuitType }) {
         { value: "overview", label: "Overview" },
         { value: "circuits", label: "Circuits", count: t.circuit_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

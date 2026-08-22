@@ -68,8 +68,8 @@ page draws (minus the redundant Group column). It is powered by
 `GET /api/wireless-lans/?group=<id>`, and it is the check to run before you
 move or delete a group.
 
-The page also carries **Journal** and **History** tabs. Groups have been
-audited all along, so History shows every recorded change to the row, including
+The page also carries **Journal** and **Change log** tabs. Groups have been
+audited all along, so the tab shows every recorded change to the row, including
 ones made before the page existed.
 
 ## Wireless LAN pages
@@ -82,7 +82,7 @@ Clicking an **SSID** in **Wireless → Wireless LANs** opens that SSID's own pag
   the authentication type, and the cipher. Comments render below if there are
   any.
 - **Journal** - your notes on this SSID.
-- **History** - the change log for the row.
+- **Change log** - the automatic record of changes to the row.
 
 Nothing in the data model points back at a wireless LAN, so the page has no
 related tabs - it links *out* to its group and VLAN, and stops there rather than

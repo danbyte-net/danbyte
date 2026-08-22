@@ -114,7 +114,7 @@ function AuditLogPage() {
       </div>
 
       <ListPageShell
-        title="Audit log"
+        title="Change log"
         count={q.data ? total : undefined}
         rail={
           <FilterRail>
@@ -199,7 +199,7 @@ function AuditLogPage() {
           flexColumn="object"
           tableId="audit-log"
           exportName="audit-log"
-          exportTitle="Audit log"
+          exportTitle="Change log"
           serverPagination={{
             page,
             pageCount: pages,

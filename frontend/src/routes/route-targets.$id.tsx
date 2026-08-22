@@ -93,7 +93,7 @@ function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
         { value: "overview", label: "Overview" },
         { value: "vrfs", label: "VRFs" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

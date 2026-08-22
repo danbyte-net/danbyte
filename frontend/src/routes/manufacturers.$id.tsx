@@ -113,7 +113,7 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
           count: m.module_type_count,
         },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

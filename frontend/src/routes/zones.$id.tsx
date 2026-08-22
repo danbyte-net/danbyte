@@ -132,7 +132,7 @@ function Body({ zone: z }: { zone: Zone }) {
         { value: "overview", label: "Overview" },
         { value: "vlans", label: "VLANs", count: z.usage_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

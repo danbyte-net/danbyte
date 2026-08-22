@@ -20,6 +20,8 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import { apiErrorToast } from "@/lib/api-toast"
+import { syncPortReservation } from "@/components/port-reservation-dialog"
 
 export interface RearPortFormProps {
   port?: RearPort
@@ -50,6 +52,8 @@ export function RearPortForm({
   const [markConnected, setMarkConnected] = useState(
     port?.mark_connected ?? false
   )
+  const [reserved, setReserved] = useState(!!port?.reservation)
+  const [reserveNote, setReserveNote] = useState(port?.reservation?.note ?? "")
   const [description, setDescription] = useState(port?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     port?.tags.map((t) => t.id) ?? []
@@ -62,6 +66,8 @@ export function RearPortForm({
     setType(port.type)
     setIsSplitter(port.is_splitter ?? false)
     setMarkConnected(port.mark_connected ?? false)
+    setReserved(!!port.reservation)
+    setReserveNote(port.reservation?.note ?? "")
     setDescription(port.description ?? "")
     setTagIds(port.tags.map((t) => t.id))
     reset()
@@ -112,6 +118,19 @@ export function RearPortForm({
       ).then(({ last, count }) => ({ saved: last, count }))
     },
     onSuccess: ({ saved, count }) => {
+      // The hold is its own API object riding alongside the port row;
+      // fan-out creates skip it - a reservation names ONE real port.
+      if (count === 1 && !isPlanning && !saved.cable && !markConnected) {
+        void syncPortReservation({
+          kind: "rear_port",
+          portId: saved.id,
+          existing: port?.reservation ?? null,
+          reserved,
+          note: reserveNote.trim(),
+        }).catch((err) =>
+          apiErrorToast(err, "Could not update the reservation")
+        )
+      }
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
       qc.invalidateQueries({ queryKey: ["rear-ports-picker", deviceId] })
       toast.success(
@@ -189,9 +208,31 @@ export function RearPortForm({
           label="Mark connected"
           hint="a cable is in the port, just not documented yet"
           checked={markConnected}
-          onChange={setMarkConnected}
+          onChange={(v) => {
+            setMarkConnected(v)
+            if (v) setReserved(false)
+          }}
         />
+        {!port?.cable && (
+          <FormCheckbox
+            label="Reserved"
+            hint="hold this port before the far end is known"
+            checked={reserved}
+            onChange={(v) => {
+              setReserved(v)
+              if (v) setMarkConnected(false)
+            }}
+          />
+        )}
       </Field>
+      {reserved && !port?.cable && (
+        <FormText
+          label="Reservation note"
+          value={reserveNote}
+          onChange={setReserveNote}
+          placeholder="Who or what this port is for"
+        />
+      )}
       <FormText
         label="Description"
         value={description}

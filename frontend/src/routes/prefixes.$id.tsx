@@ -344,7 +344,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         { value: "monitoring", label: "Monitoring" },
         ...(dnsEnabled ? [{ value: "dns", label: "DNS" }] : []),
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

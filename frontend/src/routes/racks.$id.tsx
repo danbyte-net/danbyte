@@ -167,7 +167,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         { value: "devices", label: "Devices", count: r.device_count },
         { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

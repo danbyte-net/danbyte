@@ -549,7 +549,7 @@ users with the grant - an **Edit** button (the only writable fields, `name` and
   source-of-truth intent), each linking to its detail page, with an **Assign
   to…** control (pick an object type - device / VM / IP - then the object) and a
   per-row **Unassign**. Empty until you assign it somewhere.
-- **Journal** and **History** - the shared operator notes and change log, last.
+- **Journal** and **Change log** - the shared operator notes and automatic change record, last.
 
 ### Dashboard widget
 

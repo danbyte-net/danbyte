@@ -111,7 +111,7 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
         { value: "overview", label: "Overview" },
         { value: "affected", label: "Affected objects" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

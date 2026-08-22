@@ -129,7 +129,7 @@ function Body({ range: r }: { range: IPRange }) {
         { value: "overview", label: "Overview" },
         { value: "available", label: "Available" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

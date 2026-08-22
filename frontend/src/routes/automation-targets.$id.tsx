@@ -130,7 +130,7 @@ function Body({ target: t }: { target: AutomationTarget }) {
         { value: "overview", label: "Overview" },
         { value: "runs", label: "Runs", count: runs.data?.count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

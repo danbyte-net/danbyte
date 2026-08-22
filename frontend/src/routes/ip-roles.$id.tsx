@@ -119,7 +119,7 @@ function Body({ role: r }: { role: IPRole }) {
         { value: "overview", label: "Overview" },
         { value: "ips", label: "IPs", count: r.usage_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

@@ -18,6 +18,73 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { TimeCell } from "@/components/cells/time-ago"
+import { Badge } from "@/components/ui/badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
+/** "Reserved" chip with the hold's who/why on hover - the shared tooltip,
+ * never the browser-default title. Used by port rows and detail heroes. */
+export function ReservedBadge({
+  reservation,
+}: {
+  reservation: PortReservationMini
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="warning">Reserved</Badge>
+      </TooltipTrigger>
+      <TooltipContent variant="panel">
+        {reservation.claimed_by
+          ? `Reserved by ${reservation.claimed_by}`
+          : "Reserved"}
+        {reservation.note ? ` - ${reservation.note}` : ""}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** "Undocumented" chip for mark_connected ports, hint on hover. */
+export function UndocumentedBadge() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline">Undocumented</Badge>
+      </TooltipTrigger>
+      <TooltipContent variant="panel">
+        A cable is in the port, just not documented yet
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** Align a port's reservation with an edit form's Reserved checkbox + note.
+ * Called after the port itself saved; a no-op when nothing changed. */
+export async function syncPortReservation(opts: {
+  kind: string
+  portId: string
+  existing: PortReservationMini | null
+  reserved: boolean
+  note: string
+}) {
+  const { kind, portId, existing, reserved, note } = opts
+  if (reserved && !existing) {
+    await api("/api/port-reservations/", {
+      method: "POST",
+      body: JSON.stringify({ kind, port_id: portId, note }),
+    })
+  } else if (!reserved && existing) {
+    await api(`/api/port-reservations/${existing.id}/`, { method: "DELETE" })
+  } else if (reserved && existing && note !== existing.note) {
+    await api(`/api/port-reservations/${existing.id}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ note }),
+    })
+  }
+}
 
 /** The port a reservation targets - the cable-termination kind vocabulary. */
 export interface ReservationTarget {

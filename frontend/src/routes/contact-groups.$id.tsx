@@ -131,7 +131,7 @@ function Body({ group: g }: { group: ContactGroup }) {
         { value: "children", label: "Child groups", count: g.child_count },
         { value: "contacts", label: "Contacts", count: g.contact_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

@@ -142,7 +142,7 @@ function Body({ sw }: { sw: VirtualSwitch }) {
         { value: "overview", label: "Overview" },
         { value: "networks", label: "Networks", count: nets.length },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

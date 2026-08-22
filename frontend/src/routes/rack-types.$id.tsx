@@ -156,7 +156,7 @@ function Body({ rackType: rt }: { rackType: RackType }) {
         { value: "overview", label: "Overview", count: rt.accessories.length },
         { value: "racks", label: "Racks", count: rt.rack_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v)}

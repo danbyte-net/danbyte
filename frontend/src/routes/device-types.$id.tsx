@@ -219,7 +219,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         { value: "sensors", label: "Sensors" },
         { value: "devices", label: "Devices", count: d.device_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

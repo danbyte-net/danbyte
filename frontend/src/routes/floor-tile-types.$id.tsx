@@ -142,7 +142,7 @@ function Body({ type: t }: { type: FloorTileType }) {
         { value: "overview", label: "Overview" },
         { value: "tiles", label: "Placed", count: t.tile_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v)}

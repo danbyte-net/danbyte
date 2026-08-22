@@ -111,7 +111,7 @@ function Body({ network: n }: { network: ProviderNetwork }) {
         { value: "overview", label: "Overview" },
         { value: "circuits", label: "Circuits", count: n.circuit_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={(v) => setTab(v as typeof tab)}

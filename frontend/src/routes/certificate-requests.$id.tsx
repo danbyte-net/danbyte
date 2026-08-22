@@ -233,7 +233,7 @@ function Body({ req }: { req: CertificateRequest }) {
         { value: "overview", label: "Overview" },
         { value: "acme", label: "ACME" },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}

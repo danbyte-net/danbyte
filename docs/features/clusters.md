@@ -22,7 +22,7 @@ only place you need to set a site.
 | **Description**, **tags** | Notes and labels. |
 
 Its detail page lists the **virtual machines** on it (with a count on the tab),
-plus Journal and History.
+plus Journal and Change log.
 
 ### Site, and the VMs on it
 

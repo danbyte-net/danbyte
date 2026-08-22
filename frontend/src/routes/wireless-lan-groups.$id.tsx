@@ -98,7 +98,7 @@ function Body({ group: g }: { group: WirelessLANGroup }) {
         { value: "overview", label: "Overview" },
         { value: "wlans", label: "Wireless LANs", count: g.wlan_count },
         { value: "journal", label: "Journal" },
-        { value: "history", label: "History" },
+        { value: "history", label: "Change log" },
       ]}
       tab={tab}
       onTabChange={setTab}
