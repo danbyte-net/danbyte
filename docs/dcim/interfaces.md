@@ -93,7 +93,9 @@ VLANs, VRF, LAG - applied to all of them. The form is grouped into sections:
 device/name/type up top, then **Switching** (802.1Q, VLANs, VRF), **State**
 (enabled, mark connected, reserved, uplink), and collapsible **Hardware**,
 **Nesting**, and **SNMP** groups for the rarely touched fields - a group with
-values set opens automatically and shows a dot while collapsed.
+values set opens automatically and summarises its values while collapsed.
+Your open/closed choices are remembered per browser, and Ctrl/Cmd+Enter
+saves from any field.
 
 The State checkboxes:
 
@@ -103,7 +105,9 @@ The State checkboxes:
 | **Management only** | Out-of-band management port; excluded from data-plane views. |
 | **Mark connected** | A cable is physically in the port, just not documented yet - counts as connected in [port utilization](devices.md#the-device-page) and clears itself when a real cable is attached. |
 | **Reserved** | A [port reservation](cabling.md#port-reservations) - hold the port before the far end is known. Released automatically when a cable lands. |
-| **Uplink** | Faces other network gear - discovery never suggests hosts on this port, and topology treats it as an infrastructure link. | Bulk add is the one to use for a whole
+| **Uplink** | Faces other network gear - discovery never suggests hosts on this port, and topology treats it as an infrastructure link. |
+
+Bulk add is the one to use for a whole
 switch face: it does the work server-side, keeps zero-padding, and skips
 existing names. See
 [Adding many components at once](devices.md#adding-many-components-at-once).

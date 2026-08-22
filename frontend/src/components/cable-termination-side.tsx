@@ -128,6 +128,20 @@ export function CableTerminationSide({
       staleTime: 5 * 60_000,
     })),
   })
+  // A pre-seeded termination ("Connect cable" from a port row) names only
+  // the port - once its detail arrives, focus the picker on that port's
+  // device and kind, so the side opens ready instead of on an empty picker.
+  // Once only: clearing the device to add another end must stick.
+  const [seeded, setSeeded] = useState(false)
+  useEffect(() => {
+    if (seeded || deviceId || value.length === 0) return
+    const first = fetched[0]?.data
+    if (!first?.device) return
+    setSeeded(true)
+    setType(value[0].kind)
+    setDeviceId(first.device.id)
+  }, [seeded, deviceId, value, fetched])
+
   const labelFor = (v: TerminationInput): string => {
     const k = keyOf(v)
     if (labels[k]) return labels[k]

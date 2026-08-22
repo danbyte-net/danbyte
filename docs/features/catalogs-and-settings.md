@@ -81,7 +81,7 @@ and behaves for you:
 | **Date format** | How calendar dates render: ISO (`2026-01-31`), `31.01.2026`, `01/31/2026`, `31 Jan 2026`, … |
 | **Clock** | 24-hour (`14:30`) or 12-hour (`2:30 PM`). |
 | **Timezone** | The IANA timezone times render in (e.g. `Europe/Copenhagen`). The list comes from the server's own timezone database, so every offered zone is one it accepts; renamed zones (`Europe/Kiev` → `Europe/Kyiv`) are converted on save. |
-| **Striped rows** | Alternating row shading on/off. |
+| **Striped rows** | Alternating row shading; on by default. |
 | **Confirm before deleting** | Whether delete actions ask for confirmation. |
 
 These are saved to your own profile, so they follow you and don't affect other

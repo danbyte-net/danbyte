@@ -27,7 +27,7 @@ DEFAULTS: dict[str, Any] = {
     # ─── Tables ──────────────────────────────────────────────────────────
     "page_size":      25,          # Pagination default across list pages.
     "table_density":  "comfortable",  # comfortable | compact
-    "table_stripes":  False,       # Striped rows on by default?
+    "table_stripes":  True,        # Striped rows on by default.
 
     # ─── Visual ──────────────────────────────────────────────────────────
     "theme":          "system",    # system | light | dark - initial render.

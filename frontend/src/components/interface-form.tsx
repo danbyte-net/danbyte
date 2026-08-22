@@ -455,6 +455,7 @@ export function InterfaceForm({
       <FormSection
         title="Hardware"
         collapsible
+        storageKey="interface"
         summary={hardwareSummary || undefined}
         hasValues={
           !!(
@@ -543,6 +544,7 @@ export function InterfaceForm({
       <FormSection
         title="Nesting"
         collapsible
+        storageKey="interface"
         summary={nestingSummary || undefined}
         hasValues={!!(virtual || parentId || lagId || bridgeId)}
       >
@@ -594,6 +596,7 @@ export function InterfaceForm({
         <FormSection
           title="SNMP"
           collapsible
+          storageKey="interface"
           summary={snmpSummary || undefined}
           hasValues={!!(snmpName || snmpIgnore)}
         >

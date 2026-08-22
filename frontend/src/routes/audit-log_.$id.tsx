@@ -121,6 +121,7 @@ function ChangeLogDetail() {
           <Button
             size="sm"
             variant="outline"
+            className="shrink-0 flex-nowrap whitespace-nowrap"
             asChild={!!older}
             disabled={!older}
           >
@@ -129,14 +130,15 @@ function ChangeLogDetail() {
                 <ChevronLeft className="h-3.5 w-3.5" /> Previous
               </Link>
             ) : (
-              <span>
+              <>
                 <ChevronLeft className="h-3.5 w-3.5" /> Previous
-              </span>
+              </>
             )}
           </Button>
           <Button
             size="sm"
             variant="outline"
+            className="shrink-0 flex-nowrap whitespace-nowrap"
             asChild={!!newer}
             disabled={!newer}
           >
@@ -145,9 +147,9 @@ function ChangeLogDetail() {
                 Next <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             ) : (
-              <span>
+              <>
                 Next <ChevronRight className="h-3.5 w-3.5" />
-              </span>
+              </>
             )}
           </Button>
         </div>

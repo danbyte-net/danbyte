@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { api } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { useTableFilters } from "@/components/table-filters"
@@ -49,6 +49,9 @@ function PortUtilizationPage() {
 
   const columns = useMemo<ColumnDef<RollupRow>[]>(
     () => [
+      // Tick rows to export just those - the Download menu exports the
+      // selection when one exists.
+      selectionColumn<RollupRow>(),
       {
         id: "name",
         accessorKey: "name",

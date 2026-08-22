@@ -15,11 +15,28 @@ import { cn } from "@/lib/utils"
  * `hasValues` so a section whose fields are set starts open (an edit must
  * never hide data behind a closed disclosure) and shows a dot while closed.
  */
+/** Per-browser open/closed preference for collapsible sections, keyed by
+ * form. The summary line keeps set values readable even when a user prefers
+ * a section collapsed. */
+function readSectionPrefs(storageKey: string): Record<string, boolean> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(
+      `danbyte-form-sections:${storageKey}`
+    )
+    const parsed = raw ? JSON.parse(raw) : {}
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 export function FormSection({
   title,
   collapsible,
   hasValues,
   summary,
+  storageKey,
   children,
 }: {
   title: string
@@ -29,9 +46,34 @@ export function FormSection({
   /** Terse "what's set in here" line shown while collapsed ("10G · MTU 9000")
    * - the section stays readable without expanding; clicking it opens. */
   summary?: ReactNode
+  /** Remember this section's open/closed state per browser (keyed by
+   * form name + section title) - the built-in "my default layout" pref. */
+  storageKey?: string
   children: ReactNode
 }) {
-  const [open, setOpen] = useState(!collapsible || !!hasValues)
+  const [open, setOpenState] = useState(() => {
+    if (collapsible && storageKey) {
+      const saved = readSectionPrefs(storageKey)[title]
+      if (typeof saved === "boolean") return saved
+    }
+    return !collapsible || !!hasValues
+  })
+  const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
+    setOpenState((cur) => {
+      const v = typeof next === "function" ? next(cur) : next
+      if (collapsible && storageKey && typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(
+            `danbyte-form-sections:${storageKey}`,
+            JSON.stringify({ ...readSectionPrefs(storageKey), [title]: v })
+          )
+        } catch {
+          /* quota / private mode - the toggle still works for the session */
+        }
+      }
+      return v
+    })
+  }
 
   const headingClasses =
     "flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase " +
