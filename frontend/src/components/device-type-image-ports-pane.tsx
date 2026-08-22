@@ -104,6 +104,10 @@ type Side = "front" | "rear"
 
 interface FillOpts {
   kind: PhotoMarkerKind
+  /** Range also spans ALREADY-PLACED ports (opt-in "Re-lay placed ports"):
+   * off by default so the panel only deals in unplaced ports - re-laying an
+   * existing run is a deliberate switch, not the opening state. */
+  replay: boolean
   from: string
   to: string
   rows: 1 | 2 | 3 | 4
@@ -349,36 +353,21 @@ export function DeviceTypeImagePortsPane({
 
   // ── Auto-fill: lay a whole run of ports in one shot ──────────────────────
   const openFill = () => {
-    // Prefer a kind with unplaced ports (interfaces first); with everything
-    // placed, fall back to the first kind that has ports at all - bulk can
-    // re-lay an existing run.
+    // Seed from the first kind that has unplaced ports (interfaces first).
+    // Placed ports stay out of the panel until "Re-lay placed ports".
     const kind =
       KINDS.find((k) => (unplacedByKind[k] ?? []).length) ??
       KINDS.find((k) => (allByKind[k] ?? []).length) ??
       "interface"
-    const unplaced = unplacedByKind[kind] ?? []
-    const names = unplaced.length ? unplaced : (allByKind[kind] ?? [])
+    const names = unplacedByKind[kind] ?? []
     // A RUN of ports packs tighter than one dropped marker; a run of bays is
     // still bay-sized. Either way the user can retune before applying.
     const { w, h } = DEFAULT_SIZE[kind] ?? { w: 0.02, h: 0.22 }
-    // Re-laying a fully placed run: seed the grid from where it sits now,
-    // so Bulk place opens as "adjust this grid", not "start from scratch".
-    const existing = markers.filter((m) => m.kind === kind)
-    const seed =
-      unplaced.length === 0 && existing.length >= 2
-        ? {
-            x1: Math.min(...existing.map((m) => m.x)),
-            x2: Math.max(...existing.map((m) => m.x)),
-            y1: Math.min(...existing.map((m) => m.y)),
-            row2y: Math.max(...existing.map((m) => m.y)),
-            w: existing[0].w,
-            h: existing[0].h,
-          }
-        : {}
     setSel(null)
     setSearch("")
     setFill({
       kind,
+      replay: false,
       from: names[0]?.name ?? "",
       to: names[names.length - 1]?.name ?? "",
       rows: 2,
@@ -391,6 +380,32 @@ export function DeviceTypeImagePortsPane({
       row2y: 0.66,
       w,
       h,
+    })
+  }
+
+  // Opt into re-laying: widen the range to every port of the kind and seed
+  // the grid from where the existing run sits, so it opens as "adjust this
+  // grid" rather than "start from scratch".
+  const enableReplay = () => {
+    if (!fill) return
+    const names = (allByKind[fill.kind] ?? []).map((t) => t.name)
+    const existing = markers.filter((m) => m.kind === fill.kind)
+    const seed =
+      existing.length >= 2
+        ? {
+            x1: Math.min(...existing.map((m) => m.x)),
+            x2: Math.max(...existing.map((m) => m.x)),
+            y1: Math.min(...existing.map((m) => m.y)),
+            row2y: Math.max(...existing.map((m) => m.y)),
+            w: existing[0].w,
+            h: existing[0].h,
+          }
+        : {}
+    setFill({
+      ...fill,
+      replay: true,
+      from: names[0] ?? "",
+      to: names[names.length - 1] ?? "",
       ...seed,
     })
   }
@@ -399,7 +414,8 @@ export function DeviceTypeImagePortsPane({
   // snapping them back to that kind's full range.
   useEffect(() => {
     if (!fill) return
-    const names = (allByKind[fill.kind] ?? []).map((t) => t.name)
+    const pool = fill.replay ? allByKind : unplacedByKind
+    const names = (pool[fill.kind] ?? []).map((t) => t.name)
     if (!names.includes(fill.from) || !names.includes(fill.to)) {
       setFill({
         ...fill,
@@ -413,7 +429,8 @@ export function DeviceTypeImagePortsPane({
   // The port names the current fill options select (natural-sorted, from..to).
   const fillNames = useMemo(() => {
     if (!fill) return []
-    const all = (allByKind[fill.kind] ?? []).map((t) => t.name)
+    const pool = fill.replay ? allByKind : unplacedByKind
+    const all = (pool[fill.kind] ?? []).map((t) => t.name)
     const i = all.indexOf(fill.from)
     const j = all.indexOf(fill.to)
     if (i < 0 || j < 0) return all
@@ -656,7 +673,14 @@ export function DeviceTypeImagePortsPane({
                 fillNames.filter((n) => placed.has(`${fill.kind}:${n}`)).length
               }
               kinds={fillKinds}
-              names={(allByKind[fill.kind] ?? []).map((t) => t.name)}
+              names={(
+                (fill.replay ? allByKind : unplacedByKind)[fill.kind] ?? []
+              ).map((t) => t.name)}
+              onReplay={
+                !fill.replay && markers.some((m) => m.kind === fill.kind)
+                  ? enableReplay
+                  : undefined
+              }
               pick={pick}
               setPick={setPick}
               onApply={applyFill}
@@ -776,6 +800,7 @@ function FillPanel({
   setFill,
   count,
   rePlaced,
+  onReplay,
   kinds,
   names,
   pick,
@@ -788,6 +813,9 @@ function FillPanel({
   count: number
   /** How many of those are already on the photo (they get re-placed). */
   rePlaced: number
+  /** Present while placed markers of this kind exist and re-lay is off -
+   * switches the range to every port and seeds the grid from the run. */
+  onReplay?: () => void
   kinds: PhotoMarkerKind[]
   names: string[]
   pick: null | "x1" | "x2"
@@ -1057,6 +1085,16 @@ function FillPanel({
         <Button size="sm" onClick={onApply} disabled={count === 0}>
           Place {count} port{count === 1 ? "" : "s"}
         </Button>
+        {onReplay && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={onReplay}
+          >
+            Re-lay placed ports
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
