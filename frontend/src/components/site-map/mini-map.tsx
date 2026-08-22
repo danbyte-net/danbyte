@@ -134,9 +134,12 @@ export function MiniMap({
     const group = createMarkerGroup({ cluster: true, mini: true, radius: 40 })
 
     const placedSites = data.sites.filter((s) => s.latitude !== null)
-    const sitesToShow = onlyConnectionsOf
-      ? placedSites.filter((s) => s.id === onlyConnectionsOf)
-      : placedSites
+    // `onlyConnectionsOf` scopes the CONNECTIONS and the initial framing to
+    // one site - never the marker set. Every placed site stays on the map,
+    // so zooming out from a site page still shows the rest of the estate
+    // (this once filtered the markers to just the one site, and zooming out
+    // revealed an empty world).
+    const sitesToShow = placedSites
 
     // connection arcs
     let conns = connQ.data?.connections ?? []
@@ -145,6 +148,13 @@ export function MiniMap({
         (c) =>
           c.site_a.id === onlyConnectionsOf || c.site_z.id === onlyConnectionsOf
       )
+    // Frame the view on the scoped site + its connection peers.
+    const frameIds = onlyConnectionsOf
+      ? new Set([
+          onlyConnectionsOf,
+          ...conns.flatMap((c) => [c.site_a.id, c.site_z.id]),
+        ])
+      : null
     buildConnectionsLayer(conns, () => {}).group.eachLayer((l) =>
       group.addLayer(l)
     )
@@ -168,7 +178,8 @@ export function MiniMap({
       m.bindTooltip(s.name, { direction: "top" })
       m.on("click", () => nav({ to: "/sites/$id", params: { id: s.id } }))
       group.addLayer(m)
-      bounds.push([s.latitude!, s.longitude!])
+      if (!frameIds || frameIds.has(s.id))
+        bounds.push([s.latitude!, s.longitude!])
     }
 
     let focusMarker: L.Marker | null = null
