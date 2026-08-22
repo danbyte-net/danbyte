@@ -47,12 +47,14 @@ export function ReservedBadge({
   )
 }
 
-/** "Undocumented" chip for mark_connected ports, hint on hover. */
+/** Chip for mark_connected ports. Reads "Connected" - the flag means a
+ * cable IS in the port - with the not-documented nuance on hover; the
+ * utilization card's Undocumented count keeps carrying the doc-debt angle. */
 export function UndocumentedBadge() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge variant="outline">Undocumented</Badge>
+        <Badge variant="outline">Connected</Badge>
       </TooltipTrigger>
       <TooltipContent variant="panel">
         A cable is in the port, just not documented yet

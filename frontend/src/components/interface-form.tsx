@@ -519,7 +519,8 @@ export function InterfaceForm({
           />
         )}
         <FormCheckbox
-          label="Virtual interface (sub-interface / LAG / loopback)"
+          label="Virtual interface"
+          hint="sub-interface, LAG, or loopback"
           checked={virtual}
           onChange={setVirtual}
         />
