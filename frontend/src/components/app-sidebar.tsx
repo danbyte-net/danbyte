@@ -925,11 +925,17 @@ function NavGroup({
 
   return (
     <SidebarGroup className="py-0.5">
-      <SidebarGroupLabel asChild>
+      {/* Overrides live on SidebarGroupLabel itself: its base classes
+          (text-xs, /70 foreground) win the tailwind-merge against anything
+          on the inner button, which is why the first pass changed nothing. */}
+      <SidebarGroupLabel
+        asChild
+        className="h-9 text-sm font-semibold text-sidebar-foreground"
+      >
         <button
           type="button"
           onClick={() => onOpenChange(!open)}
-          className="flex w-full items-center gap-2 text-sm font-semibold text-sidebar-foreground hover:text-foreground"
+          className="flex w-full items-center gap-2 hover:text-foreground"
         >
           {Icon && <Icon className="size-4 shrink-0 opacity-80" />}
           <span>{label}</span>

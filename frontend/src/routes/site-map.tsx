@@ -1215,7 +1215,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
         : (cablePath?.[Math.floor(cablePath.length / 2)] ?? [0, 0])
     const update = () => {
       const p = map.latLngToContainerPoint(ll)
-      setPopPos({ x: p.x, y: p.y })
+      // Failsafe: a marker near the container edge must not push its popover
+      // out of view. Clamp by the popover's worst-case footprint (max-w
+      // 22rem, centred on x; opens downward with a modest height estimate).
+      const size = map.getSize()
+      const HALF_W = 184
+      const EST_H = 340
+      const x = Math.min(Math.max(p.x, HALF_W + 8), size.x - HALF_W - 8)
+      const y = Math.min(Math.max(p.y, 8), Math.max(8, size.y - EST_H))
+      setPopPos({ x, y })
     }
     update()
     map.on("move zoom", update)
