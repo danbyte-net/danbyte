@@ -173,6 +173,15 @@ hide a problem. Click a chip to zoom into it - at maximum zoom, markers on the
 clustered object from the sidebar, search, or a `?focus=` link zooms and fans
 automatically until that marker is visible.
 
+While markers are stacked, a connection arc or cable whose endpoint is
+currently inside a chip **hides** - it would otherwise point at empty map -
+and reappears the moment the chip opens.
+
+Stacking is a preference: **View settings → Stack nearby markers** (default
+on). Turned off, nothing collapses - crowded markers **shrink** instead, down
+to about half size, so every site stays individually visible and clickable.
+The choice applies to the mini maps too.
+
 **Edit** and **Cables** modes never cluster - dragging, click-to-place and
 route drawing work on the flat markers exactly as before. The MiniMap (the
 dashboard widget, site/device locators, circuits strip) clusters too, with a

@@ -106,7 +106,11 @@ import {
   setBaseLayer,
 } from "@/components/site-map/map-core"
 import {
+  applyDensityScaling,
   createMarkerGroup,
+  setStackingEnabled,
+  stackingEnabled,
+  syncLinesWithClusters,
   tagMarker,
   zoomToRevealMarker,
 } from "@/components/site-map/cluster"
@@ -241,6 +245,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     localStorage.setItem("site-map:labels", v ? "on" : "off")
     setShowLabelsState(v)
   }
+  // Stacking: cluster colliding markers (default) or shrink them in place.
+  const [stacking, setStackingState] = useState(stackingEnabled)
+  const setStacking = (v: boolean) => {
+    setStackingEnabled(v)
+    setStackingState(v)
+  }
+  // Re-check line-vs-cluster visibility after a layer effect rebuilds lines.
+  const resyncRef = useRef<(() => void) | null>(null)
+  const modeCleanupRef = useRef<(() => void) | null>(null)
   const [tilesBlocked, setTilesBlocked] = useState(false)
   // After stamping a marker: ask for a name + optional device link.
   const [linkPrompt, setLinkPrompt] = useState<{
@@ -834,6 +847,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     built.group.addTo(map)
     connRef.current = built.group
     midpointsRef.current = built.midpoints
+    resyncRef.current?.()
   }, [shownConnections, layers.links])
 
   // Route channels (view + edit); rebuilt on selection so the selected one
@@ -869,6 +883,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     })
     layer.addTo(map)
     drawnCablesRef.current = layer
+    resyncRef.current?.()
   }, [drawnCables, highlightCableIds])
 
   // Arriving with ?trace=<cableId>: highlight the cable and fit the view -
@@ -968,7 +983,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     markerHandles.current.clear()
     // View mode clusters colliding markers; edit modes keep the flat group so
     // dragging and click-to-place work exactly as before.
-    const group = createMarkerGroup({ cluster: mode === "view" })
+    const group = createMarkerGroup({ cluster: mode === "view" && stacking })
     const sel = selectedRef.current
 
     if (layers.sites) {
@@ -1053,13 +1068,33 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
     group.addTo(map)
     markersRef.current = group
+    // Stacked: lines whose endpoint sits inside a cluster chip hide until it
+    // opens. Unstacked view mode: crowded markers shrink instead.
+    modeCleanupRef.current?.()
+    resyncRef.current = null
+    if (mode === "view") {
+      if (stacking) {
+        const armed = syncLinesWithClusters(map, group, () => [
+          connRef.current,
+          drawnCablesRef.current,
+        ])
+        resyncRef.current = armed.sync
+        modeCleanupRef.current = armed.cleanup
+      } else {
+        const ms: L.Marker[] = []
+        group.eachLayer((l) => {
+          if (l instanceof L.Marker) ms.push(l)
+        })
+        modeCleanupRef.current = applyDensityScaling(map, ms)
+      }
+    }
 
     if (!(map as unknown as { _smFitted?: boolean })._smFitted) {
       fitAll(map)
       ;(map as unknown as { _smFitted?: boolean })._smFitted = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, editing, mode, placed, layers])
+  }, [data, editing, mode, placed, layers, stacking])
 
   // Selection restyle + reveal: touch exactly the old and new selected
   // markers, and when the new one sits inside a cluster, zoom/spiderfy until
@@ -1409,6 +1444,12 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 checked={layers.routes}
                 onChange={(v) => setLayers((l) => ({ ...l, routes: v }))}
                 className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Stack nearby markers"
+                checked={stacking}
+                onChange={setStacking}
+                className="items-center"
               />
               <FormCheckbox
                 label="Region boundaries"

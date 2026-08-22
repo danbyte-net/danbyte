@@ -24,7 +24,10 @@ import {
   setBaseLayer,
 } from "@/components/site-map/map-core"
 import {
+  applyDensityScaling,
   createMarkerGroup,
+  stackingEnabled,
+  syncLinesWithClusters,
   tagMarker,
   zoomToRevealMarker,
 } from "@/components/site-map/cluster"
@@ -57,6 +60,7 @@ export function MiniMap({
   const nav = useNavigate()
   const el = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
   const layersRef = useRef<L.LayerGroup | null>(null)
   const boundaryRef = useRef<L.GeoJSON | null>(null)
 
@@ -131,7 +135,11 @@ export function MiniMap({
     layersRef.current?.remove()
     // Clustered like the full map's view mode (the MiniMap is view-only);
     // polylines added below land in the plugin's non-point group untouched.
-    const group = createMarkerGroup({ cluster: true, mini: true, radius: 40 })
+    // Honour the shared stacking preference: stacked = cluster chips (and
+    // lines into a chip hide); unstacked = density scaling shrinks crowded
+    // markers instead.
+    const stacking = stackingEnabled()
+    const group = createMarkerGroup({ cluster: stacking, mini: true, radius: 40 })
 
     const placedSites = data.sites.filter((s) => s.latitude !== null)
     // `onlyConnectionsOf` scopes the CONNECTIONS and the initial framing to
@@ -155,14 +163,14 @@ export function MiniMap({
           ...conns.flatMap((c) => [c.site_a.id, c.site_z.id]),
         ])
       : null
-    buildConnectionsLayer(conns, () => {}).group.eachLayer((l) =>
-      group.addLayer(l)
-    )
+    const connLayer = buildConnectionsLayer(conns, () => {})
+    connLayer.group.eachLayer((l) => group.addLayer(l))
 
     // cables (dashed/solid), un-highlighted
-    buildDrawnCablesLayer(drawnCables, {
+    const cablesLayer = buildDrawnCablesLayer(drawnCables, {
       highlightIds: new Set<string>(),
-    }).eachLayer((l) => group.addLayer(l))
+    })
+    cablesLayer.eachLayer((l) => group.addLayer(l))
 
     const bounds: [number, number][] = []
 
@@ -225,6 +233,17 @@ export function MiniMap({
 
     group.addTo(map)
     layersRef.current = group
+    // Post-placement behaviour per mode: hide lines whose endpoint is inside
+    // a cluster chip, or shrink crowded markers when stacking is off.
+    cleanupRef.current?.()
+    const markers: L.Marker[] = []
+    group.eachLayer((l) => {
+      if (l instanceof L.Marker) markers.push(l)
+    })
+    cleanupRef.current = stacking
+      ? syncLinesWithClusters(map, group, () => [connLayer.group, cablesLayer])
+          .cleanup
+      : applyDensityScaling(map, markers)
 
     // Fit - to the focused device, the boundary, the located site + its
     // arcs, or everything.

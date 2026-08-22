@@ -95,3 +95,109 @@ export function zoomToRevealMarker(
   if (typeof g.zoomToShowLayer === "function") g.zoomToShowLayer(marker, done)
   else done?.()
 }
+
+// ── Stacking preference ─────────────────────────────────────────────────────
+// Stacking (clustering) is the default; turning it off swaps collision
+// handling to DENSITY SCALING - markers shrink when they'd collide, so every
+// site stays individually visible. Shared by the full map and every mini map.
+const STACKING_KEY = "site-map:stacking"
+
+export function stackingEnabled(): boolean {
+  try {
+    return localStorage.getItem(STACKING_KEY) !== "off"
+  } catch {
+    return true
+  }
+}
+
+export function setStackingEnabled(v: boolean): void {
+  try {
+    localStorage.setItem(STACKING_KEY, v ? "on" : "off")
+  } catch {
+    /* private mode - session-only */
+  }
+}
+
+/**
+ * Density scaling for unstacked maps: each marker shrinks by how crowded its
+ * neighbourhood is on screen, down to 45%, so colliding markers stay apart
+ * without collapsing into a chip. Recomputed per zoom. Returns a cleanup.
+ */
+export function applyDensityScaling(map: L.Map, markers: L.Marker[]): () => void {
+  const BASE = 44 // px at which two markers are considered comfortable
+  const rescale = () => {
+    const pts = markers.map((m) => map.latLngToContainerPoint(m.getLatLng()))
+    markers.forEach((m, i) => {
+      let nearest = Infinity
+      for (let j = 0; j < pts.length; j++) {
+        if (j === i) continue
+        const d = pts[i].distanceTo(pts[j])
+        if (d < nearest) nearest = d
+      }
+      const f = Math.max(0.45, Math.min(1, nearest / BASE))
+      const el = m.getElement()?.firstElementChild as HTMLElement | null
+      if (el) {
+        el.style.transform = f < 1 ? `scale(${f.toFixed(2)})` : ""
+        el.style.transformOrigin = "center bottom"
+      }
+    })
+  }
+  map.on("zoomend", rescale)
+  // First pass after the icons exist in the DOM.
+  requestAnimationFrame(rescale)
+  return () => map.off("zoomend", rescale)
+}
+
+// ── Cluster-aware lines ─────────────────────────────────────────────────────
+// A connection arc or geo-routed cable anchored on a marker that is currently
+// COLLAPSED into a cluster points at empty map - the line's endpoint has
+// visually moved into the chip. Those lines hide until the cluster opens.
+type EndTagged = L.Path & { options: L.PathOptions & { smEnds?: L.LatLng[] } }
+
+export function tagLineEnds(line: L.Path, ends: [number, number][]): void {
+  ;(line as EndTagged).options.smEnds = ends.map(([la, ln]) => L.latLng(la, ln))
+}
+
+const endKey = (ll: L.LatLng) => `${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}`
+
+export function syncLinesWithClusters(
+  map: L.Map,
+  group: L.LayerGroup,
+  /** Getter, not a snapshot - the big map rebuilds its line layers in their
+   * own effects, and the sync must always see the current ones. */
+  getLineGroups: () => (L.LayerGroup | null | undefined)[]
+): { sync: () => void; cleanup: () => void } {
+  const g = group as L.LayerGroup & {
+    getVisibleParent?: (m: L.Marker) => L.Layer | null
+  }
+  if (typeof g.getVisibleParent !== "function")
+    return { sync: () => {}, cleanup: () => {} }
+  const sync = () => {
+    // Coordinates of every marker currently swallowed by a cluster chip.
+    const collapsed = new Set<string>()
+    g.eachLayer((l) => {
+      if (l instanceof L.Marker && g.getVisibleParent!(l) !== l)
+        collapsed.add(endKey(l.getLatLng()))
+    })
+    for (const lg of getLineGroups())
+      lg?.eachLayer((l) => {
+        const ends = (l as EndTagged).options?.smEnds
+        if (!ends?.length) return
+        const hidden = ends.some((e) => collapsed.has(endKey(e)))
+        const path = l as L.Path & { _smBaseOpacity?: number }
+        if (path._smBaseOpacity === undefined)
+          path._smBaseOpacity = (path.options.opacity as number) ?? 1
+        path.setStyle({ opacity: hidden ? 0 : path._smBaseOpacity })
+      })
+  }
+  map.on("zoomend", sync)
+  ;(group as L.Evented).on("animationend", sync)
+  requestAnimationFrame(sync)
+  return {
+    sync,
+    cleanup: () => {
+      map.off("zoomend", sync)
+      ;(group as L.Evented).off("animationend", sync)
+    },
+  }
+}

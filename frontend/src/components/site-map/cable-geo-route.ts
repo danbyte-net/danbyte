@@ -1,5 +1,7 @@
 import L from "leaflet"
 
+import { tagLineEnds } from "./cluster"
+
 import type { CableRoute, SiteMapCable } from "@/lib/api"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 import {
@@ -151,6 +153,7 @@ export function buildDrawnCablesLayer(
       lineJoin: "round",
       interactive: false,
     })
+    tagLineEnds(line, [c.path[0], c.path[c.path.length - 1]])
     const hit = L.polyline(c.path, { color: "#000", weight: 12, opacity: 0 })
     hit.bindTooltip(c.label || "cable", { sticky: true, direction: "top" })
     hit.on("click", (e: L.LeafletMouseEvent) => {
