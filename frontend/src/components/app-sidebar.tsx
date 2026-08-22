@@ -770,10 +770,12 @@ const sections: NavSection[] = [
             objectType: "compliancerule",
           },
           {
+            // Ungated: the API row-scopes entries to what the caller may
+            // view, so every signed-in user gets a meaningful (and safe)
+            // page - hiding the nav while the URL worked was just confusing.
             title: "Change log",
             url: "/audit-log",
             icon: History,
-            perm: "users.manage",
           },
           {
             title: "Jobs",

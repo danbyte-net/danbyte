@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
-import { objectDetailRoute } from "@/lib/object-routes"
+import { objectDetailRoute, objectListRoute } from "@/lib/object-routes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { KvCard, mono, dash } from "@/components/kv-card"
@@ -59,10 +59,9 @@ function ChangeLogDetail() {
     )
   if (!e) return null
 
-  const route =
-    e.action !== "delete" && e.object_exists
-      ? objectDetailRoute(e.object_type)
-      : undefined
+  const alive = e.action !== "delete" && e.object_exists
+  const route = alive ? objectDetailRoute(e.object_type) : undefined
+  const listRoute = alive && !route ? objectListRoute(e.object_type) : undefined
   const changedFields = Object.keys(e.changes)
 
   const changeRows: KvRow[] = [
@@ -92,6 +91,10 @@ function ChangeLogDetail() {
           params={{ id: e.object_id }}
           className="link font-medium"
         >
+          {e.object_repr}
+        </Link>
+      ) : listRoute ? (
+        <Link to={listRoute} className="link font-medium">
           {e.object_repr}
         </Link>
       ) : (

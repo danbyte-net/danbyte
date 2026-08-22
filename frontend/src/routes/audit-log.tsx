@@ -20,7 +20,7 @@ import { FilterRail } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TimeCell } from "@/components/cells/time-ago"
-import { objectDetailRoute } from "@/lib/object-routes"
+import { objectDetailRoute, objectListRoute } from "@/lib/object-routes"
 
 export const Route = createFileRoute("/audit-log")({ component: AuditLogPage })
 
@@ -46,6 +46,7 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "api.site", label: "Site" },
   { value: "api.cable", label: "Cable" },
   { value: "api.interface", label: "Interface" },
+  { value: "api.portreservation", label: "Port reservation" },
   { value: "api.ipstatus", label: "IP status" },
   { value: "api.iprole", label: "IP role" },
 ]
@@ -266,10 +267,12 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
       header: ({ column }) => <SortHeader column={column} label="Object" />,
       cell: ({ row }) => {
         const e = row.original
-        const route =
-          e.action !== "delete" && e.object_exists
-            ? objectDetailRoute(e.object_type)
-            : undefined
+        const alive = e.action !== "delete" && e.object_exists
+        const route = alive ? objectDetailRoute(e.object_type) : undefined
+        // Types without a detail page (e.g. port reservations) link to the
+        // list page that shows them instead of rendering plain text.
+        const listRoute =
+          alive && !route ? objectListRoute(e.object_type) : undefined
         return (
           <span className="block truncate">
             <span className="text-[11px] text-muted-foreground">
@@ -281,6 +284,10 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
                 params={{ id: e.object_id }}
                 className="link font-medium"
               >
+                {e.object_repr}
+              </Link>
+            ) : listRoute ? (
+              <Link to={listRoute} className="link font-medium">
                 {e.object_repr}
               </Link>
             ) : (

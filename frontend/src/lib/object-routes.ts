@@ -43,6 +43,17 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "customization.customfield": "/custom-fields/$id",
 }
 
+// Audited types with no $id detail page but a list page that shows them -
+// the change log links there instead of rendering plain text.
+export const OBJECT_LIST_ROUTES: Record<string, string> = {
+  "api.portreservation": "/port-reservations",
+}
+
+/** List-page fallback for an audited type without a detail route. */
+export function objectListRoute(objectType: string): string | undefined {
+  return OBJECT_LIST_ROUTES[objectType]
+}
+
 /** Detail route for an audited object type, or undefined when it has none
  * (or the object was deleted - callers should skip the link on deletes). */
 export function objectDetailRoute(objectType: string): string | undefined {
