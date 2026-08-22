@@ -89,7 +89,11 @@ Names that already exist on the device are skipped, so re-running is safe.
 
 The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`), which
 is handier for a few ports since you get the full field set - type, MTU, PoE,
-VLANs, VRF, LAG - applied to all of them. Bulk add is the one to use for a whole
+VLANs, VRF, LAG - applied to all of them. The form is grouped into sections:
+device/name/type up top, then **Switching** (802.1Q, VLANs, VRF), **State**
+(enabled, mark connected, reserved, uplink), and collapsible **Hardware**,
+**Nesting**, and **SNMP** groups for the rarely touched fields - a group with
+values set opens automatically and shows a dot while collapsed. Bulk add is the one to use for a whole
 switch face: it does the work server-side, keeps zero-padding, and skips
 existing names. See
 [Adding many components at once](devices.md#adding-many-components-at-once).
