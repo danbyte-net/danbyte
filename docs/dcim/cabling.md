@@ -50,8 +50,10 @@ ends picked).
   itself. Releasing by hand: the same bookmark action, or the list page.
 - **DCIM → Connections → Port reservations** lists every hold in the tenant:
   port, kind, site, who reserved it, note, and age
-  (`/api/port-reservations/`). Reservations are RBAC-controlled
-  (*Port reservations* object type) and audited.
+  (`/api/port-reservations/`) - with kind/site/reserved-by facets, search,
+  a pencil to edit the note, and select + release-many for bulk cleanup.
+  Reservations are RBAC-controlled (*Port reservations* object type) and
+  audited.
 
 ### Cable type
 

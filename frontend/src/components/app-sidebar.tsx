@@ -937,7 +937,7 @@ function NavGroup({
           section names read at a glance. */}
       <SidebarGroupLabel
         asChild
-        className="sticky top-0 z-10 h-9 rounded-md bg-sidebar-accent px-2.5 text-sm font-semibold text-sidebar-foreground"
+        className="sticky top-0 z-10 h-9 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground"
       >
         <button
           type="button"

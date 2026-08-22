@@ -16,6 +16,7 @@ import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
+import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
@@ -332,6 +333,27 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
       label: "Enabled",
       value: i.enabled ? "Yes" : "No",
     },
+    // The hold's who/why - the badge alone says "Reserved" but not by whom
+    // or what for, and that context is the whole point of a reservation.
+    ...(!i.cable && !i.mark_connected && i.reservation
+      ? [
+          {
+            label: "Reserved",
+            value: (
+              <span className="text-[13px]">
+                {i.reservation.note || "No note"}
+                <span className="text-muted-foreground">
+                  {i.reservation.claimed_by
+                    ? ` - by ${i.reservation.claimed_by}`
+                    : ""}
+                  {" · "}
+                  <TimeCell iso={i.reservation.created_at} />
+                </span>
+              </span>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     {
       label: "Management only",
       value: i.mgmt_only ? "Yes" : "No",

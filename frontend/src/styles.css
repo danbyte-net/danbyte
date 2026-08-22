@@ -12,6 +12,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-band: var(--sidebar-band);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -82,6 +83,9 @@
   --sidebar-primary-foreground: oklch(0.977 0.013 236.62);
   --sidebar-accent: oklch(0.967 0.001 286.375);
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
+  /* Section-header band: a step darker than the accent so the chip reads
+     against the near-white sidebar (dark mode reuses the accent). */
+  --sidebar-band: oklch(0.92 0.003 286.375);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.705 0.015 286.067);
 }
@@ -116,6 +120,7 @@
   --sidebar-primary-foreground: oklch(0.293 0.066 243.157);
   --sidebar-accent: oklch(0.274 0.006 286.033);
   --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-band: oklch(0.274 0.006 286.033);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
 }

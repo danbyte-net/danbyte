@@ -259,6 +259,18 @@ export function PortReservationDialog({
     onError: (e) => apiErrorToast(e, "Could not release the reservation"),
   })
 
+  const rename = useMutation({
+    mutationFn: () => {
+      if (!target?.reservation) throw new Error("No reservation")
+      return api(`/api/port-reservations/${target.reservation.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ note }),
+      })
+    },
+    onSuccess: () => done("Note saved"),
+    onError: (e) => apiErrorToast(e, "Could not save the note"),
+  })
+
   const existing = target?.reservation ?? null
 
   return (
@@ -277,23 +289,19 @@ export function PortReservationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {existing ? (
-          <div className="grid gap-1 text-sm">
-            {existing.note && <div>{existing.note}</div>}
-            <div className="text-muted-foreground">
-              Reserved <TimeCell iso={existing.created_at} />
-              {existing.claimed_by ? ` by ${existing.claimed_by}` : ""}
-            </div>
+        <Field label="Note">
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Who or what this port is for"
+            maxLength={200}
+          />
+        </Field>
+        {existing && (
+          <div className="text-sm text-muted-foreground">
+            Reserved <TimeCell iso={existing.created_at} />
+            {existing.claimed_by ? ` by ${existing.claimed_by}` : ""}
           </div>
-        ) : (
-          <Field label="Note">
-            <Input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Who or what this port is for"
-              maxLength={200}
-            />
-          </Field>
         )}
 
         <DialogFooter>
@@ -301,14 +309,23 @@ export function PortReservationDialog({
             Cancel
           </Button>
           {existing ? (
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={release.isPending}
-              onClick={() => release.mutate()}
-            >
-              {release.isPending ? "Releasing…" : "Release"}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={release.isPending}
+                onClick={() => release.mutate()}
+              >
+                {release.isPending ? "Releasing…" : "Release"}
+              </Button>
+              <Button
+                size="sm"
+                disabled={rename.isPending || note === existing.note}
+                onClick={() => rename.mutate()}
+              >
+                {rename.isPending ? "Saving…" : "Save"}
+              </Button>
+            </>
           ) : (
             <Button
               size="sm"
