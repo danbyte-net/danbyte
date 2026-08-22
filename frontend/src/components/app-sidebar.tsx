@@ -929,9 +929,9 @@ function NavGroup({
         <button
           type="button"
           onClick={() => onOpenChange(!open)}
-          className="flex w-full items-center gap-2 text-[13px] hover:text-foreground"
+          className="flex w-full items-center gap-2 text-sm font-semibold text-sidebar-foreground hover:text-foreground"
         >
-          {Icon && <Icon className="size-4 shrink-0 opacity-60" />}
+          {Icon && <Icon className="size-4 shrink-0 opacity-80" />}
           <span>{label}</span>
           <ChevronDown
             className={
@@ -1127,7 +1127,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     there's no room for text) and omitted for unlabelled
                     clusters so short sections stay flat. */}
                 {cluster.label && (
-                  <div className="px-2 pt-1.5 pb-0 text-[11px] font-semibold tracking-[0.08em] text-primary uppercase group-data-[collapsible=icon]:hidden">
+                  <div className="px-2 pt-2 pb-0.5 text-[11px] font-bold tracking-[0.1em] text-primary uppercase group-data-[collapsible=icon]:hidden">
                     {cluster.label}
                   </div>
                 )}
