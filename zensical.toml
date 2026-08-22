@@ -143,6 +143,8 @@ nav = [
       { "VLAN"              = "models/vlan.md" },
       { "Prefix"            = "models/prefix.md" },
       { "IP address"        = "models/ip-address.md" },
+      { "Interface"         = "models/interface.md" },
+      { "Port reservation"  = "models/port-reservation.md" },
       { "Tag"               = "models/tag.md" },
     ] },
   ] },

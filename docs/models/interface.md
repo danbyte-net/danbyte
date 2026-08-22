@@ -1,0 +1,152 @@
+---
+icon: lucide/workflow
+---
+
+# Interface
+
+A network port on a [device](site.md) - physical (a switch port, a NIC) or
+virtual (a sub-interface, LAG, loopback). Interfaces terminate
+[cables](../dcim/cabling.md), carry [IP addresses](ip-address.md) and
+[VLANs](vlan.md), and are what monitoring, discovery, and the topology views
+reason about.
+
+## Fields
+
+### Device
+
+The device this interface belongs to. An interface's name must be unique on
+its device.
+
+### Name
+
+The port's name (`GigabitEthernet0/1`, `eth0`). On create, a `[a-b]` range in
+the name fans out into one interface per number.
+
+### Type
+
+The media type (`1000base-t`, `10gbase-x-sfpp`, …) from the standard
+taxonomy. Drives the faceplate rendering and the speed-capability colouring.
+
+### Enabled
+
+Administratively up. Disabled interfaces render dashed on faceplates.
+
+### Description
+
+Free-text note shown on rows and the detail page.
+
+### Tags
+
+Tenant-scoped [tags](tag.md).
+
+## Switching & routing
+
+### 802.1Q mode
+
+How the port handles VLAN tagging: **Access** (one untagged VLAN),
+**Tagged** (a native VLAN plus tagged VLANs), or **Tagged (all)** (carries
+every VLAN). Blank for routed ports.
+
+### Untagged VLAN
+
+The access / native [VLAN](vlan.md).
+
+### Tagged VLANs
+
+The VLANs carried tagged on a trunk. Only valid in *Tagged* mode.
+
+### VRF
+
+The [VRF](vrf.md) this interface routes in. Empty = the Global table.
+
+## State
+
+### Management only
+
+Out-of-band management port; excluded from data-plane views.
+
+### Mark connected
+
+A cable is physically in the port but not documented yet. Counts as
+connected in [port utilization](../dcim/devices.md#the-device-page) and
+clears itself when a real cable is attached.
+
+### Reservation
+
+A [port reservation](port-reservation.md) holding this (uncabled) port -
+who claimed it, the note, and since when. Read-only here; managed through
+the reserve actions or `/api/port-reservations/`.
+
+### Uplink
+
+Faces other network gear: discovery never suggests hosts on this port, and
+topology treats it as an infrastructure link.
+
+## Hardware
+
+### Speed
+
+Free-text speed label (`10G`); the type's capability is used when unset.
+
+### MTU
+
+Maximum transmissible unit.
+
+### MAC address
+
+The primary MAC. Additional MACs live as first-class MAC address objects
+linked to the interface.
+
+### Duplex
+
+Half / full / auto.
+
+### PoE mode / PoE type
+
+Whether the port supplies or draws power, and the PoE standard.
+
+### WWN
+
+Fibre Channel World Wide Name.
+
+### Combo group
+
+Combo / shared port: alternate connectors of one logical port (an RJ45 and
+its SFP twin) share a group name; enabling one disables the others on the
+device.
+
+## Nesting
+
+### Virtual interface
+
+Marks a sub-interface, LAG, or loopback - no physical attributes, cannot be
+cabled.
+
+### Parent interface
+
+The interface a sub-interface nests under.
+
+### LAG / aggregate
+
+The aggregate interface this port is a member of.
+
+### Bridge
+
+The bridge interface this one belongs to.
+
+## Discovery
+
+### SNMP name
+
+What the polled agent calls this port; links the row to
+[SNMP discovery](../features/snmp-discovery.md). Clearing it unlinks.
+
+### Exclude from SNMP drift
+
+The agent can never report this port - it is skipped by drift comparison.
+
+## Read-only
+
+`cable` (the terminating cable and its status), `ip_addresses`,
+`tunnel_terminations` (VPN ends on this port), `child_count`,
+`lag_member_count`.
