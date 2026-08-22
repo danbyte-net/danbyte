@@ -239,6 +239,19 @@ export function DeviceTypeImagePortsPane({
     return out
   }, [templatesByKind])
 
+  // Re-lay pool: unplaced ports plus the ones placed on THIS side - never
+  // ports living on the other side (re-laying those here would duplicate
+  // them across the two photos).
+  const replayByKind = useMemo(() => {
+    const here = new Set(markers.map((m) => `${m.kind}:${m.name}`))
+    const out: Partial<Record<PhotoMarkerKind, PortComponent[]>> = {}
+    for (const k of KINDS)
+      out[k] = (allByKind[k] ?? []).filter(
+        (t) => !placed.has(`${k}:${t.name}`) || here.has(`${k}:${t.name}`)
+      )
+    return out
+  }, [allByKind, placed, markers])
+
   const snapV = (v: number) => (snap ? Math.round(v * 200) / 200 : v)
 
   const patchSel = (patch: Partial<ImagePortMarker>) => {
@@ -357,6 +370,7 @@ export function DeviceTypeImagePortsPane({
     // Placed ports stay out of the panel until "Re-lay placed ports".
     const kind =
       KINDS.find((k) => (unplacedByKind[k] ?? []).length) ??
+      KINDS.find((k) => markers.some((m) => m.kind === k)) ??
       KINDS.find((k) => (allByKind[k] ?? []).length) ??
       "interface"
     const names = unplacedByKind[kind] ?? []
@@ -388,7 +402,7 @@ export function DeviceTypeImagePortsPane({
   // grid" rather than "start from scratch".
   const enableReplay = () => {
     if (!fill) return
-    const names = (allByKind[fill.kind] ?? []).map((t) => t.name)
+    const names = (replayByKind[fill.kind] ?? []).map((t) => t.name)
     const existing = markers.filter((m) => m.kind === fill.kind)
     const seed =
       existing.length >= 2
@@ -414,7 +428,7 @@ export function DeviceTypeImagePortsPane({
   // snapping them back to that kind's full range.
   useEffect(() => {
     if (!fill) return
-    const pool = fill.replay ? allByKind : unplacedByKind
+    const pool = fill.replay ? replayByKind : unplacedByKind
     const names = (pool[fill.kind] ?? []).map((t) => t.name)
     if (!names.includes(fill.from) || !names.includes(fill.to)) {
       setFill({
@@ -429,7 +443,7 @@ export function DeviceTypeImagePortsPane({
   // The port names the current fill options select (natural-sorted, from..to).
   const fillNames = useMemo(() => {
     if (!fill) return []
-    const pool = fill.replay ? allByKind : unplacedByKind
+    const pool = fill.replay ? replayByKind : unplacedByKind
     const all = (pool[fill.kind] ?? []).map((t) => t.name)
     const i = all.indexOf(fill.from)
     const j = all.indexOf(fill.to)
@@ -674,7 +688,7 @@ export function DeviceTypeImagePortsPane({
               }
               kinds={fillKinds}
               names={(
-                (fill.replay ? allByKind : unplacedByKind)[fill.kind] ?? []
+                (fill.replay ? replayByKind : unplacedByKind)[fill.kind] ?? []
               ).map((t) => t.name)}
               onReplay={
                 !fill.replay && markers.some((m) => m.kind === fill.kind)
