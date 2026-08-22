@@ -267,7 +267,9 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
       cell: ({ row }) => {
         const e = row.original
         const route =
-          e.action !== "delete" ? objectDetailRoute(e.object_type) : undefined
+          e.action !== "delete" && e.object_exists
+            ? objectDetailRoute(e.object_type)
+            : undefined
         return (
           <span className="block truncate">
             <span className="text-[11px] text-muted-foreground">

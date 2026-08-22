@@ -4958,6 +4958,8 @@ export interface ChangeLogEntry {
   object_label: string
   object_id: string
   object_repr: string
+  /** The target row still exists - links render only while true. */
+  object_exists: boolean
   changes: Record<string, FieldChange>
   change_count: number
   request_id: string

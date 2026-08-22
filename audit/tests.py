@@ -107,3 +107,39 @@ class ViaCaptureTests(TestCase):
             all(r["via"] == "system" for r in body["results"]) and body["count"] >= 1
         )
         self.assertEqual(c.get("/api/changelog/?via=api").json()["count"], 0)
+
+
+class ObjectExistsTests(TestCase):
+    """`object_exists` on the changelog API: links only to living objects."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=self.org, name="Acme", slug="acme")
+
+    def test_flag_tracks_target_liveness(self):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+
+        admin = get_user_model().objects.create_superuser("root", "r@a.c", "pw")
+        client = APIClient()
+        client.force_login(admin)
+        session = client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+
+        keep = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.5.0.0/24", status=status_for(self.tenant)
+        )
+        gone = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.6.0.0/24", status=status_for(self.tenant)
+        )
+        gone_id = str(gone.id)
+        gone.delete()
+
+        rows = client.get("/api/changelog/").json()["results"]
+        by_obj = {}
+        for r in rows:
+            by_obj.setdefault(r["object_id"], r)
+        self.assertTrue(by_obj[str(keep.id)]["object_exists"])
+        # Both the create entry and the delete entry of the gone prefix agree.
+        self.assertFalse(by_obj[gone_id]["object_exists"])

@@ -262,17 +262,52 @@ class ChangeLogSerializer(serializers.ModelSerializer):
     action_display = serializers.CharField(source="get_action_display", read_only=True)
     change_count = serializers.SerializerMethodField()
     changes = serializers.SerializerMethodField()
+    object_exists = serializers.SerializerMethodField()
 
     class Meta:
         model = ChangeLogEntry
         fields = [
             "id", "timestamp", "user_name", "action", "action_display",
             "object_type", "object_label", "object_id", "object_repr",
-            "changes", "change_count", "request_id", "via",
+            "object_exists", "changes", "change_count", "request_id", "via",
         ]
 
     def get_change_count(self, obj) -> int:
         return len(obj.changes or {})
+
+    def get_object_exists(self, obj) -> bool:
+        """Whether the entry's target row is still alive - the UI only links
+        to living objects (an object deleted after the entry would 404).
+        Resolved in bulk: the first row of a page batches one pk__in query
+        per object type for every row on that page."""
+        cache = self.context.setdefault("_object_exists", {})
+        key = (obj.object_type, str(obj.object_id))
+        if key in cache:
+            return cache[key]
+        rows = (
+            list(self.parent.instance)
+            if self.parent is not None and self.parent.instance is not None
+            else [obj]
+        )
+        by_type: dict[str, set[str]] = {}
+        for r in rows:
+            if r.object_id is not None:
+                by_type.setdefault(r.object_type, set()).add(str(r.object_id))
+        for label, ids in by_type.items():
+            try:
+                model = django_apps.get_model(label)
+                alive = {
+                    str(pk)
+                    for pk in model.objects.filter(pk__in=ids).values_list(
+                        "pk", flat=True
+                    )
+                }
+            except Exception:
+                # Stale label / pk-type mismatch: nothing to link to.
+                alive = set()
+            for i in ids:
+                cache[(label, i)] = i in alive
+        return cache.get(key, False)
 
     def get_changes(self, obj) -> dict:
         """Enrich FK fields with a resolved label so the UI can show the VLAN /

@@ -60,7 +60,9 @@ function ChangeLogDetail() {
   if (!e) return null
 
   const route =
-    e.action !== "delete" ? objectDetailRoute(e.object_type) : undefined
+    e.action !== "delete" && e.object_exists
+      ? objectDetailRoute(e.object_type)
+      : undefined
   const changedFields = Object.keys(e.changes)
 
   const changeRows: KvRow[] = [
