@@ -80,6 +80,12 @@ export function buildConnectionsLayer(
         opacity: 0,
         interactive: true,
       })
+      // Same hover identity the drawn cables carry - every line names
+      // itself before you commit to a click.
+      hit.bindTooltip(`${e.name} · ${e.kind}`, {
+        sticky: true,
+        direction: "top",
+      })
       hit.on("mouseover", () => visible.setStyle({ weight: 3.5, opacity: 1 }))
       hit.on("mouseout", () => visible.setStyle({ weight: 2, opacity: 0.8 }))
       hit.on("click", (ev: L.LeafletMouseEvent) => {

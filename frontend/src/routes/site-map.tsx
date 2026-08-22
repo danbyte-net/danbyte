@@ -1459,7 +1459,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 label="Stack nearby markers"
                 checked={stacking}
                 onChange={setStacking}
-                className="items-center"
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
               />
               <FormCheckbox
                 label="Region boundaries"
