@@ -348,6 +348,13 @@ class DeploymentSettings(TimestampedModel):
         help_text="Custom browser-tab icon for this install. Blank = the "
         "default Danbyte icon. A small square PNG/ICO works best.",
     )
+    login_logo = models.ImageField(
+        upload_to="branding/",
+        null=True,
+        blank=True,
+        help_text="Custom logo shown on the login page. Blank = the Danbyte "
+        "logo. A wide transparent PNG works best.",
+    )
 
     # ─── optional built-in device fields (admin-controlled visibility) ─────
     device_field_visibility = models.JSONField(

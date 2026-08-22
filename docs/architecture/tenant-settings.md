@@ -9,7 +9,7 @@ Two settings stores:
 
 | Store | Scope | Holds |
 |---|---|---|
-| `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults, deployment LDAP, updates/release repo, `public_base_url`, proxy/timeouts, drift scheduler, retention, deployment name, branding (`favicon`) - plus the **defaults** for every overridable group |
+| `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults, deployment LDAP, updates/release repo, `public_base_url`, proxy/timeouts, drift scheduler, retention, deployment name, branding (`favicon`, `login_logo`) - plus the **defaults** for every overridable group |
 | `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle) |
 | `SiteSettings` (`core/models.py`, OneToOne per site) | one site | **Email/SMTP only (v1)** - site-local relay + From address, for orgs whose sites run their own IT. Gated by `allow_site_settings` + site-admin qualification (`core/site_settings.py`) |
 
@@ -63,6 +63,14 @@ active content lands on the media origin. `me_json` returns `favicon_url`
 (null = default) and the SPA swaps the `<link rel="icon">` href at runtime
 (`__root.tsx`), the same pattern that brands the tab title from
 `deployment_name`.
+
+The **login-page logo** works the same way: `login_logo` on
+`DeploymentSettings`, uploaded via `POST /api/deployment/logo/` (multipart
+`logo`; `DELETE` clears; raster only, max 2 MB / 2400px), shown above the
+sign-in form. Blank = the bundled Danbyte wordmark
+(`frontend/public/branding/logo-full*.png`, one variant per theme). Branding -
+name, favicon and logo - also rides the **anonymous** `me_json` answer, since
+the login page shows it before anyone signs in.
 
 ## Sessions
 

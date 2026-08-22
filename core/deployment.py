@@ -61,6 +61,8 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
     # Absolute URL of the custom favicon (read-only); null = the Danbyte
     # default. Uploaded via the dedicated multipart endpoint below.
     favicon_url = serializers.SerializerMethodField()
+    # Same shape for the login-page logo.
+    login_logo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = DeploymentSettings
@@ -80,6 +82,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "deployment_name",
             "changelog_retention_days",
             "favicon_url",
+            "login_logo_url",
             "ssrf_allowlist",
             "secrets_provider",
             "vault_addr",
@@ -120,12 +123,20 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "update_window_end",
             "updated_at",
         ]
-        read_only_fields = ["updated_at", "config_drift_last_run", "favicon_url"]
+        read_only_fields = ["updated_at", "config_drift_last_run", "favicon_url",
+                        "login_logo_url"]
 
     def get_favicon_url(self, obj) -> str | None:
         if not obj.favicon:
             return None
         url = obj.favicon.url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
+    def get_login_logo_url(self, obj) -> str | None:
+        if not obj.login_logo:
+            return None
+        url = obj.login_logo.url
         request = self.context.get("request")
         return request.build_absolute_uri(url) if request else url
 
@@ -273,6 +284,8 @@ def deployment_end_all_sessions(request):
 # Upload cap - a favicon is tiny; anything larger is a mistake or abuse.
 FAVICON_MAX_BYTES = 1024 * 1024
 FAVICON_MAX_DIM = 1024
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+LOGO_MAX_DIM = 2400
 
 
 @extend_schema(
@@ -341,6 +354,69 @@ def deployment_favicon(request):
         obj.favicon.delete(save=False)
     obj.favicon = upload
     obj.save(update_fields=["favicon", "updated_at"])
+    return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
+
+
+@extend_schema(
+    methods=["POST"],
+    summary="Set the login-page logo",
+    tags=["deployment"],
+    request={"multipart/form-data": {"type": "object", "properties": {
+        "logo": {"type": "string", "format": "binary"}}}},
+    responses=DeploymentSettingsSerializer,
+)
+@extend_schema(
+    methods=["DELETE"],
+    summary="Clear the login-page logo",
+    tags=["deployment"],
+    request=None,
+    responses=DeploymentSettingsSerializer,
+)
+@api_view(["POST", "DELETE"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def deployment_logo(request):
+    """Set (POST multipart ``logo``) or clear (DELETE) the login-page logo.
+    Same rules as the favicon: users.manage only, raster images only (no
+    SVG on the same-origin media path), just roomier size limits for a wide
+    wordmark."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    obj = DeploymentSettings.load()
+    ctx = {"request": request}
+
+    if request.method == "DELETE":
+        if obj.login_logo:
+            obj.login_logo.delete(save=False)
+            obj.login_logo = None
+            obj.save(update_fields=["login_logo", "updated_at"])
+        return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
+
+    upload = request.FILES.get("logo")
+    if not upload:
+        return Response({"detail": "No logo file provided."}, status=400)
+    if upload.size > LOGO_MAX_BYTES:
+        return Response({"detail": "Logo too large (max 2 MB)."}, status=400)
+    try:
+        from PIL import Image
+
+        image = Image.open(upload)
+        image.verify()
+        if max(image.size) > LOGO_MAX_DIM:
+            return Response(
+                {"detail": f"Logo too large (max {LOGO_MAX_DIM}px)."},
+                status=400,
+            )
+    except Exception:
+        return Response(
+            {"detail": "Not a valid image. Use a PNG file."}, status=400
+        )
+    upload.seek(0)
+
+    if obj.login_logo:
+        obj.login_logo.delete(save=False)
+    obj.login_logo = upload
+    obj.save(update_fields=["login_logo", "updated_at"])
     return Response(DeploymentSettingsSerializer(obj, context=ctx).data)
 
 

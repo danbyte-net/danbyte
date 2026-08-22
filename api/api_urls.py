@@ -508,6 +508,8 @@ urlpatterns = [
     # Custom browser-tab favicon (upload / clear) - users.manage only.
     path("deployment/favicon/", deployment.deployment_favicon,
          name="deployment-favicon"),
+    path("deployment/logo/", deployment.deployment_logo,
+         name="deployment-logo"),
     # Optional built-in device fields - admin-controlled visibility.
     path("deployment/device-fields/", deployment.device_field_visibility,
          name="deployment-device-fields"),

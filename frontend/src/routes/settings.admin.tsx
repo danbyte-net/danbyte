@@ -126,6 +126,7 @@ function IdentityCard() {
         />
       </Field>
       <FaviconField faviconUrl={data.favicon_url} />
+      <LogoField logoUrl={data.login_logo_url} />
     </SettingsCard>
   )
 }
@@ -228,6 +229,90 @@ function HumanIdsCard() {
         hint="Turning this off hides the numbers in the UI; it does not delete them."
       />
     </SettingsCard>
+  )
+}
+
+// Same file-not-field pattern as the favicon, for the login-page logo.
+function LogoField({ logoUrl }: { logoUrl: string | null }) {
+  const qc = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState<null | "upload" | "reset">(null)
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["deployment-email"] })
+    qc.invalidateQueries({ queryKey: ["me"] })
+  }
+
+  const upload = async (file: File) => {
+    setBusy("upload")
+    try {
+      const body = new FormData()
+      body.append("logo", file)
+      await api("/api/deployment/logo/", { method: "POST", body })
+      refresh()
+      toast.success("Logo updated")
+    } catch (e) {
+      apiErrorToast(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const reset = async () => {
+    setBusy("reset")
+    try {
+      await api("/api/deployment/logo/", { method: "DELETE" })
+      refresh()
+      toast.success("Logo reset to the Danbyte default")
+    } catch (e) {
+      apiErrorToast(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <Field
+      label="Login-page logo"
+      hint="Shown above the sign-in form. A wide transparent PNG works best; max 2 MB. Blank = the Danbyte logo."
+    >
+      <div className="flex items-center gap-3">
+        <img
+          src={logoUrl || "/branding/logo-full.png"}
+          alt=""
+          className="h-8 max-w-48 rounded border border-border bg-background object-contain px-1.5 py-1"
+        />
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void upload(f)
+            e.target.value = ""
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy !== null}
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy === "upload" ? "Uploading…" : "Upload…"}
+        </Button>
+        {logoUrl && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy !== null}
+            onClick={() => void reset()}
+          >
+            {busy === "reset" ? "Resetting…" : "Reset to default"}
+          </Button>
+        )}
+      </div>
+    </Field>
   )
 }
 

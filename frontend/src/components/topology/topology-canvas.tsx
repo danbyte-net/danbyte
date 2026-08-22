@@ -308,7 +308,7 @@ function build(
     roleOrder?: string[]
     roleBonds?: string[]
     roleDistance?: Record<string, number>
-    edgeRouting?: "routed" | "straight"
+    edgeRouting?: "routed" | "straight" | "curved"
     colorMode: EdgeColorMode
     nodeStyle?: NodeStyle
     positions?: Record<string, [number, number]>
@@ -783,6 +783,17 @@ function build(
         }),
       }
     }
+    // Curved: the Flat view's floating beziers on the wiring cards - no
+    // channels, no orthogonal bends, just point-to-point curves.
+    if (opts.edgeRouting === "curved")
+      return {
+        nodes: outNodes,
+        edges: outEdges.map((e) => {
+          const sem = (e.data as { sem?: string } | undefined)?.sem
+          if (!sem || !ROUTABLE.has(sem)) return e
+          return { ...e, type: "default", pathOptions: undefined }
+        }),
+      }
     const routeThem = opts.edgeRouting !== "straight"
     const routedOut = outEdges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
@@ -871,7 +882,7 @@ export interface TopologyCanvasProps {
   roleDistance?: Record<string, number>
   /** "routed" bends cables around cards (where the auto-layout supplies a
    * node-avoiding route); "straight" forces the plain smoothstep line. */
-  edgeRouting?: "routed" | "straight"
+  edgeRouting?: "routed" | "straight" | "curved"
   /** "stencil" (default) wiring cards; "flat" barebones chips with bundled
    * edges - the view for big graphs. */
   nodeStyle?: NodeStyle
@@ -1185,13 +1196,74 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           ".react-flow__viewport"
         )
         if (!el) return null
-        if (viewportOnly) {
-          // Just what's on screen - for pasting a detail into a ticket
-          // without shipping the whole estate.
-          const w = wrapper.current?.clientWidth ?? 1200
-          const h = wrapper.current?.clientHeight ?? 800
-          const vp = flow.getViewport()
-          return toPng(el, {
+        // React Flow v12 draws each edge in an <svg> with NO width/height -
+        // live it renders through `overflow: visible`, but the PNG rasterizer
+        // clips every svg to its 0×0 box, exporting a map with no cables.
+        // Give each such svg an explicit box covering its own content for the
+        // duration of the export, then restore.
+        const bare = [...el.querySelectorAll("svg")].filter(
+          (svg) => !svg.getAttribute("width")
+        )
+        const restore = bare.map((svg) => {
+          const prev = {
+            svg,
+            viewBox: svg.getAttribute("viewBox"),
+            style: svg.getAttribute("style"),
+          }
+          try {
+            const b = (svg as unknown as SVGGraphicsElement).getBBox()
+            if (b.width > 0 || b.height > 0) {
+              const pad = 24 // stroke width + labels overhang the bbox
+              const x = b.x - pad
+              const y = b.y - pad
+              const w = b.width + pad * 2
+              const h = b.height + pad * 2
+              svg.setAttribute("width", String(w))
+              svg.setAttribute("height", String(h))
+              svg.setAttribute("viewBox", `${x} ${y} ${w} ${h}`)
+              svg.style.position = "absolute"
+              svg.style.left = `${x}px`
+              svg.style.top = `${y}px`
+              svg.style.overflow = "visible"
+            }
+          } catch {
+            /* detached/empty svg - leave it alone */
+          }
+          return prev
+        })
+        const undo = () => {
+          for (const r of restore) {
+            r.svg.removeAttribute("width")
+            r.svg.removeAttribute("height")
+            if (r.viewBox) r.svg.setAttribute("viewBox", r.viewBox)
+            else r.svg.removeAttribute("viewBox")
+            if (r.style) r.svg.setAttribute("style", r.style)
+            else r.svg.removeAttribute("style")
+          }
+        }
+        try {
+          if (viewportOnly) {
+            // Just what's on screen - for pasting a detail into a ticket
+            // without shipping the whole estate.
+            const w = wrapper.current?.clientWidth ?? 1200
+            const h = wrapper.current?.clientHeight ?? 800
+            const vp = flow.getViewport()
+            return await toPng(el, {
+              backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
+              width: w,
+              height: h,
+              style: {
+                width: `${w}px`,
+                height: `${h}px`,
+                transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
+              },
+            })
+          }
+          const bounds = getNodesBounds(flow.getNodes())
+          const w = Math.min(4096, Math.max(800, Math.ceil(bounds.width) + 160))
+          const h = Math.min(4096, Math.max(600, Math.ceil(bounds.height) + 160))
+          const vp = getViewportForBounds(bounds, w, h, 0.2, 2, 0.06)
+          return await toPng(el, {
             backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
             width: w,
             height: h,
@@ -1201,21 +1273,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
             },
           })
+        } finally {
+          undo()
         }
-        const bounds = getNodesBounds(flow.getNodes())
-        const w = Math.min(4096, Math.max(800, Math.ceil(bounds.width) + 160))
-        const h = Math.min(4096, Math.max(600, Math.ceil(bounds.height) + 160))
-        const vp = getViewportForBounds(bounds, w, h, 0.2, 2, 0.06)
-        return toPng(el, {
-          backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
-          width: w,
-          height: h,
-          style: {
-            width: `${w}px`,
-            height: `${h}px`,
-            transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
-          },
-        })
       },
     }),
     [flow, theme]

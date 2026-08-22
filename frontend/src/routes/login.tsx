@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
-import { KeyRound, LogIn, Mail, ShieldCheck } from "lucide-react"
+import { KeyRound, LogIn, Mail, } from "lucide-react"
 
 import { api, ApiError, auth } from "@/lib/api"
 import type { MfaMethod, SsoPublicProvider } from "@/lib/api"
@@ -147,12 +147,32 @@ function LoginPage() {
     <main className="flex min-h-svh items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <ShieldCheck className="size-5" />
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {me.deployment_name?.trim() || "Danbyte"}
-          </h1>
+          {me.login_logo_url ? (
+            <img
+              src={me.login_logo_url}
+              alt={me.deployment_name?.trim() || "Danbyte"}
+              className="max-h-14 max-w-64 object-contain"
+            />
+          ) : (
+            <>
+              {/* The Danbyte wordmark, one variant per theme. */}
+              <img
+                src="/branding/logo-full.png"
+                alt="Danbyte"
+                className="h-9 object-contain dark:hidden"
+              />
+              <img
+                src="/branding/logo-full-white.png"
+                alt="Danbyte"
+                className="hidden h-9 object-contain dark:block"
+              />
+            </>
+          )}
+          {(me.login_logo_url || me.deployment_name?.trim()) && (
+            <h1 className="text-xl font-semibold tracking-tight">
+              {me.deployment_name?.trim() || "Danbyte"}
+            </h1>
+          )}
           <p className="text-sm text-muted-foreground">
             {step === "credentials"
               ? "Sign in to your account"

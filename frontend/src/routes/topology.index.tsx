@@ -121,7 +121,7 @@ export interface TopologySearch {
   group?: "site" | "location"
   dir?: "lr" | "tb"
   color?: EdgeColorMode
-  cables?: "routed" | "straight"
+  cables?: "routed" | "straight" | "curved"
   /** Levels organiser, encoded by `levels-param.ts`. */
   levels?: string
   /** Focused device + how many hops around it. */
@@ -284,7 +284,7 @@ interface StoredDisplay {
   roleOrder?: string[]
   roleBonds?: string[]
   roleDistance?: Record<string, number>
-  edgeRouting?: "routed" | "straight"
+  edgeRouting?: "routed" | "straight" | "curved"
   viewStyle?: ViewStyle
   groupBy?: GroupBy
 }
@@ -303,7 +303,7 @@ type TabStyle = "wiring" | "hierarchy" | "flat" | "logical"
 const TAB_STYLES = ["wiring", "hierarchy", "flat", "logical"] as const
 const COLOR_MODES = ["cable", "type", "status", "speed", "none"] as const
 const DIRS = ["lr", "tb"] as const
-const ROUTINGS = ["routed", "straight"] as const
+const ROUTINGS = ["routed", "straight", "curved"] as const
 const GROUPS = ["none", "site", "location"] as const
 const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
 const tabOfStyle = (v: ViewStyle): TabStyle => (v === "stencil" ? "wiring" : v)
@@ -319,7 +319,7 @@ type ViewFilters = Partial<
     roleOrder: string[]
     roleBonds: string[]
     roleDistance: Record<string, number>
-    edgeRouting: "routed" | "straight"
+    edgeRouting: "routed" | "straight" | "curved"
     viewStyle: ViewStyle
     groupBy: GroupBy
     devices: string[]
@@ -1146,12 +1146,13 @@ function TopologyPage() {
               </PopoverField>
               {viewStyle === "stencil" && (
                 <PopoverField label="Cables">
-                  <SegmentedTabs<"routed" | "straight">
+                  <SegmentedTabs<"routed" | "straight" | "curved">
                     value={edgeRouting}
                     onValueChange={setEdgeRouting}
                     items={[
                       { value: "routed", label: "Routed" },
                       { value: "straight", label: "Straight" },
+                      { value: "curved", label: "Curved" },
                     ]}
                   />
                 </PopoverField>

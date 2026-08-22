@@ -208,8 +208,9 @@ Two passes keep the wiring readable without manual cleanup:
   instead. The route is computed from the cards' actual positions, so it works
   the same in the auto layout, the tiered (Levels) layout, **and a saved view**
   - not just the fresh auto layout. Switch to **Straight** for plain orthogonal
-  lines. Dragging a card drops *that card's* cables back to straight; the rest
-  keep their routing.
+  lines, or **Curved** for the Flat view's floating point-to-point curves on
+  the full wiring cards. Dragging a card drops *that card's* cables back to
+  straight; the rest keep their routing.
 
 The toolbar groups its controls to stay uncluttered: a **Filters** popover
 (site / role / status / tag, with a badge counting active filters) and a

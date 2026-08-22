@@ -61,6 +61,9 @@ export function HierarchyNode({ data, selected }: NodeProps) {
       <div
         className="flex items-center gap-1.5 border-b border-border/60 px-2.5"
         style={{ height: HIER_HEADER }}
+        // The header truncates on narrow cards - hovering reveals the full
+        // identity.
+        title={[d.name, d.primary_ip, d.site].filter(Boolean).join(" · ")}
       >
         <span
           className="h-3.5 w-1 shrink-0 rounded-full"

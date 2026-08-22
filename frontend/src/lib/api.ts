@@ -290,6 +290,7 @@ export interface Me {
   deployment_name?: string
   /** Custom browser-tab icon URL (Admin → Identity); null/absent = default. */
   favicon_url?: string | null
+  login_logo_url?: string | null
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
   /** Whether the in-browser SSH terminal is enabled deployment-wide. */
@@ -5099,6 +5100,8 @@ export interface DeploymentSettings {
   changelog_retention_days: number
   /** Absolute URL of the custom favicon; null = the Danbyte default. */
   favicon_url: string | null
+  /** Absolute URL of the custom login-page logo; null = the Danbyte logo. */
+  login_logo_url: string | null
   ssrf_allowlist: string[]
   /** "" = disabled, "local" = encrypted DB, "vault" = external Vault/OpenBao. */
   secrets_provider: "" | "local" | "vault"

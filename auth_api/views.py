@@ -163,7 +163,25 @@ def me_json(request):
     """
     user = request.user
     if not user.is_authenticated:
-        return JsonResponse({"is_authenticated": False, "perms": []})
+        # Branding rides on the anonymous answer - the login page shows the
+        # deployment's name, logo and favicon BEFORE anyone signs in, which
+        # is what a login page is for. Nothing else leaks.
+        from core.models import DeploymentSettings
+
+        ds = DeploymentSettings.load()
+        return JsonResponse({
+            "is_authenticated": False,
+            "perms": [],
+            "deployment_name": ds.deployment_name,
+            "favicon_url": (
+                request.build_absolute_uri(ds.favicon.url)
+                if ds.favicon else None
+            ),
+            "login_logo_url": (
+                request.build_absolute_uri(ds.login_logo.url)
+                if ds.login_logo else None
+            ),
+        })
 
     from api.views import _get_active_tenant
     from core.effective_settings import (
@@ -226,6 +244,11 @@ def me_json(request):
         # default. The SPA swaps the <link rel=icon> href to this at runtime.
         "favicon_url": (
             request.build_absolute_uri(ds.favicon.url) if ds.favicon else None
+        ),
+        # Custom login-page logo; null = the bundled Danbyte logo.
+        "login_logo_url": (
+            request.build_absolute_uri(ds.login_logo.url)
+            if ds.login_logo else None
         ),
         # Whether the SPA should surface per-tenant human-readable numbers (numid).
         "human_ids_enabled": ui.human_ids_enabled,
