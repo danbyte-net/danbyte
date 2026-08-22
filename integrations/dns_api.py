@@ -19,7 +19,11 @@ from .winrm_client import WinRMError, ps_str, run_json
 
 
 class DnsZoneSerializer(serializers.ModelSerializer):
-    connection_name = serializers.CharField(source="connection.name", read_only=True)
+    connection_name = serializers.SerializerMethodField()
+
+    def get_connection_name(self, obj) -> str:
+        # "" = a local (Danbyte-authored) zone with no server behind it.
+        return obj.connection.name if obj.connection_id else ""
     drift_count = serializers.IntegerField(read_only=True)
 
     class Meta:
@@ -54,7 +58,8 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     can be removed (DELETE). Synced zones can't be deleted (sync would recreate
     them)."""
 
-    integration_keys = ("dns",)
+    # No integration gate: zones are a first-class IPAM feature. The DNS
+    # toggle only governs the Windows-sync machinery (connections, drift).
     tenant_field = "connection__tenant"
     http_method_names = ["get", "post", "patch", "delete"]
     queryset = DnsZone.objects.select_related("connection").order_by("name")
@@ -73,13 +78,26 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return conn
 
     def perform_create(self, serializer):
-        conn = self._conn_in_tenant(serializer.validated_data.get("connection"))
+        tenant = self._tenant_or_403()
+        conn = serializer.validated_data.get("connection")
+        if conn is not None:
+            self._conn_in_tenant(conn)
         name = serializer.validated_data["name"]
-        if DnsZone.objects.filter(connection=conn, name=name).exists():
-            raise ValidationError(
-                {"name": "A zone with that name already exists on that server."}
+        clash = (
+            DnsZone.objects.filter(connection=conn, name=name)
+            if conn is not None
+            else DnsZone.objects.filter(
+                connection__isnull=True, tenant=tenant, name=name
             )
-        serializer.save(managed=True)
+        )
+        if clash.exists():
+            raise ValidationError(
+                {"name": "A zone with that name already exists "
+                         + ("on that server." if conn else "here.")}
+            )
+        # A local zone carries the tenant itself; a server zone rides its
+        # connection's.
+        serializer.save(managed=True, tenant=None if conn else tenant)
 
     def perform_destroy(self, instance):
         if not instance.managed:
@@ -90,9 +108,23 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         instance.delete()
 
     def get_queryset(self):
-        from django.db.models import Count
+        from django.db.models import Count, Q
 
-        qs = super().get_queryset().annotate(drift_count=Count("drifts"))
+        from api.views import _get_active_tenant
+        from auth_api.drf import restrict_for_view
+
+        # Bimodal tenant scope (like DhcpScope): synced zones ride their
+        # connection's tenant, local zones carry tenant directly.
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = restrict_for_view(
+            self,
+            self.queryset.filter(
+                Q(connection__tenant=tenant)
+                | Q(connection__isnull=True, tenant=tenant)
+            ),
+        ).annotate(drift_count=Count("drifts"))
         conn = self.request.query_params.get("connection")
         if conn:
             qs = qs.filter(connection_id=conn)
@@ -247,9 +279,9 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     """Read stored A/AAAA/PTR records from reconciled zones. Filter by
     ``?zone=``, ``?connection=``, ``?ip=``, ``?prefix=<id>``, ``?type=``,
     ``?search=``. ``import`` / ``import_unmatched`` pull untracked records into
-    IPAM (needs ``ipaddress.add``)."""
+    IPAM (needs ``ipaddress.add``). No integration gate - records in local
+    zones are authorable with no Windows server at all."""
 
-    integration_keys = ("dns",)
     tenant_field = "zone__connection__tenant"
     http_method_names = ["get", "post", "patch", "delete"]
     queryset = DnsRecord.objects.select_related(
@@ -349,7 +381,23 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return Response({"ok": True, "created": created, "skipped": skipped})
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        from django.db.models import Q
+
+        from api.views import _get_active_tenant
+        from auth_api.drf import restrict_for_view
+
+        # Bimodal like the zones: a record in a local zone scopes by the
+        # zone's own tenant.
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = restrict_for_view(
+            self,
+            self.queryset.filter(
+                Q(zone__connection__tenant=tenant)
+                | Q(zone__connection__isnull=True, zone__tenant=tenant)
+            ),
+        )
         p = self.request.query_params
         if p.get("zone"):
             qs = qs.filter(zone_id=p["zone"])

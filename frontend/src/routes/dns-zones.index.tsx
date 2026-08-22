@@ -89,15 +89,18 @@ function DnsZonesPage() {
         id: "server",
         accessorKey: "connection_name",
         header: "Server",
-        cell: ({ row }) => (
-          <Link
-            to="/windows-servers/$id"
-            params={{ id: row.original.connection }}
-            className="link text-xs"
-          >
-            {row.original.connection_name}
-          </Link>
-        ),
+        cell: ({ row }) =>
+          row.original.connection ? (
+            <Link
+              to="/windows-servers/$id"
+              params={{ id: row.original.connection }}
+              className="link text-xs"
+            >
+              {row.original.connection_name}
+            </Link>
+          ) : (
+            <span className="text-xs text-muted-foreground">Local</span>
+          ),
       },
       {
         id: "records",

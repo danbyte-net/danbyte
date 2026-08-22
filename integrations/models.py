@@ -781,8 +781,18 @@ class DnsZone(TimestampedModel):
     system zones nobody wants reconciled)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Null connection = a **local** zone: authored and owned by Danbyte with
+    # no DNS backend behind it. Local zones carry `tenant` directly; synced
+    # zones ride their connection's tenant (mirrors DhcpScope's bimodal
+    # pattern). DNS/DHCP are first-class IPAM features - the Windows sync is
+    # an optional integration on top, never a gate on authoring.
     connection = models.ForeignKey(
-        WindowsServerConnection, on_delete=models.CASCADE, related_name="dns_zones"
+        WindowsServerConnection, on_delete=models.CASCADE,
+        related_name="dns_zones", null=True, blank=True,
+    )
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="local_dns_zones",
+        null=True, blank=True,
     )
     name = models.CharField(max_length=255)
     zone_type = models.CharField(max_length=32, blank=True, default="")

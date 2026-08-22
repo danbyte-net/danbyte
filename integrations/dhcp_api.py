@@ -141,7 +141,8 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     saves once accepted; without one it's a **local** Danbyte-owned scope.
     DELETE removes a pushed scope on its server too."""
 
-    integration_keys = ("dhcp",)
+    # No integration gate: scopes are first-class - the DHCP toggle only
+    # governs the Windows-sync machinery.
     # Tenant scoping is bimodal (see get_queryset) - synced scopes ride their
     # connection's tenant, local scopes carry tenant directly.
     tenant_field = "connection__tenant"
@@ -349,7 +350,6 @@ class DhcpReservationViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     """Bidirectional: every write here is pushed to the Windows server first;
     the row is only saved once the server accepted it."""
 
-    integration_keys = ("dhcp",)
     tenant_field = "scope__connection__tenant"
     queryset = DhcpReservation.objects.select_related(
         "scope", "scope__connection", "ip_address"

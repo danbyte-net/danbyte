@@ -56,7 +56,7 @@ export function DnsZoneDialog({
       api<DnsZone>("/api/dns-zones/", {
         method: "POST",
         body: JSON.stringify({
-          connection,
+          connection: connection || null,
           name: name.trim(),
           is_reverse: isReverse,
         }),
@@ -73,7 +73,7 @@ export function DnsZoneDialog({
     },
   })
 
-  const ready = connection && name.trim()
+  const ready = !!name.trim()
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -92,9 +92,11 @@ export function DnsZoneDialog({
             label="Server"
             value={connection || null}
             onChange={(v) => setConnection(v ?? "")}
-            placeholder={servers.length ? "Select a server…" : "No DNS servers"}
+            noneLabel="Local (no server)"
+            placeholder="Local (no server)"
             options={servers.map((c) => ({ value: c.id, label: c.name }))}
             error={fieldErrors.connection}
+            hint="optional"
           />
           <FormText
             label="Zone name"

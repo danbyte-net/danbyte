@@ -183,12 +183,41 @@ class DnsApiTests(APITestCase):
             self.client.delete(f"/api/dns-records/{mine.id}/").status_code, 204
         )
 
-    def test_endpoints_404_without_toggle(self):
+    def test_toggle_gates_sync_machinery_only(self):
+        """DNS is a first-class feature: zones and records stay usable with
+        the Windows-sync toggle OFF - only the sync-specific surfaces
+        (drift) gate on it."""
         IntegrationSettings.objects.filter(tenant=self.tenant).update(
             dns_sync_enabled=False
         )
-        self.assertEqual(self.client.get("/api/dns-zones/").status_code, 404)
+        self.assertEqual(self.client.get("/api/dns-zones/").status_code, 200)
         self.assertEqual(self.client.get("/api/dns-drifts/").status_code, 404)
+
+    def test_local_zone_and_record_without_any_connection(self):
+        """Authoring works with the toggle off and no Windows server at all -
+        a local (connection-less) zone owned by the tenant."""
+        IntegrationSettings.objects.filter(tenant=self.tenant).update(
+            dns_sync_enabled=False
+        )
+        r = self.client.post(
+            "/api/dns-zones/", {"name": "local.example.com"}, format="json"
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        zone_id = r.json()["id"]
+        # The write serializer answers the POST; the read shape confirms.
+        got = self.client.get(f"/api/dns-zones/{zone_id}/").json()
+        self.assertTrue(got["managed"])
+        self.assertEqual(got["connection_name"], "")
+        r2 = self.client.post(
+            "/api/dns-records/",
+            {"zone": zone_id, "name": "web.local.example.com",
+             "record_type": "A", "data": "10.77.0.99"},
+            format="json",
+        )
+        self.assertEqual(r2.status_code, 201, r2.content)
+        # And it lists back under this tenant.
+        listed = self.client.get(f"/api/dns-records/?zone={zone_id}").json()
+        self.assertEqual(listed["count"], 1)
 
     def test_records_endpoint_filters(self):
         self.zone.sync = True
@@ -219,11 +248,11 @@ class DnsApiTests(APITestCase):
         res = self.client.get("/api/dns-records/?search=b.danbyte")
         self.assertEqual(res.json()["count"], 1)
 
-    def test_records_404_without_toggle(self):
+    def test_records_stay_up_without_toggle(self):
         IntegrationSettings.objects.filter(tenant=self.tenant).update(
             dns_sync_enabled=False
         )
-        self.assertEqual(self.client.get("/api/dns-records/").status_code, 404)
+        self.assertEqual(self.client.get("/api/dns-records/").status_code, 200)
 
     def test_import_record_creates_ip(self):
         self.zone.sync = True

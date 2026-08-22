@@ -20,8 +20,11 @@ Everything is agentless. This page covers the ground rules they all share.
 
 All three integrations ship **off**. A tenant admin enables them under
 **Settings → Integrations** - one toggle each for DHCP sync, DNS sync, and
-virtualization sync. While a toggle is off, that integration's pages and API
-endpoints are hidden for the tenant and its scheduled syncs don't run.
+virtualization sync. A toggle governs the **sync machinery only**: while it's
+off, the connection pages, drift views and scheduled syncs are hidden and
+idle. DNS zones/records and DHCP scopes/reservations are first-class IPAM
+features and stay fully usable regardless - author a **local** zone (no
+server) or a local scope, and the sync never touches them.
 
 ## Where things live
 
@@ -35,7 +38,8 @@ Two places, on purpose:
   the synced data*, aggregated across every server. Virtualization lands under
   **Virtualization** (VMs, virtual switches, network topology). Each list
   filters by server and links back to the prefixes and IP addresses the data
-  maps to. These pages appear once the matching toggle is on.
+  maps to. The connection pages appear once the matching toggle is on; the
+  DNS/DHCP data pages are always there.
 
 ## Internal hosts and the outbound allowlist
 
