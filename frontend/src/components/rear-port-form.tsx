@@ -206,7 +206,6 @@ export function RearPortForm({
       <Field label="Cabling">
         <FormCheckbox
           label="Mark connected"
-          hint="a cable is in the port, just not documented yet"
           checked={markConnected}
           onChange={(v) => {
             setMarkConnected(v)
@@ -216,7 +215,6 @@ export function RearPortForm({
         {!port?.cable && (
           <FormCheckbox
             label="Reserved"
-            hint="hold this port before the far end is known"
             checked={reserved}
             onChange={(v) => {
               setReserved(v)

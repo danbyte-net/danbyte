@@ -384,7 +384,6 @@ export function InterfaceForm({
           />
           <FormCheckbox
             label="Mark connected"
-            hint="a cable is in the port, just not documented yet"
             checked={markConnected}
             onChange={(v) => {
               setMarkConnected(v)
@@ -394,7 +393,6 @@ export function InterfaceForm({
           {!iface?.cable && (
             <FormCheckbox
               label="Reserved"
-              hint="hold this port before the far end is known"
               checked={reserved}
               onChange={(v) => {
                 setReserved(v)
@@ -404,7 +402,6 @@ export function InterfaceForm({
           )}
           <FormCheckbox
             label="Uplink"
-            hint="faces other network gear - never suggest hosts on this port"
             checked={isUplink}
             onChange={setIsUplink}
           />
@@ -513,7 +510,6 @@ export function InterfaceForm({
       >
         <FormCheckbox
           label="Virtual interface"
-          hint="sub-interface, LAG, or loopback"
           checked={virtual}
           onChange={setVirtual}
         />
@@ -573,7 +569,6 @@ export function InterfaceForm({
           />
           <FormCheckbox
             label="Exclude from SNMP drift"
-            hint="the polled agent can never report this port"
             checked={snmpIgnore}
             onChange={setSnmpIgnore}
           />
