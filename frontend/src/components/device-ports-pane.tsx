@@ -36,6 +36,7 @@ import {
 } from "@/components/port-reservation-dialog"
 import { useRegisterAddActions } from "@/components/device-add-actions"
 import { useMe } from "@/lib/use-me"
+import { hereUrl } from "@/lib/return-url"
 
 // CableMini chip - the one place a cable color is allowed to show (it's the
 // physical cable). Plain "-" when the port isn't cabled.
@@ -196,7 +197,11 @@ export function DevicePortsPane({
                   >
                     <Link
                       to="/cables/new"
-                      search={{ a_kind: "rear_port", a_id: row.original.id }}
+                      search={{
+                        a_kind: "rear_port",
+                        a_id: row.original.id,
+                        ret: hereUrl(),
+                      }}
                     >
                       <CableIcon className="h-3.5 w-3.5" />
                     </Link>
@@ -348,7 +353,11 @@ export function DevicePortsPane({
                   >
                     <Link
                       to="/cables/new"
-                      search={{ a_kind: "front_port", a_id: row.original.id }}
+                      search={{
+                        a_kind: "front_port",
+                        a_id: row.original.id,
+                        ret: hereUrl(),
+                      }}
                     >
                       <CableIcon className="h-3.5 w-3.5" />
                     </Link>

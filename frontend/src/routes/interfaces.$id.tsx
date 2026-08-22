@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
+import { hereUrl } from "@/lib/return-url"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
@@ -80,15 +81,17 @@ function Body({ iface: i }: { iface: Interface }) {
 
   return (
     <DetailShell
-      backTo="/interfaces"
-      backLabel="Interfaces"
+      // An interface always belongs to a device - back leads home to its
+      // Components tab, not the flat interfaces list (the sidebar covers
+      // that). Clicking a faceplate port and stepping straight back is the
+      // common loop.
+      backTo="/devices/$id"
+      backParams={{ id: i.device.id }}
+      backSearch={{ tab: "components" }}
+      backLabel={i.device.name}
       crumbs={
-        <Link
-          to="/devices/$id"
-          params={{ id: i.device.id }}
-          className="link font-mono"
-        >
-          {i.device.name}
+        <Link to="/interfaces" className="link">
+          Interfaces
         </Link>
       }
       title={<span className="font-mono">{i.name}</span>}
@@ -99,7 +102,7 @@ function Body({ iface: i }: { iface: Interface }) {
             <Button variant="outline" size="sm" asChild>
               <Link
                 to="/cables/new"
-                search={{ a_kind: "interface", a_id: i.id }}
+                search={{ a_kind: "interface", a_id: i.id, ret: hereUrl() }}
               >
                 <CableIcon className="h-3.5 w-3.5" /> Connect cable
               </Link>

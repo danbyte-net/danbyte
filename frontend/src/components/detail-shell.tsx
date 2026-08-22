@@ -74,6 +74,8 @@ function PlannedForRoute() {
 
 export function DetailShell({
   backTo,
+  backParams,
+  backSearch,
   backLabel,
   crumbs,
   title,
@@ -86,6 +88,10 @@ export function DetailShell({
   children,
 }: {
   backTo: LinkProps["to"]
+  /** Params/search for parameterised back targets (e.g. an interface going
+   * back to its owning device's Components tab). */
+  backParams?: LinkProps["params"]
+  backSearch?: LinkProps["search"]
   backLabel: string
   /** Optional intermediate breadcrumb segment(s) between the back link and the
    * title - e.g. the parent prefix on an IP page. Rendered with a trailing
@@ -114,7 +120,7 @@ export function DetailShell({
       <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
         <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Button variant="ghost" size="sm" asChild className="h-6 px-1">
-            <Link to={backTo}>
+            <Link to={backTo} params={backParams} search={backSearch}>
               <ChevronLeft className="h-3 w-3" /> {backLabel}
             </Link>
           </Button>

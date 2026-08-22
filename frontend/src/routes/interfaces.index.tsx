@@ -25,6 +25,7 @@ import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
 import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { useMe } from "@/lib/use-me"
+import { hereUrl } from "@/lib/return-url"
 
 export const Route = createFileRoute("/interfaces/")({
   component: InterfacesPage,
@@ -120,7 +121,11 @@ function InterfacesPage() {
                   >
                     <Link
                       to="/cables/new"
-                      search={{ a_kind: "interface", a_id: i.id }}
+                      search={{
+                        a_kind: "interface",
+                        a_id: i.id,
+                        ret: hereUrl(),
+                      }}
                     >
                       <CableIcon className="h-3.5 w-3.5" />
                     </Link>

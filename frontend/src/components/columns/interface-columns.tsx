@@ -27,6 +27,7 @@ import {
 import { SnmpLinkBadge } from "@/components/snmp-link-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
+import { hereUrl } from "@/lib/return-url"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { DeviceCell } from "@/components/cells/device-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -557,7 +558,11 @@ export function buildInterfaceActionsColumn<T extends Interface>(
                   >
                     <Link
                       to="/cables/new"
-                      search={{ a_kind: "interface", a_id: iface.id }}
+                      search={{
+                        a_kind: "interface",
+                        a_id: iface.id,
+                        ret: hereUrl(),
+                      }}
                     >
                       <CableIcon className="h-3.5 w-3.5" />
                     </Link>
@@ -618,7 +623,11 @@ export function buildInterfaceActionsColumn<T extends Interface>(
               className="h-7"
               aria-label={`Edit ${iface.name}`}
             >
-              <Link to="/interfaces/$id/edit" params={{ id: iface.id }}>
+              <Link
+                to="/interfaces/$id/edit"
+                params={{ id: iface.id }}
+                search={{ ret: hereUrl() }}
+              >
                 <Pencil className="h-3.5 w-3.5" />
               </Link>
             </Button>

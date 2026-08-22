@@ -11,6 +11,7 @@ import {
   type TerminationKind,
 } from "@/lib/api"
 import { PortReserveAction } from "@/components/port-reservation-dialog"
+import { hereUrl } from "@/lib/return-url"
 import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
@@ -102,7 +103,11 @@ function consoleCols({
                 >
                   <Link
                     to="/cables/new"
-                    search={{ a_kind: kind, a_id: row.original.id }}
+                    search={{
+                      a_kind: kind,
+                      a_id: row.original.id,
+                      ret: hereUrl(),
+                    }}
                   >
                     <CableIcon className="h-3.5 w-3.5" />
                   </Link>

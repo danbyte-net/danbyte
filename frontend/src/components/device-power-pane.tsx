@@ -19,6 +19,7 @@ import { PowerPortDialog } from "@/components/power-port-dialog"
 import { PowerOutletDialog } from "@/components/power-outlet-dialog"
 import { useRegisterAddActions } from "@/components/device-add-actions"
 import { PortReserveAction } from "@/components/port-reservation-dialog"
+import { hereUrl } from "@/lib/return-url"
 import { ComponentDeleteDialog } from "@/components/component-delete-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -126,7 +127,11 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
                   >
                     <Link
                       to="/cables/new"
-                      search={{ a_kind: "power_port", a_id: row.original.id }}
+                      search={{
+                        a_kind: "power_port",
+                        a_id: row.original.id,
+                        ret: hereUrl(),
+                      }}
                     >
                       <CableIcon className="h-3.5 w-3.5" />
                     </Link>
@@ -242,7 +247,11 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
                   >
                     <Link
                       to="/cables/new"
-                      search={{ a_kind: "power_outlet", a_id: row.original.id }}
+                      search={{
+                        a_kind: "power_outlet",
+                        a_id: row.original.id,
+                        ret: hereUrl(),
+                      }}
                     >
                       <CableIcon className="h-3.5 w-3.5" />
                     </Link>
