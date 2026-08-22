@@ -928,9 +928,14 @@ function NavGroup({
       {/* Overrides live on SidebarGroupLabel itself: its base classes
           (text-xs, /70 foreground) win the tailwind-merge against anything
           on the inner button, which is why the first pass changed nothing. */}
+      {/* Sticky: while you're inside a section's items, its name stays
+          pinned at the top of the rail - the next section's header pushes it
+          away. The solid accent band doubles as the backdrop items slide
+          under (translucent would ghost) and as the visual chip that makes
+          section names read at a glance. */}
       <SidebarGroupLabel
         asChild
-        className="h-9 text-sm font-semibold text-sidebar-foreground"
+        className="sticky top-0 z-10 h-9 rounded-md bg-sidebar-accent px-2.5 text-sm font-semibold text-sidebar-foreground"
       >
         <button
           type="button"
