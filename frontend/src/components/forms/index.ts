@@ -8,6 +8,7 @@
 
 export { Field } from "./field"
 export type { FieldProps } from "./field"
+export { FormSection } from "./section"
 export { FormText } from "./text"
 export type { FormTextProps } from "./text"
 export { FormDate } from "./date"

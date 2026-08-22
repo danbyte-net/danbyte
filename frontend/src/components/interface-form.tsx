@@ -16,6 +16,7 @@ import {
   FormCheckbox,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   useFieldErrors,
@@ -283,28 +284,6 @@ export function InterfaceForm({
           hint={isEdit ? undefined : "a [0-3] range adds one port per number"}
           error={fieldErrors.name}
         />
-        {isEdit && (
-          <FormText
-            label="SNMP name"
-            hint="what discovery calls this port - clear to unlink"
-            value={snmpName}
-            onChange={setSnmpName}
-            mono
-            placeholder="eth0"
-            error={fieldErrors.snmp_name}
-          />
-        )}
-        <FormText
-          label="Speed"
-          value={speed}
-          onChange={setSpeed}
-          placeholder="10G"
-          suggestions={choices.common_speeds}
-          error={fieldErrors.speed}
-        />
-      </div>
-      <NameRangeHint name={name} editing={isEdit} noun="interfaces" />
-      <div className="grid grid-cols-2 gap-3">
         <FormCombobox
           label="Type"
           value={type || null}
@@ -316,200 +295,120 @@ export function InterfaceForm({
           options={typeOptions}
           error={fieldErrors.type}
         />
-        <FormText
-          label="MTU"
-          type="number"
-          value={mtu}
-          onChange={setMtu}
-          placeholder="1500"
-          error={fieldErrors.mtu}
-        />
-        <FormText
-          label="MAC address"
-          value={mac}
-          onChange={setMac}
-          mono
-          placeholder="00:1b:44:11:3a:b7"
-          error={fieldErrors.mac_address}
-        />
       </div>
+      <NameRangeHint name={name} editing={isEdit} noun="interfaces" />
 
-      {/* ── Physical extras ── */}
-      <div className="grid grid-cols-3 gap-3">
-        <FormSelect
-          label="Duplex"
-          value={duplex || null}
-          onChange={(v) => setDuplex(v ?? "")}
-          noneLabel="-"
-          options={choices.interface_duplex}
-          error={fieldErrors.duplex}
-        />
-        <FormSelect
-          label="PoE mode"
-          value={poeMode || null}
-          onChange={(v) => setPoeMode(v ?? "")}
-          noneLabel="No PoE"
-          options={choices.poe_modes}
-          error={fieldErrors.poe_mode}
-        />
-        <FormSelect
-          label="PoE type"
-          value={poeType || null}
-          onChange={(v) => setPoeType(v ?? "")}
-          noneLabel="-"
-          options={choices.poe_types}
-          error={fieldErrors.poe_type}
-        />
-      </div>
-      <FormText
-        label="WWN"
-        value={wwn}
-        onChange={setWwn}
-        mono
-        hint="Fibre Channel World Wide Name (optional)"
-        placeholder="10:00:00:90:fa:12:34:56"
-        error={fieldErrors.wwn}
-      />
-      <FormText
-        label="Combo group"
-        value={comboGroup}
-        onChange={setComboGroup}
-        placeholder="e.g. mgmt"
-        info="Combo / shared port: give the alternate connectors of one logical port the same group (an RJ45 and its SFP twin). Enabling one automatically disables the others on this device, so only the live connector shows as up."
-        error={fieldErrors.combo_group}
-      />
-
-      {/* ── L2 switching ── */}
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="802.1Q mode"
-          value={mode || null}
-          onChange={(v) => setMode(v ?? "")}
-          noneLabel="-"
-          options={[
-            { value: "access", label: "Access" },
-            { value: "tagged", label: "Tagged (trunk)" },
-            { value: "tagged-all", label: "Tagged (all VLANs)" },
-          ]}
-          error={fieldErrors.mode}
-        />
-        <VlanPicker
-          label={mode === "tagged" ? "Untagged / native VLAN" : "Untagged VLAN"}
-          value={vlanId}
-          onChange={setVlanId}
-          noneLabel="No VLAN"
-          placeholder="No VLAN"
-          error={fieldErrors.vlan_id}
-        />
-      </div>
-      {mode === "tagged" && (
-        <Field label="Tagged VLANs (trunk)" error={fieldErrors.tagged_vlan_ids}>
-          <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-border p-2">
-            {(vlans.data?.results ?? []).length === 0 ? (
-              <p className="text-xs text-muted-foreground">No VLANs yet.</p>
-            ) : (
-              (vlans.data?.results ?? []).map((v) => (
-                <label
-                  key={v.id}
-                  className="flex items-center gap-2 text-[13px]"
-                >
-                  <Checkbox
-                    checked={taggedVlanIds.includes(v.id)}
-                    onCheckedChange={(c) =>
-                      setTaggedVlanIds((cur) =>
-                        c ? [...cur, v.id] : cur.filter((id) => id !== v.id)
-                      )
-                    }
-                  />
-                  <span className="font-mono">
-                    {v.vlan_id} · {v.name}
-                  </span>
-                </label>
-              ))
-            )}
-          </div>
-        </Field>
-      )}
-
-      {/* ── L3 routing ── */}
-      <FormCombobox
-        label="VRF"
-        value={vrfId}
-        onChange={setVrfId}
-        noneLabel="Global (no VRF)"
-        placeholder="Global (no VRF)"
-        searchPlaceholder="Search VRFs…"
-        emptyText="No VRFs."
-        options={(vrfs.data?.results ?? []).map((v) => ({
-          value: v.id,
-          label: v.name,
-        }))}
-        error={fieldErrors.vrf_id}
-      />
-      <FormCombobox
-        label="Parent interface"
-        value={parentId}
-        onChange={setParentId}
-        noneLabel="Standalone (no parent)"
-        placeholder={
-          deviceId ? "Standalone (no parent)" : "Pick a device first"
-        }
-        searchPlaceholder="Search interfaces…"
-        emptyText="No other interfaces on this device."
-        options={ifaceOptions}
-        error={fieldErrors.parent_id}
-      />
-      <div className="grid grid-cols-2 gap-3">
+      <FormSection title="Switching">
+        <div className="grid grid-cols-2 gap-3">
+          <FormSelect
+            label="802.1Q mode"
+            value={mode || null}
+            onChange={(v) => setMode(v ?? "")}
+            noneLabel="-"
+            options={[
+              { value: "access", label: "Access" },
+              { value: "tagged", label: "Tagged (trunk)" },
+              { value: "tagged-all", label: "Tagged (all VLANs)" },
+            ]}
+            error={fieldErrors.mode}
+          />
+          <VlanPicker
+            label={
+              mode === "tagged" ? "Untagged / native VLAN" : "Untagged VLAN"
+            }
+            value={vlanId}
+            onChange={setVlanId}
+            noneLabel="No VLAN"
+            placeholder="No VLAN"
+            error={fieldErrors.vlan_id}
+          />
+        </div>
+        {mode === "tagged" && (
+          <Field
+            label="Tagged VLANs (trunk)"
+            error={fieldErrors.tagged_vlan_ids}
+          >
+            <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-border p-2">
+              {(vlans.data?.results ?? []).length === 0 ? (
+                <p className="text-xs text-muted-foreground">No VLANs yet.</p>
+              ) : (
+                (vlans.data?.results ?? []).map((v) => (
+                  <label
+                    key={v.id}
+                    className="flex items-center gap-2 text-[13px]"
+                  >
+                    <Checkbox
+                      checked={taggedVlanIds.includes(v.id)}
+                      onCheckedChange={(c) =>
+                        setTaggedVlanIds((cur) =>
+                          c ? [...cur, v.id] : cur.filter((id) => id !== v.id)
+                        )
+                      }
+                    />
+                    <span className="font-mono">
+                      {v.vlan_id} · {v.name}
+                    </span>
+                  </label>
+                ))
+              )}
+            </div>
+          </Field>
+        )}
         <FormCombobox
-          label="LAG / aggregate"
-          value={lagId}
-          onChange={setLagId}
-          noneLabel="Not a LAG member"
-          placeholder={deviceId ? "Not a LAG member" : "Pick a device first"}
-          searchPlaceholder="Search interfaces…"
-          emptyText="No other interfaces on this device."
-          options={ifaceOptions}
-          error={fieldErrors.lag_id}
+          label="VRF"
+          value={vrfId}
+          onChange={setVrfId}
+          noneLabel="Global (no VRF)"
+          placeholder="Global (no VRF)"
+          searchPlaceholder="Search VRFs…"
+          emptyText="No VRFs."
+          options={(vrfs.data?.results ?? []).map((v) => ({
+            value: v.id,
+            label: v.name,
+          }))}
+          error={fieldErrors.vrf_id}
         />
-        <FormCombobox
-          label="Bridge"
-          value={bridgeId}
-          onChange={setBridgeId}
-          noneLabel="No bridge"
-          placeholder={deviceId ? "No bridge" : "Pick a device first"}
-          searchPlaceholder="Search interfaces…"
-          emptyText="No other interfaces on this device."
-          options={ifaceOptions}
-          error={fieldErrors.bridge_id}
-        />
-      </div>
-      <div className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
-        <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
-        <FormCheckbox
-          label="Management only"
-          checked={mgmtOnly}
-          onChange={setMgmtOnly}
-        />
-        <FormCheckbox
-          label="Mark connected"
-          hint="a cable is in the port, just not documented yet"
-          checked={markConnected}
-          onChange={(v) => {
-            setMarkConnected(v)
-            if (v) setReserved(false)
-          }}
-        />
-        {!iface?.cable && (
+      </FormSection>
+
+      <FormSection title="State">
+        <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
           <FormCheckbox
-            label="Reserved"
-            hint="hold this port before the far end is known"
-            checked={reserved}
+            label="Enabled"
+            checked={enabled}
+            onChange={setEnabled}
+          />
+          <FormCheckbox
+            label="Management only"
+            checked={mgmtOnly}
+            onChange={setMgmtOnly}
+          />
+          <FormCheckbox
+            label="Mark connected"
+            hint="a cable is in the port, just not documented yet"
+            checked={markConnected}
             onChange={(v) => {
-              setReserved(v)
-              if (v) setMarkConnected(false)
+              setMarkConnected(v)
+              if (v) setReserved(false)
             }}
           />
-        )}
+          {!iface?.cable && (
+            <FormCheckbox
+              label="Reserved"
+              hint="hold this port before the far end is known"
+              checked={reserved}
+              onChange={(v) => {
+                setReserved(v)
+                if (v) setMarkConnected(false)
+              }}
+            />
+          )}
+          <FormCheckbox
+            label="Uplink"
+            hint="faces other network gear - never suggest hosts on this port"
+            checked={isUplink}
+            onChange={setIsUplink}
+          />
+        </div>
         {reserved && !iface?.cable && (
           <FormText
             label="Reservation note"
@@ -518,27 +417,169 @@ export function InterfaceForm({
             placeholder="Who or what this port is for"
           />
         )}
+      </FormSection>
+
+      <FormSection
+        title="Hardware"
+        collapsible
+        hasValues={
+          !!(
+            speed ||
+            mtu ||
+            mac ||
+            duplex ||
+            poeMode ||
+            poeType ||
+            wwn ||
+            comboGroup
+          )
+        }
+      >
+        <div className="grid grid-cols-3 gap-3">
+          <FormText
+            label="Speed"
+            value={speed}
+            onChange={setSpeed}
+            placeholder="10G"
+            suggestions={choices.common_speeds}
+            error={fieldErrors.speed}
+          />
+          <FormText
+            label="MTU"
+            type="number"
+            value={mtu}
+            onChange={setMtu}
+            placeholder="1500"
+            error={fieldErrors.mtu}
+          />
+          <FormSelect
+            label="Duplex"
+            value={duplex || null}
+            onChange={(v) => setDuplex(v ?? "")}
+            noneLabel="-"
+            options={choices.interface_duplex}
+            error={fieldErrors.duplex}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <FormText
+            label="MAC address"
+            value={mac}
+            onChange={setMac}
+            mono
+            placeholder="00:1b:44:11:3a:b7"
+            error={fieldErrors.mac_address}
+          />
+          <FormText
+            label="WWN"
+            value={wwn}
+            onChange={setWwn}
+            mono
+            hint="Fibre Channel World Wide Name"
+            placeholder="10:00:00:90:fa:12:34:56"
+            error={fieldErrors.wwn}
+          />
+          <FormSelect
+            label="PoE mode"
+            value={poeMode || null}
+            onChange={(v) => setPoeMode(v ?? "")}
+            noneLabel="No PoE"
+            options={choices.poe_modes}
+            error={fieldErrors.poe_mode}
+          />
+          <FormSelect
+            label="PoE type"
+            value={poeType || null}
+            onChange={(v) => setPoeType(v ?? "")}
+            noneLabel="-"
+            options={choices.poe_types}
+            error={fieldErrors.poe_type}
+          />
+        </div>
+        <FormText
+          label="Combo group"
+          value={comboGroup}
+          onChange={setComboGroup}
+          placeholder="e.g. mgmt"
+          info="Combo / shared port: give the alternate connectors of one logical port the same group (an RJ45 and its SFP twin). Enabling one automatically disables the others on this device, so only the live connector shows as up."
+          error={fieldErrors.combo_group}
+        />
+      </FormSection>
+
+      <FormSection
+        title="Nesting"
+        collapsible
+        hasValues={!!(virtual || parentId || lagId || bridgeId)}
+      >
         <FormCheckbox
           label="Virtual interface"
           hint="sub-interface, LAG, or loopback"
           checked={virtual}
           onChange={setVirtual}
         />
-        {isEdit && (
+        <FormCombobox
+          label="Parent interface"
+          value={parentId}
+          onChange={setParentId}
+          noneLabel="Standalone (no parent)"
+          placeholder={
+            deviceId ? "Standalone (no parent)" : "Pick a device first"
+          }
+          searchPlaceholder="Search interfaces…"
+          emptyText="No other interfaces on this device."
+          options={ifaceOptions}
+          error={fieldErrors.parent_id}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <FormCombobox
+            label="LAG / aggregate"
+            value={lagId}
+            onChange={setLagId}
+            noneLabel="Not a LAG member"
+            placeholder={deviceId ? "Not a LAG member" : "Pick a device first"}
+            searchPlaceholder="Search interfaces…"
+            emptyText="No other interfaces on this device."
+            options={ifaceOptions}
+            error={fieldErrors.lag_id}
+          />
+          <FormCombobox
+            label="Bridge"
+            value={bridgeId}
+            onChange={setBridgeId}
+            noneLabel="No bridge"
+            placeholder={deviceId ? "No bridge" : "Pick a device first"}
+            searchPlaceholder="Search interfaces…"
+            emptyText="No other interfaces on this device."
+            options={ifaceOptions}
+            error={fieldErrors.bridge_id}
+          />
+        </div>
+      </FormSection>
+
+      {isEdit && (
+        <FormSection
+          title="SNMP"
+          collapsible
+          hasValues={!!(snmpName || snmpIgnore)}
+        >
+          <FormText
+            label="SNMP name"
+            hint="what discovery calls this port - clear to unlink"
+            value={snmpName}
+            onChange={setSnmpName}
+            mono
+            placeholder="eth0"
+            error={fieldErrors.snmp_name}
+          />
           <FormCheckbox
             label="Exclude from SNMP drift"
             hint="the polled agent can never report this port"
             checked={snmpIgnore}
             onChange={setSnmpIgnore}
           />
-        )}
-        <FormCheckbox
-          label="Uplink"
-          hint="faces other network gear - never suggest hosts on this port"
-          checked={isUplink}
-          onChange={setIsUplink}
-        />
-      </div>
+        </FormSection>
+      )}
+
       <FormText
         label="Description"
         value={description}
