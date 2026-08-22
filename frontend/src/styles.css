@@ -710,3 +710,10 @@
   width: auto;
   box-shadow: none;
 }
+
+/* Leaflet paths take browser focus on click, which draws a focus rectangle
+   around the line's whole bounding box (glaring on long cables). Keyboard
+   focus keeps its ring; mouse clicks don't. */
+path.leaflet-interactive:focus:not(:focus-visible) {
+  outline: none;
+}

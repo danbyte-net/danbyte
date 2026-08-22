@@ -30,6 +30,7 @@ export type MapSelected =
   | { kind: "device"; id: string }
   | { kind: "marker"; id: string }
   | { kind: "connection"; id: string }
+  | { kind: "cable"; id: string }
 
 /** A placeable marker type from the palette (FloorTileType or DeviceRole). */
 export interface MarkerTypeOption {

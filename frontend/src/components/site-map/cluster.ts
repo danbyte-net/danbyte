@@ -135,11 +135,23 @@ export function applyDensityScaling(map: L.Map, markers: L.Marker[]): () => void
         if (d < nearest) nearest = d
       }
       const f = Math.max(0.45, Math.min(1, nearest / BASE))
-      const el = m.getElement()?.firstElementChild as HTMLElement | null
-      if (el) {
-        el.style.transform = f < 1 ? `scale(${f.toFixed(2)})` : ""
-        el.style.transformOrigin = "center bottom"
+      const root = m.getElement()
+      if (!root) return
+      // Scale ONE wrapper holding the whole icon - pin, health dot, label -
+      // never a single child (a full-size status dot beside a shrunken pin
+      // reads as a different marker entirely).
+      let wrap = root.querySelector<HTMLElement>(":scope > .sm-scale")
+      if (!wrap) {
+        wrap = document.createElement("span")
+        wrap.className = "sm-scale"
+        wrap.style.display = "block"
+        wrap.style.width = "100%"
+        wrap.style.height = "100%"
+        while (root.firstChild) wrap.appendChild(root.firstChild)
+        root.appendChild(wrap)
       }
+      wrap.style.transformOrigin = "center"
+      wrap.style.transform = f < 1 ? `scale(${f.toFixed(2)})` : ""
     })
   }
   map.on("zoomend", rescale)

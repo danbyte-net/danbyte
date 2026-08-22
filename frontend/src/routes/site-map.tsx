@@ -875,10 +875,16 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     if (!layers.cables || drawnCables.length === 0) return
     const layer = buildDrawnCablesLayer(drawnCables, {
       highlightIds: highlightCableIds,
-      onSelect: (id) =>
+      onSelect: (id) => {
         setHighlightCableIds((prev) =>
           prev.size === 1 && prev.has(id) ? new Set() : new Set([id])
-        ),
+        )
+        setSelected((prev) =>
+          prev?.kind === "cable" && prev.id === id
+            ? null
+            : { kind: "cable", id }
+        )
+      },
     })
     layer.addTo(map)
     drawnCablesRef.current = layer
@@ -1145,6 +1151,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     selected?.kind === "connection"
       ? (connections.find((c) => c.id === selected.id) ?? null)
       : null
+  const selCable =
+    selected?.kind === "cable"
+      ? ((cablesQuery.data?.cables ?? []).find((c) => c.id === selected.id) ??
+        null)
+      : null
 
   // Keyboard: Escape disarms/deselects; Delete removes a selected marker in
   // edit mode. Skipped while typing in a field.
@@ -1190,13 +1201,18 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   useEffect(() => {
     const map = mapRef.current
     const target = selSite ?? selDevice ?? selMarker
-    if (!map || (!target && !selConn)) {
+    if (!map || (!target && !selConn && !selCable)) {
       setPopPos(null)
       return
     }
+    const cablePath = selCable
+      ? (drawnCables.find((c) => c.id === selCable.id)?.path ?? null)
+      : null
     const ll: [number, number] = target
       ? [Number(target.latitude), Number(target.longitude)]
-      : (midpointsRef.current.get(selConn!.id) ?? [0, 0])
+      : selConn
+        ? (midpointsRef.current.get(selConn.id) ?? [0, 0])
+        : (cablePath?.[Math.floor(cablePath.length / 2)] ?? [0, 0])
     const update = () => {
       const p = map.latLngToContainerPoint(ll)
       setPopPos({ x: p.x, y: p.y })
@@ -1206,7 +1222,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     return () => {
       map.off("move zoom", update)
     }
-  }, [selSite, selDevice, selMarker, selConn])
+  }, [selSite, selDevice, selMarker, selConn, selCable, drawnCables])
 
   const removeFromMap = (d: SiteMapDevice) => {
     moveDevice.mutate({ id: d.id, lat: null, lng: null })
@@ -1623,7 +1639,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           )}
 
           {/* rich popover, anchored to the selected object */}
-          {popPos && (selSite || selDevice || selMarker || selConn) && (
+          {popPos &&
+            (selSite || selDevice || selMarker || selConn || selCable) && (
             <div
               className="absolute z-[900] max-h-[65vh] w-max max-w-[22rem] min-w-[15rem] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
               style={{ left: popPos.x, top: popPos.y + 14 }}
@@ -1654,6 +1671,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 <ConnectionPopover
                   edge={selConn}
                   onClose={() => setSelected(null)}
+                />
+              )}
+              {!selectedRoute && selCable && (
+                <CablePopover
+                  cable={selCable}
+                  onClose={() => {
+                    setSelected(null)
+                    setHighlightCableIds(new Set())
+                  }}
                 />
               )}
             </div>
@@ -2402,6 +2428,50 @@ function MarkerPopover({
           </Link>
         </Button>
       )}
+    </div>
+  )
+}
+
+function CablePopover({
+  cable: c,
+  onClose,
+}: {
+  cable: SiteMapCable
+  onClose: () => void
+}) {
+  return (
+    <div className="grid gap-2">
+      <PopHeader title={c.label || "Cable"} mono onClose={onClose} />
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant="outline" className="uppercase">
+          cable
+        </Badge>
+        {c.type && <Badge variant="outline">{c.type}</Badge>}
+        {c.status && (
+          <ColorBadge name={c.status.name} color={c.status.color || undefined} />
+        )}
+        {c.fiber_count ? (
+          <Badge variant="outline" className="num">
+            ×{c.fiber_count}
+          </Badge>
+        ) : null}
+      </div>
+      <div className="text-[12px] text-muted-foreground">
+        <Link to="/devices/$id" params={{ id: c.a.device_id }} className="link">
+          {c.a.device_name}
+        </Link>
+        <span className="font-mono">:{c.a.port}</span>
+        {" ↔ "}
+        <Link to="/devices/$id" params={{ id: c.z.device_id }} className="link">
+          {c.z.device_name}
+        </Link>
+        <span className="font-mono">:{c.z.port}</span>
+      </div>
+      <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
+        <Link to="/cables/$id" params={{ id: c.id }}>
+          Open cable
+        </Link>
+      </Button>
     </div>
   )
 }
