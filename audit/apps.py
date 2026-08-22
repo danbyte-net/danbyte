@@ -75,6 +75,7 @@ AUDITED_MODELS = [
     "api.RearPortTemplate",
     "api.FrontPortTemplate",
     "api.Cable",
+    "api.PortReservation",
     "api.FiberSettings",
     "api.IPStatus",
     "api.IPRole",

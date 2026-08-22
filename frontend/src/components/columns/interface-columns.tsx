@@ -9,19 +9,19 @@ import {
 } from "lucide-react"
 
 import { DriftBadge } from "@/components/drift-detail"
-import {
-  InterfaceDriftMarker,
-  type InterfaceDriftEntry,
-} from "@/components/monitoring/device-drift-badge"
-import {
-  PlannedChangeMarker,
-  type PlannedTargetRow,
-} from "@/components/planning/planned-change-badge"
+import { InterfaceDriftMarker } from "@/components/monitoring/device-drift-badge"
+import type { InterfaceDriftEntry } from "@/components/monitoring/device-drift-badge"
+import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
+import type { PlannedTargetRow } from "@/components/planning/planned-change-badge"
 
 import type { Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CableStatusControl } from "@/components/cable-status-control"
+import {
+  MarkConnectedToggle,
+  PortReserveAction,
+} from "@/components/port-reservation-dialog"
 import { SnmpLinkBadge } from "@/components/snmp-link-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
@@ -34,10 +34,8 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
-import {
-  actionsColumn,
-  type ActionsColumnOpts,
-} from "@/components/columns/actions-column"
+import { actionsColumn } from "@/components/columns/actions-column"
+import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 /** An interface row with its nesting depth (sub-interfaces indent under their
  * parent). Shared by the device interfaces table and the whole-stack table. */
@@ -438,6 +436,29 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
               canEdit={opts.cableControl.canEdit}
             />
           )
+        // Uncabled ports still carry state worth seeing: an undocumented
+        // cable (mark_connected) or a direct reservation.
+        if (!cable && row.original.mark_connected)
+          return (
+            <Badge
+              variant="outline"
+              title="A cable is in the port, just not documented yet"
+            >
+              Undocumented
+            </Badge>
+          )
+        const resv = row.original.reservation
+        if (!cable && resv)
+          return (
+            <Badge
+              variant="warning"
+              title={`${resv.claimed_by ? `by ${resv.claimed_by}` : ""}${
+                resv.note ? ` - ${resv.note}` : ""
+              }`}
+            >
+              Reserved
+            </Badge>
+          )
         return (
           <span className="num text-xs text-muted-foreground">
             {row.original.cable_count || "-"}
@@ -480,6 +501,7 @@ export interface InterfaceActionsOpts<T extends Interface> {
   canEdit: boolean
   canChangeCable: boolean
   canConnect: boolean
+  canReserve: boolean
   onTrace: (target: { id: string; name: string }) => void
   onAssignIp: (target: {
     deviceId: string
@@ -507,6 +529,7 @@ export function buildInterfaceActionsColumn<T extends Interface>(
     canEdit,
     canChangeCable,
     canConnect,
+    canReserve,
     onTrace,
     onAssignIp,
   } = opts
@@ -538,22 +561,43 @@ export function buildInterfaceActionsColumn<T extends Interface>(
               <Waypoints className="h-3.5 w-3.5" />
             </Button>
           ) : (
-            canConnect &&
             !iface.virtual && (
-              <Button
-                size="sm"
-                variant="ghost"
-                asChild
-                className="h-7 text-muted-foreground/60 hover:text-foreground"
-                title="Not cabled - connect a cable"
-              >
-                <Link
-                  to="/cables/new"
-                  search={{ a_kind: "interface", a_id: iface.id }}
-                >
-                  <CableIcon className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+              <>
+                {canConnect && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    asChild
+                    className="h-7 text-muted-foreground hover:text-primary"
+                    title="Connect cable"
+                  >
+                    <Link
+                      to="/cables/new"
+                      search={{ a_kind: "interface", a_id: iface.id }}
+                    >
+                      <CableIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                )}
+                {!iface.mark_connected && (
+                  <PortReserveAction
+                    kind="interface"
+                    portId={iface.id}
+                    name={iface.name}
+                    reservation={iface.reservation}
+                    canReserve={canReserve}
+                  />
+                )}
+                {!iface.reservation && (
+                  <MarkConnectedToggle
+                    endpoint="/api/interfaces/"
+                    portId={iface.id}
+                    name={iface.name}
+                    marked={iface.mark_connected}
+                    canEdit={canEdit}
+                  />
+                )}
+              </>
             )
           )}
           {canAddIp && (

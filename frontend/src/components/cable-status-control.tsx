@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type CSSProperties } from "react"
+import type { CSSProperties } from "react"
 import { Check, ChevronDown } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -41,6 +41,20 @@ export function cableTint(
   }
   const hex = byName[status.name?.toLowerCase() ?? ""]
   return hex ? { backgroundColor: `${hex}2b` } : undefined
+}
+
+/** Row tint for any port row: the cable's status colour when cabled, else
+ * green for mark_connected (an undocumented but real cable), else amber for a
+ * direct reservation - so held and marked ports stop looking free. */
+export function portTint(p: {
+  cable?: { status?: StatusMini | null } | null
+  mark_connected?: boolean
+  reservation?: { id: string } | null
+}): CSSProperties | undefined {
+  if (p.cable) return cableTint(p.cable.status ?? null)
+  if (p.mark_connected) return { backgroundColor: "#10b9812b" }
+  if (p.reservation) return { backgroundColor: "#f59e0b2b" }
+  return undefined
 }
 
 /** Inline cable-status switcher: click the badge to move a cable between its

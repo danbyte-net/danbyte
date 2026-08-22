@@ -513,6 +513,12 @@ const sections: NavSection[] = [
             objectType: "cable",
           },
           {
+            title: "Port reservations",
+            url: "/port-reservations",
+            icon: Bookmark,
+            objectType: "portreservation",
+          },
+          {
             title: "Port utilization",
             url: "/port-utilization",
             icon: Gauge,

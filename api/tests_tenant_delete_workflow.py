@@ -21,7 +21,7 @@ from __future__ import annotations
 from django.apps import apps
 from django.contrib.auth.models import User
 from django.core.management import call_command
-from django.db import models
+from django.db import models, transaction
 from rest_framework.test import APITestCase
 
 from api.models import Prefix, Status
@@ -111,7 +111,11 @@ class TenantDeleteWorkflowTests(APITestCase):
             for field in needs:
                 kwargs[field] = f"sweep-{model._meta.model_name}"[:60]
             try:
-                model.objects.create(**kwargs)
+                # Savepoint per attempt: a check-constraint violation (e.g.
+                # PortReservation's exactly-one-point) must not abort the
+                # test's outer transaction for every model after it.
+                with transaction.atomic():
+                    model.objects.create(**kwargs)
             except Exception:
                 continue  # a constraint we can't satisfy blindly - fine
             built.append(model._meta.label)

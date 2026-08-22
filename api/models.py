@@ -3318,13 +3318,18 @@ class CableTermination(TimestampedModel):
         creating = self._state.adding
         super().save(*args, **kwargs)
         # A documented cable retires the port's "cable exists but isn't
-        # documented yet" placeholder - the flag stood in for this row.
+        # documented yet" placeholder - the flag stood in for this row. It
+        # also fulfils any reservation on the port: the hold existed to keep
+        # the port available for exactly this cable.
         if creating:
-            for f in ("interface", "front_port", "rear_port"):
+            for f in self.POINT_FIELDS:
                 port = getattr(self, f, None)
-                if port is not None and getattr(port, "mark_connected", False):
+                if port is None:
+                    continue
+                if getattr(port, "mark_connected", False):
                     port.mark_connected = False
                     port.save(update_fields=["mark_connected"])
+                port.reservations.all().delete()
 
     @property
     def point(self):
@@ -3336,6 +3341,101 @@ class CableTermination(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.cable_id}/{self.end}: {self.point}"
+
+
+class PortReservation(TimestampedModel):
+    """A hold on a single uncabled port - "user B will need this one" before
+    the far end is even known. Complements planned cables (which need both
+    ends picked): a reservation names exactly one port. Released automatically
+    when a cable termination lands on the port."""
+
+    POINT_FIELDS = CableTermination.POINT_FIELDS
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="port_reservations"
+    )
+    interface = models.ForeignKey(
+        Interface, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    front_port = models.ForeignKey(
+        FrontPort, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    rear_port = models.ForeignKey(
+        RearPort, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    console_port = models.ForeignKey(
+        ConsolePort, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    console_server_port = models.ForeignKey(
+        ConsoleServerPort, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    power_port = models.ForeignKey(
+        PowerPort, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    power_outlet = models.ForeignKey(
+        PowerOutlet, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    power_feed = models.ForeignKey(
+        "PowerFeed", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    aux_port = models.ForeignKey(
+        AuxPort, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="reservations",
+    )
+    claimed_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="port_reservations",
+    )
+    note = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                name="portreservation_exactly_one_point",
+                check=models.Q(
+                    *[
+                        models.Q(**{
+                            f"{set_field}__isnull": False,
+                            **{
+                                f"{other}__isnull": True
+                                for other in CableTermination.POINT_FIELDS
+                                if other != set_field
+                            },
+                        })
+                        for set_field in CableTermination.POINT_FIELDS
+                    ],
+                    _connector=models.Q.OR,
+                ),
+            ),
+            *[
+                models.UniqueConstraint(
+                    fields=[f], condition=models.Q(**{f"{f}__isnull": False}),
+                    name=f"uniq_reservation_{f}",
+                )
+                for f in CableTermination.POINT_FIELDS
+            ],
+        ]
+
+    @property
+    def point(self):
+        for f in self.POINT_FIELDS:
+            obj = getattr(self, f)
+            if obj is not None:
+                return obj
+        return None
+
+    def __str__(self) -> str:
+        return f"reservation: {self.point}"
 
 
 class FiberSettings(TimestampedModel):

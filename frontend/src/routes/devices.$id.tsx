@@ -117,7 +117,7 @@ import {
 } from "@/components/vc-stack-interfaces"
 import { DeviceConsolePane } from "@/components/device-console-pane"
 import { DevicePowerPane } from "@/components/device-power-pane"
-import { cableTint } from "@/components/cable-status-control"
+import { portTint } from "@/components/cable-status-control"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import {
   buildInterfaceColumns,
@@ -1485,6 +1485,7 @@ function DeviceInterfacesPane({
   const { canDo } = useMe()
   const canConnect = canDo("cable", "add")
   const canChangeCable = canDo("cable", "change")
+  const canReserve = canDo("portreservation", "add")
   const barSlot = useContext(BarSlotContext)
   const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null)
@@ -1602,6 +1603,7 @@ function DeviceInterfacesPane({
       canEdit,
       canChangeCable,
       canConnect,
+      canReserve,
       onTrace: setTraceTarget,
       onAssignIp: setAssignTarget,
     })
@@ -1621,6 +1623,7 @@ function DeviceInterfacesPane({
     canEdit,
     canChangeCable,
     canConnect,
+    canReserve,
     driftByIface,
   ])
   if (q.isLoading)
@@ -1714,6 +1717,7 @@ function DeviceInterfacesPane({
             canEdit,
             canChangeCable,
             canConnect,
+            canReserve,
             onTrace: setTraceTarget,
             onAssignIp: setAssignTarget,
           }}
@@ -1728,7 +1732,7 @@ function DeviceInterfacesPane({
         <DataTable
           data={rows}
           columns={columns}
-          rowStyle={(r) => cableTint(r.cable?.status)}
+          rowStyle={(r) => portTint(r)}
           embedded
           onSelectedRowsChange={setSelIfaces}
         />

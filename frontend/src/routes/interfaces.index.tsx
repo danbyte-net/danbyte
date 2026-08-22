@@ -9,7 +9,11 @@ import { api, type Interface, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildInterfaceColumns } from "@/components/columns/interface-columns"
-import { cableTint } from "@/components/cable-status-control"
+import { portTint } from "@/components/cable-status-control"
+import {
+  MarkConnectedToggle,
+  PortReserveAction,
+} from "@/components/port-reservation-dialog"
 import {
   FilterRail,
   FacetGroup,
@@ -34,6 +38,7 @@ function InterfacesPage() {
   const { canDo } = useMe()
   const canAddCable = canDo("cable", "add")
   const canChangeCable = canDo("cable", "change")
+  const canReserve = canDo("portreservation", "add")
   const canAdd = canDo("interface", "add")
   const canEdit = canDo("interface", "change")
   const canDelete = canDo("interface", "delete")
@@ -103,25 +108,55 @@ function InterfacesPage() {
           onDelete: handleDelete,
           canDelete: () => canDelete,
           extra: (i) =>
-            canAddCable && !i.cable ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                asChild
-                className="h-7 px-1.5"
-                title="Connect a cable to this port"
-              >
-                <Link
-                  to="/cables/new"
-                  search={{ a_kind: "interface", a_id: i.id }}
-                >
-                  <CableIcon className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+            !i.cable && !i.virtual ? (
+              <>
+                {canAddCable && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    asChild
+                    className="h-7 px-1.5 text-muted-foreground hover:text-primary"
+                    title="Connect cable"
+                  >
+                    <Link
+                      to="/cables/new"
+                      search={{ a_kind: "interface", a_id: i.id }}
+                    >
+                      <CableIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                )}
+                {!i.mark_connected && (
+                  <PortReserveAction
+                    kind="interface"
+                    portId={i.id}
+                    name={i.name}
+                    reservation={i.reservation}
+                    canReserve={canReserve}
+                  />
+                )}
+                {!i.reservation && (
+                  <MarkConnectedToggle
+                    endpoint="/api/interfaces/"
+                    portId={i.id}
+                    name={i.name}
+                    marked={i.mark_connected}
+                    canEdit={canEdit}
+                  />
+                )}
+              </>
             ) : null,
         },
       }),
-    [handleDelete, canEdit, canDelete, canAddCable, canChangeCable, drift]
+    [
+      handleDelete,
+      canEdit,
+      canDelete,
+      canAddCable,
+      canChangeCable,
+      canReserve,
+      drift,
+    ]
   )
 
   const rail = (
@@ -171,7 +206,7 @@ function InterfacesPage() {
         columns={columns}
         tableId="interfaces"
         flexColumn="description"
-        rowStyle={(r) => cableTint(r.cable?.status)}
+        rowStyle={(r) => portTint(r)}
       />
       <InterfaceDeleteDialog
         iface={deleting}

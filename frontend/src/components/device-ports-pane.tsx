@@ -9,7 +9,7 @@ import {
 } from "@/lib/cable-state"
 import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2, Waypoints } from "lucide-react"
+import { Cable as CableIcon, Pencil, Trash2, Waypoints } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { FrontPort, Paginated, RearPort } from "@/lib/api"
@@ -29,10 +29,11 @@ import { QueryError } from "@/components/query-error"
 import { RearPortForm } from "@/components/rear-port-form"
 import { FrontPortForm } from "@/components/front-port-form"
 import { PortDeleteDialog } from "@/components/port-delete-dialog"
+import { portTint, CableStatusControl } from "@/components/cable-status-control"
 import {
-  cableTint,
-  CableStatusControl,
-} from "@/components/cable-status-control"
+  MarkConnectedToggle,
+  PortReserveAction,
+} from "@/components/port-reservation-dialog"
 import { useRegisterAddActions } from "@/components/device-add-actions"
 import { useMe } from "@/lib/use-me"
 
@@ -71,6 +72,8 @@ export function DevicePortsPane({
   const canEditFront = canDo("frontport", "change")
   const canDeleteFront = canDo("frontport", "delete")
   const canEditCable = canDo("cable", "change")
+  const canConnect = canDo("cable", "add")
+  const canReserve = canDo("portreservation", "add")
   const [rearOpen, setRearOpen] = useState(false)
   const [editRear, setEditRear] = useState<RearPort | null>(null)
   const [delRear, setDelRear] = useState<RearPort | null>(null)
@@ -181,6 +184,44 @@ export function DevicePortsPane({
                 <Waypoints className="h-3.5 w-3.5" />
               </Button>
             )}
+            {!row.original.cable && (
+              <>
+                {canConnect && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    asChild
+                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                    title="Connect cable"
+                  >
+                    <Link
+                      to="/cables/new"
+                      search={{ a_kind: "rear_port", a_id: row.original.id }}
+                    >
+                      <CableIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                )}
+                {!row.original.mark_connected && (
+                  <PortReserveAction
+                    kind="rear_port"
+                    portId={row.original.id}
+                    name={row.original.name}
+                    reservation={row.original.reservation}
+                    canReserve={canReserve}
+                  />
+                )}
+                {!row.original.reservation && (
+                  <MarkConnectedToggle
+                    endpoint="/api/rear-ports/"
+                    portId={row.original.id}
+                    name={row.original.name}
+                    marked={!!row.original.mark_connected}
+                    canEdit={canEditRear}
+                  />
+                )}
+              </>
+            )}
             {canEditRear && (
               <Button
                 size="icon"
@@ -205,7 +246,7 @@ export function DevicePortsPane({
         ),
       },
     ],
-    [canEditRear, canDeleteRear, canEditCable]
+    [canEditRear, canDeleteRear, canEditCable, canConnect, canReserve]
   )
 
   const frontCols = useMemo<ColumnDef<FrontPort>[]>(
@@ -295,6 +336,44 @@ export function DevicePortsPane({
                 <Waypoints className="h-3.5 w-3.5" />
               </Button>
             )}
+            {!row.original.cable && (
+              <>
+                {canConnect && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    asChild
+                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                    title="Connect cable"
+                  >
+                    <Link
+                      to="/cables/new"
+                      search={{ a_kind: "front_port", a_id: row.original.id }}
+                    >
+                      <CableIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                )}
+                {!row.original.mark_connected && (
+                  <PortReserveAction
+                    kind="front_port"
+                    portId={row.original.id}
+                    name={row.original.name}
+                    reservation={row.original.reservation}
+                    canReserve={canReserve}
+                  />
+                )}
+                {!row.original.reservation && (
+                  <MarkConnectedToggle
+                    endpoint="/api/front-ports/"
+                    portId={row.original.id}
+                    name={row.original.name}
+                    marked={!!row.original.mark_connected}
+                    canEdit={canEditFront}
+                  />
+                )}
+              </>
+            )}
             {canEditFront && (
               <Button
                 size="icon"
@@ -319,7 +398,7 @@ export function DevicePortsPane({
         ),
       },
     ],
-    [canEditFront, canDeleteFront, canEditCable]
+    [canEditFront, canDeleteFront, canEditCable, canConnect, canReserve]
   )
 
   const [cabled, setCabled] = useState<CableState | null>(initialCabled ?? null)
@@ -376,7 +455,7 @@ export function DevicePortsPane({
             data={rearRows}
             columns={rearCols}
             flexColumn="description"
-            rowStyle={(r) => cableTint(r.cable?.status)}
+            rowStyle={(r) => portTint(r)}
             onSelectedRowsChange={setSelRear}
             embedded
             searchable
@@ -403,7 +482,7 @@ export function DevicePortsPane({
             data={frontRows}
             columns={frontCols}
             flexColumn="description"
-            rowStyle={(r) => cableTint(r.cable?.status)}
+            rowStyle={(r) => portTint(r)}
             onSelectedRowsChange={setSelFront}
             embedded
             searchable

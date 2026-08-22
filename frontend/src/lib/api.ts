@@ -1900,6 +1900,30 @@ export interface DcimChoices {
   common_speeds: string[]
 }
 
+/** A direct hold on one uncabled port (auto-released when a cable lands). */
+export interface PortReservationMini {
+  id: string
+  claimed_by: string
+  note: string
+  created_at: string
+}
+
+/** /api/port-reservations/ list row. */
+export interface PortReservation {
+  id: string
+  port: {
+    kind: string
+    id: string
+    name: string
+    device: { id: string; name: string }
+  }
+  site: { id: string; name: string } | null
+  claimed_by: string
+  note: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Interface {
   id: string
   device: { id: string; name: string }
@@ -1938,6 +1962,7 @@ export interface Interface {
   tags: Tag[]
   cable: CableMini | null
   cable_count: number
+  reservation: PortReservationMini | null
   ip_addresses: { id: string; ip_address: string }[]
   /** VPN tunnel ends this interface terminates (the "in a tunnel" chip). */
   tunnel_terminations: {
@@ -2006,6 +2031,7 @@ export interface RearPort {
   description: string
   tags: Tag[]
   cable: CableMini | null
+  reservation: PortReservationMini | null
   front_port_count: number
   created_at: string
   updated_at: string
@@ -2039,6 +2065,7 @@ export interface FrontPort {
   description: string
   tags: Tag[]
   cable: CableMini | null
+  reservation: PortReservationMini | null
   created_at: string
   updated_at: string
 }
@@ -2066,6 +2093,7 @@ export interface ConsolePort {
   description: string
   tags: Tag[]
   cable: CableMini | null
+  reservation: PortReservationMini | null
   created_at: string
   updated_at: string
 }
@@ -2094,6 +2122,7 @@ export interface PowerPort {
   outlet_count: number
   tags: Tag[]
   cable: CableMini | null
+  reservation: PortReservationMini | null
   created_at: string
   updated_at: string
 }
@@ -2119,6 +2148,7 @@ export interface PowerOutlet {
   description: string
   tags: Tag[]
   cable: CableMini | null
+  reservation: PortReservationMini | null
   created_at: string
   updated_at: string
 }

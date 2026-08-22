@@ -31,6 +31,28 @@ ports** - so USB console links or video runs are first-class cables.
 A port can be cabled **only once** - Danbyte rejects connecting a port that's
 already in use, so every connection stays unambiguous.
 
+## Port reservations
+
+Sometimes you know a port will be needed before you know where its cable will
+land - a colleague claims "I'll need one on this switch" with the far end
+still undecided. A **port reservation** holds exactly one uncabled port, no
+far end required, complementing the *Planned*-cable flow (which needs both
+ends picked).
+
+- Reserve from any port row's bookmark action (interfaces, front/rear ports,
+  console, power) or from the interface page's **Reserve port** button, with
+  an optional note. The row tints amber, shows a **Reserved** badge with the
+  note and reserver on hover, and the faceplate outlines the port amber.
+- A reserved port counts as **reserved** in [port
+  utilization](devices.md#the-device-page), exactly like a planned cable.
+- The hold releases **automatically** the moment any cable terminates on the
+  port - including a *Planned* one, which then carries the reserved state
+  itself. Releasing by hand: the same bookmark action, or the list page.
+- **DCIM → Connections → Port reservations** lists every hold in the tenant:
+  port, kind, site, who reserved it, note, and age
+  (`/api/port-reservations/`). Reservations are RBAC-controlled
+  (*Port reservations* object type) and audited.
+
 ### Cable type
 
 Pick the medium from the **Type** dropdown, organised into sub-categories -

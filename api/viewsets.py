@@ -44,6 +44,7 @@ from .models import (
     TopologyView,
     Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
     install_module, uninstall_module,
+    CableTermination, PortReservation,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
@@ -126,6 +127,7 @@ from .serializers import (
     DocumentCategorySerializer,
     PowerPanelSerializer,
     PowerPanelMiniSerializer,
+    PortReservationSerializer,
     PowerFeedSerializer,
     ClusterGroupSerializer,
     ClusterGroupMiniSerializer,
@@ -2863,7 +2865,9 @@ def _region_and_descendant_ids(region_id):
 
 def _cable_state(comp, term) -> str:
     """free | connected | reserved | marked - the utilization card's
-    vocabulary, per port, for the face-panel glow."""
+    vocabulary, per port, for the face-panel glow. Reserved covers both a
+    planned cable and a direct PortReservation on an uncabled port; a real
+    cable (or mark_connected) outranks the hold."""
     if term is not None:
         status = term.cable.status if term.cable_id else None
         if status is not None and status.slug == "planned":
@@ -2871,6 +2875,8 @@ def _cable_state(comp, term) -> str:
         return "connected"
     if getattr(comp, "mark_connected", False):
         return "marked"
+    if any(True for _ in comp.reservations.all()):
+        return "reserved"
     return "free"
 
 
@@ -2930,12 +2936,13 @@ class DeviceViewSet(
 
         Connected = the port terminates a cable or carries mark_connected
         (undocumented cable); reserved = its cable's status is "planned"
-        (earmarked but not yet patched); free = no cable. ``marked`` is the
+        (earmarked but not yet patched) or the uncabled port holds a
+        PortReservation; free = no cable, no hold. ``marked`` is the
         undocumented subset of connected.
         """
         from django.db.models import Exists
 
-        from .models import CableTermination
+        from .models import CableTermination, PortReservation
 
         device = self.get_object()
         kinds = {
@@ -2953,9 +2960,18 @@ class DeviceViewSet(
                 **{term_field: OuterRef("pk")}
             )
             planned = cabled.filter(cable__status__slug="planned")
-            qs = rel.annotate(_cabled=Exists(cabled), _planned=Exists(planned))
+            resv = PortReservation.objects.filter(
+                **{term_field: OuterRef("pk")}
+            )
+            qs = rel.annotate(
+                _cabled=Exists(cabled), _planned=Exists(planned),
+                _resv=Exists(resv),
+            )
             total = rel.count()
-            reserved = qs.filter(_planned=True).count()
+            reserved = qs.filter(
+                Q(_planned=True)
+                | Q(_cabled=False, mark_connected=False, _resv=True)
+            ).count()
             marked = qs.filter(_cabled=False, mark_connected=True).count()
             connected = (
                 qs.filter(_cabled=True, _planned=False).count() + marked
@@ -3093,7 +3109,9 @@ class DeviceViewSet(
                 # carry a status instead, and a module bay's occupancy is the
                 # reverse Module relation (there is no field on the bay).
                 if cabled:
-                    comps = comps.prefetch_related("terminations__cable__status")
+                    comps = comps.prefetch_related(
+                        "terminations__cable__status", "reservations"
+                    )
                 elif relation == "module_bays":
                     comps = comps.select_related("module__module_type")
                 else:
@@ -3557,7 +3575,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             "device", "vlan", "vrf", "parent", "lag", "bridge"
         )
         .prefetch_related(
-            "tags", "terminations__cable", "ip_addresses", "children",
+            "tags", "terminations__cable", "reservations", "ip_addresses", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
         )
@@ -4152,7 +4170,7 @@ class FiberSettingsViewSet(viewsets.ViewSet):
 class RearPortViewSet(_DevicePortViewSet):
     queryset = (
         RearPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "front_ports")
+        .prefetch_related("tags", "terminations__cable", "reservations", "front_ports")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = RearPortSerializer
@@ -4163,7 +4181,7 @@ class RearPortViewSet(_DevicePortViewSet):
 class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
         FrontPort.objects.select_related("device", "rear_port")
-        .prefetch_related("tags", "terminations__cable")
+        .prefetch_related("tags", "terminations__cable", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
@@ -4173,7 +4191,7 @@ class FrontPortViewSet(_DevicePortViewSet):
 class ConsolePortViewSet(_DevicePortViewSet):
     queryset = (
         ConsolePort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable")
+        .prefetch_related("tags", "terminations__cable", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsolePortSerializer
@@ -4182,7 +4200,7 @@ class ConsolePortViewSet(_DevicePortViewSet):
 class AuxPortViewSet(_DevicePortViewSet):
     queryset = (
         AuxPort.objects.select_related("device")
-        .prefetch_related("tags")  # not cable-terminable - no terminations
+        .prefetch_related("tags", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = AuxPortSerializer
@@ -4191,7 +4209,7 @@ class AuxPortViewSet(_DevicePortViewSet):
 class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable")
+        .prefetch_related("tags", "terminations__cable", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsoleServerPortSerializer
@@ -4201,7 +4219,7 @@ class ConsoleServerPortViewSet(_DevicePortViewSet):
 class PowerPortViewSet(_DevicePortViewSet):
     queryset = (
         PowerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "outlets")
+        .prefetch_related("tags", "terminations__cable", "reservations", "outlets")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerPortSerializer
@@ -4210,7 +4228,7 @@ class PowerPortViewSet(_DevicePortViewSet):
 class PowerOutletViewSet(_DevicePortViewSet):
     queryset = (
         PowerOutlet.objects.select_related("device", "power_port")
-        .prefetch_related("tags", "terminations__cable")
+        .prefetch_related("tags", "terminations__cable", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerOutletSerializer
@@ -7836,6 +7854,51 @@ class FloorPlanRaisedFloorAreaViewSet(TenantScopedViewSet):
         if serializer.validated_data.get("floor_plan") is None:
             raise ValidationError({"floor_plan_id": "This field is required."})
         serializer.save()
+
+
+class PortReservationViewSet(TenantScopedViewSet):
+    """Holds on single uncabled ports - the planning half of cabling that
+    doesn't know its far end yet. Auto-released by CableTermination.save."""
+
+    queryset = PortReservation.objects.select_related(
+        "claimed_by",
+        "interface__device__site", "front_port__device__site",
+        "rear_port__device__site", "console_port__device__site",
+        "console_server_port__device__site", "power_port__device__site",
+        "power_outlet__device__site", "aux_port__device__site",
+        "power_feed__power_panel__site",
+    ).order_by("-created_at")
+    serializer_class = PortReservationSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if not self.request:
+            return qs
+        device = self.request.query_params.get("device")
+        if device:
+            qs = qs.filter(
+                Q(interface__device_id=device)
+                | Q(front_port__device_id=device)
+                | Q(rear_port__device_id=device)
+                | Q(console_port__device_id=device)
+                | Q(console_server_port__device_id=device)
+                | Q(power_port__device_id=device)
+                | Q(power_outlet__device_id=device)
+                | Q(aux_port__device_id=device)
+            )
+        kind = self.request.query_params.get("kind")
+        if kind in CableTermination.POINT_FIELDS:
+            qs = qs.filter(**{f"{kind}__isnull": False})
+        claimed_by = self.request.query_params.get("claimed_by")
+        if claimed_by:
+            qs = qs.filter(claimed_by__username=claimed_by)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(
+            tenant=self._tenant_or_403(), claimed_by=self.request.user
+        )
 
 
 class CableRouteViewSet(TenantScopedViewSet):

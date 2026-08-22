@@ -18,6 +18,7 @@ import { QueryError } from "@/components/query-error"
 import { PowerPortDialog } from "@/components/power-port-dialog"
 import { PowerOutletDialog } from "@/components/power-outlet-dialog"
 import { useRegisterAddActions } from "@/components/device-add-actions"
+import { PortReserveAction } from "@/components/port-reservation-dialog"
 import { ComponentDeleteDialog } from "@/components/component-delete-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -30,6 +31,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
   const canEditOutlet = canDo("poweroutlet", "change")
   const canDeleteOutlet = canDo("poweroutlet", "delete")
   const canConnect = canDo("cable", "add")
+  const canReserve = canDo("portreservation", "add")
 
   const [portOpen, setPortOpen] = useState(false)
   const [editPort, setEditPort] = useState<PowerPort | null>(null)
@@ -112,21 +114,32 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
-            {canConnect && !row.original.cable && (
-              <Button
-                size="sm"
-                variant="ghost"
-                asChild
-                className="h-7 text-muted-foreground/60 hover:text-foreground"
-                title="Not cabled - connect a cable"
-              >
-                <Link
-                  to="/cables/new"
-                  search={{ a_kind: "power_port", a_id: row.original.id }}
-                >
-                  <CableIcon className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+            {!row.original.cable && (
+              <>
+                {canConnect && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    asChild
+                    className="h-7 text-muted-foreground hover:text-primary"
+                    title="Connect cable"
+                  >
+                    <Link
+                      to="/cables/new"
+                      search={{ a_kind: "power_port", a_id: row.original.id }}
+                    >
+                      <CableIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                )}
+                <PortReserveAction
+                  kind="power_port"
+                  portId={row.original.id}
+                  name={row.original.name}
+                  reservation={row.original.reservation}
+                  canReserve={canReserve}
+                />
+              </>
             )}
             {canEditPort && (
               <Button
@@ -152,7 +165,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         ),
       },
     ],
-    [canConnect, canEditPort, canDeletePort]
+    [canConnect, canReserve, canEditPort, canDeletePort]
   )
 
   const outletCols = useMemo<ColumnDef<PowerOutlet>[]>(
@@ -217,21 +230,32 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
-            {canConnect && !row.original.cable && (
-              <Button
-                size="sm"
-                variant="ghost"
-                asChild
-                className="h-7 text-muted-foreground/60 hover:text-foreground"
-                title="Not cabled - connect a cable"
-              >
-                <Link
-                  to="/cables/new"
-                  search={{ a_kind: "power_outlet", a_id: row.original.id }}
-                >
-                  <CableIcon className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+            {!row.original.cable && (
+              <>
+                {canConnect && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    asChild
+                    className="h-7 text-muted-foreground hover:text-primary"
+                    title="Connect cable"
+                  >
+                    <Link
+                      to="/cables/new"
+                      search={{ a_kind: "power_outlet", a_id: row.original.id }}
+                    >
+                      <CableIcon className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                )}
+                <PortReserveAction
+                  kind="power_outlet"
+                  portId={row.original.id}
+                  name={row.original.name}
+                  reservation={row.original.reservation}
+                  canReserve={canReserve}
+                />
+              </>
             )}
             {canEditOutlet && (
               <Button
@@ -257,7 +281,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         ),
       },
     ],
-    [canConnect, canEditOutlet, canDeleteOutlet]
+    [canConnect, canReserve, canEditOutlet, canDeleteOutlet]
   )
 
   const portRows = ports.data?.results ?? []

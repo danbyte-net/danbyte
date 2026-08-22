@@ -2,7 +2,8 @@
 
 Connected = the port terminates a cable, or carries ``mark_connected`` (a
 cable is in the port, just not documented yet); reserved = its cable's
-status is "planned" (earmarked but not yet patched); free = no cable.
+status is "planned" (earmarked but not yet patched) OR the uncabled port
+holds a PortReservation; free = no cable, no hold.
 Twelve GROUP BY aggregates total (three port kinds x four metrics) - never
 per-device queries, however many devices are in scope. ``marked`` is the
 undocumented subset of connected, kept separate so the number stays honest
@@ -10,19 +11,24 @@ about documentation debt.
 """
 from __future__ import annotations
 
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Count, Exists, OuterRef, Q
 
 
 def device_port_counts(devices) -> dict:
     """{device_id: {"total", "connected", "reserved", "marked"}} for every
     device in ``devices`` (a queryset) that has at least one port."""
-    from .models import CableTermination, FrontPort, Interface, RearPort
+    from .models import (
+        CableTermination, FrontPort, Interface, PortReservation, RearPort,
+    )
 
     def kind_counts(model, term_field):
         base = model.objects.filter(device__in=devices)
         term = CableTermination.objects.filter(**{term_field: OuterRef("pk")})
         planned = term.filter(cable__status__slug="planned")
-        ann = base.annotate(_c=Exists(term), _p=Exists(planned))
+        resv = PortReservation.objects.filter(**{term_field: OuterRef("pk")})
+        ann = base.annotate(
+            _c=Exists(term), _p=Exists(planned), _r=Exists(resv)
+        )
         group = lambda qs: {  # noqa: E731 - tiny local shaping helper
             r["device_id"]: r["n"]
             for r in qs.values("device_id").annotate(n=Count("id"))
@@ -30,7 +36,10 @@ def device_port_counts(devices) -> dict:
         return (
             group(base),
             group(ann.filter(_c=True, _p=False)),
-            group(ann.filter(_p=True)),
+            # Planned cable, or an uncabled unmarked port held directly.
+            group(ann.filter(
+                Q(_p=True) | Q(_c=False, mark_connected=False, _r=True)
+            )),
             group(ann.filter(_c=False, mark_connected=True)),
         )
 

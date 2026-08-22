@@ -28,13 +28,16 @@ export function cableStateMatches(
 }
 
 /** free | connected | reserved | marked for any port-ish row that carries the
- * cable summary (+ optional mark_connected). Reserved = the cable's status is
- * the Planned catalog entry. */
+ * cable summary (+ optional mark_connected / reservation). Reserved = the
+ * cable's status is the Planned catalog entry, or the uncabled port holds a
+ * direct PortReservation; a real cable (or mark_connected) outranks the hold. */
 export function cableState(p: {
   cable?: { status?: { slug?: string } | null } | null
   mark_connected?: boolean
+  reservation?: { id: string } | null
 }): CableState {
   if (p.cable)
     return p.cable.status?.slug === "planned" ? "reserved" : "connected"
-  return p.mark_connected ? "marked" : "free"
+  if (p.mark_connected) return "marked"
+  return p.reservation ? "reserved" : "free"
 }

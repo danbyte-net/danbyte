@@ -18,7 +18,7 @@ import {
   type InterfaceActionsOpts,
   type NestedInterface,
 } from "@/components/columns/interface-columns"
-import { cableTint } from "@/components/cable-status-control"
+import { portTint } from "@/components/cable-status-control"
 import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { QueryError } from "@/components/query-error"
@@ -111,6 +111,7 @@ export function StackInterfacesTable({
     canEdit = false,
     canChangeCable = false,
     canConnect = false,
+    canReserve = false,
     onTrace,
     onAssignIp,
   } = actions ?? {}
@@ -128,6 +129,7 @@ export function StackInterfacesTable({
             canEdit,
             canChangeCable,
             canConnect,
+            canReserve,
             onTrace,
             onAssignIp,
             // Each row belongs to its own member device.
@@ -172,6 +174,7 @@ export function StackInterfacesTable({
     canEdit,
     canChangeCable,
     canConnect,
+    canReserve,
     onTrace,
     onAssignIp,
     drift,
@@ -200,7 +203,7 @@ export function StackInterfacesTable({
           ? "shadow-[inset_2px_0_0_var(--primary)]"
           : undefined
       }
-      rowStyle={(r) => cableTint(r.cable?.status)}
+      rowStyle={(r) => portTint(r)}
       embedded
     />
   )

@@ -1,9 +1,16 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
+import { Cable as CableIcon, Pencil, Trash2 } from "lucide-react"
+import { Link } from "@tanstack/react-router"
 
-import { api, type ConsolePort, type Paginated } from "@/lib/api"
+import {
+  api,
+  type ConsolePort,
+  type Paginated,
+  type TerminationKind,
+} from "@/lib/api"
+import { PortReserveAction } from "@/components/port-reservation-dialog"
 import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
@@ -17,14 +24,21 @@ import { useMe } from "@/lib/use-me"
 // Both console tables share a row shape - only the header noun differs.
 function consoleCols({
   header,
+  kind,
   canEdit,
   canDelete,
+  canConnect,
+  canReserve,
   onEdit,
   onDelete,
 }: {
   header: string
+  /** Cable-termination kind of the rows (console_port / console_server_port). */
+  kind: TerminationKind
   canEdit: boolean
   canDelete: boolean
+  canConnect: boolean
+  canReserve: boolean
   onEdit: (p: ConsolePort) => void
   onDelete: (p: ConsolePort) => void
 }): ColumnDef<ConsolePort>[] {
@@ -76,6 +90,33 @@ function consoleCols({
       header: "",
       cell: ({ row }) => (
         <div className="flex justify-end gap-1">
+          {!row.original.cable && (
+            <>
+              {canConnect && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  asChild
+                  className="h-7 w-7 text-muted-foreground hover:text-primary"
+                  title="Connect cable"
+                >
+                  <Link
+                    to="/cables/new"
+                    search={{ a_kind: kind, a_id: row.original.id }}
+                  >
+                    <CableIcon className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              )}
+              <PortReserveAction
+                kind={kind}
+                portId={row.original.id}
+                name={row.original.name}
+                reservation={row.original.reservation}
+                canReserve={canReserve}
+              />
+            </>
+          )}
           {canEdit && (
             <Button
               size="icon"
@@ -110,6 +151,8 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
   const canAddServer = canDo("consoleserverport", "add")
   const canEditServer = canDo("consoleserverport", "change")
   const canDeleteServer = canDo("consoleserverport", "delete")
+  const canConnect = canDo("cable", "add")
+  const canReserve = canDo("portreservation", "add")
 
   const [portOpen, setPortOpen] = useState(false)
   const [editPort, setEditPort] = useState<ConsolePort | null>(null)
@@ -139,26 +182,32 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
       ...(canEditPort ? [selectionColumn<ConsolePort>()] : []),
       ...consoleCols({
         header: "Console port",
+        kind: "console_port",
         canEdit: canEditPort,
         canDelete: canDeletePort,
+        canConnect,
+        canReserve,
         onEdit: setEditPort,
         onDelete: setDelPort,
       }),
     ],
-    [canEditPort, canDeletePort]
+    [canEditPort, canDeletePort, canConnect, canReserve]
   )
   const serverCols = useMemo(
     () => [
       ...(canEditServer ? [selectionColumn<ConsolePort>()] : []),
       ...consoleCols({
         header: "Console server port",
+        kind: "console_server_port",
         canEdit: canEditServer,
         canDelete: canDeleteServer,
+        canConnect,
+        canReserve,
         onEdit: setEditServer,
         onDelete: setDelServer,
       }),
     ],
-    [canEditServer, canDeleteServer]
+    [canEditServer, canDeleteServer, canConnect, canReserve]
   )
 
   const portRows = ports.data?.results ?? []

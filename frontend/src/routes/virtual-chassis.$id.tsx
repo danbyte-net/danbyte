@@ -117,6 +117,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
     canEdit: canDo("interface", "change"),
     canChangeCable: canDo("cable", "change"),
     canConnect: canDo("cable", "add"),
+    canReserve: canDo("portreservation", "add"),
     onTrace: setTraceTarget,
     onAssignIp: setAssignTarget,
   }

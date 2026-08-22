@@ -97,17 +97,19 @@ Technical values (name, serial, asset tag, primary IP, DNS name) have a small
 
 Devices with ports also get a **Port utilization** card: a segmented bar plus
 counts of **connected** (the port terminates a cable), **reserved** (its cable
-carries the *Planned* status - earmarked for a cross-connect that isn't
-patched yet), and **free** ports, broken down per kind (interfaces, front
-ports, rear ports). A port can also be **marked connected** (a checkbox on
-the interface / front-port / rear-port forms) when a cable is physically in
-it but nobody has documented the cable yet - it counts as connected, the
+carries the *Planned* status, or the uncabled port holds a direct
+[port reservation](cabling.md#port-reservations)), and **free** ports, broken
+down per kind (interfaces, front ports, rear ports). A port can also be
+**marked connected** (a one-click bolt action on the port rows, also a
+checkbox on the interface / front-port / rear-port forms) when a cable is
+physically in it but nobody has documented the cable yet - it counts as
+connected, the row shows an *Undocumented* badge with a green tint, the
 legend shows how many are *undocumented*, and the flag clears itself the
-moment a real cable is attached to the port. Reserved rides the existing cable Status catalog - create
-the cable ahead of time as *Planned* and the port counts as held; flip the
-status once patched. Most useful on patch panels and access switches, where
-"how full is this thing" is the recurring question
-(`GET /api/devices/<id>/port-utilization/`).
+moment a real cable is attached to the port. Reserving works two ways: create
+the cable ahead of time as *Planned* and the port counts as held, or reserve
+the single port directly when the far end isn't known yet. Most useful on
+patch panels and access switches, where "how full is this thing" is the
+recurring question (`GET /api/devices/<id>/port-utilization/`).
 
 The card is interactive: **hovering** a legend entry (connected / reserved /
 free / undocumented) highlights the matching ports on the Panel above it -

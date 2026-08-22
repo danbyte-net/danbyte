@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import {
+  Bookmark,
   Cable as CableIcon,
   Pencil,
   Trash2,
@@ -18,6 +19,10 @@ import { TagList } from "@/components/cells/tag-list"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
+import {
+  MarkConnectedToggle,
+  PortReservationDialog,
+} from "@/components/port-reservation-dialog"
 import {
   AssignIpDialog,
   type AssignIpTarget,
@@ -65,6 +70,7 @@ function Body({ iface: i }: { iface: Interface }) {
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<Interface | null>(null)
   const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
+  const [reserving, setReserving] = useState(false)
   const goBack = useCallback(() => nav({ to: "/interfaces" }), [nav])
   const canAddIp = canDo("ipaddress", "add")
   const canAssignIp = canDo("ipaddress", "change")
@@ -95,6 +101,28 @@ function Body({ iface: i }: { iface: Interface }) {
                 <CableIcon className="h-3.5 w-3.5" /> Connect cable
               </Link>
             </Button>
+          )}
+          {!i.cable &&
+            !i.virtual &&
+            !i.mark_connected &&
+            (canDo("portreservation", "add") || i.reservation) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReserving(true)}
+              >
+                <Bookmark className="h-3.5 w-3.5" />{" "}
+                {i.reservation ? "Reservation" : "Reserve port"}
+              </Button>
+            )}
+          {!i.cable && !i.virtual && !i.reservation && (
+            <MarkConnectedToggle
+              endpoint="/api/interfaces/"
+              portId={i.id}
+              name={i.name}
+              marked={i.mark_connected}
+              canEdit={canDo("interface", "change")}
+            />
           )}
           {canDo("interface", "change") && (
             <Button variant="outline" size="sm" asChild>
@@ -127,6 +155,26 @@ function Body({ iface: i }: { iface: Interface }) {
                 <Badge variant="secondary">Disabled</Badge>
               )}
               {i.virtual && <Badge variant="secondary">Virtual</Badge>}
+              {!i.cable && i.mark_connected && (
+                <Badge
+                  variant="outline"
+                  title="A cable is in the port, just not documented yet"
+                >
+                  Undocumented
+                </Badge>
+              )}
+              {!i.cable && !i.mark_connected && i.reservation && (
+                <Badge
+                  variant="warning"
+                  title={`${
+                    i.reservation.claimed_by
+                      ? `by ${i.reservation.claimed_by}`
+                      : ""
+                  }${i.reservation.note ? ` - ${i.reservation.note}` : ""}`}
+                >
+                  Reserved
+                </Badge>
+              )}
               {i.tunnel_terminations.map((tt) => (
                 <Link
                   key={tt.id}
@@ -271,6 +319,19 @@ function Body({ iface: i }: { iface: Interface }) {
       <AssignIpDialog
         target={assignTarget}
         onOpenChange={(o) => !o && setAssignTarget(null)}
+      />
+      <PortReservationDialog
+        target={
+          reserving
+            ? {
+                kind: "interface",
+                id: i.id,
+                name: i.name,
+                reservation: i.reservation,
+              }
+            : null
+        }
+        onClose={() => setReserving(false)}
       />
     </DetailShell>
   )

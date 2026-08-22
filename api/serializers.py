@@ -34,7 +34,7 @@ from .models import (
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
-    NumIdMixin, Platform, PlatformGroup, weight_kg,
+    NumIdMixin, Platform, PlatformGroup, PortReservation, weight_kg,
     ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
@@ -2376,6 +2376,18 @@ def _point_cable(point):
     return CableMiniSerializer(t.cable).data if t is not None else None
 
 
+def _point_reservation(point):
+    r = point.reservations.all().first()  # ≤1 due to the per-port unique rule
+    if r is None:
+        return None
+    return {
+        "id": str(r.id),
+        "claimed_by": r.claimed_by.username if r.claimed_by_id else "",
+        "note": r.note,
+        "created_at": r.created_at.isoformat(),
+    }
+
+
 class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     device = DeviceMiniSerializer(read_only=True)
     vlan = VLANMiniSerializer(read_only=True)
@@ -2447,6 +2459,12 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
         return _point_cable(obj)
+
+    reservation = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_reservation(self, obj):
+        return _point_reservation(obj)
 
     def get_cable_count(self, obj) -> int:
         return obj.terminations.count()
@@ -2543,7 +2561,8 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "mode", "mode_display", "vlan", "vlan_id",
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",
                   "tags", "tag_ids",
-                  "cable", "cable_count", "ip_addresses", "tunnel_terminations",
+                  "cable", "cable_count", "reservation",
+                  "ip_addresses", "tunnel_terminations",
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
                   "created_at", "updated_at"]
@@ -2614,7 +2633,12 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     device = DeviceMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     cable = serializers.SerializerMethodField()
+    reservation = serializers.SerializerMethodField()
     front_port_count = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_reservation(self, obj):
+        return _point_reservation(obj)
 
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
@@ -2662,8 +2686,8 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         model = RearPort
         fields = ["id", "device", "device_id", "name", "positions",
                   "is_splitter", "type", "mark_connected", "description",
-                  "tags", "tag_ids", "cable", "front_port_count",
-                  "created_at", "updated_at"]
+                  "tags", "tag_ids", "cable", "reservation",
+                  "front_port_count", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -2672,6 +2696,11 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     rear_port = RearPortMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     cable = serializers.SerializerMethodField()
+    reservation = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_reservation(self, obj):
+        return _point_reservation(obj)
 
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
@@ -2715,7 +2744,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "device", "device_id", "name", "rear_port",
                   "rear_port_id", "rear_port_position", "positions", "type",
                   "mark_connected",
-                  "description", "tags", "tag_ids", "cable",
+                  "description", "tags", "tag_ids", "cable", "reservation",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -2739,9 +2768,15 @@ class _DevicePortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
 
+    reservation = serializers.SerializerMethodField()
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
         return _point_cable(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_reservation(self, obj):
+        return _point_reservation(obj)
 
     def get_type_display(self, obj) -> str:
         return obj.get_type_display() if obj.type else ""
@@ -2751,7 +2786,7 @@ class ConsolePortSerializer(_DevicePortSerializer):
     class Meta:
         model = ConsolePort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
-                  "speed", "description", "tags", "tag_ids", "cable",
+                  "speed", "description", "tags", "tag_ids", "cable", "reservation",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -2760,7 +2795,7 @@ class AuxPortSerializer(_DevicePortSerializer):
     class Meta:
         model = AuxPort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
-                  "description", "tags", "tag_ids", "cable",
+                  "description", "tags", "tag_ids", "cable", "reservation",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -2769,7 +2804,7 @@ class ConsoleServerPortSerializer(_DevicePortSerializer):
     class Meta:
         model = ConsoleServerPort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
-                  "speed", "description", "tags", "tag_ids", "cable",
+                  "speed", "description", "tags", "tag_ids", "cable", "reservation",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -2784,7 +2819,7 @@ class PowerPortSerializer(_DevicePortSerializer):
         model = PowerPort
         fields = ["id", "device", "device_id", "name", "type", "type_display",
                   "maximum_draw", "allocated_draw", "description",
-                  "outlet_count", "tags", "tag_ids", "cable",
+                  "outlet_count", "tags", "tag_ids", "cable", "reservation",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -2806,7 +2841,7 @@ class PowerOutletSerializer(_DevicePortSerializer):
         model = PowerOutlet
         fields = ["id", "device", "device_id", "name", "type", "type_display",
                   "power_port", "power_port_id", "feed_leg", "description",
-                  "tags", "tag_ids", "cable", "created_at", "updated_at"]
+                  "tags", "tag_ids", "cable", "reservation", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -3473,6 +3508,82 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
 
 
 # ─── Custom field definitions ──────────────────────────────────────────────
+
+class PortReservationSerializer(NumIdModelSerializer):
+    """A hold on one uncabled port ("I'll need this one" before the far end
+    is known). Read: ``port`` = the same ``{kind,id,name,device}`` shape as
+    cable terminations. Write: ``{kind, port_id, note}``; the port must be
+    uncabled, unreserved, and in the active tenant."""
+
+    port = serializers.SerializerMethodField()
+    site = serializers.SerializerMethodField()
+    claimed_by = serializers.SerializerMethodField()
+    kind = serializers.ChoiceField(
+        choices=list(CableTermination.POINT_FIELDS), write_only=True,
+        required=False,
+    )
+    port_id = serializers.UUIDField(write_only=True, required=False)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_port(self, obj):
+        return _termination_repr(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        p = obj.point
+        site = (
+            p.power_panel.site if isinstance(p, PowerFeed)
+            else getattr(p.device, "site", None)
+        )
+        return {"id": str(site.id), "name": site.name} if site else None
+
+    def get_claimed_by(self, obj) -> str:
+        return obj.claimed_by.username if obj.claimed_by_id else ""
+
+    def validate(self, attrs):
+        from api.views import _get_active_tenant
+
+        if self.instance is not None:
+            # Only the note is editable; the held port is identity.
+            if "kind" in attrs or "port_id" in attrs:
+                raise serializers.ValidationError(
+                    {"kind": "A reservation can't move to another port."})
+            return attrs
+
+        kind = attrs.pop("kind", None)
+        pid = attrs.pop("port_id", None)
+        if not kind or not pid:
+            raise serializers.ValidationError(
+                {"kind": "A reservation needs a kind + port_id."})
+        model = CableSerializer._POINT_MODELS[kind]
+        obj = model.objects.filter(pk=pid).first()
+        if obj is None:
+            raise serializers.ValidationError(
+                {"port_id": f"Unknown {kind} {pid}."})
+
+        request = self.context.get("request")
+        tenant = _get_active_tenant(request) if request is not None else None
+        obj_tenant_id = (
+            obj.tenant_id if kind == "power_feed" else obj.device.tenant_id
+        )
+        if tenant is not None and obj_tenant_id != tenant.id:
+            raise serializers.ValidationError(
+                {"port_id": "Pick a port in the current tenant."})
+        if CableTermination.objects.filter(**{kind: obj}).exists():
+            raise serializers.ValidationError(
+                {"port_id": f"{obj} is already cabled."})
+        if PortReservation.objects.filter(**{kind: obj}).exists():
+            raise serializers.ValidationError(
+                {"port_id": f"{obj} is already reserved."})
+        attrs[kind] = obj
+        return attrs
+
+    class Meta:
+        model = PortReservation
+        fields = ["id", "port", "site", "claimed_by", "note",
+                  "kind", "port_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
 
 class CustomFieldGroupSerializer(
     OwningSiteSerializerMixin, ObjectPermsSerializerMixin, serializers.ModelSerializer

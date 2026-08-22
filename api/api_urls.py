@@ -202,6 +202,7 @@ from .viewsets import (
     ModuleViewSet,
     PlatformGroupViewSet,
     PlatformViewSet,
+    PortReservationViewSet,
     PowerFeedViewSet,
     PowerOutletTemplateViewSet,
     PowerOutletViewSet,
@@ -357,6 +358,7 @@ router.register(r"cable-routes", CableRouteViewSet, basename="cable-route")
 router.register(r"module-interface-templates", ModuleInterfaceTemplateViewSet, basename="module-interface-template")
 router.register(r"modules", ModuleViewSet, basename="module")
 router.register(r"cables",        CableViewSet,       basename="cable")
+router.register(r"port-reservations", PortReservationViewSet, basename="port-reservation")
 router.register(r"fiber-settings", FiberSettingsViewSet, basename="fiber-settings")
 router.register(r"custom-fields", CustomFieldViewSet, basename="custom-field")
 router.register(r"custom-field-groups", CustomFieldGroupViewSet, basename="custom-field-group")

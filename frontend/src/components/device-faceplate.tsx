@@ -262,13 +262,21 @@ function Cage({
           style={
             cabled
               ? { ...style, ...portTintStyle(portHex(tint)) }
-              : capability
-                ? {
+              : cableState(i) === "reserved"
+                ? // Directly reserved (no cable yet) - amber outline so the
+                  // hold reads on the panel, matching the utilization card.
+                  {
                     ...style,
-                    borderColor: `${capability}73`,
-                    ["--port-color" as never]: capability,
+                    borderColor: "#f59e0bb3",
+                    ["--port-color" as never]: "#f59e0b",
                   }
-                : { ...style, ["--port-color" as never]: "#a1a1aa" }
+                : capability
+                  ? {
+                      ...style,
+                      borderColor: `${capability}73`,
+                      ["--port-color" as never]: capability,
+                    }
+                  : { ...style, ["--port-color" as never]: "#a1a1aa" }
           }
           className={cn(
             "num relative flex items-center justify-center rounded-[3px] border text-[9px] leading-none font-medium transition-colors hover:border-primary hover:text-foreground",
@@ -1528,12 +1536,20 @@ export function ImagePortsFaceplate({
                   // so the artwork stays the star until a port lights up.
                   tiered
                     ? { ...style, ...portOverlayStyle(portHex(tint)) }
-                    : {
-                        ...style,
-                        borderColor: `${capability ?? "#a1a1aa"}59`, // ~35%
-                        backgroundColor: "transparent",
-                        ["--port-color" as never]: capability ?? "#a1a1aa",
-                      }
+                    : cableState(iface) === "reserved"
+                      ? // Directly reserved - amber outline, still no fill.
+                        {
+                          ...style,
+                          borderColor: "#f59e0bb3",
+                          backgroundColor: "transparent",
+                          ["--port-color" as never]: "#f59e0b",
+                        }
+                      : {
+                          ...style,
+                          borderColor: `${capability ?? "#a1a1aa"}59`, // ~35%
+                          backgroundColor: "transparent",
+                          ["--port-color" as never]: capability ?? "#a1a1aa",
+                        }
                 }
                 className={cn(
                   "absolute rounded-[2px] border-2 transition-opacity hover:opacity-100",
