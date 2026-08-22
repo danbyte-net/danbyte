@@ -1006,6 +1006,159 @@ export function realignHierPorts(
   return { portPos, span, sides }
 }
 
+// ── Nudging cards off cable runs ────────────────────────────────────────────
+// A cable drawn straight between two cards may pass THROUGH a third one the
+// layout happened to drop on the line - glaring in the Flat view, whose
+// edges are deliberately never routed, and noise for the wiring router. When
+// a small sideways move of the blocking card clears the run, make it: only
+// along the cross axis (rank/tier positions stay), only within NUDGE_MAX,
+// only if the new spot overlaps nothing, and only if it genuinely reduces
+// how many cables cross that card - otherwise the card stays and the router
+// (where there is one) deals with it.
+const NUDGE_MAX = 110
+const NUDGE_CLEAR = 18
+const NUDGE_GAP = 24
+
+type NRect = { x: number; y: number; w: number; h: number }
+
+/** The [t0,t1] slice of segment a→b inside rect r (grown by `pad`), or null. */
+function segSlice(
+  a: [number, number],
+  b: [number, number],
+  r: NRect,
+  pad: number
+): [number, number] | null {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  let t0 = 0
+  let t1 = 1
+  const sides: [number, number][] = [
+    [-dx, a[0] - (r.x - pad)],
+    [dx, r.x + r.w + pad - a[0]],
+    [-dy, a[1] - (r.y - pad)],
+    [dy, r.y + r.h + pad - a[1]],
+  ]
+  for (const [p, q] of sides) {
+    if (p === 0) {
+      if (q < 0) return null
+      continue
+    }
+    const t = q / p
+    if (p < 0) {
+      if (t > t1) return null
+      if (t > t0) t0 = t
+    } else {
+      if (t < t0) return null
+      if (t < t1) t1 = t
+    }
+  }
+  return [t0, t1]
+}
+
+export function nudgeOffEdges(
+  nodes: Node[],
+  edges: Edge[],
+  sizeOf: (n: Node) => { width: number; height: number } | null,
+  tb: boolean,
+  frozen?: Set<string>
+): Node[] {
+  const out = nodes.map((n) => ({ ...n, position: { ...n.position } }))
+  const byId = new Map(out.map((n) => [n.id, n]))
+  const rectOf = (n: Node): NRect | null => {
+    const s = sizeOf(n)
+    return s
+      ? { x: n.position.x, y: n.position.y, w: s.width, h: s.height }
+      : null
+  }
+  const centre = (n: Node): [number, number] | null => {
+    const r = rectOf(n)
+    return r ? [r.x + r.w / 2, r.y + r.h / 2] : null
+  }
+  // The straight line each cable would draw, endpoint centres.
+  const segs: { s: string; t: string; a: [number, number]; b: [number, number] }[] = []
+  const segsFor = () => {
+    segs.length = 0
+    for (const e of edges) {
+      const s = byId.get(e.source)
+      const t = byId.get(e.target)
+      if (!s || !t) continue
+      const a = centre(s)
+      const b = centre(t)
+      if (a && b) segs.push({ s: e.source, t: e.target, a, b })
+    }
+  }
+  /** Cables crossing card `id` that don't terminate on it. */
+  const crossings = (id: string, r: NRect) => {
+    let n = 0
+    for (const sg of segs) {
+      if (sg.s === id || sg.t === id) continue
+      if (segSlice(sg.a, sg.b, r, 2)) n++
+    }
+    return n
+  }
+  const overlaps = (id: string, r: NRect) => {
+    for (const o of out) {
+      if (o.id === id) continue
+      const or = rectOf(o)
+      if (!or) continue
+      if (
+        r.x < or.x + or.w + NUDGE_GAP &&
+        r.x + r.w + NUDGE_GAP > or.x &&
+        r.y < or.y + or.h + NUDGE_GAP &&
+        r.y + r.h + NUDGE_GAP > or.y
+      )
+        return true
+    }
+    return false
+  }
+
+  for (let sweep = 0; sweep < 2; sweep++) {
+    segsFor()
+    for (const n of out) {
+      if (frozen?.has(n.id)) continue
+      const r = rectOf(n)
+      if (!r) continue
+      const before = crossings(n.id, r)
+      if (!before) continue
+      // The run's cross-axis extent across this card decides how far the
+      // card must move to clear it. Take the worst over every crossing run.
+      let lo = Infinity
+      let hi = -Infinity
+      for (const sg of segs) {
+        if (sg.s === n.id || sg.t === n.id) continue
+        const sl = segSlice(sg.a, sg.b, r, 2)
+        if (!sl) continue
+        for (const t of sl) {
+          const c = tb
+            ? sg.a[0] + (sg.b[0] - sg.a[0]) * t
+            : sg.a[1] + (sg.b[1] - sg.a[1]) * t
+          if (c < lo) lo = c
+          if (c > hi) hi = c
+        }
+      }
+      const pos = tb ? r.x : r.y
+      const size = tb ? r.w : r.h
+      const candidates = [
+        lo - NUDGE_CLEAR - size - pos, // slide before the run
+        hi + NUDGE_CLEAR - pos, // slide past it
+      ]
+        .filter((d) => Math.abs(d) <= NUDGE_MAX)
+        .sort((d1, d2) => Math.abs(d1) - Math.abs(d2))
+      for (const d of candidates) {
+        const moved: NRect = tb
+          ? { ...r, x: r.x + d }
+          : { ...r, y: r.y + d }
+        if (overlaps(n.id, moved)) continue
+        if (crossings(n.id, moved) >= before) continue
+        if (tb) n.position.x += d
+        else n.position.y += d
+        break
+      }
+    }
+  }
+  return out
+}
+
 // ── Component packing ───────────────────────────────────────────────────────
 // Dagre strings disconnected islands along one axis, leaving half the canvas
 // empty and the rest sprawling. Pack the islands into rows instead, aiming
@@ -1571,9 +1724,12 @@ export function layoutNodes(
     })
     const pinnedIds = positions ? new Set(Object.keys(positions)) : undefined
     const spaced = respaceBands(laid, edges, sizeOf, tb, pinnedIds)
+    // Tiers fix the main axis; the cross axis is free, so a card sitting on
+    // another pair's cable run slides off it.
+    const clear = nudgeOffEdges(spaced, edges, (n) => sizeOf(n.id), tb, pinnedIds)
     return {
-      nodes: spaced,
-      waypoints: computeWaypoints(spaced, edges, sizeOf, tb),
+      nodes: clear,
+      waypoints: computeWaypoints(clear, edges, sizeOf, tb),
     }
   }
 
@@ -1599,7 +1755,17 @@ export function layoutNodes(
     (n) => (clusters.leafSet.has(n.id) ? null : sizeFor(n)),
     pinnedIds
   )
-  const { out, streets } = placeLeafGrids(packed)
+  // Before the leaf grids settle (they ride their hub, which may move):
+  // cards sitting on another pair's straight cable run slide off it. The
+  // hubs' inflated boxes stand in for their whole grid.
+  const cleared = nudgeOffEdges(
+    packed,
+    mainEdges,
+    (n) => (clusters.leafSet.has(n.id) ? null : sizeFor(n)),
+    tb,
+    exempt
+  )
+  const { out, streets } = placeLeafGrids(cleared)
   const wp = computeWaypoints(
     out.filter((n) => !clusters.leafSet.has(n.id)),
     mainEdges,

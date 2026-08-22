@@ -6,6 +6,7 @@ import {
   hierarchyWaypoints,
   layoutHierarchy,
   layoutNodes,
+  nudgeOffEdges,
   type HierPortPos,
 } from "./layout"
 import { stencilSize } from "./stencil-node"
@@ -360,5 +361,69 @@ describe("hierarchy cable routing", () => {
       .filter((y): y is number => y !== undefined)
     expect(ys.length).toBeGreaterThan(1)
     expect(new Set(ys).size).toBe(ys.length)
+  })
+})
+
+describe("cards nudge off cable runs", () => {
+  const SIZE = { width: 160, height: 60 }
+  const node = (id: string, x: number, y: number): Node => ({
+    id,
+    type: "flat",
+    position: { x, y },
+    data: { name: id },
+  })
+  const cable = (id: string, s: string, t: string): Edge =>
+    ({ id, source: s, target: t, data: { sem: "cable" } }) as Edge
+
+  it("slides a card off a run passing through it", () => {
+    // a ── b runs horizontally at y=130; c sits dead on the line.
+    const nodes = [
+      node("a", 0, 100),
+      node("b", 1200, 100),
+      node("c", 500, 110),
+    ]
+    const out = nudgeOffEdges(nodes, [cable("e", "a", "b")], () => SIZE, false)
+    const c = out.find((n) => n.id === "c")!
+    // Clear of the run (y 130 ± clearance) in one small move, x untouched.
+    const clear = c.position.y + SIZE.height < 130 - 6 || c.position.y > 130 + 6
+    expect(clear).toBe(true)
+    expect(c.position.x).toBe(500)
+    expect(Math.abs(c.position.y - 110)).toBeLessThanOrEqual(110)
+  })
+
+  it("leaves a frozen (pinned) card alone", () => {
+    const nodes = [node("a", 0, 100), node("b", 1200, 100), node("c", 500, 110)]
+    const out = nudgeOffEdges(
+      nodes,
+      [cable("e", "a", "b")],
+      () => SIZE,
+      false,
+      new Set(["c"])
+    )
+    expect(out.find((n) => n.id === "c")!.position).toEqual({ x: 500, y: 110 })
+  })
+
+  it("stays put when no small move clears the run", () => {
+    // c is boxed in above and below - any clearing move would overlap.
+    const nodes = [
+      node("a", 0, 100),
+      node("b", 1200, 100),
+      node("c", 500, 110),
+      node("above", 500, 20),
+      node("below", 500, 200),
+    ]
+    const out = nudgeOffEdges(nodes, [cable("e", "a", "b")], () => SIZE, false)
+    expect(out.find((n) => n.id === "c")!.position).toEqual({ x: 500, y: 110 })
+  })
+
+  it("nudges along x in tree (TB) direction", () => {
+    const nodes = [node("a", 100, 0), node("b", 100, 1200), node("c", 90, 500)]
+    const out = nudgeOffEdges(nodes, [cable("e", "a", "b")], () => SIZE, true)
+    const c = out.find((n) => n.id === "c")!
+    const runX = 180 // centre x of the a→b run
+    const clear =
+      c.position.x + SIZE.width < runX - 6 || c.position.x > runX + 6
+    expect(clear).toBe(true)
+    expect(c.position.y).toBe(500)
   })
 })

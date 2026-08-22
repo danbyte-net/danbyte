@@ -55,6 +55,11 @@ Three mechanisms keep a large fabric legible:
   servers, cameras) stacks them in a compact grid beside it instead of
   stringing them along one endless row; each cable drops down its column's
   street.
+- **Cards slide off cable runs** - a card the layout happened to drop on
+  another pair's straight cable nudges sideways just far enough to clear it,
+  when a small move does clear it without overlapping anything. Matters most
+  in the Flat view, whose point-to-point cables are never routed around
+  cards; hand-placed (pinned) cards are never moved.
 - **Dense cards** - past ~24 cabled ports the card's side columns render as
   a faceplate bar: one slim slot per cabled port with a truncated name, and
   a cabled-port count in the middle, so a 48-port stack stays a reasonable
