@@ -22,7 +22,6 @@ import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-p
 import {
   DetailHero,
   DetailShell,
-  DetailStat,
   DetailTab,
 } from "@/components/detail-shell"
 import {
@@ -159,36 +158,6 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
             }
             tags={d.tags.length > 0 && <TagList tags={d.tags} />}
             description={d.description}
-            stats={
-              <>
-                <DetailStat
-                  label="Manufacturer"
-                  value={
-                    d.manufacturer ? (
-                      <Link
-                        to="/manufacturers/$id"
-                        params={{ id: d.manufacturer.id }}
-                        className="link"
-                      >
-                        {d.manufacturer.name}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )
-                  }
-                />
-                <DetailStat
-                  label="Model"
-                  value={
-                    d.model ? (
-                      <span className="font-mono text-[13px]">{d.model}</span>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )
-                  }
-                />
-              </>
-            }
           />
 
           <section className="border-b border-border px-6 py-4">
@@ -304,6 +273,28 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
           } satisfies KvRow,
         ]
       : []),
+    {
+      label: "Manufacturer",
+      value: d.manufacturer ? (
+        <Link
+          to="/manufacturers/$id"
+          params={{ id: d.manufacturer.id }}
+          className="link"
+        >
+          {d.manufacturer.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Model",
+      value: d.model ? (
+        <span className="font-mono text-[13px]">{d.model}</span>
+      ) : (
+        dash
+      ),
+    },
     { label: "Part number", value: d.part_number || dash },
     {
       label: "Rack units",
