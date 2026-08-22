@@ -818,15 +818,21 @@ function FillPanel({
   )
 
   return (
-    <div className="grid gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3">
+    <div className="grid gap-3 rounded-lg border border-border bg-card p-3">
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[12px] font-medium">
-          <Grid3x3 className="h-3.5 w-3.5 text-primary" /> Bulk place
-          <span className="text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+          <Grid3x3 className="h-3.5 w-3.5 text-muted-foreground" /> Bulk place
+          <span className="font-normal tracking-normal text-muted-foreground normal-case">
             · {count} port{count === 1 ? "" : "s"}
-            {rePlaced > 0 && (
-              <span className="text-amber-500"> · {rePlaced} re-placed</span>
-            )}
+            {rePlaced > 0 &&
+              (rePlaced === count ? (
+                <> · re-lays the existing {rePlaced}</>
+              ) : (
+                <span className="text-amber-500">
+                  {" "}
+                  · {rePlaced} already placed will move
+                </span>
+              ))}
           </span>
         </span>
         <button
@@ -1043,9 +1049,7 @@ function FillPanel({
           {pick === "x2" ? "Click the photo…" : "Set last (top-row) port"}
         </Button>
         <span className="text-muted-foreground">
-          First = top-left port center; Last = the last top-row port. Columns
-          space evenly between them; a bank gap pushes each later bank further
-          right.
+          First = top-left port center · Last = last top-row port.
         </span>
       </div>
 
