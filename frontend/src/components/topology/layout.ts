@@ -910,6 +910,49 @@ export function layoutHierarchy(
     }
   }
 
+  // Final collision pass. The convergence above GROWS spans - ports chase
+  // far peers - after the sweeps' collision resolve has already run, so a
+  // grown card can swallow the one below it. And the sweeps grouped cards by
+  // a coarse x-bucket, which misses overlaps between ranks whose cards are
+  // wider than the bucket. This pass tests actual rectangle overlap: any
+  // unpinned card overlapping one above it slides down, ports riding along.
+  {
+    const rect = (id: string) => ({
+      x: x.get(id) ?? 0,
+      w: widthOf(byId2.get(id)!),
+      t: top.get(id) ?? 0,
+      h: hierHeight(span.get(id) ?? 0),
+    })
+    const byId2 = new Map(nodes.map((n) => [n.id, n]))
+    const order2 = [...nodes].sort(
+      (a2, b2) => (top.get(a2.id) ?? 0) - (top.get(b2.id) ?? 0)
+    )
+    const placed2: string[] = []
+    for (const n of order2) {
+      const r = rect(n.id)
+      if (!pinned?.has(n.id)) {
+        let t = r.t
+        for (const pid of placed2) {
+          const o = rect(pid)
+          const xOverlap = r.x < o.x + o.w && r.x + r.w > o.x
+          if (!xOverlap) continue
+          if (t < o.t + o.h + HIER_NODE_GAP && t + r.h > o.t)
+            t = o.t + o.h + HIER_NODE_GAP
+        }
+        if (t !== r.t) {
+          const delta = t - r.t
+          top.set(n.id, t)
+          for (const pt of ports.get(n.id) ?? [])
+            portY.set(
+              `${n.id}:${pt.name}`,
+              (portY.get(`${n.id}:${pt.name}`) ?? 0) + delta
+            )
+        }
+      }
+      placed2.push(n.id)
+    }
+  }
+
   const portPos = new Map<string, Record<string, HierPortPos>>()
   for (const [id, list] of ports) {
     const base = top.get(id) ?? 0

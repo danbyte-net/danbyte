@@ -41,7 +41,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
       : "border-border"
   return (
     <div
-      className={`relative rounded-xl border bg-card/70 transition-opacity ${ring} ${
+      className={`relative rounded-xl border bg-card transition-opacity ${ring} ${
         d.dimmed ? "opacity-30" : ""
       }`}
       style={{ width, height }}

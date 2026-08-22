@@ -427,3 +427,52 @@ describe("cards nudge off cable runs", () => {
     expect(c.position.y).toBe(500)
   })
 })
+
+describe("hierarchy cards never overlap", () => {
+  const edge = (id: string, s: string, sp: string, t: string, tp: string) =>
+    ({
+      id,
+      source: s,
+      target: t,
+      sourceHandle: sp,
+      targetHandle: tp,
+      data: { sem: "cable", baseS: sp, baseT: tp },
+    }) as Edge
+  const node = (id: string): Node => ({
+    id,
+    type: "hier",
+    position: { x: 0, y: 0 },
+    data: { name: id },
+  })
+
+  it("a hub whose span grows in convergence can't swallow its neighbour", () => {
+    // Hub `a` fans to 8 leaves - the final port convergence stretches its
+    // span across the whole leaf column. `b` sits in the same rank; before
+    // the post-convergence collision pass it ended INSIDE a's grown card.
+    const nodes = [node("a"), node("b"),
+      ...Array.from({ length: 8 }, (_, i) => node(`l${i}`)),
+      node("lb")]
+    const edges = [
+      ...Array.from({ length: 8 }, (_, i) =>
+        edge(`e${i}`, "a", `p${i}`, `l${i}`, "eth")),
+      edge("eb", "b", "p0", "lb", "eth"),
+    ]
+    const widthOf = () => 200
+    const res = layoutHierarchy(nodes, edges, widthOf)
+    const rects = res.nodes.map((n) => ({
+      id: n.id,
+      x: n.position.x,
+      y: n.position.y,
+      w: 200,
+      h: 60 + (res.span.get(n.id) ?? 0) + 24,
+    }))
+    for (const r1 of rects)
+      for (const r2 of rects) {
+        if (r1.id >= r2.id) continue
+        const overlap =
+          r1.x < r2.x + r2.w - 4 && r1.x + r1.w - 4 > r2.x &&
+          r1.y < r2.y + r2.h - 4 && r1.y + r1.h - 4 > r2.y
+        expect(overlap, `${r1.id} overlaps ${r2.id}`).toBe(false)
+      }
+  })
+})
