@@ -170,7 +170,7 @@ export const Route = createFileRoute("/topology/")({
     if (dir) out.dir = dir
     const color = oneOf(s.color, COLOR_MODES)
     if (color) out.color = color
-    const cables = oneOf(s.cables, ["routed", "straight"] as const)
+    const cables = oneOf(s.cables, ROUTINGS)
     if (cables) out.cables = cables
     const depth = Number(s.depth)
     if (Number.isFinite(depth) && depth > 0)
