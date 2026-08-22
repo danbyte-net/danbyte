@@ -349,8 +349,9 @@ collapsed.
 
 In the **Logical** view, a leg's interface name clicks through to that
 interface's page (device interfaces; VM interfaces have no page). Cable
-detail pages have a **Topology** button opening a custom map of just that
-cable's two endpoint devices.
+detail pages have a **Topology** button opening a custom map of the cable's
+whole end-to-end run - every device it passes through, with patch panels
+shown when the run threads one.
 
 `GET /api/topology/logical/` - the Logical view's payload: `rails` (VLANs -
 id, `vlan_id`, name, effective color, group) and `nodes` (devices and VMs

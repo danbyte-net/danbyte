@@ -10,7 +10,7 @@ import { ArrowLeftRight, Network, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
-import type { Cable, Termination } from "@/lib/api"
+import type { Cable, Termination, TraceGraph } from "@/lib/api"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
@@ -101,14 +101,36 @@ function Body({ cable: c }: { cable: Cable }) {
   const [deleting, setDeleting] = useState<Cable | null>(null)
   const goBack = useCallback(() => nav({ to: "/cables" }), [nav])
 
-  // "Show me this pair in context": the custom-map builder scoped to the
-  // cable's two endpoint devices.
-  const topoDevices = (() => {
+  // "Show me this run in context": the custom-map builder scoped to every
+  // device the cable's end-to-end run passes through. The trace (same query
+  // the path strip uses, so it's already cached) supplies the run; the bare
+  // termination pair is the fallback while it loads. A run through a patch
+  // panel also turns panel display ON - the default collapses panels away,
+  // which turned this map into one lone node: the panel hidden, and the
+  // collapsed run pointing at a device outside the set.
+  const runTrace = useQuery({
+    queryKey: ["trace", "cable", c.id],
+    queryFn: () => api<TraceGraph>(`/api/cables/${c.id}/trace/`),
+  })
+  const { topoDevices, topoPanels } = (() => {
+    const runNodes = runTrace.data?.device_graph?.nodes
+    if (runNodes?.length) {
+      const ids = runNodes
+        .map((n) => n.data.device_id)
+        .filter((x): x is string => !!x)
+      return {
+        topoDevices: ids.length >= 2 ? [...new Set(ids)].join(",") : null,
+        topoPanels: runNodes.some((n) => n.data.panel),
+      }
+    }
     const ids = [...(c.a_terminations ?? []), ...(c.b_terminations ?? [])]
       .map((t) => t.device?.id)
       .filter((x): x is string => !!x)
     const uniq = [...new Set(ids)]
-    return uniq.length >= 2 ? uniq.join(",") : null
+    return {
+      topoDevices: uniq.length >= 2 ? uniq.join(",") : null,
+      topoPanels: false,
+    }
   })()
 
   return (
@@ -126,7 +148,13 @@ function Body({ cable: c }: { cable: Cable }) {
           <AutoRouteButton cableId={c.id} />
           {topoDevices && (
             <Button variant="outline" size="sm" asChild>
-              <Link to="/topology" search={{ devices: topoDevices }}>
+              <Link
+                to="/topology"
+                search={{
+                  devices: topoDevices,
+                  ...(topoPanels ? { panels: true } : {}),
+                }}
+              >
                 <Network className="h-3.5 w-3.5" /> Topology
               </Link>
             </Button>
