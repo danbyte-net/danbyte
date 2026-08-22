@@ -128,6 +128,7 @@ function Body({ iface: i }: { iface: Interface }) {
               name={i.name}
               marked={i.mark_connected}
               canEdit={canDo("interface", "change")}
+              labeled
             />
           )}
           {canDo("interface", "change") && (

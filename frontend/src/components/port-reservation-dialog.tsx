@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { PortReservationMini } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/forms"
@@ -165,12 +166,16 @@ export function MarkConnectedToggle({
   name,
   marked,
   canEdit,
+  labeled,
 }: {
   endpoint: string
   portId: string
   name: string
   marked: boolean
   canEdit: boolean
+  /** Detail-page action-bar variant: outline button with a text label,
+   * matching its Edit/Delete siblings. Default is the row icon button. */
+  labeled?: boolean
 }) {
   const qc = useQueryClient()
   const toggle = useMutation({
@@ -186,6 +191,24 @@ export function MarkConnectedToggle({
     onError: (e) => apiErrorToast(e, "Could not update the port"),
   })
   if (!canEdit) return null
+  if (labeled)
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={toggle.isPending}
+        onClick={() => toggle.mutate()}
+      >
+        <PlugZap className={cn("h-3.5 w-3.5", marked && "text-emerald-500")} />{" "}
+        {toggle.isPending
+          ? marked
+            ? "Clearing…"
+            : "Marking…"
+          : marked
+            ? "Clear mark"
+            : "Mark connected"}
+      </Button>
+    )
   return (
     <Button
       size="sm"

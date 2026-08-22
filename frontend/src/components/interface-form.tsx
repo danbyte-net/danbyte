@@ -252,6 +252,33 @@ export function InterfaceForm({
   const ifaceOptions = (parents.data?.results ?? [])
     .filter((p) => p.id !== iface?.id)
     .map((p) => ({ value: p.id, label: p.name }))
+  const nameOf = (id: string | null) =>
+    ifaceOptions.find((o) => o.value === id)?.label
+
+  // One-line "what's set in here" for the collapsed sections, so nothing
+  // needs expanding just to be read.
+  const hardwareSummary = [
+    speed,
+    mtu && `MTU ${mtu}`,
+    mac,
+    duplex,
+    poeMode && `PoE ${poeMode}`,
+    wwn && "WWN",
+    comboGroup && `combo ${comboGroup}`,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const nestingSummary = [
+    virtual && "virtual",
+    parentId && `parent ${nameOf(parentId) ?? "…"}`,
+    lagId && `LAG ${nameOf(lagId) ?? "…"}`,
+    bridgeId && `bridge ${nameOf(bridgeId) ?? "…"}`,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const snmpSummary = [snmpName, snmpIgnore && "drift excluded"]
+    .filter(Boolean)
+    .join(" · ")
 
   // Standard interface types; keep any legacy/custom value selectable.
   const typeOptions = [...choices.interface_types]
@@ -264,6 +291,13 @@ export function InterfaceForm({
       onSubmit={(e) => {
         e.preventDefault()
         mutation.mutate()
+      }}
+      onKeyDown={(e) => {
+        // Cmd/Ctrl+Enter saves from any field - the long-form affordance.
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault()
+          if (!mutation.isPending) mutation.mutate()
+        }
       }}
       className="@container grid gap-4"
     >
@@ -421,6 +455,7 @@ export function InterfaceForm({
       <FormSection
         title="Hardware"
         collapsible
+        summary={hardwareSummary || undefined}
         hasValues={
           !!(
             speed ||
@@ -508,6 +543,7 @@ export function InterfaceForm({
       <FormSection
         title="Nesting"
         collapsible
+        summary={nestingSummary || undefined}
         hasValues={!!(virtual || parentId || lagId || bridgeId)}
       >
         <FormCheckbox
@@ -558,6 +594,7 @@ export function InterfaceForm({
         <FormSection
           title="SNMP"
           collapsible
+          summary={snmpSummary || undefined}
           hasValues={!!(snmpName || snmpIgnore)}
         >
           <FormText

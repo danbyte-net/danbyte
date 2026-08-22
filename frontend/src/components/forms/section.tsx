@@ -19,12 +19,16 @@ export function FormSection({
   title,
   collapsible,
   hasValues,
+  summary,
   children,
 }: {
   title: string
   collapsible?: boolean
   /** Any field inside is set - opens the section and marks the closed row. */
   hasValues?: boolean
+  /** Terse "what's set in here" line shown while collapsed ("10G · MTU 9000")
+   * - the section stays readable without expanding; clicking it opens. */
+  summary?: ReactNode
   children: ReactNode
 }) {
   const [open, setOpen] = useState(!collapsible || !!hasValues)
@@ -47,7 +51,7 @@ export function FormSection({
         )}
       />
       {title}
-      {!open && hasValues && (
+      {!open && hasValues && !summary && (
         <span
           className="size-1.5 rounded-full bg-primary/70"
           aria-label="Has values"
@@ -67,7 +71,17 @@ export function FormSection({
       )}
     >
       <div className="@3xl:pt-1">{heading}</div>
-      {open && <div className="grid content-start gap-3">{children}</div>}
+      {open ? (
+        <div className="grid content-start gap-3">{children}</div>
+      ) : summary ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="truncate text-left text-xs text-muted-foreground hover:text-foreground @3xl:pt-1.5"
+        >
+          {summary}
+        </button>
+      ) : null}
     </section>
   )
 }
