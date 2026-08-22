@@ -1,7 +1,5 @@
 import L from "leaflet"
 
-import { tagLineEnds } from "./cluster"
-
 import type { SiteMapConnection } from "@/lib/api"
 
 // Site-to-site connection arcs. Geometry is a quadratic bezier computed in
@@ -88,10 +86,6 @@ export function buildConnectionsLayer(
         L.DomEvent.stopPropagation(ev)
         onSelect(e.id)
       })
-      // Endpoint tags let the maps hide arcs whose site is currently
-      // collapsed into a cluster chip.
-      tagLineEnds(visible, [a, z])
-      tagLineEnds(hit, [a, z])
       group.addLayer(visible)
       group.addLayer(hit)
     })

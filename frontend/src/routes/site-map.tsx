@@ -110,7 +110,6 @@ import {
   createMarkerGroup,
   setStackingEnabled,
   stackingEnabled,
-  syncLinesWithClusters,
   tagMarker,
   zoomToRevealMarker,
 } from "@/components/site-map/cluster"
@@ -206,6 +205,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     sites: boolean
     devices: boolean
     links: boolean
+    /** Plain cables. Off = only circuits and tunnels draw between sites. */
+    cables: boolean
     routes: boolean
     regions: boolean
   }
@@ -214,6 +215,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       sites: true,
       devices: true,
       links: true,
+      cables: true,
       routes: true,
       regions: true,
     }
@@ -251,8 +253,6 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     setStackingEnabled(v)
     setStackingState(v)
   }
-  // Re-check line-vs-cluster visibility after a layer effect rebuilds lines.
-  const resyncRef = useRef<(() => void) | null>(null)
   const modeCleanupRef = useRef<(() => void) | null>(null)
   const [tilesBlocked, setTilesBlocked] = useState(false)
   // After stamping a marker: ask for a name + optional device link.
@@ -847,7 +847,6 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     built.group.addTo(map)
     connRef.current = built.group
     midpointsRef.current = built.midpoints
-    resyncRef.current?.()
   }, [shownConnections, layers.links])
 
   // Route channels (view + edit); rebuilt on selection so the selected one
@@ -873,7 +872,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const map = mapRef.current
     if (!map) return
     drawnCablesRef.current?.remove()
-    if (drawnCables.length === 0) return
+    if (!layers.cables || drawnCables.length === 0) return
     const layer = buildDrawnCablesLayer(drawnCables, {
       highlightIds: highlightCableIds,
       onSelect: (id) =>
@@ -883,8 +882,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     })
     layer.addTo(map)
     drawnCablesRef.current = layer
-    resyncRef.current?.()
-  }, [drawnCables, highlightCableIds])
+  }, [drawnCables, highlightCableIds, layers.cables])
 
   // Arriving with ?trace=<cableId>: highlight the cable and fit the view -
   // once, when the data lands.
@@ -1068,25 +1066,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
     group.addTo(map)
     markersRef.current = group
-    // Stacked: lines whose endpoint sits inside a cluster chip hide until it
-    // opens. Unstacked view mode: crowded markers shrink instead.
+    // Unstacked view mode: crowded markers shrink instead of clustering.
     modeCleanupRef.current?.()
-    resyncRef.current = null
-    if (mode === "view") {
-      if (stacking) {
-        const armed = syncLinesWithClusters(map, group, () => [
-          connRef.current,
-          drawnCablesRef.current,
-        ])
-        resyncRef.current = armed.sync
-        modeCleanupRef.current = armed.cleanup
-      } else {
-        const ms: L.Marker[] = []
-        group.eachLayer((l) => {
-          if (l instanceof L.Marker) ms.push(l)
-        })
-        modeCleanupRef.current = applyDensityScaling(map, ms)
-      }
+    modeCleanupRef.current = null
+    if (mode === "view" && !stacking) {
+      const ms: L.Marker[] = []
+      group.eachLayer((l) => {
+        if (l instanceof L.Marker) ms.push(l)
+      })
+      modeCleanupRef.current = applyDensityScaling(map, ms)
     }
 
     if (!(map as unknown as { _smFitted?: boolean })._smFitted) {
@@ -1434,9 +1422,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
               />
               <FormCheckbox
-                label="Links (circuits · tunnels · cables)"
+                label="Links (circuits · tunnels)"
                 checked={layers.links}
                 onChange={(v) => setLayers((l) => ({ ...l, links: v }))}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Cables"
+                checked={layers.cables}
+                onChange={(v) => setLayers((l) => ({ ...l, cables: v }))}
                 className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
               />
               <FormCheckbox

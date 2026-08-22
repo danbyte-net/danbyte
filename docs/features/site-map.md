@@ -45,7 +45,9 @@ The page is a clone of the floor-plan editor's shell:
 - **Header** - View / Edit tabs, a *Find on map…* search (sites, devices,
   markers - jump + select), **Fit to view**, the **Satellite** toggle, the
   **Objects** sidebar toggle, and a **View** menu (Sites / Devices / Links /
-  Cable routes / Region boundaries layers + camera FOV cones).
+  Cables / Cable routes / Region boundaries layers + camera FOV cones).
+  Links are circuits and tunnels; **Cables** toggles the plain cable lines
+  separately, so a map can show just the carrier picture.
 - **Left palette rail** (Edit mode) - tabbed **Sites / Markers**, exactly
   like the plan's palette: click to arm, then click the map. Marker types
   stay armed so you can stamp several; Esc disarms. Stamping a marker opens
@@ -172,10 +174,6 @@ hide a problem. Click a chip to zoom into it - at maximum zoom, markers on the
 *same* coordinates fan out ("spiderfy") so each one is clickable. Picking a
 clustered object from the sidebar, search, or a `?focus=` link zooms and fans
 automatically until that marker is visible.
-
-While markers are stacked, a connection arc or cable whose endpoint is
-currently inside a chip **hides** - it would otherwise point at empty map -
-and reappears the moment the chip opens.
 
 Stacking is a preference: **View settings → Stack nearby markers** (default
 on). Turned off, nothing collapses - crowded markers **shrink** instead, down

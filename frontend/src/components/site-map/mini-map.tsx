@@ -27,7 +27,6 @@ import {
   applyDensityScaling,
   createMarkerGroup,
   stackingEnabled,
-  syncLinesWithClusters,
   tagMarker,
   zoomToRevealMarker,
 } from "@/components/site-map/cluster"
@@ -163,14 +162,14 @@ export function MiniMap({
           ...conns.flatMap((c) => [c.site_a.id, c.site_z.id]),
         ])
       : null
-    const connLayer = buildConnectionsLayer(conns, () => {})
-    connLayer.group.eachLayer((l) => group.addLayer(l))
+    buildConnectionsLayer(conns, () => {}).group.eachLayer((l) =>
+      group.addLayer(l)
+    )
 
     // cables (dashed/solid), un-highlighted
-    const cablesLayer = buildDrawnCablesLayer(drawnCables, {
+    buildDrawnCablesLayer(drawnCables, {
       highlightIds: new Set<string>(),
-    })
-    cablesLayer.eachLayer((l) => group.addLayer(l))
+    }).eachLayer((l) => group.addLayer(l))
 
     const bounds: [number, number][] = []
 
@@ -233,17 +232,16 @@ export function MiniMap({
 
     group.addTo(map)
     layersRef.current = group
-    // Post-placement behaviour per mode: hide lines whose endpoint is inside
-    // a cluster chip, or shrink crowded markers when stacking is off.
+    // Unstacked mode shrinks crowded markers instead of clustering.
     cleanupRef.current?.()
-    const markers: L.Marker[] = []
-    group.eachLayer((l) => {
-      if (l instanceof L.Marker) markers.push(l)
-    })
-    cleanupRef.current = stacking
-      ? syncLinesWithClusters(map, group, () => [connLayer.group, cablesLayer])
-          .cleanup
-      : applyDensityScaling(map, markers)
+    cleanupRef.current = null
+    if (!stacking) {
+      const markers: L.Marker[] = []
+      group.eachLayer((l) => {
+        if (l instanceof L.Marker) markers.push(l)
+      })
+      cleanupRef.current = applyDensityScaling(map, markers)
+    }
 
     // Fit - to the focused device, the boundary, the located site + its
     // arcs, or everything.
