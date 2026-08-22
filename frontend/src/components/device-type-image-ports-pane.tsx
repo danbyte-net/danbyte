@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Search, Wand2, X } from "lucide-react"
+import { Grid3x3, Search, X } from "lucide-react"
 
 import {
   api,
@@ -223,6 +223,18 @@ export function DeviceTypeImagePortsPane({
     return out
   }, [templatesByKind, placed, search])
 
+  // Bulk place operates over ALL ports of a kind - applyFill replaces
+  // same-name markers, so an already-placed run can be re-laid without
+  // deleting it first (the panel used to go dead once everything was placed).
+  const allByKind = useMemo(() => {
+    const out: Partial<Record<PhotoMarkerKind, PortComponent[]>> = {}
+    for (const k of KINDS)
+      out[k] = [...(templatesByKind[k] ?? [])].sort((a, b) =>
+        naturalCompare(a.name, b.name)
+      )
+    return out
+  }, [templatesByKind])
+
   const snapV = (v: number) => (snap ? Math.round(v * 200) / 200 : v)
 
   const patchSel = (patch: Partial<ImagePortMarker>) => {
@@ -337,13 +349,32 @@ export function DeviceTypeImagePortsPane({
 
   // ── Auto-fill: lay a whole run of ports in one shot ──────────────────────
   const openFill = () => {
-    // Seed from the first kind that has unplaced ports (interfaces first).
+    // Prefer a kind with unplaced ports (interfaces first); with everything
+    // placed, fall back to the first kind that has ports at all - bulk can
+    // re-lay an existing run.
     const kind =
-      KINDS.find((k) => (unplacedByKind[k] ?? []).length) ?? "interface"
-    const names = unplacedByKind[kind] ?? []
+      KINDS.find((k) => (unplacedByKind[k] ?? []).length) ??
+      KINDS.find((k) => (allByKind[k] ?? []).length) ??
+      "interface"
+    const unplaced = unplacedByKind[kind] ?? []
+    const names = unplaced.length ? unplaced : (allByKind[kind] ?? [])
     // A RUN of ports packs tighter than one dropped marker; a run of bays is
     // still bay-sized. Either way the user can retune before applying.
     const { w, h } = DEFAULT_SIZE[kind] ?? { w: 0.02, h: 0.22 }
+    // Re-laying a fully placed run: seed the grid from where it sits now,
+    // so Bulk place opens as "adjust this grid", not "start from scratch".
+    const existing = markers.filter((m) => m.kind === kind)
+    const seed =
+      unplaced.length === 0 && existing.length >= 2
+        ? {
+            x1: Math.min(...existing.map((m) => m.x)),
+            x2: Math.max(...existing.map((m) => m.x)),
+            y1: Math.min(...existing.map((m) => m.y)),
+            row2y: Math.max(...existing.map((m) => m.y)),
+            w: existing[0].w,
+            h: existing[0].h,
+          }
+        : {}
     setSel(null)
     setSearch("")
     setFill({
@@ -360,6 +391,7 @@ export function DeviceTypeImagePortsPane({
       row2y: 0.66,
       w,
       h,
+      ...seed,
     })
   }
 
@@ -367,7 +399,7 @@ export function DeviceTypeImagePortsPane({
   // snapping them back to that kind's full range.
   useEffect(() => {
     if (!fill) return
-    const names = (unplacedByKind[fill.kind] ?? []).map((t) => t.name)
+    const names = (allByKind[fill.kind] ?? []).map((t) => t.name)
     if (!names.includes(fill.from) || !names.includes(fill.to)) {
       setFill({
         ...fill,
@@ -376,12 +408,12 @@ export function DeviceTypeImagePortsPane({
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fill?.kind, unplacedByKind])
+  }, [fill?.kind, allByKind])
 
   // The port names the current fill options select (natural-sorted, from..to).
   const fillNames = useMemo(() => {
     if (!fill) return []
-    const all = (unplacedByKind[fill.kind] ?? []).map((t) => t.name)
+    const all = (allByKind[fill.kind] ?? []).map((t) => t.name)
     const i = all.indexOf(fill.from)
     const j = all.indexOf(fill.to)
     if (i < 0 || j < 0) return all
@@ -479,7 +511,7 @@ export function DeviceTypeImagePortsPane({
 
   const selected = sel != null ? markers[sel] : null
   const pct = (v: number) => Math.round(v * 1000) / 10
-  const fillKinds = KINDS.filter((k) => (unplacedByKind[k] ?? []).length)
+  const fillKinds = KINDS.filter((k) => (allByKind[k] ?? []).length)
 
   return (
     <div className="space-y-4">
@@ -508,11 +540,11 @@ export function DeviceTypeImagePortsPane({
         />
         {canWrite && (
           <Button variant="outline" size="sm" onClick={openFill}>
-            <Wand2 className="h-3.5 w-3.5" /> Auto-fill a run
+            <Grid3x3 className="h-3.5 w-3.5" /> Bulk place
           </Button>
         )}
         <p className="text-[12px] text-muted-foreground">
-          Drag a port onto the photo, or auto-fill a whole run at once.
+          Drag a port onto the photo, or bulk-place a whole run at once.
         </p>
       </div>
 
@@ -620,8 +652,11 @@ export function DeviceTypeImagePortsPane({
               fill={fill}
               setFill={setFill}
               count={fillNames.length}
+              rePlaced={
+                fillNames.filter((n) => placed.has(`${fill.kind}:${n}`)).length
+              }
               kinds={fillKinds}
-              names={(unplacedByKind[fill.kind] ?? []).map((t) => t.name)}
+              names={(allByKind[fill.kind] ?? []).map((t) => t.name)}
               pick={pick}
               setPick={setPick}
               onApply={applyFill}
@@ -740,6 +775,7 @@ function FillPanel({
   fill,
   setFill,
   count,
+  rePlaced,
   kinds,
   names,
   pick,
@@ -750,6 +786,8 @@ function FillPanel({
   fill: FillOpts
   setFill: (f: FillOpts) => void
   count: number
+  /** How many of those are already on the photo (they get re-placed). */
+  rePlaced: number
   kinds: PhotoMarkerKind[]
   names: string[]
   pick: null | "x1" | "x2"
@@ -783,9 +821,12 @@ function FillPanel({
     <div className="grid gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-[12px] font-medium">
-          <Wand2 className="h-3.5 w-3.5 text-primary" /> Auto-fill a run
+          <Grid3x3 className="h-3.5 w-3.5 text-primary" /> Bulk place
           <span className="text-muted-foreground">
             · {count} port{count === 1 ? "" : "s"}
+            {rePlaced > 0 && (
+              <span className="text-amber-500"> · {rePlaced} re-placed</span>
+            )}
           </span>
         </span>
         <button

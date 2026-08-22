@@ -387,6 +387,14 @@ keys** (Shift = coarser), or type exact **X / Y / W / H** percentages. A
 **fine-grid snap** keeps rows aligned. Coordinates are stored normalized
 (0–1), so they scale to any render size.
 
+**Bulk place** lays a whole run at once: pick the kind and a from/to port
+range, set rows, numbering direction and optional bank gaps, then anchor the
+grid - type the corner percentages or click **Set first/last port on photo**.
+Amber ghosts preview every marker live before you commit. The range spans
+*all* ports of the kind, so an already-placed run can be re-laid too: opening
+Bulk place on a fully placed side seeds the grid from where the run sits now,
+and the header counts how many markers a placement would overwrite.
+
 What the **port hover card** shows is configurable deployment-wide under
 **Settings → Component popover**: an ordered field list (name, type, state,
 VLAN, live SNMP facts, IPs, description, MAC, MTU, LAG, tags - defaults to the
