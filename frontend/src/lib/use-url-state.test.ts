@@ -103,6 +103,20 @@ describe("useUrlText", () => {
 })
 
 describe("useUrlFlag", () => {
+  it("reads a value validateSearch already coerced to a boolean", () => {
+    // A route's validateSearch may turn "0" into false before the hook sees
+    // it. Reading only strings made the checkbox snap back to its default -
+    // the "can't untick Virtual machines" bug.
+    search = { vms: false }
+    expect(renderHook(() => useUrlFlag("vms", true)).result.current[0]).toBe(
+      false
+    )
+    search = { vms: true }
+    expect(renderHook(() => useUrlFlag("vms", false)).result.current[0]).toBe(
+      true
+    )
+  })
+
   it("reads 1/0 and writes only the non-default", () => {
     expect(
       renderHook(() => useUrlFlag("panels", false)).result.current[0]
@@ -135,6 +149,14 @@ describe("useUrlInt", () => {
       renderHook(() => useUrlInt("depth", 2, { min: 1, max: 6 })).result
         .current[0]
     ).toBe(2)
+  })
+
+  it("reads a value validateSearch already coerced to a number", () => {
+    search = { depth: 3 }
+    expect(
+      renderHook(() => useUrlInt("depth", 1, { min: 1, max: 6 })).result
+        .current[0]
+    ).toBe(3)
   })
 })
 

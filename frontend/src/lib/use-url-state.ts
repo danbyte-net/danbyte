@@ -30,8 +30,12 @@ import { useNavigate, useSearch } from "@tanstack/react-router"
 
 interface ParamSpec<T> {
   key: string
-  /** URL string → value. Return `undefined` to reject and use the fallback. */
-  parse: (raw: string) => T | undefined
+  /** Search value → value. Return `undefined` to reject and use the fallback.
+   * The input is `unknown`, NOT string: a route's `validateSearch` may have
+   * already coerced the param (a flag to boolean, a depth to number), and a
+   * hook that only reads strings silently falls back on such routes - the
+   * checkbox that "can't be unticked" bug. */
+  parse: (raw: unknown) => T | undefined
   /** Value → URL string, or `undefined` to drop the param. */
   format: (value: T) => string | undefined
   fallback: T
@@ -47,7 +51,8 @@ function useUrlParam<T>(spec: ParamSpec<T>): [T, (value: T) => void] {
   // declares the param in its own validateSearch.
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const raw = search[spec.key]
-  const parsed = typeof raw === "string" ? spec.parse(raw) : undefined
+  const parsed =
+    raw === undefined || raw === null ? undefined : spec.parse(raw)
   const value = parsed === undefined ? spec.fallback : parsed
 
   const set = (next: T) => {
@@ -99,7 +104,10 @@ export function useUrlEnum<T extends string>(
 ): [T, (value: T) => void] {
   return useUrlParam<T>({
     key,
-    parse: (raw) => (valid.includes(raw as T) ? (raw as T) : undefined),
+    parse: (raw) =>
+      typeof raw === "string" && valid.includes(raw as T)
+        ? (raw as T)
+        : undefined,
     format: (v) => v,
     fallback,
     isDefault: (v) => v === fallback,
@@ -116,7 +124,7 @@ export function useUrlText(
 ): [string, (value: string) => void] {
   return useUrlParam<string>({
     key,
-    parse: (raw) => raw,
+    parse: (raw) => (typeof raw === "string" ? raw : undefined),
     format: (v) => v,
     fallback,
     isDefault: (v) => v === fallback,
@@ -133,9 +141,9 @@ export function useUrlFlag(
   return useUrlParam<boolean>({
     key,
     parse: (raw) =>
-      raw === "1" || raw === "true"
+      raw === true || raw === "1" || raw === "true"
         ? true
-        : raw === "0" || raw === "false"
+        : raw === false || raw === "0" || raw === "false"
           ? false
           : undefined,
     format: (v) => (v ? "1" : "0"),
@@ -155,6 +163,7 @@ export function useUrlInt(
   return useUrlParam<number>({
     key,
     parse: (raw) => {
+      if (typeof raw !== "string" && typeof raw !== "number") return undefined
       const n = Number(raw)
       return Number.isFinite(n) ? clamp(Math.round(n)) : undefined
     },
@@ -177,7 +186,8 @@ export function useUrlCsv(
     a === null || b === null ? a === b : a.join(",") === b.join(",")
   return useUrlParam<string[] | null>({
     key,
-    parse: (raw) => (raw ? raw.split(",").filter(Boolean) : []),
+    parse: (raw) =>
+      typeof raw === "string" ? raw.split(",").filter(Boolean) : undefined,
     format: (v) => (v === null ? undefined : v.join(",")),
     fallback,
     isDefault: (v) => same(v, fallback),

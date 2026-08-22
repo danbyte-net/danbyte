@@ -145,12 +145,13 @@ labels, cabling pictures, faceplate close-ups). Click **Add image** to upload;
 hover an image and click the trash icon to remove it, or click an image to open
 the full-size original in a new tab.
 
-Two layouts, chosen with the toggle beside **Add image**: the **grid** of
-thumbnails, and a **list** naming each file with its type, size, dimensions and
-when it changed - easier to scan once an object carries a lot of photos, and
-each row still previews and opens its image. The choice is on the page's
-address (`?images=list`), so a link keeps it. Galleries load generated
-thumbnails rather than originals, so a page of photos stays quick. Uploading and removing require **change**
+Two layouts, chosen with the toggle beside **Add image**. The **list**
+(default) names each file with its type, size, dimensions and when it changed,
+sortable by name and searchable - and downloads no images at all, so a device
+with fifty photos opens instantly; a row's link opens its original. The
+**grid** shows the pictures, loading generated thumbnails rather than
+originals. The choice is on the page's address (`?images=grid`), so a link
+keeps it. The pencil on a row or card renames an image. Uploading and removing require **change**
 permission on devices; everyone who can view the device sees the gallery
 read-only. Files are stored under `/media/` and served same-origin.
 
