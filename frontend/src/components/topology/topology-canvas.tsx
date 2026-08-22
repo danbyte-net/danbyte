@@ -1012,6 +1012,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const prevNodes = useRef<Node[]>([])
   const prevTick = useRef(layoutTick)
   const prevStyle = useRef(nodeStyle)
+  const prevDirection = useRef(direction)
   const prevFitKey = useRef(fitKey)
   useEffect(() => {
     const prev = new Map(prevNodes.current.map((n) => [n.id, n.position]))
@@ -1026,13 +1027,18 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     //    the tick: the style rides on the URL, so its render arrives a beat
     //    after any tick bump and the bump is consumed on the wrong style;
     //  - the QUERY changed (filter, focus, drill, builder set) - a different
-    //    device set is never an incidental rebuild.
+    //    device set is never an incidental rebuild;
+    //  - the DIRECTION changed. The trace maps flip it with a plain prop (no
+    //    tick), and keeping side-to-side positions under tree-direction
+    //    routing draws every cable as a giant loop around the map.
     const restyled = nodeStyle !== prevStyle.current
     prevStyle.current = nodeStyle
     const requeried = fitKey !== prevFitKey.current
     prevFitKey.current = fitKey
+    const redirected = direction !== prevDirection.current
+    prevDirection.current = direction
     const relaidOut =
-      layoutTick !== prevTick.current || restyled || requeried
+      layoutTick !== prevTick.current || restyled || requeried || redirected
     prevTick.current = layoutTick
     const keepingDrags =
       !relaidOut && !positions && prevNodes.current.length > 0
