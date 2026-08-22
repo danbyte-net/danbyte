@@ -36,6 +36,7 @@ function EditInterfacePage() {
   }
   return (
     <EditPageShell
+      className="max-w-5xl"
       crumbs={[
         { label: "Interfaces", to: "/interfaces" },
         q.data

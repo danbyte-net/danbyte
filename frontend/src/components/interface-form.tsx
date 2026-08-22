@@ -265,38 +265,40 @@ export function InterfaceForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <DevicePicker
-        value={deviceId}
-        onChange={setDeviceId}
-        error={fieldErrors.device_id}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          mono
-          placeholder="GigabitEthernet0/1"
-          hint={isEdit ? undefined : "a [0-3] range adds one port per number"}
-          error={fieldErrors.name}
+      <FormSection title="Interface">
+        <DevicePicker
+          value={deviceId}
+          onChange={setDeviceId}
+          error={fieldErrors.device_id}
         />
-        <FormCombobox
-          label="Type"
-          value={type || null}
-          onChange={(v) => setType(v ?? "")}
-          noneLabel="No type"
-          placeholder="Pick a type"
-          searchPlaceholder="Search types…"
-          emptyText="No types."
-          options={typeOptions}
-          error={fieldErrors.type}
-        />
-      </div>
-      <NameRangeHint name={name} editing={isEdit} noun="interfaces" />
+        <div className="grid grid-cols-2 gap-3">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            mono
+            placeholder="GigabitEthernet0/1"
+            hint={isEdit ? undefined : "a [0-3] range adds one port per number"}
+            error={fieldErrors.name}
+          />
+          <FormCombobox
+            label="Type"
+            value={type || null}
+            onChange={(v) => setType(v ?? "")}
+            noneLabel="No type"
+            placeholder="Pick a type"
+            searchPlaceholder="Search types…"
+            emptyText="No types."
+            options={typeOptions}
+            error={fieldErrors.type}
+          />
+        </div>
+        <NameRangeHint name={name} editing={isEdit} noun="interfaces" />
+      </FormSection>
 
       <FormSection title="Switching">
         <div className="grid grid-cols-2 gap-3">
@@ -575,20 +577,22 @@ export function InterfaceForm({
         </FormSection>
       )}
 
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="Optional"
-        error={fieldErrors.description}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
+      <FormSection title="Notes">
+        <FormText
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          placeholder="Optional"
+          error={fieldErrors.description}
         />
-      </Field>
+        <Field label="Tags" error={fieldErrors.tag_ids}>
+          <TagMultiSelect
+            options={tags.data?.results ?? []}
+            value={tagIds}
+            onChange={setTagIds}
+          />
+        </Field>
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}
