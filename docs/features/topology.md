@@ -19,7 +19,9 @@ icon: lucide/network
 - **Flat** - the barebones view for big graphs: every device is a small
   fixed-size chip (role color, status dot, name), parallel cables between
   two devices merge into a single **×N** edge (click it to list and open
-  the member cables), and the layout packs tight. Hundreds of devices stay
+  the member cables; hover names them). A pair joined by one cable shows
+  that cable - its label on the line, its own colour, its panel on click.
+  The layout packs tight. Hundreds of devices stay
   readable; Levels, direction, color modes and saved views all still apply.
 - **Logical** - the L2 picture: **VLANs as rails** (grouped by VLAN group,
   colored by the VLAN's own color or its zone's), with everything attached

@@ -188,9 +188,14 @@ function hoverLabel(e: Edge): string | undefined {
     const types = [
       ...new Set(d.cables.map((c) => c.cable_type).filter(Boolean)),
     ]
+    const names = d.cables
+      .map((c) => c.cable_label || (c.cable_numid ? `#${c.cable_numid}` : ""))
+      .filter(Boolean)
+    const shown = names.slice(0, 3).join(", ")
+    const more = names.length > 3 ? ` +${names.length - 3}` : ""
     return `${d.cables.length} cable${d.cables.length === 1 ? "" : "s"}${
       types.length ? ` · ${types.join(", ")}` : ""
-    }`
+    }${shown ? ` · ${shown}${more}` : ""}`
   }
   if (d.sem === "groupedge" && d.group)
     return `${d.group.cable_count} cable${
@@ -456,6 +461,8 @@ function build(
     if (count > 1) labelBits.push(`×${count}`)
     if (via.length) labelBits.push(`via ${via.join(", ")}`)
     if (e.data?.cable_label) labelBits.push(e.data.cable_label)
+    if (opts.colorMode === "speed" && e.data?.speed)
+      labelBits.push(e.data.speed)
 
     const stroke = edgeStroke(e.data, opts.colorMode)
     const marked = e.data?.marked
@@ -486,12 +493,52 @@ function build(
   if (flat) {
     for (const [key, b] of bundles) {
       const n = b.cables.length
+      // A pair joined by ONE cable is that cable, not a bundle of one: it
+      // carries the cable's real label, colours by its own data, gets the
+      // full hover identity, and clicking it opens the cable panel rather
+      // than a one-row bundle list.
+      if (n === 1) {
+        const c = b.cables[0]
+        const stroke = edgeStroke(c, opts.colorMode)
+        const bits: string[] = []
+        if (c.via?.length) bits.push(`via ${c.via.join(", ")}`)
+        if (c.cable_label) bits.push(c.cable_label)
+        if (opts.colorMode === "speed" && c.speed) bits.push(c.speed)
+        allEdges.push({
+          id: `f:${key}`,
+          source: b.source,
+          target: b.target,
+          sourceHandle: "n",
+          targetHandle: "n",
+          type: "smoothstep",
+          pathOptions: { borderRadius: 10 },
+          label: bits.length ? bits.join(" · ") : undefined,
+          animated: c.marked,
+          data: { sem: "cable", raw: c },
+          style: c.marked
+            ? { strokeWidth: 2.5, stroke: "var(--primary)" }
+            : {
+                strokeWidth: 1.25,
+                ...(stroke ? { stroke } : {}),
+                ...(c.via?.length ? { strokeDasharray: "10 4" } : {}),
+              },
+          labelStyle: { fontSize: 9 },
+          labelBgStyle: { fill: "var(--card)" },
+        } as Edge)
+        continue
+      }
       // The bundle keeps a colour only when every member agrees under the
       // active mode - a mixed bundle stays neutral rather than lying.
       const strokes = new Set(
         b.cables.map((c) => edgeStroke(c, opts.colorMode) ?? "")
       )
       const stroke = strokes.size === 1 ? [...strokes][0] || undefined : undefined
+      // In speed mode a bundle that agrees announces the shared speed.
+      const speeds = new Set(b.cables.map((c) => c.speed ?? ""))
+      const speed =
+        opts.colorMode === "speed" && speeds.size === 1
+          ? [...speeds][0] || undefined
+          : undefined
       allEdges.push({
         id: `f:${key}`,
         source: b.source,
@@ -500,10 +547,10 @@ function build(
         targetHandle: "n",
         type: "smoothstep",
         pathOptions: { borderRadius: 10 },
-        label: n > 1 ? `×${n}` : undefined,
+        label: speed ? `×${n} · ${speed}` : `×${n}`,
         data: { sem: "bundle", cables: b.cables },
         style: {
-          strokeWidth: n > 1 ? 1.75 : 1.25,
+          strokeWidth: 1.75,
           ...(stroke ? { stroke } : {}),
         },
         labelStyle: { fontSize: 9 },
