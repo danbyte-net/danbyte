@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { TopologyViewSaved } from "@/lib/api"
-import {
-  mergePositions,
-  migratePositions,
-  viewPositions,
-} from "./view-positions"
+import { migratePositions, viewPositions } from "./view-positions"
 
 // A saved view holds one arrangement per view style in a single record, so a
 // partial write is a delete: these guard the paths where arranging one view
@@ -64,37 +60,6 @@ describe("viewPositions", () => {
       positions: { x: [0, 0] },
     })
     expect(viewPositions(v, styleOf)).toEqual({})
-  })
-})
-
-describe("mergePositions", () => {
-  it("saving from one style keeps every other style's arrangement", () => {
-    const stored = {
-      hierarchy: { "dev:a": [1, 2] } as Record<string, [number, number]>,
-      flat: { "dev:a": [3, 4] } as Record<string, [number, number]>,
-    }
-    const saved = mergePositions(stored, "stencil", { "dev:a": [7, 8] })
-    expect(saved).toEqual({
-      hierarchy: { "dev:a": [1, 2] },
-      flat: { "dev:a": [3, 4] },
-      stencil: { "dev:a": [7, 8] },
-    })
-  })
-
-  it("replaces only the style on screen", () => {
-    const stored = {
-      flat: { "dev:a": [3, 4] } as Record<string, [number, number]>,
-    }
-    expect(mergePositions(stored, "flat", { "dev:a": [5, 6] })).toEqual({
-      flat: { "dev:a": [5, 6] },
-    })
-  })
-
-  it("leaves the record alone on the rail diagram, which has no canvas", () => {
-    const stored = {
-      flat: { "dev:a": [3, 4] } as Record<string, [number, number]>,
-    }
-    expect(mergePositions(stored, null, undefined)).toEqual(stored)
   })
 })
 

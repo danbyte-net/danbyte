@@ -1011,17 +1011,28 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // for nodes that are still present (so a color-mode flip doesn't shuffle).
   const prevNodes = useRef<Node[]>([])
   const prevTick = useRef(layoutTick)
+  const prevStyle = useRef(nodeStyle)
   const prevFitKey = useRef(fitKey)
   useEffect(() => {
     const prev = new Map(prevNodes.current.map((n) => [n.id, n.position]))
     // Keep the user's dragged positions only across INCIDENTAL rebuilds
-    // (colour mode, search highlight, a late graph refetch) - not when they
-    // deliberately re-ran the layout. Every deliberate relayout (direction,
-    // Levels order/distance, Re-layout, applyView) bumps `layoutTick`, so a
-    // changed tick means "use the fresh layout"; an unchanged tick means "an
-    // incidental rebuild - don't shuffle the user's arrangement". (A saved
-    // view that pins `positions` bypasses keeping too.)
-    const relaidOut = layoutTick !== prevTick.current
+    // (colour mode, search highlight, a late graph refetch) - not when the
+    // layout genuinely restarted. Three things restart it:
+    //  - `layoutTick` bumped (Re-layout, direction, Levels, applying a view);
+    //  - the NODE STYLE changed - node ids are identical across styles, so
+    //    keeping "positions of nodes still present" here would hand Flat's
+    //    coordinates to Hierarchy's cards (with port spans computed for a
+    //    completely different arrangement). The page can't signal this via
+    //    the tick: the style rides on the URL, so its render arrives a beat
+    //    after any tick bump and the bump is consumed on the wrong style;
+    //  - the QUERY changed (filter, focus, drill, builder set) - a different
+    //    device set is never an incidental rebuild.
+    const restyled = nodeStyle !== prevStyle.current
+    prevStyle.current = nodeStyle
+    const requeried = fitKey !== prevFitKey.current
+    prevFitKey.current = fitKey
+    const relaidOut =
+      layoutTick !== prevTick.current || restyled || requeried
     prevTick.current = layoutTick
     const keepingDrags =
       !relaidOut && !positions && prevNodes.current.length > 0
@@ -1052,17 +1063,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     } else {
       setEdges(built.edges)
     }
-    // A deliberate relayout OR a different query (filter/focus/grouping)
-    // re-fits the viewport - without this the camera keeps staring at
-    // wherever it was while the graph reshapes elsewhere, which reads as a
-    // frozen/blank map on big graphs.
-    const refit = relaidOut || fitKey !== prevFitKey.current
-    prevFitKey.current = fitKey
-    if (refit)
+    // Any relayout re-fits the viewport - without this the camera keeps
+    // staring at wherever it was while the graph reshapes elsewhere, which
+    // reads as a frozen/blank map on big graphs.
+    if (relaidOut)
       requestAnimationFrame(() =>
         flow.fitView({ padding: 0.15, duration: 300 })
       )
-  }, [built, setNodes, setEdges, layoutTick, positions, direction, routingActive, flow, fitKey])
+  }, [built, setNodes, setEdges, layoutTick, positions, direction, routingActive, flow, fitKey, nodeStyle])
   useEffect(() => {
     prevNodes.current = nodes
   }, [nodes])

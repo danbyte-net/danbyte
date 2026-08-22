@@ -85,7 +85,6 @@ import {
   type LevelsState,
 } from "@/components/topology/levels-param"
 import {
-  mergePositions,
   migratePositions,
   viewPositions,
   type PosByStyle,
@@ -473,7 +472,9 @@ function TopologyPage() {
   // One arrangement per view style - see PosByStyle. The canvas only ever
   // sees the style it is currently drawing.
   const [posByStyle, setPosByStyle] = useState<PosByStyle>(() =>
-    readStoredPositions(styleOfTab(dflt.tab) as NodeStyle)
+    urlSearch.view
+      ? {} // a saved view's arrangements arrive with the view (effect below)
+      : readStoredPositions(styleOfTab(dflt.tab) as NodeStyle)
   )
   const positions = logical ? undefined : posByStyle[viewStyle as NodeStyle]
   /** Replace the arrangement of the style on screen (undefined = re-layout
@@ -523,14 +524,12 @@ function TopologyPage() {
     patch({ [d.kind]: d.group_id })
     clearSel()
     dropAllPositions()
-    setLayoutTick((t) => t + 1)
   }
 
   const leaveDrill = () => {
     patch({ [groupBy === "location" ? "location" : "site"]: "all" })
     clearSel()
     dropAllPositions()
-    setLayoutTick((t) => t + 1)
   }
 
   /** Builder: merge ids into the custom set (starting it if needed). */
@@ -543,7 +542,6 @@ function TopologyPage() {
     patch({ devices: undefined, ...(vf.devices ? { view: undefined } : {}) })
     clearSel()
     dropAllPositions()
-    setLayoutTick((t) => t + 1)
   }
 
   /** Builder: pull one device's 1-hop neighbourhood into the set. */
@@ -757,15 +755,26 @@ function TopologyPage() {
       view: v.id,
       ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
     })
-    // Every style gets back exactly the arrangement it was saved with. A view
-    // used to DISCARD them when it had Levels set, on the theory that a tiered
-    // view should regenerate from its tiers - but discarding them here also
-    // emptied what a later Save wrote back, so saving from one view deleted
-    // the other views' arrangements. Tiers still drive anything unpinned, and
-    // Re-layout regenerates on demand.
-    setPosByStyle(viewPositions(v, sanitizeViewStyle))
-    setLayoutTick((t) => t + 1)
+    // Re-applying the view you're on restores its saved arrangements too.
+    restoredView.current = null
   }
+
+  // The ONE place a view's arrangements are restored. An effect, not a call
+  // inside applyView, because a view arrives three ways - clicked in the
+  // select, opened as a ?view= link in a fresh tab, refetched after Save -
+  // and the first fix that only covered the click left cold links opening
+  // with the personal default's coordinates pinned under the view's graph.
+  // Every style gets back exactly what was saved; tiers still drive anything
+  // unpinned, and Re-layout regenerates a style on demand.
+  const restoredView = useRef<string | null>(null)
+  useEffect(() => {
+    if (!appliedView) return
+    const key = `${appliedView.id}:${appliedView.updated_at}`
+    if (restoredView.current === key) return
+    restoredView.current = key
+    setPosByStyle(viewPositions(appliedView, sanitizeViewStyle))
+    setLayoutTick((t) => t + 1)
+  }, [appliedView])
 
   /** Back to the personal default map: no view, no overrides. */
   const clearView = () => {
@@ -773,6 +782,7 @@ function TopologyPage() {
       view: undefined,
       ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
     })
+    restoredView.current = null
     setPosByStyle(readStoredPositions(viewStyle as NodeStyle))
     setLayoutTick((t) => t + 1)
   }
@@ -786,15 +796,13 @@ function TopologyPage() {
     )
 
   const currentState = () => {
-    // Save the arrangement of every style the user has tuned, not just the one
-    // on screen - a view is the whole map, and switching to Hierarchy must not
-    // hand you the Flat spacing.
-    const live = logical ? undefined : canvas.current?.positions()
-    const byStyle = mergePositions(
-      posByStyle,
-      logical ? null : (viewStyle as NodeStyle),
-      live
-    )
+    // Save every style's arrangement AS THE USER OWNS IT: a drag writes the
+    // full snapshot into posByStyle, a Re-layout deletes that style's entry.
+    // The live canvas is deliberately NOT captured here - it would pin a
+    // fresh auto layout, and a pinned auto layout replays stale coordinates
+    // forever once the device set changes. No entry = that style keeps
+    // laying itself out.
+    const byStyle = posByStyle
     return {
       filters: {
         ...filters,
@@ -936,11 +944,11 @@ function TopologyPage() {
           value={viewStyle}
           onValueChange={(v) => {
             // Each style keeps its OWN arrangement: switching away doesn't
-            // discard it, and switching back restores it. A style you have
-            // never arranged lays itself out.
+            // discard it, and switching back restores it. The canvas treats
+            // the style change itself as a relayout, so no tick here - a
+            // tick fired now would land on the OUTGOING style (the style
+            // rides on the URL, which updates a beat later).
             setViewStyle(v)
-            if (v !== "logical" && !posByStyle[v as NodeStyle])
-              setLayoutTick((t) => t + 1)
           }}
           items={[
             { value: "stencil", label: "Wiring" },
@@ -1127,8 +1135,7 @@ function TopologyPage() {
                       ...(v !== "none" ? { site: "all", location: "all" } : {}),
                     })
                     clearSel()
-                    setPositions(undefined)
-                    setLayoutTick((t) => t + 1)
+                    dropAllPositions()
                   }}
                   items={[
                     { value: "none", label: "None" },
@@ -1373,10 +1380,7 @@ function TopologyPage() {
               size="sm"
               variant="outline"
               className="h-6 px-2 text-[11px]"
-              onClick={() => {
-                setViewStyle("stencil")
-                if (!posByStyle.stencil) setLayoutTick((t) => t + 1)
-              }}
+              onClick={() => setViewStyle("stencil")}
             >
               Switch
             </Button>
@@ -1398,10 +1402,7 @@ function TopologyPage() {
               size="sm"
               variant="outline"
               className="h-6 px-2 text-[11px]"
-              onClick={() => {
-                setViewStyle("flat")
-                if (!posByStyle.flat) setLayoutTick((t) => t + 1)
-              }}
+              onClick={() => setViewStyle("flat")}
             >
               Switch
             </Button>

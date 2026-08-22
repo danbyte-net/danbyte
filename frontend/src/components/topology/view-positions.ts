@@ -42,21 +42,3 @@ export function viewPositions(
     ? { [style as NodeStyle]: v.state.positions }
     : {}
 }
-
-/**
- * What Save writes: every style the user has arranged, with the live canvas
- * standing in for the style on screen.
- *
- * Saving used to write only what was in hand, which is how saving from Flat
- * deleted the Hierarchy arrangement stored in the same view - the two live in
- * one record, so a partial write is a delete.
- */
-export function mergePositions(
-  stored: PosByStyle,
-  style: NodeStyle | null,
-  live: PosMap | undefined
-): PosByStyle {
-  const out: PosByStyle = { ...stored }
-  if (style && live && Object.keys(live).length) out[style] = live
-  return out
-}

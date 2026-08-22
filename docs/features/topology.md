@@ -263,9 +263,16 @@ left-to-right layout. Views are plain API objects
 Arrangements are kept **per view** - Wiring, Hierarchy and Flat each remember
 their own. The cards are different sizes in each, so one shared set of
 coordinates would hand Hierarchy the spacing you tuned for Flat. Arrange a view,
-switch away, come back: it's as you left it, and **Save** writes all of them.
-**Re-layout** only re-runs the view you're looking at. Views saved before this
-keep their arrangement under the style they were saved in.
+switch away, come back: it's as you left it.
+
+**Save** stores the arrangements you actually made - a view you dragged is
+pinned exactly, a view you left (or returned, with **Re-layout**) to the
+automatic layout stays automatic, so it keeps laying itself out as the map's
+devices change. **Re-layout** only re-runs the view you're looking at. The
+saved arrangements come back however the view is opened - picked from the
+select, or as a `?view=` link in a fresh tab. Views saved before the per-view
+split keep their arrangement under the style they were saved in; if one opens
+scrambled, **Re-layout** and **Save** once.
 
 A view is addressable: `?view=<id>` opens it. Change anything afterwards and
 the toolbar says **edited** - what you're looking at is no longer what the
