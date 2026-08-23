@@ -33,6 +33,14 @@ export function CableDeleteDialog({
       toast.success("Cable deleted")
       qc.invalidateQueries({ queryKey: ["cables"] })
       qc.invalidateQueries({ queryKey: ["interfaces"] })
+      // Removing a cable frees its ports - every port surface changes.
+      qc.invalidateQueries({ queryKey: ["interface"] })
+      qc.invalidateQueries({ queryKey: ["device-interfaces"] })
+      qc.invalidateQueries({ queryKey: ["device-front-ports"] })
+      qc.invalidateQueries({ queryKey: ["device-rear-ports"] })
+      qc.invalidateQueries({ queryKey: ["device-face-ports"] })
+      qc.invalidateQueries({ queryKey: ["device-port-utilization"] })
+      qc.invalidateQueries({ queryKey: ["port-utilization-rollup"] })
       onOpenChange(false)
       onDeleted?.()
     },

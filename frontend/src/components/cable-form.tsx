@@ -150,6 +150,12 @@ export function CableForm({
       qc.invalidateQueries({ queryKey: ["cables"] })
       qc.invalidateQueries({ queryKey: ["cable", saved.id] })
       qc.invalidateQueries({ queryKey: ["interfaces"] })
+      // Singular keys are separate caches - the port DETAIL pages read
+      // ["interface", id] / ["front-port", id] / ["rear-port", id], which
+      // the plural keys never touch.
+      qc.invalidateQueries({ queryKey: ["interface"] })
+      qc.invalidateQueries({ queryKey: ["front-port"] })
+      qc.invalidateQueries({ queryKey: ["rear-port"] })
       // The per-device faceplate/port caches - broad on purpose: a cable flips
       // `connected` on BOTH ends' markers (2D photo faceplate and 3D room),
       // and this form doesn't know which devices those ports live on.
