@@ -138,6 +138,41 @@ class PortReservationTests(APITestCase):
         CableTermination.objects.create(cable=c2, end="A", console_port=cp)
         self.assertEqual(PortReservation.objects.count(), 0)
 
+    def test_cable_created_through_the_api_releases_the_hold(self):
+        """The regression behind "the reservation comes back": the API
+        writes terminations with bulk_create, which skips save(), so the
+        hold survived behind the cable and reappeared when it was deleted.
+        Mark_connected was left set the same way."""
+        self._reserve(note="hold")
+        other = Interface.objects.create(
+            device=self.dev, name="Gi9", mark_connected=True
+        )
+        r = self.client.post(
+            "/api/cables/",
+            {
+                "a": [{"kind": "interface", "id": str(self.iface.id)}],
+                "b": [{"kind": "interface", "id": str(other.id)}],
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(PortReservation.objects.count(), 0)
+        other.refresh_from_db()
+        self.assertFalse(other.mark_connected)
+
+        # Deleting the cable must not resurrect anything.
+        self.client.delete(f"/api/cables/{r.json()['id']}/")
+        self.assertEqual(PortReservation.objects.count(), 0)
+        row = next(
+            x
+            for x in self.client.get(
+                f"/api/interfaces/?device={self.dev.id}"
+            ).json()["results"]
+            if x["name"] == "Gi1"
+        )
+        self.assertIsNone(row["reservation"])
+        self.assertIsNone(row["cable"])
+
     def test_interface_serializer_exposes_reservation(self):
         self._reserve(note="hold")
         r = self.client.get(f"/api/interfaces/?device={self.dev.id}")

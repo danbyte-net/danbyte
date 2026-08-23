@@ -34,7 +34,8 @@ from .models import (
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
-    NumIdMixin, Platform, PlatformGroup, PortReservation, weight_kg,
+    NumIdMixin, Platform, PlatformGroup, PortReservation,
+    retire_port_placeholders, weight_kg,
     ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
@@ -3459,9 +3460,14 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         return attrs
 
     def _sync(self, cable, end, points):
-        CableTermination.objects.bulk_create(
-            [CableTermination(cable=cable, end=end, **{kind: obj}) for kind, obj in points]
-        )
+        rows = [
+            CableTermination(cable=cable, end=end, **{kind: obj})
+            for kind, obj in points
+        ]
+        CableTermination.objects.bulk_create(rows)
+        # bulk_create skips save(), so the placeholders a cable retires
+        # (mark_connected, port reservations) must be cleared explicitly.
+        retire_port_placeholders(rows)
 
     @transaction.atomic
     def create(self, validated_data):

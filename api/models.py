@@ -3317,19 +3317,8 @@ class CableTermination(TimestampedModel):
     def save(self, *args, **kwargs):
         creating = self._state.adding
         super().save(*args, **kwargs)
-        # A documented cable retires the port's "cable exists but isn't
-        # documented yet" placeholder - the flag stood in for this row. It
-        # also fulfils any reservation on the port: the hold existed to keep
-        # the port available for exactly this cable.
         if creating:
-            for f in self.POINT_FIELDS:
-                port = getattr(self, f, None)
-                if port is None:
-                    continue
-                if getattr(port, "mark_connected", False):
-                    port.mark_connected = False
-                    port.save(update_fields=["mark_connected"])
-                port.reservations.all().delete()
+            retire_port_placeholders([self])
 
     @property
     def point(self):
@@ -3341,6 +3330,41 @@ class CableTermination(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.cable_id}/{self.end}: {self.point}"
+
+
+def retire_port_placeholders(terminations) -> None:
+    """A documented cable retires the port's stand-ins: ``mark_connected``
+    (the flag that said "there IS a cable here, undocumented") and any
+    PortReservation (the hold existed to keep the port free for exactly
+    this cable).
+
+    Call this from EVERY path that creates terminations. It cannot live in
+    ``save()`` alone: the API writes terminations with ``bulk_create``,
+    which never calls ``save()`` - so a cable made through the UI left the
+    reservation in place, invisible behind the cable until the cable was
+    deleted and the hold reappeared.
+    """
+    from django.db.models import Q
+
+    ports_by_field: dict[str, list] = {}
+    for t in terminations:
+        for f in CableTermination.POINT_FIELDS:
+            port = getattr(t, f, None)
+            if port is not None:
+                ports_by_field.setdefault(f, []).append(port)
+
+    for field, ports in ports_by_field.items():
+        ids = [p.pk for p in ports]
+        model = type(ports[0])
+        if any(f.name == "mark_connected" for f in model._meta.fields):
+            model.objects.filter(pk__in=ids, mark_connected=True).update(
+                mark_connected=False
+            )
+            for p in ports:
+                p.mark_connected = False
+        PortReservation.objects.filter(
+            Q(**{f"{field}__in": ids})
+        ).delete()
 
 
 class PortReservation(TimestampedModel):
