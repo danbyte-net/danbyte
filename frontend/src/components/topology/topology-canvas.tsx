@@ -1381,7 +1381,27 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               }
             : n
         )
-        setNodes(nextNodes)
+        // `flow.getNodes()` returns the RENDERED nodes, which carry the
+        // derived spotlight flag - writing them straight back froze the
+        // dimming into state, so clearing the spotlight left cards greyed
+        // and a new spotlight highlighted nothing. Merge positions and port
+        // geometry into the real state instead, and drop `dimmed`.
+        setNodes((cur) => {
+          const byId = new Map(nextNodes.map((n) => [n.id, n]))
+          return cur.map((n) => {
+            const live = byId.get(n.id)
+            if (!live) return n
+            const { dimmed: _dimmed, ...liveData } = live.data as Record<
+              string,
+              unknown
+            >
+            return {
+              ...n,
+              position: live.position,
+              data: { ...(n.data as object), ...liveData },
+            }
+          })
+        })
         const next = cur.map((e) => {
           const d = e.data as { sem?: string; baseS?: string; baseT?: string }
           if (d?.sem !== "cable" || !d.baseS || !d.baseT) return e
