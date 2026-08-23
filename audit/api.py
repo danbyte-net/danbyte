@@ -6,8 +6,10 @@ from django.core.exceptions import FieldError
 from django.db.models import CharField, Q
 from django.db.models.functions import Cast
 from rest_framework import serializers, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from api.views import _get_active_tenant
 from api.viewsets import StandardPagination
@@ -430,6 +432,21 @@ class ChangeLogViewSet(viewsets.ReadOnlyModelViewSet):
         if search:
             qs = qs.filter(object_repr__icontains=search)
         return qs.filter(vis) if vis is not None else qs
+
+    @action(detail=False, methods=["get"], url_path="users")
+    def users(self, request):
+        """Distinct actors in the change log the caller can see - the User
+        filter's dropdown. Deliberately NOT the user directory: it lists who
+        actually made changes here, needs no user-management permission, and
+        rides the same row-visibility gate as the entries themselves."""
+        names = (
+            self.get_queryset()
+            .exclude(user_name="")
+            .values_list("user_name", flat=True)
+            .distinct()
+            .order_by("user_name")
+        )
+        return Response({"results": list(names[:500])})
 
 
 class JournalEntrySerializer(serializers.ModelSerializer):

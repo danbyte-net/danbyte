@@ -7,7 +7,7 @@ import { ChevronRight } from "lucide-react"
 import { api } from "@/lib/api"
 import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
+import { Combobox } from "@/components/ui/combobox"
 import {
   Select,
   SelectContent,
@@ -90,6 +90,15 @@ function AuditLogPage() {
     queryFn: () => api<Paginated<ChangeLogEntry>>(`/api/changelog/?${params}`),
     placeholderData: keepPreviousData,
   })
+  // Who has actually made changes here - the User filter's options. Not
+  // the user directory: it needs no user-management permission and lists
+  // only actors visible to this caller.
+  const actors = useQuery({
+    queryKey: ["changelog-users"],
+    queryFn: () => api<{ results: string[] }>("/api/changelog/users/"),
+    staleTime: 5 * 60_000,
+  })
+
   const rows = q.data?.results ?? []
   const total = q.data?.count ?? 0
   const pages = Math.max(1, Math.ceil(total / pageSize))
@@ -149,13 +158,20 @@ function AuditLogPage() {
               <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
                 User
               </h3>
-              <Input
-                value={user}
-                onChange={(e) => {
-                  setUser(e.target.value)
+              <Combobox
+                value={user || null}
+                onChange={(v) => {
+                  setUser(v ?? "")
                   reset()
                 }}
-                placeholder="Filter by user…"
+                options={(actors.data?.results ?? []).map((u) => ({
+                  value: u,
+                  label: u,
+                }))}
+                noneLabel="All users"
+                placeholder="All users"
+                searchPlaceholder="Search users…"
+                emptyText="No users yet."
                 className="h-8 text-xs"
               />
             </div>
