@@ -956,7 +956,11 @@ function NavGroup({
           />
         </button>
       </SidebarGroupLabel>
-      {shown && <SidebarGroupContent>{children}</SidebarGroupContent>}
+      {/* Breathing room between the section band and its first item - the
+          active-item chip otherwise sits flush against the band. */}
+      {shown && (
+        <SidebarGroupContent className="pt-1.5">{children}</SidebarGroupContent>
+      )}
     </SidebarGroup>
   )
 }
