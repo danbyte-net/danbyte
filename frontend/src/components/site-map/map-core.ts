@@ -10,7 +10,10 @@ export { markerZ, type MarkerKind } from "./status-colors"
 /** Zoom thresholds below which name chips hide (hover/selection always show).
  * Site names carry from far out; device names only matter once you're close
  * enough that they wouldn't shingle over each other. */
-export const LABEL_ZOOM = { sites: 9, devices: 15 } as const
+// Sites label from country-level zoom (Denmark fits ~z7) - hiding names
+// until z9 read as "labels only on hover". Devices stay deep: their names
+// only make sense once a site is filling the screen.
+export const LABEL_ZOOM = { sites: 6, devices: 13 } as const
 
 /** Swap the basemap in place. Always removes the previous layer first - the
  * MiniMap once keyed this on the payload object and stacked a new tile layer
