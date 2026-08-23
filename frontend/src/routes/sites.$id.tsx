@@ -556,9 +556,9 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
         </h3>
         {placedRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No VM has this site set. A VM's site is its own field - set it on the
-            VM, or tick <strong>Give VMs on this cluster its site</strong> on a
-            cluster that really is here.
+            No VM has this site set. A VM's site is its own field - set it on
+            the VM, or tick <strong>Give VMs on this cluster its site</strong>{" "}
+            on a cluster that really is here.
           </p>
         ) : (
           <DataTable
@@ -703,7 +703,7 @@ function SiteOverview({
           <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
             On the map
           </h2>
-          <div className="relative h-40 overflow-hidden rounded-lg border border-border">
+          <div className="relative h-60 overflow-hidden rounded-lg border border-border">
             <MiniMap
               className="h-full w-full"
               highlightSiteId={s.id}

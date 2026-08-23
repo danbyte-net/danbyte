@@ -88,8 +88,9 @@ arcs) is reused as a compact **MiniMap** wherever a map helps:
 - an opt-in **Map** dashboard widget (Add widget → *Map*) with an "Open map →"
   corner link;
 - a collapsible strip above the **Circuits** table;
-- an **"On the map"** locator on each site's overview (that site highlighted,
-  only its connections drawn);
+- an **"On the map"** locator on site and location overviews (the site
+  highlighted; every arc and cable drawn, framed on the site and its direct
+  peers);
 - a **Location** card on each placed device's page - the device centered, with
   **Site map** and **Floor plan** jump-off buttons.
 

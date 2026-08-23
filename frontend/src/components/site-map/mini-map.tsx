@@ -138,7 +138,11 @@ export function MiniMap({
     // lines into a chip hide); unstacked = density scaling shrinks crowded
     // markers instead.
     const stacking = stackingEnabled()
-    const group = createMarkerGroup({ cluster: stacking, mini: true, radius: 40 })
+    const group = createMarkerGroup({
+      cluster: stacking,
+      mini: true,
+      radius: 40,
+    })
 
     const placedSites = data.sites.filter((s) => s.latitude !== null)
     // `onlyConnectionsOf` scopes the CONNECTIONS and the initial framing to
@@ -148,18 +152,24 @@ export function MiniMap({
     // revealed an empty world).
     const sitesToShow = placedSites
 
-    // connection arcs
-    let conns = connQ.data?.connections ?? []
-    if (onlyConnectionsOf)
-      conns = conns.filter(
-        (c) =>
-          c.site_a.id === onlyConnectionsOf || c.site_z.id === onlyConnectionsOf
-      )
-    // Frame the view on the scoped site + its connection peers.
+    // Connection arcs: draw them ALL - like the drawn cables below, the rest
+    // of the estate's circuits/tunnels stay visible when zooming out from a
+    // site page (this once filtered the arcs to the scoped site, so a site
+    // with no circuit of its own showed cable lines but no arcs at all).
+    // `onlyConnectionsOf` scopes only the initial FRAMING to the site + its
+    // direct connection peers.
+    const conns = connQ.data?.connections ?? []
+    const own = onlyConnectionsOf
+      ? conns.filter(
+          (c) =>
+            c.site_a.id === onlyConnectionsOf ||
+            c.site_z.id === onlyConnectionsOf
+        )
+      : conns
     const frameIds = onlyConnectionsOf
       ? new Set([
           onlyConnectionsOf,
-          ...conns.flatMap((c) => [c.site_a.id, c.site_z.id]),
+          ...own.flatMap((c) => [c.site_a.id, c.site_z.id]),
         ])
       : null
     buildConnectionsLayer(conns, () => {}).group.eachLayer((l) =>

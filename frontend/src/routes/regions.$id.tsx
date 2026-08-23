@@ -190,7 +190,7 @@ function RegionOverview({ region: r }: { region: Region }) {
           <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
             Boundary
           </h2>
-          <div className="relative h-64 overflow-hidden rounded-lg border border-border">
+          <div className="relative h-96 overflow-hidden rounded-lg border border-border">
             <MiniMap
               className="h-full w-full"
               boundary={{ geometry: r.boundary, color: r.color }}

@@ -21,6 +21,7 @@ import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { LocationDeleteDialog } from "@/components/location-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { MiniMap } from "@/components/site-map/mini-map"
 import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -326,6 +327,27 @@ function LocationOverview({
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Details" rows={details} />
+        {l.site && (
+          <section>
+            <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+              On the map
+            </h2>
+            <div className="relative h-60 overflow-hidden rounded-lg border border-border">
+              <MiniMap
+                className="h-full w-full"
+                highlightSiteId={l.site.id}
+                onlyConnectionsOf={l.site.id}
+              />
+              <Link
+                to="/site-map"
+                className="absolute right-2 bottom-2 z-[500] rounded-md border border-border bg-background/85 px-2 py-1 text-[11px] backdrop-blur hover:bg-background"
+                title="Open the Site map"
+              >
+                Open map →
+              </Link>
+            </div>
+          </section>
+        )}
       </div>
       <ObjectImages apiBase={`/api/locations/${l.id}`} objectType="location" />
     </div>
