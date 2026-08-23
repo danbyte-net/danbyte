@@ -31,24 +31,35 @@ class AuditSiteBackfillMigrationTests(TransactionTestCase):
         executor.migrate([self.migrate_from])
         old_apps = executor.loader.project_state([self.migrate_from]).apps
 
-        org = Organization.objects.create(name="Migration Org", slug="migration-org")
-        self.tenant = Tenant.objects.create(
-            org=org, name="Migration Tenant", slug="migration-tenant"
-        )
-        self.site = Site.objects.create(tenant=self.tenant, name="Migration Site")
-        DeploymentSettings.objects.update_or_create(
-            pk=1, defaults={"enhanced_site_separation": False}
-        )
-        TenantSettings.objects.create(
-            tenant=self.tenant,
-            override_separation=True,
-            enhanced_site_separation=True,
-        )
-        device_type = DeviceType.objects.create(
-            tenant=self.tenant,
-            name="Local catalog",
-            owning_site=self.site,
-        )
+        # The audit table is rolled back to 0006 here, but these fixture
+        # creates run the LIVE signal, whose model writes columns added by
+        # later migrations (e.g. 0010's `via`). Suspend capture - the test
+        # seeds its own old-schema entries below.
+        from .context import suspended
+
+        with suspended():
+            org = Organization.objects.create(
+                name="Migration Org", slug="migration-org"
+            )
+            self.tenant = Tenant.objects.create(
+                org=org, name="Migration Tenant", slug="migration-tenant"
+            )
+            self.site = Site.objects.create(
+                tenant=self.tenant, name="Migration Site"
+            )
+            DeploymentSettings.objects.update_or_create(
+                pk=1, defaults={"enhanced_site_separation": False}
+            )
+            TenantSettings.objects.create(
+                tenant=self.tenant,
+                override_separation=True,
+                enhanced_site_separation=True,
+            )
+            device_type = DeviceType.objects.create(
+                tenant=self.tenant,
+                name="Local catalog",
+                owning_site=self.site,
+            )
 
         OldChange = old_apps.get_model("audit", "ChangeLogEntry")
         OldJournal = old_apps.get_model("audit", "JournalEntry")
@@ -89,6 +100,10 @@ class AuditSiteBackfillMigrationTests(TransactionTestCase):
 
         executor = MigrationExecutor(connection)
         executor.migrate([self.migrate_to])
+        # Assertions must read through the 0007-state models: the live model
+        # selects columns from later migrations (0010's `via`) that don't
+        # exist at this point of the history.
+        self.apps_at_to = executor.loader.project_state([self.migrate_to]).apps
 
     def tearDown(self):
         executor = MigrationExecutor(connection)
@@ -96,20 +111,22 @@ class AuditSiteBackfillMigrationTests(TransactionTestCase):
         super().tearDown()
 
     def test_forward_migration_fails_closed_and_backfills_local_catalogs(self):
+        Change = self.apps_at_to.get_model("audit", "ChangeLogEntry")
+        Journal = self.apps_at_to.get_model("audit", "JournalEntry")
         self.assertEqual(
-            ChangeLogEntry.objects.get(pk=self.deleted_change_id).object_site_id,
+            Change.objects.get(pk=self.deleted_change_id).object_site_id,
             UNKNOWN_SITE,
         )
         self.assertEqual(
-            JournalEntry.objects.get(pk=self.deleted_journal_id).object_site_id,
+            Journal.objects.get(pk=self.deleted_journal_id).object_site_id,
             UNKNOWN_SITE,
         )
         self.assertEqual(
-            ChangeLogEntry.objects.get(pk=self.catalog_change_id).object_site_id,
+            Change.objects.get(pk=self.catalog_change_id).object_site_id,
             self.site.id,
         )
         self.assertEqual(
-            JournalEntry.objects.get(pk=self.catalog_journal_id).object_site_id,
+            Journal.objects.get(pk=self.catalog_journal_id).object_site_id,
             self.site.id,
         )
 
