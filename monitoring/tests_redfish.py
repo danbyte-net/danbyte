@@ -238,3 +238,55 @@ class RedfishApiTests(_Base):
             f"/api/monitoring/devices/{foreign.id}/redfish/"
         )
         self.assertEqual(resp.status_code, 404)
+
+
+class RedfishCredentialTests(APITestCase):
+    """The stored account is shown; the password never is, and changing one
+    doesn't clobber the other (#84)."""
+
+    def setUp(self):
+        from core.models import Organization, Tenant
+        from api.models import Device
+
+        self.org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(
+            org=self.org, name="Acme", slug="acme"
+        )
+        self.admin = User.objects.create_superuser("root", "r@a.c", "pw")
+        self.client.force_login(self.admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        self.device = Device.objects.create(tenant=self.tenant, name="srv-1")
+        self.url = f"/api/monitoring/devices/{self.device.id}/redfish/"
+
+    def test_username_is_returned_password_is_not(self):
+        r = self.client.put(
+            self.url,
+            {"host": "10.0.0.9", "username": "bmcadmin", "password": "s3cret"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        body = self.client.get(self.url).json()
+        self.assertEqual(body["username"], "bmcadmin")
+        self.assertTrue(body["has_credentials"])
+        self.assertNotIn("password", body)
+        self.assertNotIn("s3cret", str(body))
+
+    def test_changing_the_username_keeps_the_stored_password(self):
+        self.client.put(
+            self.url,
+            {"host": "10.0.0.9", "username": "old", "password": "keepme"},
+            format="json",
+        )
+        r = self.client.put(
+            self.url,
+            {"host": "10.0.0.9", "username": "new", "password": ""},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        from monitoring.models import RedfishEndpoint
+
+        ep = RedfishEndpoint.objects.get(device=self.device)
+        self.assertEqual(ep.secret_params["username"], "new")
+        self.assertEqual(ep.secret_params["password"], "keepme")

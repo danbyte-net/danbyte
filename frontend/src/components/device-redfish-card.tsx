@@ -26,6 +26,8 @@ interface RedfishState {
   verify_tls?: boolean
   enabled?: boolean
   has_credentials: boolean
+  /** The stored BMC account (the password is never returned). */
+  username?: string
   data: {
     system?: { manufacturer?: string; model?: string; health?: string }
     drives?: RedfishPart[]
@@ -65,6 +67,9 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
     setHost(q.data.host ?? "")
     setPort(String(q.data.port ?? 443))
     setVerifyTls(!!q.data.verify_tls)
+    // Show which account is configured - "reachable" told you the stored
+    // credentials work but not whose they are (#84).
+    setUsername(q.data.username ?? "")
   }, [q.data])
 
   const invalidateHardware = () => {
@@ -80,8 +85,12 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
         port: Number(port) || 443,
         verify_tls: verifyTls,
       }
-      // Credentials only travel when typed - blank means "keep stored".
-      if (username || password) {
+      // The username is pre-filled from the server, so "typed something"
+      // no longer means "changed something": send the pair when the password
+      // was entered or the account was edited. A blank password with an
+      // unchanged username still means "keep the stored one".
+      const userChanged = username !== (q.data?.username ?? "")
+      if (password || userChanged) {
         payload.username = username
         payload.password = password
       }
@@ -225,10 +234,7 @@ export function DeviceRedfishCard({ deviceId }: { deviceId: string }) {
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field
-                label="Username"
-                hint={s?.has_credentials ? "blank = keep stored" : undefined}
-              >
+              <Field label="Username">
                 <Input
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}

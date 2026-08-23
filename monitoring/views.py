@@ -2572,6 +2572,10 @@ def _redfish_payload(ep):
         "enabled": ep.enabled,
         "timeout_ms": ep.timeout_ms,
         "has_credentials": bool(ep.secret_params),
+        # The account is not the secret - without it you can see that BMC
+        # auth works but not which login it uses (#84). The password stays
+        # write-only.
+        "username": (ep.secret_params or {}).get("username", ""),
         "data": ep.data or {},
         "reachable": ep.reachable,
         "error": ep.error,
@@ -2647,11 +2651,19 @@ def device_redfish_view(request, device_id):
         ep.enabled = bool(request.data["enabled"])
     if "timeout_ms" in request.data:
         ep.timeout_ms = int(request.data["timeout_ms"])
-    # Credentials: sent → replace; omitted → keep.
+    # Credentials: sent → replace; omitted → keep. The two are kept
+    # INDEPENDENT: the form pre-fills the stored username now, so changing
+    # the account with the password box left blank must not wipe the
+    # password - blank still means "keep the stored one".
     if request.data.get("username") is not None or request.data.get("password") is not None:
+        stored = ep.secret_params or {}
+        sent_user = request.data.get("username")
+        sent_pw = request.data.get("password")
         ep.secret_params = {
-            "username": request.data.get("username") or "",
-            "password": request.data.get("password") or "",
+            "username": (
+                sent_user if sent_user is not None else stored.get("username", "")
+            ),
+            "password": sent_pw or stored.get("password", ""),
         }
     ep.save()
     return Response(_redfish_payload(ep))
