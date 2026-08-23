@@ -5,4 +5,4 @@ corresponds to. Bump it when cutting a ``vX.Y.Z`` tag/release; the in-app
 updates check compares it against the configured release repo.
 """
 
-__version__ = "0.13.0"
+__version__ = "0.14.0"
