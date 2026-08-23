@@ -213,6 +213,17 @@ function AuditLogPage() {
         <DataTable
           data={rows}
           columns={columns}
+          // The table holds one 50-row page; an audit export must not be
+          // silently truncated to it.
+          exportAll={async () => {
+            const all = new URLSearchParams(params)
+            all.set("page", "1")
+            all.set("page_size", "10000")
+            const r = await api<Paginated<ChangeLogEntry>>(
+              `/api/changelog/?${all}`
+            )
+            return r.results
+          }}
           flexColumn="object"
           tableId="audit-log"
           exportName="audit-log"

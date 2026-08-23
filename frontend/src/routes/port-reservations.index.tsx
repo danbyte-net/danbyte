@@ -56,7 +56,7 @@ function PortReservationsPage() {
       api(`/api/port-reservations/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
       toast.success("Reservation released")
-      qc.invalidateQueries({ queryKey: ["port-reservations"] })
+      qc.invalidateQueries() // port tables and faceplates change too
     },
     onError: (e) => apiErrorToast(e, "Could not release the reservation"),
   })
@@ -70,7 +70,7 @@ function PortReservationsPage() {
     onSuccess: (n) => {
       toast.success(`Released ${n} reservation${n === 1 ? "" : "s"}`)
       setSel([])
-      qc.invalidateQueries({ queryKey: ["port-reservations"] })
+      qc.invalidateQueries() // port tables and faceplates change too
     },
     onError: (e) => apiErrorToast(e, "Could not release the reservations"),
   })

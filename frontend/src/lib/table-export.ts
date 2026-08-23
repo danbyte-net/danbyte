@@ -348,10 +348,15 @@ function printHtml(html: string) {
 export function exportTable<T>(
   table: Table<T>,
   format: ExportFormat,
-  opts: ExportOptions
+  opts: ExportOptions,
+  /** Rows to export instead of the table's own. Server-paginated tables pass
+   * the full filtered set - otherwise the file silently holds one page. */
+  allRows?: T[]
 ) {
   const columns = exportColumns(table)
-  const rows = exportRows(table, columns)
+  const rows = allRows
+    ? allRows.map((r) => columns.map((c) => coerce(c.get(r, () => undefined))))
+    : exportRows(table, columns)
   if (format === "csv") {
     downloadBlob(
       `${opts.name}.csv`,

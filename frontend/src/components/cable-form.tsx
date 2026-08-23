@@ -161,7 +161,7 @@ export function CableForm({
       qc.invalidateQueries({ queryKey: ["device-rear-ports"] })
       qc.invalidateQueries({ queryKey: ["device-front-ports"] })
       qc.invalidateQueries({ queryKey: ["port-reservations"] })
-      qc.invalidateQueries({ queryKey: ["port-utilization"] })
+      qc.invalidateQueries({ queryKey: ["device-port-utilization"] })
       qc.invalidateQueries({ queryKey: ["port-utilization-rollup"] })
       toast.success(isEdit ? "Cable updated" : "Cable created")
       onSaved(saved)

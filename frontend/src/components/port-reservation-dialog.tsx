@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { TimeCell } from "@/components/cells/time-ago"
+import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import {
   Tooltip,
@@ -245,11 +246,18 @@ export function PortReservationDialog({
   onClose: () => void
 }) {
   const qc = useQueryClient()
+  const { canDo } = useMe()
   const [note, setNote] = useState("")
 
+  // Keyed on the TARGET's identity, not the object: callers build the target
+  // literal every render, so depending on the object discarded whatever the
+  // user was typing whenever the parent re-rendered (a refetch was enough).
+  const targetKey = target ? `${target.kind}:${target.id}` : ""
+  const heldId = target?.reservation?.id ?? ""
   useEffect(() => {
     setNote(target?.reservation?.note ?? "")
-  }, [target])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetKey, heldId])
 
   const done = (msg: string) => {
     toast.success(msg)
@@ -297,6 +305,8 @@ export function PortReservationDialog({
   })
 
   const existing = target?.reservation ?? null
+  const canWrite = canDo("portreservation", existing ? "change" : "add")
+  const canRelease = canDo("portreservation", "delete")
 
   return (
     <Dialog open={target !== null} onOpenChange={(o) => !o && onClose()}>
@@ -317,6 +327,7 @@ export function PortReservationDialog({
         <Field label="Note">
           <Input
             value={note}
+            disabled={!canWrite}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Who or what this port is for"
             maxLength={200}
@@ -335,30 +346,36 @@ export function PortReservationDialog({
           </Button>
           {existing ? (
             <>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={release.isPending}
-                onClick={() => release.mutate()}
-              >
-                {release.isPending ? "Releasing…" : "Release"}
-              </Button>
-              <Button
-                size="sm"
-                disabled={rename.isPending || note === existing.note}
-                onClick={() => rename.mutate()}
-              >
-                {rename.isPending ? "Saving…" : "Save"}
-              </Button>
+              {canRelease && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={release.isPending}
+                  onClick={() => release.mutate()}
+                >
+                  {release.isPending ? "Releasing…" : "Release"}
+                </Button>
+              )}
+              {canWrite && (
+                <Button
+                  size="sm"
+                  disabled={rename.isPending || note === existing.note}
+                  onClick={() => rename.mutate()}
+                >
+                  {rename.isPending ? "Saving…" : "Save"}
+                </Button>
+              )}
             </>
           ) : (
-            <Button
-              size="sm"
-              disabled={reserve.isPending}
-              onClick={() => reserve.mutate()}
-            >
-              {reserve.isPending ? "Reserving…" : "Reserve"}
-            </Button>
+            canWrite && (
+              <Button
+                size="sm"
+                disabled={reserve.isPending}
+                onClick={() => reserve.mutate()}
+              >
+                {reserve.isPending ? "Reserving…" : "Reserve"}
+              </Button>
+            )
           )}
         </DialogFooter>
       </DialogContent>

@@ -214,6 +214,28 @@ class PortReservationTests(APITestCase):
             PortReservation.objects.get().site_id, site.id
         )
 
+    def test_marking_connected_releases_the_hold(self):
+        """Both states at once used to hide every row action that could undo
+        either - a port could be stuck reserved AND marked."""
+        self._reserve()
+        r = self.client.patch(
+            f"/api/interfaces/{self.iface.id}/",
+            {"mark_connected": True},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(PortReservation.objects.count(), 0)
+
+    def test_bulk_mark_connected_releases_holds(self):
+        self._reserve()
+        r = self.client.post(
+            "/api/interfaces/bulk-update/",
+            {"ids": [str(self.iface.id)], "fields": {"mark_connected": True}},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(PortReservation.objects.count(), 0)
+
     def test_interface_serializer_exposes_reservation(self):
         self._reserve(note="hold")
         r = self.client.get(f"/api/interfaces/?device={self.dev.id}")

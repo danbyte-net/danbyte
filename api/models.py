@@ -3332,6 +3332,29 @@ class CableTermination(TimestampedModel):
         return f"{self.cable_id}/{self.end}: {self.point}"
 
 
+def release_reservations_for(model, pks) -> int:
+    """Drop any hold on these ports - used when they are marked connected.
+    A port can't be both "a cable is already in here" and "keep this free
+    for me"; leaving both set hid every row action that could undo either."""
+    field = {
+        "interface": "interface",
+        "frontport": "front_port",
+        "rearport": "rear_port",
+        "consoleport": "console_port",
+        "consoleserverport": "console_server_port",
+        "powerport": "power_port",
+        "poweroutlet": "power_outlet",
+        "powerfeed": "power_feed",
+        "auxport": "aux_port",
+    }.get(model._meta.model_name)
+    if not field or not pks:
+        return 0
+    deleted, _ = PortReservation.objects.filter(
+        **{f"{field}__in": list(pks)}
+    ).delete()
+    return deleted
+
+
 def _is_planned(termination) -> bool:
     """The cable this termination belongs to is merely planned."""
     cable = getattr(termination, "cable", None)

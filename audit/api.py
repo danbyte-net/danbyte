@@ -427,7 +427,9 @@ class ChangeLogViewSet(viewsets.ReadOnlyModelViewSet):
                 qs = qs.filter(**{key: v})
         user = p.get("user")
         if user:
-            qs = qs.filter(user_name__icontains=user)
+            # The filter is a dropdown of exact actor names now - a substring
+            # match made "admin" also return "administrator"'s rows.
+            qs = qs.filter(user_name=user)
         search = p.get("search")
         if search:
             qs = qs.filter(object_repr__icontains=search)

@@ -654,6 +654,11 @@ class ComponentBulkMixin(FieldWriteAllowList):
             updated = qs.update(**updates) if updates else qs.count()
             if updates:
                 log_bulk_update(_rows, updates)
+            # Marking ports connected fulfils any hold on them.
+            if updates.get("mark_connected"):
+                from .models import release_reservations_for
+
+                release_reservations_for(qs.model, [r.pk for r in _rows])
             if self.bulk_tags:
                 apply_and_log_bulk_tags(
                     qs,

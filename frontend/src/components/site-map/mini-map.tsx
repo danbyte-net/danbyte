@@ -269,11 +269,15 @@ export function MiniMap({
     // focused device sits inside a cluster (stacked coordinates), zoom or
     // spiderfy until its pin is actually the thing with the ring on it.
     const reveal = focusMarker
-    setTimeout(() => {
+    // Cleared on re-run: without this the timer fired after the next draw
+    // had already removed this group, and zoomToRevealMarker dereferenced a
+    // detached layer (TypeError, and the reveal never happened).
+    const revealTimer = window.setTimeout(() => {
       map.invalidateSize()
       if (reveal && !(reveal as unknown as { _icon?: HTMLElement })._icon)
         zoomToRevealMarker(group, reveal)
     }, 100)
+    return () => window.clearTimeout(revealTimer)
   }, [
     data,
     connQ.data,

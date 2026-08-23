@@ -216,7 +216,7 @@ export function DevicePortsPane({
                     canReserve={canReserve}
                   />
                 )}
-                {!row.original.reservation && (
+                {
                   <MarkConnectedToggle
                     endpoint="/api/rear-ports/"
                     portId={row.original.id}
@@ -224,7 +224,7 @@ export function DevicePortsPane({
                     marked={!!row.original.mark_connected}
                     canEdit={canEditRear}
                   />
-                )}
+                }
               </>
             )}
             {canEditRear && (
@@ -372,7 +372,7 @@ export function DevicePortsPane({
                     canReserve={canReserve}
                   />
                 )}
-                {!row.original.reservation && (
+                {
                   <MarkConnectedToggle
                     endpoint="/api/front-ports/"
                     portId={row.original.id}
@@ -380,7 +380,7 @@ export function DevicePortsPane({
                     marked={!!row.original.mark_connected}
                     canEdit={canEditFront}
                   />
-                )}
+                }
               </>
             )}
             {canEditFront && (

@@ -117,20 +117,28 @@ export function RearPortForm({
         })
       ).then(({ last, count }) => ({ saved: last, count }))
     },
-    onSuccess: ({ saved, count }) => {
-      // The hold is its own API object riding alongside the port row;
-      // fan-out creates skip it - a reservation names ONE real port.
+    onSuccess: async ({ saved, count }) => {
+      // The hold is its own API object riding alongside the port row.
+      // Awaited (not fire-and-forget) so the invalidations below can't race
+      // it - a reservation written after the refetch left the row looking
+      // unchanged until the cache went stale.
       if (count === 1 && !isPlanning && !saved.cable && !markConnected) {
-        void syncPortReservation({
-          kind: "rear_port",
-          portId: saved.id,
-          existing: port?.reservation ?? null,
-          reserved,
-          note: reserveNote.trim(),
-        }).catch((err) =>
-          apiErrorToast(err, "Could not update the reservation")
-        )
+        try {
+          await syncPortReservation({
+            kind: "rear_port",
+            portId: saved.id,
+            existing: port?.reservation ?? null,
+            reserved,
+            note: reserveNote.trim(),
+          })
+        } catch (err) {
+          apiErrorToast(err, "Saved, but the reservation didn't update")
+        }
       }
+      // The faceplate paints ports from their cable state, so it goes stale
+      // on a reservation change too.
+      qc.invalidateQueries({ queryKey: ["device-face-ports"] })
+      qc.invalidateQueries({ queryKey: ["port-reservations"] })
       qc.invalidateQueries({ queryKey: ["device-rear-ports", deviceId] })
       qc.invalidateQueries({ queryKey: ["rear-ports-picker", deviceId] })
       toast.success(

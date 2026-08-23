@@ -89,6 +89,9 @@ interface DataTableProps<T> {
   /** Hide the Export menu (CSV / HTML / Print). Export is on by default for
    * every table; opt out for trivial/embedded tables. */
   enableExport?: boolean
+  /** Fetch every row the current filters match, for export. Server-paginated
+   * tables must supply this or the download holds only the visible page. */
+  exportAll?: () => Promise<T[]>
   /** File base name for exports. Defaults to `tableId` or "export". */
   exportName?: string
   /** Heading shown on the exported HTML / print page. Defaults to the file
@@ -147,6 +150,7 @@ export function DataTable<T>({
   tableId,
   striped,
   enableExport = true,
+  exportAll,
   exportName,
   exportTitle,
   rowClassName,
@@ -419,11 +423,20 @@ export function DataTable<T>({
                         key={fmt}
                         onSelect={() => {
                           const base = exportName || tableId || "export"
-                          exportTable(table, fmt, {
+                          const opts = {
                             name: base,
                             title: exportTitle || prettifyName(base),
                             generatedAt: new Date().toLocaleString(),
-                          })
+                          }
+                          // A selection always wins; otherwise a server-paged
+                          // table exports everything its filters match.
+                          if (exportAll && selectedCount === 0) {
+                            void exportAll().then((rows) =>
+                              exportTable(table, fmt, opts, rows)
+                            )
+                            return
+                          }
+                          exportTable(table, fmt, opts)
                         }}
                       >
                         {label}

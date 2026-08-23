@@ -35,7 +35,7 @@ from .models import (
     TopologyView,
     Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
     NumIdMixin, Platform, PlatformGroup, PortReservation,
-    retire_port_placeholders, weight_kg,
+    release_reservations_for, retire_port_placeholders, weight_kg,
     ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
@@ -2390,6 +2390,14 @@ def _point_reservation(point):
 
 
 class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+    def update(self, instance, validated_data):
+        obj = super().update(instance, validated_data)
+        # A port marked connected can't also be held for later - the mark
+        # says a cable is already in it, which fulfils the hold.
+        if validated_data.get("mark_connected"):
+            release_reservations_for(type(obj), [obj.pk])
+        return obj
+
     device = DeviceMiniSerializer(read_only=True)
     vlan = VLANMiniSerializer(read_only=True)
     tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
@@ -2631,6 +2639,14 @@ class RearPortMiniSerializer(NumIdModelSerializer):
 
 
 class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+    def update(self, instance, validated_data):
+        obj = super().update(instance, validated_data)
+        # A port marked connected can't also be held for later - the mark
+        # says a cable is already in it, which fulfils the hold.
+        if validated_data.get("mark_connected"):
+            release_reservations_for(type(obj), [obj.pk])
+        return obj
+
     device = DeviceMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     cable = serializers.SerializerMethodField()
@@ -2693,6 +2709,14 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
 
 class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+    def update(self, instance, validated_data):
+        obj = super().update(instance, validated_data)
+        # A port marked connected can't also be held for later - the mark
+        # says a cable is already in it, which fulfils the hold.
+        if validated_data.get("mark_connected"):
+            release_reservations_for(type(obj), [obj.pk])
+        return obj
+
     device = DeviceMiniSerializer(read_only=True)
     rear_port = RearPortMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)

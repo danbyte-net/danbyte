@@ -577,7 +577,10 @@ export function buildInterfaceActionsColumn<T extends Interface>(
                     canReserve={canReserve}
                   />
                 )}
-                {!iface.reservation && (
+                {/* Always available on an uncabled port: if a row ever
+                    carries both the mark and a hold, this is how you get
+                    out of it. */}
+                {
                   <MarkConnectedToggle
                     endpoint="/api/interfaces/"
                     portId={iface.id}
@@ -585,7 +588,7 @@ export function buildInterfaceActionsColumn<T extends Interface>(
                     marked={iface.mark_connected}
                     canEdit={canEdit}
                   />
-                )}
+                }
               </>
             )
           )}

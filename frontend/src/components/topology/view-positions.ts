@@ -24,7 +24,11 @@ export function migratePositions(raw: unknown, style: NodeStyle): PosByStyle {
   if (!raw || typeof raw !== "object") return {}
   const obj = raw as Record<string, unknown>
   const isNew = POSITION_STYLES.some((k) => k in obj)
-  return isNew ? (obj as PosByStyle) : { [style]: obj as PosMap }
+  if (isNew) return obj as PosByStyle
+  // Logical owns no arrangement: stamping a legacy map under "logical" made
+  // every later Save-as POST a 400 for anyone who last used that tab.
+  if (!POSITION_STYLES.includes(style)) return {}
+  return { [style]: obj as PosMap }
 }
 
 /** A saved view's arrangements. Views written before the split carry one map
