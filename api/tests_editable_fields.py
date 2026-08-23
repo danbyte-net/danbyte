@@ -210,6 +210,7 @@ class BulkAgreementTests(_Base):
         samples = {
             "enabled": False,
             "mgmt_only": True,
+            "mark_connected": True,
             "mtu": 9000,
             "description": "planned",
             "speed": "10000",
