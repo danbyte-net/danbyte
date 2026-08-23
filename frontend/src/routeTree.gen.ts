@@ -39,6 +39,7 @@ import { Route as ProviderNetworksRouteImport } from './routes/provider-networks
 import { Route as PrefixesRouteImport } from './routes/prefixes'
 import { Route as PowerPanelsRouteImport } from './routes/power-panels'
 import { Route as PowerFeedsRouteImport } from './routes/power-feeds'
+import { Route as PortUtilizationRouteImport } from './routes/port-utilization'
 import { Route as PermissionsRouteImport } from './routes/permissions'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MonitoringEnginesRouteImport } from './routes/monitoring-engines'
@@ -118,6 +119,7 @@ import { Route as ProviderNetworksIndexRouteImport } from './routes/provider-net
 import { Route as PrefixesIndexRouteImport } from './routes/prefixes.index'
 import { Route as PowerPanelsIndexRouteImport } from './routes/power-panels.index'
 import { Route as PowerFeedsIndexRouteImport } from './routes/power-feeds.index'
+import { Route as PortReservationsIndexRouteImport } from './routes/port-reservations.index'
 import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
 import { Route as PlanningIndexRouteImport } from './routes/planning.index'
@@ -563,6 +565,11 @@ const PowerFeedsRoute = PowerFeedsRouteImport.update({
   path: '/power-feeds',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortUtilizationRoute = PortUtilizationRouteImport.update({
+  id: '/port-utilization',
+  path: '/port-utilization',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PermissionsRoute = PermissionsRouteImport.update({
   id: '/permissions',
   path: '/permissions',
@@ -958,6 +965,11 @@ const PowerFeedsIndexRoute = PowerFeedsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PowerFeedsRoute,
+} as any)
+const PortReservationsIndexRoute = PortReservationsIndexRouteImport.update({
+  id: '/port-reservations/',
+  path: '/port-reservations/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PlatformsIndexRoute = PlatformsIndexRouteImport.update({
   id: '/platforms/',
@@ -2477,6 +2489,7 @@ export interface FileRoutesByFullPath {
   '/monitoring-engines': typeof MonitoringEnginesRoute
   '/notifications': typeof NotificationsRoute
   '/permissions': typeof PermissionsRouteWithChildren
+  '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
   '/prefixes': typeof PrefixesRouteWithChildren
@@ -2730,6 +2743,7 @@ export interface FileRoutesByFullPath {
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
+  '/port-reservations/': typeof PortReservationsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
   '/prefixes/': typeof PrefixesIndexRoute
@@ -2852,6 +2866,7 @@ export interface FileRoutesByTo {
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
   '/notifications': typeof NotificationsRoute
+  '/port-utilization': typeof PortUtilizationRoute
   '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
   '/set-password': typeof SetPasswordRoute
@@ -3079,6 +3094,7 @@ export interface FileRoutesByTo {
   '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
   '/platforms': typeof PlatformsIndexRoute
+  '/port-reservations': typeof PortReservationsIndexRoute
   '/power-feeds': typeof PowerFeedsIndexRoute
   '/power-panels': typeof PowerPanelsIndexRoute
   '/prefixes': typeof PrefixesIndexRoute
@@ -3232,6 +3248,7 @@ export interface FileRoutesById {
   '/monitoring-engines': typeof MonitoringEnginesRoute
   '/notifications': typeof NotificationsRoute
   '/permissions': typeof PermissionsRouteWithChildren
+  '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
   '/prefixes': typeof PrefixesRouteWithChildren
@@ -3485,6 +3502,7 @@ export interface FileRoutesById {
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
   '/platforms/': typeof PlatformsIndexRoute
+  '/port-reservations/': typeof PortReservationsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
   '/prefixes/': typeof PrefixesIndexRoute
@@ -3639,6 +3657,7 @@ export interface FileRouteTypes {
     | '/monitoring-engines'
     | '/notifications'
     | '/permissions'
+    | '/port-utilization'
     | '/power-feeds'
     | '/power-panels'
     | '/prefixes'
@@ -3892,6 +3911,7 @@ export interface FileRouteTypes {
     | '/planning/'
     | '/platform-groups/'
     | '/platforms/'
+    | '/port-reservations/'
     | '/power-feeds/'
     | '/power-panels/'
     | '/prefixes/'
@@ -4014,6 +4034,7 @@ export interface FileRouteTypes {
     | '/monitoring'
     | '/monitoring-engines'
     | '/notifications'
+    | '/port-utilization'
     | '/saved-filters'
     | '/search'
     | '/set-password'
@@ -4241,6 +4262,7 @@ export interface FileRouteTypes {
     | '/planning'
     | '/platform-groups'
     | '/platforms'
+    | '/port-reservations'
     | '/power-feeds'
     | '/power-panels'
     | '/prefixes'
@@ -4393,6 +4415,7 @@ export interface FileRouteTypes {
     | '/monitoring-engines'
     | '/notifications'
     | '/permissions'
+    | '/port-utilization'
     | '/power-feeds'
     | '/power-panels'
     | '/prefixes'
@@ -4646,6 +4669,7 @@ export interface FileRouteTypes {
     | '/planning/'
     | '/platform-groups/'
     | '/platforms/'
+    | '/port-reservations/'
     | '/power-feeds/'
     | '/power-panels/'
     | '/prefixes/'
@@ -4799,6 +4823,7 @@ export interface RootRouteChildren {
   MonitoringEnginesRoute: typeof MonitoringEnginesRoute
   NotificationsRoute: typeof NotificationsRoute
   PermissionsRoute: typeof PermissionsRouteWithChildren
+  PortUtilizationRoute: typeof PortUtilizationRoute
   PowerFeedsRoute: typeof PowerFeedsRouteWithChildren
   PowerPanelsRoute: typeof PowerPanelsRouteWithChildren
   PrefixesRoute: typeof PrefixesRouteWithChildren
@@ -4891,6 +4916,7 @@ export interface RootRouteChildren {
   PlanningIndexRoute: typeof PlanningIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
+  PortReservationsIndexRoute: typeof PortReservationsIndexRoute
   RackRolesIndexRoute: typeof RackRolesIndexRoute
   RacksIndexRoute: typeof RacksIndexRoute
   ServiceTemplatesIndexRoute: typeof ServiceTemplatesIndexRoute
@@ -5132,6 +5158,13 @@ declare module '@tanstack/react-router' {
       path: '/power-feeds'
       fullPath: '/power-feeds'
       preLoaderRoute: typeof PowerFeedsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/port-utilization': {
+      id: '/port-utilization'
+      path: '/port-utilization'
+      fullPath: '/port-utilization'
+      preLoaderRoute: typeof PortUtilizationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/permissions': {
@@ -5686,6 +5719,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/power-feeds/'
       preLoaderRoute: typeof PowerFeedsIndexRouteImport
       parentRoute: typeof PowerFeedsRoute
+    }
+    '/port-reservations/': {
+      id: '/port-reservations/'
+      path: '/port-reservations'
+      fullPath: '/port-reservations/'
+      preLoaderRoute: typeof PortReservationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/platforms/': {
       id: '/platforms/'
@@ -8799,6 +8839,7 @@ const rootRouteChildren: RootRouteChildren = {
   MonitoringEnginesRoute: MonitoringEnginesRoute,
   NotificationsRoute: NotificationsRoute,
   PermissionsRoute: PermissionsRouteWithChildren,
+  PortUtilizationRoute: PortUtilizationRoute,
   PowerFeedsRoute: PowerFeedsRouteWithChildren,
   PowerPanelsRoute: PowerPanelsRouteWithChildren,
   PrefixesRoute: PrefixesRouteWithChildren,
@@ -8891,6 +8932,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlanningIndexRoute: PlanningIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
+  PortReservationsIndexRoute: PortReservationsIndexRoute,
   RackRolesIndexRoute: RackRolesIndexRoute,
   RacksIndexRoute: RacksIndexRoute,
   ServiceTemplatesIndexRoute: ServiceTemplatesIndexRoute,
