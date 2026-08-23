@@ -699,11 +699,13 @@ function SiteOverview({
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Details" rows={details} />
-        <section>
+        {/* Spans both left-column rows (Details + Scope) so the map fills
+            the whole right side down to Images. */}
+        <section className="flex flex-col lg:row-span-2">
           <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
             On the map
           </h2>
-          <div className="relative h-60 overflow-hidden rounded-lg border border-border">
+          <div className="relative min-h-60 flex-1 overflow-hidden rounded-lg border border-border">
             <MiniMap
               className="h-full w-full"
               highlightSiteId={s.id}
