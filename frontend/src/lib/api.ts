@@ -3830,6 +3830,7 @@ export interface SearchResponse {
     sites: SearchHit[]
     tenants: SearchHit[]
     devices: SearchHit[]
+    vms: SearchHit[]
     tags: SearchHit[]
   }
 }
@@ -3845,6 +3846,7 @@ export const SEARCH_GROUPS: Array<{
   { key: "route_targets", label: "Route Targets" },
   { key: "sites", label: "Sites" },
   { key: "devices", label: "Devices" },
+  { key: "vms", label: "Virtual machines" },
   { key: "tags", label: "Tags" },
   { key: "tenants", label: "Tenants" },
 ]

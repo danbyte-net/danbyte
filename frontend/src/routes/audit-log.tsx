@@ -342,26 +342,31 @@ function ChangesCell({ e }: { e: ChangeLogEntry }) {
         {fields.length} field{fields.length === 1 ? "" : "s"}
       </button>
       {open && (
-        <table className="text-[12px]">
-          <tbody>
-            {fields.map(([f, c]) => (
-              <tr key={f}>
-                <td className="py-0.5 pr-4 align-top font-mono text-muted-foreground">
-                  {f}
-                </td>
-                <td className="py-0.5 pr-2 align-top font-mono text-red-600 line-through dark:text-red-400">
-                  <FieldVal value={c.old} label={c.old_label} />
-                </td>
-                <td className="py-0.5 pr-2 align-top text-muted-foreground">
-                  →
-                </td>
-                <td className="py-0.5 align-top font-mono text-emerald-600 dark:text-emerald-400">
-                  <FieldVal value={c.new} label={c.new_label} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        // Values can be whole JSON blobs; wrap them and cap the columns so a
+        // long one can't push the diff past the container (#83). Anything
+        // still too wide scrolls inside its own box, never the page.
+        <div className="max-w-full overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <tbody>
+              {fields.map(([f, c]) => (
+                <tr key={f}>
+                  <td className="py-0.5 pr-4 align-top font-mono break-all text-muted-foreground">
+                    {f}
+                  </td>
+                  <td className="max-w-[22rem] py-0.5 pr-2 align-top font-mono break-all whitespace-pre-wrap text-red-600 line-through dark:text-red-400">
+                    <FieldVal value={c.old} label={c.old_label} />
+                  </td>
+                  <td className="py-0.5 pr-2 align-top text-muted-foreground">
+                    →
+                  </td>
+                  <td className="max-w-[22rem] py-0.5 align-top font-mono break-all whitespace-pre-wrap text-emerald-600 dark:text-emerald-400">
+                    <FieldVal value={c.new} label={c.new_label} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

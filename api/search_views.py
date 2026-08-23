@@ -27,7 +27,9 @@ from rest_framework.response import Response
 
 from core.models import Tag, Tenant
 from auth_api import rbac
-from .models import Device, IPAddress, Prefix, RouteTarget, Site, VLAN, VRF
+from .models import (
+    Device, IPAddress, Prefix, RouteTarget, Site, VLAN, VirtualMachine, VRF,
+)
 from .serializers import TagSerializer
 from .views import _get_active_tenant
 
@@ -72,7 +74,7 @@ def search(request):
     """GET /api/search/?q=<query>&limit=<n>
 
     Returns ``{ q, total, groups: { prefixes, ips, vlans, vrfs,
-    route_targets, sites, tenants, devices, tags } }``. Each group is
+    route_targets, sites, tenants, devices, vms, tags } }``. Each group is
     pre-shaped for the React results table - id, label, sublabel, url -
     so the page can render every section the same way without per-entity
     branches.
@@ -100,6 +102,7 @@ def search(request):
         "sites":         _search_sites(q, u, tenant, limit),
         "tenants":       _search_tenants(q, u, limit),
         "devices":       _search_devices(q, u, tenant, limit),
+        "vms":           _search_vms(q, u, tenant, limit),
         "tags":          _search_tags(q, tenant, limit),
     }
     total = sum(len(g) for g in groups.values())
@@ -287,6 +290,37 @@ def _search_devices(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     ]
 
 
+def _search_vms(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
+    """Virtual machines are first-class objects with their own pages, so
+    global search must find them too (#82 - they were missing while the VM
+    list page's own search worked)."""
+    qs = (
+        rbac.restrict_queryset(
+            VirtualMachine.objects.filter(tenant=tenant).select_related(
+                "cluster", "site"
+            ),
+            user,
+            tenant,
+            "virtualmachine",
+            "view",
+        )
+        .filter(Q(name__icontains=q))
+        .order_by("name")[:limit]
+    )
+    return [
+        {
+            "id": str(v.id),
+            "label": v.name,
+            "sublabel": v.cluster.name if v.cluster_id else (
+                v.site.name if v.site_id else ""
+            ),
+            "extras": {},
+            "url": f"/virtual-machines/{v.id}",
+        }
+        for v in qs
+    ]
+
+
 def _search_tags(q: str, tenant: Tenant, limit: int) -> list[dict]:
     # Tags are tenant-scoped (NULL tenant = deployment-global). Without this
     # filter the search leaked every tenant's tag names/slugs/colors.
@@ -314,5 +348,5 @@ def _empty_groups() -> dict[str, list]:
     return {
         "prefixes": [], "ips": [], "vlans": [], "vrfs": [],
         "route_targets": [], "sites": [], "tenants": [],
-        "devices": [], "tags": [],
+        "devices": [], "vms": [], "tags": [],
     }
