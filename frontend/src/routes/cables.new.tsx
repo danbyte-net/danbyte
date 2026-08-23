@@ -40,7 +40,11 @@ function NewCablePage() {
   // `?ret=` (issue #76): opened from a device tab, save/cancel go back there
   // instead of the cables list - the tab shows the new cable immediately.
   const done = (cableId?: string) => {
-    if (ret) router.history.push(ret)
+    // The port just left whatever cabled-state bucket the caller was
+    // filtered to (reserved/free -> connected), so returning into that
+    // filter would land on a list the port is no longer in.
+    const back = ret ? ret.replace(/([?&])cabled=[^&]*(&|$)/, "$1") : ret
+    if (back) router.history.push(back.replace(/[?&]$/, ""))
     else if (cableId) void nav({ to: "/cables/$id", params: { id: cableId } })
     else void nav({ to: "/cables" })
   }

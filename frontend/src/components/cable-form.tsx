@@ -154,6 +154,15 @@ export function CableForm({
       // `connected` on BOTH ends' markers (2D photo faceplate and 3D room),
       // and this form doesn't know which devices those ports live on.
       qc.invalidateQueries({ queryKey: ["device-face-ports"] })
+      // Same reason, same breadth: cabling a port clears its mark_connected
+      // flag and RELEASES any reservation on it, so the device tabs, the
+      // reservation list and the utilization counts are all stale now.
+      qc.invalidateQueries({ queryKey: ["device-interfaces"] })
+      qc.invalidateQueries({ queryKey: ["device-rear-ports"] })
+      qc.invalidateQueries({ queryKey: ["device-front-ports"] })
+      qc.invalidateQueries({ queryKey: ["port-reservations"] })
+      qc.invalidateQueries({ queryKey: ["port-utilization"] })
+      qc.invalidateQueries({ queryKey: ["port-utilization-rollup"] })
       toast.success(isEdit ? "Cable updated" : "Cable created")
       onSaved(saved)
     },

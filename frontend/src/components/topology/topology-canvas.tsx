@@ -75,7 +75,10 @@ export type NodeStyle = "stencil" | "hierarchy" | "flat"
 /** One member of a Flat-view bundled edge (the underlying cable's data). */
 export type BundleMember = NonNullable<TopoEdge["data"]>
 
-const flatSize = (n: Node) => ({ width: flatW(n.data as { name?: string }), height: FLAT_H })
+const flatSize = (n: Node) => ({
+  width: flatW(n.data as { name?: string }),
+  height: FLAT_H,
+})
 const groupSize = () => ({ width: GROUP_W, height: GROUP_H })
 
 export interface CanvasHandle {
@@ -170,8 +173,7 @@ function hoverLabel(e: Edge): string | undefined {
   if (d.sem === "cable" && d.raw) {
     const r = d.raw
     const bits = [
-      r.cable_label ||
-        (r.cable_numid ? `Cable #${r.cable_numid}` : "Cable"),
+      r.cable_label || (r.cable_numid ? `Cable #${r.cable_numid}` : "Cable"),
     ]
     if (r.cable_type) bits.push(r.cable_type)
     if (r.speed) bits.push(r.speed)
@@ -533,7 +535,8 @@ function build(
       const strokes = new Set(
         b.cables.map((c) => edgeStroke(c, opts.colorMode) ?? "")
       )
-      const stroke = strokes.size === 1 ? [...strokes][0] || undefined : undefined
+      const stroke =
+        strokes.size === 1 ? [...strokes][0] || undefined : undefined
       // In speed mode a bundle that agrees announces the shared speed.
       const speeds = new Set(b.cables.map((c) => c.speed ?? ""))
       const speed =
@@ -619,6 +622,17 @@ function build(
     // Port-anchored routing: a cable bends only to get past a card that
     // stands in its way, and always leaves and arrives at its own port
     // level - never at the card's centre.
+    // Curved skips port-anchored routing here too - one control, one
+    // meaning in every view.
+    if (opts.edgeRouting === "curved")
+      return {
+        nodes: laid,
+        edges: hedges.map((e) => {
+          const sem = (e.data as { sem?: string } | undefined)?.sem
+          if (sem !== "cable") return e
+          return { ...e, type: "default", pathOptions: undefined }
+        }),
+      }
     const hwp = hierarchyWaypoints(laid, hedges, res.portPos)
     const hrouted = hedges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
@@ -676,11 +690,7 @@ function build(
       grouped ? groupSize : flatSize
     )
     const posPre = new Map(pre.nodes.map((n) => [n.id, n.position]))
-    const { edges: sided } = assignSides(
-      allEdges,
-      (id) => posPre.get(id),
-      dir
-    )
+    const { edges: sided } = assignSides(allEdges, (id) => posPre.get(id), dir)
     let outNodes = pre.nodes
     let outEdges = sided
     let wpMap = pre.waypoints
@@ -705,12 +715,12 @@ function build(
         if (!sem || !ROUTABLE.has(sem)) continue
         const sS = sideOf(e.sourceHandle as string | undefined)
         const tS = sideOf(e.targetHandle as string | undefined)
-        ;(perNode.get(e.source) ?? perNode.set(e.source, []).get(e.source)!).push(
-          { e, end: "s", side: sS, order: crossOf(e.target, sS) }
-        )
-        ;(perNode.get(e.target) ?? perNode.set(e.target, []).get(e.target)!).push(
-          { e, end: "t", side: tS, order: crossOf(e.source, tS) }
-        )
+        ;(
+          perNode.get(e.source) ?? perNode.set(e.source, []).get(e.source)!
+        ).push({ e, end: "s", side: sS, order: crossOf(e.target, sS) })
+        ;(
+          perNode.get(e.target) ?? perNode.set(e.target, []).get(e.target)!
+        ).push({ e, end: "t", side: tS, order: crossOf(e.source, tS) })
       }
       const anchorsOf = new Map<string, FlatAnchor[]>()
       const fanH = new Map<string, number>()
@@ -850,6 +860,19 @@ function build(
     levels,
     mainOffsets
   )
+  // Curved: floating point-to-point beziers on the wiring cards - no
+  // channels, no orthogonal bends. The curved branch above only covers the
+  // flat/grouped payloads, so without this the Cables control silently did
+  // nothing in the Wiring view (it fell through to routed).
+  if (opts.edgeRouting === "curved")
+    return {
+      nodes: laid,
+      edges: edges.map((e) => {
+        const sem = (e.data as { sem?: string } | undefined)?.sem
+        if (!sem || !ROUTABLE.has(sem)) return e
+        return { ...e, type: "default", pathOptions: undefined }
+      }),
+    }
   // Route cable edges along the node-avoiding interior bends (the ends snap to
   // the port handles). Skipped in "straight" mode.
   const routeEdges = opts.edgeRouting !== "straight"
@@ -1017,16 +1040,13 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // hide via CSS keyed on the wrapper's data-lod - pure paint, no re-layout,
   // so a big graph reads as clean boxes-and-lines until you zoom in.
   const [lod, setLod] = useState(0)
-  const onMove = useCallback(
-    (_: unknown, vp: { zoom: number }) => {
-      // Cable labels are the map's most useful text - they stay until the
-      // graph is genuinely too small to read, not at the zoom a fitted
-      // fabric happens to land on.
-      const next = vp.zoom < 0.2 ? 2 : vp.zoom < 0.32 ? 1 : 0
-      setLod((cur) => (cur === next ? cur : next))
-    },
-    []
-  )
+  const onMove = useCallback((_: unknown, vp: { zoom: number }) => {
+    // Cable labels are the map's most useful text - they stay until the
+    // graph is genuinely too small to read, not at the zoom a fitted
+    // fabric happens to land on.
+    const next = vp.zoom < 0.2 ? 2 : vp.zoom < 0.32 ? 1 : 0
+    setLod((cur) => (cur === next ? cur : next))
+  }, [])
   // Hover/select emphasis: the active edge thickens, rises, and always
   // carries a full label (synthesized when the resting edge has none - a
   // cable must name itself on hover whatever the view or zoom); every other
@@ -1075,8 +1095,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             ...(isSel ? { stroke: "var(--primary)" } : {}),
           },
         }
-      const offSpot =
-        spotSet && e.source !== spotId && e.target !== spotId
+      const offSpot = spotSet && e.source !== spotId && e.target !== spotId
       return hotEdge || offSpot
         ? {
             ...e,
@@ -1166,7 +1185,18 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       requestAnimationFrame(() =>
         flow.fitView({ padding: 0.15, duration: 300 })
       )
-  }, [built, setNodes, setEdges, layoutTick, positions, direction, routingActive, flow, fitKey, nodeStyle])
+  }, [
+    built,
+    setNodes,
+    setEdges,
+    layoutTick,
+    positions,
+    direction,
+    routingActive,
+    flow,
+    fitKey,
+    nodeStyle,
+  ])
   useEffect(() => {
     prevNodes.current = nodes
   }, [nodes])
@@ -1261,7 +1291,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           }
           const bounds = getNodesBounds(flow.getNodes())
           const w = Math.min(4096, Math.max(800, Math.ceil(bounds.width) + 160))
-          const h = Math.min(4096, Math.max(600, Math.ceil(bounds.height) + 160))
+          const h = Math.min(
+            4096,
+            Math.max(600, Math.ceil(bounds.height) + 160)
+          )
           const vp = getViewportForBounds(bounds, w, h, 0.2, 2, 0.06)
           return await toPng(el, {
             backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
