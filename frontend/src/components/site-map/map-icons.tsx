@@ -27,10 +27,12 @@ export function escapeHtml(s: string): string {
     .replaceAll('"', "&quot;")
 }
 
-function healthRing(check: string | null): string {
+/** Status border: the pin/badge wears its health as a colored ring instead
+ * of a corner dot - unmonitored markers keep the default hairline. */
+function healthRingStyle(check: string | null): string {
   if (!check) return ""
   const c = CHECK_COLOR[check] ?? CHECK_COLOR.unknown
-  return `<span class="sm-health" style="background:${c}"></span>`
+  return `box-shadow:0 0 0 2px ${c},0 1px 2px rgb(0 0 0 / 0.2);`
 }
 
 // A user-supplied color lands inside a style attribute - only let an actual
@@ -41,8 +43,10 @@ export function siteIcon(s: SiteMapSite, opts: IconOpts = {}): L.DivIcon {
   const { selected = false, mini = false } = opts
   const color = s.color && HEX_COLOR.test(s.color) ? s.color : ""
   // A custom pin color gets a white glyph; the default pin keeps the theme's
-  // primary-foreground via CSS.
-  const style = color ? ` style="background:${color};color:#fff"` : ""
+  // primary-foreground via CSS. Health rides the ring, not a dot.
+  const styleBits =
+    (color ? `background:${color};color:#fff;` : "") + healthRingStyle(s.check)
+  const style = styleBits ? ` style="${styleBits}"` : ""
   // Every site pin carries a glyph - the custom icon, or a standard building
   // so a site reads as "a building" at a glance rather than a bare dot.
   const glyph = renderToStaticMarkup(
@@ -57,7 +61,7 @@ export function siteIcon(s: SiteMapSite, opts: IconOpts = {}): L.DivIcon {
     : `<span class="sm-label">${escapeHtml(s.name)}${count}</span>`
   return L.divIcon({
     className: "sm-marker" + (selected ? " sm-sel" : ""),
-    html: `<span class="sm-pin"${style}>${glyph}</span>` + healthRing(s.check) + label,
+    html: `<span class="sm-pin"${style}>${glyph}</span>` + label,
     iconSize: undefined as unknown as L.PointExpression,
     iconAnchor: [14, 14],
   })
@@ -74,10 +78,11 @@ export function deviceIcon(d: SiteMapDevice, opts: IconOpts = {}): L.DivIcon {
   const label = mini
     ? ""
     : `<span class="sm-devlabel" style="left:27px;top:2px">${escapeHtml(d.name)}</span>`
+  const ring = healthRingStyle(d.check)
+  const badgeStyle = ring ? ` style="${ring}"` : ""
   return L.divIcon({
     className: "sm-marker" + (selected ? " sm-sel" : ""),
-    html:
-      `<span class="sm-badge">${badge}</span>${healthRing(d.check)}` + label,
+    html: `<span class="sm-badge"${badgeStyle}>${badge}</span>` + label,
     iconAnchor: [12, 12],
   })
 }

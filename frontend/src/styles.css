@@ -218,11 +218,6 @@
   width: 15px;
   height: 15px;
 }
-/* The health dot rides the pin's top-right corner. */
-.sm-pin + .sm-health {
-  top: -3px;
-  left: 21px;
-}
 .sm-label {
   position: absolute;
   top: 4px;
@@ -391,15 +386,6 @@
   display: inline;
 }
 
-.sm-health {
-  position: absolute;
-  top: -4px;
-  left: 10px;
-  width: 9px;
-  height: 9px;
-  border-radius: 9999px;
-  border: 1.5px solid var(--background);
-}
 
 .sm-vertex {
   display: block;
