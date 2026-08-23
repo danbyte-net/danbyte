@@ -28,7 +28,9 @@ from rest_framework.response import Response
 from core.models import Tag, Tenant
 from auth_api import rbac
 from .models import (
-    Device, IPAddress, Prefix, RouteTarget, Site, VLAN, VirtualMachine, VRF,
+    Circuit, Cluster, Contact, Device, DeviceType, IPAddress, Interface,
+    Location, Manufacturer, Prefix, Provider, Rack, RouteTarget, Site, VLAN,
+    VirtualMachine, VRF,
 )
 from .serializers import TagSerializer
 from .views import _get_active_tenant
@@ -105,6 +107,11 @@ def search(request):
         "vms":           _search_vms(q, u, tenant, limit),
         "tags":          _search_tags(q, tenant, limit),
     }
+    # Everything else people navigate to by name. Declarative because these
+    # differ only in model/fields/URL - the bespoke functions above stay as
+    # they are (their results carry entity-specific shaping).
+    for key, spec in _SIMPLE_GROUPS.items():
+        groups[key] = _search_simple(q, u, tenant, limit, **spec)
     total = sum(len(g) for g in groups.values())
     return Response({"q": q, "total": total, "groups": groups})
 
@@ -321,6 +328,62 @@ def _search_vms(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     ]
 
 
+# key → how to find it. `fields` are icontains-matched; `sub` names the
+# attribute shown under the label; `scope` is the tenant path for models that
+# reach their tenant through a parent (interfaces have no tenant column).
+_SIMPLE_GROUPS: dict[str, dict] = {
+    "locations":    {"model": Location,     "slug": "location",     "fields": ("name", "slug"),          "url": "/locations/{id}",     "sub": "site"},
+    "racks":        {"model": Rack,         "slug": "rack",         "fields": ("name",),                 "url": "/racks/{id}",         "sub": "site"},
+    "clusters":     {"model": Cluster,      "slug": "cluster",      "fields": ("name",),                 "url": "/clusters/{id}",      "sub": "type"},
+    "device_types": {"model": DeviceType,   "slug": "devicetype",   "fields": ("name", "model", "part_number"), "url": "/device-types/{id}", "sub": "manufacturer"},
+    "manufacturers":{"model": Manufacturer, "slug": "manufacturer", "fields": ("name", "slug"),          "url": "/manufacturers/{id}", "sub": None},
+    "circuits":     {"model": Circuit,      "slug": "circuit",      "fields": ("cid",),                  "url": "/circuits/{id}",      "sub": "provider"},
+    "providers":    {"model": Provider,     "slug": "provider",     "fields": ("name", "slug"),          "url": "/providers/{id}",     "sub": None},
+    "contacts":     {"model": Contact,      "slug": "contact",      "fields": ("name", "title"),         "url": "/contacts/{id}",      "sub": "title"},
+    "interfaces":   {"model": Interface,    "slug": "interface",    "fields": ("name",),                 "url": "/interfaces/{id}",    "sub": "device", "scope": "device__tenant"},
+}
+
+
+def _search_simple(
+    q: str,
+    user,
+    tenant: Tenant,
+    limit: int,
+    *,
+    model,
+    slug: str,
+    fields: tuple[str, ...],
+    url: str,
+    sub: str | None,
+    scope: str = "tenant",
+) -> list[dict]:
+    """One name-ish search over any tenant-scoped model, RBAC-restricted the
+    same way the bespoke searches are."""
+    match = Q()
+    for f in fields:
+        match |= Q(**{f"{f}__icontains": q})
+    qs = (
+        rbac.restrict_queryset(
+            model.objects.filter(**{scope: tenant}), user, tenant, slug, "view"
+        )
+        .filter(match)
+        .order_by(fields[0])[:limit]
+    )
+    out = []
+    for obj in qs:
+        related = getattr(obj, sub, None) if sub else None
+        out.append({
+            "id": str(obj.id),
+            "label": str(getattr(obj, fields[0], "") or obj),
+            "sublabel": (
+                related if isinstance(related, str) else getattr(related, "name", "")
+            ) or "",
+            "extras": {},
+            "url": url.format(id=obj.id),
+        })
+    return out
+
+
 def _search_tags(q: str, tenant: Tenant, limit: int) -> list[dict]:
     # Tags are tenant-scoped (NULL tenant = deployment-global). Without this
     # filter the search leaked every tenant's tag names/slugs/colors.
@@ -349,4 +412,5 @@ def _empty_groups() -> dict[str, list]:
         "prefixes": [], "ips": [], "vlans": [], "vrfs": [],
         "route_targets": [], "sites": [], "tenants": [],
         "devices": [], "vms": [], "tags": [],
+        **{k: [] for k in _SIMPLE_GROUPS},
     }

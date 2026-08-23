@@ -3832,6 +3832,15 @@ export interface SearchResponse {
     devices: SearchHit[]
     vms: SearchHit[]
     tags: SearchHit[]
+    locations: SearchHit[]
+    racks: SearchHit[]
+    clusters: SearchHit[]
+    device_types: SearchHit[]
+    manufacturers: SearchHit[]
+    circuits: SearchHit[]
+    providers: SearchHit[]
+    contacts: SearchHit[]
+    interfaces: SearchHit[]
   }
 }
 
@@ -3847,6 +3856,15 @@ export const SEARCH_GROUPS: Array<{
   { key: "sites", label: "Sites" },
   { key: "devices", label: "Devices" },
   { key: "vms", label: "Virtual machines" },
+  { key: "interfaces", label: "Interfaces" },
+  { key: "racks", label: "Racks" },
+  { key: "locations", label: "Locations" },
+  { key: "clusters", label: "Clusters" },
+  { key: "device_types", label: "Device types" },
+  { key: "manufacturers", label: "Manufacturers" },
+  { key: "circuits", label: "Circuits" },
+  { key: "providers", label: "Providers" },
+  { key: "contacts", label: "Contacts" },
   { key: "tags", label: "Tags" },
   { key: "tenants", label: "Tenants" },
 ]

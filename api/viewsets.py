@@ -3528,6 +3528,10 @@ class DeviceViewSet(
             .prefetch_related(
                 "tags", "ip_addresses", "children", "lag_members",
                 "tunnel_terminations__tunnel",
+                # The serializer reads both per row - without these the tab
+                # ran one extra query per interface (62 on a Nexus, 500 on a
+                # big chassis).
+                "terminations__cable__status", "reservations",
             )
             .order_by(NATURAL_NAME)
         )

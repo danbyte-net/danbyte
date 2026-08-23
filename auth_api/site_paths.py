@@ -33,6 +33,8 @@ SITE_PATHS: dict[str, str] = {
     "powerport": "device__site",
     "poweroutlet": "device__site",
     "auxport": "device__site",
+    # Denormalized on the row (its port could be any of nine kinds).
+    "portreservation": "site",
     "inventoryitem": "device__site",
     "devicebay": "device__site",
     "modulebay": "device__site",

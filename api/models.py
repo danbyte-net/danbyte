@@ -3332,11 +3332,23 @@ class CableTermination(TimestampedModel):
         return f"{self.cable_id}/{self.end}: {self.point}"
 
 
+def _is_planned(termination) -> bool:
+    """The cable this termination belongs to is merely planned."""
+    cable = getattr(termination, "cable", None)
+    status = getattr(cable, "status", None) if cable is not None else None
+    return getattr(status, "slug", None) == "planned"
+
+
 def retire_port_placeholders(terminations) -> None:
     """A documented cable retires the port's stand-ins: ``mark_connected``
     (the flag that said "there IS a cable here, undocumented") and any
     PortReservation (the hold existed to keep the port free for exactly
     this cable).
+
+    A **planned** cable only fulfils the reservation. It is by definition
+    not patched yet, so clearing ``mark_connected`` - a fact the operator
+    typed, with no undo and no restore when the planned cable is deleted -
+    would silently destroy documentation.
 
     Call this from EVERY path that creates terminations. It cannot live in
     ``save()`` alone: the API writes terminations with ``bulk_create``,
@@ -3347,21 +3359,29 @@ def retire_port_placeholders(terminations) -> None:
     from django.db.models import Q
 
     ports_by_field: dict[str, list] = {}
+    ports_with_terms: dict[str, list] = {}
     for t in terminations:
         for f in CableTermination.POINT_FIELDS:
             port = getattr(t, f, None)
             if port is not None:
                 ports_by_field.setdefault(f, []).append(port)
+                ports_with_terms.setdefault(f, []).append((port, t))
 
     for field, ports in ports_by_field.items():
         ids = [p.pk for p in ports]
         model = type(ports[0])
-        if any(f.name == "mark_connected" for f in model._meta.fields):
-            model.objects.filter(pk__in=ids, mark_connected=True).update(
+        clearable = [
+            p.pk for p, t in ports_with_terms[field] if not _is_planned(t)
+        ]
+        if clearable and any(
+            f.name == "mark_connected" for f in model._meta.fields
+        ):
+            model.objects.filter(pk__in=clearable, mark_connected=True).update(
                 mark_connected=False
             )
             for p in ports:
-                p.mark_connected = False
+                if p.pk in set(clearable):
+                    p.mark_connected = False
         PortReservation.objects.filter(
             Q(**{f"{field}__in": ids})
         ).delete()
@@ -3420,6 +3440,15 @@ class PortReservation(TimestampedModel):
         related_name="port_reservations",
     )
     note = models.CharField(max_length=200, blank=True, default="")
+    # Denormalized from the held port, kept fresh in save(). Site-scoped
+    # ObjectPermissions filter on ONE ORM path per type, and a reservation's
+    # site hides behind whichever of the nine point FKs is set - so without
+    # this column the type had no site path at all, and a site-scoped
+    # operator could read, create and delete other sites' holds.
+    site = models.ForeignKey(
+        "Site", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="port_reservations",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -3457,6 +3486,26 @@ class PortReservation(TimestampedModel):
             if obj is not None:
                 return obj
         return None
+
+    def site_of_point(self):
+        """The Site the held port sits in - through its device, or through
+        the power panel for a site-level feed."""
+        p = self.point
+        if p is None:
+            return None
+        panel = getattr(p, "power_panel", None)
+        if panel is not None:
+            return panel.site
+        device = getattr(p, "device", None)
+        return getattr(device, "site", None) if device is not None else None
+
+    def save(self, *args, **kwargs):
+        # Recomputed on every save so a device moving site can't strand the
+        # hold outside its own site scope.
+        self.site = self.site_of_point()
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            kwargs["update_fields"] = {*kwargs["update_fields"], "site"}
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"reservation: {self.point}"

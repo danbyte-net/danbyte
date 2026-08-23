@@ -173,6 +173,47 @@ class PortReservationTests(APITestCase):
         self.assertIsNone(row["reservation"])
         self.assertIsNone(row["cable"])
 
+    def test_planned_cable_keeps_mark_connected(self):
+        """A planned cable is not patched: it fulfils the hold, but must not
+        erase a fact the operator typed (mark_connected has no undo, and the
+        flag is never restored when the planned cable is deleted)."""
+        planned = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned",
+            available_to=["cable"],
+        )
+        self.iface.mark_connected = True
+        self.iface.save(update_fields=["mark_connected"])
+        PortReservation.objects.create(tenant=self.tenant, interface=self.iface)
+        other = Interface.objects.create(device=self.dev, name="Gi8")
+
+        r = self.client.post(
+            "/api/cables/",
+            {
+                "status_id": str(planned.id),
+                "a": [{"kind": "interface", "id": str(self.iface.id)}],
+                "b": [{"kind": "interface", "id": str(other.id)}],
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.iface.refresh_from_db()
+        self.assertTrue(self.iface.mark_connected)  # kept
+        self.assertEqual(PortReservation.objects.count(), 0)  # hold fulfilled
+
+    def test_reservation_records_the_ports_site(self):
+        """Site-scoped grants filter on this column - a hold with no site
+        would sit outside every site scope."""
+        from api.models import Site
+
+        site = Site.objects.create(tenant=self.tenant, name="S1")
+        self.dev.site = site
+        self.dev.save(update_fields=["site"])
+        r = self._reserve()
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(
+            PortReservation.objects.get().site_id, site.id
+        )
+
     def test_interface_serializer_exposes_reservation(self):
         self._reserve(note="hold")
         r = self.client.get(f"/api/interfaces/?device={self.dev.id}")
