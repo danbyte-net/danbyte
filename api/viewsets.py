@@ -3581,7 +3581,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     bulk_str_fields = ("type", "mode", "speed", "duplex", "description")
     bulk_bool_fields = ("enabled", "mgmt_only", "mark_connected")
     bulk_int_fields = ("mtu",)
-    bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF}
+    bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
     bulk_name_scope_field = "device_id"
     bulk_tags = True
 

@@ -52,6 +52,33 @@ class ComponentBulkTests(TestCase):
         self.assertEqual(self.if1.vlan_id, self.vlan.id)
         self.assertEqual(self.if1.mode, "access")
 
+    def test_bulk_status_set_and_cross_tenant_rejected(self):
+        from .models import Status
+
+        mine = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned",
+            available_to=["interface"],
+        )
+        theirs = Status.objects.create(
+            tenant=self.other, name="Planned", slug="planned",
+            available_to=["interface"],
+        )
+        r = self.client_api.post(
+            "/api/interfaces/bulk-update/",
+            {"ids": [str(self.if1.id)], "fields": {"status_id": str(mine.id)}},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.if1.refresh_from_db()
+        self.assertEqual(self.if1.status_id, mine.id)
+
+        r = self.client_api.post(
+            "/api/interfaces/bulk-update/",
+            {"ids": [str(self.if1.id)], "fields": {"status_id": str(theirs.id)}},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
     def test_bad_choice_rejected(self):
         r = self.client_api.post(
             "/api/interfaces/bulk-update/",

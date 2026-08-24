@@ -1747,6 +1747,12 @@ function DeviceInterfacesPane({
           { key: "enabled", label: "Enabled", kind: "bool" },
           { key: "mark_connected", label: "Mark connected", kind: "bool" },
           {
+            key: "status_id",
+            label: "Status",
+            kind: "status",
+            statusModel: "interface",
+          },
+          {
             key: "type",
             label: "Type",
             kind: "choice",

@@ -34,6 +34,7 @@ export const Route = createFileRoute("/interfaces/")({
 function InterfacesPage() {
   const [q, setQ] = useState("")
   const [deviceFilter, setDeviceFilter] = useState<Set<string>>(new Set())
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState<Interface | null>(null)
 
   const { canDo } = useMe()
@@ -56,10 +57,29 @@ function InterfacesPage() {
   const rows = useMemo(
     () =>
       allRows.filter(
-        (i) => deviceFilter.size === 0 || deviceFilter.has(i.device.id)
+        (i) =>
+          (deviceFilter.size === 0 || deviceFilter.has(i.device.id)) &&
+          (statusFilter.size === 0 ||
+            statusFilter.has(i.status?.name ?? "Active"))
       ),
-    [allRows, deviceFilter]
+    [allRows, deviceFilter, statusFilter]
   )
+
+  // Status facet counts null as Active - that's how it reads everywhere.
+  const statusFacets = useMemo(() => {
+    const c: Record<string, number> = {}
+    for (const i of allRows) {
+      const name = i.status?.name ?? "Active"
+      c[name] = (c[name] ?? 0) + 1
+    }
+    return Object.entries(c)
+      .sort(([, a], [, b]) => b - a)
+      .map<FacetOption>(([name, count]) => ({
+        value: name,
+        label: name,
+        count,
+      }))
+  }, [allRows])
 
   const facets = useMemo(() => {
     const c: Record<string, { name: string; count: number }> = {}
@@ -171,6 +191,12 @@ function InterfacesPage() {
         options={facets}
         selected={deviceFilter}
         onToggle={(v) => toggleInSet(deviceFilter, v, setDeviceFilter)}
+      />
+      <FacetGroup
+        label="Status"
+        options={statusFacets}
+        selected={statusFilter}
+        onToggle={(v) => toggleInSet(statusFilter, v, setStatusFilter)}
       />
     </FilterRail>
   )

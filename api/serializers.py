@@ -2465,7 +2465,9 @@ def _point_reservation(point):
     }
 
 
-class InterfaceSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "interface"
+
     def update(self, instance, validated_data):
         obj = super().update(instance, validated_data)
         # A port marked connected can't also be held for later - the mark
@@ -2639,7 +2641,7 @@ class InterfaceSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdM
         fields = ["id", "device", "device_id", "name", "snmp_name", "snmp_ignore", "is_uplink", "type",
                   "type_display",
                   "speed", "mtu",
-                  "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected",
+                  "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected", "custom_fields",
                   "duplex", "poe_mode",
                   "poe_type",
                   "wwn", "mac_address", "mac_addresses", "description",
@@ -4639,7 +4641,9 @@ class ProtocolPortsSerializerMixin:
         return out
 
 
-class ServiceSerializer(ProtocolPortsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class ServiceSerializer(CustomFieldsSerializerMixin, ProtocolPortsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "service"
+
     protocol_display = serializers.CharField(
         source="get_protocol_display", read_only=True
     )
@@ -4704,7 +4708,9 @@ class ServiceTemplateMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "protocol", "ports", "protocol_ports"]
 
 
-class ServiceTemplateSerializer(ProtocolPortsSerializerMixin, NumIdModelSerializer):
+class ServiceTemplateSerializer(CustomFieldsSerializerMixin, ProtocolPortsSerializerMixin, NumIdModelSerializer):
+    cf_model = "servicetemplate"
+
     slug = serializers.SlugField(required=False, allow_blank=True)
     protocol_display = serializers.CharField(
         source="get_protocol_display", read_only=True

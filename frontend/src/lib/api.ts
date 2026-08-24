@@ -1946,6 +1946,7 @@ export interface Interface {
   mgmt_only: boolean
   mark_connected: boolean
   combo_group: string
+  custom_fields: Record<string, unknown>
   duplex: string
   poe_mode: string
   poe_type: string
@@ -3632,6 +3633,7 @@ export interface DeviceSyncResponse {
 
 export interface ServiceTemplate {
   id: string
+  custom_fields: Record<string, unknown>
   numid: number | null
   name: string
   slug: string

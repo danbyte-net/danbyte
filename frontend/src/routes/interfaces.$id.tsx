@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -551,6 +552,11 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
           <KvCard title="Interface" rows={attributes} />
           <KvCard title="Switching" rows={switching} />
           <KvCard title="Relationships" rows={relationships} />
+          <CustomFieldValues
+            model="interface"
+            values={i.custom_fields}
+            layout="cards"
+          />
         </div>
         {i.cable && (
           <div className="rounded-lg border border-border bg-card p-4">
