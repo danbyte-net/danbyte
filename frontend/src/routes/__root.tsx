@@ -29,6 +29,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { useEffect } from "react"
 import { useMe } from "@/lib/use-me"
+import { pageTitle, setTitleSuffix } from "@/lib/page-title"
 import { setUnauthorizedHandler } from "@/lib/api"
 
 const queryClient = new QueryClient({
@@ -134,7 +135,10 @@ function AppLayout() {
   const isPublic = pathname === "/login" || pathname === "/set-password"
 
   useEffect(() => {
-    document.title = me.deployment_name?.trim() || "Danbyte"
+    // The deployment name is the tab-title SUFFIX; each page prepends what
+    // it's showing (#100), so a row of tabs is readable.
+    setTitleSuffix(me.deployment_name?.trim() || "Danbyte")
+    document.title = pageTitle(null)
   }, [me.deployment_name])
 
   // Swap the browser-tab icon to the admin's custom favicon when one is set

@@ -54,10 +54,14 @@ def _callback_uri(request, slug: str) -> str:
 def sso_providers(request):
     """Enabled SSO providers, for rendering login-page buttons (pre-auth).
 
-    Only deployment-wide providers are advertised on the shared, unauthenticated
-    login page; tenant-scoped providers aren't exposed to anonymous callers."""
+    Every enabled provider is listed, deployment-wide or tenant-scoped. The
+    login endpoint accepts any enabled provider, so filtering the buttons to
+    deployment-wide ones only hid a login that still worked if you typed the
+    URL - "SSO is on but there's no button" (#95). Only the display name,
+    slug and protocol are exposed; nothing about the tenant.
+    """
     provs = list(
-        IdentityProvider.objects.filter(enabled=True, tenant__isnull=True)
+        IdentityProvider.objects.filter(enabled=True)
         .order_by("name")
         .values("name", "slug", "protocol")
     )

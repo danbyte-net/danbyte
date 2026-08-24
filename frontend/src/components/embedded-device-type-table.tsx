@@ -1,4 +1,6 @@
-import { useMemo } from "react"
+import { Input } from "@/components/ui/input"
+import { Search } from "lucide-react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 
@@ -24,7 +26,20 @@ export function EmbeddedDeviceTypeTable({
     queryKey: ["embedded-device-types", qs],
     queryFn: () => api<Paginated<DeviceType>>(`/api/device-types/?${qs}`),
   })
-  const rows = q.data?.results ?? []
+  // A manufacturer can own hundreds of types - scrolling to find one is the
+  // complaint behind #96. Filtering happens on the rows already fetched, so
+  // it is instant and needs no extra request.
+  const [search, setSearch] = useState("")
+  const all = q.data?.results ?? []
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    if (!needle) return all
+    return all.filter((t) =>
+      [t.name, t.part_number, t.model]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(needle))
+    )
+  }, [all, search])
 
   const columns = useMemo<ColumnDef<DeviceType>[]>(
     () =>
@@ -38,15 +53,34 @@ export function EmbeddedDeviceTypeTable({
   if (q.isError) return <QueryError error={q.error} />
   if (q.isLoading)
     return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (rows.length === 0)
+  if (all.length === 0)
     return <p className="text-sm text-muted-foreground">{emptyText}</p>
 
   return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      flexColumn="name"
-      tableId="embedded-device-types"
-    />
+    <div className="space-y-2">
+      {all.length > 8 && (
+        <div className="relative max-w-xs">
+          <Search className="pointer-events-none absolute top-2 left-2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter types…"
+            className="h-8 pl-7 text-xs"
+          />
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nothing matches {`"${search}"`}.
+        </p>
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="name"
+          tableId="embedded-device-types"
+        />
+      )}
+    </div>
   )
 }

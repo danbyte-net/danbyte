@@ -81,3 +81,27 @@ export function parseLevels(raw: string): LevelsState | undefined {
 export function sameLevels(a: LevelsState, b: LevelsState): boolean {
   return formatLevels(a) === formatLevels(b)
 }
+
+/** Every role a graph shows, ranked into layout tiers.
+ *
+ * The organiser lists every role on the map: the saved order first, then any
+ * role that isn't in it yet, appended - and it numbers each of those rows as
+ * its own level. The canvas only ever received the SAVED order though, and
+ * ranked everything else `last`, so roles the panel showed as levels 6, 7 and
+ * 8 were all drawn in one row. On a big estate that's most of the map.
+ *
+ * So the appended roles are ranked here exactly as the organiser appends
+ * them - `rolesInGraph` order, not alphabetical - and the two agree.
+ *
+ * `fallback` is the tier for a device with no role at all.
+ */
+export function roleTiers(
+  rolesInGraph: string[],
+  groups: string[][]
+): { rank: Map<string, number>; fallback: number } {
+  const rank = new Map<string, number>()
+  groups.forEach((group, i) => group.forEach((name) => rank.set(name, i)))
+  const extras = [...new Set(rolesInGraph)].filter((name) => !rank.has(name))
+  extras.forEach((name, i) => rank.set(name, groups.length + i))
+  return { rank, fallback: groups.length + extras.length }
+}

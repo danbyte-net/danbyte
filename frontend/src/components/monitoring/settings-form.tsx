@@ -106,6 +106,7 @@ export function MonitoringSettingsForm() {
           stale_after_scans: Number(draft.stale_after_scans),
           stale_after_days: Number(draft.stale_after_days),
           skip_ip_statuses: draft.skip_ip_statuses,
+          snmp_import_not_present: draft.snmp_import_not_present,
           dns_sync_enabled: draft.dns_sync_enabled,
           dns_clear_on_missing: draft.dns_clear_on_missing,
           dns_preserve_if_alive: draft.dns_preserve_if_alive,
@@ -198,6 +199,25 @@ export function MonitoringSettingsForm() {
               </span>
             )}
           </div>
+        </Section>
+
+        <Section title="SNMP discovery">
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.snmp_import_not_present}
+              onCheckedChange={(v) => set("snmp_import_not_present", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                Import pre-allocated ports
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Stackable switches report ports for members that aren't
+                installed. Off = drift and sync skip them.
+              </span>
+            </span>
+          </label>
         </Section>
 
         <Section title="Reverse DNS">

@@ -1,3 +1,4 @@
+import { usePageTitle } from "@/lib/page-title"
 import { Link } from "@tanstack/react-router"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
@@ -49,6 +50,7 @@ export function EditPageShell({
   className,
   children,
 }: EditPageShellProps) {
+  usePageTitle(typeof title === "string" ? title : null)
   const last = crumbs[crumbs.length - 1]
   const lead = crumbs.slice(0, -1)
   return (

@@ -19,6 +19,7 @@ from drf_spectacular.utils import (
 from drf_spectacular.types import OpenApiTypes
 
 import ipaddress as _ip
+import re
 
 from api.models import (
     Device,
@@ -66,7 +67,12 @@ from danbyte_checks.snmp_facts import (
 from .snmp_resolve import resolve_device_profile
 from .snmp_poll import poll_device, poll_vm
 from .snmp_util import compute_device_utilization
-from .snmp_drift import apply_drift_action, compute_device_drift, sync_device_from_snmp
+from .snmp_drift import (
+    _skip_not_present,
+    apply_drift_action,
+    compute_device_drift,
+    sync_device_from_snmp,
+)
 
 # How many recent results feed the per-check sparkline.
 SPARK_POINTS = 30
@@ -2131,6 +2137,8 @@ def snmp_drift_list_view(request):
     )
     iface_drift: dict[str, dict] = {}
     rows = []
+    # One policy read for the whole fleet, not one per device.
+    skip_absent = _skip_not_present(tenant)
     for state in states:
         # Only a confirmed-reachable poll has observed state worth comparing;
         # reachable False *or* None gets its own bucket, never a misleading
@@ -2146,6 +2154,7 @@ def snmp_drift_list_view(request):
             items = compute_device_drift(
                 state.device, tenant, state=state,
                 intended_interfaces=ifaces_by_device.get(state.device_id, []),
+                skip_absent=skip_absent,
             )
             status_ = "drift" if items else "in_sync"
             if want and want != status_:
@@ -2253,6 +2262,39 @@ def snmp_topology_ghosts_view(request):
     return Response({"edges": ghost_edges(tenant, list(devices))})
 
 
+def _iface_for_discovered_name(devices, device_id, reported):
+    """Resolve a port name as an agent REPORTS it to the interface record.
+
+    An exact match is not enough: LLDP hands back whatever the neighbour's
+    firmware prints - "Port #1" for a port recorded as "Port 1",
+    "GigabitEthernet1/0/25" for "Gi1/0/25", different case or padding. So try,
+    in order: the exact name, the SNMP link name (which exists precisely to
+    tie a discovered name to a port), then a normalised comparison that
+    ignores case, whitespace and punctuation. Ambiguous normalised matches
+    are refused rather than guessed at.
+    """
+    if not device_id or not reported:
+        return None
+    base = Interface.objects.filter(
+        device__in=devices, device_id=device_id
+    ).select_related("device")
+    exact = base.filter(name=reported).first()
+    if exact is not None:
+        return exact
+    linked = base.filter(snmp_name__iexact=reported).first()
+    if linked is not None:
+        return linked
+
+    def squash(v: str) -> str:
+        return re.sub(r"[^a-z0-9/]+", "", (v or "").lower())
+
+    target = squash(reported)
+    if not target:
+        return None
+    hits = [i for i in base if squash(i.name) == target]
+    return hits[0] if len(hits) == 1 else None
+
+
 @extend_schema(
     summary="Turn an LLDP ghost link into a real Cable",
     tags=["monitoring"],
@@ -2296,14 +2338,12 @@ def materialize_cable_view(request):
         Device.objects.filter(tenant=tenant),
         request.user, tenant, "device", "view",
     )
-    local = Interface.objects.filter(
-        device__in=viewable_devices, device_id=d.get("source_device"),
-        name=d.get("local_port"),
-    ).select_related("device").first()
-    remote = Interface.objects.filter(
-        device__in=viewable_devices, device_id=d.get("remote_device"),
-        name=d.get("remote_port"),
-    ).select_related("device").first()
+    local = _iface_for_discovered_name(
+        viewable_devices, d.get("source_device"), d.get("local_port")
+    )
+    remote = _iface_for_discovered_name(
+        viewable_devices, d.get("remote_device"), d.get("remote_port")
+    )
     if local is None or remote is None:
         missing = []
         if local is None:

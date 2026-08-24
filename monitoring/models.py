@@ -667,6 +667,16 @@ class MonitoringSettings(TimestampedModel):
 
     # Reverse-DNS enrichment: resolve each monitored IP's PTR and write it to
     # IPAddress.dns_name.
+    # Firmware on stackable switches pre-allocates ports for members that
+    # aren't there (an Aruba 1960 reports 200+ of them). SNMP flags those
+    # notPresent; importing them as normal enabled ports buries the real
+    # ones (#97).
+    snmp_import_not_present = models.BooleanField(
+        default=False,
+        help_text="Import interfaces the agent reports as notPresent "
+        "(pre-allocated stack ports). Off = skip them on sync and drift.",
+    )
+
     dns_sync_enabled = models.BooleanField(
         default=False,
         help_text="Resolve reverse DNS (PTR) for monitored IPs and store it as "

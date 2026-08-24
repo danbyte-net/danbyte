@@ -832,6 +832,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
         fields = [
             "global_enabled", "default_interval_seconds", "stale_after_scans",
             "stale_after_days", "skip_ip_statuses", "skip_ip_status_detail",
+            "snmp_import_not_present",
             "dns_sync_enabled", "dns_clear_on_missing", "dns_preserve_if_alive",
             "dns_resolvers",
             "renotify_enabled", "renotify_interval_minutes",

@@ -48,6 +48,7 @@ import {
   realignHierPorts,
 } from "./layout"
 import { resolveLevels } from "./level-organiser"
+import { roleTiers } from "./levels-param"
 import { RoutedEdge } from "./routed-edge"
 
 // Defined once, outside the component (re-creating nodeTypes each render
@@ -652,9 +653,12 @@ function build(
     // Bonded roles share one level, so a level can hold several roles - rank by
     // LEVEL index, not by position in the order.
     const groups = resolveLevels(opts.roleOrder, opts.roleBonds ?? [])
-    const rank = new Map<string, number>()
-    groups.forEach((group, i) => group.forEach((name) => rank.set(name, i)))
-    const last = groups.length
+    const { rank, fallback: last } = roleTiers(
+      graph.nodes
+        .filter((n) => n.data.role && !n.data.role.is_patch_panel)
+        .map((n) => n.data.role!.name),
+      groups
+    )
     levels = new Map()
     for (const n of graph.nodes) {
       // Patch panels aren't a device tier - leave them at their structural

@@ -69,6 +69,32 @@ def _fmt_speed(mbps) -> str:
 UPLINK_MAC_LIMIT = 4
 
 
+def _skip_not_present(tenant) -> bool:
+    """Whether ports the agent reports as notPresent are ignored (#97).
+
+    Stackable firmware pre-allocates ports for members that aren't installed
+    and flags them notPresent. Importing those as ordinary enabled interfaces
+    buries the real ports - so by default they're skipped on both drift and
+    sync; a tenant that wants them can turn the setting on.
+
+    A plain read, never ``for_tenant`` - that get-or-creates, which would
+    make the FIRST drift call of a deployment cost writes the next one
+    doesn't (the fleet endpoint's query-count guard catches exactly that).
+    """
+    from .models import MonitoringSettings
+
+    opted_in = (
+        MonitoringSettings.objects.filter(tenant=tenant)
+        .values_list("snmp_import_not_present", flat=True)
+        .first()
+    )
+    return not opted_in
+
+
+def _is_not_present(o: dict) -> bool:
+    return str(o.get("oper_status") or "").lower() == "notpresent"
+
+
 def _norm(value) -> str:
     return (value or "").strip().lower()
 
@@ -237,7 +263,9 @@ def _norm_mac(value) -> str:
     return re.sub(r"[^0-9a-f]", "", (value or "").lower())
 
 
-def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -> list[dict]:
+def compute_device_drift(
+    device, tenant, state=None, intended_interfaces=None, skip_absent=None
+) -> list[dict]:
     """Read-only list of differences between observed SNMP state and intent.
 
     ``state`` (the device's ``DeviceSnmp`` row) and ``intended_interfaces`` (its
@@ -261,6 +289,11 @@ def compute_device_drift(device, tenant, state=None, intended_interfaces=None) -
 
     # 2. Interfaces, matched by name (case-insensitive).
     observed = [o for o in (state.interfaces or []) if o.get("name")]
+    # Callers that loop devices resolve the policy once and pass it in.
+    if skip_absent is None:
+        skip_absent = _skip_not_present(tenant)
+    if skip_absent:
+        observed = [o for o in observed if not _is_not_present(o)]
     obs_by_name = {_norm(o["name"]): o for o in observed}
     intended = (
         list(intended_interfaces) if intended_interfaces is not None
@@ -635,8 +668,15 @@ def sync_device_from_snmp(device, tenant) -> dict:
     # the speed/VLAN/IPs on the duplicate instead of the port it means.
     existing = _intent_by_observed_name(Interface.objects.filter(device=device))
     ip_rows = _observed_ip_rows(tenant, state.interfaces or [])
+    skip_absent = _skip_not_present(tenant)
     for o in (state.interfaces or []):
         name = o.get("name")
+        # Pre-allocated stack ports: not real hardware, not intent.
+        if skip_absent and _is_not_present(o):
+            summary["interfaces_skipped_not_present"] = (
+                summary.get("interfaces_skipped_not_present", 0) + 1
+            )
+            continue
         if not name:
             continue
         speed = _fmt_speed(o.get("speed_mbps"))

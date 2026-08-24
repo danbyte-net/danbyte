@@ -4,6 +4,7 @@ import {
   EMPTY_LEVELS,
   formatLevels,
   parseLevels,
+  roleTiers,
   sameLevels,
 } from "./levels-param"
 
@@ -56,5 +57,39 @@ describe("levels URL param", () => {
     expect(
       sameLevels(EMPTY_LEVELS, { order: ["Core"], bonds: [], distance: {} })
     ).toBe(false)
+  })
+})
+
+describe("roleTiers", () => {
+  const roles = ["Access", "Core", "Firewall", "Server", "Wireless"]
+
+  it("keeps the organiser's order and bonded tiers", () => {
+    const { rank } = roleTiers(roles, [["Firewall"], ["Core", "Router"]])
+    expect(rank.get("Firewall")).toBe(0)
+    expect(rank.get("Core")).toBe(1)
+    expect(rank.get("Router")).toBe(1)
+  })
+
+  it("gives every unordered role its own tier instead of one heap", () => {
+    const { rank, fallback } = roleTiers(roles, [["Firewall"], ["Core"]])
+    // Access / Server / Wireless are unordered: three separate tiers, not one.
+    const extras = [
+      rank.get("Access"),
+      rank.get("Server"),
+      rank.get("Wireless"),
+    ]
+    expect(new Set(extras).size).toBe(3)
+    expect(extras.every((t) => t !== undefined && t >= 2)).toBe(true)
+    expect(fallback).toBe(5)
+  })
+
+  it("appends unordered roles the way the organiser lists them", () => {
+    // The organiser shows the saved order first, then the rest in graph
+    // order - the canvas must tier them the same way, or the panel and the
+    // map disagree about which level a role sits on.
+    const { rank } = roleTiers(["Server", "Access", "Server"], [["Core"]])
+    expect(rank.get("Core")).toBe(0)
+    expect(rank.get("Server")).toBe(1)
+    expect(rank.get("Access")).toBe(2)
   })
 })

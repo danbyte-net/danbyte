@@ -271,3 +271,28 @@ class EntraUsernameTests(TestCase):
         )
         self.assertEqual(r.status_code, 400)
         self.assertIn("username", r.json())
+
+
+class SsoProviderListTests(TestCase):
+    """The login page's button list must match what the login URL accepts."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O2", slug="o2")
+        self.tenant = Tenant.objects.create(org=org, name="T2", slug="t2")
+
+    def test_lists_deployment_wide_and_tenant_scoped_providers(self):
+        IdentityProvider.objects.create(
+            name="Global", slug="global", protocol="oidc", enabled=True
+        )
+        IdentityProvider.objects.create(
+            name="Scoped", slug="scoped", protocol="oidc", enabled=True,
+            tenant=self.tenant,
+        )
+        IdentityProvider.objects.create(
+            name="Off", slug="off", protocol="oidc", enabled=False
+        )
+        body = self.client.get("/api/auth/sso/providers/").json()
+        slugs = {p["slug"] for p in body["providers"]}
+        self.assertEqual(slugs, {"global", "scoped"})
+        # Nothing about the tenant is exposed to an anonymous caller.
+        self.assertNotIn("tenant", body["providers"][0])

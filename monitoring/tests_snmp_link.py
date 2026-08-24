@@ -462,3 +462,45 @@ class ShortLongNameBridgeTests(_SnmpDriftTestBase):
         self.assertEqual(summary["interfaces_created"], 0)   # no duplicate
         self.assertEqual(Interface.objects.filter(device=self.device).count(), 1)
         self.device.interfaces.get(name="GigabitEthernet1/0/1")  # unchanged name
+
+
+class NotPresentPortTests(_SnmpDriftTestBase):
+    """Stackable firmware pre-allocates ports for members that aren't there
+    and reports them notPresent - they shouldn't become interfaces (#97)."""
+
+    ROWS = [
+        {"name": "1/1", "oper_status": "up"},
+        {"name": "2/1", "oper_status": "notPresent"},
+        {"name": "2/2", "oper_status": "notPresent"},
+    ]
+
+    def test_not_present_ports_are_not_drift_and_are_not_synced(self):
+        self._observe(rows=self.ROWS)
+        names = {d.get("name") for d in self._drift()}
+        self.assertIn("1/1", names)
+        self.assertNotIn("2/1", names)
+
+        summary = sync_device_from_snmp(self.device, self.tenant)
+        created = set(
+            Interface.objects.filter(device=self.device).values_list(
+                "name", flat=True
+            )
+        )
+        self.assertEqual(created, {"1/1"})
+        self.assertEqual(summary.get("interfaces_skipped_not_present"), 2)
+
+    def test_a_tenant_can_opt_into_importing_them(self):
+        from monitoring.models import MonitoringSettings
+
+        ms = MonitoringSettings.for_tenant(self.tenant)
+        ms.snmp_import_not_present = True
+        ms.save(update_fields=["snmp_import_not_present"])
+
+        self._observe(rows=self.ROWS)
+        sync_device_from_snmp(self.device, self.tenant)
+        created = set(
+            Interface.objects.filter(device=self.device).values_list(
+                "name", flat=True
+            )
+        )
+        self.assertEqual(created, {"1/1", "2/1", "2/2"})

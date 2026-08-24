@@ -1,3 +1,4 @@
+import { usePageTitle } from "@/lib/page-title"
 import { type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { LinkProps } from "@tanstack/react-router"
@@ -77,6 +78,7 @@ export function ListPageShell({
   /** The table (and any dialogs/bulk bars) - rendered once data is ready. */
   children: ReactNode
 }) {
+  usePageTitle(title)
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 min-w-0 flex-1">

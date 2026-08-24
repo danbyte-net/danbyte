@@ -1,3 +1,4 @@
+import { nodeText, usePageTitle } from "@/lib/page-title"
 import { type ReactNode } from "react"
 import { Link, type LinkProps } from "@tanstack/react-router"
 import { ChevronLeft, ChevronRight, Pin } from "lucide-react"
@@ -112,6 +113,7 @@ export function DetailShell({
   /** `<DetailTab value=…>` panes. */
   children: ReactNode
 }) {
+  usePageTitle(nodeText(title))
   // Safe when presence is omitted - the hook no-ops on an undefined id.
   useRegisterPresence(presence?.type ?? "", presence?.id, "viewing")
 

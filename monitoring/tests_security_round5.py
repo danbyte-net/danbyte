@@ -218,6 +218,55 @@ class CableAndTopologyScopeTests(_ScopedMonitoringBase):
         self.assertIn(str(allowed.id), ids)
         self.assertNotIn(str(hidden.id), ids)
 
+    def test_materialize_matches_the_name_the_agent_reports(self):
+        """LLDP prints whatever the neighbour's firmware says - "Port #1" for
+        a port recorded as "Port 1", or a long-form name for a short one. The
+        cable must still be creatable (#99)."""
+        a1 = Device.objects.create(tenant=self.tenant, site=self.site_a, name="s1")
+        a2 = Device.objects.create(tenant=self.tenant, site=self.site_a, name="s2")
+        Interface.objects.create(device=a1, name="Port 1")
+        Interface.objects.create(device=a2, name="1/23")
+        self._grant("device", sites=(self.site_a,))
+        self._grant("cable", actions=("add",), sites=(self.site_a,))
+        self._login()
+
+        response = self.client.post(
+            "/api/monitoring/topology/materialize-cable/",
+            {
+                "source_device": str(a1.id),
+                "local_port": "Port #1",   # as LLDP reports it
+                "remote_device": str(a2.id),
+                "remote_port": " 1/23 ",
+                "type": "cat6",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+
+    def test_materialize_refuses_an_ambiguous_name(self):
+        """Two ports that normalise the same must not be guessed between."""
+        a1 = Device.objects.create(tenant=self.tenant, site=self.site_a, name="s3")
+        a2 = Device.objects.create(tenant=self.tenant, site=self.site_a, name="s4")
+        Interface.objects.create(device=a1, name="Port 1")
+        Interface.objects.create(device=a1, name="port-1")
+        Interface.objects.create(device=a2, name="eth0")
+        self._grant("device", sites=(self.site_a,))
+        self._grant("cable", actions=("add",), sites=(self.site_a,))
+        self._login()
+
+        response = self.client.post(
+            "/api/monitoring/topology/materialize-cable/",
+            {
+                "source_device": str(a1.id),
+                "local_port": "Port #1",
+                "remote_device": str(a2.id),
+                "remote_port": "eth0",
+                "type": "cat6",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+
     def test_materialize_rolls_back_when_cable_grant_misses_endpoints(self):
         b1 = Device.objects.create(tenant=self.tenant, site=self.site_b, name="b1")
         b2 = Device.objects.create(tenant=self.tenant, site=self.site_b, name="b2")
