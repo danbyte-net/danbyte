@@ -23,6 +23,7 @@ import {
   Field,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   QuickAddDialog,
@@ -438,246 +439,324 @@ export function DeviceForm({
     },
   })
 
+  // One-line "what's set in here" for collapsed sections (matches the
+  // interface form's idiom).
+  const hardwareSummary = [serial, assetTag, airflow]
+    .filter(Boolean)
+    .join(" \u00b7 ")
+  const notesSummary = [
+    description && "description",
+    comments && "comments",
+    tagIds.length
+      ? `${tagIds.length} tag${tagIds.length === 1 ? "" : "s"}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" \u00b7 ")
+  const placementSummary = [
+    locationId &&
+      (locations.data?.results ?? []).find((l) => l.id === locationId)?.name,
+    clusterId &&
+      (clusters.data?.results ?? []).find((c) => c.id === clusterId)?.name,
+    latitude && longitude ? `${latitude}, ${longitude}` : "",
+  ]
+    .filter(Boolean)
+    .join(" \u00b7 ")
+  const rackSummary = rackId
+    ? [
+        (racks.data?.results ?? []).find((r) => r.id === rackId)?.name,
+        position ? `U${position}` : "",
+        face,
+      ]
+        .filter(Boolean)
+        .join(" \u00b7 ")
+    : ""
+  const stackSummary = vcId
+    ? [vcPosition && `position ${vcPosition}`].filter(Boolean).join(" \u00b7 ")
+    : ""
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        mono
-        placeholder="sw-fra-01"
-        error={fieldErrors.name}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <DeviceTypePicker
-          value={deviceTypeId}
-          onChange={setDeviceTypeId}
-          error={fieldErrors.device_type_id}
+      <FormSection title="Device">
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          mono
+          placeholder="sw-fra-01"
+          error={fieldErrors.name}
         />
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
+        <div className="grid grid-cols-2 gap-3">
+          <DeviceTypePicker
+            value={deviceTypeId}
+            onChange={setDeviceTypeId}
+            error={fieldErrors.device_type_id}
+          />
+          <FormCombobox
+            label="Status"
+            value={statusId}
+            onChange={setStatusId}
+            options={(statuses.data?.results ?? []).map((s) => ({
+              value: s.id,
+              label: s.name,
+            }))}
+            noneLabel="No status"
+            placeholder="Select a status…"
+            error={fieldErrors.status_id}
+          />
+        </div>
+        <FormSelect
+          label="Site"
+          hint={siteLocked ? "locked to your site" : undefined}
+          value={siteId}
+          onChange={setSiteId}
+          noneLabel="No site"
+          disabled={siteLocked}
+          options={sites.options.map((s) => ({
             value: s.id,
             label: s.name,
           }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
+          error={fieldErrors.site_id}
         />
-      </div>
-      <FormSelect
-        label="Site"
-        hint={siteLocked ? "locked to your site" : undefined}
-        value={siteId}
-        onChange={setSiteId}
-        noneLabel="No site"
-        disabled={siteLocked}
-        options={sites.options.map((s) => ({
-          value: s.id,
-          label: s.name,
-        }))}
-        error={fieldErrors.site_id}
-      />
-      <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <FormCombobox
+            label="Role"
+            hint="optional"
+            value={roleId}
+            onChange={setRoleId}
+            options={(roles.data?.results ?? []).map((r) => ({
+              value: r.id,
+              label: r.name,
+            }))}
+            noneLabel="No role"
+            placeholder="Select a role…"
+            searchPlaceholder="Search roles…"
+            emptyText="No device roles."
+            error={fieldErrors.role_id}
+            quickAdd={
+              <QuickAddDialog
+                title="New device role"
+                endpoint="/api/device-roles/"
+                fields={[
+                  { name: "name", label: "Name", required: true },
+                  {
+                    name: "description",
+                    label: "Description",
+                    type: "textarea",
+                  },
+                ]}
+                onCreated={(r) => {
+                  qc.invalidateQueries({ queryKey: ["device-roles-picker"] })
+                  setRoleId(r.id)
+                }}
+              />
+            }
+          />
+          <FormCombobox
+            label="Platform"
+            hint="optional"
+            value={platformId}
+            onChange={setPlatformId}
+            options={(platforms.data?.results ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+            }))}
+            noneLabel="No platform"
+            placeholder="Select a platform…"
+            searchPlaceholder="Search platforms…"
+            emptyText="No platforms."
+            error={fieldErrors.platform_id}
+            quickAdd={
+              <QuickAddDialog
+                title="New platform"
+                endpoint="/api/platforms/"
+                fields={[{ name: "name", label: "Name", required: true }]}
+                onCreated={(p) => {
+                  qc.invalidateQueries({ queryKey: ["platforms-picker"] })
+                  setPlatformId(p.id)
+                }}
+              />
+            }
+          />
+        </div>
         <FormCombobox
-          label="Role"
-          hint="optional"
-          value={roleId}
-          onChange={setRoleId}
-          options={(roles.data?.results ?? []).map((r) => ({
-            value: r.id,
-            label: r.name,
+          label="Config template"
+          hint="overrides role/platform"
+          value={configTemplateId}
+          onChange={setConfigTemplateId}
+          options={(templates.data?.results ?? []).map((t) => ({
+            value: t.id,
+            label: t.name,
           }))}
-          noneLabel="No role"
-          placeholder="Select a role…"
-          searchPlaceholder="Search roles…"
-          emptyText="No device roles."
-          error={fieldErrors.role_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New device role"
-              endpoint="/api/device-roles/"
-              fields={[
-                { name: "name", label: "Name", required: true },
-                { name: "description", label: "Description", type: "textarea" },
-              ]}
-              onCreated={(r) => {
-                qc.invalidateQueries({ queryKey: ["device-roles-picker"] })
-                setRoleId(r.id)
-              }}
-            />
-          }
+          noneLabel="Inherit from role/platform"
+          placeholder="Inherit from role/platform"
+          searchPlaceholder="Search templates…"
+          emptyText="No device export templates."
+          error={fieldErrors.config_template_id}
         />
-        <FormCombobox
-          label="Platform"
-          hint="optional"
-          value={platformId}
-          onChange={setPlatformId}
-          options={(platforms.data?.results ?? []).map((p) => ({
-            value: p.id,
-            label: p.name,
-          }))}
-          noneLabel="No platform"
-          placeholder="Select a platform…"
-          searchPlaceholder="Search platforms…"
-          emptyText="No platforms."
-          error={fieldErrors.platform_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New platform"
-              endpoint="/api/platforms/"
-              fields={[{ name: "name", label: "Name", required: true }]}
-              onCreated={(p) => {
-                qc.invalidateQueries({ queryKey: ["platforms-picker"] })
-                setPlatformId(p.id)
-              }}
-            />
-          }
-        />
-      </div>
-      <FormCombobox
-        label="Config template"
-        hint="overrides role/platform"
-        value={configTemplateId}
-        onChange={setConfigTemplateId}
-        options={(templates.data?.results ?? []).map((t) => ({
-          value: t.id,
-          label: t.name,
-        }))}
-        noneLabel="Inherit from role/platform"
-        placeholder="Inherit from role/platform"
-        searchPlaceholder="Search templates…"
-        emptyText="No device export templates."
-        error={fieldErrors.config_template_id}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Serial number"
-          value={serial}
-          onChange={setSerial}
-          mono
-          error={fieldErrors.serial_number}
-        />
-        <FormText
-          label="Asset tag"
-          value={assetTag}
-          onChange={setAssetTag}
-          mono
-          error={fieldErrors.asset_tag}
-        />
-      </div>
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      </FormSection>
 
-      {visibility.comments && (
+      <FormSection
+        title="Hardware"
+        collapsible
+        storageKey="device"
+        summary={hardwareSummary || undefined}
+        hasValues={!!(serial || assetTag || airflow)}
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <FormText
+            label="Serial number"
+            value={serial}
+            onChange={setSerial}
+            mono
+            error={fieldErrors.serial_number}
+          />
+          <FormText
+            label="Asset tag"
+            value={assetTag}
+            onChange={setAssetTag}
+            mono
+            error={fieldErrors.asset_tag}
+          />
+        </div>
+        {visibility.airflow && (
+          <FormSelect
+            label="Airflow"
+            value={airflow === "" ? null : airflow}
+            onChange={(v) => setAirflow(v ?? "")}
+            noneLabel="-"
+            options={AIRFLOW_OPTIONS}
+            error={fieldErrors.airflow}
+          />
+        )}
+      </FormSection>
+
+      <FormSection
+        title="Notes"
+        collapsible
+        storageKey="device"
+        summary={notesSummary || undefined}
+        hasValues={!!(description || comments || tagIds.length)}
+      >
         <FormTextarea
-          label="Comments"
-          hint="optional"
-          value={comments}
-          onChange={setComments}
-          error={fieldErrors.comments}
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
         />
-      )}
 
-      {(visibility.location || visibility.cluster) && (
-        <div className="grid grid-cols-2 gap-3">
-          {visibility.location && (
-            <FormCombobox
-              label="Location"
-              hint="optional"
-              value={locationId}
-              onChange={setLocationId}
-              options={(locations.data?.results ?? []).map((l) => ({
-                value: l.id,
-                label: l.name,
-              }))}
-              noneLabel="No location"
-              placeholder="Select a location…"
-              searchPlaceholder="Search locations…"
-              emptyText="No locations."
-              error={fieldErrors.location_id}
-            />
-          )}
-          {visibility.cluster && (
-            <FormCombobox
-              label="Cluster"
-              hint="optional"
-              value={clusterId}
-              onChange={setClusterId}
-              options={(clusters.data?.results ?? []).map((c) => ({
-                value: c.id,
-                label: c.name,
-              }))}
-              noneLabel="No cluster"
-              placeholder="Select a cluster…"
-              searchPlaceholder="Search clusters…"
-              emptyText="No clusters."
-              error={fieldErrors.cluster_id}
-            />
-          )}
-        </div>
-      )}
+        {visibility.comments && (
+          <FormTextarea
+            label="Comments"
+            hint="optional"
+            value={comments}
+            onChange={setComments}
+            error={fieldErrors.comments}
+          />
+        )}
 
-      {visibility.airflow && (
-        <FormSelect
-          label="Airflow"
-          value={airflow === "" ? null : airflow}
-          onChange={(v) => setAirflow(v ?? "")}
-          noneLabel="-"
-          options={AIRFLOW_OPTIONS}
-          error={fieldErrors.airflow}
-        />
-      )}
+        <Field label="Tags" error={fieldErrors.tag_ids}>
+          <TagMultiSelect
+            options={tags.data?.results ?? []}
+            value={tagIds}
+            onChange={setTagIds}
+          />
+        </Field>
+      </FormSection>
 
-      {(visibility.latitude || visibility.longitude) && (
-        <div className="grid grid-cols-2 gap-3">
-          {visibility.latitude && (
-            <FormText
-              label="Latitude"
-              hint="optional"
-              type="number"
-              inputMode="decimal"
-              mono
-              value={latitude}
-              onChange={setLatitude}
-              placeholder="55.6761"
-              error={fieldErrors.latitude}
-            />
-          )}
-          {visibility.longitude && (
-            <FormText
-              label="Longitude"
-              hint="optional"
-              type="number"
-              inputMode="decimal"
-              mono
-              value={longitude}
-              onChange={setLongitude}
-              placeholder="12.5683"
-              error={fieldErrors.longitude}
-            />
-          )}
-        </div>
-      )}
+      <FormSection
+        title="Placement"
+        collapsible
+        storageKey="device"
+        summary={placementSummary || undefined}
+        hasValues={!!(locationId || clusterId || latitude || longitude)}
+      >
+        {(visibility.location || visibility.cluster) && (
+          <div className="grid grid-cols-2 gap-3">
+            {visibility.location && (
+              <FormCombobox
+                label="Location"
+                hint="optional"
+                value={locationId}
+                onChange={setLocationId}
+                options={(locations.data?.results ?? []).map((l) => ({
+                  value: l.id,
+                  label: l.name,
+                }))}
+                noneLabel="No location"
+                placeholder="Select a location…"
+                searchPlaceholder="Search locations…"
+                emptyText="No locations."
+                error={fieldErrors.location_id}
+              />
+            )}
+            {visibility.cluster && (
+              <FormCombobox
+                label="Cluster"
+                hint="optional"
+                value={clusterId}
+                onChange={setClusterId}
+                options={(clusters.data?.results ?? []).map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                }))}
+                noneLabel="No cluster"
+                placeholder="Select a cluster…"
+                searchPlaceholder="Search clusters…"
+                emptyText="No clusters."
+                error={fieldErrors.cluster_id}
+              />
+            )}
+          </div>
+        )}
 
-      <fieldset className="grid gap-3 rounded-lg border border-border p-3">
-        <legend className="px-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-          Rack
-        </legend>
+        {(visibility.latitude || visibility.longitude) && (
+          <div className="grid grid-cols-2 gap-3">
+            {visibility.latitude && (
+              <FormText
+                label="Latitude"
+                hint="optional"
+                type="number"
+                inputMode="decimal"
+                mono
+                value={latitude}
+                onChange={setLatitude}
+                placeholder="55.6761"
+                error={fieldErrors.latitude}
+              />
+            )}
+            {visibility.longitude && (
+              <FormText
+                label="Longitude"
+                hint="optional"
+                type="number"
+                inputMode="decimal"
+                mono
+                value={longitude}
+                onChange={setLongitude}
+                placeholder="12.5683"
+                error={fieldErrors.longitude}
+              />
+            )}
+          </div>
+        )}
+      </FormSection>
+
+      <FormSection
+        title="Rack"
+        collapsible
+        storageKey="device"
+        summary={rackSummary || undefined}
+        hasValues={!!rackId}
+      >
         <RackPicker
           hint="optional"
           value={rackId}
@@ -805,12 +884,15 @@ export function DeviceForm({
             )}
           </div>
         )}
-      </fieldset>
+      </FormSection>
 
-      <fieldset className="grid gap-3 rounded-lg border border-border p-3">
-        <legend className="px-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-          Stack membership
-        </legend>
+      <FormSection
+        title="Stack membership"
+        collapsible
+        storageKey="device"
+        summary={stackSummary || undefined}
+        hasValues={!!vcId}
+      >
         <FormCombobox
           label="Virtual chassis"
           hint="optional"
@@ -846,15 +928,8 @@ export function DeviceForm({
             error={fieldErrors.vc_priority}
           />
         </div>
-      </fieldset>
+      </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
       <CustomFieldInputs
         model="device"
         value={customFields}

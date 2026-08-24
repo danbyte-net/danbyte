@@ -34,7 +34,7 @@ import {
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { DevicePicker } from "@/components/device-picker"
-import { useFieldErrors } from "@/components/forms"
+import { FormSection, useFieldErrors } from "@/components/forms"
 import { InfoTip } from "@/components/ui/info-tip"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
@@ -410,331 +410,349 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
         }
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      {!isEdit && (
-        <div className="grid gap-3 rounded-md border border-border p-3">
-          <p className="text-[11px] text-muted-foreground">
-            Pick the subnet this IP belongs to - it sets the VRF and site.
-            Narrow the list by site or VRF.
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Site (filter)">
+      <FormSection title="Address">
+        {!isEdit && (
+          <div className="grid gap-3 rounded-md border border-border p-3">
+            <p className="text-[11px] text-muted-foreground">
+              Pick the subnet this IP belongs to - it sets the VRF and site.
+              Narrow the list by site or VRF.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Site (filter)">
+                <Combobox
+                  value={siteFilter}
+                  onChange={(v) => {
+                    setSiteFilter(v)
+                    setPrefixId(null)
+                  }}
+                  options={siteOpts}
+                  noneLabel="Any site"
+                  placeholder="Any site"
+                  searchPlaceholder="Search sites…"
+                  emptyText="No sites."
+                />
+              </Field>
+              <Field label="VRF (filter)">
+                <Combobox
+                  value={vrfFilter}
+                  onChange={(v) => {
+                    setVrfFilter(v)
+                    setPrefixId(null)
+                  }}
+                  options={vrfOpts}
+                  noneLabel="Any VRF"
+                  placeholder="Any VRF"
+                  searchPlaceholder="Search VRFs…"
+                  emptyText="No VRFs."
+                />
+              </Field>
+            </div>
+            <Field label="Subnet" error={fieldErrors.prefix_id}>
               <Combobox
-                value={siteFilter}
-                onChange={(v) => {
-                  setSiteFilter(v)
-                  setPrefixId(null)
-                }}
-                options={siteOpts}
-                noneLabel="Any site"
-                placeholder="Any site"
-                searchPlaceholder="Search sites…"
-                emptyText="No sites."
-              />
-            </Field>
-            <Field label="VRF (filter)">
-              <Combobox
-                value={vrfFilter}
-                onChange={(v) => {
-                  setVrfFilter(v)
-                  setPrefixId(null)
-                }}
-                options={vrfOpts}
-                noneLabel="Any VRF"
-                placeholder="Any VRF"
-                searchPlaceholder="Search VRFs…"
-                emptyText="No VRFs."
+                value={prefixId}
+                onChange={setPrefixId}
+                options={prefixOpts}
+                placeholder="Pick a subnet…"
+                searchPlaceholder="Search subnets…"
+                emptyText="No subnets - adjust the filters."
               />
             </Field>
           </div>
-          <Field label="Subnet" error={fieldErrors.prefix_id}>
+        )}
+
+        <Field label="Address" error={fieldErrors.ip_address}>
+          <Input
+            autoFocus={!isEdit}
+            required
+            placeholder="10.0.10.5"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            className="font-mono"
+          />
+          {!isEdit && selectedPrefix?.cidr && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Within{" "}
+              <span className="font-mono text-foreground">
+                {selectedPrefix.cidr}
+              </span>{" "}
+              - the network part is filled in, just add the host.
+            </p>
+          )}
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Status" error={fieldErrors.status_id}>
+            <Select
+              value={statusId ?? NONE}
+              onValueChange={(v) => setStatusId(v === NONE ? null : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Pick status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>- none -</SelectItem>
+                {statuses.data?.results.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Role" error={fieldErrors.role_id}>
+            <Select
+              value={roleId ?? NONE}
+              onValueChange={(v) => setRoleId(v === NONE ? null : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="No role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>No role</SelectItem>
+                {roles.data?.results.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+
+        <Field label="Description" error={fieldErrors.description}>
+          <Textarea
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="e.g. db-01 - production replica"
+          />
+        </Field>
+
+        <Field
+          label="Reservation note"
+          hint={requiresNote ? "Required for this status" : "Optional"}
+          error={fieldErrors.reservation_note}
+        >
+          <Input
+            required={requiresNote}
+            value={reservationNote}
+            onChange={(e) => setReservationNote(e.target.value)}
+            placeholder="Ticket #, owner, etc."
+          />
+        </Field>
+      </FormSection>
+
+      <FormSection
+        title="Assignment"
+        collapsible
+        storageKey="ip"
+        hasValues={!!(deviceId || vmId || switchId)}
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <DevicePicker
+            label="Device"
+            value={deviceId}
+            onChange={(next) => {
+              setDeviceId(next)
+              setInterfaceId(null)
+              if (!next) setIsPrimary(false)
+            }}
+            noneLabel="No device"
+            placeholder="No device"
+            error={fieldErrors.assigned_device_id}
+          />
+          <Field label="Interface">
+            <Select
+              value={interfaceId ?? NONE}
+              onValueChange={(v) => setInterfaceId(v === NONE ? null : v)}
+              disabled={!deviceId}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={
+                    deviceId ? "Pick interface" : "Pick device first"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>- none -</SelectItem>
+                {interfaces.data?.results.map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+
+        {/* The virtual counterpart of Device + Interface above. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Virtual machine" error={fieldErrors.assigned_vm_id}>
             <Combobox
-              value={prefixId}
-              onChange={setPrefixId}
-              options={prefixOpts}
-              placeholder="Pick a subnet…"
-              searchPlaceholder="Search subnets…"
-              emptyText="No subnets - adjust the filters."
+              value={vmId}
+              onChange={(next) => {
+                setVmId(next)
+                setVmInterfaceId(null)
+              }}
+              options={(vms.data?.results ?? []).map((v) => ({
+                value: v.id,
+                label: v.name,
+              }))}
+              noneLabel="No virtual machine"
+              placeholder="No virtual machine"
+              searchPlaceholder="Search VMs…"
+              emptyText="No virtual machines."
+            />
+          </Field>
+          <Field label="VM interface">
+            <Select
+              value={vmInterfaceId ?? NONE}
+              onValueChange={(v) => setVmInterfaceId(v === NONE ? null : v)}
+              disabled={!vmId}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={vmId ? "Pick interface" : "Pick a VM first"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>- none -</SelectItem>
+                {vmInterfaces.data?.results.map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <DevicePicker
+            label="Switch"
+            value={switchId}
+            onChange={(next) => {
+              setSwitchId(next)
+              setSwitchInterfaceId(null)
+            }}
+            noneLabel="No switch"
+            placeholder="No switch"
+          />
+          <Field label="Switch port">
+            <Select
+              value={switchInterfaceId ?? NONE}
+              onValueChange={(v) => setSwitchInterfaceId(v === NONE ? null : v)}
+              disabled={!switchId}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={switchId ? "Pick port" : "Pick switch first"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>- none -</SelectItem>
+                {switchInterfaces.data?.results.map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection
+        title="Identity"
+        collapsible
+        storageKey="ip"
+        hasValues={!!(mac || dnsName)}
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="MAC address" error={fieldErrors.mac_address}>
+            <Input
+              value={mac}
+              onChange={(e) => setMac(e.target.value)}
+              className="font-mono"
+              placeholder="00:1b:44:11:3a:b7"
+            />
+          </Field>
+          <Field label="DNS name" error={fieldErrors.dns_name}>
+            <Input
+              value={dnsName}
+              onChange={(e) => setDnsName(e.target.value)}
+              className="font-mono"
+              placeholder="host.example.com"
             />
           </Field>
         </div>
-      )}
 
-      <Field label="Address" error={fieldErrors.ip_address}>
-        <Input
-          autoFocus={!isEdit}
-          required
-          placeholder="10.0.10.5"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          className="font-mono"
-        />
-        {!isEdit && selectedPrefix?.cidr && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Within{" "}
-            <span className="font-mono text-foreground">
-              {selectedPrefix.cidr}
-            </span>{" "}
-            - the network part is filled in, just add the host.
-          </p>
+        {canDhcp && (
+          <div className="rounded-md border border-border p-3">
+            <label
+              className={
+                "flex items-center gap-2 text-sm " +
+                (planning || (!existingRes && !mac.trim())
+                  ? "text-muted-foreground"
+                  : "cursor-pointer")
+              }
+            >
+              <Checkbox
+                checked={dhcpReserve}
+                disabled={planning || (!existingRes && !mac.trim())}
+                onCheckedChange={(v) => setDhcpReserve(!!v)}
+              />
+              <span>Reserve in DHCP (MAC binding)</span>
+              <InfoTip>
+                This address is inside the DHCP scope pool{" "}
+                <span className="font-mono">
+                  {poolScope?.scope_id ?? existingRes?.scope_display}
+                </span>{" "}
+                on {poolScope?.connection_name ?? existingRes?.connection_name}.
+                Reserving binds it to the MAC address above and pushes the
+                reservation to the Windows server on save; unticking removes it
+                there.
+              </InfoTip>
+            </label>
+            <p className="mt-1 pl-6 text-[11px] text-muted-foreground">
+              {planning
+                ? "Unavailable in plan mode - reservations push to the DHCP server immediately."
+                : !existingRes && !mac.trim()
+                  ? "Enter the MAC address above to reserve this address."
+                  : existingRes
+                    ? `Currently reserved on ${existingRes.connection_name ?? "Danbyte (local)"} (${existingRes.mac}).`
+                    : `Will reserve on ${poolScope?.connection_name ?? "Danbyte (local)"} when you save.`}
+            </p>
+          </div>
         )}
-      </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Status" error={fieldErrors.status_id}>
-          <Select
-            value={statusId ?? NONE}
-            onValueChange={(v) => setStatusId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Pick status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>- none -</SelectItem>
-              {statuses.data?.results.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Role" error={fieldErrors.role_id}>
-          <Select
-            value={roleId ?? NONE}
-            onValueChange={(v) => setRoleId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No role" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No role</SelectItem>
-              {roles.data?.results.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
-          rows={3}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. db-01 - production replica"
-        />
-      </Field>
-
-      <Field
-        label="Reservation note"
-        hint={requiresNote ? "Required for this status" : "Optional"}
-        error={fieldErrors.reservation_note}
-      >
-        <Input
-          required={requiresNote}
-          value={reservationNote}
-          onChange={(e) => setReservationNote(e.target.value)}
-          placeholder="Ticket #, owner, etc."
-        />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <DevicePicker
-          label="Device"
-          value={deviceId}
-          onChange={(next) => {
-            setDeviceId(next)
-            setInterfaceId(null)
-            if (!next) setIsPrimary(false)
-          }}
-          noneLabel="No device"
-          placeholder="No device"
-          error={fieldErrors.assigned_device_id}
-        />
-        <Field label="Interface">
-          <Select
-            value={interfaceId ?? NONE}
-            onValueChange={(v) => setInterfaceId(v === NONE ? null : v)}
-            disabled={!deviceId}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue
-                placeholder={deviceId ? "Pick interface" : "Pick device first"}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>- none -</SelectItem>
-              {interfaces.data?.results.map((i) => (
-                <SelectItem key={i.id} value={i.id}>
-                  {i.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-
-      {/* The virtual counterpart of Device + Interface above. */}
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Virtual machine" error={fieldErrors.assigned_vm_id}>
-          <Combobox
-            value={vmId}
-            onChange={(next) => {
-              setVmId(next)
-              setVmInterfaceId(null)
-            }}
-            options={(vms.data?.results ?? []).map((v) => ({
-              value: v.id,
-              label: v.name,
-            }))}
-            noneLabel="No virtual machine"
-            placeholder="No virtual machine"
-            searchPlaceholder="Search VMs…"
-            emptyText="No virtual machines."
-          />
-        </Field>
-        <Field label="VM interface">
-          <Select
-            value={vmInterfaceId ?? NONE}
-            onValueChange={(v) => setVmInterfaceId(v === NONE ? null : v)}
-            disabled={!vmId}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue
-                placeholder={vmId ? "Pick interface" : "Pick a VM first"}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>- none -</SelectItem>
-              {vmInterfaces.data?.results.map((i) => (
-                <SelectItem key={i.id} value={i.id}>
-                  {i.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <DevicePicker
-          label="Switch"
-          value={switchId}
-          onChange={(next) => {
-            setSwitchId(next)
-            setSwitchInterfaceId(null)
-          }}
-          noneLabel="No switch"
-          placeholder="No switch"
-        />
-        <Field label="Switch port">
-          <Select
-            value={switchInterfaceId ?? NONE}
-            onValueChange={(v) => setSwitchInterfaceId(v === NONE ? null : v)}
-            disabled={!switchId}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue
-                placeholder={switchId ? "Pick port" : "Pick switch first"}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>- none -</SelectItem>
-              {switchInterfaces.data?.results.map((i) => (
-                <SelectItem key={i.id} value={i.id}>
-                  {i.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="MAC address" error={fieldErrors.mac_address}>
-          <Input
-            value={mac}
-            onChange={(e) => setMac(e.target.value)}
-            className="font-mono"
-            placeholder="00:1b:44:11:3a:b7"
-          />
-        </Field>
-        <Field label="DNS name" error={fieldErrors.dns_name}>
-          <Input
-            value={dnsName}
-            onChange={(e) => setDnsName(e.target.value)}
-            className="font-mono"
-            placeholder="host.example.com"
-          />
-        </Field>
-      </div>
-
-      {canDhcp && (
-        <div className="rounded-md border border-border p-3">
+        {deviceId && (
           <label
-            className={
-              "flex items-center gap-2 text-sm " +
-              (planning || (!existingRes && !mac.trim())
-                ? "text-muted-foreground"
-                : "cursor-pointer")
-            }
+            className={`flex items-center gap-2 text-xs ${
+              planning ? "text-muted-foreground" : "cursor-pointer"
+            }`}
           >
-            <Checkbox
-              checked={dhcpReserve}
-              disabled={planning || (!existingRes && !mac.trim())}
-              onCheckedChange={(v) => setDhcpReserve(!!v)}
-            />
-            <span>Reserve in DHCP (MAC binding)</span>
-            <InfoTip>
-              This address is inside the DHCP scope pool{" "}
-              <span className="font-mono">
-                {poolScope?.scope_id ?? existingRes?.scope_display}
-              </span>{" "}
-              on {poolScope?.connection_name ?? existingRes?.connection_name}.
-              Reserving binds it to the MAC address above and pushes the
-              reservation to the Windows server on save; unticking removes it
-              there.
-            </InfoTip>
-          </label>
-          <p className="mt-1 pl-6 text-[11px] text-muted-foreground">
-            {planning
-              ? "Unavailable in plan mode - reservations push to the DHCP server immediately."
-              : !existingRes && !mac.trim()
-                ? "Enter the MAC address above to reserve this address."
-                : existingRes
-                  ? `Currently reserved on ${existingRes.connection_name ?? "Danbyte (local)"} (${existingRes.mac}).`
-                  : `Will reserve on ${poolScope?.connection_name ?? "Danbyte (local)"} when you save.`}
-          </p>
-        </div>
-      )}
-
-      {deviceId && (
-        <label
-          className={`flex items-center gap-2 text-xs ${
-            planning ? "text-muted-foreground" : "cursor-pointer"
-          }`}
-        >
-          {/* Primary IP is a field on the *device*, written by a second request
+            {/* Primary IP is a field on the *device*, written by a second request
               that plan mode never reaches. Rather than silently drop it from a
               plan, the box is unavailable here and says where it lives. */}
-          <Checkbox
-            checked={isPrimary && !planning}
-            disabled={planning}
-            onCheckedChange={(v) => setIsPrimary(!!v)}
-          />
-          Make this the device's primary IP
-          {planning && (
-            <InfoTip>
-              Primary IP is stored on the device, not the address. Plan it from
-              the device's own form.
-            </InfoTip>
-          )}
-        </label>
-      )}
+            <Checkbox
+              checked={isPrimary && !planning}
+              disabled={planning}
+              onCheckedChange={(v) => setIsPrimary(!!v)}
+            />
+            Make this the device's primary IP
+            {planning && (
+              <InfoTip>
+                Primary IP is stored on the device, not the address. Plan it
+                from the device's own form.
+              </InfoTip>
+            )}
+          </label>
+        )}
+      </FormSection>
 
       <Field label="Tags" error={fieldErrors.tag_ids}>
         <TagMultiSelect

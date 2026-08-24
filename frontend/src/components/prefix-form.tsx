@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { useFieldErrors, FormCheckbox } from "@/components/forms"
+import { FormSection, useFieldErrors, FormCheckbox } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 // Pure form body - no dialog chrome. Rendered by /prefixes/new and
@@ -190,136 +190,145 @@ export function PrefixForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <Field label="Prefix (CIDR)" error={fieldErrors.cidr}>
-        <Input
-          autoFocus={!isEdit}
-          required
-          placeholder="10.0.10.0/24"
-          value={cidr}
-          onChange={(e) => setCidr(e.target.value)}
-          className="font-mono"
-        />
-      </Field>
+      <FormSection title="Prefix">
+        <Field label="Prefix (CIDR)" error={fieldErrors.cidr}>
+          <Input
+            autoFocus={!isEdit}
+            required
+            placeholder="10.0.10.0/24"
+            value={cidr}
+            onChange={(e) => setCidr(e.target.value)}
+            className="font-mono"
+          />
+        </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Status" error={fieldErrors.status_id}>
-          <Select
-            value={statusId ?? NONE}
-            onValueChange={(v) => setStatusId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No status</SelectItem>
-              {statuses.data?.results.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="VRF" error={fieldErrors.vrf_id}>
-          <Select
-            value={vrfId ?? NONE}
-            onValueChange={(v) => setVrfId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Global" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>Global</SelectItem>
-              {vrfs.data?.results.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.name}{" "}
-                  {v.rd && (
-                    <span className="text-muted-foreground">· {v.rd}</span>
-                  )}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Status" error={fieldErrors.status_id}>
+            <Select
+              value={statusId ?? NONE}
+              onValueChange={(v) => setStatusId(v === NONE ? null : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="No status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>No status</SelectItem>
+                {statuses.data?.results.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="VRF" error={fieldErrors.vrf_id}>
+            <Select
+              value={vrfId ?? NONE}
+              onValueChange={(v) => setVrfId(v === NONE ? null : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Global" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Global</SelectItem>
+                {vrfs.data?.results.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name}{" "}
+                    {v.rd && (
+                      <span className="text-muted-foreground">· {v.rd}</span>
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Site" error={fieldErrors.site_id}>
-          <Select
-            value={siteId ?? NONE}
-            onValueChange={(v) => {
-              setSiteId(v === NONE ? null : v)
-              setLocationId(null) // locations are site-specific
-            }}
-            disabled={siteLocked}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No site" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No site</SelectItem>
-              {sites.options.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="VLAN" error={fieldErrors.vlan_id}>
-          <Select
-            value={vlanId ?? NONE}
-            onValueChange={(v) => setVlanId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No VLAN" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No VLAN</SelectItem>
-              {vlans.data?.results.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.vlan_id} · {v.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Site" error={fieldErrors.site_id}>
+            <Select
+              value={siteId ?? NONE}
+              onValueChange={(v) => {
+                setSiteId(v === NONE ? null : v)
+                setLocationId(null) // locations are site-specific
+              }}
+              disabled={siteLocked}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="No site" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>No site</SelectItem>
+                {sites.options.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="VLAN" error={fieldErrors.vlan_id}>
+            <Select
+              value={vlanId ?? NONE}
+              onValueChange={(v) => setVlanId(v === NONE ? null : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="No VLAN" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>No VLAN</SelectItem>
+                {vlans.data?.results.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.vlan_id} · {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+      </FormSection>
 
-      <Field
-        label="Location"
-        hint={
-          siteId ? "Optional - a range within the site" : "Pick a site first"
-        }
-        error={fieldErrors.location_id}
+      <FormSection
+        title="Placement"
+        collapsible
+        storageKey="prefix"
+        hasValues={!!(locationId || autoAssignSite)}
       >
-        <Select
-          value={locationId ?? NONE}
-          onValueChange={(v) => setLocationId(v === NONE ? null : v)}
-          disabled={!siteId}
+        <Field
+          label="Location"
+          hint={
+            siteId ? "Optional - a range within the site" : "Pick a site first"
+          }
+          error={fieldErrors.location_id}
         >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="No location" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No location</SelectItem>
-            {locations.data?.results.map((l) => (
-              <SelectItem key={l.id} value={l.id}>
-                {l.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
+          <Select
+            value={locationId ?? NONE}
+            onValueChange={(v) => setLocationId(v === NONE ? null : v)}
+            disabled={!siteId}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="No location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>No location</SelectItem>
+              {locations.data?.results.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
 
-      <FormCheckbox
-        label="Assign IPs in this range to the site"
-        hint="New IPs created here inherit the prefix's site, so site-scoped users and filters pick them up."
-        checked={autoAssignSite}
-        onChange={setAutoAssignSite}
-      />
+        <FormCheckbox
+          label="Assign IPs in this range to the site"
+          hint="New IPs created here inherit the prefix's site, so site-scoped users and filters pick them up."
+          checked={autoAssignSite}
+          onChange={setAutoAssignSite}
+        />
+      </FormSection>
 
       <Field label="Gateway" hint="Optional" error={fieldErrors.gateway}>
         <Input
