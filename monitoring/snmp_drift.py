@@ -558,7 +558,10 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
                 device=device,
                 name=action.get("name", "")[:64],
                 mac_address=(observed.get("mac") or "")[:17],
-                enabled=observed.get("admin_status") != "down",
+                enabled=(
+                    observed.get("admin_status") != "down"
+                    and not _is_not_present(observed)
+                ),
             )
         except IntegrityError:
             # Already created (double-accept) or collides with an existing
@@ -695,7 +698,14 @@ def sync_device_from_snmp(device, tenant) -> dict:
                 iface = Interface.objects.create(
                     device=device, name=name[:64],
                     mac_address=(o.get("mac") or "")[:17],
-                    enabled=o.get("admin_status") != "down",
+                    # A notPresent port only reaches here when the
+                    # tenant opted in. It's a slot with no hardware, so it
+                    # lands DISABLED - importing them as ordinary enabled
+                    # ports is what buried the real ones (#97).
+                    enabled=(
+                        o.get("admin_status") != "down"
+                        and not _is_not_present(o)
+                    ),
                     speed=speed, vlan=vlan,
                 )
             except IntegrityError:

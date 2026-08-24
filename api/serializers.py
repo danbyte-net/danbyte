@@ -8,6 +8,8 @@ import ipaddress
 import os
 
 from django.db import transaction
+from django.utils.text import slugify
+from rest_framework.fields import empty
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -74,6 +76,77 @@ class NumIdModelSerializer(serializers.ModelSerializer):
         ):
             names = ["numid", *names]
         return names
+
+    def run_validation(self, data=empty):
+        """Validate, then fill a blank slug from the object's name.
+
+        36 models carry a UNIQUE slug and their serializers accept a blank
+        one, but nothing ever generated it - so every row created without an
+        explicit slug stored "". The first was fine; the second hit the
+        unique constraint and the API answered 409 (#104 - Locations, whose
+        form has no slug field at all, so it was every second one).
+
+        This sits in ``run_validation`` rather than ``validate`` on purpose:
+        27 serializers override ``validate`` without calling super, and a
+        fix they can silently skip is not a fix.
+        """
+        attrs = super().run_validation(data)
+        return self._fill_blank_slug(attrs)
+
+    # Catalogs treat the slug as identity, so two rows with the same name
+    # SHOULD collide - that rejection is the feature ("you already have a
+    # Cooling unit"). Serializers whose names legitimately repeat opt in to a
+    # numeric suffix instead; Locations do, since a campus site can hold a
+    # "Rack room" in each building.
+    slug_autofill_unique = False
+
+    def _fill_blank_slug(self, attrs):
+        """Derive a slug from the name when the caller left it blank. A
+        caller-supplied slug is left exactly as sent."""
+        model = getattr(getattr(self, "Meta", None), "model", None)
+        if (
+            model is None
+            or not isinstance(attrs, dict)
+            or not any(f.name == "slug" for f in model._meta.concrete_fields)
+        ):
+            return attrs
+        if attrs.get("slug"):
+            return attrs
+        if self.instance is not None and getattr(self.instance, "slug", ""):
+            return attrs
+        source = (
+            attrs.get("name")
+            or getattr(self.instance, "name", "")
+            or attrs.get("cid")
+            or ""
+        )
+        base = slugify(source)[:100] or "item"
+        scope = {}
+        for field in ("tenant", "site"):
+            if any(f.name == field for f in model._meta.concrete_fields):
+                value = attrs.get(field) or getattr(self.instance, field, None)
+                if value is None and field == "tenant":
+                    from api.views import _get_active_tenant
+
+                    request = self.context.get("request")
+                    value = (
+                        _get_active_tenant(request) if request is not None else None
+                    )
+                if value is not None:
+                    scope[field] = value
+        if not self.slug_autofill_unique:
+            attrs["slug"] = base
+            return attrs
+        taken = model._default_manager.filter(**scope)
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        used = set(taken.values_list("slug", flat=True))
+        candidate, n = base, 1
+        while candidate in used:
+            n += 1
+            candidate = f"{base[:96]}-{n}"
+        attrs["slug"] = candidate
+        return attrs
 
     def _reject_nested_relation_inputs(self):
         """Guard against the common client mistake of sending a relation's
@@ -5614,6 +5687,10 @@ class LocationMiniSerializer(NumIdModelSerializer):
 
 
 class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
+    # A site can hold "Rack room" in two different buildings, and the form
+    # has no slug field to disambiguate with - so suffix instead of 409.
+    slug_autofill_unique = True
+
     slug = serializers.SlugField(required=False, allow_blank=True)
     site = SiteMiniSerializer(read_only=True)
     parent = LocationMiniSerializer(read_only=True)

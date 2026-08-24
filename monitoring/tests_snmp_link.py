@@ -504,3 +504,11 @@ class NotPresentPortTests(_SnmpDriftTestBase):
             )
         )
         self.assertEqual(created, {"1/1", "2/1", "2/2"})
+        # Imported, but not as live ports - the hardware isn't there.
+        absent = Interface.objects.filter(
+            device=self.device, name__in=["2/1", "2/2"]
+        )
+        self.assertTrue(all(not i.enabled for i in absent))
+        self.assertTrue(
+            Interface.objects.get(device=self.device, name="1/1").enabled
+        )
