@@ -95,6 +95,21 @@ def _is_not_present(o: dict) -> bool:
     return str(o.get("oper_status") or "").lower() == "notpresent"
 
 
+def _not_present_status(tenant):
+    """The tenant's "Not present" interface status, or None if renamed away.
+
+    Stamped on ports imported while the agent reports them notPresent (#105)
+    so they read as absent hardware, not as ports someone switched off.
+    """
+    from api.models import Status
+
+    return (
+        Status.objects.filter(tenant=tenant, slug="not_present")
+        .filter(available_to__contains=["interface"])
+        .first()
+    )
+
+
 def _norm(value) -> str:
     return (value or "").strip().lower()
 
@@ -562,6 +577,11 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
                     observed.get("admin_status") != "down"
                     and not _is_not_present(observed)
                 ),
+                status=(
+                    _not_present_status(tenant)
+                    if _is_not_present(observed)
+                    else None
+                ),
             )
         except IntegrityError:
             # Already created (double-accept) or collides with an existing
@@ -699,12 +719,16 @@ def sync_device_from_snmp(device, tenant) -> dict:
                     device=device, name=name[:64],
                     mac_address=(o.get("mac") or "")[:17],
                     # A notPresent port only reaches here when the
-                    # tenant opted in. It's a slot with no hardware, so it
-                    # lands DISABLED - importing them as ordinary enabled
-                    # ports is what buried the real ones (#97).
+                    # tenant opted in. It's a slot with no hardware: it lands
+                    # disabled AND carries the Not present status (#97, #105).
                     enabled=(
                         o.get("admin_status") != "down"
                         and not _is_not_present(o)
+                    ),
+                    status=(
+                        _not_present_status(tenant)
+                        if _is_not_present(o)
+                        else None
                     ),
                     speed=speed, vlan=vlan,
                 )

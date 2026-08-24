@@ -8,6 +8,7 @@ import {
   type InterfaceOption,
   type InterfaceWritePayload,
   type Paginated,
+  type Status,
   type TagOption,
   type VLANOption,
 } from "@/lib/api"
@@ -51,6 +52,12 @@ export function InterfaceForm({
   const isEdit = !!iface
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const statuses = useQuery({
+    queryKey: ["statuses", "interface"],
+    queryFn: () =>
+      api<Paginated<Status>>("/api/statuses/?available_to=interface&picker=1"),
+    staleTime: 5 * 60_000,
+  })
   const saveObject = useSaveObject()
   const isPlanning = !!usePlanTarget()
   const choices = useDcimChoices()
@@ -63,6 +70,9 @@ export function InterfaceForm({
   const [speed, setSpeed] = useState(iface?.speed ?? "")
   const [mtu, setMtu] = useState(iface?.mtu != null ? String(iface.mtu) : "")
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
+  const [statusId, setStatusId] = useState<string | null>(
+    iface?.status?.id ?? null
+  )
   const [mac, setMac] = useState(iface?.mac_address ?? "")
   const [mgmtOnly, setMgmtOnly] = useState(iface?.mgmt_only ?? false)
   const [markConnected, setMarkConnected] = useState(
@@ -108,6 +118,7 @@ export function InterfaceForm({
     setSpeed(iface.speed)
     setMtu(iface.mtu != null ? String(iface.mtu) : "")
     setEnabled(iface.enabled)
+    setStatusId(iface.status?.id ?? null)
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
     setMarkConnected(iface.mark_connected ?? false)
@@ -167,6 +178,7 @@ export function InterfaceForm({
         speed: speed.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
         enabled,
+        status_id: statusId,
         mac_address: mac.trim(),
         mgmt_only: mgmtOnly,
         mark_connected: markConnected,
@@ -415,6 +427,20 @@ export function InterfaceForm({
       </FormSection>
 
       <FormSection title="State">
+        <div className="mb-3 max-w-xs">
+          <FormSelect
+            label="Status"
+            value={statusId}
+            onChange={setStatusId}
+            options={(statuses.data?.results ?? []).map((s) => ({
+              value: s.id,
+              label: s.name,
+            }))}
+            noneLabel="Active"
+            placeholder="Active"
+            error={fieldErrors.status_id}
+          />
+        </div>
         <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
           <FormCheckbox
             label="Enabled"

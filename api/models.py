@@ -2494,6 +2494,12 @@ class Status(_LabeledChoice):
                    "outage event leaves the open list, the calendar's open "
                    "count, and releases its silence."),
     )
+    excludes_capacity = models.BooleanField(
+        default=False,
+        help_text=("Ports carrying this status don't count as capacity in "
+                   "port utilization - the hardware isn't there (interface "
+                   "'Not present' / 'Decommissioning')."),
+    )
 
     class Meta(_LabeledChoice.Meta):
         verbose_name_plural = "statuses"
@@ -2576,6 +2582,14 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     speed = models.CharField(max_length=64, blank=True)
     mtu = models.IntegerField(blank=True, null=True)
     enabled = models.BooleanField(default=True)
+    # Lifecycle, distinct from ``enabled`` (the admin flag the device
+    # reports): a port can be enabled in config yet Not present in the rack
+    # (a pre-allocated stack port), or disabled by an operator while very
+    # much installed. Null reads as Active (#105).
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="interfaces",
+    )
     poe_mode = models.CharField(max_length=8, blank=True, default="")
     poe_type = models.CharField(max_length=32, blank=True, default="")
     mgmt_only = models.BooleanField(
@@ -3031,8 +3045,8 @@ class Module(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """An auxiliary physical connector on a device - USB data ports, video
     outputs (HDMI/VGA/DP), card slots, grounding lugs: everything no other
-    component type models. Not cable-terminable (yet). Tenant scope inherited
-    via device."""
+    component type models. Cable-terminable (a POINT_FIELDS member) since the
+    port-reservation work. Tenant scope inherited via device."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     device = models.ForeignKey(

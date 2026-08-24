@@ -2961,6 +2961,10 @@ class DeviceViewSet(
         }
         for key, (relation, term_field) in kinds.items():
             rel = getattr(device, relation)
+            # Not-present / decommissioning interfaces aren't capacity (#105);
+            # same rule as the shared device_port_counts.
+            if relation == "interfaces":
+                rel = rel.exclude(status__excludes_capacity=True)
             cabled = CableTermination.objects.filter(
                 **{term_field: OuterRef("pk")}
             )
@@ -3529,7 +3533,9 @@ class DeviceViewSet(
 
         device = self.get_object()
         qs = (
-            device.interfaces.select_related("device", "vlan", "parent", "lag", "bridge")
+            device.interfaces.select_related(
+                "device", "vlan", "parent", "lag", "bridge", "status"
+            )
             .prefetch_related(
                 "tags", "ip_addresses", "children", "lag_members",
                 "tunnel_terminations__tunnel",
@@ -3581,7 +3587,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
 
     queryset = (
         Interface.objects.select_related(
-            "device", "vlan", "vrf", "parent", "lag", "bridge"
+            "device", "vlan", "vrf", "parent", "lag", "bridge", "status"
         )
         .prefetch_related(
             "tags", "terminations__cable", "reservations", "ip_addresses", "children",

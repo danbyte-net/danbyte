@@ -102,6 +102,7 @@ The State checkboxes:
 | Flag | Meaning |
 |---|---|
 | **Enabled** | Administratively up. |
+| **Status** | Lifecycle: Active (default), Disabled, Planned, Not present, Decommissioning. Not present = hardware the agent reports as absent; it and Decommissioning don't count as capacity in port utilization. |
 | **Management only** | Out-of-band management port; excluded from data-plane views. |
 | **Mark connected** | A cable is physically in the port, just not documented yet - counts as connected in [port utilization](devices.md#the-device-page) and clears itself when a real cable is attached. |
 | **Reserved** | A [port reservation](cabling.md#port-reservations) - hold the port before the far end is known. Released automatically when a cable lands. |

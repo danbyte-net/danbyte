@@ -16,6 +16,7 @@ import type { PlannedTargetRow } from "@/components/planning/planned-change-badg
 
 import type { Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { CableStatusControl } from "@/components/cable-status-control"
 import {
@@ -82,6 +83,7 @@ export type InterfaceColumnId =
   | "mac"
   | "layer"
   | "enabled"
+  | "status"
   | "speed"
   | "mtu"
   | "vlan"
@@ -98,6 +100,7 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
   "mac",
   "layer",
   "enabled",
+  "status",
   "speed",
   "mtu",
   "vlan",
@@ -118,6 +121,7 @@ export const DEVICE_INTERFACE_COLUMNS: InterfaceColumnId[] = [
   "mac",
   "layer",
   "enabled",
+  "status",
   "speed",
   "vlan",
   "vrf",
@@ -336,6 +340,17 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
         ) : (
           <Badge variant="secondary">Disabled</Badge>
         ),
+    }),
+    status: () => ({
+      id: "status",
+      accessorFn: (r) => r.status?.name ?? "",
+      header: "Status",
+      // Null is Active - the common case renders blank so the column only
+      // draws the eye when a port is Planned / Not present / Decommissioning.
+      cell: ({ row }) =>
+        row.original.status ? (
+          <StatusBadge status={row.original.status} />
+        ) : null,
     }),
     speed: () => ({
       id: "speed",

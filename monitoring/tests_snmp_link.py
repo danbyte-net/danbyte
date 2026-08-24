@@ -490,8 +490,10 @@ class NotPresentPortTests(_SnmpDriftTestBase):
         self.assertEqual(summary.get("interfaces_skipped_not_present"), 2)
 
     def test_a_tenant_can_opt_into_importing_them(self):
+        from api.status_registry import seed_builtin_statuses
         from monitoring.models import MonitoringSettings
 
+        seed_builtin_statuses(self.tenant)
         ms = MonitoringSettings.for_tenant(self.tenant)
         ms.snmp_import_not_present = True
         ms.save(update_fields=["snmp_import_not_present"])
@@ -504,11 +506,15 @@ class NotPresentPortTests(_SnmpDriftTestBase):
             )
         )
         self.assertEqual(created, {"1/1", "2/1", "2/2"})
-        # Imported, but not as live ports - the hardware isn't there.
+        # Imported, but not as live ports - the hardware isn't there. They
+        # land disabled AND carry the Not present lifecycle status (#105).
         absent = Interface.objects.filter(
             device=self.device, name__in=["2/1", "2/2"]
-        )
+        ).select_related("status")
         self.assertTrue(all(not i.enabled for i in absent))
+        self.assertTrue(
+            all(i.status and i.status.slug == "not_present" for i in absent)
+        )
         self.assertTrue(
             Interface.objects.get(device=self.device, name="1/1").enabled
         )

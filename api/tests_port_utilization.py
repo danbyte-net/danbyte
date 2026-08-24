@@ -120,6 +120,29 @@ class PortUtilizationTests(APITestCase):
         self.assertEqual(body["interfaces"]["marked"], 0)
         self.assertEqual(body["interfaces"]["connected"], 1)
 
+    def test_excluded_status_ports_leave_the_math(self):
+        """A Not-present stack port is not capacity - free or otherwise
+        (#105). Only the excludes_capacity flag matters, not the slug."""
+        absent = Status.objects.create(
+            tenant=self.tenant, name="Not Present", slug="not_present",
+            available_to=["interface"], excludes_capacity=True,
+        )
+        Interface.objects.create(device=self.dev, name="Gi1")
+        Interface.objects.create(device=self.dev, name="2/1", status=absent)
+        Interface.objects.create(device=self.dev, name="2/2", status=absent)
+
+        r = self.client.get(f"/api/devices/{self.dev.id}/port-utilization/")
+        self.assertEqual(r.status_code, 200, r.content)
+        combined = r.json()["combined"]
+        self.assertEqual(combined["total"], 1)
+        self.assertEqual(combined["free"], 1)
+
+        from api.port_utilization import device_port_counts
+        from api.models import Device as D
+
+        counts = device_port_counts(D.objects.filter(pk=self.dev.pk))
+        self.assertEqual(counts[self.dev.id]["total"], 1)
+
     def test_rollup_lists_port_devices_fullest_first(self):
         # pp-01: 1 of 2 interfaces cabled (50%); sw-01: 1 of 1 (100%).
         i1 = Interface.objects.create(device=self.dev, name="Gi1")

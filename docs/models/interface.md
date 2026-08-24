@@ -61,6 +61,16 @@ The [VRF](vrf.md) this interface routes in. Empty = the Global table.
 
 ## State
 
+### Status
+
+Lifecycle status from the tenant's [status catalog](../features/catalogs-and-settings.md),
+distinct from **Enabled** (the admin flag the device reports). Seeded values:
+Active, Disabled, Planned, Not present, Decommissioning. Empty reads as
+Active. **Not present** marks hardware the agent reports as absent - a
+pre-allocated stack port or an empty slot; SNMP sync sets it automatically
+when the *Import pre-allocated ports* setting is on. Not present and
+Decommissioning ports are excluded from port-utilization capacity entirely.
+
 ### Management only
 
 Out-of-band management port; excluded from data-plane views.

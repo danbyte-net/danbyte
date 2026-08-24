@@ -3,7 +3,9 @@
 Connected = the port terminates a cable, or carries ``mark_connected`` (a
 cable is in the port, just not documented yet); reserved = its cable's
 status is "planned" (earmarked but not yet patched) OR the uncabled port
-holds a PortReservation; free = no cable, no hold.
+holds a PortReservation; free = no cable, no hold. Interfaces whose status
+carries ``excludes_capacity`` (Not present, Decommissioning) leave the math
+entirely (#105) - a phantom stack port is not capacity, free or otherwise.
 Twelve GROUP BY aggregates total (three port kinds x four metrics) - never
 per-device queries, however many devices are in scope. ``marked`` is the
 undocumented subset of connected, kept separate so the number stays honest
@@ -23,6 +25,10 @@ def device_port_counts(devices) -> dict:
 
     def kind_counts(model, term_field):
         base = model.objects.filter(device__in=devices)
+        # Only Interface carries a lifecycle status today; front/rear ports
+        # have no status field, so the exclusion is a no-op for them.
+        if model is Interface:
+            base = base.exclude(status__excludes_capacity=True)
         term = CableTermination.objects.filter(**{term_field: OuterRef("pk")})
         planned = term.filter(cable__status__slug="planned")
         resv = PortReservation.objects.filter(**{term_field: OuterRef("pk")})
