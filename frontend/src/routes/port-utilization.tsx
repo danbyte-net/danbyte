@@ -180,7 +180,10 @@ function PortUtilizationPage() {
       count={q.data ? filteredRows.length : undefined}
       rail={rail}
       savedViews={{
-        objectType: "device",
+        // Its own page key, NOT "device": sharing the Devices list's key let
+        // views cross between the two pages, and a Devices filter expression
+        // evaluated against utilization rows blanks the whole table (#107).
+        objectType: "port-utilization",
         filters: { snapshot, restore, activeCount },
       }}
       search={{

@@ -83,6 +83,7 @@ class SnmpProfileSerializer(serializers.ModelSerializer):
         extra_kwargs = {"slug": {"required": False}}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])[:120] or "snmp"
         return attrs
@@ -290,6 +291,7 @@ class DeviceCredentialSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "secret_set", "created_at", "updated_at"]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # External credentials must name a path; managed ones auto-assign it.
         managed = attrs.get(
             "secret_managed",
@@ -562,6 +564,7 @@ class SnmpSensorSerializer(serializers.ModelSerializer):
         extra_kwargs = {"slug": {"required": False}}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])[:120] or "sensor"
         vm = attrs.get("value_map")
@@ -604,6 +607,7 @@ class CheckTemplateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         kind = attrs.get("kind", getattr(self.instance, "kind", None))
         params = attrs.get("params", getattr(self.instance, "params", {}) or {})
         checker = get_checker(kind)
@@ -656,6 +660,7 @@ class CheckAssignmentSerializer(serializers.ModelSerializer):
         self.fields["exclusions"].queryset = qs
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         ip = attrs.get("ip_address", getattr(self.instance, "ip_address", None))
         prefix = attrs.get("prefix", getattr(self.instance, "prefix", None))
         if bool(ip) == bool(prefix):
@@ -678,6 +683,7 @@ class MonitoringProfileSerializer(serializers.ModelSerializer):
         extra_kwargs = {"slug": {"required": False}}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])[:120] or "profile"
         return attrs
@@ -698,6 +704,7 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         scope = attrs.get("scope", getattr(self.instance, "scope", ""))
         targets = {
             "vrf": attrs.get("vrf", getattr(self.instance, "vrf", None)),
@@ -935,6 +942,7 @@ class SilenceSerializer(serializers.ModelSerializer):
         return obj.is_active()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         starts = attrs.get("starts_at", getattr(self.instance, "starts_at", None))
         ends = attrs.get("ends_at", getattr(self.instance, "ends_at", None))
         if starts and ends and ends <= starts:
@@ -992,6 +1000,7 @@ class PortUtilizationRuleSerializer(serializers.ModelSerializer):
         return {"id": str(r.id), "name": r.name, "color": r.color} if r else None
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         condition = attrs.get(
             "condition", getattr(self.instance, "condition", None)
         )
@@ -1054,6 +1063,7 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
     _URL_KINDS = {"webhook", "slack", "teams", "discord"}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         kind = attrs.get("kind", getattr(self.instance, "kind", None))
         config = attrs.get("config", getattr(self.instance, "config", {}) or {})
         if kind in self._URL_KINDS and not config.get("url"):
@@ -1097,6 +1107,7 @@ class NotificationSubscriptionSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         user = attrs.get("user", getattr(self.instance, "user", None))
         group = attrs.get("group", getattr(self.instance, "group", None))
         if bool(user) == bool(group):
@@ -1150,6 +1161,7 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
         return obj.check_states.count()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])
         return attrs
@@ -1186,6 +1198,7 @@ class OutpostReleaseSerializer(serializers.ModelSerializer):
         return bool(obj.artifact)
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         source = attrs.get("source", getattr(self.instance, "source", "file"))
         if source == "git":
             url = attrs.get("git_url") or getattr(self.instance, "git_url", "")

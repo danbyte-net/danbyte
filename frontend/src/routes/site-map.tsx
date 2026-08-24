@@ -1221,7 +1221,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       const size = map.getSize()
       const HALF_W = 184
       const EST_H = 340
-      const x = Math.min(Math.max(p.x, HALF_W + 8), size.x - HALF_W - 8)
+      // Same floor guard as y: on a container narrower than the popover the
+      // upper bound went below the lower one and the clamp inverted, pushing
+      // the popover to a negative left (#108).
+      const x = Math.min(
+        Math.max(p.x, HALF_W + 8),
+        Math.max(HALF_W + 8, size.x - HALF_W - 8)
+      )
       const y = Math.min(Math.max(p.y, 8), Math.max(8, size.y - EST_H))
       setPopPos({ x, y })
     }
@@ -1649,49 +1655,52 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           {/* rich popover, anchored to the selected object */}
           {popPos &&
             (selSite || selDevice || selMarker || selConn || selCable) && (
-            <div
-              className="absolute z-[900] max-h-[65vh] w-max max-w-[22rem] min-w-[15rem] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
-              style={{ left: popPos.x, top: popPos.y + 14 }}
-            >
-              {selSite && (
-                <SitePopover site={selSite} onClose={() => setSelected(null)} />
-              )}
-              {!selectedRoute && selDevice && (
-                <DevicePopover
-                  device={selDevice}
-                  fields={popoverFields}
-                  cableIds={cablesByDevice.get(selDevice.id) ?? []}
-                  onTrace={(ids) => {
-                    traceCables(ids)
-                    fitToCables(ids)
-                  }}
-                  onClose={() => setSelected(null)}
-                />
-              )}
-              {!selectedRoute && selMarker && (
-                <MarkerPopover
-                  marker={selMarker}
-                  fields={popoverFields}
-                  onClose={() => setSelected(null)}
-                />
-              )}
-              {!selectedRoute && selConn && (
-                <ConnectionPopover
-                  edge={selConn}
-                  onClose={() => setSelected(null)}
-                />
-              )}
-              {!selectedRoute && selCable && (
-                <CablePopover
-                  cable={selCable}
-                  onClose={() => {
-                    setSelected(null)
-                    setHighlightCableIds(new Set())
-                  }}
-                />
-              )}
-            </div>
-          )}
+              <div
+                className="absolute z-[900] max-h-[65vh] w-max max-w-[22rem] min-w-[15rem] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                style={{ left: popPos.x, top: popPos.y + 14 }}
+              >
+                {selSite && (
+                  <SitePopover
+                    site={selSite}
+                    onClose={() => setSelected(null)}
+                  />
+                )}
+                {!selectedRoute && selDevice && (
+                  <DevicePopover
+                    device={selDevice}
+                    fields={popoverFields}
+                    cableIds={cablesByDevice.get(selDevice.id) ?? []}
+                    onTrace={(ids) => {
+                      traceCables(ids)
+                      fitToCables(ids)
+                    }}
+                    onClose={() => setSelected(null)}
+                  />
+                )}
+                {!selectedRoute && selMarker && (
+                  <MarkerPopover
+                    marker={selMarker}
+                    fields={popoverFields}
+                    onClose={() => setSelected(null)}
+                  />
+                )}
+                {!selectedRoute && selConn && (
+                  <ConnectionPopover
+                    edge={selConn}
+                    onClose={() => setSelected(null)}
+                  />
+                )}
+                {!selectedRoute && selCable && (
+                  <CablePopover
+                    cable={selCable}
+                    onClose={() => {
+                      setSelected(null)
+                      setHighlightCableIds(new Set())
+                    }}
+                  />
+                )}
+              </div>
+            )}
         </div>
 
         {selectedRoute && (
@@ -2456,7 +2465,10 @@ function CablePopover({
         </Badge>
         {c.type && <Badge variant="outline">{c.type}</Badge>}
         {c.status && (
-          <ColorBadge name={c.status.name} color={c.status.color || undefined} />
+          <ColorBadge
+            name={c.status.name}
+            color={c.status.color || undefined}
+          />
         )}
         {c.fiber_count ? (
           <Badge variant="outline" className="num">

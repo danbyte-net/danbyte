@@ -8,9 +8,9 @@ here all resolve without touching the network (they fail, or stop at the unknown
 """
 from __future__ import annotations
 
+import asyncio
 import json
 
-from asgiref.sync import async_to_sync
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth.models import AnonymousUser, User
 from django.test import TransactionTestCase
@@ -57,6 +57,23 @@ class SshTerminalGateTests(TransactionTestCase):
             tenant=self.tenant, ref="creds/sw1", value={"password": "pw"}
         )
 
+    @staticmethod
+    def _run(coro):
+        """Run a coroutine on its OWN event loop.
+
+        ``async_to_sync`` picks up the thread's loop slot, and earlier suites
+        that use ``asyncio.run`` can leave a *closed* loop there - so these
+        seven tests errored under the full run and passed standalone (#81).
+        A private loop per call has no ordering to be sensitive to.
+        """
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            asyncio.set_event_loop(None)
+            loop.close()
+
     def _user(self, name, superuser=False):
         u = User.objects.create_user(name, password="x", is_superuser=superuser)
         UserProfile.objects.create(user=u, role="custom").tenants.add(self.tenant)
@@ -81,7 +98,7 @@ class SshTerminalGateTests(TransactionTestCase):
             await comm.disconnect()
             return accepted, msg
 
-        accepted, msg = async_to_sync(run)()
+        accepted, msg = self._run(run())
         self.assertTrue(accepted)
         self.assertEqual(msg["t"], "need_auth")
         self.assertEqual(msg["username"], "alice")
@@ -112,7 +129,7 @@ class SshTerminalGateTests(TransactionTestCase):
             await comm.disconnect()
             return accepted, msg
 
-        return async_to_sync(run)()
+        return self._run(run())
 
     def test_unauthenticated_is_rejected_pre_accept(self):
         accepted, _ = self._connect(user=AnonymousUser())

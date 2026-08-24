@@ -653,6 +653,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         return value.lower()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         group = attrs.get("group", getattr(self.instance, "group", None))
         vid = attrs.get("vlan_id", getattr(self.instance, "vlan_id", None))
         if group is not None and vid is not None:
@@ -1072,6 +1073,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
            normal /16 ⊃ /24 nesting). Gated on the flag so existing hierarchies
            aren't retroactively rejected.
         """
+        attrs = super().validate(attrs)
         import ipaddress
 
         request = self.context.get("request")
@@ -1984,6 +1986,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Exactly one of file / url - mirrors the DB CheckConstraint, but as an
         # actionable field error instead of an IntegrityError.
         has_file = attrs.get("file") if "file" in attrs else (
@@ -2462,7 +2465,7 @@ def _point_reservation(point):
     }
 
 
-class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class InterfaceSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     def update(self, instance, validated_data):
         obj = super().update(instance, validated_data)
         # A port marked connected can't also be held for later - the mark
@@ -2636,7 +2639,7 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "device", "device_id", "name", "snmp_name", "snmp_ignore", "is_uplink", "type",
                   "type_display",
                   "speed", "mtu",
-                  "enabled", "mgmt_only", "combo_group", "mark_connected",
+                  "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected",
                   "duplex", "poe_mode",
                   "poe_type",
                   "wwn", "mac_address", "mac_addresses", "description",
@@ -2746,6 +2749,7 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         return obj.front_ports.count()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         splitter = attrs.get(
             "is_splitter",
             self.instance.is_splitter if self.instance else False,
@@ -2816,6 +2820,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         return _point_cable(obj)
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Run the model's range/overlap check (DRF doesn't call clean()).
         from django.core.exceptions import ValidationError as DjangoError
 
@@ -3137,6 +3142,7 @@ class InventoryItemSerializer(
         )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         parent = attrs.get("parent")
         device = attrs.get("device") or (
             self.instance.device if self.instance else None
@@ -3180,6 +3186,7 @@ class DeviceBaySerializer(TaggableSerializerMixin, NumIdModelSerializer):
     )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         child = attrs.get("installed_device")
         parent = attrs.get("device") or (
             self.instance.device if self.instance else None
@@ -3293,6 +3300,7 @@ class ModuleSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         ]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         bay = attrs.get("module_bay") or (
             self.instance.module_bay if self.instance else None
         )
@@ -3346,6 +3354,7 @@ class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
         return {"id": str(t.id), "name": t.name} if t else None
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         ppt = attrs.get("power_port_template")
         dt = attrs.get("device_type") or (
             self.instance.device_type if self.instance else None
@@ -3365,6 +3374,7 @@ class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
 
 class RearPortTemplateSerializer(_ComponentTemplateSerializer):
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         splitter = attrs.get(
             "is_splitter",
             self.instance.is_splitter if self.instance else False,
@@ -3399,6 +3409,7 @@ class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
         return {"id": str(t.id), "name": t.name}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         rpt = attrs.get("rear_port_template") or (
             self.instance.rear_port_template if self.instance else None
         )
@@ -3483,6 +3494,7 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         return out
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         from api.views import _get_active_tenant
         request = self.context.get("request")
         tenant = _get_active_tenant(request) if request is not None else None
@@ -3644,6 +3656,7 @@ class PortReservationSerializer(NumIdModelSerializer):
         return obj.claimed_by.username if obj.claimed_by_id else ""
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         from api.views import _get_active_tenant
 
         if self.instance is not None:
@@ -3775,6 +3788,7 @@ class CustomFieldSerializer(
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         ftype = attrs.get("type", getattr(self.instance, "type", "text"))
         choices = attrs.get("choices", getattr(self.instance, "choices", None) or [])
         if ftype in ("select", "multiselect") and not choices:
@@ -4155,6 +4169,7 @@ class RackTypeAccessorySerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
         if dt is not None and dt.u_height != 0:
             raise serializers.ValidationError(
@@ -4265,6 +4280,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         return {"id": str(l.id), "name": l.name} if l else None
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # A rack's location must live in the rack's site.
         location = attrs.get("location", getattr(self.instance, "location", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
@@ -4761,6 +4777,7 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
     )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         import ipaddress as _ip
 
         start = attrs.get("start_address", getattr(self.instance, "start_address", None))
@@ -4886,6 +4903,7 @@ class ASNSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdM
         return value
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Tenant-scoped uniqueness (tenant isn't a serializer field, so DRF
         # can't auto-generate the validator) - return a clean 400, not a 500.
         from api.views import _get_active_tenant
@@ -4943,6 +4961,7 @@ class VLANGroupSerializer(NumIdModelSerializer):
         return v if v is not None else obj.vlans.count()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         lo = attrs.get("min_vid", getattr(self.instance, "min_vid", 1))
         hi = attrs.get("max_vid", getattr(self.instance, "max_vid", 4094))
         if not (1 <= lo <= 4094) or not (1 <= hi <= 4094):
@@ -4986,6 +5005,7 @@ class FHRPGroupAssignmentSerializer(NumIdModelSerializer):
                 "vm": {"id": str(vi.vm_id), "name": vi.vm.name}}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
         vmi = attrs.get("vm_interface", getattr(self.instance, "vm_interface", None))
         if bool(iface) == bool(vmi):
@@ -5291,6 +5311,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
     )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         site = attrs.get("site", getattr(self.instance, "site", None))
         pn = attrs.get(
             "provider_network", getattr(self.instance, "provider_network", None)
@@ -5570,6 +5591,7 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
         vmi = attrs.get(
             "vm_interface", getattr(self.instance, "vm_interface", None)
@@ -5718,6 +5740,7 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         return v if v is not None else obj.racks.count()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         parent = attrs.get("parent", getattr(self.instance, "parent", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
         if parent is not None:
@@ -6035,6 +6058,7 @@ class L2VPNTerminationSerializer(serializers.ModelSerializer):
                 "vm": {"id": str(i.vm_id), "name": i.vm.name}}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         vlan = attrs.get("vlan", getattr(self.instance, "vlan", None))
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
         vmi = attrs.get(
@@ -6156,6 +6180,7 @@ class SiteMarkerSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         tile = attrs.get("tile_type", getattr(self.instance, "tile_type", None))
         role = attrs.get("role_type", getattr(self.instance, "role_type", None))
         if bool(tile) == bool(role):
@@ -6233,6 +6258,7 @@ class FloorPlanSerializer(
         return v
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Friendly duplicate check ahead of the DB unique constraint.
         location = attrs.get("location", getattr(self.instance, "location", None))
         name = attrs.get("name", getattr(self.instance, "name", None))
@@ -6317,6 +6343,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         }
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         from api.views import _get_active_tenant
 
         # Exactly one of tile_type / role_type (matches the DB constraint,

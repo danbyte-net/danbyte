@@ -21,6 +21,12 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TimeCell } from "@/components/cells/time-ago"
 import { objectDetailRoute, objectListRoute } from "@/lib/object-routes"
+import {
+  useUrlEnum,
+  useUrlInt,
+  useUrlPatch,
+  useUrlText,
+} from "@/lib/use-url-state"
 
 export const Route = createFileRoute("/audit-log")({ component: AuditLogPage })
 
@@ -65,12 +71,31 @@ const VIA_LABEL: Record<string, string> = {
 }
 
 function AuditLogPage() {
-  const [action, setAction] = useState<ChangeAction | "all">("all")
-  const [type, setType] = useState("all")
-  const [via, setVia] = useState("all")
-  const [user, setUser] = useState("")
-  const [search, setSearch] = useState("")
-  const [page, setPage] = useState(1)
+  // Filters and the page live in the URL (#109): navigate into an entry, hit
+  // back, and the view is exactly where it was - like every other list. A
+  // filter change and the page-1 reset go through ONE patch call; two setters
+  // in the same tick would drop one (see useUrlPatch).
+  const patch = useUrlPatch()
+  const [action] = useUrlEnum<ChangeAction | "all">("action", "all", [
+    "all",
+    "create",
+    "update",
+    "delete",
+  ])
+  const [type] = useUrlText("type", "all")
+  const [via] = useUrlEnum("via", "all", ["all", "ui", "api", "system"])
+  const [user] = useUrlText("user")
+  const [search] = useUrlText("q", "", { replace: true })
+  const [page, setPage] = useUrlInt("page", 1, { min: 1 })
+  const drop = (v: string, dflt: string) => (v === dflt ? undefined : v)
+  const setAction = (v: ChangeAction | "all") =>
+    patch({ action: drop(v, "all"), page: undefined })
+  const setType = (v: string) =>
+    patch({ type: drop(v, "all"), page: undefined })
+  const setVia = (v: string) => patch({ via: drop(v, "all"), page: undefined })
+  const setUser = (v: string) => patch({ user: drop(v, ""), page: undefined })
+  const setSearch = (v: string) =>
+    patch({ q: drop(v, ""), page: undefined }, { replace: true })
 
   // Explicit page_size: the API's default page is 10k rows (the SPA usually
   // paginates client-side), which made this page crawl on big logs (#59).
@@ -103,8 +128,6 @@ function AuditLogPage() {
   const total = q.data?.count ?? 0
   const pages = Math.max(1, Math.ceil(total / pageSize))
 
-  const reset = () => setPage(1)
-
   const columns = useMemo<ColumnDef<ChangeLogEntry>[]>(() => buildColumns(), [])
 
   return (
@@ -117,7 +140,6 @@ function AuditLogPage() {
           value={action}
           onValueChange={(v) => {
             setAction(v)
-            reset()
           }}
           items={ACTION_TABS}
         />
@@ -139,7 +161,6 @@ function AuditLogPage() {
                 value={type}
                 onValueChange={(v) => {
                   setType(v)
-                  reset()
                 }}
               >
                 <SelectTrigger className="h-8 w-full text-xs">
@@ -160,10 +181,7 @@ function AuditLogPage() {
               </h3>
               <Combobox
                 value={user || null}
-                onChange={(v) => {
-                  setUser(v ?? "")
-                  reset()
-                }}
+                onChange={(v) => setUser(v ?? "")}
                 options={(actors.data?.results ?? []).map((u) => ({
                   value: u,
                   label: u,
@@ -183,7 +201,6 @@ function AuditLogPage() {
                 value={via}
                 onValueChange={(v) => {
                   setVia(v)
-                  reset()
                 }}
               >
                 <SelectTrigger className="h-8 w-full text-xs">
@@ -202,10 +219,7 @@ function AuditLogPage() {
         }
         search={{
           value: search,
-          onChange: (v) => {
-            setSearch(v)
-            reset()
-          },
+          onChange: setSearch,
           placeholder: "Search object…",
         }}
         query={q}
