@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
@@ -156,6 +157,11 @@ function AggregateOverview({ aggregate: a }: { aggregate: Aggregate }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Details" rows={details} />
+      <CustomFieldValues
+        model="aggregate"
+        values={a.custom_fields}
+        layout="cards"
+      />
     </div>
   )
 }

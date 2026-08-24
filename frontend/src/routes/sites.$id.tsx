@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -721,6 +722,11 @@ function SiteOverview({
           </div>
         </section>
         <KvCard title="Scope" rows={scope} />
+        <CustomFieldValues
+          model="site"
+          values={s.custom_fields}
+          layout="cards"
+        />
       </div>
       <ObjectImages apiBase={`/api/sites/${s.id}`} objectType="site" />
     </div>

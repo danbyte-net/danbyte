@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
@@ -253,6 +254,11 @@ function IpRangeOverview({ range: r }: { range: IPRange }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Details" rows={details} />
+      <CustomFieldValues
+        model="iprange"
+        values={r.custom_fields}
+        layout="cards"
+      />
     </div>
   )
 }

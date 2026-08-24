@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -168,6 +169,11 @@ function Body({ contact: c }: { contact: Contact }) {
       <DetailTab value="overview">
         <div className="grid gap-6 lg:grid-cols-2">
           <KvCard title="Contact" rows={contactRows} />
+          <CustomFieldValues
+            model="contact"
+            values={c.custom_fields}
+            layout="cards"
+          />
         </div>
       </DetailTab>
       <DetailTab value="assignments">

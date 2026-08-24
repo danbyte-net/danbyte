@@ -1939,6 +1939,10 @@ export interface Interface {
   speed: string
   mtu: number | null
   enabled: boolean
+  /** Lifecycle status (Active / Disabled / Planned / Not present /
+   * Decommissioning). Null reads as Active; distinct from `enabled`,
+   * the device-reported admin flag. */
+  status: StatusMini | null
   mgmt_only: boolean
   mark_connected: boolean
   combo_group: string
@@ -1988,6 +1992,7 @@ export interface Interface {
 }
 
 export interface InterfaceWritePayload {
+  status_id?: string | null
   /** Discovery link - the agent's name for this port ("" unlinks). */
   snmp_name?: string
   snmp_ignore?: boolean

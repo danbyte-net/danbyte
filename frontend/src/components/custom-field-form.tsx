@@ -2,6 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import { IdMultiSelect } from "@/components/cells/id-multi-select"
+
 import {
   api,
   type CustomField,
@@ -338,15 +340,6 @@ function ScopeRulesEditor({
     }
     onChange(next)
   }
-  const toggle = (
-    key: keyof CustomFieldScopeRules,
-    side: "include" | "exclude",
-    id: string,
-    checked: boolean
-  ) => {
-    const cur = value[key]?.[side] ?? []
-    setRule(key, side, checked ? [...cur, id] : cur.filter((x) => x !== id))
-  }
   const csv = (key: keyof CustomFieldScopeRules, side: "include" | "exclude") =>
     (value[key]?.[side] ?? []).join(", ")
   const setCsv = (
@@ -368,58 +361,82 @@ function ScopeRulesEditor({
           Empty rules keep the field visible and object pickers unrestricted.
         </div>
       </div>
-      <Field label="Device type whitelist / blacklist">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {(deviceTypes.data?.results ?? []).map((d) => (
-            <div key={d.id} className="grid gap-1">
-              <FormCheckbox
-                label={`Show ${d.name}`}
-                checked={(value.device_types?.include ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_types", "include", d.id, on)}
-              />
-              <FormCheckbox
-                label={`Hide ${d.name}`}
-                checked={(value.device_types?.exclude ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_types", "exclude", d.id, on)}
-              />
-            </div>
-          ))}
+      <Field label="Device types">
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-1">
+            <span className="text-[11px] text-muted-foreground">Show only</span>
+            <IdMultiSelect
+              options={(deviceTypes.data?.results ?? []).map((d) => ({
+                id: d.id,
+                name: d.name,
+              }))}
+              value={value.device_types?.include ?? []}
+              onChange={(ids) => setRule("device_types", "include", ids)}
+            />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-[11px] text-muted-foreground">Hide</span>
+            <IdMultiSelect
+              options={(deviceTypes.data?.results ?? []).map((d) => ({
+                id: d.id,
+                name: d.name,
+              }))}
+              value={value.device_types?.exclude ?? []}
+              onChange={(ids) => setRule("device_types", "exclude", ids)}
+            />
+          </div>
         </div>
       </Field>
-      <Field label="Device role whitelist / blacklist">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {(deviceRoles.data?.results ?? []).map((d) => (
-            <div key={d.id} className="grid gap-1">
-              <FormCheckbox
-                label={`Show ${d.name}`}
-                checked={(value.device_roles?.include ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_roles", "include", d.id, on)}
-              />
-              <FormCheckbox
-                label={`Hide ${d.name}`}
-                checked={(value.device_roles?.exclude ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_roles", "exclude", d.id, on)}
-              />
-            </div>
-          ))}
+      <Field label="Device roles">
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-1">
+            <span className="text-[11px] text-muted-foreground">Show only</span>
+            <IdMultiSelect
+              options={(deviceRoles.data?.results ?? []).map((d) => ({
+                id: d.id,
+                name: d.name,
+              }))}
+              value={value.device_roles?.include ?? []}
+              onChange={(ids) => setRule("device_roles", "include", ids)}
+            />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-[11px] text-muted-foreground">Hide</span>
+            <IdMultiSelect
+              options={(deviceRoles.data?.results ?? []).map((d) => ({
+                id: d.id,
+                name: d.name,
+              }))}
+              value={value.device_roles?.exclude ?? []}
+              onChange={(ids) => setRule("device_roles", "exclude", ids)}
+            />
+          </div>
         </div>
       </Field>
-      <Field label="Tag whitelist / blacklist">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {(tags.data?.results ?? []).map((t) => (
-            <div key={t.slug} className="grid gap-1">
-              <FormCheckbox
-                label={`Show ${t.name}`}
-                checked={(value.tags?.include ?? []).includes(t.slug)}
-                onChange={(on) => toggle("tags", "include", t.slug, on)}
-              />
-              <FormCheckbox
-                label={`Hide ${t.name}`}
-                checked={(value.tags?.exclude ?? []).includes(t.slug)}
-                onChange={(on) => toggle("tags", "exclude", t.slug, on)}
-              />
-            </div>
-          ))}
+      <Field label="Tags">
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-1">
+            <span className="text-[11px] text-muted-foreground">Show only</span>
+            <IdMultiSelect
+              options={(tags.data?.results ?? []).map((t) => ({
+                id: t.slug,
+                name: t.name,
+              }))}
+              value={value.tags?.include ?? []}
+              onChange={(ids) => setRule("tags", "include", ids)}
+            />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-[11px] text-muted-foreground">Hide</span>
+            <IdMultiSelect
+              options={(tags.data?.results ?? []).map((t) => ({
+                id: t.slug,
+                name: t.name,
+              }))}
+              value={value.tags?.exclude ?? []}
+              onChange={(ids) => setRule("tags", "exclude", ids)}
+            />
+          </div>
         </div>
       </Field>
       <div className="grid gap-3 md:grid-cols-2">

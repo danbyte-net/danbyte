@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -215,6 +216,7 @@ function VrfOverview({ vrf: v, humanIds }: { vrf: VRF; humanIds: boolean }) {
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Attributes" rows={attributes} />
       <KvCard title="Route targets" rows={routeTargets} />
+      <CustomFieldValues model="vrf" values={v.custom_fields} layout="cards" />
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import {
   AutoRouteButton,
@@ -307,6 +308,11 @@ function CableOverview({ cable: c }: { cable: Cable }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Cable" rows={details} />
         <KvCard title="Physical" rows={physical} />
+        <CustomFieldValues
+          model="cable"
+          values={c.custom_fields}
+          layout="cards"
+        />
       </div>
       <CableRoutingCard cableId={c.id} />
       {c.is_fiber && modelling !== "off" && <CableFibers cable={c} />}

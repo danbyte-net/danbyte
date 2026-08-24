@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TagList } from "@/components/cells/tag-list"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
@@ -336,6 +337,11 @@ function Overview({
         <div className="grid content-start gap-6">
           <KvCard title="Virtual chassis" rows={attributes} />
           <KvCard title="Notes" rows={notes} />
+          <CustomFieldValues
+            model="virtualchassis"
+            values={vc.custom_fields}
+            layout="cards"
+          />
         </div>
       </div>
       <MembersTable vc={vc} members={members} />

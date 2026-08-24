@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -190,6 +191,7 @@ function VlanOverview({
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Attributes" rows={attributes} />
+      <CustomFieldValues model="vlan" values={v.custom_fields} layout="cards" />
     </div>
   )
 }
@@ -201,10 +203,7 @@ function VlanPrefixesTable({ vlanId }: { vlanId: string }) {
       api<Paginated<Prefix>>(`/api/prefixes/?vlan=${vlanId}&page_size=500`),
   })
 
-  const columns = useMemo<ColumnDef<Prefix>[]>(
-    () => buildPrefixColumns(),
-    []
-  )
+  const columns = useMemo<ColumnDef<Prefix>[]>(() => buildPrefixColumns(), [])
 
   if (q.isLoading)
     return <p className="text-sm text-muted-foreground">Loading prefixes…</p>
