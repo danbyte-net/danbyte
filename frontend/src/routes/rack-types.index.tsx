@@ -20,6 +20,7 @@ import {
 import { DataTable } from "@/components/data-table"
 import { buildRackTypeColumns } from "@/components/columns/rack-type-columns"
 import { ListPageShell } from "@/components/list-page-shell"
+import { TableActions } from "@/components/table-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -70,6 +71,7 @@ function RackTypesPage() {
       }}
       actions={
         <>
+          <TableActions ioType="racktype" />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/rack-types/new">Add rack type</Link>

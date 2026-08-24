@@ -9,6 +9,7 @@ import { DataTable } from "@/components/data-table"
 import { TagList } from "@/components/cells/tag-list"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
+import { TableActions } from "@/components/table-actions"
 import { MacObjectDialog } from "@/components/mac-object-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -69,11 +70,14 @@ function MacsPage() {
         placeholder: "Filter by MAC, device, interface, IP…",
       }}
       actions={
-        canAdd && (
-          <Button size="sm" onClick={() => setAdding(true)}>
-            Add MAC
-          </Button>
-        )
+        <>
+          <TableActions ioType="macaddress" />
+          {canAdd && (
+            <Button size="sm" onClick={() => setAdding(true)}>
+              Add MAC
+            </Button>
+          )}
+        </>
       }
       query={query}
     >

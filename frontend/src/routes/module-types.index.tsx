@@ -21,6 +21,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
 import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
 import { ListPageShell } from "@/components/list-page-shell"
+import { TableActions } from "@/components/table-actions"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -64,6 +65,7 @@ function ModuleTypesPage() {
       }}
       actions={
         <>
+          <TableActions ioType="moduletype" />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/module-types/new">Add module type</Link>

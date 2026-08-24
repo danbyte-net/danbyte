@@ -8,7 +8,9 @@ import { api, type Paginated, type Service } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { buildServiceColumns } from "@/components/columns/service-columns"
 import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
+import { ServiceFormDialog } from "@/components/services-pane"
 import { ListPageShell } from "@/components/list-page-shell"
+import { Button } from "@/components/ui/button"
 import { useTableFilters } from "@/components/table-filters"
 import { useMe } from "@/lib/use-me"
 
@@ -19,6 +21,8 @@ function ServicesPage() {
   const [deleting, setDeleting] = useState<Service | null>(null)
   const { canDo, humanIds } = useMe()
   const canDelete = canDo("service", "delete")
+  const canAdd = canDo("service", "add")
+  const [adding, setAdding] = useState(false)
 
   const query = useQuery({
     queryKey: ["services-list", q],
@@ -62,7 +66,16 @@ function ServicesPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
-      actions={<TableActions ioType="service" />}
+      actions={
+        <>
+          <TableActions ioType="service" />
+          {canAdd && (
+            <Button size="sm" onClick={() => setAdding(true)}>
+              Add service
+            </Button>
+          )}
+        </>
+      }
       query={query}
     >
       <DataTable
@@ -74,6 +87,12 @@ function ServicesPage() {
       <ServiceDeleteDialog
         service={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <ServiceFormDialog
+        service={null}
+        open={adding}
+        onOpenChange={(o) => !o && setAdding(false)}
+        onSaved={() => query.refetch()}
       />
     </ListPageShell>
   )
