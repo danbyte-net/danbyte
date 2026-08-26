@@ -219,6 +219,7 @@ class BulkAgreementTests(_Base):
             "duplex": "full",
             "vlan_id": None,
             "vrf_id": None,
+            "status_id": None,
         }
         advertised = {d.key for d in fields_for(Interface)}
         self.assertTrue(
