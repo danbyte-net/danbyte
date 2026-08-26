@@ -4,7 +4,7 @@ import { Waypoints } from "lucide-react"
 
 import { api, type DevicePathRun } from "@/lib/api"
 import { QueryError } from "@/components/query-error"
-import { PathStrip, type PathStep } from "@/components/cable-trace-path"
+import { FanOut, PathStrip, type PathStep } from "@/components/cable-trace-path"
 
 // The end-to-end cabled runs of a device, one flat strip each (panels crossed
 // front⇄rear). Shared by the device page's topology widget and the site map's
@@ -87,40 +87,25 @@ export function PathRow({
         .filter((id): id is string => !!id),
     [run.steps]
   )
-  const steps = useMemo<PathStep[]>(
+  const steps = useMemo<PathStep[]>(() => toPathSteps(run.steps), [run.steps])
+  // A breakout run draws as one cable fanning into its legs, the same shape
+  // the cable and interface pages use.
+  const legBranches = useMemo<PathStep[][] | null>(
     () =>
-      run.steps.map((s) =>
-        s.t === "chip"
-          ? {
-              t: "chip",
-              chip: {
-                deviceId: s.device_id,
-                device: s.device,
-                origin: s.origin,
-                ports: s.ports.map((p) => ({
-                  name: p.name,
-                  interfaceId: p.interface_id ?? undefined,
-                })),
-              },
-            }
-          : {
-              t: "seg",
-              seg: {
-                cableId: s.cable_id,
-                label: s.label,
-                tag: s.cable_label ?? undefined,
-                color: s.color ?? undefined,
-                self: false,
-                fiber: s.fiber,
-                fiberCount: s.fiber_count,
-                strand: s.strand,
-                strandColor: s.strand_color,
-              },
-            }
-      ),
-    [run.steps]
+      run.legs?.map((leg) => [
+        ...steps.filter((st) => st.t === "seg").slice(0, 1),
+        ...toPathSteps(leg),
+      ]) ?? null,
+    [run.legs, steps]
   )
   const hasLeading = (onTraceCables && ids.length > 0) || !run.complete
+  if (legBranches && legBranches.length > 1)
+    return (
+      <div className="px-1 py-1">
+        <FanOut trunk={steps.slice(0, 1)} branches={legBranches} />
+      </div>
+    )
+
   return (
     <div className="px-1 py-1">
       <PathStrip
@@ -151,5 +136,39 @@ export function PathRow({
         }
       />
     </div>
+  )
+}
+
+/** One run's API steps as the shared PathStrip shape. Also used for each leg
+ * of a breakout run. */
+function toPathSteps(apiSteps: DevicePathRun["steps"]): PathStep[] {
+  return apiSteps.map((s) =>
+    s.t === "chip"
+      ? {
+          t: "chip",
+          chip: {
+            deviceId: s.device_id,
+            device: s.device,
+            origin: s.origin,
+            ports: s.ports.map((p) => ({
+              name: p.name,
+              interfaceId: p.interface_id ?? undefined,
+            })),
+          },
+        }
+      : {
+          t: "seg",
+          seg: {
+            cableId: s.cable_id,
+            label: s.label,
+            tag: s.cable_label ?? undefined,
+            color: s.color ?? undefined,
+            self: false,
+            fiber: s.fiber,
+            fiberCount: s.fiber_count,
+            strand: s.strand,
+            strandColor: s.strand_color,
+          },
+        }
   )
 }

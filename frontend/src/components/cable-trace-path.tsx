@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { Waypoints } from "lucide-react"
@@ -120,8 +121,13 @@ export function PathStrip({
   highlightPort,
   leading,
   onTraceCable,
+  stackPorts,
 }: {
   steps: PathStep[]
+  /** Stack a chip's ports as rows instead of side-by-side cells. A fan-out
+   * destination holds one port per leg, and four legs read as a list, not as
+   * a wide strip of cells. */
+  stackPorts?: boolean
   /** Port name to emphasise (e.g. the traced origin on a mid-chain device). */
   highlightPort?: string
   /** Rendered as the first flex item INSIDE the scroll container - an origin
@@ -167,7 +173,12 @@ export function PathStrip({
                 {s.chip.device}
               </div>
             )}
-            <div className="flex divide-x divide-border border-t border-border">
+            <div
+              className={
+                "divide-border border-t border-border " +
+                (stackPorts ? "flex flex-col divide-y" : "flex divide-x")
+              }
+            >
               {s.chip.ports.map((port, pi) => {
                 // Interfaces and site power feeds open their own page; other
                 // ports (front/rear/console/power) open their device's
@@ -195,8 +206,11 @@ export function PathStrip({
                 return (
                   <span
                     key={pi}
+                    data-port-row={stackPorts ? "" : undefined}
                     className={
-                      "flex-1 px-2 py-0.5 text-center font-mono text-[10px] whitespace-nowrap " +
+                      "px-2 py-0.5 font-mono text-[10px] whitespace-nowrap " +
+                      (stackPorts ? "text-left" : "flex-1 text-center") +
+                      " " +
                       (highlightPort && port.name === highlightPort
                         ? "bg-muted font-medium text-foreground"
                         : "text-muted-foreground") +
@@ -252,6 +266,7 @@ export function PathStrip({
               )}
             </span>
             <span
+              data-cable-rail=""
               className="block w-full rounded-full"
               style={{
                 height: s.seg.fiber ? 3 : 2,
@@ -350,6 +365,144 @@ function wireAdj(g: TraceGraph): Map<string, Adj[]> {
     ])
   }
   return adj
+}
+
+/** A breakout drawn as what it is: ONE cable.
+ *
+ * The trunk port, the cable, then curves fanning into each port it lands on.
+ * The curves are SVG drawn from MEASURED positions - the cable's rail end and
+ * each port row's centre - because deriving connector geometry from padding
+ * classes produced lines that didn't meet anything. One stroke, the cable's
+ * own width and colour, so a fan-out reads as a single assembly.
+ *
+ * Legs landing on the same device collapse into that device's chip with its
+ * ports listed: four copies of one server told you nothing three times. */
+export function FanOut({
+  trunk,
+  branches,
+  highlightPort,
+}: {
+  trunk: PathStep[]
+  branches: PathStep[][]
+  highlightPort?: string
+}) {
+  const seg = branches[0]?.find((st) => st.t === "seg")
+  const groups: PathChip[] = []
+  for (const b of branches) {
+    const chips = b.filter((st) => st.t === "chip") as {
+      t: "chip"
+      chip: PathChip
+    }[]
+    const last = chips[chips.length - 1]?.chip
+    if (!last) continue
+    const key = last.deviceId ?? last.device
+    const existing = groups.find((g) => (g.deviceId ?? g.device) === key)
+    if (existing) {
+      for (const port of last.ports)
+        if (!existing.ports.some((p) => p.name === port.name))
+          existing.ports.push(port)
+    } else {
+      groups.push({ ...last, ports: [...last.ports] })
+    }
+  }
+
+  const wrap = useRef<HTMLDivElement>(null)
+  const [fan, setFan] = useState<{ d: string[]; w: number; h: number } | null>(
+    null
+  )
+  useLayoutEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const measure = () => {
+      const base = el.getBoundingClientRect()
+      const rails = el.querySelectorAll("[data-cable-rail]")
+      const start = rails[rails.length - 1]?.getBoundingClientRect()
+      const rows = [...el.querySelectorAll("[data-port-row]")].map((r) =>
+        r.getBoundingClientRect()
+      )
+      if (!start || rows.length === 0 || base.width === 0) return
+      // Overlap the rail by a couple of pixels and snap to the half-pixel
+      // grid: getBoundingClientRect returns fractional positions, so a curve
+      // starting exactly at the rail's edge left a hairline step at the join.
+      const snap = (v: number) => Math.round(v * 2) / 2
+      const x0 = snap(start.right - base.left) - 2
+      const y0 = snap(start.top + start.height / 2 - base.top)
+      setFan({
+        w: base.width,
+        h: base.height,
+        d: rows.map((r) => {
+          const x1 = snap(r.left - base.left)
+          const y1 = snap(r.top + r.height / 2 - base.top)
+          const c = x0 + (x1 - x0) * 0.55
+          return `M ${x0} ${y0} C ${c} ${y0}, ${c} ${y1}, ${x1} ${y1}`
+        }),
+      })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [branches, groups.length])
+
+  if (!seg || groups.length === 0)
+    return (
+      <>
+        <PathStrip steps={trunk} highlightPort={highlightPort} />
+        <div className="mt-1.5 space-y-1 border-l border-border pl-3">
+          {branches.map((b, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <span className="text-muted-foreground/60">└</span>
+              <PathStrip steps={b} />
+            </div>
+          ))}
+        </div>
+      </>
+    )
+
+  const segData = seg.t === "seg" ? seg.seg : null
+  const stroke = segData?.strandColor?.hex || segData?.color || "var(--border)"
+  // One stroke per leg. The rail hints a fibre duplex with a shadow line,
+  // but two parallel curves read as two cables - which is exactly what a
+  // breakout is not.
+  const width = segData?.fiber ? 3 : 2
+
+  return (
+    <div ref={wrap} className="relative flex items-center">
+      {fan && (
+        <svg
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          width={fan.w}
+          height={fan.h}
+        >
+          {fan.d.map((d, i) => (
+            <path
+              key={i}
+              d={d}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={width}
+              strokeLinecap="round"
+            />
+          ))}
+        </svg>
+      )}
+      <PathStrip steps={trunk} highlightPort={highlightPort} />
+      <PathStrip steps={[seg]} />
+      {/* room for the curves to travel before the chips */}
+      <span aria-hidden className="w-14 shrink-0" />
+      <div className="flex flex-col justify-center gap-2">
+        {groups.map((g) => (
+          <PathStrip
+            key={g.deviceId ?? g.device}
+            steps={[{ t: "chip", chip: g }]}
+            highlightPort={highlightPort}
+            stackPorts
+          />
+        ))}
+      </div>
+    </div>
+  )
 }
 
 /** Turn a node sequence (leaf→…) into chip ─cable─ chip steps: consecutive
@@ -462,13 +615,24 @@ export function treeizeTrace(
   const branchNodes = [...adj.entries()].filter(([, a]) => a.length > 2)
   if (branchNodes.length !== 1) return null
   const bId = branchNodes[0][0]
-  if (!adj.has(originNodeId) || originNodeId === bId) return null
+  if (!adj.has(originNodeId)) return null
 
-  // Trunk: origin leaf → branch node.
-  const trunkSeq = walkChain(originNodeId, null, adj, bId)
-  if (trunkSeq[trunkSeq.length - 1]?.nodeId !== bId) return null // origin not under B
+  // Two shapes reach here. Usually the origin is a leaf and the fan-out sits
+  // further along the run (a panel, a splitter), so the trunk is the walk to
+  // it. But when you trace FROM the breakout port itself - the QSFP whose
+  // legs land in four servers - the origin IS the fan-out node, and the
+  // trunk is just that one port. That case used to bail out, leaving a
+  // breakout with no drawn path at all.
+  const originIsFanOut = originNodeId === bId
+  const trunkSeq = originIsFanOut
+    ? [{ nodeId: bId } as SeqItem]
+    : walkChain(originNodeId, null, adj, bId)
+  if (!originIsFanOut && trunkSeq[trunkSeq.length - 1]?.nodeId !== bId)
+    return null // origin not under B
   const cameFrom =
-    trunkSeq.length >= 2 ? trunkSeq[trunkSeq.length - 2].nodeId : null
+    !originIsFanOut && trunkSeq.length >= 2
+      ? trunkSeq[trunkSeq.length - 2].nodeId
+      : null
   const trunk = buildSteps(trunkSeq, nodeById, selfCableId)
   if (!trunk) return null
 
@@ -508,6 +672,36 @@ export function TracePathStrip({
 }) {
   const q = useQuery({ queryKey, queryFn: () => api<TraceGraph>(url) })
   if (!q.data) return null
+
+  // A breakout leg gets the same fan the cable page draws, rooted at the
+  // split, with this port highlighted - not its own linear two-chip run.
+  const legAdj = wireAdj(q.data)
+  const legSplit = [...legAdj.entries()].find(([, a]) => a.length > 2)?.[0]
+  if (legSplit) {
+    const legTree = treeizeTrace(q.data, legSplit, "")
+    if (legTree)
+      return (
+        <div>
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              Fans out to {legTree.branches.length} leg
+              {legTree.branches.length === 1 ? "" : "s"}
+            </span>
+            {!q.data.complete && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                incomplete
+              </span>
+            )}
+          </div>
+          <FanOut
+            trunk={legTree.trunk}
+            branches={legTree.branches}
+            highlightPort={highlightPort}
+          />
+        </div>
+      )
+  }
+
   const steps = linearizeTrace(q.data, "")
   if (!steps || steps.filter((s) => s.t === "chip").length < 2) return null
   return (
@@ -573,12 +767,18 @@ export function TracePreview({
     )
   }
 
-  // 2) One-to-many (splitter / breakout) → trunk + one branch strip per leg.
-  const originNodeId = originInterfaceId ? `if:${originInterfaceId}` : ""
-  const tree = originNodeId ? treeizeTrace(q.data, originNodeId, "") : null
+  // 2) One-to-many (splitter / breakout): always root the drawing at the
+  // SPLIT, never at the port you happen to be standing on - a leg rooted at
+  // itself drew "me → trunk → the others", which reads as two cables in a
+  // row. Same picture from every entry point; your port is highlighted.
+  const treeAdj = wireAdj(q.data)
+  const splitId =
+    [...treeAdj.entries()].find(([, a]) => a.length > 2)?.[0] ??
+    (originInterfaceId ? `if:${originInterfaceId}` : "")
+  const tree = splitId ? treeizeTrace(q.data, splitId, "") : null
   if (tree) {
     return (
-      <div className="max-w-4xl">
+      <div>
         <div className="mb-1.5 flex items-center gap-2">
           <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Fans out to {tree.branches.length} leg
@@ -590,15 +790,11 @@ export function TracePreview({
             </span>
           )}
         </div>
-        <PathStrip steps={tree.trunk} highlightPort={highlightPort} />
-        <div className="mt-1.5 space-y-1 border-l border-border pl-3">
-          {tree.branches.map((b, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <span className="text-muted-foreground/60">└</span>
-              <PathStrip steps={b} />
-            </div>
-          ))}
-        </div>
+        <FanOut
+          trunk={tree.trunk}
+          branches={tree.branches}
+          highlightPort={highlightPort}
+        />
       </div>
     )
   }
@@ -664,8 +860,32 @@ export function CableTracePath({
   })
   if (!q.data) return <>{fallback}</>
   const steps = linearizeTrace(q.data, cableId)
-  if (!steps || steps.filter((s) => s.t === "chip").length < 2)
+  if (!steps || steps.filter((s) => s.t === "chip").length < 2) {
+    // A breakout has no single flat run, but it's still ONE cable: find the
+    // port everything fans out from and draw it that way, rather than falling
+    // back to two lists of boxes with a swap icon between them.
+    const adj = wireAdj(q.data)
+    const fan = [...adj.entries()].find(([, a]) => a.length > 2)
+    const tree = fan ? treeizeTrace(q.data, fan[0], cableId) : null
+    if (tree)
+      return (
+        <div>
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              Fans out to {tree.branches.length} leg
+              {tree.branches.length === 1 ? "" : "s"}
+            </span>
+            {!q.data.complete && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                incomplete
+              </span>
+            )}
+          </div>
+          <FanOut trunk={tree.trunk} branches={tree.branches} />
+        </div>
+      )
     return <>{fallback}</>
+  }
 
   return (
     <div className="max-w-4xl">

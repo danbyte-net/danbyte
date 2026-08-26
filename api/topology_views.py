@@ -1064,9 +1064,20 @@ def device_paths(device, viewable_ids=None):
             cable_ids = frozenset(
                 s["cable_id"] for s in steps if s["t"] == "seg" and s.get("cable_id")
             )
-            if cable_ids and cable_ids in seen_runs:
+            # Identify a run by its cables AND the ports it touches. The
+            # ports set collapses mirror images (a panel's run found from its
+            # front and again from its rear is one run) while keeping a
+            # breakout's legs apart - they share a cable but end elsewhere.
+            touched = frozenset(
+                (st.get("device_id"), p["name"])
+                for st in steps
+                if st["t"] == "chip"
+                for p in st.get("ports", [])
+            )
+            run_key = (cable_ids, touched)
+            if cable_ids and run_key in seen_runs:
                 continue
-            seen_runs.add(cable_ids)
+            seen_runs.add(run_key)
 
             runs.append({
                 "origin": {"name": oport.name,
@@ -1074,8 +1085,30 @@ def device_paths(device, viewable_ids=None):
                 "steps": steps,
                 "complete": complete,
             })
-    runs.sort(key=lambda r: r["origin"]["name"])
-    return {"runs": runs}
+    # One cable leaving one port, landing in several places, is a breakout -
+    # emit it as ONE run carrying its legs so the UI can draw the fan instead
+    # of listing the same cable once per leg.
+    grouped: list[dict] = []
+    index: dict[tuple, dict] = {}
+    for r in runs:
+        cables = tuple(
+            s["cable_id"] for s in r["steps"]
+            if s["t"] == "seg" and s.get("cable_id")
+        )
+        key = (r["origin"]["name"], cables)
+        first = index.get(key)
+        if first is None:
+            index[key] = r
+            grouped.append(r)
+            continue
+        # Second+ landing for this port/cable: keep the shared head, collect
+        # the tails as legs.
+        head = 2  # origin chip + its segment
+        first.setdefault("legs", [first["steps"][head:]])
+        first["legs"].append(r["steps"][head:])
+        first["complete"] = first["complete"] and r["complete"]
+    grouped.sort(key=lambda r: r["origin"]["name"])
+    return {"runs": grouped}
 
 
 def cable_strand_path(cable, strand):

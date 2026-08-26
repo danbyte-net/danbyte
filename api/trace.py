@@ -164,6 +164,8 @@ def trace(starts):
         for o in others:
             add_point(o)
             add_cable_edge(cable, p, o)
+            if _key(o) not in processed:
+                queue.append(o)
             thrus = _through_steps(o)
             if not thrus:
                 if o[0] != "interface":
