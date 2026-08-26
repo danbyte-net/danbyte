@@ -17,6 +17,11 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -109,17 +114,27 @@ export function Combobox({
               truncate alone never engages and a long label spills out. */}
           {selected?.color ? (
             <ColorBadge name={selected.label} color={selected.color} />
+          ) : selected ? (
+            // The field is narrow, so a long value still truncates here -
+            // hovering (or focusing) shows it in full.
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="min-w-0 truncate">{selected.label}</span>
+              </TooltipTrigger>
+              <TooltipContent>{selected.label}</TooltipContent>
+            </Tooltip>
           ) : (
-            <span className="min-w-0 truncate">
-              {selected ? selected.label : placeholder}
-            </span>
+            <span className="min-w-0 truncate">{placeholder}</span>
           )}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-(--radix-popover-trigger-width) p-0"
+        // min-w = trigger width, but the list may grow wider: an option's
+        // full name always has to be readable (a truncated "Cisco Nexus
+        // 931..." is useless when three types share that prefix).
+        className="w-auto max-w-[min(38rem,calc(100vw-2rem))] min-w-(--radix-popover-trigger-width) p-0"
       >
         <Command>
           <CommandInput placeholder={searchPlaceholder} className="h-9" />
@@ -173,7 +188,7 @@ export function Combobox({
                     {o.color ? (
                       <ColorBadge name={o.label} color={o.color} />
                     ) : (
-                      <span className="truncate">{o.label}</span>
+                      <span className="whitespace-normal">{o.label}</span>
                     )}
                     {o.hint && (
                       <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">

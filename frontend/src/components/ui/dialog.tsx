@@ -67,8 +67,9 @@ function DialogContent({
    * weren't. Keying off `data-size` can't be clobbered that way.
    *
    * sm 24rem · md 28rem (default) · lg 32rem · xl 36rem · 2xl 42rem · 3xl 48rem
+   * · 4xl 56rem · 5xl 64rem · 6xl 72rem (review tables and other wide grids)
    */
-  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl"
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl" | "6xl"
 }) {
   return (
     <DialogPortal>
@@ -83,7 +84,7 @@ function DialogContent({
           // column with an inner overflow area) override via className.
           "fixed top-1/2 left-1/2 z-50 grid max-h-[90dvh] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           // Width by data-size, mirroring AlertDialogContent's existing pattern.
-          "data-[size=2xl]:sm:max-w-2xl data-[size=3xl]:sm:max-w-3xl data-[size=lg]:sm:max-w-lg data-[size=md]:sm:max-w-md data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-xl",
+          "data-[size=2xl]:sm:max-w-2xl data-[size=3xl]:sm:max-w-3xl data-[size=4xl]:sm:max-w-4xl data-[size=5xl]:sm:max-w-5xl data-[size=6xl]:sm:max-w-6xl data-[size=lg]:sm:max-w-lg data-[size=md]:sm:max-w-md data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-xl",
           className
         )}
         {...props}
