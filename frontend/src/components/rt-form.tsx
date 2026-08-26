@@ -1,21 +1,17 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type RouteTarget,
-  type RouteTargetWritePayload,
-  type TagOption,
-} from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { type RouteTarget, type RouteTargetWritePayload } from "@/lib/api"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { useFieldErrors } from "@/components/forms"
+import {
+  FormFooter,
+  FormSection,
+  FormTags,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface RtFormProps {
@@ -47,12 +43,6 @@ export function RtForm({ rt, onSaved, onCancel }: RtFormProps) {
     setCustomFields(rt.custom_fields ?? {})
     reset()
   }, [rt, reset])
-
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -90,37 +80,34 @@ export function RtForm({ rt, onSaved, onCancel }: RtFormProps) {
       }}
       className="grid gap-4"
     >
-      <Field
-        label="Name"
-        hint="ASN:value, e.g. 65000:100"
-        error={fieldErrors.name}
-      >
-        <Input
-          autoFocus={!isEdit}
+      <FormSection title="Route target" card>
+        <FormText
+          label="Name"
           required
-          placeholder="65000:100"
+          hint="ASN:value"
+          autoFocus={!isEdit}
+          mono
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="font-mono"
+          onChange={setName}
+          placeholder="65000:100"
+          error={fieldErrors.name}
         />
-      </Field>
-
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
+        <FormTextarea
+          label="Description"
           rows={2}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="e.g. Shared production hub RT"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="routetarget"
@@ -128,48 +115,11 @@ export function RtForm({ rt, onSaved, onCancel }: RtFormProps) {
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create RT"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create RT"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

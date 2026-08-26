@@ -6,7 +6,6 @@ import {
   api,
   type Paginated,
   type Status,
-  type TagOption,
   type VLANOption,
   type WirelessAuthCipher,
   type WirelessAuthType,
@@ -15,15 +14,18 @@ import {
   type WirelessLANWritePayload,
 } from "@/lib/api"
 import {
-  Field,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
+  FormStatusSelect,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -104,11 +106,6 @@ export function WirelessLANForm({
     queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
   const statuses = useQuery({
     queryKey: ["statuses", "wirelesslan"],
     queryFn: () =>
@@ -158,100 +155,109 @@ export function WirelessLANForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="SSID"
-          required
-          autoFocus={!isEdit}
-          value={ssid}
-          onChange={setSsid}
-          error={fieldErrors.ssid}
-        />
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Wireless LAN" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="SSID"
+                required
+                autoFocus={!isEdit}
+                value={ssid}
+                onChange={setSsid}
+                error={fieldErrors.ssid}
+              />
+              <FormStatusSelect
+                value={statusId}
+                onChange={setStatusId}
+                options={statuses.data?.results ?? []}
+                noneLabel="No status"
+                placeholder="Select a status…"
+                error={fieldErrors.status_id}
+              />
+            </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Group"
-          hint="optional"
-          value={groupId}
-          onChange={setGroupId}
-          options={(groups.data?.results ?? []).map((g) => ({
-            value: g.id,
-            label: g.name,
-          }))}
-          noneLabel="No group"
-          placeholder="No group"
-          searchPlaceholder="Search groups…"
-          emptyText="No groups."
-          error={fieldErrors.group_id}
-        />
-        <FormCombobox
-          label="VLAN"
-          hint="optional bridge"
-          value={vlanId}
-          onChange={setVlanId}
-          options={(vlans.data?.results ?? []).map((v) => ({
-            value: v.id,
-            label: `${v.vlan_id} · ${v.name}`,
-          }))}
-          noneLabel="No VLAN"
-          placeholder="No VLAN"
-          searchPlaceholder="Search VLANs…"
-          emptyText="No VLANs."
-          error={fieldErrors.vlan_id}
-        />
-      </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormCombobox
+                label="Group"
+                hint="optional"
+                value={groupId}
+                onChange={setGroupId}
+                options={(groups.data?.results ?? []).map((g) => ({
+                  value: g.id,
+                  label: g.name,
+                }))}
+                noneLabel="No group"
+                placeholder="No group"
+                searchPlaceholder="Search groups…"
+                emptyText="No groups."
+                error={fieldErrors.group_id}
+              />
+              <FormCombobox
+                label="VLAN"
+                hint="optional bridge"
+                value={vlanId}
+                onChange={setVlanId}
+                options={(vlans.data?.results ?? []).map((v) => ({
+                  value: v.id,
+                  label: `${v.vlan_id} · ${v.name}`,
+                }))}
+                noneLabel="No VLAN"
+                placeholder="No VLAN"
+                searchPlaceholder="Search VLANs…"
+                emptyText="No VLANs."
+                error={fieldErrors.vlan_id}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Authentication"
-          value={authType || null}
-          onChange={(v) => setAuthType((v as WirelessAuthType) ?? "")}
-          noneLabel="-"
-          options={AUTH_TYPES}
-        />
-        <FormSelect
-          label="Cipher"
-          value={authCipher || null}
-          onChange={(v) => setAuthCipher((v as WirelessAuthCipher) ?? "")}
-          noneLabel="-"
-          options={AUTH_CIPHERS}
-        />
-      </div>
+        <FormColumn>
+          <FormSection title="Security" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Authentication"
+                value={authType || null}
+                onChange={(v) => setAuthType((v as WirelessAuthType) ?? "")}
+                noneLabel="-"
+                options={AUTH_TYPES}
+              />
+              <FormSelect
+                label="Cipher"
+                value={authCipher || null}
+                onChange={(v) => setAuthCipher((v as WirelessAuthCipher) ?? "")}
+                noneLabel="-"
+                options={AUTH_CIPHERS}
+              />
+            </div>
+          </FormSection>
 
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
+          <FormSection title="Notes" card>
+            <FormText
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+            <FormTextarea
+              label="Comments"
+              value={comments}
+              onChange={setComments}
+              error={fieldErrors.comments}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+
       <CustomFieldInputs
         model="wirelesslan"
         value={customFields}

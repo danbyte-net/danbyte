@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { type VirtualChassis, type VirtualChassisWritePayload } from "@/lib/api"
 import {
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -84,39 +85,47 @@ export function VirtualChassisForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="stack-fra-01"
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Domain"
-        hint="optional"
-        value={domain}
-        onChange={setDomain}
-        mono
-        placeholder="stack-domain-1"
-        error={fieldErrors.domain}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormTextarea
-        label="Comments"
-        hint="optional"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
+      <FormSection title="Virtual chassis" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            placeholder="stack-fra-01"
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Domain"
+            hint="optional"
+            value={domain}
+            onChange={setDomain}
+            mono
+            placeholder="stack-domain-1"
+            error={fieldErrors.domain}
+          />
+        </div>
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTextarea
+          label="Comments"
+          hint="optional"
+          value={comments}
+          onChange={setComments}
+          error={fieldErrors.comments}
+        />
+      </FormSection>
+
       <CustomFieldInputs
         model="virtualchassis"
         value={customFields}

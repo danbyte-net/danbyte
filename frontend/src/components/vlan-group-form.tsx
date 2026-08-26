@@ -9,29 +9,24 @@ import {
   type VLANGroup,
   type VLANGroupWritePayload,
 } from "@/lib/api"
+import {
+  FormCombobox,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
+import { useSaveObject } from "@/lib/save-object"
 
 type ClusterPick = { id: string; name: string }
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { useFieldErrors } from "@/components/forms"
-import { useSaveObject } from "@/lib/save-object"
 
 export interface VlanGroupFormProps {
   group?: VLANGroup
   onSaved: (g: VLANGroup) => void
   onCancel: () => void
 }
-
-const NONE = "__none__"
 
 export function VlanGroupForm({
   group,
@@ -112,131 +107,87 @@ export function VlanGroupForm({
       }}
       className="grid gap-4"
     >
-      <Field label="Name" error={fieldErrors.name}>
-        <Input
-          autoFocus={!isEdit}
+      <FormSection title="Group" card>
+        <FormText
+          label="Name"
           required
-          placeholder="Campus access VLANs"
+          autoFocus={!isEdit}
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={setName}
+          placeholder="Campus access VLANs"
+          error={fieldErrors.name}
         />
-      </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Min VID" error={fieldErrors.min_vid}>
-          <Input
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Min VID"
             required
             type="number"
+            inputMode="numeric"
             min={1}
             max={4094}
+            mono
             value={minVid}
-            onChange={(e) => setMinVid(e.target.value)}
-            className="font-mono"
+            onChange={setMinVid}
+            error={fieldErrors.min_vid}
           />
-        </Field>
-        <Field label="Max VID" error={fieldErrors.max_vid}>
-          <Input
+          <FormText
+            label="Max VID"
             required
             type="number"
+            inputMode="numeric"
             min={1}
             max={4094}
+            mono
             value={maxVid}
-            onChange={(e) => setMaxVid(e.target.value)}
-            className="font-mono"
+            onChange={setMaxVid}
+            error={fieldErrors.max_vid}
           />
-        </Field>
-      </div>
+        </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Site" hint="optional" error={fieldErrors.site_id}>
-          <Select
-            value={siteId ?? NONE}
-            onValueChange={(v) => setSiteId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No site" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No site</SelectItem>
-              {sites.options.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Cluster" hint="optional" error={fieldErrors.cluster_id}>
-          <Select
-            value={clusterId ?? NONE}
-            onValueChange={(v) => setClusterId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No cluster" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No cluster</SelectItem>
-              {clusters.data?.results.map((cl) => (
-                <SelectItem key={cl.id} value={cl.id}>
-                  {cl.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
+        <FormTextarea
+          label="Description"
           rows={3}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="e.g. Access VLANs for the Amsterdam campus"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create group"}
-        </Button>
-      </div>
+      <FormSection title="Scope" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormCombobox
+            label="Site"
+            value={siteId}
+            onChange={setSiteId}
+            options={sites.options.map((s) => ({ value: s.id, label: s.name }))}
+            noneLabel="No site"
+            placeholder="No site"
+            searchPlaceholder="Search sites…"
+            emptyText="No sites."
+            error={fieldErrors.site_id}
+          />
+          <FormSelect
+            label="Cluster"
+            value={clusterId}
+            onChange={setClusterId}
+            options={(clusters.data?.results ?? []).map((cl) => ({
+              value: cl.id,
+              label: cl.name,
+            }))}
+            noneLabel="No cluster"
+            placeholder="No cluster"
+            error={fieldErrors.cluster_id}
+          />
+        </div>
+      </FormSection>
+
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create group"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

@@ -18,6 +18,7 @@ function EditWirelessLANPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Wireless LANs", to: "/wireless-lans" },
         { label: q.data?.ssid ?? "…" },

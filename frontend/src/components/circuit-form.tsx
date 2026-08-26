@@ -10,17 +10,19 @@ import {
   type Paginated,
   type ProviderOption,
   type Status,
-  type TagOption,
 } from "@/lib/api"
 import {
-  Field,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
+  FormSection,
+  FormStatusSelect,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -89,11 +91,6 @@ export function CircuitForm({ circuit, onSaved, onCancel }: CircuitFormProps) {
       api<Paginated<CircuitTypeOption>>("/api/circuit-types/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
   const statuses = useQuery({
     queryKey: ["statuses", "circuit"],
     queryFn: () =>
@@ -143,106 +140,114 @@ export function CircuitForm({ circuit, onSaved, onCancel }: CircuitFormProps) {
       }}
       className="grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Circuit ID"
-          required
-          mono
-          autoFocus={!isEdit}
-          value={cid}
-          onChange={setCid}
-          error={fieldErrors.cid}
-        />
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Circuit" card>
+            <FormText
+              label="Circuit ID"
+              required
+              mono
+              autoFocus={!isEdit}
+              value={cid}
+              onChange={setCid}
+              error={fieldErrors.cid}
+            />
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Provider"
-          value={providerId}
-          onChange={setProviderId}
-          options={(providers.data?.results ?? []).map((p) => ({
-            value: p.id,
-            label: p.name,
-          }))}
-          placeholder="Select provider"
-          searchPlaceholder="Search providers…"
-          emptyText="No providers."
-          error={fieldErrors.provider_id}
-        />
-        <FormCombobox
-          label="Type"
-          hint="optional"
-          value={typeId}
-          onChange={setTypeId}
-          options={(types.data?.results ?? []).map((t) => ({
-            value: t.id,
-            label: t.name,
-          }))}
-          noneLabel="No type"
-          placeholder="No type"
-          searchPlaceholder="Search types…"
-          emptyText="No types."
-          error={fieldErrors.type_id}
-        />
-      </div>
+            <FormStatusSelect
+              value={statusId}
+              onChange={setStatusId}
+              options={statuses.data?.results ?? []}
+              placeholder="Select a status…"
+              error={fieldErrors.status_id}
+            />
 
-      <div className="grid grid-cols-3 gap-3">
-        <FormText
-          label="Install date"
-          type="text"
-          placeholder="YYYY-MM-DD"
-          value={installDate}
-          onChange={setInstallDate}
-          error={fieldErrors.install_date}
-        />
-        <FormText
-          label="Termination date"
-          type="text"
-          placeholder="YYYY-MM-DD"
-          value={terminationDate}
-          onChange={setTerminationDate}
-          error={fieldErrors.termination_date}
-        />
-        <FormText
-          label="Commit rate (kbps)"
-          type="number"
-          value={commitRate}
-          onChange={setCommitRate}
-          error={fieldErrors.commit_rate_kbps}
-        />
-      </div>
+            <FormCombobox
+              label="Provider"
+              required
+              value={providerId}
+              onChange={setProviderId}
+              options={(providers.data?.results ?? []).map((p) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+              placeholder="Select provider"
+              searchPlaceholder="Search providers…"
+              emptyText="No providers."
+              error={fieldErrors.provider_id}
+            />
 
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
+            <FormCombobox
+              label="Type"
+              hint="optional"
+              value={typeId}
+              onChange={setTypeId}
+              options={(types.data?.results ?? []).map((t) => ({
+                value: t.id,
+                label: t.name,
+                color: t.color,
+              }))}
+              noneLabel="No type"
+              placeholder="No type"
+              searchPlaceholder="Search types…"
+              emptyText="No types."
+              error={fieldErrors.type_id}
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Service" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Install date"
+                type="text"
+                placeholder="YYYY-MM-DD"
+                value={installDate}
+                onChange={setInstallDate}
+                error={fieldErrors.install_date}
+              />
+              <FormText
+                label="Termination date"
+                type="text"
+                placeholder="YYYY-MM-DD"
+                value={terminationDate}
+                onChange={setTerminationDate}
+                error={fieldErrors.termination_date}
+              />
+            </div>
+            <FormText
+              label="Commit rate (kbps)"
+              type="number"
+              value={commitRate}
+              onChange={setCommitRate}
+              error={fieldErrors.commit_rate_kbps}
+            />
+          </FormSection>
+
+          <FormSection title="Notes" card>
+            <FormText
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+            <FormTextarea
+              label="Comments"
+              value={comments}
+              onChange={setComments}
+              error={fieldErrors.comments}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+
       <CustomFieldInputs
         model="circuit"
         value={customFields}

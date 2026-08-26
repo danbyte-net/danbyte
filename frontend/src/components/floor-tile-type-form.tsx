@@ -8,7 +8,7 @@ import {
   FormColor,
   FormFooter,
   FormIcon,
-  FormRow,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -83,77 +83,84 @@ export function FloorTileTypeForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="Rack, Wall, Cooling unit, Camera…"
-        error={fieldErrors.name || fieldErrors.slug}
-      />
-      <FormColor
-        label="Color"
-        hint="The tile's fill on the canvas"
-        value={color}
-        onChange={setColor}
-        error={fieldErrors.color}
-      />
-      <FormIcon
-        label="Icon"
-        hint="Optional - shown in the palette and lists"
-        value={icon}
-        onChange={setIcon}
-        error={fieldErrors.icon}
-      />
-      <FormRow>
+      <FormSection title="Tile type" card>
         <FormText
-          label="Default width"
-          hint="Cells"
-          type="number"
-          min={1}
-          max={512}
-          value={defaultWidth}
-          onChange={setDefaultWidth}
-          error={fieldErrors.default_width}
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="Rack, Wall, Cooling unit, Camera…"
+          error={fieldErrors.name || fieldErrors.slug}
         />
-        <FormText
-          label="Default height"
-          hint="Cells"
-          type="number"
-          min={1}
-          max={512}
-          value={defaultHeight}
-          onChange={setDefaultHeight}
-          error={fieldErrors.default_height}
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Default width"
+            hint="Cells"
+            type="number"
+            min={1}
+            max={512}
+            value={defaultWidth}
+            onChange={setDefaultWidth}
+            error={fieldErrors.default_width}
+          />
+          <FormText
+            label="Default height"
+            hint="Cells"
+            type="number"
+            min={1}
+            max={512}
+            value={defaultHeight}
+            onChange={setDefaultHeight}
+            error={fieldErrors.default_height}
+          />
+        </div>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
         />
-      </FormRow>
-      <FormCheckbox
-        label="Background zone"
-        hint="Paints the grid background (hot/cold aisle, security area) - renders under normal tiles, which may sit on top of it"
-        checked={isZone}
-        onChange={setIsZone}
-      />
-      <FormCheckbox
-        label="Camera field of view"
-        hint="Tiles of this type get a direction / angle / reach cone on the canvas"
-        checked={hasFov}
-        onChange={setHasFov}
-      />
-      <FormCheckbox
-        label="Perforated floor (3D)"
-        hint="Zone tiles of this type render as grate/supply tiles in the 3D room - the cold-aisle read"
-        checked={perforated}
-        onChange={setPerforated}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+        <FormCheckbox
+          label="Background zone"
+          hint="Paints the grid background (hot/cold aisle, security area) - renders under normal tiles, which may sit on top of it"
+          checked={isZone}
+          onChange={setIsZone}
+        />
+        <FormCheckbox
+          label="Camera field of view"
+          hint="Tiles of this type get a direction / angle / reach cone on the canvas"
+          checked={hasFov}
+          onChange={setHasFov}
+        />
+        <FormCheckbox
+          label="Perforated floor (3D)"
+          hint="Zone tiles of this type render as grate/supply tiles in the 3D room - the cold-aisle read"
+          checked={perforated}
+          onChange={setPerforated}
+        />
+      </FormSection>
+
+      <FormSection title="Appearance" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormColor
+            label="Color"
+            hint="The tile's fill on the canvas"
+            value={color}
+            onChange={setColor}
+            error={fieldErrors.color}
+          />
+          <FormIcon
+            label="Icon"
+            hint="Shown in the palette and lists"
+            value={icon}
+            onChange={setIcon}
+            error={fieldErrors.icon}
+          />
+        </div>
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

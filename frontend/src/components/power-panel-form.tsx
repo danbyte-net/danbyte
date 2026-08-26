@@ -1,24 +1,18 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
+import { type PowerPanel, type PowerPanelWritePayload } from "@/lib/api"
 import {
-  api,
-  type Paginated,
-  type PowerPanel,
-  type PowerPanelWritePayload,
-  type TagOption,
-} from "@/lib/api"
-import {
-  Field,
   FormCombobox,
   FormFooter,
+  FormSection,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -59,11 +53,6 @@ export function PowerPanelForm({
   }, [panel, reset])
 
   const sites = useSiteOptions()
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -100,42 +89,48 @@ export function PowerPanelForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        error={fieldErrors.name}
-      />
-      <FormCombobox
-        label="Site"
-        value={siteId}
-        onChange={setSiteId}
-        options={sites.options.map((s) => ({
-          value: s.id,
-          label: s.name,
-        }))}
-        placeholder="Select site"
-        searchPlaceholder="Search sites…"
-        emptyText="No sites."
-        error={fieldErrors.site_id}
-      />
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
+      <FormSection title="Power panel" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          error={fieldErrors.name}
         />
-      </Field>
+        <FormCombobox
+          label="Site"
+          required
+          value={siteId}
+          onChange={setSiteId}
+          options={sites.options.map((s) => ({
+            value: s.id,
+            label: s.name,
+          }))}
+          placeholder="Select site"
+          searchPlaceholder="Search sites…"
+          emptyText="No sites."
+          error={fieldErrors.site_id}
+        />
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Comments"
+          value={comments}
+          onChange={setComments}
+          error={fieldErrors.comments}
+        />
+      </FormSection>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
       <CustomFieldInputs
         model="powerpanel"
         value={customFields}

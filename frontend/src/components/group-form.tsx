@@ -16,6 +16,7 @@ import {
   Field,
   FormCheckbox,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -103,26 +104,28 @@ export function GroupForm({ group, onSaved, onCancel }: GroupFormProps) {
         }
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        error={fieldErrors.name}
-        hint={group?.built_in ? "Built-in group" : undefined}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.set_description}
-      />
+      <FormSection title="Group" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          error={fieldErrors.name}
+          hint={group?.built_in ? "Built-in group" : undefined}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.set_description}
+        />
+      </FormSection>
 
       {!isEdit && (
-        <div className="grid gap-3 rounded-md border border-border p-3">
+        <FormSection title="Site access" card>
           <FormCheckbox
             label="Site-scoped access (local IT)"
             checked={siteScoped}
@@ -160,7 +163,7 @@ export function GroupForm({ group, onSaved, onCancel }: GroupFormProps) {
               )}
             </div>
           )}
-        </div>
+        </FormSection>
       )}
 
       <FormFooter

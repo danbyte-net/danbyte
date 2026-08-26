@@ -12,6 +12,7 @@ import {
 import {
   FormCombobox,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -90,46 +91,52 @@ export function ModuleTypeForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="C9300-NM-8X"
-        error={fieldErrors.name}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Manufacturer"
-          value={manufacturerId}
-          onChange={setManufacturerId}
-          noneLabel="No manufacturer"
-          placeholder="Pick a manufacturer"
-          searchPlaceholder="Search…"
-          emptyText="No manufacturers."
-          options={(manufacturers.data?.results ?? []).map((m) => ({
-            value: m.id,
-            label: m.name,
-          }))}
-          error={fieldErrors.manufacturer_id}
-        />
+      <FormSection title="Module type" card>
         <FormText
-          label="Part number"
-          value={partNumber}
-          onChange={setPartNumber}
-          mono
-          error={fieldErrors.part_number}
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="C9300-NM-8X"
+          error={fieldErrors.name}
         />
-      </div>
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormCombobox
+            label="Manufacturer"
+            value={manufacturerId}
+            onChange={setManufacturerId}
+            noneLabel="No manufacturer"
+            placeholder="Pick a manufacturer"
+            searchPlaceholder="Search…"
+            emptyText="No manufacturers."
+            options={(manufacturers.data?.results ?? []).map((m) => ({
+              value: m.id,
+              label: m.name,
+            }))}
+            error={fieldErrors.manufacturer_id}
+          />
+          <FormText
+            label="Part number"
+            value={partNumber}
+            onChange={setPartNumber}
+            mono
+            error={fieldErrors.part_number}
+          />
+        </div>
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
+
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

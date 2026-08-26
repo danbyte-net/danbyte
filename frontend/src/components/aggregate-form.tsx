@@ -8,23 +8,18 @@ import {
   type AggregateWritePayload,
   type Paginated,
   type RIROption,
-  type TagOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { DatePicker } from "@/components/ui/date-picker"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { useFieldErrors } from "@/components/forms"
+import {
+  FormDate,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormTags,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface AggregateFormProps {
@@ -70,11 +65,6 @@ export function AggregateForm({
     queryFn: () => api<Paginated<RIROption>>("/api/rirs/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -112,61 +102,67 @@ export function AggregateForm({
     <form
       onSubmit={(e) => {
         e.preventDefault()
+        // The API requires an RIR (rir_id has no default) - the old form
+        // disabled Save until one was picked; the shared footer has no
+        // disabled state, so guard here and say why.
+        if (!rirId) {
+          toast.error("Pick the RIR this block is allocated by.")
+          return
+        }
         mutation.mutate()
       }}
       className="grid gap-4"
     >
-      <Field label="Prefix (CIDR)" error={fieldErrors.prefix}>
-        <Input
-          autoFocus={!isEdit}
+      <FormSection title="Aggregate" card>
+        <FormText
+          label="Prefix"
           required
-          placeholder="10.0.0.0/8"
+          hint="CIDR"
+          autoFocus={!isEdit}
+          mono
           value={prefix}
-          onChange={(e) => setPrefix(e.target.value)}
-          className="font-mono"
+          onChange={setPrefix}
+          placeholder="10.0.0.0/8"
+          error={fieldErrors.prefix}
         />
-      </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="RIR" error={fieldErrors.rir_id}>
-          <Select value={rirId ?? ""} onValueChange={(v) => setRirId(v)}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select a RIR" />
-            </SelectTrigger>
-            <SelectContent>
-              {rirs.data?.results.map((r) => (
-                <SelectItem key={r.id} value={r.id}>
-                  {r.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field
-          label="Date added"
-          hint="optional"
-          error={fieldErrors.date_added}
-        >
-          <DatePicker value={dateAdded} onChange={setDateAdded} />
-        </Field>
-      </div>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormSelect
+            label="RIR"
+            required
+            value={rirId}
+            onChange={setRirId}
+            options={(rirs.data?.results ?? []).map((r) => ({
+              value: r.id,
+              label: r.name,
+            }))}
+            placeholder="Select a RIR"
+            error={fieldErrors.rir_id}
+          />
+          <FormDate
+            label="Date added"
+            value={dateAdded}
+            onChange={setDateAdded}
+            error={fieldErrors.date_added}
+          />
+        </div>
 
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
+        <FormTextarea
+          label="Description"
           rows={3}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="e.g. RFC1918 private block"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="aggregate"
@@ -174,48 +170,11 @@ export function AggregateForm({
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending || !rirId}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create aggregate"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create aggregate"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

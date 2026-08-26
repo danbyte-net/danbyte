@@ -7,22 +7,24 @@ import {
   type IPSecProfileOption,
   type Paginated,
   type Status,
-  type TagOption,
   type Tunnel,
   type TunnelEncapsulation,
   type TunnelGroupOption,
   type TunnelWritePayload,
 } from "@/lib/api"
 import {
-  Field,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
+  FormStatusSelect,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -98,11 +100,6 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
       api<Paginated<IPSecProfileOption>>("/api/ipsec-profiles/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
   const statuses = useQuery({
     queryKey: ["statuses", "tunnel"],
     queryFn: () =>
@@ -153,104 +150,110 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          error={fieldErrors.name}
-        />
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Tunnel" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              error={fieldErrors.name}
+            />
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormStatusSelect
+                value={statusId}
+                onChange={setStatusId}
+                options={statuses.data?.results ?? []}
+                noneLabel="No status"
+                placeholder="Select a status…"
+                error={fieldErrors.status_id}
+              />
+              <FormCombobox
+                label="Group"
+                hint="optional"
+                value={groupId}
+                onChange={setGroupId}
+                options={(groups.data?.results ?? []).map((g) => ({
+                  value: g.id,
+                  label: g.name,
+                }))}
+                noneLabel="No group"
+                placeholder="No group"
+                searchPlaceholder="Search groups…"
+                emptyText="No groups."
+                error={fieldErrors.group_id}
+              />
+            </div>
+          </FormSection>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Encapsulation"
-          value={encapsulation}
-          onChange={(v) =>
-            setEncapsulation((v as TunnelEncapsulation) ?? "ipsec-tunnel")
-          }
-          options={ENCAPS}
-        />
-        <FormText
-          label="Tunnel ID"
-          hint="optional"
-          type="number"
-          value={tunnelId}
-          onChange={setTunnelId}
-          error={fieldErrors.tunnel_id}
-        />
-      </div>
+          <FormSection title="Notes" card>
+            <FormText
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+            <FormTextarea
+              label="Comments"
+              value={comments}
+              onChange={setComments}
+              error={fieldErrors.comments}
+            />
+          </FormSection>
+        </FormColumn>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Group"
-          hint="optional"
-          value={groupId}
-          onChange={setGroupId}
-          options={(groups.data?.results ?? []).map((g) => ({
-            value: g.id,
-            label: g.name,
-          }))}
-          noneLabel="No group"
-          placeholder="No group"
-          searchPlaceholder="Search groups…"
-          emptyText="No groups."
-          error={fieldErrors.group_id}
-        />
-        {ipsec && (
-          <FormCombobox
-            label="IPSec profile"
-            hint="optional"
-            value={profileId}
-            onChange={setProfileId}
-            options={(profiles.data?.results ?? []).map((p) => ({
-              value: p.id,
-              label: p.name,
-            }))}
-            noneLabel="No profile"
-            placeholder="No profile"
-            searchPlaceholder="Search profiles…"
-            emptyText="No profiles."
-            error={fieldErrors.ipsec_profile_id}
-          />
-        )}
-      </div>
+        <FormColumn>
+          <FormSection title="Encapsulation" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Encapsulation"
+                value={encapsulation}
+                onChange={(v) =>
+                  setEncapsulation((v as TunnelEncapsulation) ?? "ipsec-tunnel")
+                }
+                options={ENCAPS}
+              />
+              <FormText
+                label="Tunnel ID"
+                hint="optional"
+                type="number"
+                value={tunnelId}
+                onChange={setTunnelId}
+                error={fieldErrors.tunnel_id}
+              />
+            </div>
+            {ipsec && (
+              <FormCombobox
+                label="IPSec profile"
+                hint="optional"
+                value={profileId}
+                onChange={setProfileId}
+                options={(profiles.data?.results ?? []).map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                }))}
+                noneLabel="No profile"
+                placeholder="No profile"
+                searchPlaceholder="Search profiles…"
+                emptyText="No profiles."
+                error={fieldErrors.ipsec_profile_id}
+              />
+            )}
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+
       <CustomFieldInputs
         model="tunnel"
         value={customFields}

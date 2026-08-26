@@ -10,6 +10,7 @@ function NewWirelessLANPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Wireless LANs", to: "/wireless-lans" },
         { label: "Add" },

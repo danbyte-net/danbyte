@@ -17,6 +17,7 @@ import {
   FormCheckbox,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -194,102 +195,105 @@ export function ExportTemplateForm({
         e.preventDefault()
         save.mutate()
       }}
-      className="grid max-w-3xl gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Name"
+      <FormSection title="Template" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            error={fieldErrors.name}
+          />
+          <FormSelect
+            label="Object type"
+            required
+            value={objectType}
+            onChange={(v) => {
+              setObjectType(v)
+              setClientErrors((e) => ({ ...e, object_type: "" }))
+              // Drop a now-stale sample selection / preview when the type
+              // changes so we never render the wrong per-object endpoint.
+              setSampleId(null)
+              setPreview(null)
+            }}
+            options={typeOptions}
+            placeholder="Pick a type"
+            error={clientErrors.object_type || fieldErrors.object_type}
+          />
+        </div>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
+
+      <FormSection title="Template code" card>
+        <Field
+          label="Template (Jinja2)"
           required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          error={fieldErrors.name}
-        />
-        <FormSelect
-          label="Object type"
-          hint="required"
-          value={objectType}
-          onChange={(v) => {
-            setObjectType(v)
-            setClientErrors((e) => ({ ...e, object_type: "" }))
-            // Drop a now-stale sample selection / preview when the type changes
-            // so we never render the wrong per-object endpoint.
-            setSampleId(null)
-            setPreview(null)
-          }}
-          options={typeOptions}
-          placeholder="Pick a type"
-          error={clientErrors.object_type || fieldErrors.object_type}
-        />
-      </div>
+          hint={contextHint}
+          error={clientErrors.template_code || fieldErrors.template_code}
+        >
+          <textarea
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value)
+              setClientErrors((err) => ({ ...err, template_code: "" }))
+            }}
+            rows={12}
+            spellCheck={false}
+            className="w-full rounded-md border border-input bg-transparent p-3 font-mono text-[12px] leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            placeholder={"{% for o in objects %}\n{{ o.name }}\n{% endfor %}"}
+          />
+        </Field>
+      </FormSection>
 
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-
-      <Field
-        label="Template (Jinja2)"
-        hint={contextHint}
-        error={clientErrors.template_code || fieldErrors.template_code}
-      >
-        <textarea
-          value={code}
-          onChange={(e) => {
-            setCode(e.target.value)
-            setClientErrors((err) => ({ ...err, template_code: "" }))
-          }}
-          rows={12}
-          spellCheck={false}
-          className="w-full rounded-md border border-input bg-transparent p-3 font-mono text-[12px] leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          placeholder={"{% for o in objects %}\n{{ o.name }}\n{% endfor %}"}
-        />
-      </Field>
-
-      <div className="grid grid-cols-[1fr_auto_auto] items-end gap-3">
-        <FormText
-          label="MIME type"
-          mono
-          value={mimeType}
-          onChange={setMimeType}
-          error={fieldErrors.mime_type}
-        />
-        <FormText
-          label="Extension"
-          mono
-          value={ext}
-          onChange={setExt}
-          error={fieldErrors.file_extension}
-        />
+      <FormSection title="Output" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="MIME type"
+            mono
+            value={mimeType}
+            onChange={setMimeType}
+            error={fieldErrors.mime_type}
+          />
+          <FormText
+            label="Extension"
+            mono
+            value={ext}
+            onChange={setExt}
+            error={fieldErrors.file_extension}
+          />
+        </div>
         <FormCheckbox
           label="As download"
           checked={asAttachment}
           onChange={setAsAttachment}
-          className="pb-2"
         />
-      </div>
+      </FormSection>
 
       {isEdit && (
-        <Field
-          label="Preview"
-          hint="Renders the saved template against live objects"
-        >
+        <FormSection title="Preview" card>
+          <p className="text-[11px] text-muted-foreground">
+            Renders the saved template against live objects.
+          </p>
           {isPerObject && (
-            <div className="mb-2">
-              <FormCombobox
-                label="Sample object"
-                value={sampleId}
-                onChange={setSampleId}
-                placeholder="Pick a sample object"
-                searchPlaceholder="Search…"
-                emptyText="No objects."
-                options={sampleOptions}
-              />
-            </div>
+            <FormCombobox
+              label="Sample object"
+              value={sampleId}
+              onChange={setSampleId}
+              placeholder="Pick a sample object"
+              searchPlaceholder="Search…"
+              emptyText="No objects."
+              options={sampleOptions}
+            />
           )}
-          <div className="mb-2">
+          <div>
             <Button
               type="button"
               variant="outline"
@@ -306,7 +310,7 @@ export function ExportTemplateForm({
             </Button>
           </div>
           {isPerObject && !sampleId && (
-            <p className="mb-2 text-[11px] text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               Pick a sample object to render this template against.
             </p>
           )}
@@ -315,7 +319,7 @@ export function ExportTemplateForm({
               {preview || "(empty)"}
             </pre>
           )}
-        </Field>
+        </FormSection>
       )}
 
       <FormFooter

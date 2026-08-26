@@ -9,6 +9,7 @@ import {
 import {
   FormCheckbox,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -81,47 +82,50 @@ export function CustomFieldGroupForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="Operations"
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Slug"
-        mono
-        value={slug}
-        onChange={setSlug}
-        hint="Auto-generated from the name if left blank."
-        placeholder="operations"
-        error={fieldErrors.slug}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="What this section groups together"
-        error={fieldErrors.description}
-      />
-      <FormText
-        label="Weight"
-        type="number"
-        value={weight}
-        onChange={setWeight}
-        hint="Section order, low → high."
-        error={fieldErrors.weight}
-      />
-      <FormCheckbox
-        label="Start collapsed on detail pages"
-        checked={collapsed}
-        onChange={setCollapsed}
-      />
-
+      <FormSection title="Field group" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            placeholder="Operations"
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            mono
+            value={slug}
+            onChange={setSlug}
+            hint="Auto-generated from the name if left blank."
+            placeholder="operations"
+            error={fieldErrors.slug}
+          />
+        </div>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          placeholder="What this section groups together"
+          error={fieldErrors.description}
+        />
+        <FormText
+          label="Weight"
+          type="number"
+          value={weight}
+          onChange={setWeight}
+          hint="Section order, low → high."
+          error={fieldErrors.weight}
+        />
+        <FormCheckbox
+          label="Start collapsed on detail pages"
+          checked={collapsed}
+          onChange={setCollapsed}
+        />
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

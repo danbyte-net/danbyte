@@ -1,23 +1,17 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type RearPort,
-  type RearPortWritePayload,
-  type TagOption,
-} from "@/lib/api"
+import { type RearPort, type RearPortWritePayload } from "@/lib/api"
 import {
   FormSection,
   Field,
   FormCheckbox,
   FormFooter,
+  FormTags,
   FormText,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
@@ -73,12 +67,6 @@ export function RearPortForm({
     setTagIds(port.tags.map((t) => t.id))
     reset()
   }, [port, reset])
-
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -165,8 +153,8 @@ export function RearPortForm({
       }}
       className="@container grid gap-4"
     >
-      <FormSection title="Rear port">
-        <div className="grid grid-cols-2 gap-3">
+      <FormSection title="Rear port" card>
+        <div className="grid gap-3 @md:grid-cols-2">
           <FormText
             label="Name"
             required
@@ -183,7 +171,7 @@ export function RearPortForm({
           <FormText
             label="Positions"
             type="number"
-            required
+            min={1}
             value={positions}
             onChange={setPositions}
             placeholder="1"
@@ -217,27 +205,25 @@ export function RearPortForm({
         </Field>
       </FormSection>
 
-      <FormSection title="State">
-        <Field label="Cabling">
+      <FormSection title="State" card>
+        <FormCheckbox
+          label="Mark connected"
+          checked={markConnected}
+          onChange={(v) => {
+            setMarkConnected(v)
+            if (v) setReserved(false)
+          }}
+        />
+        {!port?.cable && (
           <FormCheckbox
-            label="Mark connected"
-            checked={markConnected}
+            label="Reserved"
+            checked={reserved}
             onChange={(v) => {
-              setMarkConnected(v)
-              if (v) setReserved(false)
+              setReserved(v)
+              if (v) setMarkConnected(false)
             }}
           />
-          {!port?.cable && (
-            <FormCheckbox
-              label="Reserved"
-              checked={reserved}
-              onChange={(v) => {
-                setReserved(v)
-                if (v) setMarkConnected(false)
-              }}
-            />
-          )}
-        </Field>
+        )}
         {reserved && !port?.cable && (
           <FormText
             label="Reservation note"
@@ -248,20 +234,22 @@ export function RearPortForm({
         )}
       </FormSection>
 
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="Optional"
-        error={fieldErrors.description}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
+      <FormSection title="Notes" card>
+        <FormText
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          placeholder="Optional"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

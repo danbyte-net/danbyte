@@ -11,10 +11,17 @@ import {
   type Silence,
   type TagOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FormCombobox, FormTags } from "@/components/forms"
+import {
+  Field,
+  FormCombobox,
+  FormFooter,
+  FormSection,
+  FormTags,
+  FormText,
+} from "@/components/forms"
+import { CheckStatusBadge } from "./status-badge"
 import { KINDS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -136,127 +143,116 @@ export function SilenceForm({
         e.preventDefault()
         save.mutate()
       }}
-      className="grid max-w-2xl gap-5"
+      className="@container grid gap-4"
     >
-      <Field label="Reason" hint="Why alerts are muted - shown in the list.">
-        <Input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="Datacenter A maintenance"
+      <FormSection title="Silence" card>
+        <FormText
+          label="Reason"
+          hint="Why alerts are muted - shown in the list."
           autoFocus
+          value={reason}
+          onChange={setReason}
+          placeholder="Datacenter A maintenance"
         />
-      </Field>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Starts">
-          <Input
-            type="datetime-local"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
-            required
-          />
-        </Field>
-        <Field label="Ends">
-          <Input
-            type="datetime-local"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-            required
-          />
-        </Field>
-      </div>
-
-      <div className="rounded-md border border-dashed border-border p-3">
-        <p className="mb-3 text-[11px] tracking-[0.08em] text-muted-foreground uppercase">
-          Matchers - leave everything empty for a blanket maintenance window
-        </p>
-        <div className="space-y-4">
-          <Field label="Check kinds" hint="empty = any">
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {KINDS.map((k) => (
-                <label
-                  key={k.value}
-                  className="flex items-center gap-2 text-[13px]"
-                >
-                  <Checkbox
-                    checked={kinds.includes(k.value)}
-                    onCheckedChange={() => toggle(kinds, k.value, setKinds)}
-                  />
-                  {k.value}
-                </label>
-              ))}
-            </div>
-          </Field>
-
-          <Field label="Statuses" hint="empty = any">
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {TRIGGER_STATUSES.map((s) => (
-                <label key={s} className="flex items-center gap-2 text-[13px]">
-                  <Checkbox
-                    checked={statuses.includes(s)}
-                    onCheckedChange={() => toggle(statuses, s, setStatuses)}
-                  />
-                  {s}
-                </label>
-              ))}
-            </div>
-          </Field>
-
-          <FormTags
-            label="IP tags"
-            hint="Only IPs carrying any of these tags."
-            value={tagIds}
-            onChange={setTagIds}
-          />
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <FormCombobox
-              label="Within prefix"
-              value={prefixId}
-              onChange={setPrefixId}
-              noneLabel="Any prefix"
-              placeholder="Any prefix"
-              searchPlaceholder="Search prefixes…"
-              emptyText="No prefixes."
-              options={(prefixesQ.data?.results ?? []).map((p) => ({
-                value: p.id,
-                label: p.cidr,
-              }))}
+        <div className="grid gap-3 @md:grid-cols-2">
+          <Field label="Starts" required>
+            <Input
+              type="datetime-local"
+              value={startsAt}
+              onChange={(e) => setStartsAt(e.target.value)}
+              required
             />
-            <FormCombobox
-              label="Single IP"
-              value={ipId}
-              onChange={setIpId}
-              noneLabel="Any IP"
-              placeholder="Any IP"
-              searchPlaceholder="Search IPs…"
-              emptyText="No IPs."
-              options={(ipsQ.data?.results ?? []).map((ip) => ({
-                value: ip.id,
-                label: ip.ip_address,
-              }))}
+          </Field>
+          <Field label="Ends" required>
+            <Input
+              type="datetime-local"
+              value={endsAt}
+              onChange={(e) => setEndsAt(e.target.value)}
+              required
             />
-          </div>
+          </Field>
         </div>
-      </div>
+      </FormSection>
 
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={save.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={save.isPending}>
-          {save.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save silence"
-              : "Create silence"}
-        </Button>
-      </div>
+      <FormSection title="Matchers" card>
+        <p className="text-[11px] text-muted-foreground">
+          Leave everything empty for a blanket maintenance window.
+        </p>
+
+        <Field label="Check kinds" hint="empty = any">
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {KINDS.map((k) => (
+              <label
+                key={k.value}
+                className="flex items-center gap-2 text-[13px]"
+              >
+                <Checkbox
+                  checked={kinds.includes(k.value)}
+                  onCheckedChange={() => toggle(kinds, k.value, setKinds)}
+                />
+                {k.value}
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Statuses" hint="empty = any">
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {TRIGGER_STATUSES.map((s) => (
+              <label key={s} className="flex items-center gap-2 text-[13px]">
+                <Checkbox
+                  checked={statuses.includes(s)}
+                  onCheckedChange={() => toggle(statuses, s, setStatuses)}
+                />
+                <CheckStatusBadge status={s} />
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        <FormTags
+          label="IP tags"
+          hint="Only IPs carrying any of these tags."
+          value={tagIds}
+          onChange={setTagIds}
+        />
+
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormCombobox
+            label="Within prefix"
+            value={prefixId}
+            onChange={setPrefixId}
+            noneLabel="Any prefix"
+            placeholder="Any prefix"
+            searchPlaceholder="Search prefixes…"
+            emptyText="No prefixes."
+            options={(prefixesQ.data?.results ?? []).map((p) => ({
+              value: p.id,
+              label: p.cidr,
+            }))}
+          />
+          <FormCombobox
+            label="Single IP"
+            value={ipId}
+            onChange={setIpId}
+            noneLabel="Any IP"
+            placeholder="Any IP"
+            searchPlaceholder="Search IPs…"
+            emptyText="No IPs."
+            options={(ipsQ.data?.results ?? []).map((ip) => ({
+              value: ip.id,
+              label: ip.ip_address,
+            }))}
+          />
+        </div>
+      </FormSection>
+
+      <FormFooter
+        onCancel={onCancel}
+        submitting={save.isPending}
+        submitLabel={isEdit ? "Save silence" : "Create silence"}
+      />
     </form>
   )
 }

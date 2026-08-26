@@ -11,6 +11,7 @@ function NewContactPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Contacts", to: "/contacts" }, { label: "Add" }]}
       title="Add contact"
       subtitle="A person or team you can attach to objects."

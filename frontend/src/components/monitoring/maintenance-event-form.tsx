@@ -12,7 +12,11 @@ import type {
 } from "@/lib/api"
 import {
   Field,
+  FormColumn,
+  FormColumns,
+  FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -126,114 +130,135 @@ export function MaintenanceEventForm({
 
   return (
     <form
-      className="grid gap-4"
+      className="@container grid gap-4"
       onSubmit={(e) => {
         e.preventDefault()
         save.mutate()
       }}
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormSelect
-          label="Kind"
-          value={kind}
-          onChange={(v) => setKind(v as MaintenanceEventKind)}
-          options={[
-            { value: "maintenance", label: "Maintenance" },
-            { value: "outage", label: "Outage" },
-          ]}
-          error={fieldErrors.kind}
-        />
-        <FormSelect
-          label="Status"
-          value={statusId}
-          onChange={(v) => v && setStatusId(v)}
-          options={statusRows.map((s) => ({ value: s.id, label: s.name }))}
-          info="Rows from Settings → Statuses that are available to maintenance events - add your own there."
-          error={fieldErrors.status_id}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Event" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Kind"
+                required
+                value={kind}
+                onChange={(v) => setKind(v as MaintenanceEventKind)}
+                options={[
+                  { value: "maintenance", label: "Maintenance" },
+                  { value: "outage", label: "Outage" },
+                ]}
+                error={fieldErrors.kind}
+              />
+              {/* Statuses are catalog rows with a colour - the picker renders
+                  each one as its ColorBadge, exactly as tables do. */}
+              <FormCombobox
+                label="Status"
+                required
+                value={statusId}
+                onChange={(v) => v && setStatusId(v)}
+                options={statusRows.map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                  color: s.color,
+                }))}
+                placeholder="Pick status"
+                searchPlaceholder="Search statuses…"
+                emptyText="No statuses."
+                info="Rows from Settings → Statuses that are available to maintenance events - add your own there."
+                error={fieldErrors.status_id}
+              />
+            </div>
 
-      <FormText
-        label="Name"
-        value={name}
-        onChange={setName}
-        required
-        placeholder="Fiber splice, span DK-31"
-        error={fieldErrors.name}
-      />
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormSelect
-          label="Provider"
-          value={provider}
-          onChange={setProvider}
-          noneLabel="None (internal work)"
-          options={(providers.data?.results ?? []).map((p) => ({
-            value: p.id,
-            label: p.name,
-          }))}
-          error={fieldErrors.provider}
-        />
-        <FormText
-          label="Provider reference"
-          value={externalRef}
-          onChange={setExternalRef}
-          placeholder="MAINT-77031"
-          info="The provider's own ticket id - automated ingestion uses it to update instead of duplicate."
-          error={fieldErrors.external_ref}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Starts" error={fieldErrors.starts_at}>
-          <Input
-            type="datetime-local"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
-            required
-          />
-        </Field>
-        {kind === "maintenance" ? (
-          <Field label="Ends" error={fieldErrors.ends_at}>
-            <Input
-              type="datetime-local"
-              value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
+            <FormText
+              label="Name"
+              value={name}
+              onChange={setName}
               required
+              placeholder="Fiber splice, span DK-31"
+              error={fieldErrors.name}
             />
-          </Field>
-        ) : (
-          <Field
-            label="ETR"
-            error={fieldErrors.etr}
-            info="Estimated time to restore. Leave empty while unknown; set Ends when the outage actually closes."
-          >
-            <Input
-              type="datetime-local"
-              value={etr}
-              onChange={(e) => setEtr(e.target.value)}
+
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              rows={3}
+              error={fieldErrors.description}
             />
-          </Field>
-        )}
-      </div>
+          </FormSection>
+        </FormColumn>
 
-      {kind === "outage" && (
-        <Field label="Ended" error={fieldErrors.ends_at}>
-          <Input
-            type="datetime-local"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-          />
-        </Field>
-      )}
+        <FormColumn>
+          <FormSection title="Schedule" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <Field label="Starts" required error={fieldErrors.starts_at}>
+                <Input
+                  type="datetime-local"
+                  value={startsAt}
+                  onChange={(e) => setStartsAt(e.target.value)}
+                  required
+                />
+              </Field>
+              {kind === "maintenance" ? (
+                <Field label="Ends" required error={fieldErrors.ends_at}>
+                  <Input
+                    type="datetime-local"
+                    value={endsAt}
+                    onChange={(e) => setEndsAt(e.target.value)}
+                    required
+                  />
+                </Field>
+              ) : (
+                <Field
+                  label="ETR"
+                  error={fieldErrors.etr}
+                  info="Estimated time to restore. Leave empty while unknown; set Ends when the outage actually closes."
+                >
+                  <Input
+                    type="datetime-local"
+                    value={etr}
+                    onChange={(e) => setEtr(e.target.value)}
+                  />
+                </Field>
+              )}
+            </div>
 
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        rows={3}
-        error={fieldErrors.description}
-      />
+            {kind === "outage" && (
+              <Field label="Ended" error={fieldErrors.ends_at}>
+                <Input
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(e) => setEndsAt(e.target.value)}
+                />
+              </Field>
+            )}
+          </FormSection>
+
+          <FormSection title="Provider" card>
+            <FormSelect
+              label="Provider"
+              value={provider}
+              onChange={setProvider}
+              noneLabel="None (internal work)"
+              options={(providers.data?.results ?? []).map((p) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+              error={fieldErrors.provider}
+            />
+            <FormText
+              label="Provider reference"
+              value={externalRef}
+              onChange={setExternalRef}
+              placeholder="MAINT-77031"
+              info="The provider's own ticket id - automated ingestion uses it to update instead of duplicate."
+              error={fieldErrors.external_ref}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormFooter
         onCancel={onCancel}

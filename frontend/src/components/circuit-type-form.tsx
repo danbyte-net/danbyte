@@ -6,6 +6,7 @@ import { type CircuitType, type CircuitTypeWritePayload } from "@/lib/api"
 import {
   FormColor,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -89,34 +90,43 @@ export function CircuitTypeForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={onNameChange}
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Slug"
-        hint="URL-safe id"
-        value={slug}
-        onChange={(v) => {
-          setSlugDirty(true)
-          setSlug(slugify(v))
-        }}
-        mono
-        error={fieldErrors.slug}
-      />
-      <FormColor label="Color" value={color} onChange={setColor} />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      <FormSection title="Circuit type" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+        </div>
+        <FormColor
+          label="Color"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

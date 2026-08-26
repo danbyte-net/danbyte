@@ -12,10 +12,18 @@ function NewChannelPage() {
   const back = () =>
     nav({
       to: "/alerts",
-      search: { tab: "channels", state: "firing", severity: "all", ack: "all", q: "", site: "all" },
+      search: {
+        tab: "channels",
+        state: "firing",
+        severity: "all",
+        ack: "all",
+        q: "",
+        site: "all",
+      },
     })
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Alerts", to: "/alerts" }, { label: "New channel" }]}
       title="New notification channel"
       subtitle="Where alerts are delivered."

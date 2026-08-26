@@ -20,6 +20,7 @@ function EditDeviceTypePage() {
   const back = () => nav({ to: "/device-types/$id", params: { id } })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Device types", to: "/device-types" },
         q.data

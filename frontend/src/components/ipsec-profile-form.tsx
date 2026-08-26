@@ -11,6 +11,7 @@ import {
 } from "@/lib/api"
 import {
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -125,68 +126,76 @@ export function IPSecProfileForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        error={fieldErrors.name}
-      />
-      <div className="grid grid-cols-3 gap-3">
-        <FormSelect
-          label="IKE version"
-          value={String(ikeVersion)}
-          onChange={(v) => setIkeVersion((Number(v) as IkeVersion) || 2)}
-          options={IKE_VERSIONS}
-        />
-        <FormSelect
-          label="Encryption"
-          value={encryption}
-          onChange={(v) =>
-            setEncryption((v as IPSecEncryption) ?? "aes-256-cbc")
-          }
-          options={ENCRYPTIONS}
-        />
-        <FormSelect
-          label="Authentication"
-          value={authentication}
-          onChange={(v) => setAuthentication((v as IPSecAuth) ?? "hmac-sha256")}
-          options={AUTHS}
-        />
-      </div>
-      <div className="grid grid-cols-3 gap-3">
+      <FormSection title="Profile" card>
         <FormText
-          label="DH group"
-          type="number"
-          value={dhGroup}
-          onChange={setDhGroup}
-          error={fieldErrors.dh_group}
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          error={fieldErrors.name}
         />
-        <FormText
-          label="PFS group"
-          hint="blank = off"
-          type="number"
-          value={pfsGroup}
-          onChange={setPfsGroup}
-          error={fieldErrors.pfs_group}
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
         />
-        <FormText
-          label="SA lifetime (s)"
-          type="number"
-          value={saLifetime}
-          onChange={setSaLifetime}
-          error={fieldErrors.sa_lifetime}
-        />
-      </div>
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      </FormSection>
+
+      <FormSection title="Cryptography" card>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormSelect
+            label="IKE version"
+            value={String(ikeVersion)}
+            onChange={(v) => setIkeVersion((Number(v) as IkeVersion) || 2)}
+            options={IKE_VERSIONS}
+          />
+          <FormSelect
+            label="Encryption"
+            value={encryption}
+            onChange={(v) =>
+              setEncryption((v as IPSecEncryption) ?? "aes-256-cbc")
+            }
+            options={ENCRYPTIONS}
+          />
+          <FormSelect
+            label="Authentication"
+            value={authentication}
+            onChange={(v) =>
+              setAuthentication((v as IPSecAuth) ?? "hmac-sha256")
+            }
+            options={AUTHS}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="DH group"
+            type="number"
+            value={dhGroup}
+            onChange={setDhGroup}
+            error={fieldErrors.dh_group}
+          />
+          <FormText
+            label="PFS group"
+            hint="blank = off"
+            type="number"
+            value={pfsGroup}
+            onChange={setPfsGroup}
+            error={fieldErrors.pfs_group}
+          />
+          <FormText
+            label="SA lifetime (s)"
+            type="number"
+            value={saLifetime}
+            onChange={setSaLifetime}
+            error={fieldErrors.sa_lifetime}
+          />
+        </div>
+      </FormSection>
+
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

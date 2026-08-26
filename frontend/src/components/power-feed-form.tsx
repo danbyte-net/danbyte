@@ -13,18 +13,20 @@ import {
   type PowerSupply,
   type RackOption,
   type Status,
-  type TagOption,
 } from "@/lib/api"
 import {
-  Field,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
+  FormStatusSelect,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -112,11 +114,6 @@ export function PowerFeedForm({ feed, onSaved, onCancel }: PowerFeedFormProps) {
     queryFn: () => api<Paginated<RackOption>>("/api/racks/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
   const statuses = useQuery({
     queryKey: ["statuses", "powerfeed"],
     queryFn: () =>
@@ -169,118 +166,125 @@ export function PowerFeedForm({ feed, onSaved, onCancel }: PowerFeedFormProps) {
       }}
       className="grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          error={fieldErrors.name}
-        />
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Power feed" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Name"
+                required
+                autoFocus={!isEdit}
+                value={name}
+                onChange={setName}
+                error={fieldErrors.name}
+              />
+              <FormStatusSelect
+                value={statusId}
+                onChange={setStatusId}
+                options={statuses.data?.results ?? []}
+                noneLabel="No status"
+                placeholder="Select a status…"
+                error={fieldErrors.status_id}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormCombobox
+                label="Power panel"
+                required
+                value={panelId}
+                onChange={setPanelId}
+                options={(panels.data?.results ?? []).map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                }))}
+                placeholder="Select panel"
+                searchPlaceholder="Search panels…"
+                emptyText="No panels."
+                error={fieldErrors.power_panel_id}
+              />
+              <FormCombobox
+                label="Rack"
+                hint="optional"
+                value={rackId}
+                onChange={setRackId}
+                options={(racks.data?.results ?? []).map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                }))}
+                noneLabel="No rack"
+                placeholder="No rack"
+                searchPlaceholder="Search racks…"
+                emptyText="No racks."
+                error={fieldErrors.rack_id}
+              />
+            </div>
+          </FormSection>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Power panel"
-          value={panelId}
-          onChange={setPanelId}
-          options={(panels.data?.results ?? []).map((p) => ({
-            value: p.id,
-            label: p.name,
-          }))}
-          placeholder="Select panel"
-          searchPlaceholder="Search panels…"
-          emptyText="No panels."
-          error={fieldErrors.power_panel_id}
-        />
-        <FormCombobox
-          label="Rack"
-          hint="optional"
-          value={rackId}
-          onChange={setRackId}
-          options={(racks.data?.results ?? []).map((r) => ({
-            value: r.id,
-            label: r.name,
-          }))}
-          noneLabel="No rack"
-          placeholder="No rack"
-          searchPlaceholder="Search racks…"
-          emptyText="No racks."
-          error={fieldErrors.rack_id}
-        />
-      </div>
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Comments"
+              value={comments}
+              onChange={setComments}
+              error={fieldErrors.comments}
+            />
+          </FormSection>
+        </FormColumn>
 
-      <div className="grid grid-cols-3 gap-3">
-        <FormSelect
-          label="Type"
-          value={type}
-          onChange={(v) => setType((v as PowerFeedType) ?? "primary")}
-          options={TYPES}
-        />
-        <FormSelect
-          label="Supply"
-          value={supply}
-          onChange={(v) => setSupply((v as PowerSupply) ?? "ac")}
-          options={SUPPLIES}
-        />
-        <FormSelect
-          label="Phase"
-          value={phase}
-          onChange={(v) => setPhase((v as PowerPhase) ?? "single")}
-          options={PHASES}
-        />
-      </div>
+        <FormColumn>
+          <FormSection title="Electrical" card>
+            <div className="grid gap-3 @md:grid-cols-3">
+              <FormSelect
+                label="Type"
+                value={type}
+                onChange={(v) => setType((v as PowerFeedType) ?? "primary")}
+                options={TYPES}
+              />
+              <FormSelect
+                label="Supply"
+                value={supply}
+                onChange={(v) => setSupply((v as PowerSupply) ?? "ac")}
+                options={SUPPLIES}
+              />
+              <FormSelect
+                label="Phase"
+                value={phase}
+                onChange={(v) => setPhase((v as PowerPhase) ?? "single")}
+                options={PHASES}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-3">
+              <FormText
+                label="Voltage (V)"
+                type="number"
+                value={voltage}
+                onChange={setVoltage}
+                error={fieldErrors.voltage}
+              />
+              <FormText
+                label="Amperage (A)"
+                type="number"
+                value={amperage}
+                onChange={setAmperage}
+                error={fieldErrors.amperage}
+              />
+              <FormText
+                label="Max utilisation (%)"
+                type="number"
+                value={maxUtil}
+                onChange={setMaxUtil}
+                error={fieldErrors.max_utilization}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
-      <div className="grid grid-cols-3 gap-3">
-        <FormText
-          label="Voltage (V)"
-          type="number"
-          value={voltage}
-          onChange={setVoltage}
-          error={fieldErrors.voltage}
-        />
-        <FormText
-          label="Amperage (A)"
-          type="number"
-          value={amperage}
-          onChange={setAmperage}
-          error={fieldErrors.amperage}
-        />
-        <FormText
-          label="Max utilisation (%)"
-          type="number"
-          value={maxUtil}
-          onChange={setMaxUtil}
-          error={fieldErrors.max_utilization}
-        />
-      </div>
-
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
       <CustomFieldInputs
         model="powerfeed"
         value={customFields}

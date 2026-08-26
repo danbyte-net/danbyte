@@ -8,6 +8,7 @@ import {
 } from "@/lib/api"
 import {
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -116,34 +117,37 @@ export function ServiceTemplateForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="HTTPS"
-        error={fieldErrors.name}
-      />
-      <ServicePortsField
-        value={ports}
-        onChange={(v) => {
-          setPorts(v)
-          setPortErrors({ tcp: null, udp: null })
-        }}
-        errors={{
-          tcp: portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
-          udp: portErrors.udp,
-        }}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      <FormSection title="Service template" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="HTTPS"
+          error={fieldErrors.name}
+        />
+        <ServicePortsField
+          value={ports}
+          onChange={(v) => {
+            setPorts(v)
+            setPortErrors({ tcp: null, udp: null })
+          }}
+          errors={{
+            tcp:
+              portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
+            udp: portErrors.udp,
+          }}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

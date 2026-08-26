@@ -17,7 +17,10 @@ import {
   CheckList,
   Field,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -233,129 +236,146 @@ export function PermissionForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid max-w-2xl gap-4"
+      className="grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        error={fieldErrors.name}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormCheckbox
-        label="Enabled"
-        checked={enabled}
-        onChange={setEnabled}
-        hint="Disabled permissions grant nothing"
-      />
-
-      <Field
-        label="Actions"
-        hint="What this grants on the selected object types"
-        error={fieldErrors.actions}
-      >
-        <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-border p-3">
-          {availableActions.map((a) => (
-            <FormCheckbox
-              key={a}
-              label={a}
-              hint={ACTION_HINT[a]}
-              checked={actions.includes(a)}
-              onChange={() => toggleAction(a)}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Permission" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              error={fieldErrors.name}
             />
-          ))}
-        </div>
-      </Field>
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+            <FormCheckbox
+              label="Enabled"
+              checked={enabled}
+              onChange={setEnabled}
+              hint="Disabled permissions grant nothing"
+            />
+          </FormSection>
 
-      <Field
-        label="Object types"
-        hint="The models this permission applies to"
-        error={fieldErrors.object_types}
-      >
-        <FormCheckbox
-          label="All object types"
-          checked={allTypes}
-          onChange={handleAllTypesChange}
-          hint="Wildcard - grants on every model"
-          className="mb-2"
-        />
-        {allTypes ? (
-          <p className="text-[13px] text-muted-foreground">
-            Grants on every model. Enabling this clears any specific object-type
-            picks - turn it off to choose individual models again.
-          </p>
-        ) : (
-          <CheckList
-            options={typeOptions}
-            value={objectTypes}
-            onChange={setObjectTypes}
-            empty="Loading object types…"
-          />
-        )}
-      </Field>
+          <FormSection title="Grant" card>
+            <Field
+              label="Actions"
+              hint="What this grants on the selected object types"
+              error={fieldErrors.actions}
+            >
+              <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-border p-3">
+                {availableActions.map((a) => (
+                  <FormCheckbox
+                    key={a}
+                    label={a}
+                    hint={ACTION_HINT[a]}
+                    checked={actions.includes(a)}
+                    onChange={() => toggleAction(a)}
+                  />
+                ))}
+              </div>
+            </Field>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Groups" hint="Members get this grant">
-          <CheckList
-            options={groupOptions}
-            value={groupIds}
-            onChange={setGroupIds}
-            empty="No groups yet."
-          />
-        </Field>
-        <Field label="Users" hint="Direct grants (besides groups)">
-          <CheckList
-            options={userOptions}
-            value={userIds}
-            onChange={setUserIds}
-            empty="No users yet."
-          />
-        </Field>
-      </div>
+            <Field
+              label="Object types"
+              hint="The models this permission applies to"
+              error={fieldErrors.object_types}
+            >
+              <FormCheckbox
+                label="All object types"
+                checked={allTypes}
+                onChange={handleAllTypesChange}
+                hint="Wildcard - grants on every model"
+                className="mb-2"
+              />
+              {allTypes ? (
+                <p className="text-[13px] text-muted-foreground">
+                  Grants on every model. Enabling this clears any specific
+                  object-type picks - turn it off to choose individual models
+                  again.
+                </p>
+              ) : (
+                <CheckList
+                  options={typeOptions}
+                  value={objectTypes}
+                  onChange={setObjectTypes}
+                  empty="Loading object types…"
+                />
+              )}
+            </Field>
+          </FormSection>
+        </FormColumn>
 
-      <Field
-        label="Tenant scope"
-        hint="Empty = every tenant the user can access"
-      >
-        <CheckList
-          options={tenantOptions}
-          value={tenantIds}
-          onChange={setTenantIds}
-          empty="No tenants yet."
-        />
-      </Field>
+        <FormColumn>
+          <FormSection title="Assigned to" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <Field label="Groups" hint="Members get this grant">
+                <CheckList
+                  options={groupOptions}
+                  value={groupIds}
+                  onChange={setGroupIds}
+                  empty="No groups yet."
+                />
+              </Field>
+              <Field label="Users" hint="Direct grants (besides groups)">
+                <CheckList
+                  options={userOptions}
+                  value={userIds}
+                  onChange={setUserIds}
+                  empty="No users yet."
+                />
+              </Field>
+            </div>
+          </FormSection>
 
-      <Field
-        label="Site scope"
-        hint="Empty = all sites. Narrows object types that have a site (devices, prefixes, IPs, racks…); others are unaffected. Tip: pair an edit grant scoped to a site with an unscoped view grant for 'edit own site, see everything'."
-      >
-        <CheckList
-          options={siteOptions}
-          value={siteIds}
-          onChange={setSiteIds}
-          empty="No sites yet."
-        />
-      </Field>
+          <FormSection title="Scope" card>
+            <Field
+              label="Tenant scope"
+              hint="Empty = every tenant the user can access"
+            >
+              <CheckList
+                options={tenantOptions}
+                value={tenantIds}
+                onChange={setTenantIds}
+                empty="No tenants yet."
+              />
+            </Field>
 
-      <FormTextarea
-        label="Constraints (advanced)"
-        hint="JSON queryset filter, or a list of filters OR'd together"
-        rows={5}
-        value={constraintsText}
-        onChange={(v) => {
-          setConstraintsText(v)
-          setJsonError(null)
-        }}
-        placeholder='e.g. {"status__slug": "active"} or [{"site__slug": "dc-ams"}]'
-        error={jsonError ?? fieldErrors.constraints}
-      />
+            <Field
+              label="Site scope"
+              hint="Empty = all sites. Narrows object types that have a site (devices, prefixes, IPs, racks…); others are unaffected. Tip: pair an edit grant scoped to a site with an unscoped view grant for 'edit own site, see everything'."
+            >
+              <CheckList
+                options={siteOptions}
+                value={siteIds}
+                onChange={setSiteIds}
+                empty="No sites yet."
+              />
+            </Field>
+          </FormSection>
+
+          <FormSection title="Constraints" card>
+            <FormTextarea
+              label="Constraints (advanced)"
+              hint="JSON queryset filter, or a list of filters OR'd together"
+              rows={5}
+              value={constraintsText}
+              onChange={(v) => {
+                setConstraintsText(v)
+                setJsonError(null)
+              }}
+              placeholder='e.g. {"status__slug": "active"} or [{"site__slug": "dc-ams"}]'
+              error={jsonError ?? fieldErrors.constraints}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormFooter
         onCancel={onCancel}

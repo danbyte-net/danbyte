@@ -59,6 +59,7 @@ function EditUserPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Users", to: "/users" },
         { label: q.data?.username ?? "…" },

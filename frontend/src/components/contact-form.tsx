@@ -8,16 +8,17 @@ import {
   type ContactGroupOption,
   type ContactWritePayload,
   type Paginated,
-  type TagOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
+  FormColumn,
+  FormColumns,
   FormCombobox,
+  FormFooter,
+  FormSection,
+  FormTags,
+  FormText,
+  FormTextarea,
   QuickAddDialog,
   useFieldErrors,
 } from "@/components/forms"
@@ -73,11 +74,6 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
       api<Paginated<ContactGroupOption>>("/api/contact-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -121,110 +117,122 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
       }}
       className="grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Name" error={fieldErrors.name}>
-          <Input
-            autoFocus={!isEdit}
-            required
-            placeholder="Jane Doe"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        <Field label="Title" error={fieldErrors.title}>
-          <Input
-            placeholder="Network Engineer"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Email" error={fieldErrors.email}>
-          <Input
-            type="email"
-            placeholder="jane@acme.io"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </Field>
-        <Field label="Phone" error={fieldErrors.phone}>
-          <Input
-            placeholder="+1 555 0100"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Group"
-          hint="optional"
-          value={groupId}
-          onChange={setGroupId}
-          options={(groups.data?.results ?? []).map((g) => ({
-            value: g.id,
-            label: g.name,
-          }))}
-          noneLabel="No group"
-          placeholder="No group"
-          searchPlaceholder="Search groups…"
-          emptyText="No groups."
-          error={fieldErrors.group_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New contact group"
-              endpoint="/api/contact-groups/"
-              fields={[
-                { name: "name", label: "Name", required: true },
-                {
-                  name: "description",
-                  label: "Description",
-                  type: "textarea",
-                },
-              ]}
-              onCreated={(g) => {
-                qc.invalidateQueries({ queryKey: ["contact-groups-picker"] })
-                setGroupId(g.id)
-              }}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Contact" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              placeholder="Jane Doe"
+              value={name}
+              onChange={setName}
+              error={fieldErrors.name}
             />
-          }
-        />
-        <Field label="Link" hint="optional" error={fieldErrors.link}>
-          <Input
-            type="url"
-            placeholder="https://…"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-          />
-        </Field>
-      </div>
+            <FormText
+              label="Title"
+              hint="optional"
+              placeholder="Network Engineer"
+              value={title}
+              onChange={setTitle}
+              error={fieldErrors.title}
+            />
+            <FormCombobox
+              label="Group"
+              hint="optional"
+              value={groupId}
+              onChange={setGroupId}
+              options={(groups.data?.results ?? []).map((g) => ({
+                value: g.id,
+                label: g.name,
+              }))}
+              noneLabel="No group"
+              placeholder="No group"
+              searchPlaceholder="Search groups…"
+              emptyText="No groups."
+              error={fieldErrors.group_id}
+              quickAdd={
+                <QuickAddDialog
+                  title="New contact group"
+                  endpoint="/api/contact-groups/"
+                  fields={[
+                    { name: "name", label: "Name", required: true },
+                    {
+                      name: "description",
+                      label: "Description",
+                      type: "textarea",
+                    },
+                  ]}
+                  onCreated={(g) => {
+                    qc.invalidateQueries({
+                      queryKey: ["contact-groups-picker"],
+                    })
+                    setGroupId(g.id)
+                  }}
+                />
+              }
+            />
+          </FormSection>
 
-      <Field label="Address" error={fieldErrors.address}>
-        <Textarea
-          rows={2}
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-        />
-      </Field>
+          <FormSection title="Address" card>
+            <FormTextarea
+              label="Address"
+              rows={2}
+              value={address}
+              onChange={setAddress}
+              error={fieldErrors.address}
+            />
+          </FormSection>
+        </FormColumn>
 
-      <Field label="Comments" error={fieldErrors.comments}>
-        <Textarea
-          rows={2}
-          value={comments}
-          onChange={(e) => setComments(e.target.value)}
-        />
-      </Field>
+        <FormColumn>
+          <FormSection title="Reachability" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Email"
+                type="email"
+                placeholder="jane@acme.io"
+                value={email}
+                onChange={setEmail}
+                error={fieldErrors.email}
+              />
+              <FormText
+                label="Phone"
+                placeholder="+1 555 0100"
+                value={phone}
+                onChange={setPhone}
+                error={fieldErrors.phone}
+              />
+            </div>
+            <FormText
+              label="Link"
+              hint="optional"
+              type="url"
+              placeholder="https://…"
+              value={link}
+              onChange={setLink}
+              error={fieldErrors.link}
+            />
+          </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Comments"
+              rows={2}
+              value={comments}
+              onChange={setComments}
+              error={fieldErrors.comments}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="contact"
@@ -232,48 +240,11 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create contact"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create contact"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

@@ -10,6 +10,7 @@ function NewPowerFeedPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Power feeds", to: "/power-feeds" }, { label: "Add" }]}
       title="Add power feed"
       subtitle="A feed from a panel, optionally delivered to a rack."

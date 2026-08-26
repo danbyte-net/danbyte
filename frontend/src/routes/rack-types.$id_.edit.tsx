@@ -21,6 +21,7 @@ function EditRackTypePage() {
   const back = () => nav({ to: "/rack-types/$id", params: { id } })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Rack types", to: "/rack-types" },
         { label: q.data?.name ?? "…" },

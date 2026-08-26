@@ -10,6 +10,7 @@ function NewWebhookPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Webhooks", to: "/webhooks" }, { label: "Add" }]}
       title="Add webhook"
       subtitle="POST a payload to an external URL when objects change."

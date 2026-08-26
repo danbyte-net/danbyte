@@ -10,19 +10,21 @@ import {
   type Paginated,
   type RouteTargetMini,
   type Status,
-  type TagOption,
 } from "@/lib/api"
 import {
   Field,
-  FormCombobox,
+  FormColumn,
+  FormColumns,
   FormFooter,
+  FormSection,
   FormSelect,
+  FormStatusSelect,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
 import { RtMultiSelect } from "@/components/cells/rt-multi-select"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 
 export const L2VPN_TYPES: { value: L2VPNType; label: string }[] = [
@@ -110,11 +112,6 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
       api<Paginated<RouteTargetMini>>("/api/route-targets/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
   const statuses = useQuery({
     queryKey: ["statuses", "l2vpn"],
     queryFn: () =>
@@ -167,105 +164,113 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={onNameChange}
-          error={fieldErrors.name}
-        />
-        <FormText
-          label="Slug"
-          hint="URL-safe id"
-          required
-          value={slug}
-          onChange={(v) => {
-            setSlugDirty(true)
-            setSlug(slugify(v))
-          }}
-          mono
-          error={fieldErrors.slug}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="L2VPN" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Name"
+                required
+                autoFocus={!isEdit}
+                value={name}
+                onChange={onNameChange}
+                error={fieldErrors.name}
+              />
+              <FormText
+                label="Slug"
+                hint="auto-derives from name if blank"
+                value={slug}
+                onChange={(v) => {
+                  setSlugDirty(true)
+                  setSlug(slugify(v))
+                }}
+                mono
+                error={fieldErrors.slug}
+              />
+            </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Type"
-          value={type}
-          onChange={(v) => setType((v as L2VPNType) ?? "vxlan")}
-          options={L2VPN_TYPES}
-        />
-        <FormText
-          label="Identifier"
-          hint="optional - VNI / VPN id"
-          type="number"
-          value={identifier}
-          onChange={setIdentifier}
-          error={fieldErrors.identifier}
-        />
-      </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Type"
+                value={type}
+                onChange={(v) => setType((v as L2VPNType) ?? "vxlan")}
+                options={L2VPN_TYPES}
+              />
+              <FormText
+                label="Identifier"
+                hint="optional - VNI / VPN id"
+                type="number"
+                value={identifier}
+                onChange={setIdentifier}
+                error={fieldErrors.identifier}
+              />
+            </div>
 
-      <FormCombobox
-        label="Status"
-        value={statusId}
-        onChange={setStatusId}
-        options={(statuses.data?.results ?? []).map((s) => ({
-          value: s.id,
-          label: s.name,
-        }))}
-        noneLabel="No status"
-        placeholder="Select a status…"
-        error={fieldErrors.status_id}
+            <FormStatusSelect
+              value={statusId}
+              onChange={setStatusId}
+              options={statuses.data?.results ?? []}
+              noneLabel="No status"
+              placeholder="Select a status…"
+              error={fieldErrors.status_id}
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Route targets" card>
+            <Field
+              label="Import targets"
+              hint="RTs whose routes this L2VPN accepts"
+              error={fieldErrors.import_target_ids}
+            >
+              <RtMultiSelect
+                options={rts.data?.results ?? []}
+                value={importIds}
+                onChange={setImportIds}
+                placeholder="Add import RT…"
+              />
+            </Field>
+            <Field
+              label="Export targets"
+              hint="RTs this L2VPN tags its own routes with"
+              error={fieldErrors.export_target_ids}
+            >
+              <RtMultiSelect
+                options={rts.data?.results ?? []}
+                value={exportIds}
+                onChange={setExportIds}
+                placeholder="Add export RT…"
+              />
+            </Field>
+          </FormSection>
+
+          <FormSection title="Notes" card>
+            <FormText
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+            <FormTextarea
+              label="Comments"
+              value={comments}
+              onChange={setComments}
+              error={fieldErrors.comments}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
 
-      <Field
-        label="Import targets"
-        hint="RTs whose routes this L2VPN accepts"
-        error={fieldErrors.import_target_ids}
-      >
-        <RtMultiSelect
-          options={rts.data?.results ?? []}
-          value={importIds}
-          onChange={setImportIds}
-          placeholder="Add import RT…"
-        />
-      </Field>
-      <Field
-        label="Export targets"
-        hint="RTs this L2VPN tags its own routes with"
-        error={fieldErrors.export_target_ids}
-      >
-        <RtMultiSelect
-          options={rts.data?.results ?? []}
-          value={exportIds}
-          onChange={setExportIds}
-          placeholder="Add export RT…"
-        />
-      </Field>
-
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
       <CustomFieldInputs
         model="l2vpn"
         value={customFields}

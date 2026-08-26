@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import {
   FormColor,
   FormFooter,
+  FormSection,
   FormTags,
   FormText,
   FormTextarea,
@@ -99,37 +100,45 @@ export function ZoneForm({ zone, onSaved, onCancel }: ZoneFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="trust"
-        error={fieldErrors.name}
-      />
-      <FormColor
-        label="Color"
-        value={color}
-        onChange={setColor}
-        error={fieldErrors.color}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormText
-        label="Weight"
-        type="number"
-        value={weight}
-        onChange={setWeight}
-        hint="Lower sorts first"
-        error={fieldErrors.weight}
-      />
+      <FormSection title="Zone" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="trust"
+          error={fieldErrors.name}
+        />
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormColor
+            label="Color"
+            value={color}
+            onChange={setColor}
+            error={fieldErrors.color}
+          />
+          <FormText
+            label="Weight"
+            type="number"
+            value={weight}
+            onChange={setWeight}
+            hint="Lower sorts first"
+            error={fieldErrors.weight}
+          />
+        </div>
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
+
       <FormTags
         label="Tags"
         value={tagIds}

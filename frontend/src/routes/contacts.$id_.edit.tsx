@@ -20,6 +20,7 @@ function EditContactPage() {
 
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Contacts", to: "/contacts" },
         { label: q.data?.name ?? "…", to: "/contacts/$id", params: { id } },

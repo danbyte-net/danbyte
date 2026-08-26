@@ -15,7 +15,10 @@ import {
   CheckList,
   Field,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   useFieldErrors,
@@ -174,181 +177,198 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
         }
         mutation.mutate()
       }}
-      className="grid max-w-2xl gap-4"
+      className="grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-4">
-        <FormText
-          label="Username"
-          required
-          autoFocus={!isEdit}
-          mono
-          value={username}
-          onChange={setUsername}
-          error={fieldErrors.username}
-        />
-        <FormText
-          label="Email"
-          type="email"
-          value={email}
-          onChange={setEmail}
-          error={fieldErrors.email}
-        />
-        <FormText
-          label="First name"
-          value={firstName}
-          onChange={setFirstName}
-          error={fieldErrors.first_name}
-        />
-        <FormText
-          label="Last name"
-          value={lastName}
-          onChange={setLastName}
-          error={fieldErrors.last_name}
-        />
-      </div>
-
-      <FormSelect
-        label="Authentication"
-        value={authSource}
-        onChange={(v) => setAuthSource(v as "local" | "ldap" | "sso")}
-        options={[
-          { value: "local", label: "Local password" },
-          { value: "ldap", label: "LDAP / directory" },
-          { value: "sso", label: "SSO / SAML" },
-        ]}
-        hint={
-          authSource === "ldap"
-            ? "The directory holds the credential - no password is set here."
-            : authSource === "sso"
-              ? "The identity provider holds the credential - the account binds on first SSO login."
-              : undefined
-        }
-        error={fieldErrors.set_auth_source}
-      />
-
-      {authSource === "local" && (
-        <div className="grid gap-3 rounded-md border border-border p-3">
-          {!isEdit && (
-            <SegmentedTabs
-              items={[
-                { value: "invite", label: "Email an invite" },
-                { value: "manual", label: "Set a password" },
-              ]}
-              value={pwMode}
-              onValueChange={(v) => setPwMode(v as "invite" | "manual")}
-            />
-          )}
-
-          {!isEdit && pwMode === "invite" ? (
-            <p className="text-xs text-muted-foreground">
-              The user gets an email with a link to choose their own password -
-              you never set or see it. Requires an email address above.
-            </p>
-          ) : (
-            <FormText
-              label={isEdit ? "Set new password" : "Password"}
-              type="password"
-              placeholder={
-                isEdit ? "Leave blank to keep current" : "Choose a password"
-              }
-              autoComplete="new-password"
-              value={password}
-              onChange={setPassword}
-              error={fieldErrors.password}
-            />
-          )}
-
-          {isEdit && (
-            <FormCheckbox
-              label="Email a password-reset link"
-              checked={pwMode === "invite"}
-              onChange={(v) => setPwMode(v ? "invite" : "manual")}
-              hint="Sends the user a link to set a new password themselves"
-            />
-          )}
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-md border border-border p-3">
-        <FormCheckbox
-          label="Active"
-          checked={isActive}
-          onChange={setIsActive}
-          hint="Inactive users can't sign in"
-        />
-        <FormCheckbox
-          label="Superuser"
-          checked={isSuperuser}
-          onChange={setIsSuperuser}
-          hint="Bypasses all permission checks"
-        />
-        <FormCheckbox
-          label="Require MFA"
-          checked={requireMfa}
-          onChange={setRequireMfa}
-          hint="Prompt for a code at login"
-        />
-      </div>
-
-      {!isEdit && (
-        <div className="grid gap-3 rounded-md border border-border p-3">
-          <FormCheckbox
-            label="Site-scoped access (local IT)"
-            checked={siteScoped}
-            onChange={setSiteScoped}
-            hint="Set up this user as a site editor/viewer in one step, instead of hand-building permissions."
-          />
-          {siteScoped && (
-            <div className="grid gap-3 pl-1">
-              <SegmentedTabs
-                items={[
-                  { value: "editor", label: "Editor (add/edit/delete)" },
-                  { value: "viewer", label: "Viewer (read only)" },
-                ]}
-                value={siteRole}
-                onValueChange={(v) => setSiteRole(v as "editor" | "viewer")}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Identity" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Username"
+                required
+                autoFocus={!isEdit}
+                mono
+                value={username}
+                onChange={setUsername}
+                error={fieldErrors.username}
               />
-              <Field
-                label="Sites"
-                hint="They can only add/edit/delete objects in these sites"
-              >
-                <CheckList
-                  options={siteOptions}
-                  value={siteRoleSites}
-                  onChange={setSiteRoleSites}
-                  empty="No sites yet."
-                />
-              </Field>
-              {siteRole === "editor" && (
-                <FormCheckbox
-                  label="Can only see their own sites"
-                  checked={siteSilo}
-                  onChange={setSiteSilo}
-                  hint="Off (default) = read everything, edit only their sites - the usual local-IT model. On = a strict silo."
-                />
-              )}
+              <FormText
+                label="Email"
+                type="email"
+                value={email}
+                onChange={setEmail}
+                error={fieldErrors.email}
+              />
+              <FormText
+                label="First name"
+                value={firstName}
+                onChange={setFirstName}
+                error={fieldErrors.first_name}
+              />
+              <FormText
+                label="Last name"
+                value={lastName}
+                onChange={setLastName}
+                error={fieldErrors.last_name}
+              />
             </div>
+          </FormSection>
+
+          <FormSection title="Authentication" card>
+            <FormSelect
+              label="Authentication"
+              value={authSource}
+              onChange={(v) => setAuthSource(v as "local" | "ldap" | "sso")}
+              options={[
+                { value: "local", label: "Local password" },
+                { value: "ldap", label: "LDAP / directory" },
+                { value: "sso", label: "SSO / SAML" },
+              ]}
+              hint={
+                authSource === "ldap"
+                  ? "The directory holds the credential - no password is set here."
+                  : authSource === "sso"
+                    ? "The identity provider holds the credential - the account binds on first SSO login."
+                    : undefined
+              }
+              error={fieldErrors.set_auth_source}
+            />
+
+            {authSource === "local" && (
+              <div className="grid gap-3 rounded-md border border-border p-3">
+                {!isEdit && (
+                  <SegmentedTabs
+                    items={[
+                      { value: "invite", label: "Email an invite" },
+                      { value: "manual", label: "Set a password" },
+                    ]}
+                    value={pwMode}
+                    onValueChange={(v) => setPwMode(v as "invite" | "manual")}
+                  />
+                )}
+
+                {!isEdit && pwMode === "invite" ? (
+                  <p className="text-xs text-muted-foreground">
+                    The user gets an email with a link to choose their own
+                    password - you never set or see it. Requires an email
+                    address above.
+                  </p>
+                ) : (
+                  <FormText
+                    label={isEdit ? "Set new password" : "Password"}
+                    type="password"
+                    placeholder={
+                      isEdit
+                        ? "Leave blank to keep current"
+                        : "Choose a password"
+                    }
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={setPassword}
+                    error={fieldErrors.password}
+                  />
+                )}
+
+                {isEdit && (
+                  <FormCheckbox
+                    label="Email a password-reset link"
+                    checked={pwMode === "invite"}
+                    onChange={(v) => setPwMode(v ? "invite" : "manual")}
+                    hint="Sends the user a link to set a new password themselves"
+                  />
+                )}
+              </div>
+            )}
+          </FormSection>
+
+          <FormSection title="Account" card>
+            <FormCheckbox
+              label="Active"
+              checked={isActive}
+              onChange={setIsActive}
+              hint="Inactive users can't sign in"
+            />
+            <FormCheckbox
+              label="Superuser"
+              checked={isSuperuser}
+              onChange={setIsSuperuser}
+              hint="Bypasses all permission checks"
+            />
+            <FormCheckbox
+              label="Require MFA"
+              checked={requireMfa}
+              onChange={setRequireMfa}
+              hint="Prompt for a code at login"
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          {!isEdit && (
+            <FormSection title="Site access" card>
+              <FormCheckbox
+                label="Site-scoped access (local IT)"
+                checked={siteScoped}
+                onChange={setSiteScoped}
+                hint="Set up this user as a site editor/viewer in one step, instead of hand-building permissions."
+              />
+              {siteScoped && (
+                <div className="grid gap-3 pl-1">
+                  <SegmentedTabs
+                    items={[
+                      { value: "editor", label: "Editor (add/edit/delete)" },
+                      { value: "viewer", label: "Viewer (read only)" },
+                    ]}
+                    value={siteRole}
+                    onValueChange={(v) => setSiteRole(v as "editor" | "viewer")}
+                  />
+                  <Field
+                    label="Sites"
+                    hint="They can only add/edit/delete objects in these sites"
+                  >
+                    <CheckList
+                      options={siteOptions}
+                      value={siteRoleSites}
+                      onChange={setSiteRoleSites}
+                      empty="No sites yet."
+                    />
+                  </Field>
+                  {siteRole === "editor" && (
+                    <FormCheckbox
+                      label="Can only see their own sites"
+                      checked={siteSilo}
+                      onChange={setSiteSilo}
+                      hint="Off (default) = read everything, edit only their sites - the usual local-IT model. On = a strict silo."
+                    />
+                  )}
+                </div>
+              )}
+            </FormSection>
           )}
-        </div>
-      )}
 
-      <Field label="Groups" hint="Permissions are granted through groups">
-        <CheckList
-          options={groupOptions}
-          value={groupIds}
-          onChange={setGroupIds}
-          empty="No groups yet."
-        />
-      </Field>
-
-      <Field label="Tenants" hint="Outer scope - leave empty for all tenants">
-        <CheckList
-          options={tenantOptions}
-          value={tenantIds}
-          onChange={setTenantIds}
-          empty="No tenants yet."
-        />
-      </Field>
+          <FormSection title="Membership" card>
+            <Field label="Groups" hint="Permissions are granted through groups">
+              <CheckList
+                options={groupOptions}
+                value={groupIds}
+                onChange={setGroupIds}
+                empty="No groups yet."
+              />
+            </Field>
+            <Field
+              label="Tenants"
+              hint="Outer scope - leave empty for all tenants"
+            >
+              <CheckList
+                options={tenantOptions}
+                value={tenantIds}
+                onChange={setTenantIds}
+                empty="No tenants yet."
+              />
+            </Field>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormFooter
         onCancel={onCancel}

@@ -19,6 +19,7 @@ function NewDeviceTypePage() {
   const cloning = !!clone
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Device types", to: "/device-types" },
         { label: cloning ? "Clone" : "Add" },

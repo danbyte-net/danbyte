@@ -13,16 +13,17 @@ import {
   type RegionWritePayload,
 } from "@/lib/api"
 import {
+  Field,
   FormColor,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { InfoTip } from "@/components/ui/info-tip"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface RegionFormProps {
@@ -140,139 +141,146 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={onNameChange}
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Slug"
-        hint="URL-safe id"
-        required
-        placeholder="us-east"
-        value={slug}
-        onChange={(v) => {
-          setSlugDirty(true)
-          setSlug(slugify(v))
-        }}
-        mono
-        error={fieldErrors.slug}
-      />
-      <FormCombobox
-        label="Parent region"
-        hint="optional"
-        value={parentId}
-        onChange={setParentId}
-        options={parentOptions}
-        noneLabel="Top level"
-        placeholder="Top level"
-        searchPlaceholder="Search regions…"
-        emptyText="No regions."
-        error={fieldErrors.parent_id}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormColor
-        label="Map color"
-        hint="shades the boundary on maps"
-        value={color}
-        onChange={setColor}
-      />
-      <div className="grid gap-1.5">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-medium">Map boundary</span>
-          <InfoTip>
-            Searches OpenStreetMap for the region's outline - a country,
-            municipality, or postal code - and stores the selected boundary
-            on the region. Boundary data © OpenStreetMap contributors, ODbL.
-          </InfoTip>
-        </div>
-        {boundary ? (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs">
-            <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 truncate" title={boundaryLabel}>
-              {boundaryLabel || "Custom boundary"}
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 px-1.5"
-              onClick={() => {
-                setBoundary(null)
-                setBoundaryLabel("")
-              }}
-            >
-              <X className="h-3.5 w-3.5" /> Clear
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className="flex gap-2">
-              <Input
-                value={lookupQ}
-                onChange={(e) => setLookupQ(e.target.value)}
-                placeholder="Place or postal code…"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    if (lookupQ.trim()) lookup.mutate(lookupQ.trim())
-                  }
-                }}
-              />
+      <FormSection title="Region" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={onNameChange}
+          error={fieldErrors.name}
+        />
+        <FormText
+          label="Slug"
+          hint="URL-safe id"
+          placeholder="us-east"
+          value={slug}
+          onChange={(v) => {
+            setSlugDirty(true)
+            setSlug(slugify(v))
+          }}
+          mono
+          error={fieldErrors.slug}
+        />
+        <FormCombobox
+          label="Parent region"
+          hint="optional"
+          value={parentId}
+          onChange={setParentId}
+          options={parentOptions}
+          noneLabel="Top level"
+          placeholder="Top level"
+          searchPlaceholder="Search regions…"
+          emptyText="No regions."
+          error={fieldErrors.parent_id}
+        />
+      </FormSection>
+
+      <FormSection title="Map" card>
+        <FormColor
+          label="Map color"
+          hint="shades the boundary on maps"
+          value={color}
+          onChange={setColor}
+        />
+        <Field
+          label="Map boundary"
+          info={
+            <>
+              Searches OpenStreetMap for the region's outline - a country,
+              municipality, or postal code - and stores the selected boundary on
+              the region. Boundary data © OpenStreetMap contributors, ODbL.
+            </>
+          }
+          error={fieldErrors.boundary}
+        >
+          {boundary ? (
+            <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs">
+              <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate">
+                {boundaryLabel || "Custom boundary"}
+              </span>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="h-9 shrink-0"
-                disabled={!lookupQ.trim() || lookup.isPending}
-                onClick={() => lookup.mutate(lookupQ.trim())}
+                className="ml-auto h-6 px-1.5"
+                onClick={() => {
+                  setBoundary(null)
+                  setBoundaryLabel("")
+                }}
               >
-                {lookup.isPending ? "Searching…" : "Search OSM"}
+                <X className="h-3.5 w-3.5" /> Clear
               </Button>
             </div>
-            {candidates && candidates.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No boundary found. Try the official name, or add the country.
-              </p>
-            )}
-            {candidates && candidates.length > 0 && (
-              <div className="grid gap-1">
-                {candidates.map((c, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
-                    onClick={() => {
-                      setBoundary(c.boundary)
-                      setBoundaryLabel(c.label)
-                      setCandidates(null)
-                      setLookupQ("")
-                    }}
-                  >
-                    <span className="min-w-0 truncate">{c.label}</span>
-                    <span className="ml-auto shrink-0 text-muted-foreground">
-                      {c.kind}
-                    </span>
-                  </button>
-                ))}
+          ) : (
+            <div className="grid gap-1.5">
+              <div className="flex gap-2">
+                <Input
+                  value={lookupQ}
+                  onChange={(e) => setLookupQ(e.target.value)}
+                  placeholder="Place or postal code…"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      if (lookupQ.trim()) lookup.mutate(lookupQ.trim())
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0"
+                  disabled={!lookupQ.trim() || lookup.isPending}
+                  onClick={() => lookup.mutate(lookupQ.trim())}
+                >
+                  {lookup.isPending ? "Searching…" : "Search OSM"}
+                </Button>
               </div>
-            )}
-          </>
-        )}
-        {fieldErrors.boundary && (
-          <p className="text-xs text-destructive">{fieldErrors.boundary}</p>
-        )}
-      </div>
+              {candidates && candidates.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No boundary found. Try the official name, or add the country.
+                </p>
+              )}
+              {candidates && candidates.length > 0 && (
+                <div className="grid gap-1">
+                  {candidates.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
+                      onClick={() => {
+                        setBoundary(c.boundary)
+                        setBoundaryLabel(c.label)
+                        setCandidates(null)
+                        setLookupQ("")
+                      }}
+                    >
+                      <span className="min-w-0 truncate">{c.label}</span>
+                      <span className="ml-auto shrink-0 text-muted-foreground">
+                        {c.kind}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </Field>
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
+
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

@@ -10,23 +10,19 @@ import {
   type Paginated,
   type Prefix,
   type Status,
-  type TagOption,
   type VRFOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { useFieldErrors } from "@/components/forms"
+import {
+  FormCombobox,
+  FormFooter,
+  FormSection,
+  FormStatusSelect,
+  FormTags,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 import { cidrHostRange } from "@/lib/prefix-tree"
 import { PrefixPicker, prefixDetailKey } from "@/components/prefix-picker"
@@ -36,8 +32,6 @@ export interface IpRangeFormProps {
   onSaved: (saved: IPRange) => void
   onCancel: () => void
 }
-
-const NONE = "__none__"
 
 export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
   const isEdit = !!range
@@ -93,11 +87,6 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
     queryFn: () => api<Paginated<IPRoleOption>>("/api/ip-roles/"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -143,141 +132,122 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
       }}
       className="grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Start address" error={fieldErrors.start_address}>
-          <Input
+      <FormSection title="Range" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Start address"
+            required
             autoFocus={!isEdit}
-            required
-            placeholder="10.0.10.10"
+            mono
             value={startAddress}
-            onChange={(e) => setStartAddress(e.target.value)}
-            className="font-mono"
+            onChange={setStartAddress}
+            placeholder="10.0.10.10"
+            error={fieldErrors.start_address}
           />
-        </Field>
-        <Field label="End address" error={fieldErrors.end_address}>
-          <Input
+          <FormText
+            label="End address"
             required
-            placeholder="10.0.10.50"
+            mono
             value={endAddress}
-            onChange={(e) => setEndAddress(e.target.value)}
-            className="font-mono"
+            onChange={setEndAddress}
+            placeholder="10.0.10.50"
+            error={fieldErrors.end_address}
           />
-        </Field>
-      </div>
+        </div>
 
-      <PrefixPicker
-        label="Parent prefix"
-        hint="optional - sets the VRF"
-        value={prefixId}
-        onChange={(v) => {
-          setPrefixId(v)
-          if (!v) return
-          // Fetch the picked prefix (works for modal picks beyond the
-          // combobox page too - the old find-in-first-page lookup didn't).
-          qc.fetchQuery({
-            queryKey: prefixDetailKey(v),
-            queryFn: () => api<Prefix>(`/api/prefixes/${v}/`),
-            staleTime: 10 * 60_000,
-          }).then((p) => {
-            // A range under a prefix inherits its VRF (the backend enforces
-            // this too) - reflect it immediately.
-            setVrfId(p.vrf?.id ?? null)
-            // Pre-fill the span with the prefix's network → broadcast so the
-            // user starts from the full subnet and narrows from there.
-            const range = cidrHostRange(p.cidr)
-            if (range) {
-              setStartAddress(range.start)
-              setEndAddress(range.end)
-            }
-          })
-        }}
-        noneLabel="No parent prefix"
-        placeholder="No parent prefix"
-        error={fieldErrors.prefix_id}
-      />
+        <PrefixPicker
+          label="Parent prefix"
+          hint="sets the VRF"
+          value={prefixId}
+          onChange={(v) => {
+            setPrefixId(v)
+            if (!v) return
+            // Fetch the picked prefix (works for modal picks beyond the
+            // combobox page too - the old find-in-first-page lookup didn't).
+            qc.fetchQuery({
+              queryKey: prefixDetailKey(v),
+              queryFn: () => api<Prefix>(`/api/prefixes/${v}/`),
+              staleTime: 10 * 60_000,
+            }).then((p) => {
+              // A range under a prefix inherits its VRF (the backend enforces
+              // this too) - reflect it immediately.
+              setVrfId(p.vrf?.id ?? null)
+              // Pre-fill the span with the prefix's network → broadcast so the
+              // user starts from the full subnet and narrows from there.
+              const range = cidrHostRange(p.cidr)
+              if (range) {
+                setStartAddress(range.start)
+                setEndAddress(range.end)
+              }
+            })
+          }}
+          noneLabel="No parent prefix"
+          placeholder="No parent prefix"
+          error={fieldErrors.prefix_id}
+        />
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Status" error={fieldErrors.status_id}>
-          <Select
-            value={statusId ?? NONE}
-            onValueChange={(v) => setStatusId(v === NONE ? null : v)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No status</SelectItem>
-              {statuses.data?.results.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field
+        <FormCombobox
           label="VRF"
           hint={prefixId ? "from prefix" : undefined}
+          value={vrfId}
+          onChange={setVrfId}
+          disabled={!!prefixId}
+          options={(vrfs.data?.results ?? []).map((v) => ({
+            value: v.id,
+            label: v.name,
+            color: v.color || null,
+            hint: v.rd || undefined,
+          }))}
+          noneLabel="Global"
+          placeholder="Global"
+          searchPlaceholder="Search VRFs…"
+          emptyText="No VRFs."
           error={fieldErrors.vrf_id}
-        >
-          <Select
-            value={vrfId ?? NONE}
-            onValueChange={(v) => setVrfId(v === NONE ? null : v)}
-            disabled={!!prefixId}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Global" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>Global</SelectItem>
-              {vrfs.data?.results.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.name}{" "}
-                  {v.rd && (
-                    <span className="text-muted-foreground">· {v.rd}</span>
-                  )}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
+        />
+      </FormSection>
 
-      <Field label="Role" hint="optional" error={fieldErrors.role_id}>
-        <Select
-          value={roleId ?? NONE}
-          onValueChange={(v) => setRoleId(v === NONE ? null : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="No role" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No role</SelectItem>
-            {roles.data?.results.map((r) => (
-              <SelectItem key={r.id} value={r.id}>
-                {r.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
+      <FormSection title="Classification" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormStatusSelect
+            value={statusId}
+            onChange={setStatusId}
+            options={statuses.data?.results ?? []}
+            noneLabel="No status"
+            error={fieldErrors.status_id}
+          />
+          <FormCombobox
+            label="Role"
+            value={roleId}
+            onChange={setRoleId}
+            options={(roles.data?.results ?? []).map((r) => ({
+              value: r.id,
+              label: r.name,
+              color: r.color,
+            }))}
+            noneLabel="No role"
+            placeholder="No role"
+            searchPlaceholder="Search roles…"
+            emptyText="No IP roles."
+            error={fieldErrors.role_id}
+          />
+        </div>
 
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
+        <FormTextarea
+          label="Description"
           rows={3}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="e.g. DHCP pool - floor 3 wireless"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="iprange"
@@ -285,48 +255,11 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create IP range"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create IP range"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

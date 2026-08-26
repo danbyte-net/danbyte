@@ -8,11 +8,18 @@ import {
   type ComplianceRule,
   type ComplianceSeverity,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FormSelect } from "@/components/forms"
+import { Badge } from "@/components/ui/badge"
+import {
+  FormCheckbox,
+  FormColumn,
+  FormColumns,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormText,
+  FormTextarea,
+  type SelectOption,
+} from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const OBJECT_TYPES = [
@@ -30,11 +37,25 @@ const CHECKS: { value: ComplianceCheck; label: string }[] = [
   { value: "required_tag", label: "Must carry a tag" },
   { value: "required_cf", label: "Custom field must be set" },
 ]
-const SEVERITIES: { value: ComplianceSeverity; label: string }[] = [
-  { value: "critical", label: "Critical" },
-  { value: "warning", label: "Warning" },
-  { value: "info", label: "Info" },
-]
+
+// Compliance severity is a fixed scale rather than a catalog row, but it is
+// rendered as a tinted pill wherever violations show up - the picker uses the
+// same pill so the two never disagree.
+const SEV_VARIANT: Record<
+  ComplianceSeverity,
+  "destructive" | "warning" | "secondary"
+> = { critical: "destructive", warning: "warning", info: "secondary" }
+
+const SEVERITIES: SelectOption[] = (
+  ["critical", "warning", "info"] as ComplianceSeverity[]
+).map((s) => ({
+  value: s,
+  label: (
+    <Badge variant={SEV_VARIANT[s]} className="capitalize">
+      {s}
+    </Badge>
+  ),
+}))
 
 export function ComplianceRuleForm({
   rule,
@@ -105,130 +126,128 @@ export function ComplianceRuleForm({
         e.preventDefault()
         if (name.trim()) save.mutate()
       }}
-      className="grid max-w-2xl gap-5"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Name">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Prefixes need a description"
-            autoFocus
-            required
-          />
-        </Field>
-        <FormSelect
-          label="Severity"
-          value={severity}
-          onChange={(v) => setSeverity((v as ComplianceSeverity) ?? "warning")}
-          options={SEVERITIES}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Rule" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus
+              value={name}
+              onChange={setName}
+              placeholder="Prefixes need a description"
+            />
 
-      <Field label="Description" hint="Optional - why this rule exists">
-        <Textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="min-h-16 text-[13px]"
-        />
-      </Field>
+            <FormSelect
+              label="Severity"
+              value={severity}
+              onChange={(v) =>
+                setSeverity((v as ComplianceSeverity) ?? "warning")
+              }
+              options={SEVERITIES}
+            />
 
-      <Field
-        label="How to fix"
-        hint="Optional - Markdown remediation guide shown with this rule's violations (headings, lists, `code`, **bold**, links)"
-      >
-        <Textarea
-          value={remediation}
-          onChange={(e) => setRemediation(e.target.value)}
-          placeholder={"1. Open the device\n2. Set the missing field…"}
-          className="min-h-28 font-mono text-[13px]"
-        />
-      </Field>
+            <FormTextarea
+              label="Description"
+              hint="Why this rule exists"
+              value={description}
+              onChange={setDescription}
+              rows={3}
+            />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormSelect
-          label="Applies to"
-          value={objectType}
-          onChange={(v) => setObjectType(v ?? "prefix")}
-          options={OBJECT_TYPES}
-        />
-        <FormSelect
-          label="Check"
-          value={check}
-          onChange={(v) => setCheck((v as ComplianceCheck) ?? "required")}
-          options={CHECKS}
-        />
-      </div>
+            <FormCheckbox
+              label="Enabled"
+              checked={enabled}
+              onChange={setEnabled}
+            />
+          </FormSection>
+        </FormColumn>
 
-      {usesField && (
-        <Field
-          label="Field"
-          hint="Model field name, e.g. description, dns_name, status"
-        >
-          <Input
-            value={field}
-            onChange={(e) => setField(e.target.value)}
-            placeholder="description"
-            className="font-mono text-[13px]"
-            required
-          />
-        </Field>
-      )}
-      {check === "regex" && (
-        <Field label="Pattern" hint="Python regex the value must match">
-          <Input
-            value={pattern}
-            onChange={(e) => setPattern(e.target.value)}
-            placeholder="^[a-z0-9.-]+$"
-            className="font-mono text-[13px]"
-            required
-          />
-        </Field>
-      )}
-      {check === "required_tag" && (
-        <Field label="Tag slug" hint="Object must carry this tag">
-          <Input
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            placeholder="monitored"
-            className="font-mono text-[13px]"
-            required
-          />
-        </Field>
-      )}
-      {check === "required_cf" && (
-        <Field
-          label="Custom-field key"
-          hint="Object's custom_fields must set this"
-        >
-          <Input
-            value={cfKey}
-            onChange={(e) => setCfKey(e.target.value)}
-            placeholder="owner"
-            className="font-mono text-[13px]"
-            required
-          />
-        </Field>
-      )}
+        <FormColumn>
+          <FormSection title="Check" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Applies to"
+                required
+                value={objectType}
+                onChange={(v) => setObjectType(v ?? "prefix")}
+                options={OBJECT_TYPES}
+              />
+              <FormSelect
+                label="Check"
+                required
+                value={check}
+                onChange={(v) => setCheck((v as ComplianceCheck) ?? "required")}
+                options={CHECKS}
+              />
+            </div>
 
-      <label className="flex items-center gap-2 border-t border-border pt-4 text-sm">
-        <Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(!!v)} />
-        Enabled
-      </label>
+            {usesField && (
+              <FormText
+                label="Field"
+                required
+                mono
+                value={field}
+                onChange={setField}
+                placeholder="description"
+                hint="Model field name, e.g. description, dns_name, status"
+              />
+            )}
+            {check === "regex" && (
+              <FormText
+                label="Pattern"
+                required
+                mono
+                value={pattern}
+                onChange={setPattern}
+                placeholder="^[a-z0-9.-]+$"
+                hint="Python regex the value must match"
+              />
+            )}
+            {check === "required_tag" && (
+              <FormText
+                label="Tag slug"
+                required
+                mono
+                value={tag}
+                onChange={setTag}
+                placeholder="monitored"
+                hint="Object must carry this tag"
+              />
+            )}
+            {check === "required_cf" && (
+              <FormText
+                label="Custom-field key"
+                required
+                mono
+                value={cfKey}
+                onChange={setCfKey}
+                placeholder="owner"
+                hint="Object's custom_fields must set this"
+              />
+            )}
+          </FormSection>
 
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={save.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={!name.trim() || save.isPending}>
-          {save.isPending ? "Saving…" : isEdit ? "Save rule" : "Create rule"}
-        </Button>
-      </div>
+          <FormSection title="Remediation" card>
+            <FormTextarea
+              label="How to fix"
+              hint="Markdown guide shown with this rule's violations - headings, lists, `code`, **bold**, links"
+              value={remediation}
+              onChange={setRemediation}
+              rows={6}
+              placeholder={"1. Open the device\n2. Set the missing field…"}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormFooter
+        onCancel={onCancel}
+        submitting={save.isPending}
+        submitLabel={isEdit ? "Save rule" : "Create rule"}
+      />
     </form>
   )
 }

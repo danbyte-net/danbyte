@@ -12,6 +12,7 @@ function NewMaintenanceEventPage() {
   const back = () => nav({ to: "/maintenance" })
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Maintenance", to: "/maintenance" }, { label: "New" }]}
       title="New maintenance or outage event"
     >

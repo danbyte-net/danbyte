@@ -10,6 +10,7 @@ import {
 import {
   FormCheckbox,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -119,101 +120,100 @@ export function AutomationTargetForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid max-w-2xl gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-[1fr_auto_auto] items-end gap-4">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          error={fieldErrors.name}
-        />
-        <FormSelect
-          label="Kind"
-          value={kind}
-          onChange={(v) => setKind((v as AutomationKind) ?? "awx")}
-          options={[
-            { value: "awx", label: "Ansible AWX / AAP" },
-            { value: "webhook", label: "Generic webhook" },
-          ]}
-        />
-        <FormCheckbox
-          label="Enabled"
-          checked={enabled}
-          onChange={setEnabled}
-          className="pb-2"
-        />
-      </div>
+      <FormSection title="Target" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            error={fieldErrors.name}
+          />
+          <FormSelect
+            label="Kind"
+            value={kind}
+            onChange={(v) => setKind((v as AutomationKind) ?? "awx")}
+            options={[
+              { value: "awx", label: "Ansible AWX / AAP" },
+              { value: "webhook", label: "Generic webhook" },
+            ]}
+          />
+        </div>
 
-      <FormText
-        label={kind === "awx" ? "AWX controller URL" : "Webhook URL"}
-        required
-        type="url"
-        mono
-        placeholder={
-          kind === "awx"
-            ? "https://awx.example.com"
-            : "https://ci.example.com/hook"
-        }
-        value={baseUrl}
-        onChange={setBaseUrl}
-        error={fieldErrors.base_url}
-      />
-
-      {kind === "awx" && (
         <FormText
-          label="Job template ID"
+          label={kind === "awx" ? "AWX controller URL" : "Webhook URL"}
           required
+          type="url"
           mono
-          placeholder="42"
-          value={jobTemplateId}
-          onChange={setJobTemplateId}
-          error={fieldErrors.job_template_id}
+          placeholder={
+            kind === "awx"
+              ? "https://awx.example.com"
+              : "https://ci.example.com/hook"
+          }
+          value={baseUrl}
+          onChange={setBaseUrl}
+          error={fieldErrors.base_url}
         />
-      )}
 
-      <FormText
-        label={kind === "awx" ? "Bearer token" : "Signing secret"}
-        type="password"
-        autoComplete="new-password"
-        placeholder={target?.token_set ? "Saved - leave blank to keep" : ""}
-        hint={
-          kind === "awx"
-            ? "AWX/AAP OAuth token (sent as Authorization: Bearer)"
-            : "HMAC-SHA512 signs the payload in X-Danbyte-Signature"
-        }
-        value={token}
-        onChange={setToken}
-        error={fieldErrors.token}
-      />
+        {kind === "awx" && (
+          <FormText
+            label="Job template ID"
+            required
+            mono
+            placeholder="42"
+            value={jobTemplateId}
+            onChange={setJobTemplateId}
+            error={fieldErrors.job_template_id}
+          />
+        )}
 
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
+      </FormSection>
+
+      <FormSection title="Credentials" card>
+        <FormText
+          label={kind === "awx" ? "Bearer token" : "Signing secret"}
+          type="password"
+          autoComplete="new-password"
+          placeholder={target?.token_set ? "Saved - leave blank to keep" : ""}
+          hint={
+            kind === "awx"
+              ? "AWX/AAP OAuth token (sent as Authorization: Bearer)"
+              : "HMAC-SHA512 signs the payload in X-Danbyte-Signature"
+          }
+          value={token}
+          onChange={setToken}
+          error={fieldErrors.token}
+        />
         <FormCheckbox
           label="Verify TLS certificate"
           checked={sslVerify}
           onChange={setSslVerify}
         />
+      </FormSection>
+
+      <FormSection title="Behaviour" card>
         <FormCheckbox
           label="Auto-deploy on change"
           checked={autoOnChange}
           onChange={setAutoOnChange}
           hint="Fire automatically when a device changes"
         />
-      </div>
-
-      <FormTextarea
-        label="Extra vars (JSON)"
-        hint="Merged into the AWX launch / webhook payload"
-        rows={4}
-        value={extraVars}
-        onChange={(v) => {
-          setExtraVars(v)
-          setJsonError(null)
-        }}
-        error={jsonError ?? fieldErrors.extra_vars}
-      />
+        <FormTextarea
+          label="Extra vars (JSON)"
+          hint="Merged into the AWX launch / webhook payload"
+          rows={4}
+          value={extraVars}
+          onChange={(v) => {
+            setExtraVars(v)
+            setJsonError(null)
+          }}
+          error={jsonError ?? fieldErrors.extra_vars}
+        />
+      </FormSection>
 
       <FormFooter
         onCancel={onCancel}

@@ -18,6 +18,7 @@ function EditPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Tunnels", to: "/tunnels" },
         { label: q.data?.name ?? "…" },

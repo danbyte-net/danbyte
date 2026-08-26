@@ -13,9 +13,13 @@ import type {
 } from "@/lib/api"
 import {
   FormColor,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
   FormIcon,
+  FormSection,
+  FormStatusSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -143,93 +147,105 @@ export function LocationForm({
       }}
       className="grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          error={fieldErrors.name}
-        />
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
-        />
-      </div>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Location" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              error={fieldErrors.name}
+            />
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Site"
-          value={siteId}
-          onChange={(v) => {
-            setSiteId(v)
-            setParentId(null) // parent must be in the same site
-            if (v) setSiteError(null)
-          }}
-          options={sites.options.map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          placeholder="Select site"
-          searchPlaceholder="Search sites…"
-          emptyText="No sites."
-          error={siteError ?? fieldErrors.site_id}
-        />
-        <FormCombobox
-          label="Parent location"
-          hint="optional"
-          value={parentId}
-          onChange={setParentId}
-          options={parentOptions}
-          noneLabel="Top level"
-          placeholder={siteId ? "Top level" : "Pick a site first"}
-          searchPlaceholder="Search locations…"
-          emptyText="No locations in this site."
-          error={fieldErrors.parent_id}
-        />
-      </div>
+            <FormStatusSelect
+              value={statusId}
+              onChange={setStatusId}
+              options={statuses.data?.results ?? []}
+              placeholder="Select a status…"
+              error={fieldErrors.status_id}
+            />
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormColor
-          label="Color"
-          value={color}
-          onChange={setColor}
-          error={fieldErrors.color}
-        />
-        <FormIcon
-          label="Icon"
-          value={icon}
-          onChange={setIcon}
-          error={fieldErrors.icon}
-        />
-      </div>
+            <FormCombobox
+              label="Site"
+              required
+              value={siteId}
+              onChange={(v) => {
+                setSiteId(v)
+                setParentId(null) // parent must be in the same site
+                if (v) setSiteError(null)
+              }}
+              options={sites.options.map((s) => ({
+                value: s.id,
+                label: s.name,
+              }))}
+              placeholder="Select site"
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
+              error={siteError ?? fieldErrors.site_id}
+            />
 
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      {location?.id && (
-        <MonitoringEngineField scope="location" objectId={location.id} />
-      )}
-      {location?.id && (
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
-            SNMP credentials
-          </span>
-          <SnmpBindingControl scope="location" objectId={location.id} canEdit />
-        </div>
-      )}
+            <FormCombobox
+              label="Parent location"
+              hint="optional"
+              value={parentId}
+              onChange={setParentId}
+              options={parentOptions}
+              noneLabel="Top level"
+              placeholder={siteId ? "Top level" : "Pick a site first"}
+              searchPlaceholder="Search locations…"
+              emptyText="No locations in this site."
+              error={fieldErrors.parent_id}
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Appearance" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormColor
+                label="Color"
+                value={color}
+                onChange={setColor}
+                error={fieldErrors.color}
+              />
+              <FormIcon
+                label="Icon"
+                value={icon}
+                onChange={setIcon}
+                error={fieldErrors.icon}
+              />
+            </div>
+          </FormSection>
+
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+          </FormSection>
+
+          {location?.id && (
+            <FormSection title="Monitoring" card>
+              <MonitoringEngineField scope="location" objectId={location.id} />
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
+                  SNMP credentials
+                </span>
+                <SnmpBindingControl
+                  scope="location"
+                  objectId={location.id}
+                  canEdit
+                />
+              </div>
+            </FormSection>
+          )}
+        </FormColumn>
+      </FormColumns>
+
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

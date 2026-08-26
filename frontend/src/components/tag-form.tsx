@@ -7,6 +7,7 @@ import {
   FormText,
   FormColor,
   FormFooter,
+  FormSection,
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
@@ -62,24 +63,26 @@ export function TagForm({ tag, onSaved, onCancel }: TagFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="prod"
-        error={fieldErrors.name}
-      />
-      <FormColor
-        label="Color"
-        hint="Optional - leave empty for a neutral chip"
-        value={color}
-        onChange={setColor}
-        error={fieldErrors.color}
-      />
+      <FormSection title="Tag" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="prod"
+          error={fieldErrors.name}
+        />
+        <FormColor
+          label="Color"
+          hint="Optional - leave empty for a neutral chip"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
+        />
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

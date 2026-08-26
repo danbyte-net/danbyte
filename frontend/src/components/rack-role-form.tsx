@@ -6,7 +6,7 @@ import { type RackRole, type RackRoleWritePayload } from "@/lib/api"
 import {
   FormColor,
   FormFooter,
-  FormRow,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -88,44 +88,45 @@ export function RackRoleForm({ role, onSaved, onCancel }: RackRoleFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={onNameChange}
-        placeholder="Compute"
-        error={fieldErrors.name}
-      />
-      <FormRow>
-        <FormText
-          label="Slug"
-          hint="URL-safe id"
-          required
-          placeholder="compute"
-          value={slug}
-          onChange={(v) => {
-            setSlugDirty(true)
-            setSlug(slugify(v))
-          }}
-          mono
-          error={fieldErrors.slug}
-        />
+      <FormSection title="Rack role" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            placeholder="Compute"
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            placeholder="compute"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+        </div>
         <FormColor
           label="Color"
           value={color}
           onChange={setColor}
           error={fieldErrors.color}
         />
-      </FormRow>
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

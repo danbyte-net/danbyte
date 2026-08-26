@@ -8,6 +8,7 @@ function NewUserPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Users", to: "/users" }, { label: "Add" }]}
       title="Add user"
       subtitle="Create a local or LDAP account and assign groups + tenant scope."

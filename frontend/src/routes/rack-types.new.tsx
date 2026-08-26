@@ -11,6 +11,7 @@ function NewRackTypePage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Rack types", to: "/rack-types" }, { label: "Add" }]}
       title="Add rack type"
       subtitle="A cabinet model - its dimensions pre-fill new racks, and its accessories can stamp factory-fitted PDU strips."

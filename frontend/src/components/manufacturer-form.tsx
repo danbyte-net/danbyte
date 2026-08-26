@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { type Manufacturer, type ManufacturerWritePayload } from "@/lib/api"
 import {
   FormFooter,
+  FormSection,
   FormTags,
   FormText,
   FormTextarea,
@@ -80,31 +81,33 @@ export function ManufacturerForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="Cisco"
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="URL"
-        type="url"
-        value={url}
-        onChange={setUrl}
-        placeholder="https://cisco.com"
-        error={fieldErrors.url}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      <FormSection title="Manufacturer" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="Cisco"
+          error={fieldErrors.name}
+        />
+        <FormText
+          label="URL"
+          type="url"
+          value={url}
+          onChange={setUrl}
+          placeholder="https://cisco.com"
+          error={fieldErrors.url}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
       <FormTags
         label="Tags"
         value={tagIds}

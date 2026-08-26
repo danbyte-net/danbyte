@@ -9,12 +9,12 @@ import {
   type TenantGroup,
   type TenantWritePayload,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import {
   FormCheckbox,
   FormColor,
   FormCombobox,
-  FormRow,
+  FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -110,93 +110,79 @@ export function TenantForm({ tenant, onSaved, onCancel }: TenantFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        placeholder="Acme Corp"
-        value={name}
-        onChange={onNameChange}
-        error={fieldErrors.name}
-      />
-
-      <FormRow>
+      <FormSection title="Tenant" card>
         <FormText
-          label="Slug"
-          hint="URL-safe id"
+          label="Name"
           required
-          placeholder="acme"
-          value={slug}
-          onChange={(v) => {
-            setSlugDirty(true)
-            setSlug(slugify(v))
-          }}
-          mono
-          error={fieldErrors.slug}
+          autoFocus={!isEdit}
+          placeholder="Acme Corp"
+          value={name}
+          onChange={onNameChange}
+          error={fieldErrors.name}
         />
-        <FormColor
-          label="Color"
-          hint="pick or paste hex"
-          value={color}
-          onChange={setColor}
-          error={fieldErrors.color}
+
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            required
+            placeholder="acme"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+          <FormColor
+            label="Color"
+            hint="pick or paste hex"
+            value={color}
+            onChange={setColor}
+            error={fieldErrors.color}
+          />
+        </div>
+
+        <FormCombobox
+          label="Group"
+          hint="optional"
+          value={groupId}
+          onChange={setGroupId}
+          options={(groupsQuery.data?.results ?? []).map((g: TenantGroup) => ({
+            value: g.id,
+            label: g.name,
+          }))}
+          noneLabel="No group"
+          placeholder="No group"
+          error={fieldErrors.group_id}
         />
-      </FormRow>
 
-      <FormCombobox
-        label="Group"
-        hint="optional"
-        value={groupId}
-        onChange={setGroupId}
-        options={(groupsQuery.data?.results ?? []).map((g: TenantGroup) => ({
-          value: g.id,
-          label: g.name,
-        }))}
-        noneLabel="No group"
-        placeholder="No group"
-        error={fieldErrors.group_id}
+        <FormCheckbox
+          checked={isActive}
+          onChange={setIsActive}
+          label="Active"
+          hint="Inactive tenants can't be switched into."
+        />
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          placeholder="e.g. Acme's network records"
+          error={fieldErrors.description}
+        />
+      </FormSection>
+
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create tenant"}
       />
-
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="e.g. Acme's network records"
-        error={fieldErrors.description}
-      />
-
-      <FormCheckbox
-        checked={isActive}
-        onChange={setIsActive}
-        label={
-          <>
-            Active{" "}
-            <span className="text-muted-foreground">
-              (inactive tenants can't be switched into)
-            </span>
-          </>
-        }
-      />
-
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create Tenant"}
-        </Button>
-      </div>
     </form>
   )
 }

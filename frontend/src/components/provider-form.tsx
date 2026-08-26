@@ -1,22 +1,16 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import type { Provider, ProviderWritePayload } from "@/lib/api"
 import {
-  api,
-  type Paginated,
-  type Provider,
-  type ProviderWritePayload,
-  type TagOption,
-} from "@/lib/api"
-import {
-  Field,
   FormFooter,
+  FormSection,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -79,12 +73,6 @@ export function ProviderForm({
     if (!slugDirty && !isEdit) setSlug(slugify(v))
   }
 
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
-
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: ProviderWritePayload = {
@@ -124,73 +112,81 @@ export function ProviderForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
+      <FormSection title="Provider" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+        </div>
         <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={onNameChange}
-          error={fieldErrors.name}
+          label="Account"
+          hint="optional"
+          value={account}
+          onChange={setAccount}
+          error={fieldErrors.account}
         />
+      </FormSection>
+
+      <FormSection title="Support" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="NOC email"
+            type="email"
+            value={nocEmail}
+            onChange={setNocEmail}
+            error={fieldErrors.noc_email}
+          />
+          <FormText
+            label="NOC phone"
+            value={nocPhone}
+            onChange={setNocPhone}
+            error={fieldErrors.noc_phone}
+          />
+        </div>
         <FormText
-          label="Slug"
-          hint="URL-safe id"
-          required
-          value={slug}
-          onChange={(v) => {
-            setSlugDirty(true)
-            setSlug(slugify(v))
-          }}
-          mono
-          error={fieldErrors.slug}
+          label="Portal URL"
+          type="url"
+          placeholder="https://…"
+          value={portalUrl}
+          onChange={setPortalUrl}
+          error={fieldErrors.portal_url}
         />
-      </div>
-      <FormText
-        label="Account"
-        hint="optional"
-        value={account}
-        onChange={setAccount}
-        error={fieldErrors.account}
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Comments"
+          value={comments}
+          onChange={setComments}
+          error={fieldErrors.comments}
+        />
+      </FormSection>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="NOC email"
-          type="email"
-          value={nocEmail}
-          onChange={setNocEmail}
-          error={fieldErrors.noc_email}
-        />
-        <FormText
-          label="NOC phone"
-          value={nocPhone}
-          onChange={setNocPhone}
-          error={fieldErrors.noc_phone}
-        />
-      </div>
-      <FormText
-        label="Portal URL"
-        type="url"
-        placeholder="https://…"
-        value={portalUrl}
-        onChange={setPortalUrl}
-        error={fieldErrors.portal_url}
-      />
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+
       <CustomFieldInputs
         model="provider"
         value={customFields}

@@ -1,30 +1,25 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type FHRPGroup,
   type FHRPGroupWritePayload,
   type FHRPProtocol,
-  type Paginated,
-  type TagOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { IpPicker } from "@/components/ip-picker"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { useFieldErrors } from "@/components/forms"
+import {
+  Field,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormTags,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface FhrpGroupFormProps {
@@ -41,10 +36,9 @@ const PROTOCOLS: { value: FHRPProtocol; label: string }[] = [
   { value: "carp", label: "CARP" },
 ]
 const AUTH_TYPES = [
-  { value: "", label: "None" },
   { value: "plaintext", label: "Plaintext" },
   { value: "md5", label: "MD5" },
-] as const
+]
 
 export function FhrpGroupForm({
   group,
@@ -92,12 +86,6 @@ export function FhrpGroupForm({
     reset()
   }, [group, reset])
 
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
-
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: FHRPGroupWritePayload = {
@@ -140,105 +128,89 @@ export function FhrpGroupForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Protocol" error={fieldErrors.protocol}>
-          <Select
+      <FormSection title="Group" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormSelect
+            label="Protocol"
             value={protocol}
-            onValueChange={(v) => setProtocol(v as FHRPProtocol)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PROTOCOLS.map((p) => (
-                <SelectItem key={p.value} value={p.value}>
-                  {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Group ID" hint="0–255" error={fieldErrors.group_id}>
-          <Input
+            onChange={(v) => setProtocol((v as FHRPProtocol) ?? "vrrp3")}
+            options={PROTOCOLS}
+            error={fieldErrors.protocol}
+          />
+          <FormText
+            label="Group ID"
             required
+            hint="0–255"
             type="number"
             min={0}
             max={255}
+            mono
             placeholder="10"
             value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
-            className="font-mono"
+            onChange={setGroupId}
+            error={fieldErrors.group_id}
           />
-        </Field>
-      </div>
+        </div>
 
-      <Field label="Name" hint="optional label" error={fieldErrors.name}>
-        <Input
-          placeholder="gw-vrrp-prod"
+        <FormText
+          label="Name"
+          hint="optional label"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={setName}
+          placeholder="gw-vrrp-prod"
+          error={fieldErrors.name}
         />
-      </Field>
 
-      <IpPicker
-        label="Virtual IP"
-        hint="optional"
-        value={virtualIpId}
-        onChange={setVirtualIpId}
-        noneLabel="No virtual IP"
-        placeholder="Select an IP…"
-        error={fieldErrors.virtual_ip_id}
-      />
+        <IpPicker
+          label="Virtual IP"
+          hint="optional"
+          value={virtualIpId}
+          onChange={setVirtualIpId}
+          noneLabel="No virtual IP"
+          placeholder="Select an IP…"
+          error={fieldErrors.virtual_ip_id}
+        />
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Auth type" error={fieldErrors.auth_type}>
-          <Select
-            value={authType || "none"}
-            onValueChange={(v) =>
-              setAuthType(v === "none" ? "" : (v as "plaintext" | "md5"))
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {AUTH_TYPES.map((a) => (
-                <SelectItem key={a.value || "none"} value={a.value || "none"}>
-                  {a.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Auth key" error={fieldErrors.auth_key}>
-          <Input
-            placeholder={authType ? "shared secret" : "-"}
-            value={authKey}
-            disabled={!authType}
-            onChange={(e) => setAuthKey(e.target.value)}
-            className="font-mono"
-          />
-        </Field>
-      </div>
-
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
+        <FormTextarea
+          label="Description"
           rows={2}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="e.g. Default gateway redundancy for the prod VLAN"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+      <FormSection title="Authentication" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormSelect
+            label="Auth type"
+            value={authType || null}
+            onChange={(v) => setAuthType((v as "plaintext" | "md5") ?? "")}
+            noneLabel="None"
+            options={AUTH_TYPES}
+            error={fieldErrors.auth_type}
+          />
+          <Field label="Auth key" error={fieldErrors.auth_key}>
+            <Input
+              placeholder={authType ? "shared secret" : "-"}
+              value={authKey}
+              disabled={!authType}
+              onChange={(e) => setAuthKey(e.target.value)}
+              className="font-mono"
+            />
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="fhrpgroup"
@@ -246,48 +218,11 @@ export function FhrpGroupForm({
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create FHRP group"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create FHRP group"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }
