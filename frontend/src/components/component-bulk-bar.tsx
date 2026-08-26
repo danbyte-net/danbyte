@@ -401,14 +401,26 @@ function RenameCloneDialog({
   const [replace, setReplace] = useState("")
   const [useRegex, setUseRegex] = useState(false)
 
-  // Live preview - same literal/regex substitution the backend applies.
+  // Live preview - the backend runs Python's re.sub, so a replacement
+  // written for it uses \g<1> / \1 backreferences. JavaScript wants $1, and
+  // rendering the raw Python form made the preview lie (it showed the literal
+  // "\g<1>" while the server produced the right name). Translate before
+  // previewing so what's shown is what will be saved.
+  // \g<1> and \1 are numbered → $1; \g<name> is named → $<name>.
+  const jsReplacement = (r: string) =>
+    r
+      .replace(/\\g<(\w+)>/g, (_m, g) =>
+        /^\d+$/.test(g) ? `$${g}` : `$<${g}>`
+      )
+      .replace(/\\(\d)/g, "$$$1")
+
   let regexError: string | null = null
   const preview = selected.map((r) => {
     let next = r.name
     if (find) {
       if (useRegex) {
         try {
-          next = r.name.replace(new RegExp(find, "g"), replace)
+          next = r.name.replace(new RegExp(find, "g"), jsReplacement(replace))
         } catch (e) {
           regexError = (e as Error).message
         }
