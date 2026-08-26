@@ -92,7 +92,9 @@ export function EditPageShell({
         <div
           className={cn(
             "edit-page-form mx-auto w-full px-6 py-6",
-            wide ? "max-w-6xl" : "max-w-2xl",
+            // A wide form carries panels and device photos, not just
+            // fields - 6xl left a faceplate too small to read.
+            wide ? "max-w-[110rem]" : "max-w-2xl",
             className
           )}
         >

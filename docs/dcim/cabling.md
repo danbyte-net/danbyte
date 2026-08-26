@@ -91,6 +91,14 @@ You're not limited to one-to-one patches:
 | **Breakout** | 1 port | many ports | one QSFP → four SFP |
 | **Trunk** | many | many | bundled links |
 
+**One end may span devices.** A breakout's four legs commonly land in four
+different servers, so the ports on a single end don't have to share a device.
+The cable form gives each end a tab per device for exactly this.
+
+**One end is one kind of port.** Several interfaces on an end is a breakout;
+an interface *and* a power port on the same end is a typo, and is rejected -
+no cable is half network and half power.
+
 ## Patch panels
 
 A patch panel is just a device with **front ports** and **rear ports**. Each

@@ -20,6 +20,7 @@ function EditCablePage() {
   const back = () => nav({ to: "/cables/$id", params: { id } })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Cables", to: "/cables" },
         q.data

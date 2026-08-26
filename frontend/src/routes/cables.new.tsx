@@ -50,6 +50,7 @@ function NewCablePage() {
   }
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Cables", to: "/cables" }, { label: "Add" }]}
       title="Add cable"
       subtitle="A physical connection between two interfaces."

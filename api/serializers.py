@@ -3532,6 +3532,20 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
                 if clash.exists():
                     raise serializers.ValidationError({side: f"{obj} is already cabled."})
 
+            # One END of a cable is one connector family. Several ports on a
+            # side is normal - a QSFP breakout fans out to four SFPs, an MPO
+            # trunk lands on twelve front ports, a Y cord feeds two inlets -
+            # and those ports may sit on DIFFERENT devices (the four legs of a
+            # breakout routinely land in four servers). Mixing KINDS on one
+            # end is not a looser model, it's a typo: no cable is half network
+            # and half power.
+            kinds = {k for k, _ in pts}
+            if len(kinds) > 1:
+                raise serializers.ValidationError(
+                    {side: "One end of a cable is one kind of port - "
+                           f"got {', '.join(sorted(kinds))}."}
+                )
+
         # ── Fibre strands ──────────────────────────────────────────────────
         eff_type = attrs.get("type", getattr(self.instance, "type", ""))
         count = attrs.get(
