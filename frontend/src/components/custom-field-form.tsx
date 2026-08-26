@@ -320,6 +320,91 @@ export function CustomFieldForm({
   )
 }
 
+/** One include/exclude rule, boxed. The two dropdowns are a pair - bare and
+ * side by side they read as four unrelated controls rather than one rule, so
+ * the box (and the heading inside it) is what says they belong together. */
+function ScopeRule({
+  label,
+  options,
+  include,
+  exclude,
+  onChange,
+}: {
+  label: string
+  options: { id: string; name: string }[]
+  include: string[]
+  exclude: string[]
+  onChange: (side: "include" | "exclude", ids: string[]) => void
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border p-3">
+      <span className="text-xs font-medium">{label}</span>
+      <div className="grid gap-2 md:grid-cols-2">
+        <div className="grid gap-1">
+          <span className="text-[11px] text-muted-foreground">Show only</span>
+          <IdMultiSelect
+            options={options}
+            value={include}
+            onChange={(ids) => onChange("include", ids)}
+          />
+        </div>
+        <div className="grid gap-1">
+          <span className="text-[11px] text-muted-foreground">Hide</span>
+          <IdMultiSelect
+            options={options}
+            value={exclude}
+            onChange={(ids) => onChange("exclude", ids)}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+/** The same boxed pair for the comma-separated rules, so every rule in the
+ * Scope section reads as one unit instead of six loose inputs. */
+function ScopeTextRule({
+  label,
+  includeLabel,
+  excludeLabel,
+  includeValue,
+  excludeValue,
+  onChange,
+  includePlaceholder,
+  excludePlaceholder,
+}: {
+  label: string
+  includeLabel: string
+  excludeLabel: string
+  includeValue: string
+  excludeValue: string
+  onChange: (side: "include" | "exclude", raw: string) => void
+  includePlaceholder: string
+  excludePlaceholder: string
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border p-3">
+      <span className="text-xs font-medium">{label}</span>
+      <div className="grid gap-2 md:grid-cols-2">
+        <FormText
+          label={includeLabel}
+          value={includeValue}
+          onChange={(v) => onChange("include", v)}
+          placeholder={includePlaceholder}
+        />
+        <FormText
+          label={excludeLabel}
+          value={excludeValue}
+          onChange={(v) => onChange("exclude", v)}
+          placeholder={excludePlaceholder}
+        />
+      </div>
+    </div>
+  )
+}
+
+
 function ScopeRulesEditor({
   value,
   onChange,
@@ -384,122 +469,66 @@ function ScopeRulesEditor({
       <p className="text-xs text-muted-foreground">
         Empty rules keep the field visible and object pickers unrestricted.
       </p>
-      <Field label="Device types">
-        <div className="grid gap-2 md:grid-cols-2">
-          <div className="grid gap-1">
-            <span className="text-[11px] text-muted-foreground">Show only</span>
-            <IdMultiSelect
-              options={(deviceTypes.data?.results ?? []).map((d) => ({
-                id: d.id,
-                name: d.name,
-              }))}
-              value={value.device_types?.include ?? []}
-              onChange={(ids) => setRule("device_types", "include", ids)}
-            />
-          </div>
-          <div className="grid gap-1">
-            <span className="text-[11px] text-muted-foreground">Hide</span>
-            <IdMultiSelect
-              options={(deviceTypes.data?.results ?? []).map((d) => ({
-                id: d.id,
-                name: d.name,
-              }))}
-              value={value.device_types?.exclude ?? []}
-              onChange={(ids) => setRule("device_types", "exclude", ids)}
-            />
-          </div>
-        </div>
-      </Field>
-      <Field label="Device roles">
-        <div className="grid gap-2 md:grid-cols-2">
-          <div className="grid gap-1">
-            <span className="text-[11px] text-muted-foreground">Show only</span>
-            <IdMultiSelect
-              options={(deviceRoles.data?.results ?? []).map((d) => ({
-                id: d.id,
-                name: d.name,
-              }))}
-              value={value.device_roles?.include ?? []}
-              onChange={(ids) => setRule("device_roles", "include", ids)}
-            />
-          </div>
-          <div className="grid gap-1">
-            <span className="text-[11px] text-muted-foreground">Hide</span>
-            <IdMultiSelect
-              options={(deviceRoles.data?.results ?? []).map((d) => ({
-                id: d.id,
-                name: d.name,
-              }))}
-              value={value.device_roles?.exclude ?? []}
-              onChange={(ids) => setRule("device_roles", "exclude", ids)}
-            />
-          </div>
-        </div>
-      </Field>
-      <Field label="Tags">
-        <div className="grid gap-2 md:grid-cols-2">
-          <div className="grid gap-1">
-            <span className="text-[11px] text-muted-foreground">Show only</span>
-            <IdMultiSelect
-              options={(tags.data?.results ?? []).map((t) => ({
-                id: t.slug,
-                name: t.name,
-              }))}
-              value={value.tags?.include ?? []}
-              onChange={(ids) => setRule("tags", "include", ids)}
-            />
-          </div>
-          <div className="grid gap-1">
-            <span className="text-[11px] text-muted-foreground">Hide</span>
-            <IdMultiSelect
-              options={(tags.data?.results ?? []).map((t) => ({
-                id: t.slug,
-                name: t.name,
-              }))}
-              value={value.tags?.exclude ?? []}
-              onChange={(ids) => setRule("tags", "exclude", ids)}
-            />
-          </div>
-        </div>
-      </Field>
-      <div className="grid gap-3 md:grid-cols-2">
-        <FormText
-          label="VLAN ranges allowed"
-          value={csv("vlan_ranges", "include")}
-          onChange={(v) => setCsv("vlan_ranges", "include", v)}
-          placeholder="100-199, 300"
-        />
-        <FormText
-          label="VLAN ranges blocked"
-          value={csv("vlan_ranges", "exclude")}
-          onChange={(v) => setCsv("vlan_ranges", "exclude", v)}
-          placeholder="50, 900-999"
-        />
-        <FormText
-          label="IP/prefix ranges allowed"
-          value={csv("ip_ranges", "include")}
-          onChange={(v) => setCsv("ip_ranges", "include", v)}
-          placeholder="10.0.0.0/8, 2001:db8::/32"
-        />
-        <FormText
-          label="IP/prefix ranges blocked"
-          value={csv("ip_ranges", "exclude")}
-          onChange={(v) => setCsv("ip_ranges", "exclude", v)}
-          placeholder="10.0.9.0/24"
-        />
-        <FormText
-          label="Name contains"
-          value={csv("name_patterns", "include")}
-          onChange={(v) => setCsv("name_patterns", "include", v)}
-          placeholder="core, edge"
-        />
-        <FormText
-          label="Name excludes"
-          value={csv("name_patterns", "exclude")}
-          onChange={(v) => setCsv("name_patterns", "exclude", v)}
-          placeholder="test, retired"
-        />
-      </div>
+      <ScopeRule
+        label="Device types"
+        options={(deviceTypes.data?.results ?? []).map((d) => ({
+          id: d.id,
+          name: d.name,
+        }))}
+        include={value.device_types?.include ?? []}
+        exclude={value.device_types?.exclude ?? []}
+        onChange={(side, ids) => setRule("device_types", side, ids)}
+      />
+      <ScopeRule
+        label="Device roles"
+        options={(deviceRoles.data?.results ?? []).map((d) => ({
+          id: d.id,
+          name: d.name,
+        }))}
+        include={value.device_roles?.include ?? []}
+        exclude={value.device_roles?.exclude ?? []}
+        onChange={(side, ids) => setRule("device_roles", side, ids)}
+      />
+      <ScopeRule
+        label="Tags"
+        options={(tags.data?.results ?? []).map((t) => ({
+          id: t.slug,
+          name: t.name,
+        }))}
+        include={value.tags?.include ?? []}
+        exclude={value.tags?.exclude ?? []}
+        onChange={(side, ids) => setRule("tags", side, ids)}
+      />
+      <ScopeTextRule
+        label="VLAN ranges"
+        includeLabel="Allowed"
+        excludeLabel="Blocked"
+        includeValue={csv("vlan_ranges", "include")}
+        excludeValue={csv("vlan_ranges", "exclude")}
+        onChange={(side, v) => setCsv("vlan_ranges", side, v)}
+        includePlaceholder="100-199, 300"
+        excludePlaceholder="50, 900-999"
+      />
+      <ScopeTextRule
+        label="IP/prefix ranges"
+        includeLabel="Allowed"
+        excludeLabel="Blocked"
+        includeValue={csv("ip_ranges", "include")}
+        excludeValue={csv("ip_ranges", "exclude")}
+        onChange={(side, v) => setCsv("ip_ranges", side, v)}
+        includePlaceholder="10.0.0.0/8, 2001:db8::/32"
+        excludePlaceholder="10.0.9.0/24"
+      />
+      <ScopeTextRule
+        label="Name"
+        includeLabel="Contains"
+        excludeLabel="Excludes"
+        includeValue={csv("name_patterns", "include")}
+        excludeValue={csv("name_patterns", "exclude")}
+        onChange={(side, v) => setCsv("name_patterns", side, v)}
+        includePlaceholder="core, edge"
+        excludePlaceholder="test, retired"
+      />
     </div>
   )
 }
