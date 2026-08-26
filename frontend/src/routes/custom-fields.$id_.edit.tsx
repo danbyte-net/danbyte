@@ -29,6 +29,7 @@ function EditCustomFieldPage() {
         { label: "Edit" },
       ]}
       title={q.data ? `Edit ${q.data.label}` : "Edit custom field"}
+      wide
     >
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.isError && <QueryError error={q.error} />}

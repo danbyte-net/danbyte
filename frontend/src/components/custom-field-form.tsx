@@ -22,7 +22,10 @@ import {
 import {
   Field,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -170,122 +173,143 @@ export function CustomFieldForm({
       }}
       className="grid gap-4"
     >
-      <FormText
-        label="Key"
-        required
-        mono
-        autoFocus={!isEdit}
-        value={key}
-        onChange={setKey}
-        hint="The JSON key, e.g. owner_team"
-        placeholder="owner_team"
-        error={fieldErrors.key}
-      />
-      <FormText
-        label="Label"
-        required
-        value={label}
-        onChange={setLabel}
-        placeholder="Owner team"
-        error={fieldErrors.label}
-      />
-      <FormSelect
-        label="Type"
-        value={type}
-        onChange={(v) => v && setType(v as CustomFieldType)}
-        options={CUSTOM_FIELD_TYPES.map((t) => ({
-          value: t.value,
-          label: t.label,
-        }))}
-        error={fieldErrors.type}
-      />
-
-      {type === "object" && (
-        <FormSelect
-          label="Referenced model"
-          value={relatedModel}
-          onChange={setRelatedModel}
-          placeholder="Pick a model"
-          options={(meta.data?.reference_models ?? []).map((r) => ({
-            value: r.value,
-            label: r.label,
-          }))}
-          hint="The field's value is one object of this model, picked with the advanced search."
-          error={fieldErrors.related_model}
-        />
-      )}
-
-      {needsChoices && (
-        <FormTextarea
-          label="Choices"
-          hint="One per line"
-          value={choicesText}
-          onChange={setChoicesText}
-          rows={4}
-          placeholder={"production\nstaging\ndev"}
-          error={fieldErrors.choices}
-        />
-      )}
-
-      <Field
-        label="Applies to"
-        hint="Which objects can carry this field"
-        error={fieldErrors.applies_to}
-      >
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {modelOptions.map((m) => (
-            <FormCheckbox
-              key={m.value}
-              label={m.label}
-              checked={appliesTo.includes(m.value)}
-              onChange={() => toggleModel(m.value)}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Field" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Key"
+                required
+                mono
+                autoFocus={!isEdit}
+                value={key}
+                onChange={setKey}
+                hint="The JSON key, e.g. owner_team"
+                placeholder="owner_team"
+                error={fieldErrors.key}
+              />
+              <FormText
+                label="Label"
+                required
+                value={label}
+                onChange={setLabel}
+                placeholder="Owner team"
+                error={fieldErrors.label}
+              />
+            </div>
+            <FormSelect
+              label="Type"
+              value={type}
+              onChange={(v) => v && setType(v as CustomFieldType)}
+              options={CUSTOM_FIELD_TYPES.map((t) => ({
+                value: t.value,
+                label: t.label,
+              }))}
+              error={fieldErrors.type}
             />
-          ))}
-        </div>
-      </Field>
 
-      <ScopeRulesEditor value={scopeRules} onChange={setScopeRules} />
+            {type === "object" && (
+              <FormSelect
+                label="Referenced model"
+                value={relatedModel}
+                onChange={setRelatedModel}
+                placeholder="Pick a model"
+                options={(meta.data?.reference_models ?? []).map((r) => ({
+                  value: r.value,
+                  label: r.label,
+                }))}
+                hint="The field's value is one object of this model, picked with the advanced search."
+                error={fieldErrors.related_model}
+              />
+            )}
 
-      <FormText
-        label="Default value"
-        value={defVal}
-        onChange={setDefVal}
-        hint="Optional initial value (stored as text)"
-        error={fieldErrors.default}
-      />
-      <FormCheckbox
-        label="Required"
-        hint="Must be filled in when shown on a form"
-        checked={required}
-        onChange={setRequired}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="What this field is for"
-        error={fieldErrors.description}
-      />
-      <FormText
-        label="Weight"
-        type="number"
-        value={weight}
-        onChange={(v) => {
-          setWeight(v)
-          setWeightError(null)
-        }}
-        hint="Display order, low → high"
-        error={weightError ?? fieldErrors.weight}
-      />
-      <FormSelect
-        label="Group"
-        value={group}
-        onChange={setGroup}
-        noneLabel="- None -"
-        options={groupOptions}
-        hint="Optional section heading this field shows under."
-        error={fieldErrors.group}
-      />
+            {needsChoices && (
+              <FormTextarea
+                label="Choices"
+                hint="One per line"
+                value={choicesText}
+                onChange={setChoicesText}
+                rows={4}
+                placeholder={"production\nstaging\ndev"}
+                error={fieldErrors.choices}
+              />
+            )}
+          </FormSection>
+
+          <FormSection title="Behaviour" card>
+            <FormText
+              label="Default value"
+              value={defVal}
+              onChange={setDefVal}
+              hint="Optional initial value (stored as text)"
+              error={fieldErrors.default}
+            />
+            <FormCheckbox
+              label="Required"
+              hint="Must be filled in when shown on a form"
+              checked={required}
+              onChange={setRequired}
+            />
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              placeholder="What this field is for"
+              error={fieldErrors.description}
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Applies to" card>
+            <Field
+              label="Objects"
+              hint="Which objects can carry this field"
+              error={fieldErrors.applies_to}
+            >
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                {modelOptions.map((m) => (
+                  <FormCheckbox
+                    key={m.value}
+                    label={m.label}
+                    checked={appliesTo.includes(m.value)}
+                    onChange={() => toggleModel(m.value)}
+                  />
+                ))}
+              </div>
+            </Field>
+          </FormSection>
+
+          <FormSection title="Scope" card>
+            <ScopeRulesEditor value={scopeRules} onChange={setScopeRules} />
+          </FormSection>
+
+          <FormSection title="Placement" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Group"
+                value={group}
+                onChange={setGroup}
+                noneLabel="- None -"
+                options={groupOptions}
+                hint="Optional section heading this field shows under."
+                error={fieldErrors.group}
+              />
+              <FormText
+                label="Weight"
+                type="number"
+                value={weight}
+                onChange={(v) => {
+                  setWeight(v)
+                  setWeightError(null)
+                }}
+                hint="Display order, low → high"
+                error={weightError ?? fieldErrors.weight}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormFooter
         onCancel={onCancel}
@@ -353,14 +377,13 @@ function ScopeRulesEditor({
       raw.split(",").map((s) => s.trim())
     )
 
+  // No box or heading of its own: the enclosing FormSection card supplies
+  // both, and nesting a second frame inside it read as a form-in-a-form.
   return (
-    <div className="grid gap-3 rounded-md border border-border p-3">
-      <div>
-        <div className="text-xs font-medium">Visibility &amp; Scope</div>
-        <div className="text-xs text-muted-foreground">
-          Empty rules keep the field visible and object pickers unrestricted.
-        </div>
-      </div>
+    <div className="grid gap-3">
+      <p className="text-xs text-muted-foreground">
+        Empty rules keep the field visible and object pickers unrestricted.
+      </p>
       <Field label="Device types">
         <div className="grid gap-2 md:grid-cols-2">
           <div className="grid gap-1">

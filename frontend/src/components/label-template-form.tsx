@@ -16,11 +16,19 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormColumn,
+  FormColumns,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormText,
+} from "@/components/forms"
 import {
   Select,
   SelectContent,
@@ -299,16 +307,24 @@ export function LabelTemplateFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="3xl">
+      <DialogContent size="5xl">
         <DialogHeader>
           <DialogTitle>
             {template ? "Edit label template" : "New label template"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid max-h-[72vh] gap-4 overflow-y-auto md:grid-cols-2">
-          {/* ── Left: configuration ── */}
-          <div className="space-y-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (d.name.trim() && !save.isPending) save.mutate()
+          }}
+          className="grid gap-4"
+        >
+        <div className="max-h-[72vh] overflow-y-auto">
+        <FormColumns>
+          <FormColumn>
+            <FormSection title="Template" card>
             <FormText
               label="Name"
               value={d.name}
@@ -369,6 +385,9 @@ export function LabelTemplateFormDialog({
                 </div>
               </Field>
             )}
+            </FormSection>
+
+            <FormSection title="Size &amp; code" card>
             <div className="grid grid-cols-3 gap-2">
               <FormText
                 label="Width (mm)"
@@ -415,12 +434,12 @@ export function LabelTemplateFormDialog({
                 />
               </div>
             )}
+            </FormSection>
+
+            <FormSection title="Content" card>
             <div>
-              <div className="mb-1 flex items-center gap-2">
-                <span className="text-[11px] font-medium text-muted-foreground">
-                  Label content
-                </span>
-                <div className="ml-auto flex rounded-md border border-border p-0.5 text-[11px]">
+              <div className="mb-1 flex items-center justify-end gap-2">
+                <div className="flex rounded-md border border-border p-0.5 text-[11px]">
                   {(["simple", "html"] as const).map((m) => (
                     <button
                       key={m}
@@ -440,7 +459,7 @@ export function LabelTemplateFormDialog({
               </div>
 
               {mode === "simple" ? (
-                <div className="space-y-2 rounded-md border border-border bg-card p-2">
+                <div className="space-y-2 rounded-md border border-border p-2">
                   {blocks.length === 0 && (
                     <p className="px-1 py-2 text-[12px] text-muted-foreground">
                       Add a field or a line of text - or click a field on the
@@ -628,21 +647,18 @@ export function LabelTemplateFormDialog({
               onChange={(v) => set("is_default", v)}
               hint="Preselected when printing labels for this type."
             />
-          </div>
+            </FormSection>
+          </FormColumn>
 
-          {/* ── Right: preview + field reference ── */}
-          <div className="space-y-3">
+          <FormColumn>
+            <FormSection title="Preview" card>
             <div>
-              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-                Live preview{" "}
-                <span className="text-muted-foreground/70">
-                  (first{" "}
-                  {OBJECT_TYPES.find((o) => o.value === d.object_type)?.label ??
-                    d.object_type}
-                  )
-                </span>
+              <span className="mb-1 block text-[11px] text-muted-foreground">
+                First{" "}
+                {OBJECT_TYPES.find((o) => o.value === d.object_type)?.label ??
+                  d.object_type}
               </span>
-              <div className="flex justify-center overflow-auto rounded-md border border-border bg-card p-3">
+              <div className="flex justify-center overflow-auto rounded-md border border-border p-3">
                 {previewErr ? (
                   <p className="py-6 text-center text-[12px] text-destructive">
                     {previewErr}
@@ -689,10 +705,12 @@ export function LabelTemplateFormDialog({
                 {d.width_mm} × {d.height_mm} mm
               </p>
             </div>
+            </FormSection>
+
+            <FormSection title="Fields" card>
             <div>
-              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-                Fields -{" "}
-                {mode === "simple" ? "click to add a line" : "click to insert"}
+              <span className="mb-1 block text-[11px] text-muted-foreground">
+                {mode === "simple" ? "Click to add a line" : "Click to insert"}
               </span>
               <input
                 value={fieldSearch}
@@ -700,7 +718,7 @@ export function LabelTemplateFormDialog({
                 placeholder="Search fields…"
                 className="mb-1 w-full rounded-md border border-input bg-transparent px-2 py-1 text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
-              <div className="flex max-h-48 flex-wrap gap-1 overflow-y-auto rounded-md border border-border bg-card p-2">
+              <div className="flex max-h-48 flex-wrap gap-1 overflow-y-auto rounded-md border border-border p-2">
                 {shownTokens.map((tok) => (
                   <button
                     key={tok}
@@ -718,20 +736,17 @@ export function LabelTemplateFormDialog({
                 )}
               </div>
             </div>
-          </div>
+            </FormSection>
+          </FormColumn>
+        </FormColumns>
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!d.name.trim() || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {save.isPending ? "Saving…" : template ? "Save" : "Create"}
-          </Button>
-        </DialogFooter>
+        <FormFooter
+          onCancel={() => onOpenChange(false)}
+          submitting={save.isPending}
+          submitLabel={template ? "Save changes" : "Create template"}
+        />
+        </form>
       </DialogContent>
     </Dialog>
   )
