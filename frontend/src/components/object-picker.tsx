@@ -84,6 +84,7 @@ export interface ObjectPickerProps {
   value: string | null
   onChange: (v: string | null) => void
   label: string
+  required?: boolean
   hint?: string
   /** Explanation via the (i) info-icon popover beside the label. */
   info?: React.ReactNode
@@ -124,6 +125,7 @@ export function ObjectPicker<
   value,
   onChange,
   label,
+  required,
   hint,
   info,
   error,
@@ -202,9 +204,15 @@ export function ObjectPicker<
   }, [options, missingSelected, selected.data, spec])
 
   return (
-    <Field label={label} hint={hint} info={info} error={error}>
-      <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1">
+    <Field
+      label={label}
+      hint={hint}
+      info={info}
+      error={error}
+      required={required}
+    >
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 [&:has(>*:nth-child(3))]:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <div className="min-w-0">
           <Combobox
             value={value}
             onChange={onChange}

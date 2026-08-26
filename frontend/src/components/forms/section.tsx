@@ -37,6 +37,7 @@ export function FormSection({
   hasValues,
   summary,
   storageKey,
+  card,
   children,
 }: {
   title: string
@@ -49,6 +50,10 @@ export function FormSection({
   /** Remember this section's open/closed state per browser (keyed by
    * form name + section title) - the built-in "my default layout" pref. */
   storageKey?: string
+  /** Raised-surface variant: the section renders as a bg-card panel with its
+   * title as a header, instead of the flat 180px-rail settings row. For wide
+   * multi-column forms where sections sit side by side. */
+  card?: boolean
   children: ReactNode
 }) {
   const [open, setOpenState] = useState(() => {
@@ -104,6 +109,24 @@ export function FormSection({
     <h3 className={headingClasses}>{title}</h3>
   )
 
+  if (card)
+    return (
+      <section className="grid min-w-0 content-start gap-3 rounded-lg border border-border bg-card p-4">
+        {heading}
+        {open ? (
+          <div className="grid content-start gap-3">{children}</div>
+        ) : summary ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="truncate text-left text-xs text-muted-foreground hover:text-foreground"
+          >
+            {summary}
+          </button>
+        ) : null}
+      </section>
+    )
+
   return (
     <section
       className={cn(
@@ -125,5 +148,26 @@ export function FormSection({
         </button>
       ) : null}
     </section>
+  )
+}
+
+/** Two-column scaffold for wide card forms - THE way to lay out a big edit
+ * form. Columns stack on small screens; each is a container so sections
+ * adapt to their own width, and min-w-0 lets card content truncate.
+ *
+ *   <FormColumns>
+ *     <FormColumn>…<FormSection card>…</FormColumn>
+ *     <FormColumn>…</FormColumn>
+ *   </FormColumns>
+ */
+export function FormColumns({ children }: { children: ReactNode }) {
+  return <div className="grid items-start gap-4 xl:grid-cols-2">{children}</div>
+}
+
+export function FormColumn({ children }: { children: ReactNode }) {
+  return (
+    <div className="@container grid min-w-0 content-start gap-4">
+      {children}
+    </div>
   )
 }

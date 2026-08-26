@@ -18,6 +18,8 @@ export interface BreadcrumbCrumb {
 }
 
 export interface EditPageShellProps {
+  /** Wide (multi-column) form layout - max-w-6xl instead of 2xl. */
+  wide?: boolean
   /** Crumbs left → right. Last one is rendered as plain text (the current page). */
   crumbs: BreadcrumbCrumb[]
   /** Big heading. */
@@ -42,6 +44,7 @@ function EditPresence({ type, id }: { type: string; id: string }) {
 }
 
 export function EditPageShell({
+  wide,
   crumbs,
   title,
   subtitle,
@@ -88,7 +91,8 @@ export function EditPageShell({
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div
           className={cn(
-            "edit-page-form mx-auto w-full max-w-2xl px-6 py-6",
+            "edit-page-form mx-auto w-full px-6 py-6",
+            wide ? "max-w-6xl" : "max-w-2xl",
             className
           )}
         >
