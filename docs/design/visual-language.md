@@ -46,7 +46,8 @@ a lot of data fast - typography and spacing serve that, not decoration.
   and TanStack `Link`s alike all use `.link`.
 - **Mono font**: for every IP, CIDR, MAC, serial, ID, UUID, custom-field key.
 - **Tabular nums**: on every counter, percentage, timestamp.
-- **Radii**: `rounded-md` and `rounded-lg` only. `rounded-full` for status dots and avatars.
+- **Radii**: `rounded-md` and `rounded-lg` only. `rounded-full` for presence/health dots and avatars.
+- **Statuses are pills, never dots.** A status renders as its `ColorBadge` pill everywhere it appears - table cells, dropdown options, the selected value of a select. A colored dot beside a plain name is not an acceptable compact form of a status.
 - **Badges are squarish, never pills.** Every count/label chip uses the
   `Badge` primitive (`rounded-[5px]`) - including chips floating over a
   canvas (map, floor plan, topology). Do not hand-roll `rounded-full` pill

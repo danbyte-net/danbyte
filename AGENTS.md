@@ -199,8 +199,11 @@ Loading rules:
 Keep the UI restrained and operator-focused. Use semantic CSS variables and
 the established zinc-based palette, color only for meaning, `rounded-md` or
 `rounded-lg`, and shadows only for real overlays. Use Lucide icons from the
-existing library. Avoid gradients, decorative shadows, colored dot-plus-name
-status treatments, hard-coded status-name palettes, and one-off SVG icons.
+existing library. Avoid gradients, decorative shadows, hard-coded
+status-name palettes, and one-off SVG icons. A status renders as its
+`ColorBadge`/`StatusBadge` pill EVERYWHERE it appears - tables, dropdown
+options, selected values. Never a colored dot next to a name; the owner has
+rejected dot-plus-name status treatments repeatedly, in any context.
 
 The full design system - tokens, palette, type scale, and component patterns -
 lives in `docs/design/visual-language.md` and
