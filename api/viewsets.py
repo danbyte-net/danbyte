@@ -3801,6 +3801,8 @@ class CableViewSet(TenantScopedViewSet):
             # A power feed hangs off a panel, not a device - the read shape
             # names the panel, so prefetch it like the device-side kinds.
             "terminations__power_feed__power_panel",
+            # Same for a circuit end: it names its circuit, not a device.
+            "terminations__circuit_termination__circuit",
             "tags",
         ).order_by("-created_at")
     )
@@ -5920,7 +5922,9 @@ class CircuitViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("provider", "type")
             .prefetch_related(
-                "tags", "terminations__site", "terminations__provider_network"
+                "tags", "terminations__site", "terminations__provider_network",
+                # Each end reports the cable landing on it (#118).
+                "terminations__circuit", "terminations__terminations__cable__status",
             )
         )
         if self.request:
@@ -5975,6 +5979,7 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
     queryset = (
         CircuitTermination.objects
         .select_related("circuit", "site", "provider_network")
+        .prefetch_related("terminations__cable__status")
         .order_by("term_side")
     )
     serializer_class = CircuitTerminationSerializer
@@ -7601,8 +7606,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         # device (so a device↔device run shows even with no tray).
         touches_placed = Q()
         for field in CableTermination.POINT_FIELDS:
-            if field == "power_feed":
-                continue  # feeds aren't devices
+            if field in ("power_feed", "circuit_termination"):
+                continue  # neither hangs off a device
             touches_placed |= Q(**{f"terminations__{field}__device_id__in": placed_device_ids})
         cables = (
             Cable.objects.filter(Q(trays__floor_plan=plan) | touches_placed)
@@ -7903,7 +7908,7 @@ class PortReservationViewSet(TenantScopedViewSet):
                 | Q(aux_port__device_id=device)
             )
         kind = self.request.query_params.get("kind")
-        if kind in CableTermination.POINT_FIELDS:
+        if kind in PortReservation.POINT_FIELDS:
             qs = qs.filter(**{f"{kind}__isnull": False})
         claimed_by = self.request.query_params.get("claimed_by")
         if claimed_by:

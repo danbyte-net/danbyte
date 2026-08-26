@@ -17,6 +17,8 @@ ports** - so USB console links or video runs are first-class cables.
 1. Open **DCIM → Cables** and click **Add cable** (or start from a port's detail
    page).
 2. Build each end - **A side** then **B side** - the same way:
+   - choose what the end lands on: a **device**, or a **circuit**
+     (see [Cabling a circuit](#cabling-a-circuit) below),
    - pick the **port type** (interface, front/rear port, console, console
      server, power port, or power outlet),
    - pick the **device** with the searchable [device picker](devices.md#picking-a-device)
@@ -97,7 +99,26 @@ The cable form gives each end a tab per device for exactly this.
 
 **One end is one kind of port.** Several interfaces on an end is a breakout;
 an interface *and* a power port on the same end is a typo, and is rejected -
-no cable is half network and half power.
+no cable is half network and half power. A circuit end follows the same rule:
+it is the whole end, never mixed with device ports.
+
+## Cabling a circuit
+
+The provider hands off at a demarc, and that handoff lands on a real port on a
+real switch. A **circuit termination** is therefore a cable endpoint like any
+other: on either side of the cable form, switch the end from **Device** to
+**Circuit**, pick the circuit, and choose the side (**A** or **Z**) that lands
+here. Each side shows the site or provider network it terminates on, and a side
+already carrying a cable is greyed out - a circuit end takes one cable, exactly
+like a port.
+
+Once connected, the [trace](#tracing-a-connection) runs from the interface
+across the panels and out to the circuit, and stops there: the far side of the
+circuit is the provider's, not yours, so the path is complete at the demarc.
+
+The circuit end still carries its own **cross-connect ID** and **patch-panel
+info** - those describe the facility's paperwork. The cable is what records
+which of your ports it actually reaches.
 
 ## Patch panels
 

@@ -47,7 +47,14 @@ def _allowed_termination_q(site_ids: set, *, include_shared: bool) -> Q:
     feed_site_q = Q(power_feed__power_panel__site_id__in=site_ids)
     if include_shared:
         feed_site_q |= Q(power_feed__power_panel__site_id__isnull=True)
-    return out | (Q(power_feed__isnull=False) & feed_site_q)
+    out |= Q(power_feed__isnull=False) & feed_site_q
+
+    # A circuit end carries its own site (or none, when it lands on a provider
+    # network) - that site is the locality of this end, same as a device's.
+    circuit_site_q = Q(circuit_termination__site_id__in=site_ids)
+    if include_shared:
+        circuit_site_q |= Q(circuit_termination__site_id__isnull=True)
+    return out | (Q(circuit_termination__isnull=False) & circuit_site_q)
 
 
 def restrict_cables(qs, user, tenant, action: str):

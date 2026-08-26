@@ -4,6 +4,7 @@ import { X } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
+  Circuit,
   Interface,
   Paginated,
   TerminationInput,
@@ -15,7 +16,7 @@ import { Input } from "@/components/ui/input"
 import { DevicePicker } from "@/components/device-picker"
 import { FaceplateView, useHasImagePorts } from "@/components/device-faceplate"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { Field } from "@/components/forms"
+import { Field, FormSelect } from "@/components/forms"
 import { cn } from "@/lib/utils"
 
 /** One end of a cable, picked the way people actually patch: look at the
@@ -26,7 +27,10 @@ import { cn } from "@/lib/utils"
  * Ports already carrying a cable are shown but not selectable - hiding them
  * would make a 48-port panel lie about which slot is which. */
 
-const KIND_ENDPOINT: Record<Exclude<TerminationKind, "power_feed">, string> = {
+const KIND_ENDPOINT: Record<
+  Exclude<TerminationKind, "power_feed" | "circuit_termination">,
+  string
+> = {
   interface: "interfaces",
   front_port: "front-ports",
   rear_port: "rear-ports",
@@ -40,6 +44,7 @@ const KIND_ENDPOINT: Record<Exclude<TerminationKind, "power_feed">, string> = {
 const LABEL_ENDPOINT: Record<TerminationKind, string> = {
   ...KIND_ENDPOINT,
   power_feed: "power-feeds",
+  circuit_termination: "circuit-terminations",
 }
 
 const KIND_TABS: { value: string; label: string }[] = [
@@ -57,6 +62,10 @@ interface PortRow {
   cable?: { id: string } | null
   mark_connected?: boolean
   device?: { id: string; name: string }
+  /** Only on a circuit end (/api/circuit-terminations/) - it names its
+   * circuit and its side instead of a device and a port. */
+  circuit?: { id: string; cid: string }
+  term_side?: string
 }
 
 const keyOf = (t: { kind: TerminationKind; id: string }) => `${t.kind}:${t.id}`
@@ -111,6 +120,12 @@ export function CableEndpointPicker({
   // A side can span several devices - a QSFP breakout lands on four hosts.
   // Each slot is a tab with its own panel; every slot's picks pool into the
   // one termination list this side submits.
+  // What this end lands on. Most cables run box-to-box, but the provider's
+  // handoff is a circuit end - a real endpoint, not free text in pp_info.
+  const [source, setSource] = useState<"device" | "circuit">(
+    value[0]?.kind === "circuit_termination" ? "circuit" : "device"
+  )
+  const [circuitId, setCircuitId] = useState<string | null>(null)
   const [slots, setSlots] = useState<(string | null)[]>([seedDeviceId ?? null])
   const [slot, setSlot] = useState(0)
   const deviceId = slots[slot] ?? null
@@ -146,6 +161,14 @@ export function CableEndpointPicker({
       api<Paginated<Interface>>(`/api/devices/${deviceId}/interfaces/`),
     enabled: !!deviceId,
   })
+  // Circuits carry their ends nested, so one fetch feeds both the circuit
+  // list and the A/Z rows under it.
+  const circuits = useQuery({
+    queryKey: ["cable-circuits"],
+    queryFn: () => api<Paginated<Circuit>>("/api/circuits/?page_size=500"),
+    enabled: source === "circuit",
+    staleTime: 60_000,
+  })
   const ports = useQuery({
     queryKey: ["cable-ports", kind, deviceId],
     queryFn: () =>
@@ -174,7 +197,12 @@ export function CableEndpointPicker({
       rows.forEach((r, i) => {
         if (!r) return
         const v = unresolved[i]
-        add[keyOf(v)] = r.device ? `${r.device.name}:${r.name}` : r.name
+        add[keyOf(v)] =
+          v.kind === "circuit_termination"
+            ? `${r.circuit?.cid ?? "circuit"}:Side ${r.term_side}`
+            : r.device
+              ? `${r.device.name}:${r.name}`
+              : r.name
         if (!slots[0] && r.device)
           setSlots((prev) => [r.device!.id, ...prev.slice(1)])
       })
@@ -252,7 +280,87 @@ export function CableEndpointPicker({
   return (
     <Field label={label} hint={hint} error={error}>
       <div className="grid gap-3">
-        {(slots.length > 1 || value.length > 0) && (
+        <SegmentedTabs
+          value={source}
+          onValueChange={(v) => {
+            const next = v as "device" | "circuit"
+            setSource(next)
+            // One end is one kind of port, so a device pick and a circuit
+            // pick can't coexist here - switching drops the other family
+            // rather than letting the save fail on it.
+            onChange(
+              value.filter((t) =>
+                next === "circuit"
+                  ? t.kind === "circuit_termination"
+                  : t.kind !== "circuit_termination"
+              )
+            )
+          }}
+          items={[
+            { value: "device", label: "Device" },
+            { value: "circuit", label: "Circuit" },
+          ]}
+        />
+
+        {source === "circuit" && (
+          <div className="grid gap-2">
+            <FormSelect
+              label="Circuit"
+              value={circuitId ?? ""}
+              onChange={setCircuitId}
+              options={(circuits.data?.results ?? []).map((c) => ({
+                value: c.id,
+                label: c.provider ? `${c.cid} · ${c.provider.name}` : c.cid,
+              }))}
+              placeholder={
+                circuits.isLoading ? "Loading…" : "Select a circuit…"
+              }
+            />
+            {circuitId && (
+              <div className="overflow-hidden rounded-md border border-border">
+                {(
+                  circuits.data?.results.find((c) => c.id === circuitId)
+                    ?.terminations ?? []
+                ).map((t) => {
+                  const key = keyOf({ kind: "circuit_termination", id: t.id })
+                  const on = selected.has(key)
+                  const taken = !!t.cable && !on
+                  const where =
+                    t.site?.name ?? t.provider_network?.name ?? "unplaced"
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      disabled={taken}
+                      onClick={() =>
+                        toggle(
+                          "circuit_termination",
+                          t.id,
+                          taken,
+                          `Side ${t.term_side}`
+                        )
+                      }
+                      className={cn(
+                        "flex w-full items-center justify-between px-3 py-1.5 text-left text-xs",
+                        on && "bg-accent text-accent-foreground",
+                        taken
+                          ? "cursor-not-allowed text-muted-foreground/60"
+                          : "hover:bg-accent/60"
+                      )}
+                    >
+                      <span className="font-mono">Side {t.term_side}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {taken ? "already cabled" : where}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {source === "device" && (slots.length > 1 || value.length > 0) && (
           <div className="flex items-center gap-1">
             {slots.map((_, i) => (
               <Button
@@ -282,20 +390,23 @@ export function CableEndpointPicker({
           </div>
         )}
 
-        {deviceId && (ifaces.data?.results?.length ?? 0) > 0 && (
+        {source === "device" &&
+          deviceId &&
+          (ifaces.data?.results?.length ?? 0) > 0 && (
           <div className="grid gap-2">
-            {/* Picked ports wear the connected green - they're what this
-                cable will land on, so they should read like a state, not a
-                selection outline. Hover is the dashed version. */}
+            {/* Orange, not the connected green: on a photo the jacks are
+                themselves green and a green outline vanished into them. The
+                dark halo keeps it readable on any artwork. Hover is the
+                dashed version of the same. */}
             <style>
               {value
                 .map(
                   (v) =>
-                    `[data-cable-pick="${label}"] [data-port-id="${v.id}"]{outline:2px solid #10b981;outline-offset:1px;background:#10b98159;--port-color:#10b981}`
+                    `[data-cable-pick="${label}"] [data-port-id="${v.id}"]{outline:3px solid #f97316;outline-offset:1px;background:#f97316d9;box-shadow:0 0 0 2px #00000073;--port-color:#f97316}`
                 )
                 .join("") +
                 (hoverId
-                  ? `[data-cable-pick="${label}"] [data-port-id="${hoverId}"]{outline:2px dashed #10b981;outline-offset:2px}`
+                  ? `[data-cable-pick="${label}"] [data-port-id="${hoverId}"]{outline:3px dashed #f97316;outline-offset:2px;box-shadow:0 0 0 2px #00000073}`
                   : "")}
             </style>
             <div
@@ -351,6 +462,7 @@ export function CableEndpointPicker({
           </div>
         )}
 
+        {source === "device" && (
         <div className="grid gap-1.5">
           <DevicePicker
             label="Device"
@@ -362,8 +474,9 @@ export function CableEndpointPicker({
           />
           {deviceId && <PortsFreeBar deviceId={deviceId} />}
         </div>
+        )}
 
-        {deviceId && (
+        {source === "device" && deviceId && (
           <div className="grid gap-2">
             <SegmentedTabs
               value={kind}

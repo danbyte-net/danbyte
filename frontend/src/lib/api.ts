@@ -1742,8 +1742,10 @@ export type TerminationKind =
   | "power_outlet"
   | "power_feed"
   | "aux_port"
+  | "circuit_termination"
 
-/** A cable's endpoint: a port and which device it's on. */
+/** A cable's endpoint: a port and which device it's on. For a circuit end the
+ * "device" is the circuit and the "name" is its side (#118). */
 export interface Termination {
   kind: TerminationKind
   id: string
@@ -5826,7 +5828,12 @@ export type CircuitTermSide = "A" | "Z"
 
 export interface CircuitTermination {
   id: string
+  /** The owning circuit, so an end can label itself away from its circuit. */
+  circuit?: { id: string; numid: number | null; cid: string }
   term_side: CircuitTermSide
+  /** The cable landing on this end, or null - a circuit end is a cable
+   * endpoint like a port is (#118). */
+  cable?: CableMini | null
   site: SiteOption | null
   provider_network: ProviderNetworkOption | null
   port_speed_kbps: number | null

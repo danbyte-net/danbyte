@@ -87,14 +87,20 @@ def trace(starts):
         # instead (no `.device`). Group it under whichever container it has.
         d = getattr(obj, "device", None) or getattr(obj, "power_panel", None)
         cid = getattr(obj, "device_id", None) or getattr(obj, "power_panel_id", None)
+        # A circuit end has neither: it belongs to a circuit, and the path ends
+        # there - the far side of the circuit is the provider's, not ours.
+        circuit = getattr(obj, "circuit", None)
         if nid not in nodes:
             nodes[nid] = {
                 "id": nid,
                 "type": p[0],
                 "data": {
-                    "name": obj.name,
+                    "name": (
+                        f"Side {obj.term_side}" if circuit else obj.name
+                    ),
+                    "circuit_id": str(obj.circuit_id) if circuit else None,
                     "kind": p[0],
-                    "device_name": d.name if d else "",
+                    "device_name": d.name if d else (circuit.cid if circuit else ""),
                     "device_id": str(cid) if cid else None,
                     # Splitter inputs get a badge on the trace canvas.
                     "is_splitter": bool(getattr(obj, "is_splitter", False)),
@@ -168,7 +174,9 @@ def trace(starts):
                 queue.append(o)
             thrus = _through_steps(o)
             if not thrus:
-                if o[0] != "interface":
+                # Both are ends of the path, not dangling strands: an interface
+                # is the host side, a circuit end is the provider demarc.
+                if o[0] not in ("interface", "circuit_termination"):
                     complete = False  # reached a panel strand with no mapping
                 continue
             for thru in thrus:

@@ -93,12 +93,13 @@ from .cable_points import (  # noqa: E402
 )
 
 
-# A power feed terminates on a PowerPanel, not a device - it has no `device`
-# relation to prefetch and no place in device↔device topology. Prefetch the
-# device chain only for the device-bearing points; pull the power feed itself
-# without a device lookup (an invalid `power_feed__device` prefetch 500s the
-# paths endpoint for any cable that terminates on a power feed).
-_DEVICE_POINT_ATTRS = tuple(a for a in _POINT_ATTRS if a != "power_feed")
+# A power feed terminates on a PowerPanel and a circuit end on a Circuit -
+# neither has a `device` relation to prefetch, nor a place in device↔device
+# topology. Prefetch the device chain only for the device-bearing points and
+# pull the other two without a device lookup (an invalid `power_feed__device`
+# prefetch 500s the paths endpoint for any cable that terminates on one).
+_NON_DEVICE_POINTS = ("power_feed", "circuit_termination")
+_DEVICE_POINT_ATTRS = tuple(a for a in _POINT_ATTRS if a not in _NON_DEVICE_POINTS)
 
 
 def _cables_qs(tenant):
@@ -108,6 +109,7 @@ def _cables_qs(tenant):
         .prefetch_related(
             *[f"terminations__{a}__device" for a in _DEVICE_POINT_ATTRS],
             "terminations__power_feed",
+            "terminations__circuit_termination__circuit",
             "terminations__front_port__rear_port",
         )
     )
@@ -1164,11 +1166,28 @@ def cable_strand_path(cable, strand):
             "panel": True, "ports": ports,
         }
 
+    def offbox_chip(kind, port):
+        """A chip for an endpoint that isn't on a device: a power feed hangs
+        off a panel, a circuit end off a circuit. Both are real endpoints, so
+        they render as a chip named by whatever they do hang off."""
+        if kind == "circuit_termination":
+            owner, name = port.circuit, f"Side {port.term_side}"
+        else:
+            owner, name = port.power_panel, port.name
+        return {
+            "t": "chip", "device_id": str(owner.id),
+            "device": getattr(owner, "name", None) or owner.cid,
+            "panel": False,
+            "ports": [{"name": name, "interface_id": None}],
+        }
+
     def walk_out(kind, port):
         """Steps from the cable end outward (crossing panels at `strand`) to the
         far endpoint, ordered cable→far. Returns (steps, complete)."""
         steps, seen, position = [], set(), strand
-        dev = port.device
+        dev = getattr(port, "device", None)
+        if dev is None:
+            return [offbox_chip(kind, port)], True
         while True:
             if kind not in ("front_port", "rear_port"):
                 steps.append(dev_chip(dev, port, kind))

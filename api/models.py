@@ -3205,7 +3205,7 @@ class CableTermination(TimestampedModel):
     POINT_FIELDS = [
         "interface", "front_port", "rear_port", "console_port",
         "console_server_port", "power_port", "power_outlet", "power_feed",
-        "aux_port",
+        "aux_port", "circuit_termination",
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -3250,6 +3250,13 @@ class CableTermination(TimestampedModel):
         AuxPort, on_delete=models.CASCADE, null=True, blank=True,
         related_name="terminations",
     )
+    # A circuit's end is a cable endpoint like any port: the provider's
+    # handoff lands on a real switch port, and until this existed you could
+    # only record it as free text in pp_info (#118).
+    circuit_termination = models.ForeignKey(
+        "CircuitTermination", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="terminations",
+    )
 
     class Meta:
         ordering = ["end"]
@@ -3268,7 +3275,7 @@ class CableTermination(TimestampedModel):
                                     "interface", "front_port", "rear_port",
                                     "console_port", "console_server_port",
                                     "power_port", "power_outlet", "power_feed",
-                                    "aux_port",
+                                    "aux_port", "circuit_termination",
                                 ]
                                 if other != set_field
                             },
@@ -3277,7 +3284,7 @@ class CableTermination(TimestampedModel):
                             "interface", "front_port", "rear_port",
                             "console_port", "console_server_port",
                             "power_port", "power_outlet", "power_feed",
-                            "aux_port",
+                            "aux_port", "circuit_termination",
                         ]
                     ],
                     _connector=models.Q.OR,
@@ -3286,6 +3293,11 @@ class CableTermination(TimestampedModel):
             models.UniqueConstraint(
                 fields=["interface"], condition=models.Q(interface__isnull=False),
                 name="uniq_termination_interface",
+            ),
+            models.UniqueConstraint(
+                fields=["circuit_termination"],
+                condition=models.Q(circuit_termination__isnull=False),
+                name="uniq_termination_circuit_termination",
             ),
             models.UniqueConstraint(
                 fields=["front_port"], condition=models.Q(front_port__isnull=False),
@@ -3419,9 +3431,19 @@ def retire_port_placeholders(terminations) -> None:
             for p in ports:
                 if p.pk in set(clearable):
                     p.mark_connected = False
-        PortReservation.objects.filter(
-            Q(**{f"{field}__in": ids})
-        ).delete()
+        # Only device-side ports can be reserved - a circuit end has no
+        # reservation column to filter on.
+        if field in PortReservation.POINT_FIELDS:
+            PortReservation.objects.filter(
+                Q(**{f"{field}__in": ids})
+            ).delete()
+
+
+# The device-side cable points only: you reserve a port on a box, not the
+# circuit end that lands on it (and PortReservation has no FK for one).
+_RESERVABLE_POINTS = [
+    f for f in CableTermination.POINT_FIELDS if f != "circuit_termination"
+]
 
 
 class PortReservation(TimestampedModel):
@@ -3430,7 +3452,7 @@ class PortReservation(TimestampedModel):
     ends picked): a reservation names exactly one port. Released automatically
     when a cable termination lands on the port."""
 
-    POINT_FIELDS = CableTermination.POINT_FIELDS
+    POINT_FIELDS = _RESERVABLE_POINTS
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -3498,11 +3520,11 @@ class PortReservation(TimestampedModel):
                             f"{set_field}__isnull": False,
                             **{
                                 f"{other}__isnull": True
-                                for other in CableTermination.POINT_FIELDS
+                                for other in _RESERVABLE_POINTS
                                 if other != set_field
                             },
                         })
-                        for set_field in CableTermination.POINT_FIELDS
+                        for set_field in _RESERVABLE_POINTS
                     ],
                     _connector=models.Q.OR,
                 ),
@@ -3512,7 +3534,7 @@ class PortReservation(TimestampedModel):
                     fields=[f], condition=models.Q(**{f"{f}__isnull": False}),
                     name=f"uniq_reservation_{f}",
                 )
-                for f in CableTermination.POINT_FIELDS
+                for f in _RESERVABLE_POINTS
             ],
         ]
 

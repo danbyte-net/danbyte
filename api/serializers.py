@@ -2428,6 +2428,15 @@ def _termination_repr(t) -> dict:
     p = _point_of(t)
     # A power feed hangs off a panel, not a device - surface the panel under
     # the same "device" key so the cable UI renders one consistent shape.
+    if isinstance(p, CircuitTermination):
+        # A circuit end belongs to a circuit, not a device: show the circuit
+        # as the "device" and the side (A/Z) as the port.
+        return {
+            "kind": _point_kind(t),
+            "id": str(p.id),
+            "name": f"Side {p.term_side}",
+            "device": {"id": str(p.circuit_id), "name": p.circuit.cid},
+        }
     if isinstance(p, PowerFeed):
         parent = {"id": str(p.power_panel_id), "name": p.power_panel.name}
     else:
@@ -3471,6 +3480,7 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         "power_outlet": PowerOutlet,
         "power_feed": PowerFeed,
         "aux_port": AuxPort,
+        "circuit_termination": CircuitTermination,
     }
 
     @extend_schema_field(serializers.ListField())
@@ -3519,11 +3529,14 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
 
         for side, pts in (("a", a or []), ("b", b or [])):
             for kind, obj in pts:
-                # Power feeds carry their own tenant FK; every other point
-                # kind inherits tenant via its device.
-                obj_tenant_id = (
-                    obj.tenant_id if kind == "power_feed" else obj.device.tenant_id
-                )
+                # Power feeds carry their own tenant FK and circuit ends
+                # inherit via the circuit; every other kind via its device.
+                if kind == "power_feed":
+                    obj_tenant_id = obj.tenant_id
+                elif kind == "circuit_termination":
+                    obj_tenant_id = obj.circuit.tenant_id
+                else:
+                    obj_tenant_id = obj.device.tenant_id
                 if tenant is not None and obj_tenant_id != tenant.id:
                     raise serializers.ValidationError({side: "Pick a port in the current tenant."})
                 clash = CableTermination.objects.filter(**{kind: obj})
@@ -3650,7 +3663,7 @@ class PortReservationSerializer(NumIdModelSerializer):
     site = serializers.SerializerMethodField()
     claimed_by = serializers.SerializerMethodField()
     kind = serializers.ChoiceField(
-        choices=list(CableTermination.POINT_FIELDS), write_only=True,
+        choices=list(PortReservation.POINT_FIELDS), write_only=True,
         required=False,
     )
     port_id = serializers.UUIDField(write_only=True, required=False)
@@ -5312,11 +5325,25 @@ class ProviderNetworkSerializer(
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+class CircuitMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = Circuit
+        fields = ["id", "cid"]
+
+
 class CircuitTerminationSerializer(serializers.ModelSerializer):
     """One end (A/Z) of a circuit - exactly one of site / provider_network."""
 
     site = SiteMiniSerializer(read_only=True)
     provider_network = ProviderNetworkMiniSerializer(read_only=True)
+    # A circuit end is a cable endpoint (#118), so it reads like a port does:
+    # who owns it, and what (if anything) is already plugged into it.
+    circuit = CircuitMiniSerializer(read_only=True)
+    cable = serializers.SerializerMethodField()
+
+    @extend_schema_field(CableMiniSerializer(allow_null=True))
+    def get_cable(self, obj):
+        return _point_cable(obj)
 
     circuit_id = serializers.PrimaryKeyRelatedField(
         source="circuit", queryset=Circuit.objects.all(), write_only=True,
@@ -5344,7 +5371,8 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CircuitTermination
-        fields = ["id", "circuit_id", "term_side", "site", "site_id",
+        fields = ["id", "circuit", "circuit_id", "term_side", "cable",
+                  "site", "site_id",
                   "provider_network", "provider_network_id",
                   "port_speed_kbps", "upstream_speed_kbps", "xconnect_id",
                   "pp_info", "description", "created_at", "updated_at"]
