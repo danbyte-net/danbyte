@@ -2005,7 +2005,7 @@ export interface InterfaceWritePayload {
   poe_mode?: string
   poe_type?: string
   wwn?: string
-  device_id: string
+  device_id?: string
   name: string
   type?: string
   speed?: string

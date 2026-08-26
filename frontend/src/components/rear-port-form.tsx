@@ -10,6 +10,7 @@ import {
   type TagOption,
 } from "@/lib/api"
 import {
+  FormSection,
   Field,
   FormCheckbox,
   FormFooter,
@@ -162,83 +163,91 @@ export function RearPortForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
+      <FormSection title="Rear port">
+        <div className="grid grid-cols-2 gap-3">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            mono
+            placeholder="Rear1"
+            hint={
+              isEdit ? undefined : "a [1-12] range adds one port per number"
+            }
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Positions"
+            type="number"
+            required
+            value={positions}
+            onChange={setPositions}
+            placeholder="1"
+            error={fieldErrors.positions}
+          />
+        </div>
+        <NameRangeHint name={name} editing={isEdit} noun="rear ports" />
         <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          mono
-          placeholder="Rear1"
-          hint={isEdit ? undefined : "a [1-12] range adds one port per number"}
-          error={fieldErrors.name}
+          label="Type"
+          value={type}
+          onChange={setType}
+          placeholder="8p8c, lc, mpo…"
+          error={fieldErrors.type}
         />
-        <FormText
-          label="Positions"
-          type="number"
-          required
-          value={positions}
-          onChange={setPositions}
-          placeholder="1"
-          error={fieldErrors.positions}
-        />
-      </div>
-      <NameRangeHint name={name} editing={isEdit} noun="rear ports" />
-      <FormText
-        label="Type"
-        value={type}
-        onChange={setType}
-        placeholder="8p8c, lc, mpo…"
-        error={fieldErrors.type}
-      />
-      <Field label="Splitter" error={fieldErrors.is_splitter}>
-        <FormCheckbox
-          label={
-            <>
-              Optical splitter (PON){" "}
-              <span className="text-muted-foreground">
-                - every front port carries the input signal
-              </span>
-            </>
-          }
-          checked={isSplitter}
-          onChange={(v) => {
-            setIsSplitter(v)
-            if (v) setPositions("1")
-          }}
-        />
-      </Field>
-      <Field label="Cabling">
-        <FormCheckbox
-          label="Mark connected"
-          checked={markConnected}
-          onChange={(v) => {
-            setMarkConnected(v)
-            if (v) setReserved(false)
-          }}
-        />
-        {!port?.cable && (
+        <Field label="Splitter" error={fieldErrors.is_splitter}>
           <FormCheckbox
-            label="Reserved"
-            checked={reserved}
+            label={
+              <>
+                Optical splitter (PON){" "}
+                <span className="text-muted-foreground">
+                  - every front port carries the input signal
+                </span>
+              </>
+            }
+            checked={isSplitter}
             onChange={(v) => {
-              setReserved(v)
-              if (v) setMarkConnected(false)
+              setIsSplitter(v)
+              if (v) setPositions("1")
             }}
           />
+        </Field>
+      </FormSection>
+
+      <FormSection title="State">
+        <Field label="Cabling">
+          <FormCheckbox
+            label="Mark connected"
+            checked={markConnected}
+            onChange={(v) => {
+              setMarkConnected(v)
+              if (v) setReserved(false)
+            }}
+          />
+          {!port?.cable && (
+            <FormCheckbox
+              label="Reserved"
+              checked={reserved}
+              onChange={(v) => {
+                setReserved(v)
+                if (v) setMarkConnected(false)
+              }}
+            />
+          )}
+        </Field>
+        {reserved && !port?.cable && (
+          <FormText
+            label="Reservation note"
+            value={reserveNote}
+            onChange={setReserveNote}
+            placeholder="Who or what this port is for"
+          />
         )}
-      </Field>
-      {reserved && !port?.cable && (
-        <FormText
-          label="Reservation note"
-          value={reserveNote}
-          onChange={setReserveNote}
-          placeholder="Who or what this port is for"
-        />
-      )}
+      </FormSection>
+
       <FormText
         label="Description"
         value={description}

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api, type Device } from "@/lib/api"
 import { DeviceForm } from "@/components/device-form"
+import { RelatedObjectsStrip } from "@/components/related-objects-strip"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
 import { PendingFieldsProvider } from "@/lib/pending-fields"
@@ -25,6 +26,7 @@ function EditDevicePage() {
   const back = () => nav({ to: "/devices/$id", params: { id } })
   return (
     <EditPageShell
+      wide
       presenceType="device"
       presenceId={id}
       crumbs={[
@@ -40,7 +42,10 @@ function EditDevicePage() {
       {q.isError && <QueryError error={q.error} />}
       <PendingFieldsProvider objectType="api.device" objectId={id}>
         {q.data && (
-          <DeviceForm device={q.data} onSaved={back} onCancel={back} />
+          <>
+            <RelatedObjectsStrip device={q.data} />
+            <DeviceForm device={q.data} onSaved={back} onCancel={back} />
+          </>
         )}
       </PendingFieldsProvider>
     </EditPageShell>

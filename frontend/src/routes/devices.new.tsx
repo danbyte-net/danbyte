@@ -1,3 +1,4 @@
+import { toast } from "sonner"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { DeviceForm } from "@/components/device-form"
@@ -45,6 +46,7 @@ function NewDevicePage() {
 
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Devices", to: "/devices" },
         { label: cloning ? "Clone" : "Add" },
@@ -74,7 +76,17 @@ function NewDevicePage() {
               : undefined
           }
           clone={cloning ? cloneQ.data?.initial : undefined}
-          onSaved={(d) => nav({ to: "/devices/$id", params: { id: d.id } })}
+          onSaved={(d) => {
+            nav({ to: "/devices/$id", params: { id: d.id } })
+            // The moment ports are wanted is right after creating the box.
+            toast("Give it ports?", {
+              action: {
+                label: "Add interfaces",
+                onClick: () =>
+                  nav({ to: "/interfaces/bulk", search: { device: d.id } }),
+              },
+            })
+          }}
           onCancel={() => nav({ to: "/devices" })}
         />
       )}

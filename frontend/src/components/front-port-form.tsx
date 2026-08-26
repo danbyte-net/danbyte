@@ -11,6 +11,7 @@ import {
   type TagOption,
 } from "@/lib/api"
 import {
+  FormSection,
   FormCheckbox,
   Field,
   FormFooter,
@@ -226,100 +227,106 @@ export function FrontPortForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
       {noRearPorts && (
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
           Add a rear port first - a front port maps to a rear-port strand.
         </p>
       )}
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        mono
-        placeholder="Front[1-24]"
-        hint={
-          isEdit
-            ? undefined
-            : "a [1-24] range adds one port per number, each on the next strand"
-        }
-        error={fieldErrors.name}
-      />
-      <NameRangeHint name={name} editing={isEdit} noun="front ports" />
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Rear port"
-          value={rearPortId}
+      <FormSection title="Front port">
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          mono
+          placeholder="Front[1-24]"
+          hint={
+            isEdit
+              ? undefined
+              : "a [1-24] range adds one port per number, each on the next strand"
+          }
+          error={fieldErrors.name}
+        />
+        <NameRangeHint name={name} editing={isEdit} noun="front ports" />
+        <div className="grid grid-cols-2 gap-3">
+          <FormSelect
+            label="Rear port"
+            value={rearPortId}
+            onChange={(v) => {
+              setRearPortId(v)
+              setPosition("1")
+            }}
+            placeholder="Pick a rear port"
+            options={rearOptions.map((r) => ({
+              value: r.id,
+              label: `${r.name} (${r.positions}p)`,
+            }))}
+            error={fieldErrors.rear_port_id}
+          />
+          <FormSelect
+            label={showFibres ? "Start strand" : "Strand"}
+            value={position}
+            onChange={(v) => setPosition(v ?? "1")}
+            options={positionOptions}
+            error={fieldErrors.rear_port_position}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <FormSelect
+            label="Type / connector"
+            value={type || null}
+            onChange={onTypeChange}
+            placeholder="8p8c, lc, mpo…"
+            options={typeOptions}
+            error={fieldErrors.type}
+          />
+          {showFibres && (
+            <FormText
+              label="Fibres"
+              type="number"
+              min={1}
+              value={positions}
+              onChange={setPositions}
+              placeholder="1"
+              error={fieldErrors.positions}
+              hint="Strands the connector carries (LC-duplex 2, MPO 8–24)."
+            />
+          )}
+        </div>
+      </FormSection>
+
+      <FormSection title="State">
+        <FormCheckbox
+          label="Mark connected"
+          checked={markConnected}
           onChange={(v) => {
-            setRearPortId(v)
-            setPosition("1")
+            setMarkConnected(v)
+            if (v) setReserved(false)
           }}
-          placeholder="Pick a rear port"
-          options={rearOptions.map((r) => ({
-            value: r.id,
-            label: `${r.name} (${r.positions}p)`,
-          }))}
-          error={fieldErrors.rear_port_id}
         />
-        <FormSelect
-          label={showFibres ? "Start strand" : "Strand"}
-          value={position}
-          onChange={(v) => setPosition(v ?? "1")}
-          options={positionOptions}
-          error={fieldErrors.rear_port_position}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Type / connector"
-          value={type || null}
-          onChange={onTypeChange}
-          placeholder="8p8c, lc, mpo…"
-          options={typeOptions}
-          error={fieldErrors.type}
-        />
-        {showFibres && (
-          <FormText
-            label="Fibres"
-            type="number"
-            min={1}
-            value={positions}
-            onChange={setPositions}
-            placeholder="1"
-            error={fieldErrors.positions}
-            hint="Strands the connector carries (LC-duplex 2, MPO 8–24)."
+        {!port?.cable && (
+          <FormCheckbox
+            label="Reserved"
+            checked={reserved}
+            onChange={(v) => {
+              setReserved(v)
+              if (v) setMarkConnected(false)
+            }}
           />
         )}
-      </div>
-      <FormCheckbox
-        label="Mark connected"
-        checked={markConnected}
-        onChange={(v) => {
-          setMarkConnected(v)
-          if (v) setReserved(false)
-        }}
-      />
-      {!port?.cable && (
-        <FormCheckbox
-          label="Reserved"
-          checked={reserved}
-          onChange={(v) => {
-            setReserved(v)
-            if (v) setMarkConnected(false)
-          }}
-        />
-      )}
-      {reserved && !port?.cable && (
-        <FormText
-          label="Reservation note"
-          value={reserveNote}
-          onChange={setReserveNote}
-          placeholder="Who or what this port is for"
-        />
-      )}
+        {reserved && !port?.cable && (
+          <FormText
+            label="Reservation note"
+            value={reserveNote}
+            onChange={setReserveNote}
+            placeholder="Who or what this port is for"
+          />
+        )}
+      </FormSection>
+
       <FormText
         label="Description"
         value={description}

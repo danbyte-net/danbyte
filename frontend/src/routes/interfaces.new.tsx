@@ -19,6 +19,7 @@ function NewInterfacePage() {
   const { device } = Route.useSearch()
   return (
     <EditPageShell
+      wide
       className="max-w-5xl"
       crumbs={[{ label: "Interfaces", to: "/interfaces" }, { label: "Add" }]}
       title="Add interface"
