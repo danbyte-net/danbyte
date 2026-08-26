@@ -785,6 +785,35 @@ class VirtChangeApiTests(TestCase):
         self.client.force_login(self.user)
         self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
 
+    def test_accepting_iface_extra_deletes_the_named_interfaces(self):
+        """Accept on "Interface not on hypervisor" takes the hypervisor's
+        word: the Danbyte rows go. It used to no-op, so the button dismissed
+        the row while claiming to apply it."""
+        from api.models import Cluster, ClusterType, VirtualMachine, VMInterface
+        from integrations.models import VirtChange
+
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="pve")
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="c1", type=ctype
+        )
+        vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="vm1", cluster=cluster
+        )
+        self.guest.vm = vm
+        self.guest.save(update_fields=["vm"])
+        VMInterface.objects.create(vm=vm, name="Network Adapter 1")
+        VMInterface.objects.create(vm=vm, name="keep-me")
+        change = VirtChange.objects.create(
+            source=self.source, guest=self.guest, kind="iface_extra",
+            detail={"names": ["Network Adapter 1"]},
+        )
+
+        r = self.client.post(f"/api/virt-changes/{change.id}/accept/")
+        self.assertEqual(r.status_code, 200, r.content)
+        names = set(VMInterface.objects.filter(vm=vm).values_list("name", flat=True))
+        self.assertEqual(names, {"keep-me"})
+        self.assertFalse(VirtChange.objects.filter(pk=change.pk).exists())
+
     def test_list_hides_ignored_by_default(self):
         from integrations.models import VirtChange, VirtGuest
 

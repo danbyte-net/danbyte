@@ -36,6 +36,7 @@ import {
   DetailTab,
 } from "@/components/detail-shell"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { VirtChangesPanel } from "@/components/integrations/virt-changes-dialog"
 import { SourceDialog } from "./virtualization-sources.index"
 
 export const Route = createFileRoute("/virtualization-sources/$id")({
@@ -59,12 +60,13 @@ const PATTERN_HINT: Record<string, string> = {
 function SourceDetailPage() {
   const { id } = Route.useParams()
   const [tab, setTab] = useUrlTab<
-    "overview" | "vms" | "hosts" | "placement" | "skipped" | "log"
+    "overview" | "review" | "vms" | "hosts" | "placement" | "skipped" | "log"
   >("overview")
 
   const query = useQuery({
     queryKey: ["virtualization-source", id],
-    queryFn: () => api<VirtualizationSource>(`/api/virtualization-sources/${id}/`),
+    queryFn: () =>
+      api<VirtualizationSource>(`/api/virtualization-sources/${id}/`),
   })
   const ruleCount = useQuery({
     queryKey: ["virt-placement-rules", id],
@@ -189,7 +191,10 @@ function SourceDetailPage() {
   ]
   const imports: KvRow[] = [
     { label: "Disks", value: source.sync_disks ? "Yes" : "No" },
-    { label: "Switches & networks", value: source.sync_networks ? "Yes" : "No" },
+    {
+      label: "Switches & networks",
+      value: source.sync_networks ? "Yes" : "No",
+    },
     { label: "Hosts as devices", value: source.sync_hosts ? "Yes" : "No" },
     { label: "Platforms", value: source.sync_platforms ? "Yes" : "No" },
     ...(source.kind === "vcenter"
@@ -210,7 +215,11 @@ function SourceDetailPage() {
       actions={
         <>
           {canDo("virtualizationsource", "change") && (
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditing(true)}
+            >
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
           )}
@@ -264,6 +273,11 @@ function SourceDetailPage() {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        {
+          value: "review",
+          label: "Review",
+          count: source.pending_count || undefined,
+        },
         { value: "vms", label: "Virtual machines", count: vmCount },
         { value: "hosts", label: "Hosts", count: hostCount },
         {
@@ -286,6 +300,16 @@ function SourceDetailPage() {
 
       <DetailTab value="vms">
         <SourceVms sourceId={source.id} />
+      </DetailTab>
+
+      <DetailTab value="review">
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Danbyte only reads from a hypervisor - accepting a change writes to
+            the Danbyte inventory, never to {source.name}.
+          </p>
+          <VirtChangesPanel source={source} />
+        </div>
       </DetailTab>
 
       <DetailTab value="hosts">
@@ -392,8 +416,16 @@ function SourceHosts({ sourceId }: { sourceId: string }) {
     () =>
       buildDeviceColumns<Device>({
         humanIds,
-        include: ["numid", "name", "status", "type", "manufacturer", "serial",
-                  "site", "platform"],
+        include: [
+          "numid",
+          "name",
+          "status",
+          "type",
+          "manufacturer",
+          "serial",
+          "site",
+          "platform",
+        ],
       }),
     [humanIds]
   )
@@ -432,8 +464,7 @@ type LogRow = {
   message: string
 }
 
-const LOG_LINE =
-  /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d),\d+ (\w+) (.*)$/
+const LOG_LINE = /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d),\d+ (\w+) (.*)$/
 
 const LOG_COLUMNS: ColumnDef<LogRow>[] = [
   {
@@ -456,9 +487,7 @@ const LOG_COLUMNS: ColumnDef<LogRow>[] = [
     cell: ({ row }) =>
       row.original.level && row.original.level !== "INFO" ? (
         <Badge
-          variant={
-            row.original.level === "WARNING" ? "warning" : "destructive"
-          }
+          variant={row.original.level === "WARNING" ? "warning" : "destructive"}
           className="text-[10px]"
         >
           {row.original.level.toLowerCase()}
@@ -517,7 +546,6 @@ function SyncLogTable({ text }: { text: string }) {
     />
   )
 }
-
 
 function SkippedList({ items }: { items: string[] }) {
   if (items.length === 0)
@@ -703,9 +731,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
         id: "weight",
         accessorKey: "weight",
         header: ({ column }) => <SortHeader column={column} label="Weight" />,
-        cell: ({ row }) => (
-          <span className="num">{row.original.weight}</span>
-        ),
+        cell: ({ row }) => <span className="num">{row.original.weight}</span>,
       },
       {
         id: "actions",
@@ -743,7 +769,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
         the{" "}
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
           hypervisor.
-            <InfoTip>
+          <InfoTip>
             The nearest match wins: host beats folder beats cluster beats
             datacenter, and a folder rule also covers everything nested under
             it. With no rules at all, anything whose datacenter (or Proxmox
@@ -799,7 +825,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
               value={siteId}
               onChange={(v) => {
                 setSiteId(v)
-                setLocationId(null)  // a location only belongs to one site
+                setLocationId(null) // a location only belongs to one site
               }}
               placeholder="Pick a site"
               options={(sites.data?.results ?? []).map((s) => ({

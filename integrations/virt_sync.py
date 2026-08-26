@@ -2079,7 +2079,25 @@ def apply_change(change) -> None:
                 vm.save(update_fields=fields)
     elif change.kind == "iface_change":
         _accept_iface_change(guest, change.detail or {})
+    elif change.kind == "iface_extra":
+        _accept_iface_extra(guest, change.detail or {})
     change.delete()
+
+
+def _accept_iface_extra(guest, detail: dict) -> None:
+    """Take the hypervisor's word that these interfaces are gone.
+
+    Only operator-created rows reach this change kind - ones the sync itself
+    created are removed without asking - so accepting deletes records a human
+    entered. Named rows only: an interface added since the change was queued
+    isn't in ``names`` and survives.
+    """
+    from api.models import VMInterface
+
+    names = (detail or {}).get("names") or []
+    if guest.vm is None or not names:
+        return
+    VMInterface.objects.filter(vm=guest.vm, name__in=names).delete()
 
 
 def _accept_iface_change(guest, detail: dict) -> None:
