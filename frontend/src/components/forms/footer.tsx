@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -13,6 +14,11 @@ export interface FormFooterProps {
    * button announced "Saving…". CLAUDE.md requires the verb track the action. */
   submittingLabel?: string
   cancelLabel?: string
+  /** Extra action pinned to the left of the bar, e.g. "Create & add another".
+   * It belongs inside the footer: on a full-page form the footer becomes a
+   * sticky bar with its own background, which would otherwise cover a sibling
+   * button sitting next to it. */
+  secondary?: ReactNode
   className?: string
 }
 
@@ -37,6 +43,7 @@ export function FormFooter({
   submitLabel = "Save changes",
   submittingLabel,
   cancelLabel = "Cancel",
+  secondary,
   className,
 }: FormFooterProps) {
   // In plan mode this button does not write, so it must not say "Save". Done
@@ -78,6 +85,7 @@ export function FormFooter({
         className
       )}
     >
+      {secondary && <div className="sm:mr-auto">{secondary}</div>}
       <Button
         type="button"
         variant="ghost"
@@ -90,11 +98,6 @@ export function FormFooter({
         {submitting
           ? (submittingLabel ?? pendingLabel(submitLabel))
           : submitLabel}
-        {!submitting && (
-          <kbd className="pointer-events-none font-sans text-[10px] tracking-wide opacity-60 max-sm:hidden">
-            ⌘↵
-          </kbd>
-        )}
       </Button>
     </div>
   )

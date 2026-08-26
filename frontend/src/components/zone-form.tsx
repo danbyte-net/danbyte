@@ -150,28 +150,26 @@ export function ZoneForm({ zone, onSaved, onCancel }: ZoneFormProps) {
         value={customFields}
         onChange={setCustomFields}
       />
-      <div className="flex items-center gap-2">
-        {!isEdit && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={mutation.isPending}
-            onClick={() => {
-              addAnother.current = true
-              mutation.mutate()
-            }}
-          >
-            Create & add another
-          </Button>
-        )}
-        <div className="flex-1">
-          <FormFooter
-            onCancel={onCancel}
-            submitting={mutation.isPending}
-            submitLabel={isEdit ? "Save changes" : "Create zone"}
-          />
-        </div>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create zone"}
+        secondary={
+          !isEdit && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => {
+                addAnother.current = true
+                mutation.mutate()
+              }}
+            >
+              Create & add another
+            </Button>
+          )
+        }
+      />
     </form>
   )
 }

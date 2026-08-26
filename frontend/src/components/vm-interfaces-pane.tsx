@@ -6,6 +6,7 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
 import {
+  type VRFOption,
   api,
   type Paginated,
   type VLANOption,
@@ -509,7 +510,7 @@ function VMInterfaceForm({
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>("/api/vrfs/"),
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
 
@@ -656,6 +657,7 @@ function VMInterfaceForm({
         options={(vrfs.data?.results ?? []).map((v) => ({
           value: v.id,
           label: v.name,
+          color: v.color,
         }))}
         error={fieldErrors.vrf_id}
       />

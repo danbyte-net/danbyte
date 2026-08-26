@@ -194,6 +194,7 @@ export function AssignIpDialog({
   const vrfOpts = (vrfs.data?.results ?? []).map((v) => ({
     value: v.id,
     label: v.name,
+    color: v.color,
   }))
   const prefixOpts = (prefixes.data?.results ?? []).map((p) => ({
     value: p.id,

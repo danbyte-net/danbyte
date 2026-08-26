@@ -34,7 +34,7 @@ export function InfoTip({
           <Info className="h-3.5 w-3.5" />
         </button>
       </HoverCardTrigger>
-      <HoverCardContent className="w-72 text-xs leading-relaxed text-muted-foreground">
+      <HoverCardContent className="w-auto max-w-md text-xs leading-relaxed text-muted-foreground">
         {children}
       </HoverCardContent>
     </HoverCard>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useTimezoneOptions } from "@/lib/use-timezones"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Check, ChevronsUpDown } from "lucide-react"
@@ -66,6 +67,7 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
   const isEdit = !!site
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const timezoneOptions = useTimezoneOptions()
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(site?.name ?? "")
@@ -305,12 +307,16 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
               )}
             </Field>
 
-            <FormText
+            <FormCombobox
               label="Time zone"
-              hint="optional - IANA name, e.g. Europe/Copenhagen"
-              placeholder="Europe/Copenhagen"
-              value={timeZone}
-              onChange={setTimeZone}
+              hint="optional"
+              value={timeZone || null}
+              onChange={(v) => setTimeZone(v ?? "")}
+              options={timezoneOptions}
+              noneLabel="Inherit from the deployment"
+              placeholder="Inherit from the deployment"
+              searchPlaceholder="Search zones…"
+              emptyText="No matching zone."
               error={fieldErrors.time_zone}
             />
 

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
+  type VRFOption,
   api,
   type Interface,
   type InterfaceOption,
@@ -155,7 +156,7 @@ export function InterfaceForm({
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>("/api/vrfs/"),
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Candidate parents: other interfaces on the same device (excluding self).
@@ -312,8 +313,22 @@ export function InterfaceForm({
                 onChange={setName}
                 mono
                 placeholder="GigabitEthernet0/1"
-                hint={
-                  isEdit ? undefined : "a [0-3] range adds one port per number"
+                info={
+                  isEdit ? undefined : (
+                    <span className="grid gap-1">
+                      <span>
+                        <b className="font-mono text-foreground">[0-3]</b> in
+                        the name creates one port per number.
+                      </span>
+                      <span>
+                        <b className="font-mono text-foreground">
+                          {"{position}"}
+                        </b>{" "}
+                        resolves to the device&apos;s stack member number, so a
+                        template port is named for the member it sits on.
+                      </span>
+                    </span>
+                  )
                 }
                 error={fieldErrors.name}
               />
@@ -403,6 +418,7 @@ export function InterfaceForm({
               options={(vrfs.data?.results ?? []).map((v) => ({
                 value: v.id,
                 label: v.name,
+                color: v.color,
               }))}
               error={fieldErrors.vrf_id}
             />
