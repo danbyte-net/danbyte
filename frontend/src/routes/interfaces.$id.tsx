@@ -552,6 +552,29 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
           <KvCard title="Interface" rows={attributes} />
           <KvCard title="Switching" rows={switching} />
           <KvCard title="Relationships" rows={relationships} />
+          {i.ip_addresses.length > 0 && (
+            // The addresses at a glance - the IP tab stays where they're
+            // assigned and removed.
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border px-4 py-2">
+                <h2 className="text-sm font-semibold">IP addresses</h2>
+                <Badge variant="secondary">{i.ip_addresses.length}</Badge>
+              </div>
+              <ul className="divide-y divide-border">
+                {i.ip_addresses.map((ip) => (
+                  <li key={ip.id}>
+                    <Link
+                      to="/ips/$id"
+                      params={{ id: ip.id }}
+                      className="link block px-4 py-2 font-mono text-[13px] hover:bg-muted/60"
+                    >
+                      {ip.ip_address}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <CustomFieldValues
             model="interface"
             values={i.custom_fields}

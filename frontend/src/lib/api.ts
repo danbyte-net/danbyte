@@ -2598,6 +2598,9 @@ export interface GhostEdgeData {
 
 export interface DevicePathRun {
   origin: { name: string; kind: TopoPortKind }
+  /** A breakout: the same cable leaving this port and landing in several
+   * places. Each leg is the tail after the shared origin chip + segment. */
+  legs?: DevicePathRun["steps"][]
   steps: (
     | {
         t: "chip"
