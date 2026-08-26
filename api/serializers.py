@@ -1228,6 +1228,9 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     prefix = PrefixMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     is_primary_for_device = serializers.SerializerMethodField()
+    # A VM's primary IP is the same idea one level up (#122): the address the
+    # VM answers on. VMs carry no secondary/OOB - those are hardware notions.
+    is_primary_for_vm = serializers.SerializerMethodField()
     is_secondary_for_device = serializers.SerializerMethodField()
     is_oob_for_device = serializers.SerializerMethodField()
     scope = serializers.SerializerMethodField()
@@ -1304,6 +1307,10 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     def get_is_primary_for_device(self, obj) -> bool:
         dev = obj.assigned_device
         return bool(dev and dev.primary_ip_id == obj.id)
+
+    def get_is_primary_for_vm(self, obj) -> bool:
+        vm = obj.assigned_vm
+        return bool(vm and vm.primary_ip_id == obj.id)
 
     def get_is_secondary_for_device(self, obj) -> bool:
         dev = obj.assigned_device
@@ -1395,6 +1402,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "discovered",
             "flap_exclude",
             "is_primary_for_device",
+            "is_primary_for_vm",
             "is_secondary_for_device",
             "is_oob_for_device",
             "scope",

@@ -784,6 +784,8 @@ export interface IPAddress {
   discovered: boolean
   flap_exclude: boolean
   is_primary_for_device: boolean
+  /** This address is its VM's primary IP (#122). */
+  is_primary_for_vm?: boolean
   is_secondary_for_device?: boolean
   is_oob_for_device?: boolean
   description: string

@@ -140,6 +140,11 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const [mac, setMac] = useState(ip?.mac_address ?? "")
   const [dnsName, setDnsName] = useState(seed?.dns_name ?? "")
   const [isPrimary, setIsPrimary] = useState(ip?.is_primary_for_device ?? false)
+  // Same idea for a VM: the address it answers on (#122). Separate state
+  // because an address is assigned to a device or a VM, never both.
+  const [isVmPrimary, setIsVmPrimary] = useState(
+    ip?.is_primary_for_vm ?? false
+  )
   const [tagIds, setTagIds] = useState<number[]>(
     seed?.tags?.map((t) => t.id) ?? []
   )
@@ -161,6 +166,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     setMac(ip.mac_address ?? "")
     setDnsName(ip.dns_name ?? "")
     setIsPrimary(ip.is_primary_for_device)
+    setIsVmPrimary(!!ip.is_primary_for_vm)
     setTagIds(ip.tags.map((t) => t.id))
     setCustomFields(ip.custom_fields ?? {})
     reset()
@@ -357,10 +363,20 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
         id: isEdit ? ip!.id : undefined,
         payload,
       })
-      if (isPrimary && saved.assigned_device) {
+      // Primary IP lives on the device/VM, so it takes a second request.
+      // Unticking has to clear it, or the box would only ever turn on.
+      if (saved.assigned_device && isPrimary !== !!ip?.is_primary_for_device) {
         await api(`/api/devices/${saved.assigned_device.id}/`, {
           method: "PATCH",
-          body: JSON.stringify({ primary_ip_id: saved.id }),
+          body: JSON.stringify({ primary_ip_id: isPrimary ? saved.id : null }),
+        }).catch(() => {})
+      }
+      if (saved.assigned_vm && isVmPrimary !== !!ip?.is_primary_for_vm) {
+        await api(`/api/virtual-machines/${saved.assigned_vm.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            primary_ip_id: isVmPrimary ? saved.id : null,
+          }),
         }).catch(() => {})
       }
       // DHCP reservation rides along after the IP write (real writes only -
@@ -639,6 +655,30 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                   <InfoTip>
                     Primary IP is stored on the device, not the address. Plan it
                     from the device's own form.
+                  </InfoTip>
+                )}
+              </label>
+            )}
+
+            {vmId && (
+              <label
+                className={`flex items-center gap-2 text-xs ${
+                  planning ? "text-muted-foreground" : "cursor-pointer"
+                }`}
+              >
+                {/* A VM has a primary IP for the same reason a device does -
+                  the address it answers on. Stored on the VM, so plan mode
+                  can't reach it either (#122). */}
+                <Checkbox
+                  checked={isVmPrimary && !planning}
+                  disabled={planning}
+                  onCheckedChange={(v) => setIsVmPrimary(!!v)}
+                />
+                Make this the VM's primary IP
+                {planning && (
+                  <InfoTip>
+                    Primary IP is stored on the VM, not the address. Plan it
+                    from the VM's own form.
                   </InfoTip>
                 )}
               </label>

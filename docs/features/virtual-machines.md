@@ -108,7 +108,9 @@ the VM without naming an interface is allowed when you only care that the
 address belongs to that VM.
 
 The first private IPv4 becomes the VM's **primary IP** when it has none, and
-that is what monitoring checks.
+that is what monitoring checks. To choose a different one, tick **Make this
+the VM's primary IP** on the address's own form, or set **Primary IP** on the
+VM. Unticking the box clears it again.
 
 !!! note "A synced IP needs its prefix to exist first"
     When a hypervisor reports a guest address, Danbyte records it only if a

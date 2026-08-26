@@ -1178,7 +1178,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 IPAddress.objects
                 .filter(prefix=prefix)
                 .select_related(
-                    "status", "role", "assigned_device", "prefix__vlan__zone"
+                    "status", "role", "assigned_device", "assigned_vm",
+                    "prefix__vlan__zone",
                 )
                 .prefetch_related("tags")
             ),
@@ -1383,7 +1384,9 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         # chip) - without the joins every IP row lazy-loads them.
         .select_related(
             "status", "role", "assigned_device", "prefix__vlan__zone",
-            "prefix__vrf", "prefix__site", "site",
+            # assigned_vm: is_primary_for_vm reads the VM's primary_ip_id, so
+            # without the join every VM-assigned row lazy-loads its VM (#122).
+            "assigned_vm", "prefix__vrf", "prefix__site", "site",
         )
         .prefetch_related("tags")
         .all()
