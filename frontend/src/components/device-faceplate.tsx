@@ -259,6 +259,7 @@ function Cage({
           to="/interfaces/$id"
           params={{ id: i.id }}
           data-cable-state={cableState(i)}
+          data-port-name={i.name}
           style={
             cabled
               ? { ...style, ...portTintStyle(portHex(tint)) }
@@ -1465,6 +1466,7 @@ export function ImagePortsFaceplate({
                     type="button"
                     style={portStyle}
                     data-cable-state={fp.cable_state}
+                    data-port-name={fp.name}
                     title={`${fp.name} - free, click to connect a cable`}
                     onClick={() =>
                       fp.id &&
@@ -1479,6 +1481,7 @@ export function ImagePortsFaceplate({
                   <span
                     style={portStyle}
                     data-cable-state={fp.cable_state}
+                    data-port-name={fp.name}
                     className={portClass}
                   />
                 )}
@@ -1529,6 +1532,7 @@ export function ImagePortsFaceplate({
                 to="/interfaces/$id"
                 params={{ id: iface.id }}
                 data-cable-state={cableState(iface)}
+                data-port-name={iface.name}
                 style={
                   // On a photo: cabled markers get an OPAQUE tier border +
                   // solid-enough fill; idle markers are a VERY faint outline

@@ -252,6 +252,7 @@ function Body({ device: d }: { device: Device }) {
       presence={{ type: "device", id: d.id }}
       actions={
         <>
+          {" "}
           <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
           <ShowOnSiteMap
             deviceId={d.id}
