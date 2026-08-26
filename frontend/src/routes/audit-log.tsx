@@ -21,6 +21,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TimeCell } from "@/components/cells/time-ago"
 import { objectDetailRoute, objectListRoute } from "@/lib/object-routes"
+import { useCurrentHref } from "@/lib/return-to"
 import {
   useUrlEnum,
   useUrlInt,
@@ -28,7 +29,37 @@ import {
   useUrlText,
 } from "@/lib/use-url-state"
 
-export const Route = createFileRoute("/audit-log")({ component: AuditLogPage })
+export const Route = createFileRoute("/audit-log")({
+  // Declared so the filters survive navigation: params a route doesn't
+  // validate are dropped when the router rebuilds the location, which is
+  // what reset the filters on Back (#109).
+  validateSearch: (
+    s: Record<string, unknown>
+  ): {
+    action?: string
+    type?: string
+    via?: string
+    user?: string
+    q?: string
+    page?: number
+  } => {
+    const out: {
+      action?: string
+      type?: string
+      via?: string
+      user?: string
+      q?: string
+      page?: number
+    } = {}
+    for (const k of ["action", "type", "via", "user", "q"] as const) {
+      if (typeof s[k] === "string" && s[k]) out[k] = s[k] as string
+    }
+    const page = Number(s.page)
+    if (Number.isFinite(page) && page > 1) out.page = Math.round(page)
+    return out
+  },
+  component: AuditLogPage,
+})
 
 const ACTION_VARIANT: Record<
   ChangeAction,
@@ -128,7 +159,13 @@ function AuditLogPage() {
   const total = q.data?.count ?? 0
   const pages = Math.max(1, Math.ceil(total / pageSize))
 
-  const columns = useMemo<ColumnDef<ChangeLogEntry>[]>(() => buildColumns(), [])
+  // The list's own href travels with each row link, so the entry page can
+  // come back to this exact filtered view.
+  const href = useCurrentHref()
+  const columns = useMemo<ColumnDef<ChangeLogEntry>[]>(
+    () => buildColumns(href),
+    [href]
+  )
 
   return (
     // Action is a page-level split of the whole log (server-side `action=`), so
@@ -254,7 +291,7 @@ function AuditLogPage() {
   )
 }
 
-function buildColumns(): ColumnDef<ChangeLogEntry>[] {
+function buildColumns(href: string): ColumnDef<ChangeLogEntry>[] {
   return [
     {
       id: "when",
@@ -266,6 +303,7 @@ function buildColumns(): ColumnDef<ChangeLogEntry>[] {
         <Link
           to="/audit-log/$id"
           params={{ id: row.original.id }}
+          search={{ from: href }}
           className="link"
         >
           <TimeCell iso={row.original.timestamp} />
