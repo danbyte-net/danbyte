@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { usePlanTarget } from "@/lib/save-object"
@@ -41,6 +42,22 @@ export function FormFooter({
   // In plan mode this button does not write, so it must not say "Save". Done
   // here rather than in each form: every form's footer is this component.
   const planning = !!usePlanTarget()
+  // Cmd/Ctrl+Enter submits the enclosing form - every form has this footer,
+  // so every form gets the shortcut. Listening on the form itself scopes it:
+  // with a dialog form stacked over a page form, only the focused one fires.
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const form = rootRef.current?.closest("form")
+    if (!form) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault()
+        form.requestSubmit()
+      }
+    }
+    form.addEventListener("keydown", onKey)
+    return () => form.removeEventListener("keydown", onKey)
+  }, [])
   if (planning) {
     submitLabel = "Save as planned change"
     submittingLabel = "Planning…"
@@ -54,6 +71,7 @@ export function FormFooter({
       // styles.css) so Save stays reachable without scrolling to the bottom.
       // Dialogs use the same forms but aren't inside .edit-page-form, so their
       // footers are unaffected.
+      ref={rootRef}
       data-form-footer=""
       className={cn(
         "mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end",
@@ -72,6 +90,11 @@ export function FormFooter({
         {submitting
           ? (submittingLabel ?? pendingLabel(submitLabel))
           : submitLabel}
+        {!submitting && (
+          <kbd className="pointer-events-none font-sans text-[10px] tracking-wide opacity-60 max-sm:hidden">
+            ⌘↵
+          </kbd>
+        )}
       </Button>
     </div>
   )

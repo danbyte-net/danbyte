@@ -49,14 +49,17 @@ export function Field({
     // label in a picker trigger widened the whole column and shoved the
     // neighbouring field aside (#53). Allowing the cell to shrink lets the
     // trigger's own `truncate` finally do its job.
-    <div className={cn("grid min-w-0 content-start gap-1.5", className)}>
+    <div
+      data-field-error={error ? "" : undefined}
+      className={cn("grid min-w-0 content-start gap-1.5", className)}
+    >
       <div className="flex items-baseline justify-between gap-2">
         <Label className="flex items-center gap-1 text-xs">
           {label}
           {required && (
             // Not `text-destructive`: an untouched required field isn't an
             // error, and colouring it red on load reads as one.
-            <span aria-hidden className="ml-0.5 text-muted-foreground">
+            <span aria-hidden className="ml-0.5 font-semibold text-primary">
               *
             </span>
           )}
