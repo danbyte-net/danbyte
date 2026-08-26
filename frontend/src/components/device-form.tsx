@@ -588,14 +588,6 @@ export function DeviceForm({
                 error={fieldErrors.comments}
               />
             )}
-
-            <Field label="Tags" error={fieldErrors.tag_ids}>
-              <TagMultiSelect
-                options={tags.data?.results ?? []}
-                value={tagIds}
-                onChange={setTagIds}
-              />
-            </Field>
           </FormSection>
         </FormColumn>
 
@@ -870,6 +862,15 @@ export function DeviceForm({
           </FormSection>
         </FormColumn>
       </FormColumns>
+
+      <Field label="Tags" error={fieldErrors.tag_ids}>
+        {" "}
+        <TagMultiSelect
+          options={tags.data?.results ?? []}
+          value={tagIds}
+          onChange={setTagIds}
+        />{" "}
+      </Field>
 
       <CustomFieldInputs
         model="device"

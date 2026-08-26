@@ -18,9 +18,12 @@ import { useMe } from "@/lib/use-me"
 import {
   FormSection,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
   FormSelect,
+  FormStatusSelect,
   FormTags,
   FormText,
   FormTextarea,
@@ -142,6 +145,8 @@ export function RackForm({
   useEffect(() => {
     if (!isEdit && sites.lockedId && !siteId) setSiteId(sites.lockedId)
   }, [isEdit, sites.lockedId, siteId])
+  // The picker serializer carries the role's catalog color; the shared
+  // (untouched) API type.
   const roles = useQuery({
     queryKey: ["rack-roles-picker"],
     queryFn: () => api<Paginated<RackRoleOption>>("/api/rack-roles/?picker=1"),
@@ -250,242 +255,259 @@ export function RackForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="@container grid gap-4"
+      className="grid gap-4"
     >
-      <FormSection title="Rack">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          placeholder="rack-a1"
-          error={fieldErrors.name}
-        />
-
-        <FormText
-          label="Facility ID"
-          hint="optional"
-          value={facilityId}
-          onChange={setFacilityId}
-          mono
-          placeholder="R101"
-          error={fieldErrors.facility_id}
-        />
-
-        <FormCombobox
-          label="Site"
-          value={siteId}
-          onChange={(v) => {
-            setSiteId(v)
-            setLocationId(null) // locations are per-site
-          }}
-          disabled={siteLocked}
-          options={sites.options.map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          placeholder="Select a site…"
-          searchPlaceholder="Search sites…"
-          emptyText="No sites."
-          error={fieldErrors.site_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New site"
-              endpoint="/api/sites/"
-              fields={[{ name: "name", label: "Name", required: true }]}
-              onCreated={(s) => {
-                qc.invalidateQueries({ queryKey: ["sites-picker"] })
-                setSiteId(s.id)
-              }}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Rack" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              placeholder="rack-a1"
+              error={fieldErrors.name}
             />
-          }
-        />
 
-        <FormCombobox
-          label="Location"
-          hint="optional · within the site"
-          value={locationId}
-          onChange={setLocationId}
-          options={(locations.data?.results ?? []).map((l) => ({
-            value: l.id,
-            label: l.name,
-          }))}
-          noneLabel="No location"
-          placeholder={siteId ? "Select a location…" : "Pick a site first"}
-          searchPlaceholder="Search locations…"
-          emptyText="No locations in this site."
-          disabled={!siteId}
-          error={fieldErrors.location_id}
-        />
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Facility ID"
+                hint="optional"
+                value={facilityId}
+                onChange={setFacilityId}
+                mono
+                placeholder="R101"
+                error={fieldErrors.facility_id}
+              />
+              <FormStatusSelect
+                value={statusId}
+                onChange={setStatusId}
+                options={statuses.data?.results ?? []}
+                error={fieldErrors.status_id}
+              />
+            </div>
 
-        <FormCombobox
-          label="Role"
-          hint="optional"
-          value={roleId}
-          onChange={setRoleId}
-          options={(roles.data?.results ?? []).map((r) => ({
-            value: r.id,
-            label: r.name,
-          }))}
-          noneLabel="No role"
-          placeholder="Select a rack role…"
-          searchPlaceholder="Search roles…"
-          emptyText="No rack roles."
-          error={fieldErrors.role_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New rack role"
-              endpoint="/api/rack-roles/"
-              fields={[
-                { name: "name", label: "Name", required: true },
-                { name: "description", label: "Description", type: "textarea" },
-              ]}
-              onCreated={(r) => {
-                qc.invalidateQueries({ queryKey: ["rack-roles-picker"] })
-                setRoleId(r.id)
+            <FormCombobox
+              label="Site"
+              required
+              value={siteId}
+              onChange={(v) => {
+                setSiteId(v)
+                setLocationId(null) // locations are per-site
               }}
+              disabled={siteLocked}
+              options={sites.options.map((s) => ({
+                value: s.id,
+                label: s.name,
+              }))}
+              placeholder="Select a site…"
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
+              error={fieldErrors.site_id}
+              quickAdd={
+                <QuickAddDialog
+                  title="New site"
+                  endpoint="/api/sites/"
+                  fields={[{ name: "name", label: "Name", required: true }]}
+                  onCreated={(s) => {
+                    qc.invalidateQueries({ queryKey: ["sites-picker"] })
+                    setSiteId(s.id)
+                  }}
+                />
+              }
             />
-          }
-        />
 
-        <FormCombobox
-          label="Rack type"
-          hint="optional · cabinet model - picking one fills the dims below"
-          value={rackTypeId}
-          onChange={(v) => {
-            setRackTypeId(v)
-            if (!v) setCreateAccessories(false)
-            const t = (rackTypes.data?.results ?? []).find((x) => x.id === v)
-            if (t) applyTypeProfile(t)
-          }}
-          options={(rackTypes.data?.results ?? []).map((t) => ({
-            value: t.id,
-            label: t.manufacturer ? `${t.manufacturer.name} ${t.name}` : t.name,
-          }))}
-          noneLabel="No rack type"
-          placeholder="Select a rack type…"
-          searchPlaceholder="Search rack types…"
-          emptyText="No rack types."
-          error={fieldErrors.rack_type_id}
-        />
+            <FormCombobox
+              label="Location"
+              hint="optional · within the site"
+              value={locationId}
+              onChange={setLocationId}
+              options={(locations.data?.results ?? []).map((l) => ({
+                value: l.id,
+                label: l.name,
+              }))}
+              noneLabel="No location"
+              placeholder={siteId ? "Select a location…" : "Pick a site first"}
+              searchPlaceholder="Search locations…"
+              emptyText="No locations in this site."
+              disabled={!siteId}
+              error={fieldErrors.location_id}
+            />
 
-        {!isEdit && chosenType && chosenType.accessories.length > 0 && (
-          <FormCheckbox
-            label={`Create ${chosenType.accessories.length} accessor${
-              chosenType.accessories.length === 1 ? "y" : "ies"
-            } (${chosenType.accessories.map((a) => a.label).join(", ")})`}
-            hint={
-              canStamp
-                ? "Stamps each strip as a side-mounted device named {rack}-{label}"
-                : "Requires permission to add devices"
-            }
-            checked={createAccessories && canStamp}
-            onChange={(v) => setCreateAccessories(v && canStamp)}
-            disabled={!canStamp}
-          />
-        )}
-      </FormSection>
+            <FormCombobox
+              label="Role"
+              hint="optional"
+              value={roleId}
+              onChange={setRoleId}
+              options={(roles.data?.results ?? []).map((r) => ({
+                value: r.id,
+                label: r.name,
+                color: r.color,
+              }))}
+              noneLabel="No role"
+              placeholder="Select a rack role…"
+              searchPlaceholder="Search roles…"
+              emptyText="No rack roles."
+              error={fieldErrors.role_id}
+              quickAdd={
+                <QuickAddDialog
+                  title="New rack role"
+                  endpoint="/api/rack-roles/"
+                  fields={[
+                    { name: "name", label: "Name", required: true },
+                    {
+                      name: "description",
+                      label: "Description",
+                      type: "textarea",
+                    },
+                  ]}
+                  onCreated={(r) => {
+                    qc.invalidateQueries({ queryKey: ["rack-roles-picker"] })
+                    setRoleId(r.id)
+                  }}
+                />
+              }
+            />
 
-      <FormSection title="Dimensions" collapsible storageKey="rack" hasValues>
-        <div className="grid grid-cols-2 gap-3">
-          <FormCombobox
-            label="Status"
-            value={statusId}
-            onChange={setStatusId}
-            options={(statuses.data?.results ?? []).map((s) => ({
-              value: s.id,
-              label: s.name,
-            }))}
-            noneLabel="No status"
-            placeholder="Select a status…"
-            error={fieldErrors.status_id}
-          />
-          <FormSelect
-            label="Width"
-            value={String(width)}
-            onChange={(v) => v && setWidth(Number(v) as RackWidth)}
-            options={WIDTHS.map((w) => ({
-              value: String(w.value),
-              label: w.label,
-            }))}
-            error={fieldErrors.width}
-          />
-        </div>
+            <FormCombobox
+              label="Rack type"
+              hint="optional · cabinet model - fills the dimensions"
+              value={rackTypeId}
+              onChange={(v) => {
+                setRackTypeId(v)
+                if (!v) setCreateAccessories(false)
+                const t = (rackTypes.data?.results ?? []).find(
+                  (x) => x.id === v
+                )
+                if (t) applyTypeProfile(t)
+              }}
+              options={(rackTypes.data?.results ?? []).map((t) => ({
+                value: t.id,
+                label: t.manufacturer
+                  ? `${t.manufacturer.name} ${t.name}`
+                  : t.name,
+              }))}
+              noneLabel="No rack type"
+              placeholder="Select a rack type…"
+              searchPlaceholder="Search rack types…"
+              emptyText="No rack types."
+              error={fieldErrors.rack_type_id}
+            />
 
-        <div className="grid grid-cols-2 gap-3">
-          <FormText
-            label="Height (U)"
-            type="number"
-            min={1}
-            value={uHeight}
-            onChange={setUHeight}
-            error={fieldErrors.u_height}
-          />
-          <FormText
-            label="Starting unit"
-            type="number"
-            value={startingUnit}
-            onChange={setStartingUnit}
-            error={fieldErrors.starting_unit}
-          />
-          <FormText
-            label="Outer width (mm)"
-            hint={zeroUHint}
-            type="number"
-            min={100}
-            max={2000}
-            value={outerWidth}
-            onChange={setOuterWidth}
-            error={fieldErrors.outer_width_mm}
-          />
-          <FormText
-            label="Outer depth (mm)"
-            hint="optional - blank = 1000"
-            type="number"
-            min={100}
-            max={3000}
-            value={outerDepth}
-            onChange={setOuterDepth}
-            error={fieldErrors.outer_depth_mm}
-          />
-          <FormText
-            label="Weight budget"
-            hint="optional - floor / rack load rating"
-            type="number"
-            min={0}
-            value={maxWeight}
-            onChange={setMaxWeight}
-            error={fieldErrors.max_weight}
-          />
-          <FormSelect
-            label="Budget unit"
-            value={maxWeightUnit}
-            onChange={(v) => setMaxWeightUnit(v ?? "kg")}
-            options={[
-              { value: "kg", label: "kg" },
-              { value: "g", label: "g" },
-              { value: "lb", label: "lb" },
-              { value: "oz", label: "oz" },
-            ]}
-            error={fieldErrors.max_weight_unit}
-          />
-        </div>
+            {!isEdit && chosenType && chosenType.accessories.length > 0 && (
+              <FormCheckbox
+                label={`Create ${chosenType.accessories.length} accessor${
+                  chosenType.accessories.length === 1 ? "y" : "ies"
+                } (${chosenType.accessories.map((a) => a.label).join(", ")})`}
+                hint={
+                  canStamp
+                    ? "Stamps each strip as a side-mounted device named {rack}-{label}"
+                    : "Requires permission to add devices"
+                }
+                checked={createAccessories && canStamp}
+                onChange={(v) => setCreateAccessories(v && canStamp)}
+                disabled={!canStamp}
+              />
+            )}
+          </FormSection>
 
-        <FormCheckbox
-          label="Descending units"
-          hint="Number units top-to-bottom (U1 at the top)"
-          checked={descUnits}
-          onChange={setDescUnits}
-        />
-      </FormSection>
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+          </FormSection>
+        </FormColumn>
 
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+        <FormColumn>
+          <FormSection title="Dimensions" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Width"
+                value={String(width)}
+                onChange={(v) => v && setWidth(Number(v) as RackWidth)}
+                options={WIDTHS.map((w) => ({
+                  value: String(w.value),
+                  label: w.label,
+                }))}
+                error={fieldErrors.width}
+              />
+              <FormText
+                label="Height (U)"
+                type="number"
+                min={1}
+                value={uHeight}
+                onChange={setUHeight}
+                error={fieldErrors.u_height}
+              />
+              <FormText
+                label="Starting unit"
+                type="number"
+                value={startingUnit}
+                onChange={setStartingUnit}
+                error={fieldErrors.starting_unit}
+              />
+              <FormText
+                label="Outer depth (mm)"
+                hint="optional - blank = 1000"
+                type="number"
+                min={100}
+                max={3000}
+                value={outerDepth}
+                onChange={setOuterDepth}
+                error={fieldErrors.outer_depth_mm}
+              />
+            </div>
+
+            <FormText
+              label="Outer width (mm)"
+              hint={zeroUHint}
+              type="number"
+              min={100}
+              max={2000}
+              value={outerWidth}
+              onChange={setOuterWidth}
+              error={fieldErrors.outer_width_mm}
+            />
+
+            <FormCheckbox
+              label="Descending units"
+              hint="Number units top-to-bottom (U1 at the top)"
+              checked={descUnits}
+              onChange={setDescUnits}
+            />
+          </FormSection>
+
+          <FormSection title="Weight" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Weight budget"
+                hint="optional - floor / rack load rating"
+                type="number"
+                min={0}
+                value={maxWeight}
+                onChange={setMaxWeight}
+                error={fieldErrors.max_weight}
+              />
+              <FormSelect
+                label="Budget unit"
+                value={maxWeightUnit}
+                onChange={(v) => setMaxWeightUnit(v ?? "kg")}
+                options={[
+                  { value: "kg", label: "kg" },
+                  { value: "g", label: "g" },
+                  { value: "lb", label: "lb" },
+                  { value: "oz", label: "oz" },
+                ]}
+                error={fieldErrors.max_weight_unit}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormTags
         label="Tags"

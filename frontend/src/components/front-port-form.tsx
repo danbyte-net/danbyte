@@ -234,7 +234,7 @@ export function FrontPortForm({
           Add a rear port first - a front port maps to a rear-port strand.
         </p>
       )}
-      <FormSection title="Front port">
+      <FormSection title="Front port" card>
         <FormText
           label="Name"
           required
@@ -251,9 +251,10 @@ export function FrontPortForm({
           error={fieldErrors.name}
         />
         <NameRangeHint name={name} editing={isEdit} noun="front ports" />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 @md:grid-cols-2">
           <FormSelect
             label="Rear port"
+            required
             value={rearPortId}
             onChange={(v) => {
               setRearPortId(v)
@@ -274,7 +275,7 @@ export function FrontPortForm({
             error={fieldErrors.rear_port_position}
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 @md:grid-cols-2">
           <FormSelect
             label="Type / connector"
             value={type || null}
@@ -298,7 +299,7 @@ export function FrontPortForm({
         </div>
       </FormSection>
 
-      <FormSection title="State">
+      <FormSection title="State" card>
         <FormCheckbox
           label="Mark connected"
           checked={markConnected}
@@ -327,13 +328,16 @@ export function FrontPortForm({
         )}
       </FormSection>
 
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="Optional"
-        error={fieldErrors.description}
-      />
+      <FormSection title="Notes" card>
+        <FormText
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          placeholder="Optional"
+          error={fieldErrors.description}
+        />
+      </FormSection>
+
       <Field label="Tags" error={fieldErrors.tag_ids}>
         <TagMultiSelect
           options={tags.data?.results ?? []}

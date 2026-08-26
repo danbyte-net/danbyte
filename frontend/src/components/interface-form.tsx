@@ -416,13 +416,6 @@ export function InterfaceForm({
               placeholder="Optional"
               error={fieldErrors.description}
             />
-            <Field label="Tags" error={fieldErrors.tag_ids}>
-              <TagMultiSelect
-                options={tags.data?.results ?? []}
-                value={tagIds}
-                onChange={setTagIds}
-              />
-            </Field>
           </FormSection>
         </FormColumn>
 
@@ -622,6 +615,14 @@ export function InterfaceForm({
           )}
         </FormColumn>
       </FormColumns>
+
+      <Field label="Tags" error={fieldErrors.tag_ids}>
+        <TagMultiSelect
+          options={tags.data?.results ?? []}
+          value={tagIds}
+          onChange={setTagIds}
+        />
+      </Field>
 
       <FormFooter
         onCancel={onCancel}

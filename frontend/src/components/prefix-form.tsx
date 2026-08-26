@@ -10,24 +10,24 @@ import {
   type Prefix,
   type PrefixWritePayload,
   type Status,
-  type TagOption,
-  type VLANOption,
   type VRFOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { FormSection, useFieldErrors, FormCheckbox } from "@/components/forms"
+import { VlanPicker } from "@/components/vlan-picker"
+import {
+  FormCheckbox,
+  FormColumn,
+  FormColumns,
+  FormCombobox,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormStatusSelect,
+  FormTags,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 // Pure form body - no dialog chrome. Rendered by /prefixes/new and
@@ -51,8 +51,6 @@ export interface PrefixFormProps {
   onSaved: (saved: Prefix) => void
   onCancel: () => void
 }
-
-const NONE = "__none__"
 
 export function PrefixForm({
   prefix,
@@ -138,16 +136,6 @@ export function PrefixForm({
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })
-  const vlans = useQuery({
-    queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
-    staleTime: 10 * 60_000,
-  })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -192,169 +180,131 @@ export function PrefixForm({
       }}
       className="@container grid gap-4"
     >
-      <FormSection title="Prefix">
-        <Field label="Prefix (CIDR)" error={fieldErrors.cidr}>
-          <Input
-            autoFocus={!isEdit}
-            required
-            placeholder="10.0.10.0/24"
-            value={cidr}
-            onChange={(e) => setCidr(e.target.value)}
-            className="font-mono"
-          />
-        </Field>
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Prefix" card>
+            <FormText
+              label="Prefix (CIDR)"
+              required
+              autoFocus={!isEdit}
+              value={cidr}
+              onChange={setCidr}
+              mono
+              placeholder="10.0.10.0/24"
+              error={fieldErrors.cidr}
+            />
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Status" error={fieldErrors.status_id}>
-            <Select
-              value={statusId ?? NONE}
-              onValueChange={(v) => setStatusId(v === NONE ? null : v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="No status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>No status</SelectItem>
-                {statuses.data?.results.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="VRF" error={fieldErrors.vrf_id}>
-            <Select
-              value={vrfId ?? NONE}
-              onValueChange={(v) => setVrfId(v === NONE ? null : v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Global" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Global</SelectItem>
-                {vrfs.data?.results.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.name}{" "}
-                    {v.rd && (
-                      <span className="text-muted-foreground">· {v.rd}</span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormStatusSelect
+                value={statusId}
+                onChange={setStatusId}
+                options={statuses.data?.results ?? []}
+                error={fieldErrors.status_id}
+              />
+              <FormCombobox
+                label="VRF"
+                value={vrfId}
+                onChange={setVrfId}
+                options={(vrfs.data?.results ?? []).map((v) => ({
+                  value: v.id,
+                  label: v.rd ? `${v.name} · ${v.rd}` : v.name,
+                  color: v.color,
+                }))}
+                noneLabel="Global"
+                placeholder="Global"
+                searchPlaceholder="Search VRFs…"
+                emptyText="No VRFs."
+                error={fieldErrors.vrf_id}
+              />
+            </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Site" error={fieldErrors.site_id}>
-            <Select
-              value={siteId ?? NONE}
-              onValueChange={(v) => {
-                setSiteId(v === NONE ? null : v)
+            <div className="grid gap-3 @md:grid-cols-2">
+              <VlanPicker
+                value={vlanId}
+                onChange={setVlanId}
+                noneLabel="No VLAN"
+                placeholder="No VLAN"
+                error={fieldErrors.vlan_id}
+              />
+              <FormText
+                label="Gateway"
+                hint="optional"
+                value={gateway}
+                onChange={setGateway}
+                mono
+                placeholder="10.0.10.1"
+                error={fieldErrors.gateway}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Placement" card>
+            <FormSelect
+              label="Site"
+              hint={siteLocked ? "locked to your site" : "optional"}
+              value={siteId}
+              onChange={(v) => {
+                setSiteId(v)
                 setLocationId(null) // locations are site-specific
               }}
+              noneLabel="No site"
+              placeholder="No site"
               disabled={siteLocked}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="No site" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>No site</SelectItem>
-                {sites.options.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="VLAN" error={fieldErrors.vlan_id}>
-            <Select
-              value={vlanId ?? NONE}
-              onValueChange={(v) => setVlanId(v === NONE ? null : v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="No VLAN" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>No VLAN</SelectItem>
-                {vlans.data?.results.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.vlan_id} · {v.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-      </FormSection>
+              options={sites.options.map((s) => ({
+                value: s.id,
+                label: s.name,
+              }))}
+              error={fieldErrors.site_id}
+            />
 
-      <FormSection
-        title="Placement"
-        collapsible
-        storageKey="prefix"
-        hasValues={!!(locationId || autoAssignSite)}
-      >
-        <Field
-          label="Location"
-          hint={
-            siteId ? "Optional - a range within the site" : "Pick a site first"
-          }
-          error={fieldErrors.location_id}
-        >
-          <Select
-            value={locationId ?? NONE}
-            onValueChange={(v) => setLocationId(v === NONE ? null : v)}
-            disabled={!siteId}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="No location" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>No location</SelectItem>
-              {locations.data?.results.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+            <FormSelect
+              label="Location"
+              hint={
+                siteId
+                  ? "Optional - a range within the site"
+                  : "Pick a site first"
+              }
+              value={locationId}
+              onChange={setLocationId}
+              noneLabel="No location"
+              placeholder="No location"
+              disabled={!siteId}
+              options={(locations.data?.results ?? []).map((l) => ({
+                value: l.id,
+                label: l.name,
+              }))}
+              error={fieldErrors.location_id}
+            />
 
-        <FormCheckbox
-          label="Assign IPs in this range to the site"
-          hint="New IPs created here inherit the prefix's site, so site-scoped users and filters pick them up."
-          checked={autoAssignSite}
-          onChange={setAutoAssignSite}
-        />
-      </FormSection>
+            <FormCheckbox
+              label="Assign IPs in this range to the site"
+              hint="New IPs created here inherit the prefix's site, so site-scoped users and filters pick them up."
+              checked={autoAssignSite}
+              onChange={setAutoAssignSite}
+            />
+          </FormSection>
 
-      <Field label="Gateway" hint="Optional" error={fieldErrors.gateway}>
-        <Input
-          placeholder="10.0.10.1"
-          value={gateway}
-          onChange={(e) => setGateway(e.target.value)}
-          className="font-mono"
-        />
-      </Field>
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Description"
+              rows={3}
+              value={description}
+              onChange={setDescription}
+              placeholder="e.g. Prod East - application servers"
+              error={fieldErrors.description}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
-          rows={3}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. Prod East - application servers"
-        />
-      </Field>
-
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="prefix"
@@ -362,48 +312,11 @@ export function PrefixForm({
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create prefix"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create prefix"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

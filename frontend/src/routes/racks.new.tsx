@@ -21,6 +21,7 @@ function NewRackPage() {
   const { rack_type } = Route.useSearch()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Racks", to: "/racks" }, { label: "Add" }]}
       title="Add rack"
       subtitle="A physical equipment rack that holds devices by unit."

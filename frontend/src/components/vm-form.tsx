@@ -13,14 +13,16 @@ import {
   type VirtualMachineWritePayload,
 } from "@/lib/api"
 import {
+  FormColumn,
+  FormColumns,
   FormSection,
   FormCombobox,
+  FormStatusSelect,
   QuickAddDialog,
   UnitInput,
   MEMORY_UNITS,
   DISK_UNITS,
   FormFooter,
-  FormRow,
   FormTags,
   FormText,
   FormTextarea,
@@ -180,208 +182,223 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
       }}
       className="@container grid gap-4"
     >
-      <FormSection title="Virtual machine">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          placeholder="web-01"
-          error={fieldErrors.name}
-        />
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Virtual machine" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              placeholder="web-01"
+              error={fieldErrors.name}
+            />
 
-        <FormCombobox
-          label="Cluster"
-          value={clusterId}
-          onChange={setClusterId}
-          options={(clusters.data?.results ?? []).map((c) => ({
-            value: c.id,
-            label: c.name,
-          }))}
-          placeholder="Select a cluster…"
-          searchPlaceholder="Search clusters…"
-          emptyText="No clusters."
-          error={fieldErrors.cluster_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New cluster"
-              endpoint="/api/clusters/"
-              fields={[
-                { name: "name", label: "Name", required: true },
-                {
-                  name: "type_id",
-                  label: "Type",
-                  type: "combobox",
-                  endpoint: "/api/cluster-types/?picker=1",
-                  queryKey: "cluster-types-picker",
-                  required: true,
-                  quickAdd: {
-                    title: "New cluster type",
-                    endpoint: "/api/cluster-types/",
-                    fields: [
+            <FormCombobox
+              label="Cluster"
+              required
+              value={clusterId}
+              onChange={setClusterId}
+              options={(clusters.data?.results ?? []).map((c) => ({
+                value: c.id,
+                label: c.name,
+              }))}
+              placeholder="Select a cluster…"
+              searchPlaceholder="Search clusters…"
+              emptyText="No clusters."
+              error={fieldErrors.cluster_id}
+              quickAdd={
+                <QuickAddDialog
+                  title="New cluster"
+                  endpoint="/api/clusters/"
+                  fields={[
+                    { name: "name", label: "Name", required: true },
+                    {
+                      name: "type_id",
+                      label: "Type",
+                      type: "combobox",
+                      endpoint: "/api/cluster-types/?picker=1",
+                      queryKey: "cluster-types-picker",
+                      required: true,
+                      quickAdd: {
+                        title: "New cluster type",
+                        endpoint: "/api/cluster-types/",
+                        fields: [
+                          { name: "name", label: "Name", required: true },
+                          {
+                            name: "description",
+                            label: "Description",
+                            type: "textarea",
+                          },
+                        ],
+                      },
+                    },
+                  ]}
+                  onCreated={(c) => {
+                    qc.invalidateQueries({ queryKey: ["clusters-picker"] })
+                    setClusterId(c.id)
+                  }}
+                />
+              }
+            />
+
+            <FormStatusSelect
+              value={statusId}
+              onChange={setStatusId}
+              options={statuses.data?.results ?? []}
+              placeholder="Select a status…"
+              error={fieldErrors.status_id}
+            />
+
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormCombobox
+                label="Role"
+                hint="optional"
+                value={roleId}
+                onChange={setRoleId}
+                options={(roles.data?.results ?? []).map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                  color: r.color,
+                }))}
+                noneLabel="No role"
+                placeholder="Select a role…"
+                searchPlaceholder="Search roles…"
+                emptyText="No device roles."
+                error={fieldErrors.role_id}
+                quickAdd={
+                  <QuickAddDialog
+                    title="New device role"
+                    endpoint="/api/device-roles/"
+                    fields={[
                       { name: "name", label: "Name", required: true },
                       {
                         name: "description",
                         label: "Description",
                         type: "textarea",
                       },
-                    ],
-                  },
-                },
-              ]}
-              onCreated={(c) => {
-                qc.invalidateQueries({ queryKey: ["clusters-picker"] })
-                setClusterId(c.id)
-              }}
+                    ]}
+                    onCreated={(r) => {
+                      qc.invalidateQueries({
+                        queryKey: ["device-roles-picker"],
+                      })
+                      setRoleId(r.id)
+                    }}
+                  />
+                }
+              />
+
+              <FormCombobox
+                label="Platform"
+                hint="optional"
+                value={platformId}
+                onChange={setPlatformId}
+                options={(platforms.data?.results ?? []).map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                }))}
+                noneLabel="No platform"
+                placeholder="Select a platform…"
+                searchPlaceholder="Search platforms…"
+                emptyText="No platforms."
+                error={fieldErrors.platform_id}
+                quickAdd={
+                  <QuickAddDialog
+                    title="New platform"
+                    endpoint="/api/platforms/"
+                    fields={[{ name: "name", label: "Name", required: true }]}
+                    onCreated={(p) => {
+                      qc.invalidateQueries({ queryKey: ["platforms-picker"] })
+                      setPlatformId(p.id)
+                    }}
+                  />
+                }
+              />
+            </div>
+          </FormSection>
+
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
             />
-          }
-        />
+          </FormSection>
+        </FormColumn>
 
-        <DevicePicker
-          label="Host device"
-          hint="optional"
-          value={deviceId}
-          onChange={setDeviceId}
-          noneLabel="No host device"
-          placeholder="Select a host device…"
-          error={fieldErrors.device_id}
-        />
-
-        <FormCombobox
-          label="Site"
-          hint="optional"
-          value={siteId}
-          onChange={setSiteId}
-          options={sites.options.map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No site"
-          placeholder="Select a site…"
-          searchPlaceholder="Search sites…"
-          emptyText="No sites."
-          error={fieldErrors.site_id}
-        />
-
-        <FormCombobox
-          label="Role"
-          hint="optional"
-          value={roleId}
-          onChange={setRoleId}
-          options={(roles.data?.results ?? []).map((r) => ({
-            value: r.id,
-            label: r.name,
-          }))}
-          noneLabel="No role"
-          placeholder="Select a role…"
-          searchPlaceholder="Search roles…"
-          emptyText="No device roles."
-          error={fieldErrors.role_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New device role"
-              endpoint="/api/device-roles/"
-              fields={[
-                { name: "name", label: "Name", required: true },
-                { name: "description", label: "Description", type: "textarea" },
-              ]}
-              onCreated={(r) => {
-                qc.invalidateQueries({ queryKey: ["device-roles-picker"] })
-                setRoleId(r.id)
-              }}
+        <FormColumn>
+          <FormSection title="Placement" card>
+            <DevicePicker
+              label="Host device"
+              hint="optional"
+              value={deviceId}
+              onChange={setDeviceId}
+              noneLabel="No host device"
+              placeholder="Select a host device…"
+              error={fieldErrors.device_id}
             />
-          }
-        />
 
-        <FormCombobox
-          label="Platform"
-          hint="optional"
-          value={platformId}
-          onChange={setPlatformId}
-          options={(platforms.data?.results ?? []).map((p) => ({
-            value: p.id,
-            label: p.name,
-          }))}
-          noneLabel="No platform"
-          placeholder="Select a platform…"
-          searchPlaceholder="Search platforms…"
-          emptyText="No platforms."
-          error={fieldErrors.platform_id}
-          quickAdd={
-            <QuickAddDialog
-              title="New platform"
-              endpoint="/api/platforms/"
-              fields={[{ name: "name", label: "Name", required: true }]}
-              onCreated={(p) => {
-                qc.invalidateQueries({ queryKey: ["platforms-picker"] })
-                setPlatformId(p.id)
-              }}
+            <FormCombobox
+              label="Site"
+              hint="optional"
+              value={siteId}
+              onChange={setSiteId}
+              options={sites.options.map((s) => ({
+                value: s.id,
+                label: s.name,
+              }))}
+              noneLabel="No site"
+              placeholder="Select a site…"
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
+              error={fieldErrors.site_id}
             />
-          }
-        />
 
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
-        />
-      </FormSection>
+            <IpPicker
+              label="Primary IP"
+              hint="optional"
+              value={primaryIpId}
+              onChange={setPrimaryIpId}
+              noneLabel="No primary IP"
+              placeholder="Select an IP…"
+              error={fieldErrors.primary_ip_id}
+            />
+          </FormSection>
 
-      <FormSection title="Resources" collapsible storageKey="vm" hasValues>
-        <FormRow cols={3}>
-          <FormText
-            label="vCPUs"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={vcpus}
-            onChange={setVcpus}
-            placeholder="-"
-            error={fieldErrors.vcpus}
-          />
-          <UnitInput
-            label="Memory"
-            base="MB"
-            units={MEMORY_UNITS}
-            value={memoryMb}
-            onChange={setMemoryMb}
-            error={fieldErrors.memory_mb}
-          />
-          <UnitInput
-            label="Disk"
-            base="GB"
-            units={DISK_UNITS}
-            value={diskGb}
-            onChange={setDiskGb}
-            error={fieldErrors.disk_gb}
-          />
-        </FormRow>
-      </FormSection>
-
-      <IpPicker
-        label="Primary IP"
-        hint="optional"
-        value={primaryIpId}
-        onChange={setPrimaryIpId}
-        noneLabel="No primary IP"
-        placeholder="Select an IP…"
-        error={fieldErrors.primary_ip_id}
-      />
-
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+          <FormSection title="Resources" card>
+            <div className="grid gap-3 @md:grid-cols-3">
+              <FormText
+                label="vCPUs"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={vcpus}
+                onChange={setVcpus}
+                placeholder="-"
+                error={fieldErrors.vcpus}
+              />
+              <UnitInput
+                label="Memory"
+                base="MB"
+                units={MEMORY_UNITS}
+                value={memoryMb}
+                onChange={setMemoryMb}
+                error={fieldErrors.memory_mb}
+              />
+              <UnitInput
+                label="Disk"
+                base="GB"
+                units={DISK_UNITS}
+                value={diskGb}
+                onChange={setDiskGb}
+                error={fieldErrors.disk_gb}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormTags
         label="Tags"

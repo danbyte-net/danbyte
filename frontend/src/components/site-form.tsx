@@ -11,21 +11,10 @@ import type {
   Site,
   SiteGatewayPolicy,
   SiteWritePayload,
-  TagOption,
   VRFOption,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
@@ -45,11 +34,18 @@ import {
 import { cn } from "@/lib/utils"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
+  Field,
   FormSection,
   FormColor,
+  FormColumn,
+  FormColumns,
   FormCombobox,
+  FormFooter,
   FormIcon,
   FormSelect,
+  FormTags,
+  FormText,
+  FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
@@ -125,11 +121,6 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
     queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
-    staleTime: 10 * 60_000,
-  })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   // Candidates for the site's default: its own prefixes. (The server also
@@ -221,236 +212,216 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="@container grid gap-4"
+      className="grid gap-4"
     >
-      <FormSection title="Site">
-        <Field label="Name" error={fieldErrors.name}>
-          <Input
-            autoFocus={!isEdit}
-            required
-            placeholder="dc-fra-01"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-
-        <FormCombobox
-          label="Region"
-          hint="optional"
-          value={regionId}
-          onChange={setRegionId}
-          options={(regions.data?.results ?? []).map((r) => ({
-            value: r.id,
-            label: r.name,
-          }))}
-          noneLabel="No region"
-          placeholder="No region"
-          searchPlaceholder="Search regions…"
-          emptyText="No regions."
-          error={fieldErrors.region_id}
-        />
-
-        {site?.id && <MonitoringEngineField scope="site" objectId={site.id} />}
-
-        {site?.id && (
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
-              SNMP credentials
-            </span>
-            <SnmpBindingControl scope="site" objectId={site.id} canEdit />
-          </div>
-        )}
-      </FormSection>
-
-      <FormSection
-        title="Location"
-        collapsible
-        storageKey="site"
-        hasValues={!!(location || timeZone || latitude || longitude)}
-      >
-        <Field label="Address" hint="optional" error={fieldErrors.location}>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Frankfurt, DE"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              onBlur={() => {
-                // Auto-place: one lookup per distinct address, and never
-                // while coordinates are already set (typed or auto-filled).
-                const q = location.trim()
-                if (!q || String(latitude).trim() || String(longitude).trim())
-                  return
-                if (autoGeoRef.current === q || geocode.isPending) return
-                autoGeoRef.current = q
-                geocode.mutate({ q, auto: true })
-              }}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Site" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              placeholder="dc-fra-01"
+              value={name}
+              onChange={setName}
+              error={fieldErrors.name}
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 shrink-0"
-              title="Look up coordinates on OpenStreetMap - fills latitude/longitude below"
-              disabled={!location.trim() || geocode.isPending}
-              onClick={() => geocode.mutate({ q: location.trim() })}
-            >
-              {geocode.isPending ? "Searching…" : "Find on OSM"}
-            </Button>
-          </div>
-          {geoCandidates && geoCandidates.length === 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              No match - try adding a city or country to the address.
-            </p>
-          )}
-          {geoCandidates && geoCandidates.length > 0 && (
-            <div className="mt-1.5 grid gap-1">
-              {geoCandidates.map((c, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
-                  onClick={() => {
-                    setLatitude(c.latitude.toFixed(6))
-                    setLongitude(c.longitude.toFixed(6))
-                    setGeoCandidates(null)
+
+            <FormCombobox
+              label="Region"
+              hint="optional"
+              value={regionId}
+              onChange={setRegionId}
+              options={(regions.data?.results ?? []).map((r) => ({
+                value: r.id,
+                label: r.name,
+              }))}
+              noneLabel="No region"
+              placeholder="No region"
+              searchPlaceholder="Search regions…"
+              emptyText="No regions."
+              error={fieldErrors.region_id}
+            />
+          </FormSection>
+
+          <FormSection title="Location" card>
+            <Field label="Address" hint="optional" error={fieldErrors.location}>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Frankfurt, DE"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onBlur={() => {
+                    // Auto-place: one lookup per distinct address, and never
+                    // while coordinates are already set (typed or auto-filled).
+                    const q = location.trim()
+                    if (
+                      !q ||
+                      String(latitude).trim() ||
+                      String(longitude).trim()
+                    )
+                      return
+                    if (autoGeoRef.current === q || geocode.isPending) return
+                    autoGeoRef.current = q
+                    geocode.mutate({ q, auto: true })
                   }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0"
+                  disabled={!location.trim() || geocode.isPending}
+                  onClick={() => geocode.mutate({ q: location.trim() })}
                 >
-                  <span className="min-w-0 truncate">{c.label}</span>
-                  <span className="ml-auto shrink-0 text-muted-foreground">
-                    {c.kind}
-                  </span>
-                </button>
-              ))}
+                  {geocode.isPending ? "Searching…" : "Find on OSM"}
+                </Button>
+              </div>
+              {geoCandidates && geoCandidates.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  No match - try adding a city or country to the address.
+                </p>
+              )}
+              {geoCandidates && geoCandidates.length > 0 && (
+                <div className="mt-1.5 grid gap-1">
+                  {geoCandidates.map((c, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs hover:bg-muted/60"
+                      onClick={() => {
+                        setLatitude(c.latitude.toFixed(6))
+                        setLongitude(c.longitude.toFixed(6))
+                        setGeoCandidates(null)
+                      }}
+                    >
+                      <span className="min-w-0 truncate">{c.label}</span>
+                      <span className="ml-auto shrink-0 text-muted-foreground">
+                        {c.kind}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Field>
+
+            <FormText
+              label="Time zone"
+              hint="optional - IANA name, e.g. Europe/Copenhagen"
+              placeholder="Europe/Copenhagen"
+              value={timeZone}
+              onChange={setTimeZone}
+              error={fieldErrors.time_zone}
+            />
+
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Latitude"
+                hint="or place it on the Site map"
+                mono
+                placeholder="55.676098"
+                value={String(latitude)}
+                onChange={setLatitude}
+                error={fieldErrors.latitude}
+              />
+              <FormText
+                label="Longitude"
+                mono
+                placeholder="12.568337"
+                value={String(longitude)}
+                onChange={setLongitude}
+                error={fieldErrors.longitude}
+              />
             </div>
+
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormColor
+                label="Marker color"
+                hint="shown on the Site map"
+                value={color}
+                onChange={setColor}
+                error={fieldErrors.color}
+              />
+              <FormIcon
+                label="Marker icon"
+                value={icon}
+                onChange={setIcon}
+                error={fieldErrors.icon}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Networking" card>
+            <FormSelect
+              label="Gateway policy"
+              hint="auto-creates a gateway IP on new prefixes"
+              value={gatewayPolicy}
+              onChange={(v) =>
+                setGatewayPolicy((v ?? "first") as SiteGatewayPolicy)
+              }
+              options={GATEWAY_POLICIES.map((p) => ({
+                value: p.value,
+                label: p.label,
+              }))}
+            />
+
+            {/* Edit-only: a brand-new site has no prefixes to choose from yet. */}
+            {isEdit && (
+              <FormSelect
+                label="Default prefix"
+                hint="pre-selected when staff here add an address - a hint, not a limit"
+                value={defaultPrefixId}
+                onChange={setDefaultPrefixId}
+                noneLabel="No default - staff pick every time"
+                options={(sitePrefixes.data?.results ?? []).map((p) => ({
+                  value: p.id,
+                  label: p.cidr,
+                }))}
+              />
+            )}
+
+            <Field label="VRFs" hint="documentation only - not enforced">
+              <VrfMultiSelect
+                options={vrfs.data?.results ?? []}
+                value={vrfIds}
+                onChange={setVrfIds}
+              />
+            </Field>
+          </FormSection>
+
+          {site?.id && (
+            <FormSection title="Monitoring" card>
+              <MonitoringEngineField scope="site" objectId={site.id} />
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
+                  SNMP credentials
+                </span>
+                <SnmpBindingControl scope="site" objectId={site.id} canEdit />
+              </div>
+            </FormSection>
           )}
-        </Field>
 
-        <Field
-          label="Time zone"
-          hint="optional - IANA name, e.g. Europe/Copenhagen"
-          error={fieldErrors.time_zone}
-        >
-          <Input
-            placeholder="Europe/Copenhagen"
-            value={timeZone}
-            onChange={(e) => setTimeZone(e.target.value)}
-          />
-        </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field
-            label="Latitude"
-            hint="or place it on the Site map"
-            error={fieldErrors.latitude}
-          >
-            <Input
-              placeholder="55.676098"
-              className="font-mono text-[13px]"
-              value={String(latitude)}
-              onChange={(e) => setLatitude(e.target.value)}
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Description"
+              rows={2}
+              value={description}
+              onChange={setDescription}
+              placeholder="e.g. Primary EU data center"
+              error={fieldErrors.description}
             />
-          </Field>
-          <Field label="Longitude" error={fieldErrors.longitude}>
-            <Input
-              placeholder="12.568337"
-              className="font-mono text-[13px]"
-              value={String(longitude)}
-              onChange={(e) => setLongitude(e.target.value)}
-            />
-          </Field>
-        </div>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
-        <div className="grid grid-cols-2 gap-3">
-          <FormColor
-            label="Marker color"
-            hint="shown on the Site map"
-            value={color}
-            onChange={setColor}
-            error={fieldErrors.color}
-          />
-          <FormIcon
-            label="Marker icon"
-            value={icon}
-            onChange={setIcon}
-            error={fieldErrors.icon}
-          />
-        </div>
-      </FormSection>
-
-      <FormSection
-        title="Notes"
-        collapsible
-        storageKey="site"
-        hasValues={!!description}
-      >
-        <Field label="Description" error={fieldErrors.description}>
-          <Textarea
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="e.g. Primary EU data center"
-          />
-        </Field>
-      </FormSection>
-
-      <FormSection
-        title="Networking"
-        collapsible
-        storageKey="site"
-        hasValues={!!(gatewayPolicy !== "first" || vrfIds.length)}
-      >
-        <Field
-          label="Gateway policy"
-          hint="auto-creates a gateway IP on new prefixes"
-        >
-          <Select
-            value={gatewayPolicy}
-            onValueChange={(v) => setGatewayPolicy(v as SiteGatewayPolicy)}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {GATEWAY_POLICIES.map((p) => (
-                <SelectItem key={p.value} value={p.value}>
-                  {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        {/* Edit-only: a brand-new site has no prefixes to choose from yet. */}
-        {isEdit && (
-          <FormSelect
-            label="Default prefix"
-            hint="pre-selected when staff here add an address - a hint, not a limit"
-            value={defaultPrefixId}
-            onChange={setDefaultPrefixId}
-            noneLabel="No default - staff pick every time"
-            options={(sitePrefixes.data?.results ?? []).map((p) => ({
-              value: p.id,
-              label: p.cidr,
-            }))}
-          />
-        )}
-
-        <Field label="VRFs" hint="documentation only - not enforced">
-          <VrfMultiSelect
-            options={vrfs.data?.results ?? []}
-            value={vrfIds}
-            onChange={setVrfIds}
-          />
-        </Field>
-      </FormSection>
-
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="site"
@@ -458,23 +429,11 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create Site"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create site"}
+      />
     </form>
   )
 }
@@ -553,31 +512,6 @@ function VrfMultiSelect({
           </Command>
         </PopoverContent>
       </Popover>
-    </div>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
     </div>
   )
 }

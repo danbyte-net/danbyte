@@ -161,7 +161,15 @@ export function FormSection({
  *   </FormColumns>
  */
 export function FormColumns({ children }: { children: ReactNode }) {
-  return <div className="grid items-start gap-4 xl:grid-cols-2">{children}</div>
+  // A container query, not a viewport one: the same form renders full-page
+  // and inside a dialog, and a dialog is narrow no matter how wide the
+  // screen is. Splitting on the viewport forced two columns into a 512px
+  // dialog.
+  return (
+    <div className="@container/cols grid items-start gap-4 @4xl/cols:grid-cols-2">
+      {children}
+    </div>
+  )
 }
 
 export function FormColumn({ children }: { children: ReactNode }) {

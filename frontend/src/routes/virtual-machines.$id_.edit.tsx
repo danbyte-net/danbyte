@@ -22,6 +22,7 @@ function EditVmPage() {
 
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Virtual machines", to: "/virtual-machines" },
         q.data

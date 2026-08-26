@@ -24,6 +24,7 @@ function EditSitePage() {
 
   return (
     <EditPageShell
+      wide
       presenceType="site"
       presenceId={id}
       crumbs={[

@@ -34,6 +34,7 @@ function EditIpPage() {
 
   return (
     <EditPageShell
+      wide
       presenceType="ipaddress"
       presenceId={id}
       crumbs={[

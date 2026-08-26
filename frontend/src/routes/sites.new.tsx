@@ -11,6 +11,7 @@ function NewSitePage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Sites", to: "/sites" }, { label: "Add" }]}
       title="Add site"
       subtitle="Register a new physical location."

@@ -31,6 +31,7 @@ function NewPrefixPage() {
 
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Prefixes", to: "/prefixes" },
         { label: cloning ? "Clone" : "Add" },

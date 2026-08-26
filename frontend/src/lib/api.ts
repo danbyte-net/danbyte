@@ -1550,6 +1550,8 @@ export interface RackRoleWritePayload {
 export interface RackRoleOption {
   id: string
   name: string
+  /** The picker serialises it and the form renders it as a ColorBadge. */
+  color?: string | null
 }
 
 export type RackStatus =
