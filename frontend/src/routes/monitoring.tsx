@@ -24,6 +24,7 @@ import {
 } from "@/lib/api"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { useMe } from "@/lib/use-me"
 import { EngineHealthBanner } from "@/components/monitoring/engine-health-banner"
 import {
   Card,
@@ -50,7 +51,12 @@ import { TemplatesList } from "@/components/monitoring/templates-list"
 import { MonitoringConfiguration } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 
-type MonitoringView = "overview" | "checks" | "templates" | "configuration"
+type MonitoringView =
+  | "overview"
+  | "checks"
+  | "templates"
+  | "configuration"
+  | "settings"
 interface MonitoringSearch {
   view: MonitoringView
   status: CheckStatus | "all"
@@ -61,6 +67,7 @@ const VIEWS: MonitoringView[] = [
   "checks",
   "templates",
   "configuration",
+  "settings",
 ]
 
 export const Route = createFileRoute("/monitoring")({
@@ -101,6 +108,9 @@ const KIND_PALETTE = [
 
 function MonitoringPage() {
   const { view, status } = Route.useSearch()
+  // Same gate the settings page uses - the tab is hidden without it, and the
+  // panel is guarded too so a hand-typed ?view=settings shows nothing.
+  const { canManage } = useMe()
   const nav = useNavigate()
   const go = (next: Partial<MonitoringSearch>) =>
     nav({
@@ -195,6 +205,7 @@ function MonitoringPage() {
             { value: "checks", label: "Checks" },
             { value: "templates", label: "Templates" },
             { value: "configuration", label: "Configuration" },
+            ...(canManage ? [{ value: "settings", label: "Settings" }] : []),
           ]}
         />
         {d && (
@@ -234,6 +245,36 @@ function MonitoringPage() {
         )}
 
         {view === "configuration" && <MonitoringConfiguration />}
+
+        {/* Its own tab rather than a card at the foot of Overview: a dashboard
+            is for reading and settings are for changing, and burying a form
+            below the charts made it hard to find (#63). */}
+        {view === "settings" && canManage && (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Settings &amp; defaults</CardTitle>
+                <CardDescription>
+                  Stale thresholds, the skip policy, and the global schedule
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MonitoringSettingsForm />
+              </CardContent>
+            </Card>
+            <p className="text-[11px] text-muted-foreground">
+              Deployment-wide scheduling for drift runs and the email digest
+              lives in{" "}
+              <Link
+                to="/settings/monitoring-defaults"
+                className="underline underline-offset-2"
+              >
+                Settings → Monitoring defaults
+              </Link>
+              .
+            </p>
+          </div>
+        )}
 
         {view === "overview" && d && (
           <div className="mx-auto max-w-7xl space-y-4 lg:space-y-6">
@@ -515,19 +556,6 @@ function MonitoringPage() {
                 </Card>
               )}
             </div>
-
-            {/* Settings - full width so its two-column form isn't cramped */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Settings &amp; defaults</CardTitle>
-                <CardDescription>
-                  Stale thresholds, the skip policy, and the global schedule
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <MonitoringSettingsForm />
-              </CardContent>
-            </Card>
 
             <p className="text-[11px] text-muted-foreground">
               Configure individual checks from an{" "}

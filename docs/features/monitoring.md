@@ -373,10 +373,17 @@ exactly like an automatic scan.
   paging. Each row links to its IP.
 - **Templates** - your reusable check library.
 
-### Settings on the dashboard
+### The Settings tab
 
-The Overview tab (also reachable from **Settings → Monitoring**) is where you set
-the per-tenant monitoring options:
+The **Settings** tab (also reachable from **Settings → Monitoring**) is where
+you set the per-tenant monitoring options. It sits on its own tab rather than
+at the foot of Overview: a dashboard is for reading and settings are for
+changing, and a form below the charts was easy to miss. The tab appears for
+users with `users.manage`.
+
+Deployment-wide scheduling for config-drift runs and the email digest is a
+separate, deployment-admin concern and stays under **Settings → Monitoring
+defaults**.
 
 | Setting | What it controls |
 |---|---|

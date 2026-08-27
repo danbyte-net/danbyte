@@ -25,13 +25,13 @@ function MonitoringSettingsPage() {
         <p className="mt-1 max-w-prose text-xs text-muted-foreground">
           Global schedule, stale thresholds, skip policy, reverse-DNS, alerting,
           discovery &amp; cleanup, and the flapping monitor. The same settings
-          appear on the{" "}
+          appear under{" "}
           <Link
             to="/monitoring"
-            search={{ view: "overview", status: "all" }}
+            search={{ view: "settings", status: "all" }}
             className="underline underline-offset-2"
           >
-            Monitoring dashboard
+            Monitoring → Settings
           </Link>
           .
         </p>
