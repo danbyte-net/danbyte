@@ -233,6 +233,63 @@ class DhcpSyncTests(TestCase):
             IPAddress.objects.filter(ip_address="10.77.0.150").exists()
         )
 
+    def test_a_non_mac_client_id_does_not_abort_the_scope(self):
+        """#115: a ClientId that isn't a 48-bit MAC - an RFC 4361 client-id, a
+        DUID, an Infiniband GUID - used to be assigned to IPAddress.mac_address
+        (varchar 17) and take the whole scope's sync down with a database
+        error. One odd client must not cost the other 200 addresses."""
+        self.sync(payload())
+        scope = DhcpScope.objects.get()
+        scope.lease_sync = True
+        scope.save(update_fields=["lease_sync"])
+        duid = "00-01-00-01-2d-4e-1f-3a-00-15-5d-01-2a-0b"  # 14 bytes
+        leases = [
+            {
+                "scope_id": "10.77.0.0", "ip": "10.77.0.151",
+                "mac": duid, "HostName": "odd-client",
+                "state": "Active", "expires": "2026-08-20T10:00:00Z",
+            },
+            {
+                "scope_id": "10.77.0.0", "ip": "10.77.0.152",
+                "mac": "aa-bb-cc-99-88-77", "HostName": "laptop-9",
+                "state": "Active", "expires": "2026-08-20T10:00:00Z",
+            },
+        ]
+        counts = self.sync(payload(leases=leases))
+
+        self.assertEqual(counts["leases"], 2)
+        self.conn.refresh_from_db()
+        self.assertEqual(self.conn.last_sync_status, "ok")
+
+        # The identifier is kept on the lease verbatim (it has room, and only
+        # a real MAC gets reformatted to colons)...
+        odd = DhcpLease.objects.get(ip="10.77.0.151")
+        self.assertEqual(odd.mac, duid)
+        # ...but never copied onto the address, which only holds a MAC.
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.151").mac_address, ""
+        )
+        # And the normal client in the same scope is unaffected.
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.152").mac_address,
+            "aa:bb:cc:99:88:77",
+        )
+
+    def test_a_non_mac_reservation_client_id_is_also_survivable(self):
+        """The reservation path adopts addresses through the same helper."""
+        res = {
+            "scope_id": "10.77.0.0", "ip": "10.77.0.61",
+            "mac": "00-01-00-01-2d-4e-1f-3a-00-15-5d-01-2a-0b",
+            "Name": "odd", "Description": "",
+        }
+        counts = self.sync(payload(reservations=[res]))
+        self.assertEqual(counts["reservations"], 1)
+        self.conn.refresh_from_db()
+        self.assertEqual(self.conn.last_sync_status, "ok")
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.61").mac_address, ""
+        )
+
     def test_lease_never_deletes_operator_ip(self):
         self.sync(payload())
         scope = DhcpScope.objects.get()
