@@ -17,11 +17,7 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { ColorBadge } from "@/components/cells/color-badge"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { TruncatedText } from "@/components/ui/truncated-text"
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -117,12 +113,7 @@ export function Combobox({
           ) : selected ? (
             // The field is narrow, so a long value still truncates here -
             // hovering (or focusing) shows it in full.
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="min-w-0 truncate">{selected.label}</span>
-              </TooltipTrigger>
-              <TooltipContent>{selected.label}</TooltipContent>
-            </Tooltip>
+            <TruncatedText>{selected.label}</TruncatedText>
           ) : (
             <span className="min-w-0 truncate">{placeholder}</span>
           )}
