@@ -70,6 +70,9 @@ export function WirelessLANForm({
     wlan?.auth_cipher ?? ""
   )
   const [description, setDescription] = useState(wlan?.description ?? "")
+  // Write-only: it is never sent back, so the box always starts empty and a
+  // blank one means "leave the stored key alone" (#68).
+  const [psk, setPsk] = useState("")
   const [comments, setComments] = useState(wlan?.comments ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     wlan?.tags.map((t) => t.id) ?? []
@@ -124,6 +127,9 @@ export function WirelessLANForm({
         vlan_id: vlanId,
         auth_type: authType,
         auth_cipher: authCipher,
+        // Only send it when the operator typed one - an empty box must not
+        // read as "clear the key".
+        ...(psk ? { psk } : {}),
         description: description.trim(),
         comments: comments.trim(),
         tag_ids: tagIds,
@@ -232,6 +238,19 @@ export function WirelessLANForm({
                 options={AUTH_CIPHERS}
               />
             </div>
+            <FormText
+              label="Pre-shared key"
+              type="password"
+              autoComplete="new-password"
+              value={psk}
+              onChange={setPsk}
+              placeholder={
+                wlan?.psk_set ? "Stored - type to replace" : "Not set"
+              }
+              hint={wlan?.psk_set ? "blank keeps the stored key" : "optional"}
+              info="The key is written to the deployment's secret store, never to this record. An administrator must enable a store under Settings → Security first."
+              error={fieldErrors.psk}
+            />
           </FormSection>
 
           <FormSection title="Notes" card>

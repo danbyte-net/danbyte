@@ -42,7 +42,31 @@ A group bundles related SSIDs together - for example *Corporate*, *Guest*, or
 | **VLAN** | the VLAN this SSID bridges onto, so wireless and wired networks line up. |
 | **Authentication type** | open, WEP, WPA-Personal, or WPA-Enterprise. |
 | **Authentication cipher** | auto, TKIP, or AES. |
+| **Pre-shared key** | the WPA-Personal passphrase - stored in the secret store, never in this record (see below). |
 | **Description / comments** | free-text notes. |
+
+### The pre-shared key
+
+A wireless key is a credential, so Danbyte treats it like one. The SSID record
+holds only a **reference**; the passphrase itself is written to the
+deployment's [secret store](../architecture/tenant-settings.md) - the same
+`local` (encrypted) or `vault` backend device credentials use.
+
+- Type the key into **Pre-shared key** on the SSID form. On an existing SSID
+  the box is always empty: leaving it blank keeps the stored key, and typing a
+  new one rotates it.
+- The SSID page shows `••••••••` when a key is set, with an **eye** button to
+  reveal it. Revealing is a separate request, needs the **reveal** permission
+  on wireless LANs, and is written to the change log - so who looked, and when,
+  is on the record.
+- Deleting the SSID, or clearing the field, removes the key from the store too.
+
+!!! warning "No secret store, no PSK"
+    If no secret store is enabled, saving a PSK is **refused** with a message
+    pointing at **Settings → Security → Secret store**. Danbyte does not fall
+    back to keeping the key in the database in the clear - the same
+    fail-closed rule every other key-bearing feature follows. Everything else
+    about an SSID still saves normally; only the key needs a store.
 
 ### SSID status
 

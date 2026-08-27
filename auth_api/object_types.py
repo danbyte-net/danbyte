@@ -32,6 +32,8 @@ ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe"]
 # only governs what the picker surfaces.
 CAPABILITY_VERBS: dict[str, list[str]] = {
     "devicecredential": ["reveal"],
+    # An SSID's PSK is a credential, so revealing it is its own grant (#68).
+    "wirelesslan": ["reveal"],
     "device": ["connect"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],

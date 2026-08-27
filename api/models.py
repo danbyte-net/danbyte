@@ -5418,6 +5418,18 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
     auth_cipher = models.CharField(
         max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
     )
+    # The PSK itself is deliberately NOT a field here (#68). Danbyte holds only
+    # a reference; the key lives in the deployment's secret store, the same
+    # arrangement DeviceCredential uses. A wireless key is a credential, and
+    # credentials do not sit in a documentation database in plaintext.
+    psk_secret_provider = models.CharField(
+        max_length=8, blank=True, default="",
+        help_text="Which secret store holds the PSK, stamped at write-time.",
+    )
+    psk_secret_path = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
+    )
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
 
@@ -5426,6 +5438,62 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
 
     def __str__(self) -> str:
         return self.ssid
+
+    @property
+    def psk_set(self) -> bool:
+        return bool(self.psk_secret_path)
+
+    def store_psk(self, value: str) -> None:
+        """Write the PSK into the active store under ``wireless-lans/<id>``,
+        stamping which provider took it. Fail-closed: raises
+        :class:`SecretStoreDisabled` when no store is configured, because the
+        alternative is a wireless key sitting in the database in the clear."""
+        from core.models import DeploymentSettings
+        from monitoring.secret_store import require_secret_store
+
+        store = require_secret_store()
+        if not self.psk_secret_path:
+            self.psk_secret_path = f"wireless-lans/{self.id}"
+        self.psk_secret_provider = (
+            DeploymentSettings.load().secrets_provider or ""
+        ).strip()
+        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
+
+    def resolve_psk(self) -> str:
+        """Read the PSK back at use-time. Only the reveal action calls this -
+        never list or detail serialization."""
+        from monitoring.secret_store import SecretStoreError, require_secret_store
+
+        if not self.psk_secret_path:
+            raise SecretStoreError("No PSK is set for this SSID.")
+        store = require_secret_store()
+        value = store.get(self.tenant_id, self.psk_secret_path)
+        if value is None:
+            raise SecretStoreError(
+                f"No secret found at '{self.psk_secret_path}' in the "
+                "configured store."
+            )
+        return value.get("psk", "")
+
+    def clear_psk(self) -> None:
+        """Forget the PSK, removing it from the store as well as the reference.
+
+        Best-effort on the store side: if it is unreachable the reference still
+        goes, because leaving a row pointing at a key nobody can read is worse
+        than an orphaned entry an operator can prune."""
+        path = self.psk_secret_path
+        self.psk_secret_path = ""
+        self.psk_secret_provider = ""
+        if not path:
+            return
+        from monitoring.secret_store import SecretStoreError, active_secret_store
+
+        try:
+            store = active_secret_store()
+            if store is not None:
+                store.delete(self.tenant_id, path)
+        except SecretStoreError:
+            pass
 
 
 # ─── VPN ─────────────────────────────────────────────────────────────────────

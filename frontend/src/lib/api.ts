@@ -6037,6 +6037,9 @@ export interface WirelessLAN {
   auth_type: WirelessAuthType
   auth_type_display: string
   auth_cipher: WirelessAuthCipher
+  /** Whether a PSK is stored (#68). The value itself is never serialised -
+   * fetch it from `POST /api/wireless-lans/{id}/reveal-psk/`. */
+  psk_set: boolean
   description: string
   comments: string
   tags: Tag[]
@@ -6052,6 +6055,9 @@ export interface WirelessLANWritePayload {
   vlan_id?: string | null
   auth_type?: WirelessAuthType
   auth_cipher?: WirelessAuthCipher
+  /** Write-only. Send only when setting or rotating it; omit to keep the
+   * stored key, or send null to clear it. */
+  psk?: string | null
   description?: string
   comments?: string
   tag_ids?: number[]

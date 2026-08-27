@@ -6134,9 +6134,93 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
 
 
 class WirelessLANViewSet(TenantScopedViewSet):
+    """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
+    store - this viewset moves it in and out, never through a read."""
+
     queryset = WirelessLAN.objects.all().order_by("ssid")
     serializer_class = WirelessLANSerializer
     pagination_class = StandardPagination
+    rbac_action_map = {"reveal_psk": "reveal"}
+
+    def _pop_psk(self, serializer):
+        """Take the PSK out of the validated data before the row is saved -
+        the model has no column for it, only a reference."""
+        return serializer.validated_data.pop("psk", "")
+
+    def _apply_psk(self, lan, value) -> None:
+        """None clears; a value stores; blank leaves the stored key alone."""
+        from monitoring.secret_store import SecretStoreError
+
+        if value == "":
+            return
+        try:
+            if value is None:
+                lan.clear_psk()
+            else:
+                lan.store_psk(value)
+        except SecretStoreError as exc:
+            raise ValidationError({"psk": str(exc)}) from exc
+        lan.save(update_fields=["psk_secret_path", "psk_secret_provider"])
+
+    def perform_create(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_create(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_update(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_update(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_destroy(self, instance):
+        # Take the key with the record: an SSID nobody documents any more has
+        # no business leaving its passphrase in the store.
+        instance.clear_psk()
+        super().perform_destroy(instance)
+
+    @action(detail=True, methods=["post"], url_path="reveal-psk")
+    def reveal_psk(self, request, pk=None):
+        """Return the PSK. Requires the ``reveal`` verb (type and row gates),
+        is audited, and fails closed when no secret store is enabled."""
+        from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
+
+        lan = self.get_object()
+        try:
+            psk = lan.resolve_psk()
+        except (SecretStoreDisabled, SecretStoreError) as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        self._audit_reveal(lan)
+        return Response({"psk": psk})
+
+    def _audit_reveal(self, lan):
+        """Revealing writes no model change, so nothing else would log it -
+        same trail the device-credential reveal leaves."""
+        from audit.context import current_request_id, current_via
+        from audit.models import ChangeAction, ChangeLogEntry
+        from audit.site_capture import entry_site_id
+
+        u = getattr(self.request, "user", None)
+        authed = bool(u and u.is_authenticated)
+        ChangeLogEntry.objects.create(
+            tenant_id=getattr(lan, "tenant_id", None),
+            user=u if authed else None,
+            user_name=(u.get_username() if authed else ""),
+            action=ChangeAction.REVEAL,
+            object_type=lan._meta.label_lower,
+            object_label="Wireless LAN",
+            object_id=str(lan.pk),
+            object_repr=str(lan),
+            object_site_id=entry_site_id(lan),
+            changes={"revealed": "psk"},
+            request_id=current_request_id(),
+            via=current_via() or "system",
+        )
 
     def get_queryset(self):
         qs = (

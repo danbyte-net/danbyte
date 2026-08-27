@@ -5620,14 +5620,38 @@ class WirelessLANSerializer(StatusSerializerMixin,
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    # Write-only, and never echoed back (#68). Blank on edit keeps the stored
+    # key; null clears it. The read side says only whether one exists - the
+    # value itself comes from the store via the `reveal-psk` action.
+    psk = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, allow_null=True,
+        style={"input_type": "password"},
+        help_text="Stored in the deployment's secret store, never in this row.",
+    )
+    psk_set = serializers.BooleanField(read_only=True)
+
+    def validate_psk(self, value):
+        if value in (None, ""):
+            return value
+        from monitoring.secret_store import secret_store_enabled
+
+        # Fail closed: no store means no safe home for the key, and Danbyte
+        # will not fall back to plaintext for a credential.
+        if not secret_store_enabled():
+            raise serializers.ValidationError(
+                "No secret store is enabled, so a PSK cannot be stored safely. "
+                "An administrator must enable one under Settings → Security → "
+                "Secret store first."
+            )
+        return value
 
     class Meta:
         model = WirelessLAN
         fields = ["id", "ssid", "group", "group_id", "status", "status_id", 
                   "vlan", "vlan_id", "auth_type", "auth_type_display",
-                  "auth_cipher", "description", "comments",
+                  "auth_cipher", "psk", "psk_set", "description", "comments",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id",  "auth_type_display",
+        read_only_fields = ["id",  "auth_type_display", "psk_set",
                             "created_at", "updated_at"]
 
 
