@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Globe, X } from "lucide-react"
+import { Globe, Upload, X } from "lucide-react"
 import { toast } from "sonner"
+
+import { apiErrorToast } from "@/lib/api-toast"
 
 import {
   api,
@@ -74,6 +76,36 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
     setBoundaryLabel(region.boundary_label ?? "")
     reset()
   }, [region, reset])
+
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [importReport, setImportReport] = useState<{
+    features: number
+    vertices_before: number
+    vertices_after: number
+    tolerance: number
+  } | null>(null)
+  const importFile = useMutation({
+    mutationFn: async (file: File) => {
+      const body = new FormData()
+      body.append("file", file)
+      return api<{
+        boundary: GeoBoundary
+        boundary_label: string
+        report: {
+          features: number
+          vertices_before: number
+          vertices_after: number
+          tolerance: number
+        }
+      }>("/api/regions/parse-boundary/", { method: "POST", body })
+    },
+    onSuccess: (r) => {
+      setBoundary(r.boundary)
+      setBoundaryLabel(r.boundary_label)
+      setImportReport(r.report)
+    },
+    onError: (e) => apiErrorToast(e, "Couldn't read that boundary file"),
+  })
 
   // One Nominatim request per explicit click - never per keystroke (OSM
   // usage policy). The chosen polygon is stored on the region, so it is
@@ -240,6 +272,48 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
                   {lookup.isPending ? "Searching…" : "Search OSM"}
                 </Button>
               </div>
+              {/* The other half of #80: your own shape, from a GIS. Parsed
+                  and simplified server-side, then held here and saved with
+                  the region - the same path an OSM pick takes. */}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".geojson,.json,application/geo+json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) importFile.mutate(f)
+                    e.target.value = ""
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={importFile.isPending}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {importFile.isPending ? "Reading…" : "Import GeoJSON"}
+                </Button>
+                <span className="text-[11px] text-muted-foreground">
+                  from QGIS or any GIS, in WGS84
+                </span>
+              </div>
+              {importReport && (
+                <p className="text-[11px] text-muted-foreground">
+                  {importReport.features} shape
+                  {importReport.features === 1 ? "" : "s"},{" "}
+                  <span className="num">{importReport.vertices_after}</span> of{" "}
+                  <span className="num">{importReport.vertices_before}</span>{" "}
+                  points kept
+                  {importReport.tolerance
+                    ? " - simplified to fit the map payload"
+                    : ""}
+                  .
+                </p>
+              )}
               {candidates && candidates.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   No boundary found. Try the official name, or add the country.

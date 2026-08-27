@@ -6587,6 +6587,40 @@ class RegionViewSet(TenantScopedViewSet):
             })
         return Response({"results": candidates})
 
+    @action(detail=False, methods=["post"], url_path="parse-boundary",
+            parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def parse_boundary(self, request):
+        """Turn a GeoJSON / QGIS export into a storable boundary (#80).
+
+        Send the file as ``file`` (multipart) or its text as ``geojson``. The
+        geometry is validated as WGS84 lon/lat and simplified until it fits the
+        stored payload budget; the response reports what that cost, so the UI
+        can say why the drawn shape is coarser than the file.
+
+        Parses only - the result goes back to the form and is saved with the
+        region, exactly like a boundary chosen from the OSM lookup. That is
+        what lets a brand-new region carry an imported boundary too.
+        """
+        from .geojson_import import GeoJSONError, boundary_from_geojson
+
+        self._tenant_or_403()
+        upload = request.FILES.get("file")
+        raw = upload.read() if upload is not None else request.data.get("geojson")
+        if not raw:
+            raise ValidationError(
+                {"file": "Attach a .geojson file, or send its text as geojson."}
+            )
+        try:
+            geom, report = boundary_from_geojson(raw)
+        except GeoJSONError as exc:
+            raise ValidationError({"file": str(exc)}) from exc
+        return Response({
+            "boundary": geom,
+            # Provenance, same slot the Nominatim path fills.
+            "boundary_label": (getattr(upload, "name", "") or "Imported GeoJSON")[:255],
+            "report": report,
+        })
+
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         """Bulk parent assignment (issue: build the tree without opening N

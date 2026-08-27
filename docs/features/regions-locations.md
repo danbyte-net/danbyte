@@ -45,8 +45,34 @@ the region** - it is fetched once, at your click, never on a schedule.
 - Geometry is simplified at fetch time and size-capped, so payloads stay
   small; results without an area outline (plain points) are filtered out.
 
-Boundary data **© OpenStreetMap contributors**, licensed under the
-[ODbL](https://www.openstreetmap.org/copyright). Lookups are single,
+### Importing your own boundary (GeoJSON / QGIS) {#import-geojson}
+
+When OpenStreetMap has no shape for what you call a region - a service area, a
+franchise territory, a campus drawn by hand - press **Import GeoJSON** on the
+region form and pick a `.geojson` file. QGIS's *Export → Save Features As →
+GeoJSON* produces exactly this, as does any GIS.
+
+- **Coordinates must be WGS84 (EPSG:4326)** - longitude/latitude, what GeoJSON
+  specifies. A projected export (metres, a national grid) is **refused** with a
+  note to reproject, rather than silently drawing your region off the coast of
+  Africa, which is where projected coordinates land when read as degrees.
+- **A file with several shapes becomes one multi-part boundary.** An
+  archipelago exported as five features is one region in five pieces, so all of
+  them are kept rather than only the first.
+- **It is simplified to fit.** A traced municipality routinely carries tens of
+  thousands of points; the map has to send the shape to a browser, so Danbyte
+  reduces it until it fits the payload budget and then tells you what that
+  cost - *"4,821 of 20,001 points kept"*. If it still won't fit, simplify in
+  your GIS (QGIS: **Vector → Geometry Tools → Simplify**) and re-export.
+- Points and lines are refused: a boundary needs an area. Shapefiles and
+  GeoPackages must be exported to GeoJSON first.
+
+The imported shape is stored and drawn exactly like an OSM one, and the file
+name is kept as its label so it's clear later where the outline came from.
+**Clear** removes it; importing again replaces it.
+
+Boundary data from OpenStreetMap is **© OpenStreetMap contributors**, licensed
+under the [ODbL](https://www.openstreetmap.org/copyright). Lookups are single,
 operator-triggered requests with an identifying user agent, per the
 [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/).
 
