@@ -144,7 +144,10 @@ export function SuggestInput({
         }}
         // gap-0 matters: PopoverContent is a flex column with gap-4, which
         // would space these rows like paragraphs.
-        className="max-h-56 w-(--radix-popover-trigger-width) gap-0 overflow-y-auto p-1"
+        // See filter-expression: a scrolling list must not be a flex column,
+        // or its rows shrink instead of scrolling. `gap-0` alone only fixed
+        // the spacing half of that.
+        className="block max-h-56 w-(--radix-popover-trigger-width) overflow-y-auto p-1"
       >
         {matches.map((s, i) => (
           <button

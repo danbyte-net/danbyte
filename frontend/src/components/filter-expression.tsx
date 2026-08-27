@@ -474,7 +474,11 @@ function ValueField({
       </PopoverAnchor>
       <PopoverContent
         align="start"
-        className="max-h-56 w-60 overflow-y-auto p-1"
+        // `block`, because PopoverContent is a flex column by default: as its
+        // own scroll container the option rows became flex items, and once the
+        // list outgrew max-h they shrank to nothing instead of scrolling - an
+        // empty panel with a scrollbar (#117).
+        className="block max-h-56 w-60 overflow-y-auto p-1"
         onOpenAutoFocus={(e) => e.preventDefault()}
         // The click that focuses the input is "outside" the content - without
         // this guard the popover opens on focus and closes on the same click.
