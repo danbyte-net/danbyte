@@ -44,12 +44,16 @@ blocks cycles - and NetBox contact-group trees import losslessly.
 
 A contact can record when they are actually reachable, so at 02:00 you can see
 who is on shift instead of guessing. Tick the days they work, set a start and
-end time on each, and pick the **time zone** those times are stated in - that
-last part is what makes the hours meaningful for a vendor in another country.
+end time on each, and pick the **time zone** those times are stated in. The
+zone is **required** once any hours are set: without it "08:00-17:00" cannot
+answer whether they are reachable right now, which is the whole point of the
+field, so Danbyte refuses the half-set state rather than storing a schedule
+that reads as unknown forever.
 
-Two presets cover the usual shapes: **Mon-Fri 08-17** and **24/7**. One span
-per day; split shifts aren't modelled, because the field answers "can I call
-them", not "roster them".
+Two presets cover the usual shapes: **Mon-Fri 08-17** and **24/7**. A day can
+hold more than one span - press **+** on a day to add a break, so
+*08:00-12:00, 13:00-17:00* records a desk that closes for lunch. Spans on a day
+may not overlap; they are sorted for you.
 
 The contact's page then shows the hours as one line - *Mon-Fri 08:00-17:00
 Europe/Copenhagen* - with an **Open now** or **Outside hours** badge beside it.

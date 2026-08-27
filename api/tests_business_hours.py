@@ -18,7 +18,8 @@ from .models import Contact, Provider
 
 User = get_user_model()
 
-WEEKDAYS = {str(d): ["08:00", "17:00"] for d in range(5)}
+WEEKDAYS = {str(d): [["08:00", "17:00"]] for d in range(5)}
+SPLIT = {str(d): [["08:00", "12:00"], ["13:00", "17:00"]] for d in range(5)}
 
 
 class ScheduleShapeTests(APITestCase):
@@ -29,13 +30,42 @@ class ScheduleShapeTests(APITestCase):
         )
 
     def test_always_open_reads_as_24_7(self):
-        always = {str(d): ["00:00", "24:00"] for d in range(7)}
+        always = {str(d): [["00:00", "24:00"]] for d in range(7)}
         self.assertEqual(describe(always, "UTC"), "24/7")
 
-    def test_split_days_stay_separate(self):
+    def test_a_day_may_hold_several_spans(self):
+        # A lunch break is routine for support desks in much of the world.
         self.assertEqual(
-            describe({"0": ["08:00", "17:00"], "5": ["10:00", "14:00"]}, "UTC"),
-            "Mon 08:00-17:00, Sat 10:00-14:00 UTC",
+            describe(SPLIT, "Europe/Madrid"),
+            "Mon-Fri 08:00-12:00, 13:00-17:00 Europe/Madrid",
+        )
+
+    def test_the_break_between_spans_is_closed(self):
+        noonish = dt.datetime(2026, 8, 26, 12, 30, tzinfo=ZoneInfo("Europe/Madrid"))
+        after = dt.datetime(2026, 8, 26, 14, 0, tzinfo=ZoneInfo("Europe/Madrid"))
+        self.assertFalse(is_open_at(SPLIT, "Europe/Madrid", noonish))
+        self.assertTrue(is_open_at(SPLIT, "Europe/Madrid", after))
+
+    def test_a_bare_pair_is_accepted_and_normalised(self):
+        # Older payloads and hand-written imports send one span, not a list.
+        self.assertEqual(
+            validate_schedule({"0": ["08:00", "17:00"]}),
+            {"0": [["08:00", "17:00"]]},
+        )
+
+    def test_spans_are_sorted_and_overlaps_refused(self):
+        self.assertEqual(
+            validate_schedule({"0": [["13:00", "17:00"], ["08:00", "12:00"]]}),
+            {"0": [["08:00", "12:00"], ["13:00", "17:00"]]},
+        )
+        with self.assertRaises(ScheduleError):
+            validate_schedule({"0": [["08:00", "12:00"], ["11:00", "17:00"]]})
+
+    def test_days_with_different_hours_stay_separate(self):
+        # "; " between day groups, because "," already separates spans.
+        self.assertEqual(
+            describe({"0": [["08:00", "17:00"]], "5": [["10:00", "14:00"]]}, "UTC"),
+            "Mon 08:00-17:00; Sat 10:00-14:00 UTC",
         )
 
     def test_no_schedule_describes_as_nothing(self):
@@ -59,24 +89,24 @@ class ScheduleShapeTests(APITestCase):
         self.assertFalse(is_open_at(WEEKDAYS, "Europe/Copenhagen", sunday))
 
     def test_the_end_of_a_span_is_exclusive(self):
-        day = {"2": ["08:00", "17:00"]}  # Wednesday
+        day = {"2": [["08:00", "17:00"]]}  # Wednesday
         at_close = dt.datetime(2026, 8, 26, 17, 0, tzinfo=ZoneInfo("UTC"))
         self.assertFalse(is_open_at(day, "UTC", at_close))
 
     def test_bad_shapes_are_rejected(self):
         for bad in (
-            {"9": ["08:00", "17:00"]},      # not a weekday
-            {"0": ["17:00", "08:00"]},      # ends before it starts
-            {"0": ["8:00", "17:00"]},       # not HH:MM
-            {"0": ["08:00"]},               # missing the end
+            {"9": [["08:00", "17:00"]]},    # not a weekday
+            {"0": [["17:00", "08:00"]]},    # ends before it starts
+            {"0": [["8:00", "17:00"]]},     # not HH:MM
+            {"0": [["08:00"]]},             # missing the end
             "Mon-Fri",                      # not an object
         ):
             with self.assertRaises(ScheduleError):
                 validate_schedule(bad)
 
     def test_an_empty_day_is_dropped_rather_than_stored(self):
-        self.assertEqual(validate_schedule({"0": [], "1": ["08:00", "17:00"]}),
-                         {"1": ["08:00", "17:00"]})
+        self.assertEqual(validate_schedule({"0": [], "1": [["08:00", "17:00"]]}),
+                         {"1": [["08:00", "17:00"]]})
 
 
 class BusinessHoursAPITests(APITestCase):
@@ -115,7 +145,11 @@ class BusinessHoursAPITests(APITestCase):
     def test_a_broken_schedule_is_a_field_error_not_a_500(self):
         r = self.client.post(
             "/api/contacts/",
-            {"name": "Bad", "business_hours": {"0": ["17:00", "08:00"]}},
+            {
+                "name": "Bad",
+                "business_hours": {"0": [["17:00", "08:00"]]},
+                "business_hours_tz": "UTC",
+            },
             format="json",
         )
         self.assertEqual(r.status_code, 400, r.content)
@@ -125,6 +159,16 @@ class BusinessHoursAPITests(APITestCase):
         r = self.client.post(
             "/api/contacts/",
             {"name": "Bad tz", "business_hours_tz": "Mars/Olympus"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("business_hours_tz", r.json())
+
+    def test_hours_without_a_zone_are_refused(self):
+        # Half-set is worse than unset: it can never answer "open now".
+        r = self.client.post(
+            "/api/contacts/",
+            {"name": "Zoneless", "business_hours": WEEKDAYS},
             format="json",
         )
         self.assertEqual(r.status_code, 400, r.content)
@@ -140,7 +184,9 @@ class BusinessHoursAPITests(APITestCase):
                 "support_contract": "SUP-99",
                 "support_phone": "+45 1234",
                 "account_manager_id": str(contact.id),
-                "business_hours": {str(d): ["00:00", "24:00"] for d in range(7)},
+                "business_hours": {
+                    str(d): [["00:00", "24:00"]] for d in range(7)
+                },
                 "business_hours_tz": "UTC",
             },
             format="json",

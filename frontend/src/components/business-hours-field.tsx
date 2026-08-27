@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react"
+import { Clock, Plus, X } from "lucide-react"
 
 import type { BusinessHours } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -11,21 +11,22 @@ import { useTimezoneOptions } from "@/lib/use-timezones"
 // and what the API stores.
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-const WEEKDAYS: BusinessHours = Object.fromEntries(
-  [0, 1, 2, 3, 4].map((d) => [String(d), ["08:00", "17:00"] as [string, string]])
-)
-const ALWAYS: BusinessHours = Object.fromEntries(
-  [0, 1, 2, 3, 4, 5, 6].map((d) => [
-    String(d),
-    ["00:00", "24:00"] as [string, string],
-  ])
-)
+type Span = [string, string]
 
-/** When a party is reachable: a row per day plus the zone the times are in.
+const DEFAULT_SPAN: Span = ["08:00", "17:00"]
+
+const preset = (days: number[], spans: Span[]): BusinessHours =>
+  Object.fromEntries(days.map((d) => [String(d), spans.map((s) => [...s] as Span)]))
+
+const WEEKDAYS = preset([0, 1, 2, 3, 4], [DEFAULT_SPAN])
+const ALWAYS = preset([0, 1, 2, 3, 4, 5, 6], [["00:00", "24:00"]])
+
+/** When a party is reachable: spans per day plus the zone the times are in.
  *
- * One span per day on purpose - the field answers "can I call them", not
- * "roster them". The two presets cover the shapes almost every record has, so
- * the common case is one click rather than seven rows of typing. */
+ * A day holds a *list* of spans, because a break ("08:00-12:00, 13:00-17:00")
+ * is routine for support desks in much of the world. The second span is one
+ * click away rather than always on screen, so the common single-span day stays
+ * a single row. */
 export function BusinessHoursField({
   label,
   hint,
@@ -44,11 +45,18 @@ export function BusinessHoursField({
   error?: string
 }) {
   const timezones = useTimezoneOptions()
-  const setDay = (day: number, span: [string, string] | null) => {
+
+  const setSpans = (day: number, spans: Span[]) => {
     const next = { ...value }
-    if (span) next[String(day)] = span
+    if (spans.length) next[String(day)] = spans
     else delete next[String(day)]
     onChange(next)
+  }
+  const editSpan = (day: number, i: number, at: 0 | 1, time: string) => {
+    const spans = (value[String(day)] ?? []).map((s) => [...s] as Span)
+    if (!spans[i]) return
+    spans[i][at] = time
+    setSpans(day, spans)
   }
   const anySet = Object.keys(value).length > 0
 
@@ -87,42 +95,82 @@ export function BusinessHoursField({
           )}
         </div>
 
-        <div className="grid gap-1.5 rounded-md border border-border p-3">
+        <div className="grid gap-2 rounded-md border border-border p-3">
           {DAYS.map((name, day) => {
-            const span = value[String(day)]
+            const spans = value[String(day)] ?? []
+            const open = spans.length > 0
             return (
-              <div key={name} className="flex items-center gap-2">
+              <div key={name} className="flex items-start gap-2">
                 <Checkbox
                   id={`${label}-${name}`}
-                  checked={!!span}
+                  className="mt-1.5"
+                  checked={open}
                   onCheckedChange={(on) =>
-                    setDay(day, on ? ["08:00", "17:00"] : null)
+                    setSpans(day, on ? [[...DEFAULT_SPAN]] : [])
                   }
                 />
                 <label
                   htmlFor={`${label}-${name}`}
-                  className="w-9 shrink-0 cursor-pointer text-xs"
+                  className="mt-1 w-9 shrink-0 cursor-pointer text-xs"
                 >
                   {name}
                 </label>
-                {span ? (
-                  <>
-                    <input
-                      type="time"
-                      value={span[0]}
-                      onChange={(e) => setDay(day, [e.target.value, span[1]])}
-                      className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    />
-                    <span className="text-xs text-muted-foreground">to</span>
-                    <input
-                      type="time"
-                      value={span[1] === "24:00" ? "23:59" : span[1]}
-                      onChange={(e) => setDay(day, [span[0], e.target.value])}
-                      className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    />
-                  </>
+                {open ? (
+                  <div className="grid gap-1">
+                    {spans.map((span, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <input
+                          type="time"
+                          value={span[0]}
+                          onChange={(e) => editSpan(day, i, 0, e.target.value)}
+                          className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        />
+                        <span className="text-xs text-muted-foreground">to</span>
+                        <input
+                          type="time"
+                          // The API's end-of-day sentinel has no clock face.
+                          value={span[1] === "24:00" ? "23:59" : span[1]}
+                          onChange={(e) => editSpan(day, i, 1, e.target.value)}
+                          className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        />
+                        {spans.length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground"
+                            aria-label={`Remove this ${name} span`}
+                            onClick={() =>
+                              setSpans(
+                                day,
+                                spans.filter((_, x) => x !== i)
+                              )
+                            }
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground"
+                            aria-label={`Add a second ${name} span`}
+                            title="Add a break"
+                            onClick={() =>
+                              setSpans(day, [...spans, ["13:00", "17:00"]])
+                            }
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                  <span className="text-xs text-muted-foreground">Closed</span>
+                  <span className="mt-1 text-xs text-muted-foreground">
+                    Closed
+                  </span>
                 )}
               </div>
             )
@@ -131,7 +179,7 @@ export function BusinessHoursField({
 
         <FormCombobox
           label="Time zone"
-          hint="the zone these times are stated in"
+          hint="required once hours are set"
           value={tz || null}
           onChange={(v) => onTzChange(v ?? "")}
           options={timezones}

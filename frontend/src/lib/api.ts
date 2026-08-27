@@ -3045,8 +3045,10 @@ export interface ContactRoleOption {
 }
 
 /** A weekly opening schedule, keyed "0" (Mon) to "6" (Sun); a missing day is
- * closed. Shared by contacts (#66) and providers (#67). */
-export type BusinessHours = Record<string, [string, string]>
+ * closed. Each day holds a LIST of spans, so a schedule with a break
+ * ("08:00-12:00, 13:00-17:00") is representable. Shared by contacts (#66) and
+ * providers (#67). */
+export type BusinessHours = Record<string, [string, string][]>
 
 /** The read-only pair the API derives from a schedule. `open_now` is null when
  * no hours are recorded - "unknown" is not "closed". */

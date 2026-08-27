@@ -5237,6 +5237,23 @@ class BusinessHoursSerializerMixin(serializers.Serializer):
             ) from err
         return value
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Hours without a zone can never answer "are they open now" - the one
+        # question the field exists for. Refuse the half-set state instead of
+        # storing a schedule that reads as unknown forever.
+        hours = attrs.get(
+            "business_hours", getattr(self.instance, "business_hours", None)
+        )
+        tz = attrs.get(
+            "business_hours_tz", getattr(self.instance, "business_hours_tz", "")
+        )
+        if hours and not tz:
+            raise serializers.ValidationError(
+                {"business_hours_tz": "Set the time zone these hours are in."}
+            )
+        return attrs
+
 
 class ContactSerializer(
     BusinessHoursSerializerMixin, CustomFieldsSerializerMixin,
