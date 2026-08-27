@@ -6,6 +6,8 @@ import {
   type CheckStatus,
   type CustomField,
   type Device,
+  type Interface,
+  type Paginated,
   type FloorPlanLiveState,
   type FloorPlanTile,
   type FloorTileRackState,
@@ -22,6 +24,8 @@ import {
   useCustomFieldDefs,
 } from "@/components/custom-field-display"
 import { tileName, utilizationColor } from "@/components/floorplan/floor-canvas"
+import { FaceplateView } from "@/components/device-faceplate"
+import type { FaceplateSide } from "@/lib/faceplate-layout"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
@@ -69,6 +73,75 @@ export interface PopoverField {
   render: (ctx: PopoverCtx) => React.ReactNode | null
   /** Needs the linked object fetched. */
   needsLinked?: boolean
+  /** Render full-width under the rows instead of as a label/value pair, and
+   * widen the popover. For pictures - a faceplate has nothing to say in a
+   * 5.5rem label column. */
+  wide?: boolean
+}
+
+/** A device's front (or rear) panel, small enough to sit in the popover.
+ *
+ * Answers "what does this box look like" without leaving the floor plan (#102).
+ * The interfaces are fetched only when this field is configured AND the tile
+ * links a device, so a plan of plain tiles still costs nothing. */
+function TileFaceplate({
+  deviceId,
+  deviceTypeId,
+}: {
+  deviceId: string
+  deviceTypeId: string
+}) {
+  const [side, setSide] = useState<FaceplateSide>("front")
+  const ifaces = useQuery({
+    queryKey: ["device-interfaces", deviceId],
+    queryFn: () =>
+      api<Paginated<Interface>>(`/api/devices/${deviceId}/interfaces/`),
+    staleTime: 60_000,
+  })
+  const dt = useQuery({
+    queryKey: ["device-type-images", deviceTypeId],
+    queryFn: () =>
+      api<{ front_image?: string | null; rear_image?: string | null }>(
+        `/api/device-types/${deviceTypeId}/`
+      ),
+    staleTime: 5 * 60_000,
+  })
+  if (ifaces.isLoading)
+    return <p className="text-[11px] text-muted-foreground">Loading…</p>
+  // A rear side is only worth offering when there is something to show there.
+  const hasRear = !!dt.data?.rear_image
+  return (
+    <div className="grid gap-1">
+      <div className="overflow-hidden rounded-md border border-border">
+        <FaceplateView
+          deviceId={deviceId}
+          deviceTypeId={deviceTypeId}
+          interfaces={ifaces.data?.results ?? []}
+          side={side}
+          fit="container"
+        />
+      </div>
+      {hasRear && (
+        <span className="flex items-center gap-0.5 justify-self-end rounded-md border border-border p-0.5">
+          {(["front", "rear"] as const).map((sd) => (
+            <button
+              key={sd}
+              type="button"
+              className={
+                "rounded px-1.5 py-0.5 text-[10px] capitalize " +
+                (side === sd
+                  ? "bg-muted font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground")
+              }
+              onClick={() => setSide(sd)}
+            >
+              {sd}
+            </button>
+          ))}
+        </span>
+      )}
+    </div>
+  )
 }
 
 const rack = (live?: LiveTile): FloorTileRackState | null =>
@@ -296,6 +369,21 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     render: ({ linked }) =>
       linked?.tags?.length ? <TagList tags={linked.tags} /> : null,
   },
+  faceplate: {
+    label: "Faceplate",
+    needsLinked: true,
+    wide: true,
+    // Devices only: a rack tile links a rack, which has an elevation rather
+    // than a faceplate. Renders the type's photo when it has mapped ports,
+    // else the drawn panel - the same choice the device page makes.
+    render: ({ tile, linked }) =>
+      tile.linked?.kind === "device" && linked?.device_type?.id ? (
+        <TileFaceplate
+          deviceId={tile.linked.id}
+          deviceTypeId={linked.device_type.id}
+        />
+      ) : null,
+  },
   linked_numid: {
     label: "ID",
     needsLinked: true,
@@ -451,7 +539,12 @@ export function TilePopover({
 
   // Build the rows in configured order, dropping any field with nothing to say
   // and any key the registry doesn't know (stale config must never crash).
-  const rows: { key: string; label: string; node: React.ReactNode }[] = []
+  const rows: {
+    key: string
+    label: string
+    node: React.ReactNode
+    wide?: boolean
+  }[] = []
   if (ctx) {
     for (const key of fields) {
       if (key === "linked") {
@@ -463,9 +556,12 @@ export function TilePopover({
       if (!field) continue
       const node = field.render(ctx)
       if (node === null || node === undefined || node === "") continue
-      rows.push({ key, label: field.label, node })
+      rows.push({ key, label: field.label, node, wide: field.wide })
     }
   }
+  // A picture needs room the 5.5rem label column can't give it.
+  const wideRows = rows.filter((r) => r.wide)
+  const pairRows = rows.filter((r) => !r.wide)
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -479,7 +575,7 @@ export function TilePopover({
         side="top"
         align="start"
         sideOffset={12}
-        className="w-64 p-3"
+        className={wideRows.length ? "w-80 p-3" : "w-64 p-3"}
         // Unpinned it's a preview: never steal focus, and let the pointer through
         // so moving to the next tile doesn't fight the popover.
         onOpenAutoFocus={(e) => {
@@ -505,7 +601,7 @@ export function TilePopover({
                 "Tile"}
             </p>
             <dl className="mt-2 grid gap-1 text-[13px]">
-              {rows.map((r) => (
+              {pairRows.map((r) => (
                 <div key={r.key} className="grid grid-cols-[5.5rem_1fr] gap-2">
                   <dt className="text-[11px] text-muted-foreground">
                     {r.label}
@@ -514,6 +610,14 @@ export function TilePopover({
                 </div>
               ))}
             </dl>
+            {wideRows.map((r) => (
+              <div key={r.key} className="mt-2 grid gap-1">
+                <span className="text-[11px] text-muted-foreground">
+                  {r.label}
+                </span>
+                {r.node}
+              </div>
+            ))}
             {loading && (
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Loading object details…

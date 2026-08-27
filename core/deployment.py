@@ -473,6 +473,9 @@ FLOORPLAN_POPOVER_FIELDS = [
     "linked_primary_ip",
     "linked_serial",
     "linked_asset_tag",
+    # A picture of the box, for device-linked tiles (#102). Off by default:
+    # it fetches the device's ports, and the default popover is fetch-free.
+    "faceplate",
 ]
 
 # Custom fields ride a generic `cf_<key>` convention rather than being enumerated

@@ -576,6 +576,20 @@ and in what order. A field with nothing to say for a given tile is skipped
 automatically - no rack utilization on a wall tile - so turning one on is safe
 everywhere.
 
+### Showing the device's panel {#faceplate-field}
+
+Tick **Faceplate** to draw a device-linked tile's front panel in its popover -
+what the box actually looks like, without opening its page. It uses the type's
+photo when that has mapped ports and the drawn panel otherwise, the same choice
+the device page makes, and offers a **rear** toggle when the type has a rear
+image.
+
+It applies to tiles linked to a **device**; a rack tile has an elevation rather
+than a faceplate, so the row is skipped there. Unlike the other rows, this one
+fetches the device's ports when the popover opens - which is why it is **off by
+default**: the standard popover answers entirely from data the plan has already
+loaded.
+
 The list is the **deployment default**. A tenant that overrides its UI policy
 (**Settings → This tenant → General**) carries its own list, resolved the same
 way as the optional device fields. Per-tile-type lists are supported too: a tile
