@@ -18,6 +18,17 @@ const DEFAULT_SPAN: Span = ["08:00", "17:00"]
 const preset = (days: number[], spans: Span[]): BusinessHours =>
   Object.fromEntries(days.map((d) => [String(d), spans.map((s) => [...s] as Span)]))
 
+/** The spans for one day, tolerating the legacy flat pair (`["08:00","17:00"]`
+ * instead of `[["08:00","17:00"]]`). The API still accepts that shape on write,
+ * so a row authored that way must render as a span here rather than as an
+ * empty clock - reading `span[0]` on a flat pair yields a whole string, which
+ * `<input type="time">` shows as "--:--". */
+function spansOf(raw: unknown): Span[] {
+  if (!Array.isArray(raw) || raw.length === 0) return []
+  if (typeof raw[0] === "string") return [raw as Span]
+  return raw as Span[]
+}
+
 const WEEKDAYS = preset([0, 1, 2, 3, 4], [DEFAULT_SPAN])
 const ALWAYS = preset([0, 1, 2, 3, 4, 5, 6], [["00:00", "24:00"]])
 
@@ -53,7 +64,7 @@ export function BusinessHoursField({
     onChange(next)
   }
   const editSpan = (day: number, i: number, at: 0 | 1, time: string) => {
-    const spans = (value[String(day)] ?? []).map((s) => [...s] as Span)
+    const spans = spansOf(value[String(day)]).map((s) => [...s] as Span)
     if (!spans[i]) return
     spans[i][at] = time
     setSpans(day, spans)
@@ -97,7 +108,7 @@ export function BusinessHoursField({
 
         <div className="grid gap-2 rounded-md border border-border p-3">
           {DAYS.map((name, day) => {
-            const spans = value[String(day)] ?? []
+            const spans = spansOf(value[String(day)])
             const open = spans.length > 0
             return (
               <div key={name} className="flex items-start gap-2">
