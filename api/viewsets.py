@@ -2488,6 +2488,45 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             if run.finished_at else None,
         }
 
+    @action(detail=True, methods=["post"], url_path="sync-devices")
+    def sync_devices(self, request, pk=None):
+        """Push this type's component templates at every device built from it.
+
+        ``apply=false`` (default) → what would change, per device, without
+        touching anything. ``apply=true`` → queue a background run and return
+        it; poll the existing ``import-runs/<id>`` endpoint for progress.
+
+        ``remove_extra=true`` also deletes components the type no longer
+        defines - destructive (it cascades cabling and IP links), which is why
+        the preview counts the interfaces that carry addresses.
+        """
+        from auth_api import rbac
+
+        from .devicetype_sync_tasks import enqueue_component_sync, preview_sync
+
+        dt = self.get_object()
+        tenant = self._tenant_or_403()
+        # Changing a type's fleet is a device-level act, so it takes the device
+        # verb; per-device grants are re-checked again inside the job.
+        if not rbac.has_action(request.user, tenant, "device", "change"):
+            return Response(
+                {"detail": "device.change required."},
+                status=drf_status.HTTP_403_FORBIDDEN,
+            )
+        if not bool(request.data.get("apply")):
+            return Response(
+                {"applied": False, **preview_sync(dt, request.user, tenant)}
+            )
+        run = enqueue_component_sync(
+            dt,
+            remove_extra=bool(request.data.get("remove_extra")),
+            user=request.user,
+        )
+        return Response(
+            {"applied": True, "run": self._run_dict(run)},
+            status=drf_status.HTTP_202_ACCEPTED,
+        )
+
     @action(detail=False, methods=["post"], url_path="import-folder")
     def import_folder(self, request):
         """Start a BACKGROUND import of a whole devicetype-library folder - a

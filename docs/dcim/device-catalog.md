@@ -330,6 +330,32 @@ as ghosts on the render.
 
 Sync is name-based (it never renames or retypes existing components) and needs
 `device.change`.
+
+### Sync the whole fleet at once {#sync-all-devices}
+
+When a template change affects every device of a model, **Sync devices** on the
+*device type* page does the same job across the fleet instead of one device at
+a time. It appears once the type has devices and needs `device.change`.
+
+It previews first, like the per-device flow: how many devices would change, and
+a per-device count of what would be added or is extra. **Also remove components
+this type no longer defines** is the same destructive option, and the dialog
+names how many of those extras carry IP addresses before you tick it.
+
+Pressing **Sync** shows a confirmation naming how many devices are about to
+change - and, when removal is ticked, that components and their cabling are
+about to be deleted and cannot be recovered. Confirming queues a background
+run - a type with hundreds of devices is not
+something to hold a browser request open for - and the dialog follows its
+progress. When it finishes it reports how many devices changed, how many were
+**skipped** (your grants don't cover them), and any that failed.
+
+!!! note "Permissions are re-checked per device"
+    Being allowed to sync the type is not the same as being allowed to change
+    every device built from it - a site-scoped grant may cover some and not
+    others. The job re-checks each device as it goes and skips the ones you
+    can't change, rather than trusting the check made when you pressed the
+    button.
 - Per the zero-pre-filled-data rule, no templates ship - but the type/connector
   dropdowns follow the standard taxonomies, so imported
   device-type definitions carry over.

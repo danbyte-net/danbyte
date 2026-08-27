@@ -3994,6 +3994,7 @@ class DeviceTypeImportRun(TimestampedModel):
     KIND_CHOICES = [
         ("library", "Library import"),
         ("image_reimport", "Image reimport"),
+        ("component_sync", "Component sync"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -4005,9 +4006,11 @@ class DeviceTypeImportRun(TimestampedModel):
     )
     #: library: the github.com /tree/ folder URL being imported.
     #: image_reimport: the normalised elevation-images base URL.
-    source_url = models.CharField(max_length=512)
+    #: component_sync: blank - it pushes a local type at its own devices.
+    source_url = models.CharField(max_length=512, blank=True, default="")
     stack_positions = models.BooleanField(default=False)
     #: Kind-specific knobs. image_reimport: {"overwrite": bool, "dry_run": bool}.
+    #: component_sync: {"device_type": "<uuid>", "remove_extra": bool}.
     options = models.JSONField(default=dict, blank=True)
     status = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default="queued"

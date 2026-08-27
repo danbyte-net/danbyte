@@ -18,6 +18,7 @@ import type { SectionKind } from "@/components/device-type-components-pane"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { ExportBundleButton } from "@/components/device-bundle"
+import { SyncDevicesButton } from "@/components/device-type-sync-dialog"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import {
   DetailHero,
@@ -113,6 +114,15 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         <>
           {/* Everything that makes this model work, as one shareable file. */}
           <ExportBundleButton deviceTypeId={d.id} name={d.name} />
+          {/* Push this model's templates at the fleet built from it (#103),
+              instead of opening each device's own sync. */}
+          {canDo("device", "change") && (
+            <SyncDevicesButton
+              deviceTypeId={d.id}
+              name={d.name}
+              deviceCount={d.device_count}
+            />
+          )}
           {canDo("devicetype", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/device-types/$id/edit" params={{ id: d.id }}>
