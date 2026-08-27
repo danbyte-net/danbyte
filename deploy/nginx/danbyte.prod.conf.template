@@ -88,6 +88,10 @@ server {
     # ── Documentation (Zensical, :8001).
     location /docs/ {
         proxy_pass http://127.0.0.1:8001/;
+        # The upstream doesn't know it's mounted under /docs, so its own
+        # redirects (notably the add-a-trailing-slash one) come back without
+        # the prefix and land on the SPA as a 404 (#123). Put it back.
+        proxy_redirect / /docs/;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
