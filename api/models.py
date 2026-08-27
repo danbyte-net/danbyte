@@ -4983,6 +4983,17 @@ class Contact(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     email = models.EmailField(blank=True, default="")
     address = models.TextField(blank=True, default="")
     link = models.URLField(blank=True, default="")
+    # When this contact is actually reachable (#66) - see api.business_hours
+    # for the shape. Empty means "unknown", which reads differently from
+    # "closed" when you are deciding who to escalate to at 02:00.
+    business_hours = models.JSONField(
+        default=dict, blank=True,
+        help_text="Weekly working hours, keyed 0 (Mon) to 6 (Sun).",
+    )
+    business_hours_tz = models.CharField(
+        max_length=63, blank=True, default="",
+        help_text="IANA zone the working hours are stated in.",
+    )
     comments = models.TextField(blank=True, default="")
 
     class Meta:
@@ -5059,6 +5070,34 @@ class Provider(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     portal_url = models.URLField(blank=True, default="")
     noc_email = models.EmailField(blank=True, default="")
     noc_phone = models.CharField(max_length=64, blank=True, default="")
+    # What you need in hand to open a ticket (#67). `account` above is the
+    # billing relationship; this is the support one - with the same provider
+    # they are routinely different references.
+    support_contract = models.CharField(
+        max_length=128, blank=True, default="",
+        help_text="Contract/reference quoted when opening a support case.",
+    )
+    support_phone = models.CharField(max_length=64, blank=True, default="")
+    # Same shape as Contact.business_hours - see api.business_hours.
+    business_hours = models.JSONField(
+        default=dict, blank=True,
+        help_text="Weekly support hours, keyed 0 (Mon) to 6 (Sun).",
+    )
+    business_hours_tz = models.CharField(
+        max_length=63, blank=True, default="",
+        help_text="IANA zone the support hours are stated in.",
+    )
+    # A real Contact where one exists, so the person's own phone, email and
+    # hours come along; the free-text name is the fallback for a vendor rep
+    # nobody has made a record for.
+    account_manager = models.ForeignKey(
+        "Contact", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="account_manager_for",
+    )
+    account_manager_name = models.CharField(
+        max_length=128, blank=True, default="",
+        help_text="Used when the account manager has no Contact record.",
+    )
     comments = models.TextField(blank=True, default="")
 
     class Meta:

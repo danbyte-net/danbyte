@@ -4,11 +4,13 @@ import { toast } from "sonner"
 
 import {
   api,
+  type BusinessHours,
   type Contact,
   type ContactGroupOption,
   type ContactWritePayload,
   type Paginated,
 } from "@/lib/api"
+import { BusinessHoursField } from "@/components/business-hours-field"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
   FormColumn,
@@ -43,6 +45,10 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
   const [link, setLink] = useState(contact?.link ?? "")
   const [address, setAddress] = useState(contact?.address ?? "")
   const [comments, setComments] = useState(contact?.comments ?? "")
+  const [hours, setHours] = useState<BusinessHours>(
+    contact?.business_hours ?? {}
+  )
+  const [hoursTz, setHoursTz] = useState(contact?.business_hours_tz ?? "")
   const [groupId, setGroupId] = useState<string | null>(
     contact?.group?.id ?? null
   )
@@ -62,6 +68,8 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
     setLink(contact.link)
     setAddress(contact.address)
     setComments(contact.comments)
+    setHours(contact.business_hours ?? {})
+    setHoursTz(contact.business_hours_tz ?? "")
     setGroupId(contact.group?.id ?? null)
     setTagIds(contact.tags.map((t) => t.id))
     setCustomFields(contact.custom_fields ?? {})
@@ -85,6 +93,8 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
         link: link.trim(),
         address: address.trim(),
         comments: comments.trim(),
+        business_hours: hours,
+        business_hours_tz: hoursTz,
         group_id: groupId,
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -212,6 +222,18 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
               value={link}
               onChange={setLink}
               error={fieldErrors.link}
+            />
+          </FormSection>
+
+          <FormSection title="Working hours" card>
+            <BusinessHoursField
+              label="Reachable"
+              hint="optional"
+              value={hours}
+              tz={hoursTz}
+              onChange={setHours}
+              onTzChange={setHoursTz}
+              error={fieldErrors.business_hours ?? fieldErrors.business_hours_tz}
             />
           </FormSection>
 

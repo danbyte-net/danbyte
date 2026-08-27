@@ -37,7 +37,28 @@ blocks cycles - and NetBox contact-group trees import losslessly.
 2. Give it a **name** (must be unique).
 3. Optionally fill in the **title**, **phone**, **email**, **address**, and a
    **link** (such as a profile or ticket queue), and put it in a **group**.
-4. Save.
+4. Optionally set **working hours** - see below.
+5. Save.
+
+## Working hours
+
+A contact can record when they are actually reachable, so at 02:00 you can see
+who is on shift instead of guessing. Tick the days they work, set a start and
+end time on each, and pick the **time zone** those times are stated in - that
+last part is what makes the hours meaningful for a vendor in another country.
+
+Two presets cover the usual shapes: **Mon-Fri 08-17** and **24/7**. One span
+per day; split shifts aren't modelled, because the field answers "can I call
+them", not "roster them".
+
+The contact's page then shows the hours as one line - *Mon-Fri 08:00-17:00
+Europe/Copenhagen* - with an **Open now** or **Outside hours** badge beside it.
+
+!!! note "No hours is not the same as closed"
+    A contact with no hours recorded shows neither badge. "We don't know when
+    they work" and "they are off shift" lead to different decisions during an
+    incident, so Danbyte never guesses one from the other. The API says the
+    same thing: `open_now` is `null`, not `false`.
 
 ## Attach a contact to an object
 

@@ -3044,7 +3044,20 @@ export interface ContactRoleOption {
   slug: string
 }
 
-export interface Contact {
+/** A weekly opening schedule, keyed "0" (Mon) to "6" (Sun); a missing day is
+ * closed. Shared by contacts (#66) and providers (#67). */
+export type BusinessHours = Record<string, [string, string]>
+
+/** The read-only pair the API derives from a schedule. `open_now` is null when
+ * no hours are recorded - "unknown" is not "closed". */
+export interface BusinessHoursReads {
+  business_hours: BusinessHours
+  business_hours_tz: string
+  business_hours_display: string
+  open_now: boolean | null
+}
+
+export interface Contact extends BusinessHoursReads {
   id: string
   numid: number | null
   name: string
@@ -3079,6 +3092,8 @@ export interface ContactWritePayload {
   link?: string
   comments?: string
   group_id?: string | null
+  business_hours?: BusinessHours
+  business_hours_tz?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
 }
@@ -5733,7 +5748,7 @@ export interface ProviderOption {
   slug: string
 }
 
-export interface Provider {
+export interface Provider extends BusinessHoursReads {
   id: string
   numid: number | null
   name: string
@@ -5742,6 +5757,10 @@ export interface Provider {
   portal_url: string
   noc_email: string
   noc_phone: string
+  support_contract: string
+  support_phone: string
+  account_manager: ContactMini | null
+  account_manager_name: string
   comments: string
   circuit_count: number
   tags: Tag[]
@@ -5757,6 +5776,12 @@ export interface ProviderWritePayload {
   portal_url?: string
   noc_email?: string
   noc_phone?: string
+  support_contract?: string
+  support_phone?: string
+  account_manager_id?: string | null
+  account_manager_name?: string
+  business_hours?: BusinessHours
+  business_hours_tz?: string
   comments?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>

@@ -5184,7 +5184,64 @@ class ContactMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "title", "email", "phone"]
 
 
-class ContactSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class BusinessHoursSerializerMixin(serializers.Serializer):
+    """Weekly opening hours on a record, plus the two derived reads that make
+    the field useful in the moment: a one-line summary and whether they are
+    open right now (#66, #67).
+
+    ``open_now`` is deliberately nullable - null means "no hours recorded", and
+    during an incident that is a different answer from "closed".
+    """
+
+    business_hours_display = serializers.SerializerMethodField()
+    open_now = serializers.SerializerMethodField()
+
+    BUSINESS_HOURS_FIELDS = [
+        "business_hours", "business_hours_tz", "business_hours_display",
+        "open_now",
+    ]
+
+    def get_business_hours_display(self, obj) -> str:
+        from .business_hours import describe
+
+        return describe(obj.business_hours, obj.business_hours_tz)
+
+    @extend_schema_field(serializers.BooleanField(allow_null=True))
+    def get_open_now(self, obj):
+        from django.utils import timezone
+
+        from .business_hours import is_open_at
+
+        return is_open_at(
+            obj.business_hours, obj.business_hours_tz, timezone.now()
+        )
+
+    def validate_business_hours(self, value):
+        from .business_hours import ScheduleError, validate_schedule
+
+        try:
+            return validate_schedule(value)
+        except ScheduleError as err:
+            raise serializers.ValidationError(str(err)) from err
+
+    def validate_business_hours_tz(self, value):
+        if not value:
+            return value
+        from zoneinfo import ZoneInfo
+
+        try:
+            ZoneInfo(value)
+        except Exception as err:
+            raise serializers.ValidationError(
+                "Unknown time zone - use an IANA name like 'Europe/Copenhagen'."
+            ) from err
+        return value
+
+
+class ContactSerializer(
+    BusinessHoursSerializerMixin, CustomFieldsSerializerMixin,
+    TaggableSerializerMixin, NumIdModelSerializer,
+):
     cf_model = "contact"
 
     group = ContactGroupMiniSerializer(read_only=True)
@@ -5207,8 +5264,10 @@ class ContactSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Nu
         model = Contact
         fields = ["id", "name", "title", "phone", "email", "address", "link",
                   "comments", "group", "group_id", "assignment_count",
+                  *BusinessHoursSerializerMixin.BUSINESS_HOURS_FIELDS,
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "assignment_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "assignment_count", "business_hours_display",
+                            "open_now", "created_at", "updated_at"]
 
 
 class ContactAssignmentSerializer(NumIdModelSerializer):
@@ -5255,7 +5314,8 @@ class ProviderMiniSerializer(NumIdModelSerializer):
 
 
 class ProviderSerializer(
-    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+    BusinessHoursSerializerMixin, CustomFieldsSerializerMixin,
+    TaggableSerializerMixin, NumIdModelSerializer,
 ):
     cf_model = "provider"
     slug = serializers.SlugField(required=False, allow_blank=True)
@@ -5265,6 +5325,11 @@ class ProviderSerializer(
         write_only=True, required=False, many=True,
     )
     circuit_count = serializers.SerializerMethodField()
+    account_manager = ContactMiniSerializer(read_only=True)
+    account_manager_id = TenantScopedPrimaryKeyRelatedField(
+        source="account_manager", queryset=Contact.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     def get_circuit_count(self, obj) -> int:
         v = getattr(obj, "circuit_count_annotated", None)
@@ -5273,9 +5338,14 @@ class ProviderSerializer(
     class Meta:
         model = Provider
         fields = ["id", "name", "slug", "account", "portal_url", "noc_email",
-                  "noc_phone", "comments", "circuit_count", "tags", "tag_ids",
+                  "noc_phone", "support_contract", "support_phone",
+                  "account_manager", "account_manager_id",
+                  "account_manager_name",
+                  *BusinessHoursSerializerMixin.BUSINESS_HOURS_FIELDS,
+                  "comments", "circuit_count", "tags", "tag_ids",
                   "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "circuit_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "circuit_count", "business_hours_display",
+                            "open_now", "created_at", "updated_at"]
 
 
 class CircuitTypeMiniSerializer(NumIdModelSerializer):

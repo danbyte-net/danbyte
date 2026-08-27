@@ -19,6 +19,7 @@ import { DataTable } from "@/components/data-table"
 import { buildContactAssignmentColumns } from "@/components/columns/contact-assignment-columns"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, mono, dash, type KvRow } from "@/components/kv-card"
+import { BusinessHoursSummary } from "@/components/business-hours-field"
 import { QueryError } from "@/components/query-error"
 import { ContactDeleteDialog } from "@/components/contact-delete-dialog"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -92,6 +93,15 @@ function Body({ contact: c }: { contact: Contact }) {
         <span className="whitespace-pre-line">{c.address}</span>
       ) : (
         dash
+      ),
+    },
+    {
+      label: "Working hours",
+      value: (
+        <BusinessHoursSummary
+          display={c.business_hours_display}
+          openNow={c.open_now}
+        />
       ),
     },
     {

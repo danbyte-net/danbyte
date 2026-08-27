@@ -19,7 +19,28 @@ A provider is the company you lease a circuit from.
 2. Give it a **name**.
 3. Optionally fill in the **account number**, **portal URL**, and **NOC email /
    phone** so support details live right next to the circuits.
-4. Save.
+4. Optionally fill in the **support** details - see below.
+5. Save.
+
+### Provider support details
+
+What you need in your hand when you open a ticket, kept on the provider rather
+than in somebody's mailbox:
+
+- **Support contract** - the reference you quote when filing a case. Separate
+  from the account number above: with the same provider these are routinely
+  two different references.
+- **Support phone** - the line you call, when it differs from the NOC number.
+- **Support hours** - a weekly schedule plus the time zone it is stated in,
+  the same control [contacts use](contacts.md#working-hours). The provider page
+  shows it as one line with an **Open now** / **Outside hours** badge, so you
+  can see whether it's worth calling before you dial.
+- **Account manager** - pick an existing **contact** where one exists, so their
+  own phone, email and hours come along; type a **name** instead for a vendor
+  rep nobody has made a record for.
+
+These appear in their own **Support** card on the provider page, rather than
+mixed in with the billing fields.
 
 ## Add a circuit type
 

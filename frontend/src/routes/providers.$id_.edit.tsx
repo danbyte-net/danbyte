@@ -24,6 +24,7 @@ function EditProviderPage() {
         { label: "Edit" },
       ]}
       title="Edit provider"
+      wide
     >
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.isError && <QueryError error={q.error} />}

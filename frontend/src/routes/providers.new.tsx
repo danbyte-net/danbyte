@@ -12,6 +12,7 @@ function NewProviderPage() {
     <EditPageShell
       crumbs={[{ label: "Providers", to: "/providers" }, { label: "Add" }]}
       title="Add provider"
+      wide
       subtitle="A telecom/transit provider that supplies circuits."
     >
       <ProviderForm
