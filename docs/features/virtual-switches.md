@@ -77,6 +77,14 @@ becomes a VLAN in a VLAN group named after the source, and a VM interface's
 access VLAN is **blank-filled** from it - never overwriting a VLAN you set
 yourself.
 
+Prefer your own VLANs instead: tick **Match existing VLANs by ID** on the
+source and a tagged network first looks for a VLAN you already have with that
+VLAN ID - ungrouped first, then by group name - and links to it, bringing the
+prefixes on it along through the prefix's own VLAN field. Only when nothing
+matches does the sync mint a VLAN in the source's group, and only those minted
+rows are ever pruned. The match happens when a network is first seen: toggling
+it on later doesn't re-point networks that are already linked.
+
 ## Network topology
 
 **Virtualization → Network topology** draws the whole picture in one diagram:

@@ -262,7 +262,7 @@ class VirtualizationSourceSerializer(
         fields = ["id", "name", "kind", "kind_display", "host", "port",
                   "verify_ssl", "token_id", "secret", "username", "password",
                   "credentials_set", "sync_mode", "poll_interval_minutes",
-                  "sync_disks", "sync_networks", "sync_hosts",
+                  "sync_disks", "sync_networks", "match_existing_vlans", "sync_hosts",
                   "sync_host_hardware", "sync_platforms",
                   "sync_allowed_networks",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,

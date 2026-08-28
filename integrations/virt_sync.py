@@ -264,15 +264,41 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
         vswitch.kind = kind
         vswitch.save(update_fields=["kind"])
     vlan = None
+    made_vlan = False
     if tag is not None:
-        grp = _network_group(source, c)
-        vlan, made_vlan = VLAN.objects.get_or_create(
-            tenant=source.tenant, group=grp, vlan_id=tag,
-            defaults={"name": name or f"{bridge} VLAN {tag}"},
-        )
-        if made_vlan:
-            logger.info("created VLAN %s (%s) in group %r",
-                        tag, vlan.name, grp.name)
+        # Opt-in (#116): the operator's own VLAN with this VID, before minting
+        # a duplicate in the per-source group. Ungrouped first (the tenant-wide
+        # constraint guarantees at most one), then any non-virt group - by
+        # group name, so several matches resolve the same way every sync.
+        if source.match_existing_vlans:
+            vlan = VLAN.objects.filter(
+                tenant=source.tenant, vlan_id=tag, group__isnull=True
+            ).first()
+            if vlan is None:
+                grouped = list(
+                    VLAN.objects.filter(tenant=source.tenant, vlan_id=tag)
+                    .exclude(group__slug__startswith="virt-")
+                    .select_related("group")
+                    .order_by("group__name")[:2]
+                )
+                if len(grouped) > 1:
+                    logger.info(
+                        "VID %s exists in several groups; matching %r",
+                        tag, grouped[0].group.name,
+                    )
+                vlan = grouped[0] if grouped else None
+            if vlan is not None:
+                logger.info("matched existing VLAN %s (%s) for %s",
+                            tag, vlan.name, bridge)
+        if vlan is None:
+            grp = _network_group(source, c)
+            vlan, made_vlan = VLAN.objects.get_or_create(
+                tenant=source.tenant, group=grp, vlan_id=tag,
+                defaults={"name": name or f"{bridge} VLAN {tag}"},
+            )
+            if made_vlan:
+                logger.info("created VLAN %s (%s) in group %r",
+                            tag, vlan.name, grp.name)
     ext_key = f"{bridge}:{tag}" if tag is not None else bridge
     vn, made_net = VirtNetwork.objects.get_or_create(
         source=source, ext_key=ext_key,
@@ -288,7 +314,9 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
         changed.append("vswitch")
     if vn.vlan_id is None and vlan is not None:
         vn.vlan = vlan
-        vn.created_vlan = True
+        # Only when the sync minted the row: a matched operator VLAN must
+        # never be marked sync-created, or pruning could take it.
+        vn.created_vlan = made_vlan
         changed += ["vlan", "created_vlan"]
     vn.save(update_fields=changed)
     # The direct NIC-to-network statement. The VM page renders from this, not

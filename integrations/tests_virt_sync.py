@@ -297,6 +297,65 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(iface.vlan, vlan)
         self.assertEqual(iface.mode, "access")
 
+    def test_match_existing_vlans_links_the_operators_vlan(self):
+        """#116: with the toggle on, a tagged network resolves to the tenant's
+        own VLAN with that VID - and through Prefix.vlan, its prefixes -
+        instead of minting a duplicate in the per-source group."""
+        from integrations.models import VirtNetwork
+
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="corp-10"
+        )
+        self.prefix.vlan = mine
+        self.prefix.save(update_fields=["vlan"])
+        self.source.sync_networks = True
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["sync_networks", "match_existing_vlans"])
+        self.sync()
+
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        self.assertEqual(vn.vlan, mine)
+        # Never marked sync-created: pruning must not take an operator VLAN.
+        self.assertFalse(vn.created_vlan)
+        # No duplicate row in the source's own group.
+        self.assertEqual(VLAN.objects.filter(vlan_id=10).count(), 1)
+        # The NIC lands on the operator VLAN, whose prefixes follow via the
+        # existing Prefix.vlan FK.
+        iface = VMInterface.objects.get(vm__name="router-vm", name="net0")
+        self.assertEqual(iface.vlan, mine)
+        self.assertIn(self.prefix, mine.prefixes.all())
+
+    def test_match_existing_vlans_off_keeps_minting(self):
+        # Flag off: shipped behavior unchanged - a new VLAN in the virt group
+        # even though VID 10 exists ungrouped.
+        VLAN.objects.create(tenant=self.tenant, vlan_id=10, name="corp-10")
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        self.assertEqual(VLAN.objects.filter(vlan_id=10).count(), 2)
+
+    def test_match_prefers_ungrouped_then_group_name(self):
+        from api.models import VLANGroup
+
+        g_a = VLANGroup.objects.create(tenant=self.tenant, name="Alpha", slug="alpha")
+        g_b = VLANGroup.objects.create(tenant=self.tenant, name="Beta", slug="beta")
+        in_b = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-beta", group=g_b
+        )
+        in_a = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-alpha", group=g_a
+        )
+        self.source.sync_networks = True
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["sync_networks", "match_existing_vlans"])
+        self.sync()
+        from integrations.models import VirtNetwork
+
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        # No ungrouped VID 10 → the alphabetically-first group wins, every sync.
+        self.assertEqual(vn.vlan, in_a)
+        self.assertNotEqual(vn.vlan, in_b)
+
     def test_networks_off_by_default(self):
         self.sync()  # source.sync_networks defaults False
         self.assertEqual(VirtualSwitch.objects.count(), 0)

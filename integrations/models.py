@@ -502,6 +502,10 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     sync_allowed_networks = models.JSONField(default=list, blank=True)
     #: Virtual switches + networks (port-groups/bridges → VLANs).
     sync_networks = models.BooleanField(default=False)
+    # Opt-in (#116): resolve a tagged network's VID against the tenant's own
+    # VLANs before minting one in the per-source group - so the network (and,
+    # through Prefix.vlan, its prefixes) lands on the operator's VLAN.
+    match_existing_vlans = models.BooleanField(default=False)
     #: Map the guest OS onto a Platform. Off by default: it mints rows in a
     #: catalog the operator curates, and a large estate makes a lot of them.
     sync_platforms = models.BooleanField(default=False)
