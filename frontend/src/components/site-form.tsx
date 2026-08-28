@@ -50,6 +50,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { useMe } from "@/lib/use-me"
 
 export interface SiteFormProps {
   site?: Site
@@ -64,6 +65,7 @@ const GATEWAY_POLICIES: { value: SiteGatewayPolicy; label: string }[] = [
 ]
 
 export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
+  const { canDo } = useMe()
   const isEdit = !!site
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
@@ -399,12 +401,20 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
 
           {site?.id && (
             <FormSection title="Monitoring" card>
-              <MonitoringEngineField scope="site" objectId={site.id} />
+              <MonitoringEngineField
+                scope="site"
+                objectId={site.id}
+                disabled={!canDo("site", "change")}
+              />
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
                   SNMP credentials
                 </span>
-                <SnmpBindingControl scope="site" objectId={site.id} canEdit />
+                <SnmpBindingControl
+                  scope="site"
+                  objectId={site.id}
+                  canEdit={canDo("site", "change")}
+                />
               </div>
             </FormSection>
           )}

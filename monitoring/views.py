@@ -2504,14 +2504,29 @@ def _binding_target(tenant, scope, object_id):
 
 
 def _can_access_binding_target(user, tenant, scope, target, action) -> bool:
+    """Row gate for one binding target - the target's own vocabulary OR devices.
+
+    A site/location binding is reachable two ways: it is an edit of that site
+    or location (the site form renders the control next to the site's own
+    fields), and it is an SNMP default for every device under it (a
+    device-scoped operator's concern). Either grant suffices. It used to
+    demand an UNCONSTRAINED device grant alone, so a user whose site edits all
+    worked could have exactly the SNMP half refused, with the select snapping
+    back and nothing else visibly wrong (#125). Role/type bindings affect a
+    fleet with no site of their own, so those stay device-gated.
+    """
     if user.is_superuser:
         return True
     if scope == SnmpProfileBinding.SCOPE_DEVICE:
         return rbac.can_act_on(user, tenant, "device", action, target)
     if scope == SnmpProfileBinding.SCOPE_SITE:
-        return _device_grant_covers_site(user, tenant, action, target.pk)
+        return rbac.can_act_on(
+            user, tenant, "site", action, target
+        ) or _device_grant_covers_site(user, tenant, action, target.pk)
     if scope == SnmpProfileBinding.SCOPE_LOCATION:
-        return _device_grant_covers_site(user, tenant, action, target.site_id)
+        return rbac.can_act_on(
+            user, tenant, "location", action, target
+        ) or _device_grant_covers_site(user, tenant, action, target.site_id)
     return _device_grant_covers_site(user, tenant, action, None)
 
 
@@ -2565,9 +2580,18 @@ def snmp_binding_view(request, scope, object_id):
     if scope not in dict(SnmpProfileBinding.SCOPE_CHOICES):
         return Response({"detail": "Invalid scope."}, status=400)
     action = "change" if request.method in ("PUT", "DELETE") else "view"
-    if not rbac.has_action(request.user, tenant, "device", action):
+    # Site/location bindings accept the scope's own grant as well as a device
+    # grant - see _can_access_binding_target for why.
+    slugs = {
+        SnmpProfileBinding.SCOPE_SITE: ("site", "device"),
+        SnmpProfileBinding.SCOPE_LOCATION: ("location", "device"),
+    }.get(scope, ("device",))
+    if not any(
+        rbac.has_action(request.user, tenant, slug, action) for slug in slugs
+    ):
         return Response(
-            {"detail": f"You do not have permission to {action} devices."}, status=403
+            {"detail": f"You do not have permission to {action} {slugs[0]}s."},
+            status=403,
         )
     target = _binding_target(tenant, scope, object_id)
     if target is None or not _can_access_binding_target(

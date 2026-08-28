@@ -15,9 +15,13 @@ const INHERIT = "__inherit__"
 export function MonitoringEngineField({
   scope,
   objectId,
+  disabled = false,
 }: {
   scope: "site" | "location"
   objectId: string
+  /** No change grant: render read-only instead of a select whose value snaps
+   * back after a refused PUT - which reads as "not saved" (#125). */
+  disabled?: boolean
 }) {
   const qc = useQueryClient()
   const bindingKey = ["engine-binding", scope, objectId]
@@ -69,6 +73,7 @@ export function MonitoringEngineField({
       value={binding.data?.engine_id ?? INHERIT}
       onChange={(v) => save.mutate(!v || v === INHERIT ? null : v)}
       options={options}
+      disabled={disabled}
     />
   )
 }
