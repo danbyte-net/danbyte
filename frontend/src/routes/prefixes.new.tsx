@@ -18,13 +18,16 @@ export const Route = createFileRoute("/prefixes/new")({
     site: typeof s.site === "string" ? s.site : undefined,
     location: typeof s.location === "string" ? s.location : undefined,
     ...(typeof s.clone === "string" ? { clone: s.clone } : {}),
+    // Optional, like clone: the VLAN page's "Add prefix" seeds it - the same
+    // spread trick, so existing Links needn't pass vlan: undefined.
+    ...(typeof s.vlan === "string" ? { vlan: s.vlan } : {}),
     ...planSearch(s),
   }),
   component: NewPrefixPage,
 })
 
 function NewPrefixPage() {
-  const { cidr, vrf, site, location, clone } = Route.useSearch()
+  const { cidr, vrf, site, location, vlan, clone } = Route.useSearch()
   const nav = useNavigate()
   const cloneQ = useCloneSeed<Partial<Prefix>>("prefixes", clone)
   const cloning = !!clone
@@ -54,6 +57,7 @@ function NewPrefixPage() {
             vrfId: vrf ?? null,
             siteId: site ?? null,
             locationId: location ?? null,
+            vlanId: vlan ?? null,
           }}
           clone={cloning ? cloneQ.data?.initial : undefined}
           onSaved={(p) => nav({ to: "/prefixes/$id", params: { id: p.id } })}

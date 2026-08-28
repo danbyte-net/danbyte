@@ -38,6 +38,7 @@ export interface PrefixFormInitial {
   vrfId?: string | null
   siteId?: string | null
   locationId?: string | null
+  vlanId?: string | null
 }
 
 export interface PrefixFormProps {
@@ -83,7 +84,9 @@ export function PrefixForm({
   const [autoAssignSite, setAutoAssignSite] = useState<boolean>(
     seed?.auto_assign_site ?? false
   )
-  const [vlanId, setVlanId] = useState<string | null>(seed?.vlan?.id ?? null)
+  const [vlanId, setVlanId] = useState<string | null>(
+    seed?.vlan?.id ?? initial?.vlanId ?? null
+  )
   const [gateway, setGateway] = useState(prefix?.gateway ?? "")
   const [description, setDescription] = useState(seed?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(

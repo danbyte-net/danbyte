@@ -49,6 +49,19 @@ network topology rails. Colour precedence: the VLAN's own colour, then its
 zone's colour (zones stay firewall semantics - inside/outside/prod - never a
 colour requirement), then a neutral badge / blue palette shade.
 
+### Prefixes on a VLAN
+
+The VLAN page's **Prefixes** tab lists the prefixes bridged onto it, and is
+where you wire them up:
+
+- **Assign prefix** pulls an *existing* prefix onto the VLAN - a searchable
+  list, one click per prefix, several in a row. A prefix already on another
+  VLAN shows which one, and picking it moves it.
+- **Add prefix** creates a brand-new prefix with the VLAN pre-filled on the
+  form.
+
+Both respect your prefix permissions (*change* and *add* respectively).
+
 ### VLAN groups
 
 A **VLAN group** is a named grouping that scopes VID uniqueness and defines a

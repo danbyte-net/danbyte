@@ -3,7 +3,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { CopyPlus, Pencil, Trash2 } from "lucide-react"
+import { CopyPlus, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type Prefix, type VLAN } from "@/lib/api"
@@ -20,6 +20,7 @@ import {
   DetailTab,
 } from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
+import { VlanAssignPrefixDialog } from "@/components/vlan-assign-prefix-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { VlanDeleteDialog } from "@/components/vlan-delete-dialog"
@@ -143,7 +144,7 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
         <VlanOverview vlan={v} humanIds={humanIds} />
       </DetailTab>
       <DetailTab value="prefixes">
-        <VlanPrefixesTable vlanId={v.id} />
+        <VlanPrefixesTable vlanId={v.id} vlanLabel={`VLAN ${v.vlan_id}`} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.vlan" objectId={v.id} />
@@ -196,7 +197,15 @@ function VlanOverview({
   )
 }
 
-function VlanPrefixesTable({ vlanId }: { vlanId: string }) {
+function VlanPrefixesTable({
+  vlanId,
+  vlanLabel,
+}: {
+  vlanId: string
+  vlanLabel: string
+}) {
+  const { canDo } = useMe()
+  const [assigning, setAssigning] = useState(false)
   const q = useQuery({
     queryKey: ["vlan-prefixes", vlanId],
     queryFn: () =>
@@ -209,19 +218,60 @@ function VlanPrefixesTable({ vlanId }: { vlanId: string }) {
     return <p className="text-sm text-muted-foreground">Loading prefixes…</p>
   if (q.isError) return <QueryError error={q.error} />
   const rows = q.data?.results ?? []
-  if (rows.length === 0) {
-    return (
-      <EmptyState title="No prefixes yet.">
-        No prefixes are tied to this VLAN.
-      </EmptyState>
-    )
-  }
   return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      flexColumn="description"
-      tableId="prefix-embedded"
-    />
+    <div className="space-y-3">
+      {/* Same pair the site page's prefixes tab has: pull an existing prefix
+          onto this VLAN, or create a new one already on it. */}
+      <div className="flex items-center gap-2">
+        {canDo("prefix", "change") && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={() => setAssigning(true)}
+          >
+            <Plus className="h-3.5 w-3.5" /> Assign prefix
+          </Button>
+        )}
+        {canDo("prefix", "add") && (
+          <Button
+            size="sm"
+            className={canDo("prefix", "change") ? "" : "ml-auto"}
+            asChild
+          >
+            <Link
+              to="/prefixes/new"
+              search={{
+                cidr: undefined,
+                vrf: undefined,
+                site: undefined,
+                location: undefined,
+                vlan: vlanId,
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" /> Add prefix
+            </Link>
+          </Button>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState title="No prefixes yet.">
+          No prefixes are tied to this VLAN.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="description"
+          tableId="prefix-embedded"
+        />
+      )}
+      <VlanAssignPrefixDialog
+        vlanId={vlanId}
+        vlanLabel={vlanLabel}
+        open={assigning}
+        onOpenChange={setAssigning}
+      />
+    </div>
   )
 }
