@@ -47,6 +47,9 @@ export function useMe() {
     /** Can edit deployment-wide settings (global email/LDAP, updates) - a
      * tenant-narrowed admin grant does NOT qualify. */
     canManageDeployment: !!me.can_manage_deployment,
+    /** May grant or revoke superuser status. Gates the Superuser checkbox -
+     * without it the server silently strips the flag anyway. */
+    canGrantSuperuser: !!me.can_grant_superuser,
     /** The install's display name - shown in the sidebar header, browser title,
      * and login pages. Set under Settings → Deployment; blank falls back to the
      * product name. */

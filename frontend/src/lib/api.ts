@@ -286,6 +286,9 @@ export interface Me {
   /** Deployment-tier admin (global email/LDAP/updates). Stricter than
    * can_manage_users - a tenant-narrowed grant doesn't qualify. */
   can_manage_deployment?: boolean
+  /** May set/clear is_superuser - superuser, or an UNSCOPED grant carrying
+   * the grant_superuser verb on users. */
+  can_grant_superuser?: boolean
   can_edit_tenant?: boolean
   deployment_name?: string
   /** Custom browser-tab icon URL (Admin → Identity); null/absent = default. */
@@ -375,6 +378,8 @@ export type RBACAction =
   | "delete"
   | "connect"
   | "reveal"
+  | "subscribe"
+  | "grant_superuser"
 
 export interface RBACUser {
   id: number

@@ -161,6 +161,23 @@ class SsoGroupMappingSerializer(serializers.ModelSerializer):
                 {"grants_superuser":
                  "Not available on a tenant-scoped provider."}
             )
+        # A mapping that mints superusers IS a superuser grant - turning it on
+        # takes the same power as flipping the flag directly. Without this a
+        # deployment admin below that bar could map their own IdP group to
+        # superuser and promote themselves at next login.
+        turning_on = bool(attrs.get("grants_superuser")) and not bool(
+            getattr(self.instance, "grants_superuser", False)
+        )
+        if turning_on:
+            from .permissions import can_grant_superuser
+
+            actor = getattr(self.context.get("request"), "user", None)
+            if actor is None or not can_grant_superuser(actor):
+                raise serializers.ValidationError(
+                    {"grants_superuser":
+                     "Granting superuser via a mapping needs the "
+                     "grant-superuser permission."}
+                )
         return attrs
 
 

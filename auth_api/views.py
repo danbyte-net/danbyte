@@ -19,7 +19,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from .forms import LoginForm, UserForm
-from .permissions import PERMISSIONS, can_manage_admin, require_perm, user_perms
+from .permissions import PERMISSIONS, can_manage_admin, require_perm, user_perms, can_grant_superuser
 
 
 def login_view(request):
@@ -233,6 +233,7 @@ def me_json(request):
         "permissions": permissions,
         "can_manage_users": can_manage_users,
         "can_manage_deployment": can_manage_deployment(user),
+        "can_grant_superuser": can_grant_superuser(user),
         "mfa": {
             "require_mfa": bool(profile and profile.require_mfa),
             "totp_confirmed": bool(profile and profile.mfa_totp_confirmed),

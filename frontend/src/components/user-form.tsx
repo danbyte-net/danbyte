@@ -65,7 +65,7 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
   // ── one-click site scoping (create only) ──
   // Defaults on when this tenant runs enhanced site separation - that's when
   // "most new users are local IT" is the likely intent.
-  const { siteSeparation } = useMe()
+  const { siteSeparation, canGrantSuperuser } = useMe()
   const [siteScoped, setSiteScoped] = useState(siteSeparation)
   const [siteRoleSites, setSiteRoleSites] = useState<string[]>([])
   const [siteRole, setSiteRole] = useState<"editor" | "viewer">("editor")
@@ -288,12 +288,17 @@ export function UserForm({ user, onSaved, onCancel }: UserFormProps) {
               onChange={setIsActive}
               hint="Inactive users can't sign in"
             />
-            <FormCheckbox
-              label="Superuser"
-              checked={isSuperuser}
-              onChange={setIsSuperuser}
-              hint="Bypasses all permission checks"
-            />
+            {/* Hidden without the power: the server strips the flag for
+                anyone else anyway, and a checkbox that silently does nothing
+                is worse than no checkbox. */}
+            {canGrantSuperuser && (
+              <FormCheckbox
+                label="Superuser"
+                checked={isSuperuser}
+                onChange={setIsSuperuser}
+                hint="Bypasses all permission checks"
+              />
+            )}
             <FormCheckbox
               label="Require MFA"
               checked={requireMfa}

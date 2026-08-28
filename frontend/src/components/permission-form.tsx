@@ -37,10 +37,16 @@ const ACTION_ORDER: RBACAction[] = [
   "delete",
   "connect",
   "reveal",
+  "subscribe",
+  "grant_superuser",
 ]
 const ACTION_HINT: Partial<Record<RBACAction, string>> = {
   connect: "Open an interactive session to the device",
   reveal: "Read the referenced secret value",
+  subscribe: "Opt in or out of this notification channel",
+  grant_superuser:
+    "Set or clear superuser on accounts. Counts only on a grant with no " +
+    "tenant scoping - superuser is global.",
 }
 const WILDCARD = "*"
 

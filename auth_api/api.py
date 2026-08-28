@@ -27,6 +27,33 @@ from .object_types import ACTIONS, registry_payload
 
 
 # ─── Users ───────────────────────────────────────────────────────────────────
+def _audit_superuser_flip(request, user, granted: bool) -> None:
+    """Write the change log entry for an is_superuser change.
+
+    auth.User isn't in AUDITED_MODELS (it carries no tenant and most of its
+    edits are routine), so without this the single most consequential flag in
+    the system flipped with no trail at all.
+    """
+    from audit.context import current_request_id, current_via
+    from audit.models import ChangeAction, ChangeLogEntry
+
+    actor = getattr(request, "user", None)
+    authed = bool(actor and actor.is_authenticated)
+    ChangeLogEntry.objects.create(
+        tenant_id=None,
+        user=actor if authed else None,
+        user_name=(actor.get_username() if authed else ""),
+        action=ChangeAction.UPDATE,
+        object_type="auth.user",
+        object_label="User",
+        object_id=str(user.pk),
+        object_repr=user.get_username(),
+        changes={"is_superuser": {"new": granted, "old": not granted}},
+        request_id=current_request_id(),
+        via=current_via() or "system",
+    )
+
+
 class UserSerializer(serializers.ModelSerializer):
     # Django's default username charset plus "#": Entra external accounts are
     # provisioned as "user_domain#EXT#@tenant.onmicrosoft.com", and the stock
@@ -131,20 +158,24 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"password": "Set a password or choose to email an invite."}
                 )
-        # Only an existing superuser may grant the superuser/staff flags.
+        # Only a superuser - or a holder of the ``grant_superuser`` capability
+        # verb on an UNSCOPED grant - may set the superuser/staff flags.
         # Otherwise any user-admin (RBAC `change` on `user`) could PATCH their
         # own account to Django superuser and bypass all RBAC. Strip the flags
-        # for non-superuser actors rather than erroring, so the rest of the edit
-        # still applies.
+        # for other actors rather than erroring, so the rest of the edit still
+        # applies.
+        from .permissions import can_grant_superuser
+
         request = self.context.get("request")
         actor = getattr(request, "user", None)
-        if not (actor is not None and actor.is_superuser):
+        if actor is None or not can_grant_superuser(actor):
             attrs.pop("is_superuser", None)
             attrs.pop("is_staff", None)
         return attrs
 
     @transaction.atomic
     def create(self, validated):
+        made_superuser = bool(validated.get("is_superuser"))
         pwd = validated.pop("password", None)
         invite = validated.pop("send_invite", False)
         groups = validated.pop("groups", None)
@@ -162,6 +193,8 @@ class UserSerializer(serializers.ModelSerializer):
             # follows an invite link (or LDAP authenticates them).
             user.set_unusable_password()
         user.save()
+        if made_superuser:
+            _audit_superuser_flip(self.context.get("request"), user, True)
         if groups is not None:
             user.groups.set(groups)
         self._apply_profile(user, profile_writes)
@@ -184,11 +217,16 @@ class UserSerializer(serializers.ModelSerializer):
             for k in ("tenant_ids", "set_auth_source", "set_require_mfa")
             if k in validated
         }
+        was_superuser = user.is_superuser
         for k, v in validated.items():
             setattr(user, k, v)
         if pwd:
             user.set_password(pwd)
         user.save()
+        if user.is_superuser != was_superuser:
+            _audit_superuser_flip(
+                self.context.get("request"), user, user.is_superuser
+            )
         if groups is not None:
             user.groups.set(groups)
         self._apply_profile(user, profile_writes)
@@ -233,7 +271,12 @@ class UserViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(username__icontains=s) | qs.filter(email__icontains=s)
         return qs
 
-    def _forbid_superuser_target(self, obj):
+    #: The only keys a grant_superuser holder may send at a superuser target.
+    #: Anything else on that target stays superuser-only, or the password-reset
+    #: takeover this guard exists for comes back through the new verb.
+    _FLAG_ONLY = {"is_superuser", "is_staff"}
+
+    def _forbid_superuser_target(self, obj, *, flags_only_ok: bool = False):
         """A non-superuser deployment admin must not modify a superuser account.
 
         UserSerializer.validate() strips is_superuser/is_staff so a deployment
@@ -241,23 +284,38 @@ class UserViewSet(viewsets.ModelViewSet):
         existing superuser's password/email (then logging in as them) and
         bypassing all RBAC. Guard every write path (update/delete/send-reset)
         against a superuser target unless the actor is itself a superuser.
+
+        ``flags_only_ok``: a ``grant_superuser`` holder may pass, but only when
+        the request body touches nothing beyond the flags themselves - that is
+        what lets the verb REVOKE superuser without also inheriting the power
+        to reset a superuser's password.
         """
         from rest_framework.exceptions import PermissionDenied
 
+        from .permissions import can_grant_superuser
+
         actor = getattr(self.request, "user", None)
-        if getattr(obj, "is_superuser", False) and not (
-            actor is not None and actor.is_superuser
+        if not getattr(obj, "is_superuser", False):
+            return
+        if actor is not None and actor.is_superuser:
+            return
+        if (
+            flags_only_ok
+            and actor is not None
+            and can_grant_superuser(actor)
+            and set((self.request.data or {}).keys()) <= self._FLAG_ONLY
         ):
-            raise PermissionDenied(
-                "Only a superuser may modify a superuser account."
-            )
+            return
+        raise PermissionDenied(
+            "Only a superuser may modify a superuser account."
+        )
 
     def update(self, request, *args, **kwargs):
-        self._forbid_superuser_target(self.get_object())
+        self._forbid_superuser_target(self.get_object(), flags_only_ok=True)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
-        self._forbid_superuser_target(self.get_object())
+        self._forbid_superuser_target(self.get_object(), flags_only_ok=True)
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
