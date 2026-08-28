@@ -911,26 +911,31 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             _queue_change(guest, "new_guest", detail, now, fresh_changes)
         return
 
-    # Already linked. Sync-created rows track the hypervisor's specs; adopted
-    # rows are operator-owned and only ever blank-filled.
+    # Already linked. Sync-created rows track the hypervisor's specs. Adopted
+    # rows are operator-owned: their drift is RAISED for a human, never applied
+    # directly - the same treatment operator-created interfaces get in
+    # _diff_interfaces. (They used to raise nothing at all, so a RAM change on
+    # the hypervisor was silently invisible on an adopted VM forever.)
     vm = guest.vm
-    if guest.created_vm:
-        diffs = {}
-        for field, value in specs.items():
-            if value is not None and getattr(vm, field) != value:
-                diffs[field] = {"danbyte": getattr(vm, field), "hypervisor": value}
-        if diffs:
-            if apply:
-                for field, pair in diffs.items():
-                    setattr(vm, field, pair["hypervisor"])
-                vm.save(update_fields=list(diffs))
-                _clear_change(guest, "spec_change")
-            else:
-                _queue_change(guest, "spec_change", diffs, now, fresh_changes)
-        else:
+    diffs = {}
+    for field, value in specs.items():
+        if value is not None and getattr(vm, field) not in (None, 0) \
+                and getattr(vm, field) != value:
+            diffs[field] = {"danbyte": getattr(vm, field), "hypervisor": value}
+    if diffs:
+        if apply and guest.created_vm:
+            for field, pair in diffs.items():
+                setattr(vm, field, pair["hypervisor"])
+            vm.save(update_fields=list(diffs))
             _clear_change(guest, "spec_change")
-    _blank_fill(vm, {} if guest.created_vm else specs, source, guest, place,
-                os_info)
+        else:
+            _queue_change(guest, "spec_change", diffs, now, fresh_changes)
+    else:
+        _clear_change(guest, "spec_change")
+    # Blank fields are blank-fill territory for BOTH kinds of row - filling an
+    # empty value is not a disagreement, so it never goes through the drift
+    # queue (and a sync-created VM whose spec arrived late still gets it).
+    _blank_fill(vm, specs, source, guest, place, os_info)
 
 
 def _reported_ips(entries) -> list:

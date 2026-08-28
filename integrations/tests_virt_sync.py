@@ -191,6 +191,8 @@ class ProxmoxSyncTests(TestCase):
         VirtualMachine.objects.create(
             tenant=self.tenant, name="router-vm", cluster=cluster
         )
+        self.source.sync_mode = "auto"
+        self.source.save(update_fields=["sync_mode"])
         self.sync()
         with mock.patch.object(
             virt_sync, "proxmox_get",
@@ -426,6 +428,90 @@ class ProxmoxModeTests(TestCase):
         c.refresh_from_db()
         self.assertTrue(c.ignored)  # preserved across sync
         self.assertEqual(counts["pending"], 1)  # only vmid 101 still pending
+
+    def _bumped_sync(self, **over):
+        """Re-sync with vmid 100's resource row altered."""
+        bumped = [dict(r) for r in RESOURCES]
+        bumped[0] = {**bumped[0], **over}
+
+        def bumped_get(source, path):
+            if path.startswith("cluster/resources"):
+                return bumped
+            return fake_get(source, path)
+
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=bumped_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def test_auto_mode_applies_a_spec_change_directly(self):
+        # The mirror branch itself - a changed value, not an idempotent
+        # re-sync. Was only ever exercised via review + accept before.
+        self.source.sync_mode = "auto"
+        self.source.save(update_fields=["sync_mode"])
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual((vm.vcpus, vm.memory_mb), (4, 4096))
+        self._bumped_sync(maxcpu=8, maxmem=8 * 1024**3)
+        vm.refresh_from_db()
+        self.assertEqual((vm.vcpus, vm.memory_mb), (8, 8192))
+        from integrations.models import VirtChange
+
+        self.assertFalse(VirtChange.objects.filter(kind="spec_change").exists())
+
+    def test_adopted_vm_spec_drift_is_raised_never_applied(self):
+        # An operator's own VM re-sized on the hypervisor: the change must
+        # surface as drift - the silence used to hide it forever - but mirror
+        # mode must NOT rewrite an operator-owned row. Same contract as
+        # operator-created interfaces in _diff_interfaces.
+        cluster_type = ClusterType.objects.create(
+            tenant=self.tenant, name="Proxmox VE"
+        )
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="DB-CLUSTER01", type=cluster_type
+        )
+        VirtualMachine.objects.create(
+            tenant=self.tenant, name="router-vm", cluster=cluster,
+            vcpus=4, memory_mb=4096,
+        )
+        # Mirror mode on purpose: the point is that even auto must not
+        # rewrite an operator-owned row.
+        self.source.sync_mode = "auto"
+        self.source.save(update_fields=["sync_mode"])
+        self.sync()  # adopts by name; created_vm stays False
+        from integrations.models import VirtChange, VirtGuest
+
+        guest = VirtGuest.objects.get(vmid="100")
+        self.assertFalse(guest.created_vm)
+
+        self._bumped_sync(maxmem=8 * 1024**3)
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual(vm.memory_mb, 4096)  # never auto-applied
+        change = VirtChange.objects.get(kind="spec_change")
+        self.assertEqual(
+            change.detail["memory_mb"], {"danbyte": 4096, "hypervisor": 8192}
+        )
+        # Accepting it is the human decision that applies it.
+        virt_sync.apply_change(change)
+        vm.refresh_from_db()
+        self.assertEqual(vm.memory_mb, 8192)
+
+    def test_adopted_vm_blank_specs_fill_without_drift(self):
+        # A blank field is not a disagreement - filling it must not queue a
+        # review item.
+        cluster_type = ClusterType.objects.create(
+            tenant=self.tenant, name="Proxmox VE"
+        )
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="DB-CLUSTER01", type=cluster_type
+        )
+        VirtualMachine.objects.create(
+            tenant=self.tenant, name="router-vm", cluster=cluster
+        )
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual((vm.vcpus, vm.memory_mb), (4, 4096))
+        from integrations.models import VirtChange
+
+        self.assertFalse(VirtChange.objects.filter(kind="spec_change").exists())
 
     def test_spec_change_queued_in_review_applied_on_accept(self):
         from integrations.models import VirtChange, VirtGuest

@@ -148,6 +148,15 @@ The two deleting rows ask for confirmation first, and only ever reach the
 queue for records a person created - rows the sync itself made are cleaned up
 without asking. **Ignore** hides a row until that difference changes again.
 
+!!! note "Spec changes on VMs you created yourself"
+    A re-sized VM (more RAM, more vCPUs) always surfaces. On a VM the *sync*
+    created, mirror mode applies the new specs directly and review mode queues
+    a *Specs changed* row. On a VM *you* created that the sync adopted, the
+    change is **always queued for review, in every mode** - an operator-owned
+    record is never rewritten behind your back, same as your own interfaces.
+    Earlier versions raised nothing at all for adopted VMs, so a hypervisor
+    re-size was silently invisible.
+
 ## The sync log
 
 Every virtualization source keeps the full log of its **last run** on its
