@@ -8,6 +8,7 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
 import { Button } from "@/components/ui/button"
 import { useMe } from "@/lib/use-me"
+import { FormSection } from "@/components/forms"
 
 export const Route = createFileRoute("/sites/$id_/edit")({
   component: EditSitePage,
@@ -44,8 +45,8 @@ function EditSitePage() {
             site={q.data}
             onSaved={backToDetail}
             onCancel={backToDetail}
+            scopePanel={<AddressScopePanel siteId={id} />}
           />
-          <AddressScopePanel siteId={id} />
         </>
       )}
     </EditPageShell>
@@ -68,11 +69,10 @@ function AddressScopePanel({ siteId }: { siteId: string }) {
   const rows = q.data?.results ?? []
 
   return (
-    <section className="mt-8 max-w-2xl rounded-lg border border-border p-4">
+    <FormSection title="Address scope" card>
       <div className="flex items-start gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Address scope</h2>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             Prefix ranges assigned to this site. Site-scoped users can only
             carve child prefixes within these. Managed on the{" "}
             <Link
@@ -130,6 +130,6 @@ function AddressScopePanel({ siteId }: { siteId: string }) {
           </ul>
         )}
       </div>
-    </section>
+    </FormSection>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useTimezoneOptions } from "@/lib/use-timezones"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -53,6 +53,10 @@ import { useSaveObject } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
 
 export interface SiteFormProps {
+  /** Extra card rendered in the right column (the edit page's address-scope
+   * panel) - inside the columns, so it shares the form's chrome instead of
+   * floating below the sticky footer in its own style. */
+  scopePanel?: ReactNode
   site?: Site
   onSaved: (saved: Site) => void
   onCancel: () => void
@@ -64,7 +68,12 @@ const GATEWAY_POLICIES: { value: SiteGatewayPolicy; label: string }[] = [
   { value: "none", label: "No automatic gateway" },
 ]
 
-export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
+export function SiteForm({
+  site,
+  onSaved,
+  onCancel,
+  scopePanel,
+}: SiteFormProps) {
   const { canDo } = useMe()
   const isEdit = !!site
   const qc = useQueryClient()
@@ -418,6 +427,8 @@ export function SiteForm({ site, onSaved, onCancel }: SiteFormProps) {
               </div>
             </FormSection>
           )}
+
+          {scopePanel}
 
           <FormSection title="Notes" card>
             <FormTextarea
