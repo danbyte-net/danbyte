@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Pencil, Trash2 } from "lucide-react"
 
 import { api, type Antenna, type Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +32,7 @@ import {
 } from "@/components/forms"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useMe } from "@/lib/use-me"
+import { useRegisterAddActions } from "@/components/device-add-actions"
 import { apiErrorToast } from "@/lib/api-toast"
 import { PlanStaged, useSaveObject } from "@/lib/save-object"
 
@@ -53,6 +54,13 @@ export function DeviceAntennasPane({ deviceId }: { deviceId: string }) {
   })
   const rows = q.data?.results ?? []
 
+  useRegisterAddActions(
+    "antennas",
+    canDo("antenna", "add")
+      ? [{ label: "Antenna", onClick: () => setEditing("new") }]
+      : []
+  )
+
   const remove = useMutation({
     mutationFn: (id: string) =>
       api(`/api/antennas/${id}/`, { method: "DELETE" }),
@@ -63,21 +71,9 @@ export function DeviceAntennasPane({ deviceId }: { deviceId: string }) {
     onError: (err) => apiErrorToast(err),
   })
 
-  // Hidden entirely when the device has none and none can be added - most
-  // devices aren't APs, and an empty Antennas section on every switch is noise.
-  if (!q.isLoading && !q.isError && rows.length === 0 && !canDo("antenna", "add"))
-    return null
   if (!q.isLoading && !q.isError && rows.length === 0) {
     return (
-      <Section
-        title="Antennas"
-        count={0}
-        actions={
-          <Button size="sm" variant="outline" onClick={() => setEditing("new")}>
-            <Plus className="h-3.5 w-3.5" /> Add antenna
-          </Button>
-        }
-      >
+      <Section title="Antennas" count={0}>
         <p className="p-4 text-sm text-muted-foreground">
           No antennas. Integrated elements document here; an external antenna
           is its own device, cabled to an RF aux port.
@@ -94,17 +90,7 @@ export function DeviceAntennasPane({ deviceId }: { deviceId: string }) {
   }
 
   return (
-    <Section
-      title="Antennas"
-      count={rows.length}
-      actions={
-        canWrite ? (
-          <Button size="sm" variant="outline" onClick={() => setEditing("new")}>
-            <Plus className="h-3.5 w-3.5" /> Add antenna
-          </Button>
-        ) : undefined
-      }
-    >
+    <Section title="Antennas" count={rows.length}>
       {q.isError ? (
         <QueryError error={q.error} />
       ) : q.isLoading ? (
