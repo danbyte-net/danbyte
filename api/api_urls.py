@@ -138,6 +138,8 @@ from .topology_views import (
     topology_view,
 )
 from .viewsets import (
+    AntennaTemplateViewSet,
+    AntennaViewSet,
     AggregateViewSet,
     ASNViewSet,
     AuxPortTemplateViewSet,
@@ -325,6 +327,7 @@ router.register(r"console-server-ports", ConsoleServerPortViewSet, basename="con
 router.register(r"power-ports",   PowerPortViewSet,   basename="power-port")
 router.register(r"power-outlets", PowerOutletViewSet, basename="power-outlet")
 router.register(r"aux-ports",     AuxPortViewSet,     basename="aux-port")
+router.register(r"antennas", AntennaViewSet, basename="antenna")
 router.register(r"interface-templates", InterfaceTemplateViewSet, basename="interface-template")
 router.register(r"device-type-services", DeviceTypeServiceViewSet, basename="device-type-service")
 router.register(r"console-port-templates", ConsolePortTemplateViewSet, basename="console-port-template")
@@ -334,6 +337,7 @@ router.register(r"power-outlet-templates", PowerOutletTemplateViewSet, basename=
 router.register(r"rear-port-templates", RearPortTemplateViewSet, basename="rear-port-template")
 router.register(r"front-port-templates", FrontPortTemplateViewSet, basename="front-port-template")
 router.register(r"aux-port-templates", AuxPortTemplateViewSet, basename="aux-port-template")
+router.register(r"antenna-templates", AntennaTemplateViewSet, basename="antenna-template")
 router.register(r"device-bay-templates", DeviceBayTemplateViewSet, basename="device-bay-template")
 router.register(r"inventory-item-templates", InventoryItemTemplateViewSet, basename="inventory-item-template")
 router.register(r"inventory-items", InventoryItemViewSet, basename="inventory-item")

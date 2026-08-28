@@ -6,9 +6,6 @@ import {
   api,
   bytesToUnit,
   INVENTORY_KIND_OPTIONS,
-  INVENTORY_MEDIA_OPTIONS,
-  inventorySpeedSuggestions,
-  STORAGE_UNITS,
   unitToBytes,
   type StorageUnit,
 } from "@/lib/api"
@@ -18,8 +15,6 @@ import type {
   DcimChoice,
   FrontPortTemplate,
   InterfaceTemplate,
-  InventoryItemKind,
-  InventoryMedia,
   Paginated,
   PowerOutletTemplate,
   PowerPortTemplate,
@@ -32,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Field,
   FormCheckbox,
   FormCombobox,
   FormFooter,
@@ -41,6 +37,7 @@ import {
 } from "@/components/forms"
 import { expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { PartHardwareFields } from "@/components/part-hardware-fields"
 
 /** The nine device-type component-template kinds, one dialog for all. */
 export type TemplateKind =
@@ -52,6 +49,7 @@ export type TemplateKind =
   | "rear-port"
   | "front-port"
   | "aux-port"
+  | "antenna"
   | "module-bay"
   | "device-bay"
   | "inventory-item"
@@ -65,6 +63,7 @@ export const TEMPLATE_ENDPOINT: Record<TemplateKind, string> = {
   "rear-port": "rear-port-templates",
   "front-port": "front-port-templates",
   "aux-port": "aux-port-templates",
+  antenna: "antenna-templates",
   "module-bay": "module-bay-templates",
   "device-bay": "device-bay-templates",
   "inventory-item": "inventory-item-templates",
@@ -79,6 +78,7 @@ export const TEMPLATE_QUERY_KEY: Record<TemplateKind, string> = {
   "rear-port": "dt-rear-port-templates",
   "front-port": "dt-front-port-templates",
   "aux-port": "dt-aux-port-templates",
+  antenna: "dt-antenna-templates",
   "module-bay": "dt-module-bay-templates",
   "device-bay": "dt-device-bay-templates",
   "inventory-item": "dt-inventory-item-templates",
@@ -93,6 +93,7 @@ export const TEMPLATE_NOUN: Record<TemplateKind, string> = {
   "rear-port": "rear port template",
   "front-port": "front port template",
   "aux-port": "aux port template",
+  antenna: "antenna template",
   "module-bay": "module bay template",
   "device-bay": "device bay template",
   "inventory-item": "inventory item template",
@@ -113,6 +114,14 @@ export type AnyTemplate = ComponentTemplateBase &
     position: string
     default_module_type: { id: string; name: string } | null
   }> & // module-bay
+  Partial<{
+    antenna_type: string
+    gain_dbi: string | null
+    bands: string[]
+    polarization: string
+    connector: string
+    direct_mount: boolean
+  }> & // antenna
   Partial<{
     manufacturer: { id: string; name: string } | null
     part_id: string
@@ -192,6 +201,12 @@ export function ComponentTemplateDialog({
   const [invCapacity, setInvCapacity] = useState("")
   const [invCapacityUnit, setInvCapacityUnit] = useState<StorageUnit>("GB")
   const [invSpeed, setInvSpeed] = useState("")
+  const [antType, setAntType] = useState("")
+  const [antGain, setAntGain] = useState("")
+  const [antBands, setAntBands] = useState<string[]>([])
+  const [antPolarization, setAntPolarization] = useState("")
+  const [antConnector, setAntConnector] = useState("")
+  const [antDirectMount, setAntDirectMount] = useState(false)
 
   // Seed from the template being edited (or blank) every time the dialog opens.
   useEffect(() => {
@@ -240,6 +255,12 @@ export function ComponentTemplateDialog({
     setInvCapacity(cap.value)
     setInvCapacityUnit(cap.unit)
     setInvSpeed(inv?.speed ?? "")
+    setAntType(template?.antenna_type ?? "")
+    setAntGain(template?.gain_dbi != null ? String(template.gain_dbi) : "")
+    setAntBands(template?.bands ?? [])
+    setAntPolarization(template?.polarization ?? "")
+    setAntConnector(template?.connector ?? "")
+    setAntDirectMount(template?.direct_mount ?? false)
     reset()
   }, [open, template, reset])
 
@@ -318,6 +339,13 @@ export function ComponentTemplateDialog({
       } else if (kind === "module-bay") {
         payload.position = bayPosition.trim()
         payload.default_module_type_id = defaultModuleTypeId
+      } else if (kind === "antenna") {
+        payload.antenna_type = antType
+        payload.gain_dbi = antGain.trim() === "" ? null : antGain.trim()
+        payload.bands = antBands
+        payload.polarization = antPolarization
+        payload.connector = antConnector
+        payload.direct_mount = antDirectMount
       } else if (kind === "inventory-item") {
         payload.manufacturer_id = manufacturerId
         payload.part_id = partId.trim()
@@ -416,7 +444,73 @@ export function ComponentTemplateDialog({
 
           {/* Type - grouped combobox where the backend serves a choice list,
               free text for the panel-port kinds. */}
-          {kind === "inventory-item" ? (
+          {kind === "antenna" ? (
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <FormSelect
+                  label="Type"
+                  value={antType || null}
+                  onChange={(v) => setAntType(v ?? "")}
+                  noneLabel="-"
+                  options={choices.antenna_types}
+                  error={fieldErrors.antenna_type}
+                />
+                <FormText
+                  label="Gain"
+                  hint="dBi"
+                  type="number"
+                  inputMode="decimal"
+                  value={antGain}
+                  onChange={setAntGain}
+                  placeholder="5"
+                  error={fieldErrors.gain_dbi}
+                />
+              </div>
+              <Field label="Bands" error={fieldErrors.bands}>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {choices.antenna_bands.map((b) => (
+                    <FormCheckbox
+                      key={b.value}
+                      label={b.label}
+                      checked={antBands.includes(b.value)}
+                      onChange={() =>
+                        setAntBands((prev) =>
+                          prev.includes(b.value)
+                            ? prev.filter((x) => x !== b.value)
+                            : [...prev, b.value]
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <FormSelect
+                  label="Polarization"
+                  value={antPolarization || null}
+                  onChange={(v) => setAntPolarization(v ?? "")}
+                  noneLabel="-"
+                  options={choices.antenna_polarizations}
+                  error={fieldErrors.polarization}
+                />
+                <FormSelect
+                  label="Connector"
+                  hint="external elements"
+                  value={antConnector || null}
+                  onChange={(v) => setAntConnector(v ?? "")}
+                  noneLabel="None (internal)"
+                  options={choices.rf_connector_types}
+                  error={fieldErrors.connector}
+                />
+              </div>
+              <FormCheckbox
+                label="Direct mount"
+                hint="screwed straight onto the device connector - no cable run"
+                checked={antDirectMount}
+                onChange={setAntDirectMount}
+              />
+            </div>
+          ) : kind === "inventory-item" ? (
             <div className="grid gap-3">
               <div className="grid grid-cols-2 gap-3">
                 <FormSelect
@@ -441,47 +535,18 @@ export function ComponentTemplateDialog({
                   error={fieldErrors.manufacturer_id}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {invKind === "disk" && (
-                  <FormSelect
-                    label="Media"
-                    value={invMedia || null}
-                    onChange={(v) => setInvMedia(v ?? "")}
-                    options={INVENTORY_MEDIA_OPTIONS}
-                    placeholder="-"
-                    error={fieldErrors.media}
-                  />
-                )}
-                <FormText
-                  label="Speed"
-                  value={invSpeed}
-                  onChange={setInvSpeed}
-                  placeholder="7200 RPM / PCIe 4.0 x4"
-                  suggestions={inventorySpeedSuggestions(
-                    invKind as InventoryItemKind,
-                    invMedia as InventoryMedia
-                  )}
-                  error={fieldErrors.speed}
-                />
-              </div>
-              <div className="grid grid-cols-[1fr_100px] gap-3">
-                <FormText
-                  label="Capacity"
-                  type="number"
-                  value={invCapacity}
-                  onChange={setInvCapacity}
-                  error={fieldErrors.capacity_bytes}
-                />
-                <FormSelect
-                  label="Unit"
-                  value={invCapacityUnit}
-                  onChange={(v) => v && setInvCapacityUnit(v as StorageUnit)}
-                  options={STORAGE_UNITS.map((u) => ({
-                    value: u.value,
-                    label: u.value,
-                  }))}
-                />
-              </div>
+              <PartHardwareFields
+                kind={invKind}
+                media={invMedia}
+                onMedia={(v) => setInvMedia(v)}
+                speed={invSpeed}
+                onSpeed={setInvSpeed}
+                capacity={invCapacity}
+                onCapacity={setInvCapacity}
+                capacityUnit={invCapacityUnit}
+                onCapacityUnit={setInvCapacityUnit}
+                errors={fieldErrors}
+              />
               <FormText
                 label="Part ID"
                 value={partId}

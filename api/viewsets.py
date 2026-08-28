@@ -27,6 +27,8 @@ from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
 from .filters import apply_tag_filter
 from .models import (
+    Antenna,
+    AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     Cable, CableRoute, Circuit, CircuitTermination, CircuitType, Cluster,
     ClusterGroup, ClusterType,
@@ -59,6 +61,8 @@ from .models import (
     diff_device_components, sync_device_components,
 )
 from .serializers import (
+    AntennaSerializer,
+    AntennaTemplateSerializer,
     CableRouteSerializer,
     CableSerializer,
     FiberSettingsSerializer,
@@ -3090,6 +3094,7 @@ class DeviceViewSet(
         "front-port": ("front_ports", "front_port"),
         "rear-port": ("rear_ports", "rear_port"),
         "aux-port": ("aux_ports", "aux_port"),
+        "antenna": ("antennas", None),
         "inventory-item": ("inventory_items", None),
         "module-bay": ("module_bays", None),
     }
@@ -4265,6 +4270,20 @@ class AuxPortViewSet(_DevicePortViewSet):
     serializer_class = AuxPortSerializer
 
 
+class AntennaViewSet(_DevicePortViewSet):
+    """Radiating elements (#111). Rides the device-port base for its tenant
+    scoping and ?device= filter; there is nothing to cable here."""
+
+    queryset = (
+        Antenna.objects.select_related("device")
+        .prefetch_related("tags")
+        .order_by("device__name", NATURAL_NAME)
+    )
+    serializer_class = AntennaSerializer
+    bulk_str_fields = ("antenna_type", "polarization", "connector",
+                       "description")
+
+
 class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
@@ -4382,6 +4401,11 @@ class ConsolePortTemplateViewSet(_ComponentTemplateViewSet):
 class AuxPortTemplateViewSet(_ComponentTemplateViewSet):
     queryset = AuxPortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = AuxPortTemplateSerializer
+
+
+class AntennaTemplateViewSet(_ComponentTemplateViewSet):
+    queryset = AntennaTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
+    serializer_class = AntennaTemplateSerializer
 
 
 class InventoryItemTemplateViewSet(_ComponentTemplateViewSet):

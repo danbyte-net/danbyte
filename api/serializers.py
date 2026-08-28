@@ -19,6 +19,7 @@ from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
 from .models import (
+    Antenna, AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
@@ -1697,6 +1698,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
             + obj.front_port_templates.count()
             + obj.rear_port_templates.count()
             + obj.aux_port_templates.count()
+            + obj.antenna_templates.count()
             + obj.device_bay_templates.count()
             + obj.module_bay_templates.count()
             + obj.inventory_item_templates.count()
@@ -1722,7 +1724,9 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     # slots). Those two are photo-only - the schematic faceplate stays
     # port-only, and a module bay appears there as a group's `bay` placeholder
     # instead.
-    _PHOTO_MARKER_KINDS = _FACEPLATE_SLOT_KINDS | {"inventory-item", "module-bay"}
+    _PHOTO_MARKER_KINDS = _FACEPLATE_SLOT_KINDS | {
+        "inventory-item", "module-bay", "antenna",
+    }
 
     def validate_faceplate(self, value):
         if value is None:
@@ -3003,6 +3007,50 @@ class ConsolePortTemplateSerializer(_ComponentTemplateSerializer):
 class AuxPortTemplateSerializer(_ComponentTemplateSerializer):
     class Meta(_ComponentTemplateSerializer.Meta):
         model = AuxPortTemplate
+
+
+class AntennaSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
+                        serializers.ModelSerializer):
+    """A device's radiating elements (#111). Not a port: nothing to cable,
+    so no cable/reservation fields - the coax terminates on an RF aux port."""
+
+    cf_model = "antenna"
+    device = serializers.SerializerMethodField()
+    device_id = serializers.PrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+    class Meta:
+        model = Antenna
+        fields = ["id", "device", "device_id", "name", "antenna_type",
+                  "gain_dbi", "bands", "polarization", "connector",
+                  "direct_mount", "description", "tags", "tag_ids",
+                  "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class AntennaTemplateSerializer(_ComponentTemplateSerializer):
+    # The base declares a `type` CharField for the port templates; an antenna
+    # template has `antenna_type` instead. None removes the inherited field.
+    type = None
+
+    class Meta(_ComponentTemplateSerializer.Meta):
+        model = AntennaTemplate
+        fields = [
+            f for f in _ComponentTemplateSerializer.Meta.fields if f != "type"
+        ] + [
+            "antenna_type", "gain_dbi", "bands", "polarization",
+            "connector", "direct_mount",
+        ]
 
 
 class DeviceBayTemplateSerializer(_ComponentTemplateSerializer):

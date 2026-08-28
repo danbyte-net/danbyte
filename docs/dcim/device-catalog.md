@@ -270,8 +270,9 @@ kind, and reload or back/forward without losing your place.
 
 **Aux ports** are the catch-all for connectors the other kinds don't cover: USB
 (A/B/C/mini/micro), video outputs (HDMI, VGA, DVI, DisplayPort), SD/microSD
-slots, RJ11, audio jacks, and grounding lugs - so a device type can model
-*everything* on its panel. Template names support
+slots, RJ11, audio jacks, grounding lugs, and **RF connectors** (RP-SMA, SMA,
+N-type, MMCX, U.FL, QMA, 4.3-10) - so a device type can model *everything* on
+its panel, including the coax run from an AP to its external antenna. Template names support
 two shorthands: a **`[1-24]` range** creates one template per port in a single
 add, and a **`{position}` token** resolves to the device's stack member number
 when components are stamped (and renames ports when a device changes stack
@@ -330,6 +331,34 @@ as ghosts on the render.
 
 Sync is name-based (it never renames or retypes existing components) and needs
 `device.change`.
+
+### Antennas {#antennas}
+
+Antennas are pure L1 on a lot of APs, and this is where they document. Two
+situations, two shapes:
+
+- **Integrated antennas** (most indoor APs) are **components** on the device -
+  how many, what kind, what gain. Nothing to cable. Add **antenna templates**
+  to the device type and every AP built from it carries its elements; or add
+  them per device on the **Hardware** tab.
+- **External antennas** - a sector on a mast, a dish on a wall - are their own
+  small **device**: give it a device type whose antenna component describes the
+  radiating element and whose **aux port** carries an RF connector type. The
+  coax run AP → antenna is then an ordinary cable between two RF aux ports,
+  with placement, faceplates and tracing for free. Create an "Antenna" device
+  role for them with the quick-add on the device form if you want one - roles
+  stay yours to define.
+
+An antenna records its **type** (omni, directional, sector, patch, yagi,
+parabolic, internal), **gain** (numeric dBi), **bands** (a picked list -
+2.4/5/6/60 GHz, sub-1 GHz, cellular; multi-band is simply several), **polarization**,
+**connector**, and a **direct mount** flag for elements screwed straight onto
+the device's connector with no cable run - so they don't fall between
+"integrated" and "external". Gain and bands are structured on purpose: a future
+coverage view can consume them without a re-model.
+
+Antennas are never cable endpoints themselves - the aux port is the cable end -
+but photo markers can place them on a device image like hardware parts.
 
 ### Sync the whole fleet at once {#sync-all-devices}
 
@@ -492,6 +521,12 @@ Each part also carries its **hardware identity and health**:
 
 - **Kind** - what the part is: Disk, CPU, RAM, PSU, Fan, GPU, Controller,
   Transceiver, or Other (the default for pre-existing parts).
+- **The form follows the kind.** A disk offers media, speed and capacity; RAM
+  offers speed (DDR grade / MT/s) and size; a CPU offers its clock and nothing
+  about capacity; a fan its RPM; a PSU none of the three. Every kind used to
+  wear the disk outfit - a CPU offering "7200 RPM" and a capacity in GB.
+  Fields a kind doesn't show keep their stored value, so editing a
+  BMC-synced part never wipes facts Redfish wrote.
 - **Media** (disks) - NVMe, SSD (SATA/SAS), HDD, or Tape.
 - **Capacity** with a unit picker (KB → PB; stored in bytes, so it's
   backwards- and future-proof).

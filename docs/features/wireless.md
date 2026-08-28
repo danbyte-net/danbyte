@@ -81,6 +81,14 @@ deployment's [secret store](../architecture/tenant-settings.md) - the same
     If a group still has SSIDs attached, Danbyte blocks the delete. Move or
     remove those SSIDs first.
 
+## Antennas
+
+The radiating hardware documents on the DCIM side - see
+[Antennas](../dcim/device-catalog.md#antennas). In short: integrated elements
+are components on the AP (seeded from its device type), an external sector or
+dish is its own small device cabled to the AP's RF aux port, and gain/bands
+are structured fields, not free text.
+
 ## Wireless LAN group pages
 
 Click a **wireless LAN group** name in its list to open its detail page - the

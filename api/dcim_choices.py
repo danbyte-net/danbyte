@@ -21,6 +21,7 @@ from __future__ import annotations
 
 # Type alias for readability: [(group, [(value, label), ...]), ...]
 GroupedChoices = list[tuple[str, list[tuple[str, str]]]]
+Choices = list[tuple[str, str]]
 
 # ─── Interface types (standard interface-type taxonomy) ──────────────────────
 INTERFACE_TYPE_CHOICES: GroupedChoices = [
@@ -461,12 +462,67 @@ AUX_PORT_TYPE_CHOICES: GroupedChoices = [
         ("sd", "SD card"),
         ("microsd", "microSD card"),
     ]),
+    # RF connectors (#111): the coax run AP → external antenna terminates on
+    # an aux port, so the RF connector vocabulary lives here. The antenna
+    # component reuses the same slugs for its own connector field.
+    ("RF / antenna", [
+        ("rp-sma", "RP-SMA"),
+        ("sma", "SMA"),
+        ("n-type", "N-type"),
+        ("mmcx", "MMCX"),
+        ("u.fl", "U.FL"),
+        ("qma", "QMA"),
+        ("4.3-10", "4.3-10"),
+    ]),
     ("Other", [
         ("rj11", "RJ11"),
         ("audio-3.5mm", "Audio 3.5 mm"),
         ("grounding", "Grounding lug"),
         ("other", "Other"),
     ]),
+]
+
+# ─── Antennas (#111) ────────────────────────────────────────────────────────
+# Pure L1 inventory: what radiates, how much gain, on which bands. Structured
+# on purpose (deku-m) - a future coverage calculator must be able to consume
+# gain and band without a re-model, so neither is free text.
+ANTENNA_TYPE_CHOICES: Choices = [
+    ("internal", "Internal"),
+    ("omni", "Omnidirectional"),
+    ("directional", "Directional"),
+    ("sector", "Sector"),
+    ("patch", "Patch"),
+    ("yagi", "Yagi"),
+    ("parabolic", "Parabolic dish"),
+]
+
+#: A multi-band antenna simply lists several - "multi" is not a band.
+ANTENNA_BAND_CHOICES: Choices = [
+    ("sub-1ghz", "Sub-1 GHz"),
+    ("2.4ghz", "2.4 GHz"),
+    ("5ghz", "5 GHz"),
+    ("6ghz", "6 GHz"),
+    ("60ghz", "60 GHz"),
+    ("cellular", "Cellular"),
+]
+
+ANTENNA_POLARIZATION_CHOICES: Choices = [
+    ("vertical", "Vertical"),
+    ("horizontal", "Horizontal"),
+    ("dual", "Dual"),
+    ("dual-slant", "Dual slant ±45°"),
+    ("circular", "Circular"),
+]
+
+#: The RF slugs above, flat - the antenna's own connector select.
+RF_CONNECTOR_CHOICES: Choices = [
+    ("rp-sma", "RP-SMA"),
+    ("sma", "SMA"),
+    ("n-type", "N-type"),
+    ("mmcx", "MMCX"),
+    ("u.fl", "U.FL"),
+    ("qma", "QMA"),
+    ("4.3-10", "4.3-10"),
 ]
 
 
@@ -609,5 +665,9 @@ def dcim_choices_view(request):
         "power_port_types": fmt(POWER_PORT_TYPE_CHOICES),
         "power_outlet_types": fmt(POWER_OUTLET_TYPE_CHOICES),
         "aux_port_types": fmt(AUX_PORT_TYPE_CHOICES),
+        "antenna_types": flat(ANTENNA_TYPE_CHOICES),
+        "antenna_bands": flat(ANTENNA_BAND_CHOICES),
+        "antenna_polarizations": flat(ANTENNA_POLARIZATION_CHOICES),
+        "rf_connector_types": flat(RF_CONNECTOR_CHOICES),
         "common_speeds": COMMON_SPEEDS,
     })

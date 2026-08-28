@@ -1764,6 +1764,27 @@ export interface Termination {
 }
 
 /** Lightweight cable a port is on (or null). */
+/** A radiating element on a device (#111) - L1 inventory, never cabled
+ * itself (the coax terminates on an RF aux port). */
+export interface Antenna {
+  id: string
+  device: { id: string; name: string }
+  name: string
+  antenna_type: string
+  /** Peak gain in dBi; numeric so a coverage calculator can consume it. */
+  gain_dbi: string | null
+  /** Band slugs; multi-band is several entries. */
+  bands: string[]
+  polarization: string
+  connector: string
+  direct_mount: boolean
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface CableMini {
   id: string
   type: string
@@ -1908,6 +1929,10 @@ export interface DcimChoices {
   power_port_types: DcimChoice[]
   power_outlet_types: DcimChoice[]
   aux_port_types: DcimChoice[]
+  antenna_types: DcimChoice[]
+  antenna_bands: DcimChoice[]
+  antenna_polarizations: DcimChoice[]
+  rf_connector_types: DcimChoice[]
   feed_legs: DcimChoice[]
   /** Connector value → fibre count, to pre-fill FrontPort.positions. */
   connector_fibers: Record<string, number>

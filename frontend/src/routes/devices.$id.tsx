@@ -104,6 +104,7 @@ import {
 import { useLegendCollector } from "@/components/speed-scale"
 import { DeviceBaysPane } from "@/components/device-bays-pane"
 import { DeviceInventoryPane } from "@/components/device-inventory-pane"
+import { DeviceAntennasPane } from "@/components/device-antennas-pane"
 import { DeviceModulesPane } from "@/components/device-modules-pane"
 import { DevicePortsPane } from "@/components/device-ports-pane"
 import {
@@ -621,6 +622,7 @@ function DeviceComponents({
               <div className="space-y-8">
                 <DeviceBaysPane deviceId={d.id} />
                 <DeviceModulesPane deviceId={d.id} />
+                <DeviceAntennasPane deviceId={d.id} />
                 <DeviceInventoryPane deviceId={d.id} />
                 <DevicePortsPane deviceId={d.id} initialCabled={cabled} />
               </div>

@@ -8,12 +8,16 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from .dcim_choices import (
+    ANTENNA_BAND_CHOICES,
+    ANTENNA_POLARIZATION_CHOICES,
+    ANTENNA_TYPE_CHOICES,
     AUX_PORT_TYPE_CHOICES,
     CABLE_TYPE_CHOICES,
     CONSOLE_PORT_TYPE_CHOICES,
     INTERFACE_TYPE_CHOICES,
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
+    RF_CONNECTOR_CHOICES,
 )
 from core.models import (
     CustomFieldsMixin,
@@ -592,6 +596,53 @@ class AuxPortTemplate(_ComponentTemplate):
         ordering = ["name"]
 
 
+def validate_antenna_bands(value):
+    """The band list holds validated slugs only - a future coverage
+    calculator must never meet free text here (#111)."""
+    from django.core.exceptions import ValidationError
+
+    valid = {slug for slug, _ in ANTENNA_BAND_CHOICES}
+    if not isinstance(value, list):
+        raise ValidationError("Bands are a list of band slugs.")
+    bad = [b for b in value if b not in valid]
+    if bad:
+        raise ValidationError(
+            f"Unknown band(s): {', '.join(map(str, bad))}. "
+            f"Valid: {', '.join(sorted(valid))}."
+        )
+
+
+class AntennaTemplate(_ComponentTemplate):
+    """Template for an antenna (#111), so the device library can seed an AP's
+    integrated elements onto every device built from the type."""
+
+    device_type = models.ForeignKey(
+        DeviceType, on_delete=models.CASCADE,
+        related_name="antenna_templates",
+    )
+    antenna_type = models.CharField(
+        max_length=16, blank=True, default="", choices=ANTENNA_TYPE_CHOICES
+    )
+    gain_dbi = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    bands = models.JSONField(
+        default=list, blank=True, validators=[validate_antenna_bands]
+    )
+    polarization = models.CharField(
+        max_length=16, blank=True, default="",
+        choices=ANTENNA_POLARIZATION_CHOICES,
+    )
+    connector = models.CharField(
+        max_length=16, blank=True, default="", choices=RF_CONNECTOR_CHOICES
+    )
+    direct_mount = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ("device_type", "name")
+        ordering = ["name"]
+
+
 class PowerPortTemplate(_ComponentTemplate):
     device_type = models.ForeignKey(
         DeviceType, on_delete=models.CASCADE,
@@ -1037,6 +1088,20 @@ def materialize_device_components(device) -> dict[str, int]:
     AuxPort.objects.bulk_create(made)
     created["aux_ports"] = len(made)
 
+    have = _names(device.antennas)
+    made = [
+        Antenna(
+            device=device, name=n, antenna_type=t.antenna_type,
+            gain_dbi=t.gain_dbi, bands=list(t.bands or []),
+            polarization=t.polarization, connector=t.connector,
+            direct_mount=t.direct_mount, description=t.description,
+        )
+        for t in dt.antenna_templates.all()
+        if (n := render_component_name(t.name, pos)) not in have
+    ]
+    Antenna.objects.bulk_create(made)
+    created["antennas"] = len(made)
+
     have = _names(device.inventory_items)
     made = [
         InventoryItem(
@@ -1118,6 +1183,7 @@ _MARKER_KIND_RELS = {
     "power-outlet": "power_outlets",
     "rear-port": "rear_ports",
     "aux-port": "aux_ports",
+    "antenna": "antennas",
     "inventory-item": "inventory_items",
     "module-bay": "module_bays",
 }
@@ -1172,6 +1238,7 @@ def stamp_marker_components(device) -> dict[str, int]:
         "power_outlets": (PowerOutlet, {"type": "other"}),
         "rear_ports": (RearPort, {}),
         "aux_ports": (AuxPort, {"type": "other"}),
+        "antennas": (Antenna, {}),
         "inventory_items": (InventoryItem, {}),
         "module_bays": (ModuleBay, {}),
     }
@@ -1202,6 +1269,7 @@ _SYNC_KINDS = [
     ("rear_ports", "rear_port_templates", True),
     ("front_ports", "front_port_templates", True),
     ("aux_ports", "aux_port_templates", True),
+    ("antennas", "antenna_templates", True),
     ("inventory_items", "inventory_item_templates", True),
     ("device_bays", "device_bay_templates", True),
     ("module_bays", "module_bay_templates", True),
@@ -1257,7 +1325,7 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
         order = [
             "front_ports", "power_outlets", "services", "interfaces",
             "console_ports", "console_server_ports", "aux_ports",
-            "inventory_items", "device_bays", "module_bays",
+            "antennas", "inventory_items", "device_bays", "module_bays",
             "rear_ports", "power_ports",
         ]
         for dev_rel in order:
@@ -3055,6 +3123,58 @@ class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     name = models.CharField(max_length=64)
     type = models.CharField(
         max_length=32, blank=True, default="", choices=AUX_PORT_TYPE_CHOICES
+    )
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        unique_together = ("device", "name")
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.device.name}:{self.name}"
+
+
+class Antenna(TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A radiating element on a device (#111) - pure L1 inventory.
+
+    An indoor AP's four internal omnis are documented as components here;
+    an external sector on a mast is a small *device* of its own whose Antenna
+    component describes the element and whose RF aux port takes the coax.
+    Deliberately NOT cable-terminable: the coax run terminates on an aux port
+    with an RF connector type - the antenna is what hangs off it.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="antennas"
+    )
+    name = models.CharField(max_length=64)
+    antenna_type = models.CharField(
+        max_length=16, blank=True, default="", choices=ANTENNA_TYPE_CHOICES
+    )
+    #: Numeric on purpose - "5 dBi" as text is useless to a calculator.
+    gain_dbi = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Peak gain in dBi.",
+    )
+    #: Multi-band = several entries; "multi" is not itself a band.
+    bands = models.JSONField(
+        default=list, blank=True, validators=[validate_antenna_bands],
+        help_text="Band slugs, e.g. [\"2.4ghz\", \"5ghz\"].",
+    )
+    polarization = models.CharField(
+        max_length=16, blank=True, default="",
+        choices=ANTENNA_POLARIZATION_CHOICES,
+    )
+    connector = models.CharField(
+        max_length=16, blank=True, default="", choices=RF_CONNECTOR_CHOICES,
+        help_text="RF connector, for external elements. Blank for internal.",
+    )
+    #: Screwed straight onto the device's connector - no coax run to document
+    #: (deku-m's edge case, so it doesn't fall between internal and external).
+    direct_mount = models.BooleanField(
+        default=False,
+        help_text="Mounted directly on the device connector, no cable.",
     )
     description = models.CharField(max_length=255, blank=True, default="")
 

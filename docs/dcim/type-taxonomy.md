@@ -70,6 +70,13 @@ trim/extend the lists in `api/dcim_choices.py`.
 
 ## Research notes - what was added and why
 
+**RF / antenna connectors on aux ports (#111).** RP-SMA, SMA, N-type, MMCX,
+U.FL, QMA and 4.3-10 joined the aux-port vocabulary so the coax run from an AP
+to an external antenna documents as an ordinary cable between RF aux ports. The
+antenna itself is a component (type, gain in dBi, picked bands, polarization,
+connector, direct-mount flag) - structured so a future coverage view can
+consume it. Faceplates draw the RF slugs with the antenna stub glyph.
+
 Added in the 2026-07 expansion:
 
 - **Media-specific Ethernet** (`10gbase-lr`, `100gbase-dr`, `400gbase-zr`, …)

@@ -80,6 +80,7 @@ const TEMPLATE_BULK_FIELDS: Record<string, BulkFieldSpec[]> = {
   "rear-port": [DESC],
   "front-port": [DESC],
   "aux-port": [DESC],
+  antenna: [DESC],
   "module-bay": [DESC],
   "device-bay": [DESC],
   "inventory-item": [DESC],
@@ -122,6 +123,38 @@ const EXTRA_COLUMNS: Record<TemplateKind, ColumnDef<AnyTemplate>[]> = {
   "console-port": [typeCol],
   "console-server-port": [typeCol],
   "aux-port": [typeCol],
+  antenna: [
+    {
+      id: "antenna_type",
+      header: "Type",
+      cell: ({ row }) =>
+        row.original.antenna_type ? (
+          <span className="text-xs">{row.original.antenna_type}</span>
+        ) : (
+          dash
+        ),
+    },
+    {
+      id: "gain_dbi",
+      header: "Gain",
+      cell: ({ row }) =>
+        row.original.gain_dbi != null ? (
+          <span className="num text-xs">{row.original.gain_dbi} dBi</span>
+        ) : (
+          dash
+        ),
+    },
+    {
+      id: "bands",
+      header: "Bands",
+      cell: ({ row }) =>
+        row.original.bands?.length ? (
+          <span className="text-xs">{row.original.bands.join(", ")}</span>
+        ) : (
+          dash
+        ),
+    },
+  ],
   "device-bay": [],
   "inventory-item": [
     {
@@ -303,7 +336,13 @@ const SECTIONS: { kind: TemplateKind; title: string; empty: string }[] = [
     kind: "aux-port",
     title: "Aux ports",
     empty:
-      "No aux port templates. Aux ports model USB, video (HDMI/VGA/DP), card slots, grounding - everything the other kinds don't.",
+      "No aux port templates. Aux ports model USB, video (HDMI/VGA/DP), card slots, RF connectors, grounding - everything the other kinds don't.",
+  },
+  {
+    kind: "antenna",
+    title: "Antennas",
+    empty:
+      "No antenna templates. An AP's integrated elements stamp onto every device built from this type; an external antenna is its own device type.",
   },
 ]
 
