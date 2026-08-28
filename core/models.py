@@ -355,6 +355,15 @@ class DeploymentSettings(TimestampedModel):
         help_text="Custom logo shown on the login page. Blank = the Danbyte "
         "logo. A wide transparent PNG works best.",
     )
+    # De-emphasis, not lockout (#119): the login page hides the local form and
+    # leads with the SSO buttons, but POST /api/auth/login/ keeps accepting
+    # local and LDAP credentials, and a "sign in locally" link reveals the
+    # form - the break-glass when the IdP is down.
+    hide_local_login = models.BooleanField(
+        default=False,
+        help_text="Hide the username/password form on the login page when SSO "
+        "providers exist. Local and LDAP sign-in stay reachable via a link.",
+    )
 
     # ─── optional built-in device fields (admin-controlled visibility) ─────
     device_field_visibility = models.JSONField(

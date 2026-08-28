@@ -294,6 +294,9 @@ export interface Me {
   /** Custom browser-tab icon URL (Admin → Identity); null/absent = default. */
   favicon_url?: string | null
   login_logo_url?: string | null
+  /** Hide the local username/password form when SSO providers exist (#119).
+   * Cosmetic de-emphasis - the API keeps accepting local credentials. */
+  hide_local_login?: boolean
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
   /** Whether the in-browser SSH terminal is enabled deployment-wide. */
@@ -5212,6 +5215,7 @@ export interface DeploymentSettings {
   config_drift_interval_minutes: number
   config_drift_last_run: string | null
   ssh_terminal_enabled: boolean
+  hide_local_login: boolean
   digest_enabled: boolean
   digest_frequency: "daily" | "weekly"
   digest_weekday: number
@@ -7375,6 +7379,7 @@ export interface VirtualizationSource {
   poll_interval_minutes: number
   sync_disks: boolean
   sync_networks: boolean
+  match_existing_vlans: boolean
   /** Create each hypervisor node/host as a Device. Off by default. */
   sync_hosts: boolean
   /** Enrich those Devices with model, vendor and serial over vSphere SOAP.

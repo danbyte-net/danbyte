@@ -101,6 +101,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "config_drift_interval_minutes",
             "config_drift_last_run",
             "ssh_terminal_enabled",
+            "hide_local_login",
             "digest_enabled",
             "digest_frequency",
             "digest_weekday",

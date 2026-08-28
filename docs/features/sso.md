@@ -69,6 +69,23 @@ The default claim mapping (`preferred_username`, `email`, `given_name`,
     provider - same scheme, host, and `<slug>`. Behind a reverse proxy, make
     sure Danbyte sees the external `https` host.
 
+## Hiding the local sign-in form
+
+When everyone signs in through SSO, the username/password form is noise. Turn
+on **Hide the local sign-in form** under **Settings → SSO** and the login page
+leads with the provider buttons instead; a **Sign in with a local account**
+link underneath reveals the form for the accounts that still need it.
+
+Three rules keep it safe:
+
+- **It never locks anyone out.** The API keeps accepting local credentials
+  while the form is hidden - the reveal link (or the deep link
+  `/login?local=1`) is the break-glass when the IdP is down.
+- **It fails open.** With no enabled provider, the form stays visible whatever
+  the setting says - hiding the only way in would help nobody.
+- **LDAP counts as local sign-in here.** Directory users sign in through the
+  same form, so they use the same link.
+
 ## Group mapping
 
 On a saved provider, add mappings: the **group value the IdP asserts** → a

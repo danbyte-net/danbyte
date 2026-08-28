@@ -181,6 +181,10 @@ def me_json(request):
                 request.build_absolute_uri(ds.login_logo.url)
                 if ds.login_logo else None
             ),
+            # The login page needs this before anyone signs in; it reveals
+            # only "this install prefers SSO", which the provider list at
+            # /api/auth/sso/providers/ says anyway.
+            "hide_local_login": ds.hide_local_login,
         })
 
     from api.views import _get_active_tenant

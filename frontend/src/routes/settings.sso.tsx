@@ -17,6 +17,8 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { SettingsCard } from "@/components/settings/settings-card"
+import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -170,6 +172,8 @@ function IdentityProviders() {
       ) : (
         <DataTable data={rows} columns={columns} flexColumn="name" />
       )}
+
+      <HideLocalLoginCard hasEnabledProvider={rows.some((r) => r.enabled)} />
 
       <ProviderDialog
         provider={editing}
@@ -871,5 +875,54 @@ function DeleteDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+
+/** Hide the username/password form on the login page (#119).
+
+ * De-emphasis, not lockout: the SSO buttons lead, a "sign in with a local
+ * account" link reveals the form, and the API keeps accepting local and LDAP
+ * credentials - the break-glass when the IdP is down. */
+function HideLocalLoginCard({
+  hasEnabledProvider,
+}: {
+  hasEnabledProvider: boolean
+}) {
+  const { data, save, savingKey } = useDeploymentSettings()
+  const [hide, setHide] = useState(false)
+
+  useEffect(() => {
+    if (data) setHide(data.hide_local_login ?? false)
+  }, [data])
+
+  if (!data) return null
+  return (
+    <SettingsCard
+      title="Local sign-in"
+      description="How the username/password form appears next to SSO."
+      onSave={() =>
+        save.mutate({
+          key: "hide_local_login",
+          patch: { hide_local_login: hide },
+        })
+      }
+      dirty={hide !== (data.hide_local_login ?? false)}
+      saving={savingKey === "hide_local_login"}
+      saveLabel="Save sign-in setting"
+    >
+      <FormCheckbox
+        label="Hide the local sign-in form"
+        checked={hide}
+        onChange={setHide}
+        hint="The login page leads with the SSO buttons; a link reveals the local form. Local and LDAP sign-in keep working - this changes what people see, not what the API accepts."
+      />
+      {!hasEnabledProvider && hide && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-300">
+          No enabled provider: the form stays visible until one exists, so
+          nobody is locked out.
+        </p>
+      )}
+    </SettingsCard>
   )
 }

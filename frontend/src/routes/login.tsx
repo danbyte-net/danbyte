@@ -14,11 +14,14 @@ import { useMe } from "@/lib/use-me"
 export const Route = createFileRoute("/login")({
   validateSearch: (
     search: Record<string, unknown>
-  ): { redirect?: string; sso_error?: string } => ({
+  ): { redirect?: string; sso_error?: string; local?: boolean } => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
     // The SSO handoff redirects back to /login?sso_error=<message> on failure.
     sso_error:
       typeof search.sso_error === "string" ? search.sso_error : undefined,
+    // /login?local=1 opens the local form even when it's hidden (#119) -
+    // the deep link support docs can hand out when the IdP is down.
+    ...(search.local ? { local: true } : {}),
   }),
   component: LoginPage,
 })
@@ -56,7 +59,7 @@ function errText(err: unknown): string {
 function LoginPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
-  const { redirect, sso_error } = Route.useSearch()
+  const { redirect, sso_error, local } = Route.useSearch()
   // `/api/me/` is what plants the CSRF cookie (it's @ensure_csrf_cookie) - wait
   // for it before allowing a submit so the login POST always carries a token.
   const { me, isLoading: meLoading } = useMe()
@@ -71,6 +74,13 @@ function LoginPage() {
     enabled: !me.is_authenticated,
   })
   const providers = providersQ.data?.providers ?? []
+  // Hide the local form only when the deployment asks AND at least one SSO
+  // button exists to sign in with - fail OPEN if every provider is disabled
+  // later, or nobody could sign in at all. The link below reveals it; that is
+  // the break-glass, so the server keeps accepting local credentials always.
+  const [showLocal, setShowLocal] = useState(!!local)
+  const hideLocal =
+    !!me?.hide_local_login && providers.length > 0 && !showLocal
 
   const [step, setStep] = useState<Step>("credentials")
   const [username, setUsername] = useState("")
@@ -191,6 +201,34 @@ function LoginPage() {
                   {sso_error}
                 </p>
               )}
+              {hideLocal && (
+                <>
+                  <div className="grid gap-2">
+                    {providers.map((p) => (
+                      <Button
+                        key={p.slug}
+                        type="button"
+                        className="w-full"
+                        onClick={() => {
+                          window.location.href = `/api/auth/sso/${p.slug}/login/`
+                        }}
+                      >
+                        <LogIn className="size-4" />
+                        Sign in with {p.name}
+                      </Button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-center text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    onClick={() => setShowLocal(true)}
+                  >
+                    Sign in with a local account
+                  </button>
+                </>
+              )}
+              {!hideLocal && (
+              <>
               <div className="grid gap-1.5">
                 <Label htmlFor="username" className="text-xs">
                   Username
@@ -252,6 +290,8 @@ function LoginPage() {
                     ))}
                   </div>
                 </>
+              )}
+              </>
               )}
             </form>
           ) : (
