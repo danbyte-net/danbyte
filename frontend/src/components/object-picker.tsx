@@ -389,7 +389,7 @@ function ObjectSearchDialog<T extends { id: string }>({
       <DialogContent
         size="3xl"
         overlayClassName="lg:left-60"
-        className="flex max-h-[85vh] w-full flex-col gap-4 overflow-hidden lg:left-[calc(50%+7.5rem)]"
+        className="flex max-h-[85vh] flex-col gap-4 overflow-hidden lg:left-[calc(50%+7.5rem)]"
       >
         <DialogHeader>
           <DialogTitle>Find a {spec.noun}</DialogTitle>

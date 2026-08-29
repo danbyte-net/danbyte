@@ -80,7 +80,7 @@ export function MaterializeCableDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Create cable from LLDP link</DialogTitle>
           <DialogDescription>

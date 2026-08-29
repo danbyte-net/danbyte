@@ -537,7 +537,7 @@ docker compose -f docker-compose.prod.yml up -d`}
         open={!!confirmVersion}
         onOpenChange={(o) => !o && setConfirmVersion(null)}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>Upgrade Danbyte to {confirmVersion}?</DialogTitle>
           </DialogHeader>
@@ -590,7 +590,7 @@ docker compose -f docker-compose.prod.yml up -d`}
             setUpgrading(false)
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>Upgrading to {st?.version_to ?? "…"}</DialogTitle>
           </DialogHeader>

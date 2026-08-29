@@ -317,7 +317,7 @@ function BulkEditDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         size="lg"
-        className="max-h-[85vh] overflow-auto sm:max-w-md"
+        className="max-h-[85vh] overflow-auto"
       >
         <DialogHeader>
           <DialogTitle>
