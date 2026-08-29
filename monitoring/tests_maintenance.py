@@ -369,10 +369,14 @@ class IcalFeedTests(_MaintBase):
             title="Splice; window, real",
             due_date=timezone.localdate() + td(days=3),
         )
+        # Relative, not T0: the feed serves today forward, so a hardcoded
+        # date quietly ages out of the window and fails the suite on a
+        # calendar date, not a code change.
+        soon = timezone.now() + td(days=2)
         MaintenanceEvent.objects.create(
             tenant=self.tenant, kind="maintenance",
             status=self._status("confirmed"),
-            name="Window A", starts_at=T0, ends_at=T0 + timedelta(hours=4),
+            name="Window A", starts_at=soon, ends_at=soon + timedelta(hours=4),
         )
         self.client.logout()
 
