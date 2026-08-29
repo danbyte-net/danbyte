@@ -143,7 +143,7 @@ export function LabelTemplateFormDialog({
 }) {
   const qc = useQueryClient()
   const [d, setD] = useState<Draft>(template ?? BLANK)
-  const set = <K extends keyof Draft>(k: K, v: Draft[K]) =>
+  const set = <TKey extends keyof Draft>(k: TKey, v: Draft[TKey]) =>
     setD((prev) => ({ ...prev, [k]: v }))
   const htmlRef = useRef<HTMLTextAreaElement>(null)
 

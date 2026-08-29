@@ -2,13 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  bytesToUnit,
-  INVENTORY_KIND_OPTIONS,
-  unitToBytes,
-  type StorageUnit,
-} from "@/lib/api"
+import { api, bytesToUnit, INVENTORY_KIND_OPTIONS, unitToBytes } from "@/lib/api"
 import type {
   ComponentTemplateBase,
   ComponentTemplateWritePayload,
@@ -19,6 +13,7 @@ import type {
   PowerOutletTemplate,
   PowerPortTemplate,
   RearPortTemplate,
+  StorageUnit,
 } from "@/lib/api"
 import {
   Dialog,
