@@ -90,6 +90,9 @@ export type PathChip = {
   /** The container is a power panel, not a device - `deviceId` is the panel's,
    * so the chip links to /power-panels/$id and its ports to /power-feeds/$id. */
   powerPanel?: boolean
+  /** The far end is a circuit termination - `deviceId` is the circuit's, the
+   * chip links to /circuits/$id, and the "port" is its A/Z side. */
+  circuit?: boolean
   /** The device whose page this trace is on - bordered as "you are here". */
   origin?: boolean
 }
@@ -162,7 +165,13 @@ export function PathStrip({
           >
             {s.chip.deviceId ? (
               <Link
-                to={s.chip.powerPanel ? "/power-panels/$id" : "/devices/$id"}
+                to={
+                  s.chip.powerPanel
+                    ? "/power-panels/$id"
+                    : s.chip.circuit
+                      ? "/circuits/$id"
+                      : "/devices/$id"
+                }
                 params={{ id: s.chip.deviceId }}
                 className="link block px-2.5 pt-1.5 pb-1 text-[11px] font-medium whitespace-nowrap"
               >
@@ -195,7 +204,7 @@ export function PathStrip({
                           to: "/power-feeds/$id",
                           params: { id: port.powerFeedId! },
                         })
-                    : s.chip.deviceId && !s.chip.powerPanel
+                    : s.chip.deviceId && !s.chip.powerPanel && !s.chip.circuit
                       ? () =>
                           navigate({
                             to: "/devices/$id",
@@ -542,6 +551,7 @@ function buildSteps(
           device: dev,
           ports: [portOf(n)],
           powerPanel: nodeId.startsWith("pfd:"),
+          circuit: nodeId.startsWith("ct:"),
         }
         steps.push({ t: "chip", chip })
         continue

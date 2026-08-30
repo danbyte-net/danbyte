@@ -120,14 +120,31 @@ def _physical_links(tenant):
 
     Returns ``[(cable, dev_a, port_a, kind_a, dev_b, port_b, kind_b)]``.
     """
+    from types import SimpleNamespace
+
     links = []
     for cab in _cables_qs(tenant):
         a_ends, b_ends = [], []
         for t in cab.terminations.all():
             kind, obj = _term_point(t)
-            # Only device-bearing endpoints form device↔device links; skip a
-            # power feed (it terminates on a PowerPanel, which has no device_id).
-            if obj is None or getattr(obj, "device_id", None) is None:
+            if obj is None:
+                continue
+            # A circuit end has no device, but it IS a real endpoint - without
+            # this, a port cabled to the provider's demarc reported "nothing
+            # cabled" on its own page (#118). Shim it into the (device, port)
+            # shape the walk speaks: the circuit is the "device", the side is
+            # the "port".
+            if kind == "circuit_termination":
+                dev = SimpleNamespace(id=obj.circuit_id, name=obj.circuit.cid)
+                port = SimpleNamespace(
+                    id=obj.id, name=f"Side {obj.term_side}",
+                    device_id=obj.circuit_id, device=dev,
+                )
+                (a_ends if t.end == "A" else b_ends).append((kind, port))
+                continue
+            # Power feeds terminate on a PowerPanel (no device_id) - skipped
+            # here as before; they have their own surfaces.
+            if getattr(obj, "device_id", None) is None:
                 continue
             (a_ends if t.end == "A" else b_ends).append((kind, obj))
         for ka, pa in a_ends:
@@ -955,6 +972,14 @@ def device_paths(device, viewable_ids=None):
     def chip(dev, port_pairs, panel):
         """``port_pairs`` = [(port_obj, kind)] - interface ports carry their
         id so the frontend can make the name itself a click target."""
+        # A circuit end: the "device" is the circuit, the chip links there.
+        if any(k == "circuit_termination" for _, k in port_pairs):
+            return {
+                "t": "chip", "device_id": str(dev.id), "device": dev.name,
+                "ports": [{"name": p.name, "interface_id": None}
+                          for p, _ in port_pairs],
+                "panel": panel, "circuit": True,
+            }
         # Redact devices outside the caller's view scope - a physical run can
         # cross into another site's device; show that a hop exists without
         # leaking its identity.
@@ -1179,6 +1204,7 @@ def cable_strand_path(cable, strand):
             "device": getattr(owner, "name", None) or owner.cid,
             "panel": False,
             "ports": [{"name": name, "interface_id": None}],
+            **({"circuit": True} if kind == "circuit_termination" else {}),
         }
 
     def walk_out(kind, port):

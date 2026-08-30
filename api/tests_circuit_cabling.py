@@ -139,6 +139,25 @@ class CircuitCablingTests(APITestCase):
         # box on the canvas to be grouped under.
         self.assertIsNone(node["data"]["device_id"])
 
+    def test_device_paths_shows_the_circuit_run(self):
+        """The device page's runs list said "nothing cabled" for a port whose
+        far end is a circuit - the link walk dropped endpoints without a
+        device_id. The circuit is the far chip now."""
+        self.assertEqual(
+            self._cable(
+                "circuit_termination", self.term.id, "interface", self.port.id
+            ).status_code,
+            201,
+        )
+        r = self.client.get(f"/api/devices/{self.sw.id}/paths/")
+        self.assertEqual(r.status_code, 200, r.content)
+        runs = r.json()["runs"]
+        self.assertEqual(len(runs), 1)
+        chips = [st for st in runs[0]["steps"] if st["t"] == "chip"]
+        far = next(c for c in chips if c.get("circuit"))
+        self.assertEqual(far["device"], "ACME-1234")
+        self.assertEqual(far["ports"][0]["name"], "Side A")
+
     def test_termination_endpoint_reports_its_cable(self):
         self.assertEqual(
             self._cable(
