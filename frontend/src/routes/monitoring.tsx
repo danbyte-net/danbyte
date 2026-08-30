@@ -50,6 +50,7 @@ import { ChecksList } from "@/components/monitoring/checks-list"
 import { TemplatesList } from "@/components/monitoring/templates-list"
 import { MonitoringConfiguration } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
+import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
   | "overview"
@@ -107,6 +108,7 @@ const KIND_PALETTE = [
 ]
 
 function MonitoringPage() {
+  usePageTitle("Monitoring")
   const { view, status } = Route.useSearch()
   // Same gate the settings page uses - the tab is hidden without it, and the
   // panel is guarded too so a hand-typed ?view=settings shows nothing.

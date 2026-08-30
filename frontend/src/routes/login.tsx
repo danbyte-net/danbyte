@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useMe } from "@/lib/use-me"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/login")({
   validateSearch: (
@@ -57,6 +58,7 @@ function errText(err: unknown): string {
 }
 
 function LoginPage() {
+  usePageTitle("Sign in")
   const nav = useNavigate()
   const qc = useQueryClient()
   const { redirect, sso_error, local } = Route.useSearch()

@@ -90,6 +90,7 @@ import {
   type PosByStyle,
   type PosMap,
 } from "@/components/topology/view-positions"
+import { usePageTitle } from "@/lib/page-title"
 
 const TopologyCanvas = lazy(() =>
   import("@/components/topology/topology-canvas").then((m) => ({
@@ -342,6 +343,7 @@ function writeStoredDisplay(d: StoredDisplay) {
 }
 
 function TopologyPage() {
+  usePageTitle("Topology")
   const urlSearch = Route.useSearch()
   const nav = useNavigate()
   const patch = useUrlPatch()

@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { TaskView } from "@/components/planning/task-detail"
+import { usePageTitle } from "@/lib/page-title"
 
 // `$boardId_` - the trailing underscore keeps this out of the board route's
 // component. Without it the flat file convention nests the task *inside*
@@ -35,6 +36,7 @@ function TaskPage() {
     queryKey: ["planning-task", taskId],
     queryFn: () => api<PlanningTask>(`/api/planning/tasks/${taskId}/`),
   })
+  usePageTitle(taskQ.data?.title ?? null)
   const statusesQ = useQuery({
     queryKey: ["planning-statuses", boardId],
     queryFn: () =>

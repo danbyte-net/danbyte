@@ -122,6 +122,7 @@ import { MapPaletteRail } from "@/components/site-map/palette-rail"
 import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
+import { usePageTitle } from "@/lib/page-title"
 
 // The geographic floor plan. Same shell as /floorplans/$id - h-14 header with
 // View|Edit tabs + search + view tools, left palette rail in edit mode, the
@@ -145,6 +146,7 @@ export const Route = createFileRoute("/site-map")({
 })
 
 function SiteMapPage() {
+  usePageTitle("Site map")
   const { canDo } = useMe()
   const canView = canDo("site", "view")
   const q = useQuery({

@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useMe } from "@/lib/use-me"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/set-password")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -26,6 +27,7 @@ function errText(err: unknown): string {
 }
 
 function SetPasswordPage() {
+  usePageTitle("Set password")
   const nav = useNavigate()
   const { me } = useMe()
   const { uid, token } = Route.useSearch()

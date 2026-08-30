@@ -56,6 +56,7 @@ import {
   toRglLayout,
   type DashItem,
 } from "@/lib/dashboard-layout"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/")({ component: Dashboard })
 
@@ -81,6 +82,7 @@ function loadLocalLayout(): DashItem[] | null {
 }
 
 function Dashboard() {
+  usePageTitle("Dashboard")
   const q = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<DashboardData>("/api/dashboard/"),

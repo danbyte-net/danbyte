@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router"
 
 import { useMe } from "@/lib/use-me"
+import { usePageTitle } from "@/lib/page-title"
 
 // Layout for the /settings branch: a left subnav (User / Admin sections) and
 // an Outlet for the active page.
@@ -78,6 +79,13 @@ const SECTIONS: NavSection[] = [
 function SettingsLayout() {
   const { me, canManage, canManageDeployment } = useMe()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  // The layout owns the nav catalog, so it titles the tab for every child
+  // page in one place - "Security", "Email & Delivery", … - instead of each
+  // settings page carrying its own call.
+  usePageTitle(
+    SECTIONS.flatMap((s) => s.items).find((i) => pathname === i.to)?.label ??
+      "Settings"
+  )
   // Highlight the settings page you're on.
   const cls = (href: string) => (pathname === href ? activeLinkCls : linkCls)
   const settingsSites = me.settings_sites ?? []

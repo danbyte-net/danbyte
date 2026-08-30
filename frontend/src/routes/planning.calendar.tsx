@@ -44,6 +44,7 @@ import {
   monthCells,
 } from "@/components/planning/calendar-month"
 import { CalendarTimeGrid } from "@/components/planning/calendar-timegrid"
+import { usePageTitle } from "@/lib/page-title"
 
 const VIEWS = ["month", "week", "day"] as const
 type CalView = (typeof VIEWS)[number]
@@ -86,6 +87,7 @@ function mondayOf(day: string): string {
 }
 
 function CalendarPage() {
+  usePageTitle("Calendar")
   const {
     month: monthParam,
     day: dayParam,

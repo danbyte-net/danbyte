@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { FormCheckbox, FormSelect } from "@/components/forms"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/notifications")({
   component: NotificationsPage,
@@ -110,6 +111,7 @@ function SourceBadge({ source }: { source: string }) {
 // ─── page ─────────────────────────────────────────────────────────────────
 
 function NotificationsPage() {
+  usePageTitle("Notifications")
   const { canManage, canDo } = useMe()
   const nav = useNavigate({ from: Route.fullPath })
   const { tab } = Route.useSearch()

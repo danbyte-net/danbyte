@@ -15,6 +15,7 @@ import { FiberDot } from "@/components/fiber/fiber-dot"
 import { FiberMap } from "@/components/fiber/fiber-map"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
+import { usePageTitle } from "@/lib/page-title"
 
 const MODELLING: { value: StrandModelling; label: string; blurb: string }[] = [
   {
@@ -37,6 +38,7 @@ const MODELLING: { value: StrandModelling; label: string; blurb: string }[] = [
 export const Route = createFileRoute("/fiber")({ component: FiberSettingsPage })
 
 function FiberSettingsPage() {
+  usePageTitle("Fibre colours")
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["fiber-settings"],

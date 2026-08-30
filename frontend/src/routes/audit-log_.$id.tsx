@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/audit-log_/$id")({
   // `from` carries the filtered list href so Back can return to it.
@@ -43,6 +44,7 @@ function ChangeLogDetail() {
   // The same object's full history, for Previous / Next navigation between
   // its changes (newest first, mirroring the History tab ordering).
   const e = q.data
+  usePageTitle(e ? `${e.object_label} ${e.object_repr}` : null)
   const historyQ = useQuery({
     enabled: !!e,
     queryKey: ["changelog", e?.object_type, e?.object_id],

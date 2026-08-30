@@ -148,6 +148,7 @@ import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
 import { storedQualitySetting, storeQualitySetting } from "@/lib/render-quality"
 import type { RenderQualitySetting } from "@/lib/render-quality"
+import { usePageTitle } from "@/lib/page-title"
 
 /** Arms the canvas's drag-rect painter while drawing a raised-floor area -
  * the ghost rect reuses the palette machinery, nothing else reads this. */
@@ -225,6 +226,7 @@ function FloorPlanPage() {
     queryKey: ["floor-plan", id],
     queryFn: () => api<FloorPlan>(`/api/floor-plans/${id}/`),
   })
+  usePageTitle(planQuery.data?.name ?? null)
   const tilesQuery = useQuery({
     queryKey: ["floor-plan-tiles", id],
     queryFn: () =>
