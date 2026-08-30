@@ -170,21 +170,6 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
             description={d.description}
           />
 
-          <section className="border-b border-border px-6 py-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-sm font-semibold">SNMP credentials</h2>
-              <SnmpBindingControl
-                scope="device_type"
-                objectId={d.id}
-                canEdit={canDo("devicetype", "change")}
-              />
-            </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Default SNMP profile for devices of this type - overridden by a
-              device's role or the device itself.
-            </p>
-          </section>
-
           <CustomFieldValues model="devicetype" values={d.custom_fields} />
         </>
       }
@@ -272,7 +257,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
 /** Device-type attributes that used to crowd the header, grouped into labelled
  * tables. Only the identifying manufacturer/model stay up top. */
 function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
-  const { humanIds } = useMe()
+  const { humanIds, canDo } = useMe()
 
   const hardware: KvRow[] = [
     ...(humanIds && d.numid != null
@@ -326,13 +311,67 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     },
   ]
 
+  // The Components tab's breakdown, surfaced where people first look.
+  // Every row deep-links to its section; kinds with nothing stay silent.
+  const componentRows: KvRow[] = Object.entries(d.component_counts ?? {}).map(
+    ([sub, n]) => ({
+      label: COMPONENT_KIND_LABELS[sub] ?? sub,
+      value: (
+        <Link
+          to="/device-types/$id"
+          params={{ id: d.id }}
+          search={{ tab: "components", sub: sub as SectionKind }}
+          className="num link"
+        >
+          {n}
+        </Link>
+      ),
+    })
+  )
+
+  const monitoring: KvRow[] = [
+    {
+      label: "SNMP profile",
+      value: (
+        <SnmpBindingControl
+          scope="device_type"
+          objectId={d.id}
+          canEdit={canDo("devicetype", "change")}
+          inline
+        />
+      ),
+    },
+  ]
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <KvCard title="Hardware" rows={hardware} />
+      <div className="grid gap-6">
+        <KvCard title="Hardware" rows={hardware} />
+        {componentRows.length > 0 && (
+          <KvCard title="Components" rows={componentRows} />
+        )}
+      </div>
       <div className="grid gap-6">
         <KvCard title="Usage" rows={usage} />
+        <KvCard title="Monitoring" rows={monitoring} />
         <LifecycleCard item={d} />
       </div>
     </div>
   )
+}
+
+/** Sub-tab slug → human label, matching the Components tab's sections. */
+const COMPONENT_KIND_LABELS: Record<string, string> = {
+  interface: "Interfaces",
+  "console-port": "Console ports",
+  "console-server-port": "Console server ports",
+  "power-port": "Power ports",
+  "power-outlet": "Power outlets",
+  "rear-port": "Rear ports",
+  "front-port": "Front ports",
+  "device-bay": "Device bays",
+  "module-bay": "Module bays",
+  "inventory-item": "Hardware",
+  "aux-port": "Aux ports",
+  antenna: "Antennas",
 }

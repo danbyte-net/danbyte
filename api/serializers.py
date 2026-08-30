@@ -1670,6 +1670,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     )
     device_count = serializers.SerializerMethodField()
     component_count = serializers.SerializerMethodField()
+    component_counts = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
 
@@ -1681,6 +1682,34 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     def get_device_count(self, obj) -> int:
         v = getattr(obj, "device_count_annotated", None)
         return v if v is not None else obj.device_set.count()
+
+    #: Overview-card breakdown: keys are the Components tab's sub-tab slugs,
+    #: so each row can deep-link straight to its section.
+    _COMPONENT_COUNT_RELS = [
+        ("interface", "interface_templates"),
+        ("console-port", "console_port_templates"),
+        ("console-server-port", "console_server_port_templates"),
+        ("power-port", "power_port_templates"),
+        ("power-outlet", "power_outlet_templates"),
+        ("rear-port", "rear_port_templates"),
+        ("front-port", "front_port_templates"),
+        ("device-bay", "device_bay_templates"),
+        ("module-bay", "module_bay_templates"),
+        ("inventory-item", "inventory_item_templates"),
+        ("aux-port", "aux_port_templates"),
+        ("antenna", "antenna_templates"),
+    ]
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_component_counts(self, obj):
+        view = self.context.get("view")
+        if view is not None and getattr(view, "action", None) == "list":
+            return {}
+        return {
+            slug: n
+            for slug, rel in self._COMPONENT_COUNT_RELS
+            if (n := getattr(obj, rel).count())
+        }
 
     def get_component_count(self, obj) -> int:
         # The Components tab's total - every template kind summed. Detail
@@ -1848,7 +1877,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "subdevice_role", "exclude_from_utilization",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
-                  "tags", "tag_ids", "device_count", "component_count",
+                  "tags", "tag_ids", "device_count", "component_count", "component_counts",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "component_count",
                   "front_image", "rear_image",

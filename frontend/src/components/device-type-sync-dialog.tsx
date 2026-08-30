@@ -104,7 +104,12 @@ export function DeviceTypeSyncDialog({
           body: JSON.stringify({ apply: true, remove_extra: removeExtra }),
         }
       ),
-    onSuccess: (r) => setRunId(r.run.id),
+    onSuccess: (r) => {
+      setRunId(r.run.id)
+      // Leave the confirm step behind - the run view owns the dialog now,
+      // and the destructive button must not linger looking un-pressed.
+      setConfirming(false)
+    },
     onError: (e) => apiErrorToast(e, "Couldn't start the sync"),
   })
 
@@ -293,16 +298,18 @@ export function DeviceTypeSyncDialog({
         <DialogFooter>
           <Button
             variant="ghost"
-            onClick={() => (confirming ? setConfirming(false) : close())}
+            onClick={() =>
+              confirming && !runId ? setConfirming(false) : close()
+            }
           >
-            {confirming ? "Back" : done ? "Close" : "Cancel"}
+            {confirming && !runId ? "Back" : done ? "Close" : "Cancel"}
           </Button>
           {!runId && !!t?.changing && !confirming && (
             <Button onClick={() => setConfirming(true)}>
               Sync {t.changing} device{t.changing === 1 ? "" : "s"}
             </Button>
           )}
-          {confirming && (
+          {confirming && !runId && (
             <Button
               variant={removeExtra ? "destructive" : "default"}
               disabled={start.isPending}

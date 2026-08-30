@@ -575,7 +575,13 @@ export function TilePopover({
         side="top"
         align="start"
         sideOffset={12}
-        className={wideRows.length ? "w-80 p-3" : "w-64 p-3"}
+        // A faceplate at w-80 was an unreadable postage stamp - the wide
+        // variant gets real room, capped to the viewport.
+        className={
+          wideRows.length
+            ? "w-[min(38rem,calc(100vw-2rem))] p-3"
+            : "w-64 p-3"
+        }
         // Unpinned it's a preview: never steal focus, and let the pointer through
         // so moving to the next tile doesn't fight the popover.
         onOpenAutoFocus={(e) => {

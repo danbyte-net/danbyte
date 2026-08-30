@@ -1152,6 +1152,8 @@ export interface DeviceType extends LifecycleInfo {
   /** Every component-template kind summed - detail responses only (0 on
    * list, where it isn't rendered). */
   component_count: number
+  /** Per-kind template counts, keyed by the Components tab's sub slugs. */
+  component_counts?: Record<string, number>
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string
@@ -2648,6 +2650,8 @@ export interface DevicePathRun {
         ports: { name: string; interface_id: string | null }[]
         panel: boolean
         origin?: boolean
+        /** The far end is a circuit termination; device_id is the circuit. */
+        circuit?: boolean
       }
     | {
         t: "seg"
