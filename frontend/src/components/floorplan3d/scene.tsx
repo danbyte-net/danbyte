@@ -493,6 +493,9 @@ export default function FloorScene3D({
         }}
       >
         <InvalidatorBridge apiRef={invalidateRef} />
+        <InvalidateOnToggle
+          stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
+        />
         {/* Light rig: soft ambient + one shadow-casting key light + a dim
             fill, over a procedural studio environment (PMREM'd
             RoomEnvironment - zero assets, so airgap/CSP-safe). Intensities
@@ -949,6 +952,18 @@ function StudioEnvironment() {
 
 /** invalidate() escape hatch for DOM overlays: with `frameloop="demand"`, a
  * HUD button that mutates a ref (fly-to) must kick a frame itself. */
+/** fiber 9.6.1 never invalidates on child REMOVAL (removeChild nulls the
+ * parent before invalidateInstance's parent guard runs), so toggling a layer
+ * OFF would leave its last frame on screen until the next orbit. One kicked
+ * frame per view-pref change closes that whole class. */
+function InvalidateOnToggle({ stamp }: { stamp: string }) {
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    invalidate()
+  }, [stamp, invalidate])
+  return null
+}
+
 function InvalidatorBridge({
   apiRef,
 }: {

@@ -10,6 +10,10 @@ import type { ScenePayload, SceneWall } from "./world"
 
 /** Neutral zinc, the rack-frame family - walls are structure, not signal. */
 const WALL_COLOR = "#27272a"
+/** X-ray default: lighter than the floor slab. A 0.15-alpha ghost of the
+ * floor's own hex composites to the floor's own color - literally invisible
+ * on the dark theme - so the ghost gets a tint the ground doesn't have. */
+const GHOST_COLOR = "#52525b"
 
 /**
  * One wall polyline as solid boxes with door gaps and lintels - the 3D read
@@ -59,17 +63,23 @@ export function WallMesh({
             <boxGeometry
               args={[len + WALL_THICKNESS_M, b.y1 - b.y0, WALL_THICKNESS_M]}
             />
-            {ghost ? (
-              <meshStandardMaterial
-                color={tint}
-                roughness={0.92}
-                transparent
-                opacity={0.15}
-                depthWrite={false}
-              />
-            ) : (
-              <meshStandardMaterial color={tint} roughness={0.92} />
-            )}
+            {/* ONE material element, keyed by mode, every mode-dependent prop
+                explicit. A solid/ghost ternary of the same element type is
+                diffed IN PLACE, and r3f resets the removed props to 0 - not
+                their defaults (three's material constructors take an arg, so
+                the default-restore path never runs). transparent=0 then fails
+                both of three's strict ===true/===false checks: opaque render
+                list, alpha 0 - walls vanished until a recompile with luckier
+                state. The key remounts a fresh material so the shader's
+                OPAQUE define always matches the mode. */}
+            <meshStandardMaterial
+              key={ghost ? "ghost" : "solid"}
+              color={ghost && !wall.color ? GHOST_COLOR : tint}
+              roughness={0.92}
+              transparent={ghost}
+              opacity={ghost ? 0.3 : 1}
+              depthWrite={!ghost}
+            />
           </mesh>
         )
       })}

@@ -76,17 +76,18 @@ export function Room({
         receiveShadow
       >
         <planeGeometry args={[w, d]} />
-        {xray ? (
-          <meshStandardMaterial
-            color="#27272a"
-            roughness={0.95}
-            transparent
-            opacity={0.35}
-            depthWrite={false}
-          />
-        ) : (
-          <meshStandardMaterial color="#27272a" roughness={0.95} />
-        )}
+        {/* Keyed single material with explicit mode props - a same-type
+            solid/ghost ternary is diffed in place and r3f resets removed
+            props to 0 (transparent=0 breaks three's strict checks; see
+            WallMesh). */}
+        <meshStandardMaterial
+          key={xray ? "ghost" : "solid"}
+          color="#27272a"
+          roughness={0.95}
+          transparent={xray}
+          opacity={xray ? 0.35 : 1}
+          depthWrite={!xray}
+        />
       </mesh>
       {plan.background_image && (
         <Blueprint
