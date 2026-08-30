@@ -644,6 +644,21 @@ class SceneTests(_Base):
         self.assertIsNone(tile["rack"])
         self.assertEqual(tile["type_name"], "Rack")
 
+    def test_scene_carries_the_linked_device_name(self):
+        """A device tile with no manual label still names its ghost box in 3D
+        - same fallback the 2D canvas uses (label, else linked name)."""
+        dev = Device.objects.create(tenant=self.tenant, name="cam-lobby-1")
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, tile_type=self.tt, x=5, y=5,
+            device=dev, link_kind="device",
+        )
+        body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
+        tile = next(
+            t for t in body["tiles"] if t["device_name"] == "cam-lobby-1"
+        )
+        self.assertEqual(tile["kind"], "device")
+        self.assertEqual(tile["label"], "")
+
     def test_scene_carries_perforated_from_the_tile_type(self):
         """A perforated zone type marks its scene tiles, so the 3D room can
         draw grate floor where the cold-aisle supply tiles sit."""

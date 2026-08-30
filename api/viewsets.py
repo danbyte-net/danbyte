@@ -7735,6 +7735,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "label": t.label or "",
                 "kind": "rack" if t.rack_id else
                         "device" if t.device_id else "other",
+                # The linked device's name - the 2D canvas labels device tiles
+                # with it (tileName: label || linked.name) and the 3D room's
+                # ghost boxes want the same fallback.
+                "device_name": t.device.name if t.device_id else "",
                 # The type's name, so the 3D room can label unlinked tiles
                 # ("build in advance": planned massing before objects exist).
                 "type_name": (

@@ -1971,11 +1971,13 @@ function TileShape({
 }
 
 /**
- * A rack tile's facing indicator: a thin threshold line floating just OUTSIDE
- * the edge the cabinet's FRONT (door) points at - like a door mark on an
- * architectural plan. Outside the rect so it never collides with the
- * utilization bar, label, or link dot inside the tile. Orientation matches
- * the 3D room: 0 = up (north), 90 = right, 180 = down, 270 = left.
+ * A rack tile's facing indicator: a thin accent bar hugging the INSIDE of the
+ * edge the cabinet's FRONT (door) points at - a door threshold on an
+ * architectural plan. Inside the rect because adjacent tiles share edges: the
+ * old outside placement bled straight into the neighbouring cell. It renders
+ * before the utilization bar/label, so those draw over it where they meet.
+ * Orientation matches the 3D room: 0 = up (north), 90 = right, 180 = down,
+ * 270 = left.
  */
 function FacingEdge({
   w,
@@ -1988,17 +1990,17 @@ function FacingEdge({
   orientation: number
   color: string
 }) {
-  const t = 3 // line thickness
-  const gap = 3 // distance outside the tile edge
+  const t = 3 // bar thickness
+  const edge = 1.5 // sits just inside the tile's stroke
   const inset = 7 // corner clearance (keeps the rounded corners clean)
   const bar =
     orientation === 90
-      ? { x: w + gap, y: inset, width: t, height: h - inset * 2 }
+      ? { x: w - edge - t, y: inset, width: t, height: h - inset * 2 }
       : orientation === 180
-        ? { x: inset, y: h + gap, width: w - inset * 2, height: t }
+        ? { x: inset, y: h - edge - t, width: w - inset * 2, height: t }
         : orientation === 270
-          ? { x: -gap - t, y: inset, width: t, height: h - inset * 2 }
-          : { x: inset, y: -gap - t, width: w - inset * 2, height: t }
+          ? { x: edge, y: inset, width: t, height: h - inset * 2 }
+          : { x: inset, y: edge, width: w - inset * 2, height: t }
   return (
     <rect {...bar} rx={t / 2} fill={color} opacity={0.9} pointerEvents="none" />
   )

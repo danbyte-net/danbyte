@@ -156,9 +156,10 @@ uploaded blueprint textures it.
   cords land exactly on them.
 - **Build in advance**: a typed tile needs no linked object - paint the
   future rack row now (bulk *Set type* makes this one sweep) and link real
-  racks as they land. In 3D, unlinked non-zone tiles render as translucent
-  ghost boxes with their type name, so the planned room reads as a room
-  rather than empty floor. Scroll-zoom dollies **toward the pointer**, so
+  racks as they land. In 3D, non-rack tiles render as translucent ghost
+  boxes so the planned room reads as a room rather than empty floor. Each
+  carries a camera-facing name tag - the tile's label, else its linked
+  device's name, else the type name. Scroll-zoom dollies **toward the pointer**, so
   getting close to a far corner of a big hall is one scroll, not a slow
   W-key flight.
 - **Airflow** (View menu, 3D): draws each device's cooling direction as
@@ -255,7 +256,7 @@ read-only viewer.
 | Place a tile | Click a palette entry to arm it, then click a cell (default size) or drag a rectangle (walls, aisles) |
 | Move | Drag a tile - snaps to cells |
 | Resize | Drag the corner handle of the selected tile |
-| Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest |
+| Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces |
 | Label / color / status | The inspector panel (label overrides the linked object's name; status renders planned/reserved dashed, decommissioning faded) |
 | Link to an object | Inspector → Link: rack and device use the advanced pickers, power panel/feed and nested plans a searchable dropdown |
 | Delete | Select + `Delete`, or the inspector button |

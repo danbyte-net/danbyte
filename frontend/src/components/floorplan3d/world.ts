@@ -83,6 +83,9 @@ export interface SceneTile {
   color: string
   is_zone: boolean
   rack: SceneRack | null
+  /** The linked device's name - labels device tiles like the 2D canvas does
+   * (tile label wins, then this). */
+  device_name?: string
   /** The tile type's / role's name - labels unlinked planning tiles. */
   type_name?: string
   /** Zone tiles of a perforated type draw as grate floor in 3D. Optional so
