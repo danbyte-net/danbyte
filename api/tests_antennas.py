@@ -129,6 +129,77 @@ class AntennaTests(APITestCase):
         )
         self.assertEqual(r.status_code, 400, r.content)
 
+    def test_ranged_names_expand_server_side(self):
+        """"RF[1-2]" through the raw API makes RF1 and RF2 - the dialogs used
+        to be the only place the shorthand meant anything, so a script got one
+        literally-named row."""
+        r = self.client.post(
+            "/api/antenna-templates/",
+            {"device_type_id": str(self.dt.id), "name": "ant[1-4]",
+             "antenna_type": "internal", "gain_dbi": "4.50",
+             "bands": ["2.4ghz", "5ghz"]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["name"], "ant1")  # the first row comes back
+        names = sorted(
+            self.dt.antenna_templates.values_list("name", flat=True)
+        )
+        self.assertEqual(names, ["ant1", "ant2", "ant3", "ant4"])
+        # Every row carries the shared fields, not just the first.
+        self.assertTrue(all(
+            t.bands == ["2.4ghz", "5ghz"]
+            for t in self.dt.antenna_templates.all()
+        ))
+
+    def test_ranged_device_components_expand_too(self):
+        device = self._device("ap9")
+        r = self.client.post(
+            "/api/aux-ports/",
+            {"device_id": str(device.id), "name": "RF[1-2]", "type": "n-type"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(
+            sorted(device.aux_ports.values_list("name", flat=True)),
+            ["RF1", "RF2"],
+        )
+        r = self.client.post(
+            "/api/interfaces/",
+            {"device_id": str(device.id), "name": "eth[0-3]",
+             "type": "2.5gbase-t"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(device.interfaces.count(), 4)
+
+    def test_a_ranged_clash_refuses_cleanly(self):
+        device = self._device("ap10")
+        self.client.post("/api/aux-ports/",
+                         {"device_id": str(device.id), "name": "RF2"},
+                         format="json")
+        r = self.client.post(
+            "/api/aux-ports/",
+            {"device_id": str(device.id), "name": "RF[1-3]"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("name", r.json())
+        # Nothing partial was written.
+        self.assertEqual(device.aux_ports.count(), 1)
+
+    def test_an_oversized_range_stays_literal(self):
+        # Mirrors the frontend cap: a typo must not fan out 99k rows.
+        device = self._device("ap11")
+        r = self.client.post(
+            "/api/aux-ports/",
+            {"device_id": str(device.id), "name": "p[1-9999]"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(device.aux_ports.count(), 1)
+        self.assertEqual(device.aux_ports.get().name, "p[1-9999]")
+
     def test_bundle_round_trips_antenna_templates(self):
         AntennaTemplate.objects.create(
             device_type=self.dt, name="ant0", antenna_type="omni",

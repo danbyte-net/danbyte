@@ -3622,7 +3622,56 @@ class DeviceViewSet(
         ))
 
 
-class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
+class NameRangeCreateMixin:
+    """Fan a ``[a-b]`` range in a created component's name out into one row
+    per name - server-side, so the API means the same as the dialogs.
+
+    Names the client already expanded contain no range, so a fanning client
+    stays a harmless N single creates. The response body is the FIRST row.
+    """
+
+    def perform_create(self, serializer):
+        from django.db import transaction
+
+        from .name_range import expand_name_range
+
+        name = serializer.validated_data.get("name") or ""
+        names = expand_name_range(name)
+        if len(names) == 1:
+            return self._create_one(serializer)
+        model = serializer.Meta.model
+        scope_field = getattr(self, "bulk_name_scope_field", None) or (
+            "device_type_id" if hasattr(model, "device_type") else "device_id"
+        )
+        scope_value = serializer.validated_data.get(
+            scope_field.removesuffix("_id")
+        )
+        clash = model.objects.filter(
+            **{scope_field.removesuffix("_id"): scope_value},
+            name__in=names,
+        ).values_list("name", flat=True)
+        if clash:
+            raise ValidationError(
+                {"name": f"Already exists: {', '.join(sorted(clash)[:5])}."}
+            )
+        first = None
+        with transaction.atomic():
+            for n in names:
+                # A fresh save per name through the same validated data - tags
+                # and custom fields ride along like any single create.
+                serializer.instance = None
+                serializer.validated_data["name"] = n
+                self._create_one(serializer)
+                first = first or serializer.instance
+        serializer.instance = first
+
+    def _create_one(self, serializer):
+        """One row. Subclasses with their own save logic override THIS, not
+        perform_create - the range fan-out has to wrap whatever they do."""
+        super().perform_create(serializer)
+
+
+class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
 
     bulk_str_fields = ("type", "mode", "speed", "duplex", "description")
@@ -3687,7 +3736,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         if clash.exists():
             raise ValidationError({"name": "This device already has an interface with that name."})
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 
@@ -4147,7 +4196,7 @@ class CableViewSet(TenantScopedViewSet):
         )
 
 
-class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
+class _DevicePortViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Shared base for FrontPort / RearPort - no direct tenant FK; scope via
     device.tenant, like interfaces."""
 
@@ -4188,7 +4237,7 @@ class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
         if clash.exists():
             raise ValidationError({"name": "This device already has a port with that name."})
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 
@@ -4328,7 +4377,7 @@ class PowerOutletViewSet(_DevicePortViewSet):
 
 
 # ─── Device-type component templates ─────────────────────────────────────────
-class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
+class _ComponentTemplateViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Shared base for the per-device-type component templates - no direct
     tenant FK; scope via device_type.tenant. Filter with ?device_type=."""
 
@@ -4369,7 +4418,7 @@ class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
                 {"name": "This device type already has a template with that name."}
             )
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 
