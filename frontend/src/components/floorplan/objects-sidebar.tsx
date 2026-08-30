@@ -118,25 +118,42 @@ export function ObjectsSidebar({
             {g.tiles.map((t) => {
               const live = liveState?.tiles[t.id]
               const tone = live?.check ? CHECK_TONE[live.check] : null
+              const name = tileName(t)
+              // A labelled tile hides its linked object's real name - surface
+              // it as a muted second line so the row reads "label / device".
+              const sub =
+                t.linked?.name && t.linked.name !== name ? t.linked.name : null
               return (
                 <button
                   key={t.id}
                   type="button"
                   onClick={() => onPick(t)}
                   className={cn(
-                    "flex items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[13px] hover:bg-muted/60",
+                    "flex gap-2 rounded px-1.5 py-1 pl-6 text-left text-[13px] hover:bg-muted/60",
+                    sub ? "items-start" : "items-center",
                     t.id === selectedId && "bg-muted font-medium"
                   )}
-                  title={tileName(t) || undefined}
+                  title={sub ? `${name} · ${sub}` : name || undefined}
                 >
                   {tone && (
                     <span
-                      className={cn("size-1.5 shrink-0 rounded-full", tone)}
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        sub && "mt-[5px]",
+                        tone
+                      )}
                     />
                   )}
-                  <span className="min-w-0 truncate">
-                    {tileName(t) || (
-                      <span className="text-muted-foreground">Unnamed</span>
+                  <span className="min-w-0">
+                    <span className="block truncate">
+                      {name || (
+                        <span className="text-muted-foreground">Unnamed</span>
+                      )}
+                    </span>
+                    {sub && (
+                      <span className="block truncate text-[11px] leading-tight font-normal text-muted-foreground">
+                        {sub}
+                      </span>
                     )}
                   </span>
                 </button>

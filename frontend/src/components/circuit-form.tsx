@@ -19,6 +19,7 @@ import {
   FormSection,
   FormStatusSelect,
   FormTags,
+  FormDate,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -198,18 +199,14 @@ export function CircuitForm({ circuit, onSaved, onCancel }: CircuitFormProps) {
         <FormColumn>
           <FormSection title="Service" card>
             <div className="grid gap-3 @md:grid-cols-2">
-              <FormText
+              <FormDate
                 label="Install date"
-                type="text"
-                placeholder="YYYY-MM-DD"
                 value={installDate}
                 onChange={setInstallDate}
                 error={fieldErrors.install_date}
               />
-              <FormText
+              <FormDate
                 label="Termination date"
-                type="text"
-                placeholder="YYYY-MM-DD"
                 value={terminationDate}
                 onChange={setTerminationDate}
                 error={fieldErrors.termination_date}

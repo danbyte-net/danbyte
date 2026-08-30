@@ -541,6 +541,9 @@ cable runs, just the trays, or both.
 
 - **Search** (Layout mode, header): type a tile's label, linked object, or
   type name and jump straight to it - the canvas pans and zooms to the hit.
+- **On this plan** (right rail): every placed tile grouped by device role and
+  tile type, with its own search over the same fields. A labelled tile shows
+  its linked object's real name as a muted second line.
 - **Fit** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
