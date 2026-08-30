@@ -42,6 +42,9 @@ export interface FloorCanvasApi {
 
 /** Pixel size of one grid cell in world coordinates. */
 export const CELL = 40
+/** Pixels a tile's drawn rect sits inside its cell footprint, so adjacent
+ * tiles show a seam instead of touching strokes. */
+export const GUTTER = 2
 
 /** A normalized palette entry - a FloorTileType or a DeviceRole. */
 export interface PaletteEntry {
@@ -1880,21 +1883,35 @@ function TileShape({
       role="img"
       aria-label={tileTooltip(tile, live)}
     >
+      {/* The rect sits a gutter inside the cell footprint so adjacent tiles
+          get a visible seam instead of touching strokes. Linked tiles fill
+          heavier than unlinked planning tiles - same read as the 3D room's
+          solid cabinets vs ghost massing - which replaces the old link dot. */}
       <rect
-        width={w}
-        height={h}
-        rx={6}
+        x={GUTTER}
+        y={GUTTER}
+        width={w - GUTTER * 2}
+        height={h - GUTTER * 2}
+        rx={5}
         fill={fill}
-        fillOpacity={0.18}
+        fillOpacity={tile.linked ? 0.26 : 0.13}
         stroke={checkColor ?? fill}
-        strokeWidth={selected ? 2.5 : checkColor ? 2 : 1.25}
+        strokeOpacity={selected || checkColor ? 1 : 0.55}
+        strokeWidth={selected ? 2 : checkColor ? 2 : 1}
         strokeDasharray={dashed ? "6 3" : undefined}
       />
       {/* Facing is the tile's own property (build-in-advance): every
           non-zone tile shows its front edge, linked or not - otherwise the
           bulk facing arrows change unlinked tiles invisibly. */}
       {!tileIsZone(tile) && (
-        <FacingEdge w={w} h={h} orientation={tile.orientation} color={fill} />
+        <g transform={`translate(${GUTTER},${GUTTER})`}>
+          <FacingEdge
+            w={w - GUTTER * 2}
+            h={h - GUTTER * 2}
+            orientation={tile.orientation}
+            color={fill}
+          />
+        </g>
       )}
       {/* Icons live in the palette rail only - tiles stay clean: color,
           label, and live state. */}
@@ -1914,25 +1931,28 @@ function TileShape({
         // Rack tiles: a thin utilization bar along the bottom edge.
         <g pointerEvents="none">
           <rect
-            x={3}
-            y={h - 7}
-            width={w - 6}
+            x={GUTTER + 3}
+            y={h - GUTTER - 7}
+            width={w - GUTTER * 2 - 6}
             height={4}
             rx={2}
             className="fill-foreground/10"
           />
           <rect
-            x={3}
-            y={h - 7}
-            width={Math.max(2, (w - 6) * Math.min(1, utilization))}
+            x={GUTTER + 3}
+            y={h - GUTTER - 7}
+            width={Math.max(
+              2,
+              (w - GUTTER * 2 - 6) * Math.min(1, utilization)
+            )}
             height={4}
             rx={2}
             fill={utilizationColor(utilization)}
           />
           {w >= CELL * 2 && (
             <text
-              x={w - 4}
-              y={h - 10}
+              x={w - GUTTER - 4}
+              y={h - GUTTER - 10}
               textAnchor="end"
               fontSize={8}
               fill="currentColor"
@@ -1943,15 +1963,6 @@ function TileShape({
             </text>
           )}
         </g>
-      )}
-      {tile.linked && (
-        <circle
-          cx={w - 7}
-          cy={7}
-          r={3.5}
-          fill={checkColor ?? fill}
-          data-linked="1"
-        />
       )}
       {selected && editable && (
         <rect
