@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -149,11 +149,29 @@ export function InterfaceForm({
     reset()
   }, [iface, reset])
 
+  // The device's own site floats its VLANs to the top of both pickers
+  // (#136) - shared/other-site VLANs stay reachable below, never hidden.
+  const deviceQ = useQuery({
+    queryKey: ["device", deviceId],
+    queryFn: () =>
+      api<{ site: { id: string } | null }>(`/api/devices/${deviceId}/`),
+    enabled: !!deviceId,
+    staleTime: 60_000,
+  })
+  const deviceSiteId = deviceQ.data?.site?.id ?? null
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
     queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
+  const taggedRows = useMemo(() => {
+    const all = vlans.data?.results ?? []
+    if (!deviceSiteId) return all
+    return [
+      ...all.filter((v) => v.site?.id === deviceSiteId),
+      ...all.filter((v) => v.site?.id !== deviceSiteId),
+    ]
+  }, [vlans.data, deviceSiteId])
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
     queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
@@ -365,6 +383,9 @@ export function InterfaceForm({
                 label={
                   mode === "tagged" ? "Untagged / native VLAN" : "Untagged VLAN"
                 }
+                preferQuery={
+                  deviceSiteId ? `site=${deviceSiteId}` : undefined
+                }
                 value={vlanId}
                 onChange={setVlanId}
                 noneLabel="No VLAN"
@@ -378,12 +399,12 @@ export function InterfaceForm({
                 error={fieldErrors.tagged_vlan_ids}
               >
                 <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-border p-2">
-                  {(vlans.data?.results ?? []).length === 0 ? (
+                  {taggedRows.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
                       No VLANs yet.
                     </p>
                   ) : (
-                    (vlans.data?.results ?? []).map((v) => (
+                    taggedRows.map((v) => (
                       <label
                         key={v.id}
                         className="flex items-center gap-2 text-[13px]"

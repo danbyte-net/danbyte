@@ -569,6 +569,7 @@ export interface VLANOption {
   id: string
   vlan_id: number
   name: string
+  site?: { id: string; name: string } | null
 }
 
 export interface TagOption {
