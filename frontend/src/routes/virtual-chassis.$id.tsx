@@ -286,6 +286,38 @@ function Overview({
       label: "Members",
       value: <span className="num">{vc.member_count}</span>,
     },
+    // The stack's addresses (the master's, in practice) belong on the card,
+    // not just the list view's columns.
+    {
+      label: "Primary IP",
+      value: vc.primary_ip ? (
+        <Link
+          to="/ips/$id"
+          params={{ id: vc.primary_ip.id }}
+          className="link font-mono text-[13px]"
+        >
+          {vc.primary_ip.ip_address}
+        </Link>
+      ) : (
+        dash
+      ),
+      copy: vc.primary_ip?.ip_address,
+    },
+    {
+      label: "OOB IP",
+      value: vc.oob_ip ? (
+        <Link
+          to="/ips/$id"
+          params={{ id: vc.oob_ip.id }}
+          className="link font-mono text-[13px]"
+        >
+          {vc.oob_ip.ip_address}
+        </Link>
+      ) : (
+        dash
+      ),
+      copy: vc.oob_ip?.ip_address,
+    },
   ]
 
   const notes: KvRow[] = [
