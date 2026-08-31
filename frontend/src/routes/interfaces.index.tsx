@@ -40,6 +40,7 @@ function InterfacesPage() {
   const { canDo } = useMe()
   const canAddCable = canDo("cable", "add")
   const canChangeCable = canDo("cable", "change")
+  const canDeleteCable = canDo("cable", "delete")
   const canReserve = canDo("portreservation", "add")
   const canAdd = canDo("interface", "add")
   const canEdit = canDo("interface", "change")
@@ -179,6 +180,7 @@ function InterfacesPage() {
       canDelete,
       canAddCable,
       canChangeCable,
+      canDeleteCable,
       canReserve,
       drift,
     ]

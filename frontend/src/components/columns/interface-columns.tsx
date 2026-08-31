@@ -1,9 +1,12 @@
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 import {
   Cable as CableIcon,
   EyeOff,
   Pencil,
+  Unplug,
   Waypoints,
   Workflow,
 } from "lucide-react"
@@ -14,11 +17,13 @@ import type { InterfaceDriftEntry } from "@/components/monitoring/device-drift-b
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import type { PlannedTargetRow } from "@/components/planning/planned-change-badge"
 
-import type { Interface, SnmpDriftItem } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { Cable, Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { CableStatusControl } from "@/components/cable-status-control"
+import { CableDeleteDialog } from "@/components/cable-delete-dialog"
 import {
   MarkConnectedToggle,
   PortReserveAction,
@@ -500,6 +505,7 @@ export interface InterfaceActionsOpts<T extends Interface> {
   canAssignIp: boolean
   canEdit: boolean
   canChangeCable: boolean
+  canDeleteCable: boolean
   canConnect: boolean
   canReserve: boolean
   onTrace: (target: { id: string; name: string }) => void
@@ -519,6 +525,48 @@ export interface InterfaceActionsOpts<T extends Interface> {
  * Returns `null` when the user can do none of add-IP / assign-IP / edit, so the
  * caller can omit the column entirely.
  */
+
+
+/** Disconnect (delete) the cable on a cabled row (#137) - fetches the full
+ * cable when clicked so the shared delete dialog can name both ends. */
+function CableDisconnectAction({
+  cableId,
+  ifaceName,
+}: {
+  cableId: string
+  ifaceName: string
+}) {
+  const [open, setOpen] = useState(false)
+  const cableQ = useQuery({
+    queryKey: ["cable", cableId],
+    queryFn: () => api<Cable>(`/api/cables/${cableId}/`),
+    enabled: open,
+    staleTime: 10_000,
+  })
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-muted-foreground hover:text-destructive"
+        title="Disconnect cable"
+        aria-label={`Disconnect ${ifaceName}`}
+        onClick={() => setOpen(true)}
+      >
+        <Unplug className="h-3.5 w-3.5" />
+      </Button>
+      {open && (
+        <CableDeleteDialog
+          cable={cableQ.data ?? null}
+          onOpenChange={(o) => {
+            if (!o) setOpen(false)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
 export function buildInterfaceActionsColumn<T extends Interface>(
   opts: InterfaceActionsOpts<T>
 ): ColumnDef<T> | null {
@@ -528,6 +576,7 @@ export function buildInterfaceActionsColumn<T extends Interface>(
     canAssignIp,
     canEdit,
     canChangeCable,
+    canDeleteCable,
     canConnect,
     canReserve,
     onTrace,
@@ -550,16 +599,24 @@ export function buildInterfaceActionsColumn<T extends Interface>(
             />
           )}
           {iface.cable ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7"
-              title="Trace this run"
-              aria-label={`Trace ${iface.name}`}
-              onClick={() => onTrace({ id: iface.id, name: iface.name })}
-            >
-              <Waypoints className="h-3.5 w-3.5" />
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                title="Trace this run"
+                aria-label={`Trace ${iface.name}`}
+                onClick={() => onTrace({ id: iface.id, name: iface.name })}
+              >
+                <Waypoints className="h-3.5 w-3.5" />
+              </Button>
+              {canDeleteCable && (
+                <CableDisconnectAction
+                  cableId={iface.cable.id}
+                  ifaceName={iface.name}
+                />
+              )}
+            </>
           ) : (
             !iface.virtual && (
               <>

@@ -1500,6 +1500,7 @@ function DeviceInterfacesPane({
   const { canDo } = useMe()
   const canConnect = canDo("cable", "add")
   const canChangeCable = canDo("cable", "change")
+  const canDeleteCable = canDo("cable", "delete")
   const canReserve = canDo("portreservation", "add")
   const barSlot = useContext(BarSlotContext)
   const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
@@ -1617,6 +1618,7 @@ function DeviceInterfacesPane({
       canAssignIp,
       canEdit,
       canChangeCable,
+      canDeleteCable,
       canConnect,
       canReserve,
       onTrace: setTraceTarget,
@@ -1731,6 +1733,7 @@ function DeviceInterfacesPane({
             canAssignIp,
             canEdit,
             canChangeCable,
+            canDeleteCable,
             canConnect,
             canReserve,
             onTrace: setTraceTarget,

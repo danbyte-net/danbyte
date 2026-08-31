@@ -153,7 +153,9 @@ map will prompt you.
 You don't have to start from the Cables page: any **uncabled interface** offers
 a **Connect cable** button - on the interfaces table (row action) and in the
 interface detail header. It opens the cable form with that port already on the
-A side; pick the B side and save.
+A side; pick the B side and save. A **cabled** row offers the reverse: a
+**Disconnect cable** action (unplug icon, cable-delete rights) that removes the
+run after a confirm naming both ends.
 
 The same affordance follows every other cable-able port, permissions allowing
 (you need cable-add rights; the server enforces them regardless):
