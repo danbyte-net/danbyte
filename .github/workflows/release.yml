@@ -192,6 +192,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
+          # A hyphenated tag (v0.15.0-dev1, v1.2.0-rc1) is a pre-release:
+          # stable-channel deployments filter it out of the update check.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           # Hand-written notes per tag; the news site carries the long form.
           body_path: .github/releases/${{ github.ref_name }}.md
           fail_on_unmatched_files: true
