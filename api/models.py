@@ -525,6 +525,21 @@ class _ComponentTemplate(TimestampedModel):
     def __str__(self) -> str:
         return f"{self.device_type.name}:{self.name}"
 
+    def save(self, *args, **kwargs):
+        # Photo markers and faceplate slots reference templates by NAME, so a
+        # rename must follow into them or the placed port silently orphans.
+        old = None
+        if self.pk:
+            old = (
+                type(self)._default_manager.filter(pk=self.pk)
+                .values_list("name", flat=True)
+                .first()
+            )
+        super().save(*args, **kwargs)
+        kind = _TEMPLATE_MARKER_KIND.get(type(self).__name__)
+        if kind and old and old != self.name and self.device_type_id:
+            rename_marker_refs(self.device_type, kind, old, self.name)
+
 
 class InterfaceTemplate(_ComponentTemplate):
     device_type = models.ForeignKey(
@@ -1175,6 +1190,67 @@ def materialize_device_components(device) -> dict[str, int]:
 #: diff. Front ports are deliberately absent: a marker cannot express the
 #: rear-port mapping a FrontPort requires, so a front-port marker with no
 #: template stays a ghost on the render rather than a half-made component.
+# Which marker kind each template model's names appear under - the rename
+# hook on _ComponentTemplate.save uses this to follow renames into the
+# type's photo markers and faceplate slots. FrontPortTemplate has no marker
+# kind and needs no entry.
+_TEMPLATE_MARKER_KIND = {
+    "InterfaceTemplate": "interface",
+    "ConsolePortTemplate": "console-port",
+    "ConsoleServerPortTemplate": "console-server-port",
+    "PowerPortTemplate": "power-port",
+    "PowerOutletTemplate": "power-outlet",
+    "RearPortTemplate": "rear-port",
+    "AuxPortTemplate": "aux-port",
+    "AntennaTemplate": "antenna",
+    "InventoryItemTemplate": "inventory-item",
+    "ModuleBayTemplate": "module-bay",
+}
+
+
+def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
+    """Follow a component-template rename into the type's photo markers
+    (``image_ports``) and custom faceplate slots - both reference components
+    by (kind, name), so a rename otherwise orphans the placed port. Returns
+    True when anything was rewritten."""
+    fields = []
+    ip = device_type.image_ports
+    ip_changed = False
+    if isinstance(ip, dict):
+        for side in ("front", "rear"):
+            for marker in ip.get(side) or []:
+                if (
+                    isinstance(marker, dict)
+                    and marker.get("kind", "interface") == kind
+                    and marker.get("name") == old
+                ):
+                    marker["name"] = new
+                    ip_changed = True
+    if ip_changed:
+        fields.append("image_ports")
+    fp = device_type.faceplate
+    fp_changed = False
+    if isinstance(fp, dict):
+        for side in ("front", "rear"):
+            for group in fp.get(side) or []:
+                if not isinstance(group, dict):
+                    continue
+                for slot in group.get("slots") or []:
+                    if (
+                        isinstance(slot, dict)
+                        and slot.get("t") == "port"
+                        and slot.get("kind", "interface") == kind
+                        and slot.get("name") == old
+                    ):
+                        slot["name"] = new
+                        fp_changed = True
+    if fp_changed:
+        fields.append("faceplate")
+    if fields:
+        device_type.save(update_fields=fields)
+    return bool(fields)
+
+
 _MARKER_KIND_RELS = {
     "interface": "interfaces",
     "console-port": "console_ports",

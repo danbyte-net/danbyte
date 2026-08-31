@@ -101,3 +101,71 @@ class IpSearchRankingTests(APITestCase):
             ["10.196.192.131", "10.196.192.132", "10.196.192.136",
              "10.196.192.137", "10.196.192.139"],
         )
+
+
+class MarkerRenameTests(APITestCase):
+    """Renaming a component template follows into the type's photo markers
+    and faceplate slots - they reference components by name."""
+
+    def setUp(self):
+        from .models import DeviceType, InterfaceTemplate
+
+        org = Organization.objects.create(name="O4", slug="o4")
+        self.tenant = Tenant.objects.create(org=org, name="T4", slug="t4")
+        admin = User.objects.create_superuser("mrn", "m@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        self.dt = DeviceType.objects.create(
+            tenant=self.tenant, name="MRK-1",
+            image_ports={
+                "front": [
+                    {"kind": "interface", "name": "eth0",
+                     "x": 0.1, "y": 0.5, "w": 0.05, "h": 0.4},
+                    {"kind": "interface", "name": "eth1",
+                     "x": 0.2, "y": 0.5, "w": 0.05, "h": 0.4},
+                ],
+                "rear": [],
+            },
+            faceplate={
+                "front": [
+                    {"slots": [{"t": "port", "kind": "interface",
+                                "name": "eth0"}]},
+                ],
+            },
+        )
+        self.tmpl = InterfaceTemplate.objects.create(
+            device_type=self.dt, name="eth0"
+        )
+
+    def test_template_rename_follows_into_markers(self):
+        r = self.client.patch(
+            f"/api/interface-templates/{self.tmpl.id}/",
+            {"name": "gi0"}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.dt.refresh_from_db()
+        names = [m["name"] for m in self.dt.image_ports["front"]]
+        self.assertEqual(names, ["gi0", "eth1"])  # only the renamed one moved
+        self.assertEqual(
+            self.dt.faceplate["front"][0]["slots"][0]["name"], "gi0"
+        )
+
+    def test_other_kinds_untouched(self):
+        from .models import ConsolePortTemplate
+
+        self.dt.image_ports["front"].append(
+            {"kind": "console-port", "name": "eth0",
+             "x": 0.3, "y": 0.5, "w": 0.05, "h": 0.4}
+        )
+        self.dt.save(update_fields=["image_ports"])
+        cp = ConsolePortTemplate.objects.create(
+            device_type=self.dt, name="con0"
+        )
+        cp.name = "con1"
+        cp.save()
+        self.dt.refresh_from_db()
+        # the console-port marker named eth0 stays: kind must match too
+        kinds = {(m["kind"], m["name"]) for m in self.dt.image_ports["front"]}
+        self.assertIn(("console-port", "eth0"), kinds)

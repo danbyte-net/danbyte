@@ -445,7 +445,9 @@ port markers **directly on the photo** - drag an interface (or console / power
 precisely: drag it, grab the corner handle to resize, nudge with the **arrow
 keys** (Shift = coarser), or type exact **X / Y / W / H** percentages. A
 **fine-grid snap** keeps rows aligned. Coordinates are stored normalized
-(0–1), so they scale to any render size.
+(0–1), so they scale to any render size. Markers reference their template by
+name, and renaming a template follows into them (and into custom faceplate
+slots) automatically - a placed port never orphans on rename.
 
 **Bulk place** lays a whole run at once: pick the kind and a from/to port
 range, set rows, numbering direction and optional bank gaps, then anchor the
