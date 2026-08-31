@@ -157,6 +157,11 @@ looks like the real thing. Use the **Front / Rear** toggle on the rack to switch
 faces. The same images also render read-only on each **device's** Overview tab,
 so you can see the hardware without opening the type.
 
+Uploads are downscaled server-side to at most 2000 px on the longest edge -
+aspect ratio preserved, EXIF rotation applied - so a raw phone photo doesn't
+ship megabytes to every rack view. Library-fetched images get the same
+treatment.
+
 ### Recovering lost images {#reimport-images}
 
 Images live in the media folder; the device types live in the database. Lose

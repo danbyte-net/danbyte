@@ -195,3 +195,42 @@ class ImageAttachmentTests(APITestCase):
             body = r.json()
             self.assertIsNone(body["width"])
             self.assertEqual(body["extension"], "png")
+
+
+class DownscaleOnUploadTests(APITestCase):
+    """Oversized photos shrink on the way in - aspect preserved, never warped
+    - and small ones pass through byte-identical (api.images)."""
+
+    def _big_png(self, w=4000, h=1000) -> bytes:
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (w, h), (30, 30, 30)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_oversized_upload_is_downscaled_keeping_aspect(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from api.images import downscale_image
+
+        up = SimpleUploadedFile("big.png", self._big_png(), "image/png")
+        out = downscale_image(up)
+        img = Image.open(io.BytesIO(out.read()))
+        self.assertEqual(img.size, (2000, 500))
+
+    def test_small_upload_passes_through_untouched(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from api.images import downscale_image
+
+        up = SimpleUploadedFile("small.png", _png_bytes(), "image/png")
+        self.assertIs(downscale_image(up), up)
+
+    def test_non_image_passes_through(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from api.images import downscale_image
+
+        up = SimpleUploadedFile("notes.txt", b"not an image", "text/plain")
+        self.assertIs(downscale_image(up), up)

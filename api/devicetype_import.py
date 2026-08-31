@@ -608,8 +608,14 @@ def _pull_elevation_image(
         except Exception:  # noqa: BLE001 - network is best-effort here
             return "fetch_failed"
         if resp.status_code == 200 and resp.content:
+            from .images import downscale_image
+
             field = dt.front_image if face == "front" else dt.rear_image
-            field.save(f"{slug}.{face}.{ext}", ContentFile(resp.content), save=True)
+            field.save(
+                f"{slug}.{face}.{ext}",
+                downscale_image(ContentFile(resp.content, name=f"{slug}.{face}.{ext}")),
+                save=True,
+            )
             return "saved"
     return "not_found"
 

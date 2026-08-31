@@ -892,6 +892,9 @@ class ImageAttachmentMixin:
             if upload is None:
                 return Response({"detail": "No image file provided."},
                                 status=drf_status.HTTP_400_BAD_REQUEST)
+            from .images import downscale_image
+
+            upload = downscale_image(upload)
             img = ImageAttachment.objects.create(
                 tenant=obj.tenant,
                 content_type=ct,
@@ -2872,11 +2875,16 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         """Upload / clear the front & rear rack-face images (multipart). Send a
         `front_image` / `rear_image` file to set, or `clear_front=1` /
         `clear_rear=1` to remove. Rendered in rack elevations."""
+        from .images import downscale_image
+
         dt = self.get_object()
+        # Oversized photos are downscaled on the way in (aspect preserved,
+        # EXIF orientation applied) - the renders never need more than the
+        # cap, and a 4000px phone photo would ship to every viewer.
         if "front_image" in request.FILES:
-            dt.front_image = request.FILES["front_image"]
+            dt.front_image = downscale_image(request.FILES["front_image"])
         if "rear_image" in request.FILES:
-            dt.rear_image = request.FILES["rear_image"]
+            dt.rear_image = downscale_image(request.FILES["rear_image"])
         if request.data.get("clear_front"):
             dt.front_image = None
         if request.data.get("clear_rear"):
