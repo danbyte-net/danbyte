@@ -6,6 +6,7 @@ import { CfObjectPicker } from "@/components/cf-object-picker"
 import {
   Field,
   FormCheckbox,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -53,24 +54,41 @@ export function CustomFieldInputs({
 
   const sections = groupCustomFields(defs)
 
+  // Wide, growing inputs (multi-line or arbitrary-length text) get the full
+  // card row; compact typed values pair up on wide forms.
+  const fullRow = (t: CustomField["type"]) => t === "textarea"
+
   return (
-    <div className="grid gap-4 border-t border-border pt-4">
+    <>
       {sections.map((section) => (
-        <div key={section.key} className="grid gap-4">
-          <div className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            {section.title}
+        // Each custom-field group is its own card, exactly like the form's
+        // built-in sections - the old flat strip below the cards read as a
+        // different (unfinished) form. A group flagged collapsed honors that
+        // as a collapsible card that opens itself when it holds values.
+        <FormSection
+          key={section.key}
+          title={section.title}
+          card
+          collapsible={section.collapsed}
+          hasValues={section.fields.some((d) => value[d.key] !== undefined)}
+        >
+          <div className="grid gap-3 @md:grid-cols-2">
+            {section.fields.map((d) => (
+              <div
+                key={d.id}
+                className={fullRow(d.type) ? "@md:col-span-2" : undefined}
+              >
+                <OneField
+                  def={d}
+                  value={value[d.key]}
+                  onChange={(v) => set(d.key, v)}
+                />
+              </div>
+            ))}
           </div>
-          {section.fields.map((d) => (
-            <OneField
-              key={d.id}
-              def={d}
-              value={value[d.key]}
-              onChange={(v) => set(d.key, v)}
-            />
-          ))}
-        </div>
+        </FormSection>
       ))}
-    </div>
+    </>
   )
 }
 
