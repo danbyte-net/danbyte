@@ -234,3 +234,42 @@ class DownscaleOnUploadTests(APITestCase):
 
         up = SimpleUploadedFile("notes.txt", b"not an image", "text/plain")
         self.assertIs(downscale_image(up), up)
+
+    def test_resize_verb_shrinks_a_stored_face(self):
+        from django.contrib.auth.models import User as U
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from api.models import DeviceType
+
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="Orz", slug="orz")
+        tenant = Tenant.objects.create(org=org, name="Trz", slug="trz")
+        admin = U.objects.create_superuser("rsz", "r@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(tenant.id)
+        s.save()
+        dt = DeviceType.objects.create(tenant=tenant, name="RSZ-1")
+        # Seed a 1800x600 front image directly (past the upload path).
+        buf = io.BytesIO()
+        Image.new("RGB", (1800, 600), (40, 40, 40)).save(buf, format="PNG")
+        r = self.client.post(
+            f"/api/device-types/{dt.id}/images/",
+            {"front_image": SimpleUploadedFile("f.png", buf.getvalue(), "image/png")},
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(
+            f"/api/device-types/{dt.id}/images/", {"resize_front": "800"}
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        dt.refresh_from_db()
+        with dt.front_image.open("rb") as fh:
+            img = Image.open(io.BytesIO(fh.read()))
+        self.assertEqual(img.size, (800, 267))
+        # No image on the other face → actionable 400, not a crash.
+        r = self.client.post(
+            f"/api/device-types/{dt.id}/images/", {"resize_rear": "800"}
+        )
+        self.assertEqual(r.status_code, 400)

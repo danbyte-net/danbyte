@@ -4,7 +4,18 @@ import { ImageUp, Trash2 } from "lucide-react"
 
 import { api, ApiError, type DeviceType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useMe } from "@/lib/use-me"
+
+// Longest-edge targets for the in-place resize. Uploads already cap at 2000,
+// so the menu only shrinks further.
+const RESIZE_STEPS = ["1600", "1200", "800"] as const
 
 type Face = "front" | "rear"
 
@@ -35,6 +46,7 @@ function FaceCard({
   const canChange = canDo("devicetype", "change")
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const [px, setPx] = useState<{ w: number; h: number } | null>(null)
   const image = face === "rear" ? deviceType.rear_image : deviceType.front_image
   const label = face === "rear" ? "Rear" : "Front"
 
@@ -59,6 +71,23 @@ function FaceCard({
       setError(e instanceof ApiError ? e.message : "Upload failed"),
   })
 
+  const resize = useMutation({
+    mutationFn: (maxEdge: string) => {
+      const fd = new FormData()
+      fd.append(`resize_${face}`, maxEdge)
+      return api<DeviceType>(`/api/device-types/${deviceType.id}/images/`, {
+        method: "POST",
+        body: fd,
+      })
+    },
+    onSuccess: (next) => {
+      setPx(null) // re-measured when the new file loads
+      invalidate(next)
+    },
+    onError: (e) =>
+      setError(e instanceof ApiError ? e.message : "Resize failed"),
+  })
+
   const clear = useMutation({
     mutationFn: () => {
       const fd = new FormData()
@@ -73,7 +102,7 @@ function FaceCard({
       setError(e instanceof ApiError ? e.message : "Remove failed"),
   })
 
-  const busy = upload.isPending || clear.isPending
+  const busy = upload.isPending || clear.isPending || resize.isPending
 
   return (
     <div className="rounded-lg border border-border bg-card p-3">
@@ -103,6 +132,12 @@ function FaceCard({
             src={image}
             alt={`${label} of ${deviceType.name}`}
             className="h-full w-full object-contain"
+            onLoad={(e) =>
+              setPx({
+                w: e.currentTarget.naturalWidth,
+                h: e.currentTarget.naturalHeight,
+              })
+            }
           />
         ) : (
           <span className="text-[11px] text-muted-foreground">
@@ -125,17 +160,47 @@ function FaceCard({
           }
         }}
       />
+      {image && px && (
+        <p className="num mt-1.5 text-[11px] text-muted-foreground">
+          {px.w} × {px.h} px
+        </p>
+      )}
       {canChange && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-2 w-full"
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-        >
-          <ImageUp className="h-3.5 w-3.5" />
-          {busy ? "Uploading…" : image ? "Replace" : "Upload"}
-        </Button>
+        <div className="mt-2 flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1"
+            disabled={busy}
+            onClick={() => inputRef.current?.click()}
+          >
+            <ImageUp className="h-3.5 w-3.5" />
+            {busy ? "Working…" : image ? "Replace" : "Upload"}
+          </Button>
+          {image && (
+            <Select
+              value=""
+              onValueChange={(v) => {
+                setError(null)
+                resize.mutate(v)
+              }}
+              disabled={busy}
+            >
+              <SelectTrigger size="sm" className="w-32 text-[11px]">
+                <SelectValue placeholder="Resize to…" />
+              </SelectTrigger>
+              <SelectContent>
+                {RESIZE_STEPS.filter(
+                  (r) => !px || Number(r) < Math.max(px.w, px.h)
+                ).map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r} px
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       )}
 
       {error && <p className="mt-1.5 text-[11px] text-destructive">{error}</p>}

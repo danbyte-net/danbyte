@@ -2889,6 +2889,37 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             dt.front_image = None
         if request.data.get("clear_rear"):
             dt.rear_image = None
+        # In-place shrink of a stored face: `resize_front=1200` re-encodes the
+        # existing file to at most that many pixels on the longest edge,
+        # aspect preserved - the visible knob behind the automatic upload cap.
+        import os as _os
+
+        from django.core.files import File
+
+        for face in ("front", "rear"):
+            raw = request.data.get(f"resize_{face}")
+            if not raw:
+                continue
+            try:
+                cap = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "Resize takes a pixel count."}, status=400
+                )
+            cap = max(200, min(4000, cap))
+            field = dt.front_image if face == "front" else dt.rear_image
+            if not field or not field.name:
+                return Response(
+                    {"detail": f"No {face} image to resize."}, status=400
+                )
+            name = _os.path.basename(field.name)
+            with field.open("rb") as fh:
+                wrapper = File(fh, name=name)
+                shrunk = downscale_image(wrapper, max_edge=cap)
+            # Identity, not type: the helper hands back the wrapper itself
+            # when the image is already within the cap (nothing to store).
+            if shrunk is not wrapper:
+                field.save(name, shrunk, save=False)
         dt.save()
         return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
 
