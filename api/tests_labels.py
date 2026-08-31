@@ -86,6 +86,26 @@ class LabelRenderTests(TestCase):
         self.assertIn("device.name", data["tokens"])
         self.assertIn("url", data["special"])
 
+    def test_cable_context_exposes_bare_port_names(self):
+        """`a_port` stringifies with its device; `a_port_name` is just the
+        port, for short cable labels."""
+        from api.label_templates import _cable_ends, available_fields
+        from api.models import Cable, CableTermination, Device, Interface
+
+        dev_a = Device.objects.create(tenant=self.tenant, name="sw1")
+        dev_b = Device.objects.create(tenant=self.tenant, name="sw2")
+        pa = Interface.objects.create(device=dev_a, name="eth-longname-1")
+        pb = Interface.objects.create(device=dev_b, name="eth2")
+        cable = Cable.objects.create(tenant=self.tenant)
+        CableTermination.objects.create(cable=cable, end="A", interface=pa)
+        CableTermination.objects.create(cable=cable, end="B", interface=pb)
+        ends = _cable_ends(cable)
+        self.assertEqual(ends["a_port_name"], "eth-longname-1")
+        self.assertEqual(ends["b_port_name"], "eth2")
+        self.assertEqual(ends["a"], dev_a)
+        fields = available_fields("cable", self.tenant)
+        self.assertIn("a_port_name", fields["special"])
+
     def test_available_fields_unknown_type(self):
         self.assertIsNone(available_fields("nope"))
 

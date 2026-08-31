@@ -43,7 +43,9 @@ _RELATIONS = (
 # Extra top-level tokens a given object type exposes beyond `url`/`qr`/`obj`.
 _TYPE_SPECIALS = {
     # A cable's two ends: the terminated device + the port at each end.
-    "cable": ["a", "b", "a_port", "b_port"],
+    # `*_port` stringifies with its device; `*_port_name` is the bare port
+    # name for short labels.
+    "cable": ["a", "b", "a_port", "b_port", "a_port_name", "b_port_name"],
 }
 
 
@@ -146,6 +148,8 @@ def _cable_ends(cable) -> dict:
             continue
         point = term.point  # the interface / port / feed at this end
         ends[f"{end}_port"] = point
+        # Bare port name for short labels - `a_port` renders with its device.
+        ends[f"{end}_port_name"] = getattr(point, "name", "") or ""
         ends[end] = getattr(point, "device", None) if point is not None else None
     return ends
 
