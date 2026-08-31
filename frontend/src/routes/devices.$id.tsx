@@ -555,10 +555,10 @@ function DeviceComponents({
       {/* Sub-tab bar as a flush full-width strip (matches the main tab strip),
           then the pane content padded below - the parent DetailTab is `bare` so
           there's no headroom above the bar. */}
-      // min-w-0: without it this flex child grows to its widest table and
-    // drags the whole page sideways on laptop widths (#132) - the wide
-    // content must scroll inside its own containers instead.
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* min-w-0 on this root: without it the flex child grows to its widest
+          table and drags the whole page sideways on laptop widths (#132) -
+          wide content must scroll inside its own containers instead. */}
         <div className="flex h-10 min-w-0 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
           <SegmentedTabs
             value={sub}
