@@ -125,6 +125,7 @@ import {
   type SystemInfo,
   type TenantPicker,
 } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
 import { useBookmarks } from "@/lib/use-bookmarks"
@@ -939,7 +940,13 @@ function NavGroup({
           section names read at a glance. */}
       <SidebarGroupLabel
         asChild
-        className="sticky top-0 z-10 h-9 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground"
+        className={cn(
+          "sticky top-0 z-10 h-9 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground",
+          // You-are-here: the group holding the current page wears a primary
+          // edge inside the band (inset shadow - no layout shift, respects
+          // the rounding).
+          hasActive && "shadow-[inset_3px_0_0_0_var(--primary)]"
+        )}
       >
         <button
           type="button"
@@ -1146,7 +1153,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             onOpenChange={(o) => setGroupsOpen({ [section.label]: o })}
           >
             {section.clusters.map((cluster, i) => (
-              <React.Fragment key={cluster.label ?? i}>
+              // You-are-here rail: the cluster holding the current page gets
+              // a vertical primary line down its left edge. Inactive clusters
+              // keep a transparent border so nothing shifts.
+              <div
+                key={cluster.label ?? i}
+                className={cn(
+                  "border-l-2 pl-1 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:pl-0",
+                  cluster.items.some((it) => isPage(it.url))
+                    ? "border-primary/60"
+                    : "border-transparent"
+                )}
+              >
                 {/* Cluster sub-heading. Hidden in the icon-rail (where
                     there's no room for text) and omitted for unlabelled
                     clusters so short sections stay flat. */}
@@ -1175,7 +1193,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>
-              </React.Fragment>
+              </div>
             ))}
           </NavGroup>
         ))}

@@ -519,20 +519,23 @@ export function MonitoringSettingsForm() {
                     type="button"
                     aria-label={`Remove ${d.name}`}
                     className="text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      set(
-                        "arp_source_devices",
-                        (draft.arp_source_devices ?? []).filter(
-                          (id) => id !== d.id
-                        )
+                    onClick={() =>
+                      // One atomic update: two set() calls in a row both
+                      // spread the same stale draft, so the second silently
+                      // discarded the first - the ids list never changed and
+                      // saves went out empty (issue #127).
+                      setDraft((cur) =>
+                        cur && {
+                          ...cur,
+                          arp_source_devices: (
+                            cur.arp_source_devices ?? []
+                          ).filter((id) => id !== d.id),
+                          arp_source_devices_detail: (
+                            cur.arp_source_devices_detail ?? []
+                          ).filter((x) => x.id !== d.id),
+                        }
                       )
-                      set(
-                        "arp_source_devices_detail",
-                        (draft.arp_source_devices_detail ?? []).filter(
-                          (x) => x.id !== d.id
-                        )
-                      )
-                    }}
+                    }
                   >
                     ×
                   </button>
@@ -546,16 +549,23 @@ export function MonitoringSettingsForm() {
             excludeIds={draft.arp_source_devices ?? []}
             onChange={(v) => {
               if (!v || (draft.arp_source_devices ?? []).includes(v)) return
-              set("arp_source_devices", [
-                ...(draft.arp_source_devices ?? []),
-                v,
-              ])
-              // The picker only hands back the id; show it until the next
-              // reload fills in the server detail.
-              set("arp_source_devices_detail", [
-                ...(draft.arp_source_devices_detail ?? []),
-                { id: v, name: "(added)" },
-              ])
+              // One atomic update (see the remove handler / issue #127). The
+              // picker only hands back the id; the placeholder name holds
+              // until Save returns the server detail.
+              setDraft(
+                (cur) =>
+                  cur && {
+                    ...cur,
+                    arp_source_devices: [
+                      ...(cur.arp_source_devices ?? []),
+                      v,
+                    ],
+                    arp_source_devices_detail: [
+                      ...(cur.arp_source_devices_detail ?? []),
+                      { id: v, name: "(added)" },
+                    ],
+                  }
+              )
             }}
           />
           <p className="text-[11px] text-muted-foreground">
