@@ -4,7 +4,16 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type VirtualChassis } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  BulkStatusEntry,
+  BulkStatusResponse,
+  Paginated,
+  StatusMini,
+  VirtualChassis,
+} from "@/lib/api"
+import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
@@ -37,6 +46,23 @@ function VirtualChassisPage() {
   })
 
   const rows = query.data?.results ?? []
+  // One bulk request for every member device on the page; each chassis row
+  // then merges its members' rollups (counts summed - the racing-flag badge
+  // derives the read from them).
+  const memberIds = useMemo(
+    () => [...new Set(rows.flatMap((v) => v.members.map((m) => m.id)))],
+    [rows]
+  )
+  const monQuery = useQuery({
+    queryKey: ["vc-mon-status", memberIds],
+    queryFn: () =>
+      api<BulkStatusResponse>("/api/monitoring/status/", {
+        method: "POST",
+        body: JSON.stringify({ devices: memberIds }),
+      }),
+    enabled: memberIds.length > 0,
+  })
+  const monByDevice = monQuery.data?.statuses
   const onDelete = useCallback((v: VirtualChassis) => setDeleting(v), [])
   const columns = useMemo<ColumnDef<VirtualChassis>[]>(
     () => [
@@ -104,6 +130,26 @@ function VirtualChassisPage() {
         },
       },
       {
+        id: "status",
+        header: "Status",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MemberStatusCell members={row.original.members} />
+        ),
+      },
+      {
+        id: "monitoring",
+        header: "Monitoring",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const merged = mergeRollups(
+            row.original.members.map((m) => monByDevice?.[m.id])
+          )
+          if (!merged) return <span className="text-muted-foreground">-</span>
+          return <MixedStatusBadge counts={merged} />
+        },
+      },
+      {
         id: "primary_ip",
         accessorFn: (v) => v.primary_ip?.ip_address ?? "",
         header: "Primary IP",
@@ -166,7 +212,7 @@ function VirtualChassisPage() {
         ),
       },
     ],
-    [onDelete, canEdit, canDelete, humanIds]
+    [monByDevice, onDelete, canEdit, canDelete, humanIds]
   )
   const { rail, filteredRows, snapshot, restore, activeCount } =
     useTableFilters(columns, rows)
@@ -204,5 +250,54 @@ function VirtualChassisPage() {
         onOpenChange={(o) => !o && setDeleting(null)}
       />
     </ListPageShell>
+  )
+}
+
+
+/** Sum member rollups; null when nothing is monitored. */
+function mergeRollups(
+  entries: Array<BulkStatusEntry | undefined>
+): Partial<Record<string, number>> | null {
+  const counts = new Map<string, number>()
+  for (const e of entries) {
+    for (const [k, n] of Object.entries(e?.counts ?? {})) {
+      if (n) counts.set(k, (counts.get(k) ?? 0) + n)
+    }
+  }
+  return counts.size > 0 ? Object.fromEntries(counts) : null
+}
+
+/** The members' lifecycle statuses, combined: one badge when they all agree,
+ * a racing-flag split of the distinct status colors when they don't. */
+function MemberStatusCell({
+  members,
+}: {
+  members: VirtualChassis["members"]
+}) {
+  const present: { status: StatusMini; n: number }[] = []
+  for (const m of members) {
+    if (!m.status) continue
+    const hit = present.find((p) => p.status.id === m.status!.id)
+    if (hit) hit.n += 1
+    else present.push({ status: m.status, n: 1 })
+  }
+  if (present.length === 0)
+    return <span className="text-muted-foreground">-</span>
+  if (present.length === 1) return <StatusBadge status={present[0].status} />
+  const slice = 100 / present.length
+  const stops = present
+    .map(
+      (p, i) =>
+        `${p.status.color || "#a1a1aa"} ${i * slice}% ${(i + 1) * slice}%`
+    )
+    .join(", ")
+  const title = present.map((p) => `${p.n} ${p.status.name}`).join(" · ")
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className="inline-block h-5 w-8 rounded-[5px] align-middle ring-1 ring-black/10 ring-inset dark:ring-white/15"
+      style={{ backgroundImage: `linear-gradient(to top right, ${stops})` }}
+    />
   )
 }
