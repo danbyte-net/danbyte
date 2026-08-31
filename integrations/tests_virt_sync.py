@@ -334,6 +334,62 @@ class ProxmoxSyncTests(TestCase):
         self.sync()
         self.assertEqual(VLAN.objects.filter(vlan_id=10).count(), 2)
 
+    def test_enabling_match_repoints_a_minted_network(self):
+        """Turning the toggle on after networks already minted their own VLANs
+        must migrate them: the network keeps its hypervisor name but its VLAN
+        link (and every NIC the sync parked on the minted copy) moves to the
+        operator's VLAN. The reported symptom was both VLANs staying attached."""
+        from integrations.models import VirtNetwork
+
+        # Pass 1, toggle off: the sync mints VID 10 in the per-source group.
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        minted = vn.vlan
+        self.assertTrue(vn.created_vlan)
+
+        # The operator's own VLAN 10 appears, and the toggle goes on.
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="corp-10"
+        )
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["match_existing_vlans"])
+        self.sync()
+
+        vn.refresh_from_db()
+        self.assertEqual(vn.vlan, mine)
+        self.assertFalse(vn.created_vlan)
+        iface = VMInterface.objects.get(vm__name="router-vm", name="net0")
+        self.assertEqual(iface.vlan, mine)
+        # The minted copy is left for the operator to delete - never pruned
+        # automatically while anything else might reference it.
+        self.assertTrue(VLAN.objects.filter(pk=minted.pk).exists())
+
+    def test_match_never_repoints_an_operator_chosen_vlan(self):
+        """A VLAN the operator set on the network by hand (created_vlan False)
+        stays, even when a VID match exists elsewhere."""
+        from integrations.models import VirtNetwork
+
+        self.source.sync_networks = True
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["sync_networks", "match_existing_vlans"])
+        chosen = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=999, name="hand-picked"
+        )
+        self.sync()
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        VirtNetwork.objects.filter(pk=vn.pk).update(
+            vlan=chosen, created_vlan=False
+        )
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="corp-10"
+        )
+        self.sync()
+        vn.refresh_from_db()
+        self.assertEqual(vn.vlan, chosen)
+        self.assertTrue(mine.pk)  # the match target existed and was ignored
+
     def test_match_prefers_ungrouped_then_group_name(self):
         from api.models import VLANGroup
 

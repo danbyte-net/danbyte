@@ -312,12 +312,33 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     if vn.vswitch_id is None:
         vn.vswitch = vswitch
         changed.append("vswitch")
-    if vn.vlan_id is None and vlan is not None:
-        vn.vlan = vlan
-        # Only when the sync minted the row: a matched operator VLAN must
-        # never be marked sync-created, or pruning could take it.
-        vn.created_vlan = made_vlan
-        changed += ["vlan", "created_vlan"]
+    migrated_from = None
+    if vlan is not None:
+        if vn.vlan_id is None:
+            vn.vlan = vlan
+            # Only when the sync minted the row: a matched operator VLAN must
+            # never be marked sync-created, or pruning could take it.
+            vn.created_vlan = made_vlan
+            changed += ["vlan", "created_vlan"]
+        elif (
+            source.match_existing_vlans
+            and not made_vlan
+            and vn.created_vlan
+            and vn.vlan_id != vlan.id
+        ):
+            # Matching was turned on AFTER this network minted its own VLAN:
+            # re-point the network at the operator's VLAN so prefixes and
+            # addresses resolve through the real one, not the copy. The
+            # network keeps its hypervisor name; only the VLAN link moves.
+            # An operator-chosen VLAN (created_vlan False) is never touched.
+            migrated_from = vn.vlan_id
+            vn.vlan = vlan
+            vn.created_vlan = False
+            changed += ["vlan", "created_vlan"]
+            logger.info(
+                "re-pointed network %r from its minted VLAN to existing "
+                "VLAN %s (%s)", vn.name or ext_key, vlan.vlan_id, vlan.name,
+            )
     vn.save(update_fields=changed)
     # The direct NIC-to-network statement. The VM page renders from this, not
     # from a shared VLAN - vCenter never supplies a VLAN on the NIC, so the
@@ -335,7 +356,13 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
                 logger.info("linked %s/%s to network %r",
                             guest.vm.name, iface.name, vn.name or ext_key)
             # Blank-fill the access VLAN (never overwrite operator intent).
-            if vlan is not None and iface.vlan_id is None:
+            # A NIC still riding the minted VLAN this network just migrated
+            # away from follows it to the operator's VLAN - that value came
+            # from the sync, not the operator.
+            if vlan is not None and (
+                iface.vlan_id is None
+                or (migrated_from and iface.vlan_id == migrated_from)
+            ):
                 iface.vlan = vlan
                 if not iface.mode:
                     iface.mode = "access"
