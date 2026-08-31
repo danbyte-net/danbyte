@@ -38,3 +38,36 @@ class NumidSearchTests(APITestCase):
     def test_digits_in_names_still_match(self):
         dev = Device.objects.create(tenant=self.tenant, name="rack42-sw")
         self.assertIn(str(dev.id), self._hit_ids("devices", "42"))
+
+
+class ContainedInFilterTests(APITestCase):
+    """?contained_in=<cidr> narrows the prefix list to networks inside it -
+    the aggregate page's Prefixes tab (#133)."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O2", slug="o2")
+        self.tenant = Tenant.objects.create(org=org, name="T2", slug="t2")
+        admin = User.objects.create_superuser("cif", "c@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_only_contained_prefixes_return(self):
+        from .models import Prefix
+
+        inside = Prefix.objects.create(tenant=self.tenant, cidr="10.1.0.0/16")
+        deeper = Prefix.objects.create(tenant=self.tenant, cidr="10.1.2.0/24")
+        outside = Prefix.objects.create(tenant=self.tenant, cidr="192.168.0.0/24")
+        r = self.client.get("/api/prefixes/?contained_in=10.0.0.0/8")
+        ids = [p["id"] for p in r.json()["results"]]
+        self.assertIn(str(inside.id), ids)
+        self.assertIn(str(deeper.id), ids)
+        self.assertNotIn(str(outside.id), ids)
+
+    def test_bad_cidr_returns_nothing(self):
+        from .models import Prefix
+
+        Prefix.objects.create(tenant=self.tenant, cidr="10.1.0.0/16")
+        r = self.client.get("/api/prefixes/?contained_in=not-a-net")
+        self.assertEqual(r.json()["results"], [])

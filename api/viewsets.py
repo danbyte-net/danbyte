@@ -1062,6 +1062,26 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             v = self.request.query_params.get(key)
             if v:
                 qs = qs.filter(**{field: v})
+        # `contained_in=<cidr>`: only prefixes inside that network - the
+        # aggregate page's Prefixes tab (#133). Postgres `<<=` on the stored
+        # text cast to inet, same cast the ordering below relies on.
+        contained_in = self.request.query_params.get("contained_in")
+        if contained_in:
+            import ipaddress as _ip
+
+            from django.db.models import BooleanField
+            from django.db.models.expressions import RawSQL
+
+            try:
+                net = _ip.ip_network(contained_in, strict=False)
+            except (TypeError, ValueError):
+                return qs.none()
+            qs = qs.annotate(
+                _inside=RawSQL(
+                    "cidr::inet <<= %s::inet", (str(net),),
+                    output_field=BooleanField(),
+                )
+            ).filter(_inside=True)
         qs = _apply_custom_field_scope(self.request, qs, "prefix")
         # Numeric address order, not the lexicographic CharField sort (which
         # puts 10.0.0.10 before 10.0.0.2). Postgres `inet` sorts by address

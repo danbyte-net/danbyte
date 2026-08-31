@@ -102,7 +102,8 @@ address blocks (ARIN, RIPE, RFC 1918, and so on), each flagged as public or
 private.
 
 An **aggregate** is a top-level block of address space allocated from a RIR.
-Prefixes live *under* aggregates. For IPv4 aggregates, Danbyte rolls up how much
+Prefixes live *under* aggregates. The aggregate page's **Prefixes tab** lists
+every prefix carved inside the block, with the count in the tab title. For IPv4 aggregates, Danbyte rolls up how much
 of the block is covered by child prefixes and shows it as a utilisation bar
 (IPv6 spaces are too large to express as a percentage). A RIR's detail page lists
 its aggregates.

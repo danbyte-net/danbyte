@@ -3,9 +3,12 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
-import { api, type Aggregate } from "@/lib/api"
+import { api, type Aggregate, type Paginated, type Prefix } from "@/lib/api"
+import { buildPrefixColumns } from "@/components/columns/prefix-columns"
+import { DataTable } from "@/components/data-table"
+import type { ColumnDef } from "@tanstack/react-table"
 import { TagList } from "@/components/cells/tag-list"
 import { Button } from "@/components/ui/button"
 import { KvCard, type KvRow } from "@/components/kv-card"
@@ -45,13 +48,22 @@ function AggregateDetail() {
 }
 
 function Body({ aggregate: a }: { aggregate: Aggregate }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "prefixes" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Aggregate | null>(null)
   const goBack = useCallback(() => nav({ to: "/aggregates" }), [nav])
   const { canDo } = useMe()
+  // The prefixes carved inside this aggregate (#133) - fetched up front so
+  // the tab wears its count.
+  const children = useQuery({
+    queryKey: ["aggregate-prefixes", a.id],
+    queryFn: () =>
+      api<Paginated<Prefix>>(
+        `/api/prefixes/?contained_in=${encodeURIComponent(a.prefix)}&page_size=500`
+      ),
+  })
 
   return (
     <DetailShell
@@ -108,6 +120,11 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        {
+          value: "prefixes",
+          label: "Prefixes",
+          count: children.data?.count,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -116,6 +133,9 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
     >
       <DetailTab value="overview">
         <AggregateOverview aggregate={a} />
+      </DetailTab>
+      <DetailTab value="prefixes">
+        <AggregatePrefixes aggregate={a} rows={children.data?.results ?? []} loading={children.isLoading} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.aggregate" objectId={a.id} />
@@ -163,5 +183,34 @@ function AggregateOverview({ aggregate: a }: { aggregate: Aggregate }) {
         layout="cards"
       />
     </div>
+  )
+}
+
+
+function AggregatePrefixes({
+  aggregate,
+  rows,
+  loading,
+}: {
+  aggregate: Aggregate
+  rows: Prefix[]
+  loading: boolean
+}) {
+  const columns = useMemo<ColumnDef<Prefix>[]>(() => buildPrefixColumns({}), [])
+  if (loading)
+    return <p className="text-sm text-muted-foreground">Loading prefixes…</p>
+  if (rows.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No prefixes inside {aggregate.prefix} yet.
+      </p>
+    )
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      flexColumn="description"
+      tableId="prefix-embedded"
+    />
   )
 }
