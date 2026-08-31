@@ -1438,8 +1438,30 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         p = self.request.query_params
         search = p.get("search", "").strip()
         if search:
-            qs = qs.filter(
-                Q(ip_address__icontains=search) | Q(dns_name__icontains=search)
+            # Closest match first: exact, then prefix, then substring - typing
+            # "10.0.0.13" must put .13 above .130-.139 (the assign picker
+            # surfaced whatever join order fell out otherwise). Numeric inet
+            # order inside each band.
+            from django.db.models import Case, IntegerField, Value, When
+            from django.db.models.expressions import RawSQL
+
+            qs = (
+                qs.filter(
+                    Q(ip_address__icontains=search)
+                    | Q(dns_name__icontains=search)
+                )
+                .annotate(
+                    _match=Case(
+                        When(ip_address__iexact=search, then=Value(0)),
+                        When(dns_name__iexact=search, then=Value(0)),
+                        When(ip_address__istartswith=search, then=Value(1)),
+                        When(dns_name__istartswith=search, then=Value(1)),
+                        default=Value(2),
+                        output_field=IntegerField(),
+                    ),
+                    _addr=RawSQL("ip_address::inet", ()),
+                )
+                .order_by("_match", "_addr")
             )
         if dns_name := p.get("dns_name"):
             # Exact, unlike `search` above: the DNS name page asks "which

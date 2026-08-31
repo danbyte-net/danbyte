@@ -71,3 +71,33 @@ class ContainedInFilterTests(APITestCase):
         Prefix.objects.create(tenant=self.tenant, cidr="10.1.0.0/16")
         r = self.client.get("/api/prefixes/?contained_in=not-a-net")
         self.assertEqual(r.json()["results"], [])
+
+
+class IpSearchRankingTests(APITestCase):
+    """Searching the IP list puts the closest address first: exact, then
+    prefix, then substring - .13 above .130-.139."""
+
+    def test_exact_and_prefix_rank_first(self):
+        from api.models import IPAddress, Prefix
+
+        org = Organization.objects.create(name="O3", slug="o3")
+        tenant = Tenant.objects.create(org=org, name="T3", slug="t3")
+        admin = User.objects.create_superuser("ipr", "i@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(tenant.id)
+        s.save()
+        pfx = Prefix.objects.create(tenant=tenant, cidr="10.196.192.0/24")
+        for host in (137, 131, 13, 136, 139, 132):
+            IPAddress.objects.create(
+                tenant=tenant, prefix=pfx, ip_address=f"10.196.192.{host}"
+            )
+        r = self.client.get("/api/ips/?search=10.196.192.13")
+        addrs = [row["ip_address"] for row in r.json()["results"]]
+        self.assertEqual(addrs[0], "10.196.192.13")  # exact first
+        # prefix matches follow in numeric order
+        self.assertEqual(
+            addrs[1:],
+            ["10.196.192.131", "10.196.192.132", "10.196.192.136",
+             "10.196.192.137", "10.196.192.139"],
+        )
