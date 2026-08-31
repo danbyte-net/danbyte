@@ -18,6 +18,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { INTERVALS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
+import { cn } from "@/lib/utils"
 
 // Named cadence options (minutes) for the discovery interval picker.
 const MINUTE_INTERVALS = [
@@ -512,7 +513,14 @@ export function MonitoringSettingsForm() {
               {(draft.arp_source_devices_detail ?? []).map((d) => (
                 <span
                   key={d.id}
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs"
+                  // Dashed until Save has actually written it - the saved
+                  // list is whatever the server last returned.
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs",
+                    (settingsQ.data?.arp_source_devices ?? []).includes(d.id)
+                      ? "border-border"
+                      : "border-dashed border-primary/60"
+                  )}
                 >
                   {d.name}
                   <button
@@ -547,26 +555,27 @@ export function MonitoringSettingsForm() {
             label="Add ARP source"
             value={null}
             excludeIds={draft.arp_source_devices ?? []}
-            onChange={(v) => {
-              if (!v || (draft.arp_source_devices ?? []).includes(v)) return
-              // One atomic update (see the remove handler / issue #127). The
-              // picker only hands back the id; the placeholder name holds
-              // until Save returns the server detail.
+            onPickLabel={(id, label) => {
+              // The picker hands the display name over with the id, so the
+              // chip shows the real device immediately - dashed until Save.
+              // One atomic update (see the remove handler / issue #127).
+              if (!id || (draft.arp_source_devices ?? []).includes(id)) return
               setDraft(
                 (cur) =>
                   cur && {
                     ...cur,
                     arp_source_devices: [
                       ...(cur.arp_source_devices ?? []),
-                      v,
+                      id,
                     ],
                     arp_source_devices_detail: [
                       ...(cur.arp_source_devices_detail ?? []),
-                      { id: v, name: "(added)" },
+                      { id, name: label },
                     ],
                   }
               )
             }}
+            onChange={() => {}}
           />
           <p className="text-[11px] text-muted-foreground">
             On L2-only networks a switch's own ARP table is nearly empty - add

@@ -108,6 +108,10 @@ export interface ObjectPickerProps {
    * combobox - context-relevant options float to the top, everything else
    * stays reachable below. */
   preferQuery?: string
+  /** Called with the picked option's display label alongside onChange - for
+   * callers that keep their own id list and want the name without another
+   * fetch (both the combobox and the advanced dialog deliver it). */
+  onPickLabel?: (id: string, label: string) => void
 }
 
 /**
@@ -139,6 +143,7 @@ export function ObjectPicker<
   customFieldId,
   initialFilters,
   preferQuery,
+  onPickLabel,
 }: ObjectPickerProps & { spec: ObjectPickerSpec<T, O> }) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
@@ -215,7 +220,13 @@ export function ObjectPicker<
         <div className="min-w-0">
           <Combobox
             value={value}
-            onChange={onChange}
+            onChange={(v) => {
+              onChange(v)
+              if (v && onPickLabel) {
+                const o = mergedOptions.find((x) => x.value === v)
+                if (o) onPickLabel(v, o.label)
+              }
+            }}
             options={mergedOptions}
             noneLabel={noneLabel}
             placeholder={placeholder ?? `Pick a ${spec.noun}`}
@@ -245,8 +256,16 @@ export function ObjectPicker<
         exclude={exclude}
         customFieldId={customFieldId}
         initialFilters={initialFilters}
-        onSelect={(id) => {
+        onSelect={(id, row) => {
           onChange(id)
+          if (onPickLabel) {
+            onPickLabel(
+              id,
+              spec.detailLabel
+                ? spec.detailLabel(row)
+                : ((row as { name?: string }).name ?? id)
+            )
+          }
           setAdvancedOpen(false)
         }}
       />
@@ -321,7 +340,7 @@ function ObjectSearchDialog<T extends { id: string }>({
   spec: ObjectPickerSpec<T>
   open: boolean
   onOpenChange: (v: boolean) => void
-  onSelect: (id: string) => void
+  onSelect: (id: string, row: T) => void
   exclude: Set<string>
   customFieldId?: string
   initialFilters?: Record<string, string>
@@ -439,7 +458,7 @@ function ObjectSearchDialog<T extends { id: string }>({
                         ? "cursor-not-allowed opacity-50"
                         : "cursor-pointer"
                     }
-                    onClick={() => !state.disabled && onSelect(row.id)}
+                    onClick={() => !state.disabled && onSelect(row.id, row)}
                   >
                     {spec.columns.map((c, i) => (
                       <TableCell
