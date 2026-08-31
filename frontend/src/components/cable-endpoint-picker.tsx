@@ -229,6 +229,23 @@ export function CableEndpointPicker({
   // type has them, else just the picture so it's obvious which box this is.
   // The schematic is a click away when neither exists (or when wanted).
   const [showRendered, setShowRendered] = useState(false)
+  // Per-browser preference: some operators cable from the list alone and the
+  // panel just costs vertical space (#130).
+  const [hidePanel, setHidePanel] = useState(() => {
+    try {
+      return localStorage.getItem("danbyte-cable-port-panel") === "hidden"
+    } catch {
+      return false
+    }
+  })
+  const setPanelHidden = (v: boolean) => {
+    setHidePanel(v)
+    try {
+      localStorage.setItem("danbyte-cable-port-panel", v ? "hidden" : "")
+    } catch {
+      /* private mode - the toggle still works for the session */
+    }
+  }
   const effView: "photo" | "bare" | "rendered" = showRendered
     ? "rendered"
     : hasPhoto
@@ -392,6 +409,24 @@ export function CableEndpointPicker({
 
         {source === "device" &&
           deviceId &&
+          hidePanel &&
+          (ifaces.data?.results?.length ?? 0) > 0 && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px] text-muted-foreground"
+                onClick={() => setPanelHidden(false)}
+              >
+                Show port panel
+              </Button>
+            </div>
+          )}
+
+        {source === "device" &&
+          deviceId &&
+          !hidePanel &&
           (ifaces.data?.results?.length ?? 0) > 0 && (
           <div className="grid gap-2">
             {/* Orange, not the connected green: on a photo the jacks are
@@ -457,6 +492,15 @@ export function CableEndpointPicker({
                     {showRendered ? "Show photo" : "Show device ports"}
                   </Button>
                 )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-[11px] text-muted-foreground"
+                  onClick={() => setPanelHidden(true)}
+                >
+                  Hide
+                </Button>
               </span>
             </div>
           </div>

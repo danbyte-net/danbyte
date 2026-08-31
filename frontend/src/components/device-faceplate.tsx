@@ -76,6 +76,7 @@ import {
 } from "@/components/ui/hover-card"
 import { cableState } from "@/lib/cable-state"
 import { cn } from "@/lib/utils"
+import { TruncatedText } from "@/components/ui/truncated-text"
 
 /**
  * Draws a device's front panel at millimetre-true scale - the "switch
@@ -445,9 +446,12 @@ function GroupBlock({
       style={g.gapMm ? { marginLeft: Math.round(g.gapMm * scale) } : undefined}
     >
       {g.label && (
-        <span className="num w-fit shrink-0 font-mono text-[9px] text-muted-foreground">
+        // Auto-derived from the interface prefix, which can be arbitrarily
+        // long - capped so it can't run into the next group's cages (#130);
+        // hover reveals the full name only when actually clipped.
+        <TruncatedText className="num block w-fit max-w-[72px] shrink-0 font-mono text-[9px] text-muted-foreground">
           {g.label}
-        </span>
+        </TruncatedText>
       )}
       {labels.map((r, i) => (
         <Cage key={`lbl-${i}`} r={r} scale={scale} />
