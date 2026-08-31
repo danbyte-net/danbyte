@@ -14,7 +14,10 @@ across all your major objects at once - **prefixes, IP addresses, devices, sites
 VLANs, VRFs, route targets, and tags** - within your current tenant.
 
 It's a plain substring match, so partial values work: type part of an address, a
-device name, a VLAN ID, or a tag and you'll get hits. To use it:
+device name, a VLAN ID, or a tag and you'll get hits. An **all-digit query also
+matches the short id** (the per-tenant number printed on labels and short
+links) - type the number off a cable or device label and search jumps to it;
+cables are findable this way too. To use it:
 
 1. Click the search box (or focus it) and start typing.
 2. Results appear **grouped by type**, with the most relevant few per group.

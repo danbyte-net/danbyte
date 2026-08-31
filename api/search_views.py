@@ -28,6 +28,7 @@ from rest_framework.response import Response
 from core.models import Tag, Tenant
 from auth_api import rbac
 from .models import (
+    Cable,
     Circuit, Cluster, Contact, Device, DeviceType, IPAddress, Interface,
     Location, Manufacturer, Prefix, Provider, Rack, RouteTarget, Site, VLAN,
     VirtualMachine, VRF,
@@ -121,7 +122,10 @@ def search(request):
 def _search_prefixes(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     qs = (
         rbac.restrict_queryset(Prefix.objects.filter(tenant=tenant), user, tenant, "prefix", "view")
-        .filter(Q(cidr__icontains=q) | Q(description__icontains=q))
+        .filter(
+            Q(cidr__icontains=q) | Q(description__icontains=q)
+            | (_numid_q(Prefix, q) or Q(pk__in=[]))
+        )
         .select_related("vrf", "site")
         .order_by("cidr")[:limit]
     )
@@ -148,6 +152,7 @@ def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
             Q(ip_address__icontains=q)
             | Q(description__icontains=q)
             | Q(reservation_note__icontains=q)
+            | (_numid_q(IPAddress, q) or Q(pk__in=[]))
         )
         .select_related("status", "role", "assigned_device", "prefix")
         .order_by("ip_address")[:limit]
@@ -171,6 +176,9 @@ def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 
 def _search_vlans(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     cond = Q(name__icontains=q) | Q(description__icontains=q)
+    nq = _numid_q(VLAN, q)
+    if nq:
+        cond |= nq
     if q.isdigit():
         # Exact match on VLAN ID - IntegerField doesn't support icontains
         # cleanly across all backends.
@@ -280,9 +288,13 @@ def _search_tenants(q: str, user, limit: int) -> list[dict]:
 
 
 def _search_devices(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
+    cond = Q(name__icontains=q)
+    nq = _numid_q(Device, q)
+    if nq:
+        cond |= nq
     qs = (
         rbac.restrict_queryset(Device.objects.filter(tenant=tenant), user, tenant, "device", "view")
-        .filter(Q(name__icontains=q))
+        .filter(cond)
         .order_by("name")[:limit]
     )
     return [
@@ -341,6 +353,9 @@ _SIMPLE_GROUPS: dict[str, dict] = {
     "providers":    {"model": Provider,     "slug": "provider",     "fields": ("name", "slug"),          "url": "/providers/{id}",     "sub": None},
     "contacts":     {"model": Contact,      "slug": "contact",      "fields": ("name", "title"),         "url": "/contacts/{id}",      "sub": "title"},
     "interfaces":   {"model": Interface,    "slug": "interface",    "fields": ("name",),                 "url": "/interfaces/{id}",    "sub": "device", "scope": "device__tenant"},
+    # Cables have no name to type, but their printed label carries the short
+    # id - an all-digit query finds them by numid (label field matched too).
+    "cables":       {"model": Cable,        "slug": "cable",        "fields": ("label",),                "url": "/cables/{id}",        "sub": None},
 }
 
 
@@ -362,6 +377,9 @@ def _search_simple(
     match = Q()
     for f in fields:
         match |= Q(**{f"{f}__icontains": q})
+    nq = _numid_q(model, q)
+    if nq:
+        match |= nq
     qs = (
         rbac.restrict_queryset(
             model.objects.filter(**{scope: tenant}), user, tenant, slug, "view"
@@ -405,6 +423,21 @@ def _search_tags(q: str, tenant: Tenant, limit: int) -> list[dict]:
         }
         for t in serialized
     ]
+
+
+def _numid_q(model, q: str):
+    """Exact per-tenant number match for an all-digit query, on models that
+    carry a numid - so the short id printed on a label finds its object."""
+    if not q.isdigit():
+        return None
+    try:
+        model._meta.get_field("numid")
+    except Exception:  # noqa: BLE001 - model without a numid
+        return None
+    try:
+        return Q(numid=int(q))
+    except (TypeError, ValueError):
+        return None
 
 
 def _empty_groups() -> dict[str, list]:

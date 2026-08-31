@@ -3908,6 +3908,7 @@ export interface SearchResponse {
     device_types: SearchHit[]
     manufacturers: SearchHit[]
     circuits: SearchHit[]
+    cables: SearchHit[]
     providers: SearchHit[]
     contacts: SearchHit[]
     interfaces: SearchHit[]
@@ -3933,6 +3934,7 @@ export const SEARCH_GROUPS: Array<{
   { key: "device_types", label: "Device types" },
   { key: "manufacturers", label: "Manufacturers" },
   { key: "circuits", label: "Circuits" },
+  { key: "cables", label: "Cables" },
   { key: "providers", label: "Providers" },
   { key: "contacts", label: "Contacts" },
   { key: "tags", label: "Tags" },
