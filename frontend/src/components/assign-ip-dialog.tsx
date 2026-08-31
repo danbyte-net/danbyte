@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   keepPreviousData,
   useMutation,
@@ -88,6 +88,37 @@ export function AssignIpDialog({
     }
     onOpenChange(next)
   }
+
+  // The target's own site pre-narrows the list (#135): an interface on a
+  // device in site X almost always wants an address from X. Seeded once per
+  // open - clearing back to "Any site" sticks.
+  const targetObj = useQuery({
+    queryKey: [
+      "assign-ip-target-site",
+      target?.deviceId ?? target?.vmId ?? "",
+    ],
+    queryFn: () =>
+      api<{ site: { id: string } | null }>(
+        target?.deviceId
+          ? `/api/devices/${target.deviceId}/`
+          : `/api/virtual-machines/${target?.vmId}/`
+      ),
+    enabled: open && !!(target?.deviceId || target?.vmId),
+    staleTime: 60_000,
+  })
+  const seededSite = useRef(false)
+  useEffect(() => {
+    if (!open) {
+      seededSite.current = false
+      return
+    }
+    if (seededSite.current) return
+    const sid = targetObj.data?.site?.id
+    if (sid) {
+      seededSite.current = true
+      setSite(sid)
+    }
+  }, [open, targetObj.data])
 
   // Filter option sources (small, tenant-scoped - safe to load whole).
   const sites = useQuery({
@@ -220,7 +251,9 @@ export function AssignIpDialog({
             value={site}
             onChange={(v) => {
               setSite(v)
-              setPrefix(null)
+              // Keep a subnet filter that survives the new site.
+              const row = prefixes.data?.results.find((x) => x.id === prefix)
+              if (v && row?.site?.id !== v) setPrefix(null)
             }}
             options={siteOpts}
             noneLabel="Any site"
@@ -232,7 +265,8 @@ export function AssignIpDialog({
             value={vrf}
             onChange={(v) => {
               setVrf(v)
-              setPrefix(null)
+              const row = prefixes.data?.results.find((x) => x.id === prefix)
+              if (v && row?.vrf?.id !== v) setPrefix(null)
             }}
             options={vrfOpts}
             noneLabel="Any VRF"

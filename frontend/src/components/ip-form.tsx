@@ -115,6 +115,32 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const [siteFilter, setSiteFilter] = useState<string | null>(null)
   const [vrfFilter, setVrfFilter] = useState<string | null>(null)
 
+  // Launched from a device/VM interface, the target's own site pre-narrows
+  // the subnet list (#135). Seeded once - clearing back to Any site sticks.
+  const targetForSite = ip
+    ? null
+    : (initial?.deviceId ?? null) || (initial?.vmId ?? null)
+  const targetSiteQ = useQuery({
+    queryKey: ["ip-form-target-site", targetForSite ?? ""],
+    queryFn: () =>
+      api<{ site: { id: string } | null }>(
+        initial?.deviceId
+          ? `/api/devices/${initial.deviceId}/`
+          : `/api/virtual-machines/${initial?.vmId}/`
+      ),
+    enabled: !!targetForSite,
+    staleTime: 60_000,
+  })
+  const seededSite = useRef(false)
+  useEffect(() => {
+    if (seededSite.current) return
+    const sid = targetSiteQ.data?.site?.id
+    if (sid) {
+      seededSite.current = true
+      setSiteFilter((cur) => cur ?? sid)
+    }
+  }, [targetSiteQ.data])
+
   // Staff at a single site get that site's default prefix pre-selected - the
   // whole point of the Site → Default prefix setting. Never overrides an
   // explicit choice: an edit, a clone, or a launch from a prefix page all
@@ -439,7 +465,12 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                     value={siteFilter}
                     onChange={(v) => {
                       setSiteFilter(v)
-                      setPrefixId(null)
+                      // Keep the chosen subnet when it survives the new
+                      // filter - clearing a prefix the user just picked
+                      // because they then narrowed to its own site was
+                      // maddening. Only a prefix the filter excludes clears.
+                      if (v && selectedPrefix?.site?.id !== v)
+                        setPrefixId(null)
                     }}
                     options={siteOpts}
                     noneLabel="Any site"
@@ -453,7 +484,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                     value={vrfFilter}
                     onChange={(v) => {
                       setVrfFilter(v)
-                      setPrefixId(null)
+                      if (v && selectedPrefix?.vrf?.id !== v)
+                        setPrefixId(null)
                     }}
                     options={vrfOpts}
                     noneLabel="Any VRF"
