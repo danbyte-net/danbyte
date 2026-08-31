@@ -25,6 +25,7 @@ import {
   DetailShell,
   DetailTab,
 } from "@/components/detail-shell"
+import { ObjectDocuments } from "@/components/object-documents"
 import {
   LocalityBadge,
   PromoteToGlobalButton,
@@ -182,6 +183,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
           : []),
         { value: "sensors", label: "Sensors" },
         { value: "devices", label: "Devices", count: d.device_count },
+        { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -237,6 +239,11 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
             emptyText="No devices of this type yet."
           />
         </div>
+      </DetailTab>
+      <DetailTab value="documents">
+        {/* Manuals/datasheets attached to the MODEL carry to every device of
+            this type - each device's Documents tab lists them read-only. */}
+        <ObjectDocuments objectType="api.devicetype" objectId={d.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.devicetype" objectId={d.id} />

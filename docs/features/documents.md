@@ -21,6 +21,13 @@ On an object's detail page, open the **Documents** tab:
   when you save (it must resolve to a public address - internal/loopback URLs are
   refused), and a background check flags it if it later goes dead.
 
+## Device-type documents carry to every device
+
+A document attached to a **device type** (its own Documents tab) shows up
+read-only on every device of that type, under **From device type** - attach a
+hardware manual or datasheet once and every unit carries it. Editing or
+superseding it happens on the type.
+
 ## Categories
 
 Group documents with your own **categories** (e.g. *Runbook*, *Warranty*,

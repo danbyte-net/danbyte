@@ -464,7 +464,19 @@ function Body({ device: d }: { device: Device }) {
         <ContactsPanel objectType="api.device" objectId={d.id} />
       </DetailTab>
       <DetailTab value="documents">
-        <ObjectDocuments objectType="api.device" objectId={d.id} />
+        <ObjectDocuments
+          objectType="api.device"
+          objectId={d.id}
+          inheritedFrom={
+            d.device_type
+              ? {
+                  objectType: "api.devicetype",
+                  objectId: d.device_type.id,
+                  label: "From device type",
+                }
+              : undefined
+          }
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.device" objectId={d.id} />
