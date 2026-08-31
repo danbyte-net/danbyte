@@ -5895,6 +5895,12 @@ export interface ProviderNetworkWritePayload {
 export type CircuitTermSide = "A" | "Z"
 
 export interface CircuitTermination {
+  connected_to?: {
+    kind: string
+    id: string
+    name: string
+    device: { id: string; name: string }
+  } | null
   id: string
   /** The owning circuit, so an end can label itself away from its circuit. */
   circuit?: { id: string; numid: number | null; cid: string }

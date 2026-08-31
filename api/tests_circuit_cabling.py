@@ -170,6 +170,12 @@ class CircuitCablingTests(APITestCase):
         row = r.json()["results"][0]
         self.assertEqual(row["circuit"]["cid"], "ACME-1234")
         self.assertIsNotNone(row["cable"])
+        # The far end of the run - the switch port the handoff lands on -
+        # rides along so the circuit page can show it (#118 follow-up).
+        far = row["connected_to"]
+        self.assertEqual(far["kind"], "interface")
+        self.assertEqual(far["device"]["name"], self.sw.name)
+        self.assertEqual(far["name"], self.port.name)
 
     def test_a_circuit_end_cannot_be_reserved(self):
         # You reserve a port on a box; PortReservation has no FK for a circuit

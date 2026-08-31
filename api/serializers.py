@@ -5512,10 +5512,22 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
     # who owns it, and what (if anything) is already plugged into it.
     circuit = CircuitMiniSerializer(read_only=True)
     cable = serializers.SerializerMethodField()
+    connected_to = serializers.SerializerMethodField()
 
     @extend_schema_field(CableMiniSerializer(allow_null=True))
     def get_cable(self, obj):
         return _point_cable(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_connected_to(self, obj):
+        """The far end of the cable plugged into this circuit end (#118) -
+        the switch port the provider handoff actually lands on. Null while
+        uncabled."""
+        t = obj.terminations.all().first()
+        if t is None:
+            return None
+        far = t.cable.terminations.exclude(id=t.id).first()
+        return _termination_repr(far) if far is not None else None
 
     circuit_id = serializers.PrimaryKeyRelatedField(
         source="circuit", queryset=Circuit.objects.all(), write_only=True,
@@ -5544,6 +5556,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
     class Meta:
         model = CircuitTermination
         fields = ["id", "circuit", "circuit_id", "term_side", "cable",
+                  "connected_to",
                   "site", "site_id",
                   "provider_network", "provider_network_id",
                   "port_speed_kbps", "upstream_speed_kbps", "xconnect_id",

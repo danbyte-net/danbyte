@@ -356,6 +356,30 @@ function TerminationCard({
         dash
       ),
     },
+    {
+      // The switch port the provider handoff is cabled to (#118).
+      label: "Cabled to",
+      value: t.connected_to ? (
+        <span>
+          <Link
+            to={
+              t.connected_to.kind === "circuit_termination"
+                ? "/circuits/$id"
+                : "/devices/$id"
+            }
+            params={{ id: t.connected_to.device.id }}
+            className="link"
+          >
+            {t.connected_to.device.name}
+          </Link>{" "}
+          <span className="text-[11px] text-muted-foreground">
+            {t.connected_to.name}
+          </span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
     { label: "Port speed", value: fmtKbps(t.port_speed_kbps) },
     { label: "Upstream speed", value: fmtKbps(t.upstream_speed_kbps) },
     {
