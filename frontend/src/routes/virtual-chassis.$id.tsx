@@ -37,6 +37,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
+import { DeviceMonitoringBadge } from "@/components/monitoring/device-monitoring"
 import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-dialog"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { useLegendCollector } from "@/components/speed-scale"
@@ -487,7 +488,10 @@ function MembersTable({
                     {mono(m.serial_number)}
                   </TableCell>
                   <TableCell className="py-2">
-                    <StatusBadge status={m.status} />
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusBadge status={m.status} />
+                      <DeviceMonitoringBadge deviceId={m.id} />
+                    </span>
                   </TableCell>
                   {(canEditDevice || canEditVc) && (
                     <TableCell className="py-1 text-right whitespace-nowrap">

@@ -28,6 +28,10 @@ records each member's position and master-election priority.
 
 3. Save.
 
+Members with monitored IPs or services wear their live check state next to
+the status pill - in the Members table and on each unit's row in the stack
+drawing. Unmonitored members show nothing extra.
+
 ## Add members
 
 Membership lives on the **device**, and there are two doors in:
