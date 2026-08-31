@@ -178,10 +178,21 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         <SiteLocationsTable siteId={s.id} />
       </DetailTab>
       <DetailTab value="devices">
-        <EmbeddedDeviceTable
-          filter={{ site: s.id }}
-          emptyText="No devices at this site yet."
-        />
+        <div className="grid gap-3">
+          {canDo("device", "add") && (
+            <div className="flex justify-end">
+              <Button size="sm" asChild>
+                <Link to="/devices/new" search={{ site: s.id }}>
+                  Add device
+                </Link>
+              </Button>
+            </div>
+          )}
+          <EmbeddedDeviceTable
+            filter={{ site: s.id }}
+            emptyText="No devices at this site yet."
+          />
+        </div>
       </DetailTab>
       <DetailTab value="prefixes">
         <SitePrefixesTable siteId={s.id} siteName={s.name} />

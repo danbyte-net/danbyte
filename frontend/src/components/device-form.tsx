@@ -68,6 +68,8 @@ export interface DeviceFormProps {
     face?: "" | "front" | "rear"
     /** Pre-pick the hardware model - "Add device" from a device type's page. */
     deviceTypeId?: string
+    /** Pre-pick the site - "Add device" from a site's Devices tab (#134). */
+    siteId?: string
     /** Pre-pick a 0U side mount - "+ side device" from a rack's side lane. */
     mount?: "" | "side_left" | "side_right"
   }
@@ -100,7 +102,9 @@ export function DeviceForm({
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(
     seed?.device_type?.id ?? initial?.deviceTypeId ?? null
   )
-  const [siteId, setSiteId] = useState<string | null>(seed?.site?.id ?? null)
+  const [siteId, setSiteId] = useState<string | null>(
+    seed?.site?.id ?? initial?.siteId ?? null
+  )
   const [roleId, setRoleId] = useState<string | null>(seed?.role?.id ?? null)
   const [platformId, setPlatformId] = useState<string | null>(
     seed?.platform?.id ?? null
