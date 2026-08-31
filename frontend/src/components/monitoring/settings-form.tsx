@@ -130,6 +130,9 @@ export function MonitoringSettingsForm() {
           cleanup_after_days: Number(draft.cleanup_after_days),
           flap_exclude_ip_statuses: draft.flap_exclude_ip_statuses,
           arp_source_devices: draft.arp_source_devices ?? [],
+          engine_offline_after_minutes: Number(
+            draft.engine_offline_after_minutes
+          ),
         })
       }}
     >
@@ -171,6 +174,12 @@ export function MonitoringSettingsForm() {
               hint="Down this long → stale (0 = off)"
               value={draft.stale_after_days}
               onChange={(v) => set("stale_after_days", v)}
+            />
+            <NumberField
+              label="Outpost offline after N minutes"
+              hint="No contact this long → offline alert (0 = 3× its poll interval)"
+              value={draft.engine_offline_after_minutes}
+              onChange={(v) => set("engine_offline_after_minutes", v)}
             />
           </div>
         </Section>

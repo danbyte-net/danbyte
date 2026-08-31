@@ -126,11 +126,23 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
     // No profile_id - the backend resolves it along the hierarchy
     // (device → role → type → tenant default).
     mutationFn: () =>
-      api<DeviceSnmp>(`/api/monitoring/devices/${deviceId}/snmp-poll/`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      }),
+      api<DeviceSnmp & { queued?: boolean; detail?: string }>(
+        `/api/monitoring/devices/${deviceId}/snmp-poll/`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        }
+      ),
     onSuccess: (data) => {
+      // A device on an Outpost-bound site queues there instead of polling
+      // centrally (#128) - results land when the agent's next pass reports.
+      if (data.queued) {
+        toast.info(data.detail || "Queued on the site's Outpost")
+        setTimeout(() => {
+          void qc.invalidateQueries({ queryKey: ["device-snmp", deviceId] })
+        }, 30_000)
+        return
+      }
       qc.setQueryData(["device-snmp", deviceId], data)
       qc.invalidateQueries({ queryKey: ["device-snmp-util", deviceId] })
       qc.invalidateQueries({ queryKey: ["device-snmp-drift", deviceId] })

@@ -259,7 +259,12 @@ device is picked up on the next poll with no re-enrollment.
   (the core can't reach the remote subnet): it flags the prefix + pokes the
   engine (`sweep_requested_at`), the agent sees `sweep_pending` on its next
   `/work` poll (~15 s) and sweeps immediately, and the button spinner clears when
-  the prefix's `last_discovered_at` advances.
+  the prefix's `last_discovered_at` advances. **Poll now** on a device follows
+  the same route (#128): a device whose site/location resolves to an Outpost
+  queues there (`snmp_requested_at` → `snmp_pending`) and answers *Queued on
+  Outpost …* - the agent runs its SNMP cycle on the next poll and the results
+  land through the normal ingest. Central polling would report outpost-only
+  networks as SNMP unavailable.
 - **SSH host-key pinning (shipped)** - pin `ssh_host_key` on the engine and
   Danbyte verifies the server on every SSH connection.
 - **Single-binary packaging (shipped)** - the agent repo's release CI builds a
@@ -271,3 +276,7 @@ device is picked up on the next poll with no re-enrollment.
   checks stalled"** banner appears on the Monitoring pages, and the tenant's
   notification channels get an *engine unreachable* event (and a *recovered*
   event when it comes back). Engines with no assigned checks never alert.
+  The window is configurable per tenant (#129): **Outpost offline after N
+  minutes** in Monitoring settings, 0 = the automatic 3× rule. Checks behind a
+  dead Outpost keep their last state rather than flipping down - no results
+  means no transitions - until the ordinary staleness rules age them.

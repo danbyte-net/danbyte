@@ -44,6 +44,7 @@ from .models import (
     CheckResult,
     CheckState,
     DeviceSnmp,
+    MonitoringEngine,
     MonitoringSettings,
     SnmpProfile,
     SnmpProfileBinding,
@@ -1886,6 +1887,46 @@ def device_snmp_poll_view(request, device_id):
         profile = SnmpProfile.objects.filter(pk=profile_id, tenant=tenant).first()
         if profile is None:
             return Response({"detail": "SNMP profile not found."}, status=400)
+
+    # A device whose site/location is bound to an Outpost polls from THERE -
+    # central polling would report outpost-only networks unreachable (#128).
+    # The agent pulls work, so "now" means its next poll: stamp the request
+    # and answer 202; the same profile/target validation still applies so the
+    # caller gets an actionable error instead of a queue that never delivers.
+    from .engines import engine_for_device
+
+    engine = engine_for_device(device)
+    if engine.kind != MonitoringEngine.LOCAL and engine.enabled:
+        from .snmp_poll import _device_target
+        from .snmp_resolve import resolve_device_profile
+
+        if profile is None:
+            profile, _src = resolve_device_profile(device, tenant)
+        if profile is None:
+            return Response(
+                {"detail": "No SNMP profile resolves for this device - assign "
+                 "one on the device, its role, its type, or set a tenant "
+                 "default."},
+                status=400,
+            )
+        if not _device_target(device):
+            return Response(
+                {"detail": "Device has no primary IP or name to poll."},
+                status=400,
+            )
+        engine.snmp_requested_at = timezone.now()
+        engine.save(update_fields=["snmp_requested_at"])
+        detail = f"Queued on Outpost '{engine.name}' - results land on its next pass."
+        if engine.stale_since is not None:
+            detail = (
+                f"Queued, but Outpost '{engine.name}' is currently unreachable "
+                "- it will poll when it reconnects."
+            )
+        return Response(
+            {"queued": True, "engine": engine.name,
+             "engine_stale": engine.stale_since is not None, "detail": detail},
+            status=202,
+        )
 
     # profile=None → poll_device resolves it (device → role → type → default).
     state, reason = poll_device(device, tenant, profile)

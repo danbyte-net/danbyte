@@ -292,6 +292,72 @@ class OutpostApiTests(_Base):
         # Already on the golden version → not offered (handles the v-prefix).
         self.assertIsNone(hello("v9.9.9"))
 
+    def test_poll_now_routes_through_the_sites_outpost(self):
+        """#128: a device on an Outpost-bound site queues its Poll now on the
+        engine instead of polling centrally; the agent's next work fetch sees
+        snmp_pending and its snmp-work fetch clears the request."""
+        from api.models import Device
+        from monitoring.models import SnmpProfile
+
+        dev = Device.objects.create(
+            tenant=self.tenant, name="branch-sw", site=self.site,
+            primary_ip=self.ip,
+        )
+        SnmpProfile.objects.create(
+            tenant=self.tenant, name="v2", slug="v2", version="v2c",
+            is_default=True,
+        )
+        admin = get_user_model().objects.create_superuser("padm", "p@x", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        r = self.client.post(
+            f"/api/monitoring/devices/{dev.id}/snmp-poll/", {}, format="json"
+        )
+        self.assertEqual(r.status_code, 202, r.content)
+        body = r.json()
+        self.assertTrue(body["queued"])
+        self.assertEqual(body["engine"], "branch-op")
+        self.engine.refresh_from_db()
+        self.assertIsNotNone(self.engine.snmp_requested_at)
+
+        # The agent's next check-work fetch announces the pending cycle...
+        r = self.client.get("/api/outpost/work/", **self._auth()).json()
+        self.assertTrue(r["snmp_pending"])
+        # ...and pulling snmp-work serves (clears) the request.
+        self.client.get("/api/outpost/snmp-work/", **self._auth())
+        self.engine.refresh_from_db()
+        self.assertIsNone(self.engine.snmp_requested_at)
+        r = self.client.get("/api/outpost/work/", **self._auth()).json()
+        self.assertFalse(r["snmp_pending"])
+
+    def test_engine_offline_threshold_is_configurable(self):
+        """#129: engine_offline_after_minutes overrides the automatic 3x-poll
+        threshold in the health sweep."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from monitoring.models import CheckState, MonitoringSettings
+        from monitoring.scheduler import check_engine_health
+
+        CheckState.objects.update(engine=self.engine)
+        self.engine.last_seen_at = timezone.now() - timedelta(minutes=20)
+        self.engine.save(update_fields=["last_seen_at"])
+        ms = MonitoringSettings.for_tenant(self.tenant)
+        ms.engine_offline_after_minutes = 30
+        ms.save(update_fields=["engine_offline_after_minutes"])
+        check_engine_health()
+        self.engine.refresh_from_db()
+        self.assertIsNone(self.engine.stale_since)  # 20 min < 30 min: healthy
+
+        ms.engine_offline_after_minutes = 10
+        ms.save(update_fields=["engine_offline_after_minutes"])
+        check_engine_health()
+        self.engine.refresh_from_db()
+        self.assertIsNotNone(self.engine.stale_since)  # 20 min > 10 min
+
     def test_work_carries_the_dns_directive(self):
         """The agent learns whether to resolve PTR itself, and with what."""
         r = self.client.get("/api/outpost/work/", **self._auth()).json()

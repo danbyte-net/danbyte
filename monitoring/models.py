@@ -824,6 +824,10 @@ class MonitoringSettings(TimestampedModel):
     # ─── distributed engines ─────────────────────────────────────────────
     # Tenant-wide default engine - used when a target's site/location doesn't
     # pin one. Null falls back to the tenant's built-in local engine.
+    # Minutes without contact before a remote engine is flagged offline and
+    # the channels are notified (#129). 0 = automatic: 3x its poll interval,
+    # minimum 3 minutes.
+    engine_offline_after_minutes = models.PositiveIntegerField(default=0)
     default_engine = models.ForeignKey(
         "MonitoringEngine",
         on_delete=models.SET_NULL,
@@ -918,6 +922,10 @@ class MonitoringEngine(TimestampedModel):
     # its *next* poll instead of waiting for the periodic cycle; cleared when it
     # pulls sweep-work.
     sweep_requested_at = models.DateTimeField(null=True, blank=True)
+    # Set by a device's "Poll now" when this engine owns it (#128), so the
+    # Outpost runs its SNMP discovery cycle on the next poll instead of
+    # waiting for the periodic one; cleared when it pulls snmp-work.
+    snmp_requested_at = models.DateTimeField(null=True, blank=True)
     # SSH-transport connection - how Danbyte dials *in* to the Outpost host.
     ssh_host = models.CharField(max_length=255, blank=True)
     ssh_port = models.PositiveIntegerField(default=22)

@@ -4187,6 +4187,7 @@ export interface MonitoringSettings {
   discovery_all_prefixes: boolean
   cleanup_enabled: boolean
   cleanup_after_days: number
+  engine_offline_after_minutes: number
   flap_exclude_ip_statuses: string[]
   flap_exclude_ip_status_detail: MonitoringSkipStatus[]
   /** Tenant default monitoring engine (id) - null = the local built-in. */

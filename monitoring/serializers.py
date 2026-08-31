@@ -849,6 +849,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "discovery_enabled", "discovery_min_prefix_length",
             "discovery_interval_minutes", "discovery_all_prefixes",
             "cleanup_enabled", "cleanup_after_days",
+            "engine_offline_after_minutes",
             "flap_exclude_ip_statuses", "flap_exclude_ip_status_detail",
             "default_engine", "outpost_repo_url", "outpost_repo_token",
             "outpost_repo_token_set", "updated_at",
