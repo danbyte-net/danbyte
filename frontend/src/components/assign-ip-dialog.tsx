@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Combobox } from "@/components/ui/combobox"
@@ -302,6 +303,15 @@ export function AssignIpDialog({
             <ul className="divide-y divide-border">
               {rows.map((ip) => {
                 const selected = ip.id === ipId
+                // Already attached somewhere (interface, bare device, or VM):
+                // stays selectable - assigning MOVES it, sometimes on purpose
+                // - but the row greys and says where it lives so a move is
+                // never an accident.
+                const home = ip.assigned_interface
+                  ? `${ip.assigned_interface.device.name}/${ip.assigned_interface.name}`
+                  : ip.assigned_vm_interface
+                    ? `${ip.assigned_vm_interface.vm.name}/${ip.assigned_vm_interface.name}`
+                    : (ip.assigned_device?.name ?? ip.assigned_vm?.name ?? "")
                 return (
                   <li key={ip.id}>
                     <button
@@ -312,11 +322,23 @@ export function AssignIpDialog({
                         (selected ? "bg-muted" : "")
                       }
                     >
-                      <span className="font-mono">{ip.ip_address}</span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {ip.assigned_interface
-                          ? `on ${ip.assigned_interface.device.name}/${ip.assigned_interface.name}`
-                          : (ip.dns_name ?? "")}
+                      <span
+                        className={
+                          "font-mono" +
+                          (home ? " text-muted-foreground" : "")
+                        }
+                      >
+                        {ip.ip_address}
+                      </span>
+                      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        {home ? (
+                          <>
+                            <Badge variant="outline">assigned</Badge>
+                            <span className="truncate">on {home}</span>
+                          </>
+                        ) : (
+                          <span className="truncate">{ip.dns_name ?? ""}</span>
+                        )}
                       </span>
                     </button>
                   </li>

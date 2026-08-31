@@ -30,12 +30,15 @@ function substringFilter(
   // When an item supplies keywords, ONLY those are searchable - that is how
   // entity pickers keep their UUID values out of the match entirely.
   const hay = (keywords?.length ? keywords.join(" ") : value).toLowerCase()
-  return search
-    .toLowerCase()
-    .split(/\s+/)
-    .every((term) => !term || hay.includes(term))
-    ? 1
-    : 0
+  const q = search.toLowerCase().trim()
+  const terms = q.split(/\s+/).filter(Boolean)
+  if (!terms.every((term) => hay.includes(term))) return 0
+  // Graded, not binary: cmdk sorts by score, so the closest option surfaces
+  // first regardless of the list's own order (#138) - exact, then
+  // starts-with, then plain substring.
+  if (hay === q) return 3
+  if (hay.startsWith(q)) return 2
+  return 1
 }
 
 function Command({
