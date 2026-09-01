@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { apiErrorToast } from "@/lib/api-toast"
+import { isUserInitiated } from "@/lib/user-activation"
 
 const INHERIT = "__inherit__"
 
@@ -68,8 +69,15 @@ export function SnmpVrfControl({
   return (
     <Select
       value={value}
-      onValueChange={(v) => set.mutate(v === INHERIT ? null : v)}
-      disabled={!canEdit || set.isPending}
+      onValueChange={(v) => {
+        const next = v === INHERIT ? null : v
+        // Autofill fires a change on the form's hidden native select with no
+        // gesture behind it; saving that would wipe the stored binding (#125).
+        if (!isUserInitiated() || next === (binding.data?.vrf_id ?? null))
+          return
+        set.mutate(next)
+      }}
+      disabled={!canEdit || set.isPending || binding.isPending}
     >
       <SelectTrigger className="h-8 w-60 text-xs">
         <SelectValue placeholder="-" />

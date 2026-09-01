@@ -5,6 +5,7 @@ import { api } from "@/lib/api"
 import type { MonitoringEngine, Paginated } from "@/lib/api"
 import { FormSelect } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
+import { isUserInitiated } from "@/lib/user-activation"
 
 const INHERIT = "__inherit__"
 
@@ -71,9 +72,16 @@ export function MonitoringEngineField({
           : "Which engine runs checks here (an Outpost for a remote site). Inherit follows the tenant default."
       }
       value={binding.data?.engine_id ?? INHERIT}
-      onChange={(v) => save.mutate(!v || v === INHERIT ? null : v)}
+      onChange={(v) => {
+        const next = !v || v === INHERIT ? null : v
+        // Autofill fires a change on the form's hidden native select with no
+        // gesture behind it; saving that would wipe the stored binding (#125).
+        if (!isUserInitiated() || next === (binding.data?.engine_id ?? null))
+          return
+        save.mutate(next)
+      }}
       options={options}
-      disabled={disabled}
+      disabled={disabled || binding.isPending}
     />
   )
 }
