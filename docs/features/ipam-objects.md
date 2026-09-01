@@ -90,6 +90,14 @@ the range's VRF to match the prefix. The range's detail page shows an
 recorded as IPs, with used / available / total counts (very large ranges are
 truncated so the page stays fast).
 
+**Allocating from a range.** When you add an IP and the chosen subnet contains
+ranges, a **Range** field appears - pick one to treat it as the pool: the form
+shows how many addresses are free, offers the first free ones as one-click
+picks with a **Next free** button, and nudges when the typed address falls
+outside the span. Leave it on *Any address in the subnet* to allocate from the
+whole prefix as before. The range stays a documentation object - the IP is
+saved against the subnet, and the range's own page keeps the full free list.
+
 Containment is surfaced both ways: the prefix IPs tab has a **Range** column
 (the containing range's role chip), and an IP's own detail page shows a
 **Range** row in its Network card - linked, with the range's role and, for

@@ -239,3 +239,17 @@ export function annotateNesting(prefixes: Prefix[]): NestedPrefix[] {
   walk(null)
   return result
 }
+
+/** Whether `addr` (bare, no prefix length) sits inside the inclusive
+ * `start`–`end` span. False for anything that doesn't parse or mixes
+ * families - an IP range is a pool, and a typed address outside it is worth
+ * a nudge, never a crash. */
+export function addressInRange(addr: string, start: string, end: string): boolean {
+  const a = ipToBigInt(addr.trim())
+  const s = ipToBigInt(start)
+  const e = ipToBigInt(end)
+  if (a === null || s === null || e === null) return false
+  if (addr.includes(":") !== start.includes(":")) return false
+  return a >= s && a <= e
+}
+

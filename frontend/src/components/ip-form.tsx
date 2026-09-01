@@ -10,6 +10,8 @@ import {
   type IPRoleOption,
   type StatusOption,
   type IPWritePayload,
+  type IPRange,
+  type IPRangeAvailable,
   type InterfaceOption,
   type Paginated,
   type Prefix,
@@ -17,7 +19,8 @@ import {
   type TagOption,
   type VRFOption,
 } from "@/lib/api"
-import { ipToBigInt } from "@/lib/prefix-tree"
+import { addressInRange, ipToBigInt } from "@/lib/prefix-tree"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
@@ -114,6 +117,29 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   )
   const [siteFilter, setSiteFilter] = useState<string | null>(null)
   const [vrfFilter, setVrfFilter] = useState<string | null>(null)
+  // An IP range inside the subnet used as the pool to allocate from (#143):
+  // an ISP hands out .61-.67 of a /24 that isn't yours. Optional - "any
+  // address in the subnet" stays the default.
+  const [rangeId, setRangeId] = useState<string | null>(null)
+  useEffect(() => setRangeId(null), [prefixId])
+  const rangesQuery = useQuery({
+    queryKey: ["ip-ranges-in-prefix", prefixId ?? ""],
+    queryFn: () =>
+      api<Paginated<IPRange>>(
+        `/api/ip-ranges/?prefix=${prefixId}&page_size=100`
+      ),
+    enabled: !isEdit && !!prefixId,
+    staleTime: 60_000,
+  })
+  const ranges = (rangesQuery.data?.results ?? []).filter(
+    (r) => r.dhcp !== "exclusion"
+  )
+  const selectedRange = ranges.find((r) => r.id === rangeId) ?? null
+  const availableQuery = useQuery({
+    queryKey: ["ip-range-available", rangeId ?? ""],
+    queryFn: () => api<IPRangeAvailable>(`/api/ip-ranges/${rangeId}/available/`),
+    enabled: !!rangeId,
+  })
 
   // Launched from a device/VM interface, the target's own site pre-narrows
   // the subnet list (#135). Seeded once - clearing back to Any site sticks.
@@ -506,6 +532,21 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                   emptyText="No subnets - adjust the filters."
                   error={fieldErrors.prefix_id}
                 />
+                {ranges.length > 0 && (
+                  <FormSelect
+                    label="Range"
+                    hint="allocate from a pool inside the subnet"
+                    value={rangeId}
+                    onChange={setRangeId}
+                    noneLabel="Any address in the subnet"
+                    options={ranges.map((r) => ({
+                      value: r.id,
+                      label: r.description
+                        ? `${r.start_address} – ${r.end_address} · ${r.description}`
+                        : `${r.start_address} – ${r.end_address}`,
+                    }))}
+                  />
+                )}
               </>
             )}
 
@@ -518,14 +559,25 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                 onChange={(e) => setAddress(e.target.value)}
                 className="font-mono"
               />
-              {!isEdit && selectedPrefix?.cidr && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Within{" "}
-                  <span className="font-mono text-foreground">
-                    {selectedPrefix.cidr}
-                  </span>{" "}
-                  - the network part is filled in, just add the host.
-                </p>
+              {!isEdit && selectedRange ? (
+                <RangePool
+                  range={selectedRange}
+                  available={availableQuery.data}
+                  loading={availableQuery.isLoading}
+                  address={address}
+                  onPick={setAddress}
+                />
+              ) : (
+                !isEdit &&
+                selectedPrefix?.cidr && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Within{" "}
+                    <span className="font-mono text-foreground">
+                      {selectedPrefix.cidr}
+                    </span>{" "}
+                    - the network part is filled in, just add the host.
+                  </p>
+                )
               )}
             </Field>
 
@@ -819,3 +871,85 @@ export function networkPrefill(cidr: string): string {
   if (fixed >= 4) return addr // /32 host address
   return octets.slice(0, fixed).join(".") + "."
 }
+
+/** The picked range as an allocation pool: how much is free, the first free
+ * addresses as one-click picks, "Next free", and a nudge when the typed
+ * address falls outside the span. Server-side truth stays the range's own
+ * availability endpoint. */
+function RangePool({
+  range,
+  available,
+  loading,
+  address,
+  onPick,
+}: {
+  range: IPRange
+  available?: IPRangeAvailable
+  loading: boolean
+  address: string
+  onPick: (addr: string) => void
+}) {
+  const outside =
+    address.trim() !== "" &&
+    !addressInRange(address, range.start_address, range.end_address)
+  const picks = available?.results.slice(0, 8) ?? []
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <p className="text-[11px] text-muted-foreground">
+        Within{" "}
+        <span className="font-mono text-foreground">
+          {range.start_address} – {range.end_address}
+        </span>
+        {available && (
+          <>
+            {" "}
+            · <span className="num">{available.available}</span> of{" "}
+            <span className="num">{available.size}</span> free
+          </>
+        )}
+        {loading && " · Loading…"}
+      </p>
+      {picks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[11px]"
+            onClick={() => onPick(picks[0])}
+          >
+            Next free
+          </Button>
+          {picks.map((a) => (
+            <Button
+              key={a}
+              type="button"
+              size="sm"
+              variant={a === address.trim() ? "secondary" : "ghost"}
+              className="h-6 px-1.5 font-mono text-[11px]"
+              onClick={() => onPick(a)}
+            >
+              {a}
+            </Button>
+          ))}
+          {available && available.available > picks.length && (
+            <span className="text-[11px] text-muted-foreground">
+              +{available.available - picks.length} more
+            </span>
+          )}
+        </div>
+      )}
+      {available && available.available === 0 && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          Nothing free in this range.
+        </p>
+      )}
+      {outside && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          Outside the picked range.
+        </p>
+      )}
+    </div>
+  )
+}
+
