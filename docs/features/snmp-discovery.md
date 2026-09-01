@@ -608,3 +608,20 @@ disk-status column is what you point the sensor at.
   editing the device itself, not merely tenant membership.
 - **Manage profiles & bindings** - gated to users who can change the device /
   manage settings.
+
+Three more per-tenant policies (Monitoring settings → SNMP discovery, all
+off by default) shape how SNMP meets your source of truth:
+
+- **Only update existing interfaces** - SNMP never adds ports; drift and sync
+  only touch fields (MAC, speed, VLAN, enabled) on interfaces you created.
+- **Skip unrouted VLAN pseudo-interfaces** - Cisco lists every L2 VLAN in the
+  interface table (`unrouted VLAN 401`); with this on they're ignored as the
+  VLANs they are. Routed SVIs are unaffected.
+- **Interface MAC from the MAC table** - the MAC drift/sync value becomes the
+  address *learned* on the port (the attached device, per the switch's MAC
+  table) instead of the port's own hardware MAC. Ports with several learned
+  MACs are left alone.
+
+Port access-VLANs resolve against your existing VLANs by VLAN ID - ungrouped
+first, then grouped (virt-sync groups excluded) - before a new ungrouped VLAN
+is minted.

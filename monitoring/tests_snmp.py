@@ -1107,3 +1107,106 @@ class SnmpSiteLocationBindingTests(APITestCase):
         self.assertEqual(
             self.client.get(url).json()["profile_id"], str(self.p_site.id)
         )
+
+
+class SnmpSourcePolicyTests(APITestCase):
+    """The tenant SNMP source-of-truth policies: update-only, unrouted-VLAN
+    skip, and MAC-from-FDB - all opt-in, defaults keep shipped behaviour."""
+
+    def setUp(self):
+        from django.utils import timezone as tz
+
+        from core.models import Organization, Tenant
+
+        self._tz = tz
+        org = Organization.objects.create(name="Op", slug="op")
+        self.tenant = Tenant.objects.create(org=org, name="Tp", slug="tp")
+        self.device = Device.objects.create(tenant=self.tenant, name="sw-p")
+        self.state = DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.device,
+            polled_at=self._tz.now(),
+            interfaces=[
+                {"if_index": "1", "name": "Gi1/0/1",
+                 "mac": "aa:aa:aa:aa:aa:01", "admin_status": "up"},
+                {"if_index": "9", "name": "VLAN-401", "type_name": "l2vlan",
+                 "descr": "unrouted VLAN 401", "admin_status": "up"},
+            ],
+            fdb=[
+                {"mac": "bb:bb:bb:bb:bb:01", "if_index": "1"},
+            ],
+        )
+
+    def _settings(self, **kw):
+        from monitoring.models import MonitoringSettings
+
+        ms = MonitoringSettings.for_tenant(self.tenant)
+        for k, v in kw.items():
+            setattr(ms, k, v)
+        ms.save()
+
+    def test_update_only_suppresses_adds_everywhere(self):
+        from monitoring.snmp_drift import (
+            compute_device_drift,
+            sync_device_from_snmp,
+        )
+
+        self._settings(snmp_update_only=True)
+        kinds = [i["kind"] for i in compute_device_drift(self.device, self.tenant)]
+        self.assertNotIn("interface_missing", kinds)
+        summary = sync_device_from_snmp(self.device, self.tenant)
+        self.assertEqual(summary["interfaces_created"], 0)
+        self.assertEqual(Interface.objects.filter(device=self.device).count(), 0)
+        # existing ports still get field updates
+        Interface.objects.create(
+            device=self.device, name="Gi1/0/1", mac_address="00:00:00:00:00:00"
+        )
+        summary = sync_device_from_snmp(self.device, self.tenant)
+        self.assertEqual(summary["interfaces_updated"], 1)
+
+    def test_unrouted_vlan_rows_skip_when_opted_in(self):
+        from monitoring.snmp_drift import (
+            compute_device_drift,
+            sync_device_from_snmp,
+        )
+
+        names = [i.get("name") for i in compute_device_drift(self.device, self.tenant)]
+        self.assertIn("VLAN-401", names)  # default: shipped behaviour
+        self._settings(snmp_skip_unrouted_vlans=True)
+        names = [i.get("name") for i in compute_device_drift(self.device, self.tenant)]
+        self.assertNotIn("VLAN-401", names)
+        sync_device_from_snmp(self.device, self.tenant)
+        self.assertFalse(
+            Interface.objects.filter(device=self.device, name="VLAN-401").exists()
+        )
+
+    def test_mac_from_fdb_uses_the_learned_address(self):
+        from monitoring.snmp_drift import compute_device_drift
+
+        Interface.objects.create(
+            device=self.device, name="Gi1/0/1", mac_address="00:00:00:00:00:00"
+        )
+        self._settings(snmp_mac_from_fdb=True)
+        macs = {
+            i["name"]: i["observed"]
+            for i in compute_device_drift(self.device, self.tenant)
+            if i.get("field") == "mac_address"
+        }
+        self.assertEqual(macs["Gi1/0/1"], "bb:bb:bb:bb:bb:01")
+
+    def test_multi_learner_port_is_left_alone(self):
+        from monitoring.snmp_drift import compute_device_drift
+
+        self.state.fdb = [
+            {"mac": "bb:bb:bb:bb:bb:01", "if_index": "1"},
+            {"mac": "cc:cc:cc:cc:cc:02", "if_index": "1"},
+        ]
+        self.state.save(update_fields=["fdb"])
+        Interface.objects.create(
+            device=self.device, name="Gi1/0/1", mac_address="00:00:00:00:00:00"
+        )
+        self._settings(snmp_mac_from_fdb=True)
+        fields = [
+            i.get("field")
+            for i in compute_device_drift(self.device, self.tenant)
+        ]
+        self.assertNotIn("mac_address", fields)

@@ -4171,6 +4171,9 @@ export interface MonitoringSkipStatus {
 export interface MonitoringSettings {
   /** Import interfaces SNMP reports as notPresent (pre-allocated ports). */
   snmp_import_not_present: boolean
+  snmp_update_only: boolean
+  snmp_skip_unrouted_vlans: boolean
+  snmp_mac_from_fdb: boolean
   /** Devices whose merged ARP tables feed switch-link suggestions. */
   arp_source_devices?: string[]
   arp_source_devices_detail?: { id: string; name: string }[]

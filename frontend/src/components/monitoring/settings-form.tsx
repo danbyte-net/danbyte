@@ -108,6 +108,9 @@ export function MonitoringSettingsForm() {
           stale_after_days: Number(draft.stale_after_days),
           skip_ip_statuses: draft.skip_ip_statuses,
           snmp_import_not_present: draft.snmp_import_not_present,
+          snmp_update_only: draft.snmp_update_only,
+          snmp_skip_unrouted_vlans: draft.snmp_skip_unrouted_vlans,
+          snmp_mac_from_fdb: draft.snmp_mac_from_fdb,
           dns_sync_enabled: draft.dns_sync_enabled,
           dns_clear_on_missing: draft.dns_clear_on_missing,
           dns_preserve_if_alive: draft.dns_preserve_if_alive,
@@ -225,6 +228,55 @@ export function MonitoringSettingsForm() {
               <span className="text-[11px] text-muted-foreground">
                 Stackable switches report ports for members that aren't
                 installed. Off = drift and sync skip them.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.snmp_update_only}
+              onCheckedChange={(v) => set("snmp_update_only", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                Only update existing interfaces
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                SNMP never adds ports - drift and sync touch fields (MAC,
+                speed, VLAN) on ports you created.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.snmp_skip_unrouted_vlans}
+              onCheckedChange={(v) => set("snmp_skip_unrouted_vlans", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                Skip unrouted VLAN pseudo-interfaces
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Cisco lists every L2 VLAN in the interface table. Routed SVIs
+                stay.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.snmp_mac_from_fdb}
+              onCheckedChange={(v) => set("snmp_mac_from_fdb", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                Interface MAC from the MAC table
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                The address learned on the port (the attached device) instead
+                of the port's own hardware MAC. Ports with several learners
+                are left alone.
               </span>
             </span>
           </label>

@@ -677,6 +677,25 @@ class MonitoringSettings(TimestampedModel):
         "(pre-allocated stack ports). Off = skip them on sync and drift.",
     )
 
+    # ─── SNMP → source-of-truth policy (all opt-in; defaults keep the
+    #     shipped behaviour) ────────────────────────────────────────────
+    snmp_update_only = models.BooleanField(
+        default=False,
+        help_text="SNMP never ADDS interfaces - drift and sync only update "
+        "fields on ports that already exist.",
+    )
+    snmp_skip_unrouted_vlans = models.BooleanField(
+        default=False,
+        help_text="Skip L2 VLAN pseudo-interfaces (Cisco's 'unrouted VLAN N' "
+        "ifTable rows) - they are VLANs, not ports. Routed SVIs stay.",
+    )
+    snmp_mac_from_fdb = models.BooleanField(
+        default=False,
+        help_text="Interface MAC drift/sync uses the MAC-table entry learned "
+        "on the port (the attached device) instead of the port's own hardware "
+        "MAC. Ports with several learned MACs are left alone.",
+    )
+
     dns_sync_enabled = models.BooleanField(
         default=False,
         help_text="Resolve reverse DNS (PTR) for monitored IPs and store it as "

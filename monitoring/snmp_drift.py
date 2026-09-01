@@ -91,6 +91,46 @@ def _skip_not_present(tenant) -> bool:
     return not opted_in
 
 
+def _snmp_policy(tenant) -> dict:
+    """The tenant's SNMP source-of-truth policy flags, one plain read (no
+    get-or-create - same rule as _skip_not_present)."""
+    row = (
+        MonitoringSettings.objects.filter(tenant=tenant)
+        .values("snmp_update_only", "snmp_skip_unrouted_vlans",
+                "snmp_mac_from_fdb")
+        .first()
+    )
+    return row or {
+        "snmp_update_only": False,
+        "snmp_skip_unrouted_vlans": False,
+        "snmp_mac_from_fdb": False,
+    }
+
+
+def _is_unrouted_vlan(o: dict) -> bool:
+    """Cisco exposes every L2 VLAN as an ifTable pseudo-interface (ifType
+    l2vlan / ifDescr "unrouted VLAN 401"). Those are VLANs, not ports. A
+    routed SVI reports ifType l3vlan/propVirtual and is NOT matched here."""
+    if str(o.get("type_name") or "") == "l2vlan":
+        return True
+    return str(o.get("descr") or "").lower().startswith("unrouted vlan")
+
+
+def _fdb_single_macs(state) -> dict:
+    """if_index → the ONE MAC learned on that port, from the FDB. Ports with
+    several learners (trunks, uplinks) map to None so callers skip them."""
+    seen: dict = {}
+    for row in state.fdb or []:
+        idx = str(row.get("if_index") or "")
+        if not idx or not row.get("mac"):
+            continue
+        if idx in seen and seen[idx] != row["mac"]:
+            seen[idx] = None
+        else:
+            seen.setdefault(idx, row["mac"])
+    return seen
+
+
 def _is_not_present(o: dict) -> bool:
     return str(o.get("oper_status") or "").lower() == "notpresent"
 
@@ -309,6 +349,10 @@ def compute_device_drift(
         skip_absent = _skip_not_present(tenant)
     if skip_absent:
         observed = [o for o in observed if not _is_not_present(o)]
+    policy = _snmp_policy(tenant)
+    if policy["snmp_skip_unrouted_vlans"]:
+        observed = [o for o in observed if not _is_unrouted_vlan(o)]
+    fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
     obs_by_name = {_norm(o["name"]): o for o in observed}
     intended = (
         list(intended_interfaces) if intended_interfaces is not None
@@ -340,14 +384,17 @@ def compute_device_drift(
     for name, o in obs_by_name.items():
         existing = _match_observed(o, int_by_name)
         if existing is None:
-            items.append({
-                "kind": "interface_missing",
-                "name": o["name"], "if_index": o.get("if_index", ""),
-                "observed": {
-                    "mac": o.get("mac", ""),
-                    "admin_status": o.get("admin_status", ""),
-                },
-            })
+            # Update-only fleets: the operator is the source of truth for
+            # WHICH ports exist - never propose adding one.
+            if not policy["snmp_update_only"]:
+                items.append({
+                    "kind": "interface_missing",
+                    "name": o["name"], "if_index": o.get("if_index", ""),
+                    "observed": {
+                        "mac": o.get("mac", ""),
+                        "admin_status": o.get("admin_status", ""),
+                    },
+                })
             continue
         # This intended port has been seen (by name or by descr), so it can't
         # also be reported stale below.
@@ -356,12 +403,18 @@ def compute_device_drift(
         # doesn't drift as "new"), but produces no items in either direction.
         if existing.snmp_ignore:
             continue
-        # MAC mismatch (separator-insensitive - see _norm_mac).
-        if o.get("mac") and _norm_mac(o["mac"]) != _norm_mac(existing.mac_address):
+        # MAC mismatch (separator-insensitive - see _norm_mac). With the
+        # MAC-table policy the compared value is the port's single learned
+        # MAC (the attached device); several learners → no proposal.
+        if fdb_macs is None:
+            obs_mac = o.get("mac")
+        else:
+            obs_mac = fdb_macs.get(str(o.get("if_index") or ""))
+        if obs_mac and _norm_mac(obs_mac) != _norm_mac(existing.mac_address):
             items.append({
                 "kind": "interface_mismatch", "interface_id": str(existing.id),
                 "name": existing.name, "field": "mac_address",
-                "intended": existing.mac_address, "observed": o["mac"],
+                "intended": existing.mac_address, "observed": obs_mac,
             })
         # Admin enabled mismatch.
         if o.get("admin_status") in ("up", "down"):
@@ -692,6 +745,8 @@ def sync_device_from_snmp(device, tenant) -> dict:
     existing = _intent_by_observed_name(Interface.objects.filter(device=device))
     ip_rows = _observed_ip_rows(tenant, state.interfaces or [])
     skip_absent = _skip_not_present(tenant)
+    policy = _snmp_policy(tenant)
+    fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
     for o in (state.interfaces or []):
         name = o.get("name")
         # Pre-allocated stack ports: not real hardware, not intent.
@@ -701,6 +756,9 @@ def sync_device_from_snmp(device, tenant) -> dict:
             )
             continue
         if not name:
+            continue
+        # L2 VLAN pseudo-interfaces: VLANs, not ports (policy, see drift).
+        if policy["snmp_skip_unrouted_vlans"] and _is_unrouted_vlan(o):
             continue
         speed = _fmt_speed(o.get("speed_mbps"))
         vlan = _resolve_observed_vlan(tenant, o)
@@ -714,10 +772,18 @@ def sync_device_from_snmp(device, tenant) -> dict:
         if iface is not None and iface.snmp_ignore:
             continue
         if iface is None:
+            # Update-only fleets never create ports from SNMP.
+            if policy["snmp_update_only"]:
+                continue
             try:
+                created_mac = (
+                    fdb_macs.get(str(o.get("if_index") or ""))
+                    if fdb_macs is not None
+                    else o.get("mac")
+                )
                 iface = Interface.objects.create(
                     device=device, name=name[:64],
-                    mac_address=(o.get("mac") or "")[:17],
+                    mac_address=(created_mac or "")[:17],
                     # A notPresent port only reaches here when the
                     # tenant opted in. It's a slot with no hardware: it lands
                     # disabled AND carries the Not present status (#97, #105).
@@ -743,8 +809,12 @@ def sync_device_from_snmp(device, tenant) -> dict:
                 existing[_norm(name)] = iface
         else:
             changed = []
-            if o.get("mac") and _norm_mac(o["mac"]) != _norm_mac(iface.mac_address):
-                iface.mac_address = o["mac"][:17]
+            if fdb_macs is None:
+                obs_mac = o.get("mac")
+            else:
+                obs_mac = fdb_macs.get(str(o.get("if_index") or ""))
+            if obs_mac and _norm_mac(obs_mac) != _norm_mac(iface.mac_address):
+                iface.mac_address = obs_mac[:17]
                 changed.append("mac_address")
             if o.get("admin_status") in ("up", "down"):
                 en = o["admin_status"] == "up"
@@ -809,6 +879,16 @@ def _resolve_observed_vlan(tenant, o: dict):
     if not (1 <= vid <= 4094):
         return None
     vlan = VLAN.objects.filter(tenant=tenant, vlan_id=vid, group__isnull=True).first()
+    if vlan is None:
+        # Grouped VLANs count too (site-scoped groups are the norm on larger
+        # estates) - same resolution order as virt sync's match_existing_vlans:
+        # ungrouped first, then by group name, virt-sync groups excluded.
+        vlan = (
+            VLAN.objects.filter(tenant=tenant, vlan_id=vid)
+            .exclude(group__slug__startswith="virt-")
+            .order_by("group__name")
+            .first()
+        )
     if vlan is None:
         vlan = VLAN.objects.create(
             tenant=tenant, vlan_id=vid,
