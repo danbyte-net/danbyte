@@ -166,6 +166,7 @@ const DEVICE_TABS = [
   "ips",
   "components",
   "images",
+  "photo-ports",
   "snmp",
   "services",
   "certificates",
