@@ -185,6 +185,11 @@ export function DeviceTypeImagePortsPane({
   const [fill, setFill] = useState<FillOpts | null>(null)
   const [pick, setPick] = useState<null | "x1" | "x2">(null)
   const imgRef = useRef<HTMLDivElement | null>(null)
+  // Display scale for the photo. null = fit (contain to the pane, never
+  // blown past its pixels) - a 143px-wide panel photo used to stretch to
+  // full pane width. Markers are %-positioned, so any scale stays true.
+  const [zoom, setZoom] = useState<number | null>(null)
+  const [naturalW, setNaturalW] = useState<number | null>(null)
   const drag = useRef<{
     mode: "move" | "resize"
     i: number
@@ -705,10 +710,52 @@ export function DeviceTypeImagePortsPane({
             />
           )}
           {image ? (
+            <div className="max-h-[75vh] overflow-auto">
+            <div className="mb-1.5 flex items-center gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[11px]"
+                onClick={() =>
+                  setZoom((z) => Math.max(0.25, (z ?? 1) / 1.5))
+                }
+              >
+                -
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => setZoom((z) => Math.min(6, (z ?? 1) * 1.5))}
+              >
+                +
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => setZoom(null)}
+              >
+                Fit
+              </Button>
+              {zoom != null && (
+                <span className="num text-[11px] text-muted-foreground">
+                  {Math.round(zoom * 100)}%
+                </span>
+              )}
+            </div>
             <div
               ref={imgRef}
+              style={
+                zoom != null && naturalW
+                  ? { width: Math.round(naturalW * zoom) }
+                  : undefined
+              }
               className={cn(
-                "relative w-full overflow-hidden rounded-md border border-border bg-muted/30 select-none",
+                "relative inline-block max-w-full overflow-hidden rounded-md border border-border bg-muted/30 select-none",
                 pick && "cursor-crosshair ring-2 ring-primary"
               )}
               onDragOver={(e) => e.preventDefault()}
@@ -721,7 +768,11 @@ export function DeviceTypeImagePortsPane({
               <img
                 src={image}
                 alt={`${side} of ${deviceType.name}`}
-                className="pointer-events-none block w-full"
+                onLoad={(e) => setNaturalW(e.currentTarget.naturalWidth)}
+                className={cn(
+                  "pointer-events-none block",
+                  zoom != null ? "w-full" : "h-auto max-h-[65vh] w-auto max-w-full"
+                )}
                 draggable={false}
               />
               {/* Live fill preview - amber ghosts, not interactive. */}
@@ -768,6 +819,7 @@ export function DeviceTypeImagePortsPane({
                   )}
                 </div>
               ))}
+            </div>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
