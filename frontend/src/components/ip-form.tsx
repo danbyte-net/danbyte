@@ -889,8 +889,10 @@ function RangePool({
   address: string
   onPick: (addr: string) => void
 }) {
+  // Only a complete address gets judged - the field starts as the network
+  // part ("192.173.199.") while the host is still being typed.
   const outside =
-    address.trim() !== "" &&
+    ipToBigInt(address.trim()) !== null &&
     !addressInRange(address, range.start_address, range.end_address)
   const picks = available?.results.slice(0, 8) ?? []
   return (
