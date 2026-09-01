@@ -26,7 +26,8 @@ is obvious at a glance.
 
 Rules:
 
-- The parent must be **on the same device**.
+- The parent must be **on the same device**, or on another member of the
+  same **virtual chassis**.
 - An interface can't be its own parent, and you can't create loops.
 
 ## Link aggregation (LAG)
@@ -42,11 +43,17 @@ To model it:
 In the interface list, members show `· LAG ae1` next to their name, and the
 aggregate's detail page shows how many members it has.
 
+**Stacks.** Create the aggregate once, on the virtual chassis master, and pick
+it from any member's ports - the LAG / aggregate picker offers every member's
+interfaces, labelled `member: name` when they live on another member, and the
+list shows `· LAG master: ae1` on those ports. There is no need to mirror the
+aggregate onto each member.
+
 ## Bridges
 
 A **bridge** groups interfaces into a single layer-2 domain. Set the **Bridge**
 field on each member to point at the bridge interface. Like LAG and parent, the
-bridge must be on the same device.
+bridge must be on the same device or virtual chassis.
 
 ## Quick reference
 
@@ -57,5 +64,5 @@ bridge must be on the same device.
 | **LAG / aggregate** | bundle membership (a port → its aggregate) | the aggregate |
 | **Bridge** | layer-2 bridge membership | the bridge interface |
 
-All three relationships are limited to interfaces **on the same device**, and
-none can point an interface at itself.
+All three relationships are limited to interfaces **on the same device or the
+same virtual chassis**, and none can point an interface at itself.

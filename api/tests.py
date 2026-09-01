@@ -4,7 +4,9 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from api.models import Device, IPAddress, Interface, Prefix, ServiceTemplate
+from api.models import (
+    Device, IPAddress, Interface, Prefix, ServiceTemplate, VirtualChassis,
+)
 from core.models import Organization, Tenant
 
 
@@ -90,6 +92,59 @@ class VirtualInterfaceTests(APITestCase):
         )
         self.assertEqual(r.status_code, 400)
         self.assertIn("lag_id", r.json())
+
+    def _stack(self):
+        # fw1 (master) + fw2 in one stack; fw3 stays outside it.
+        vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack1")
+        Device.objects.filter(id__in=[self.dev.id, self.other.id]).update(
+            virtual_chassis=vc
+        )
+        self.dev.refresh_from_db()
+        self.other.refresh_from_db()
+        return vc
+
+    def test_lag_across_virtual_chassis_members(self):
+        # A member's port joins the aggregate that lives on the master (#145),
+        # and the relation names the owning device so the UI can say so.
+        self._stack()
+        r = self.client.post(
+            "/api/interfaces/",
+            {"device_id": str(self.other.id), "name": "eth1",
+             "lag_id": str(self.ae.id)},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["lag"]["device"]["name"], "fw1")
+        self.assertEqual(
+            self.client.get(f"/api/interfaces/{self.ae.id}/").json()[
+                "lag_member_count"
+            ],
+            1,
+        )
+
+    def test_lag_outside_the_stack_still_rejected(self):
+        self._stack()
+        outsider = Device.objects.create(tenant=self.tenant, name="fw3")
+        r = self.client.post(
+            "/api/interfaces/",
+            {"device_id": str(outsider.id), "name": "eth1",
+             "lag_id": str(self.ae.id)},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("virtual chassis", r.json()["lag_id"][0])
+
+    def test_list_filters_by_virtual_chassis(self):
+        vc = self._stack()
+        Interface.objects.create(device=self.other, name="eth1")
+        Device.objects.create(tenant=self.tenant, name="fw3")
+        names = {
+            (i["device"]["name"], i["name"])
+            for i in self.client.get(
+                f"/api/interfaces/?virtual_chassis={vc.id}"
+            ).json()["results"]
+        }
+        self.assertEqual(names, {("fw1", "ae1"), ("fw2", "eth1")})
 
 
 class IpInPrefixValidationTests(APITestCase):

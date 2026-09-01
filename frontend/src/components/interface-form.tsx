@@ -6,7 +6,6 @@ import {
   type VRFOption,
   api,
   type Interface,
-  type InterfaceOption,
   type InterfaceWritePayload,
   type Paginated,
   type Status,
@@ -155,11 +154,15 @@ export function InterfaceForm({
   const deviceQ = useQuery({
     queryKey: ["device", deviceId],
     queryFn: () =>
-      api<{ site: { id: string } | null }>(`/api/devices/${deviceId}/`),
+      api<{
+        site: { id: string } | null
+        virtual_chassis: { id: string; name: string } | null
+      }>(`/api/devices/${deviceId}/`),
     enabled: !!deviceId,
     staleTime: 60_000,
   })
   const deviceSiteId = deviceQ.data?.site?.id ?? null
+  const vcId = deviceQ.data?.virtual_chassis?.id ?? null
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
     queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
@@ -178,12 +181,18 @@ export function InterfaceForm({
     queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  // Candidate parents: other interfaces on the same device (excluding self).
+  // Candidate parents / LAGs / bridges: the device's own interfaces - or,
+  // on a stack, every member's, so a port can join the aggregate that lives
+  // on the master (#145). Waits for the device so the query key is final.
   const parents = useQuery({
-    queryKey: ["interfaces-picker", deviceId],
+    queryKey: ["interfaces-picker", deviceId, vcId],
     queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${deviceId}`),
-    enabled: !!deviceId,
+      api<Paginated<Pick<Interface, "id" | "name" | "device">>>(
+        vcId
+          ? `/api/interfaces/?virtual_chassis=${vcId}&page_size=1000`
+          : `/api/interfaces/?device=${deviceId}`
+      ),
+    enabled: !!deviceId && deviceQ.isSuccess,
     staleTime: 60_000,
   })
   const tags = useQuery({
@@ -294,10 +303,26 @@ export function InterfaceForm({
     },
   })
 
-  // Same-device interfaces (minus self) - candidates for parent / LAG / bridge.
+  // Candidates for parent / LAG / bridge (minus self). Own ports first; a
+  // port on another stack member is labelled with its device.
   const ifaceOptions = (parents.data?.results ?? [])
     .filter((p) => p.id !== iface?.id)
-    .map((p) => ({ value: p.id, label: p.name }))
+    .sort((a, b) =>
+      a.device.id === b.device.id
+        ? 0
+        : a.device.id === deviceId
+          ? -1
+          : b.device.id === deviceId
+            ? 1
+            : a.device.name.localeCompare(b.device.name)
+    )
+    .map((p) => ({
+      value: p.id,
+      label: p.device.id === deviceId ? p.name : `${p.device.name}: ${p.name}`,
+    }))
+  const noIfaceText = vcId
+    ? "No other interfaces on this stack."
+    : "No other interfaces on this device."
 
   // A legacy/custom media type still round-trips: surface it at the top of
   // the dropdown instead of silently blanking the field.
@@ -610,7 +635,7 @@ export function InterfaceForm({
                 deviceId ? "Standalone (no parent)" : "Pick a device first"
               }
               searchPlaceholder="Search interfaces…"
-              emptyText="No other interfaces on this device."
+              emptyText={noIfaceText}
               options={ifaceOptions}
               error={fieldErrors.parent_id}
             />
@@ -624,7 +649,7 @@ export function InterfaceForm({
                   deviceId ? "Not a LAG member" : "Pick a device first"
                 }
                 searchPlaceholder="Search interfaces…"
-                emptyText="No other interfaces on this device."
+                emptyText={noIfaceText}
                 options={ifaceOptions}
                 error={fieldErrors.lag_id}
               />
@@ -635,7 +660,7 @@ export function InterfaceForm({
                 noneLabel="No bridge"
                 placeholder={deviceId ? "No bridge" : "Pick a device first"}
                 searchPlaceholder="Search interfaces…"
-                emptyText="No other interfaces on this device."
+                emptyText={noIfaceText}
                 options={ifaceOptions}
                 error={fieldErrors.bridge_id}
               />

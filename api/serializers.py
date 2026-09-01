@@ -2592,7 +2592,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     @staticmethod
     def _mini(rel):
-        return {"id": str(rel.id), "name": rel.name} if rel else None
+        # The owning device rides along so a relation on another stack member
+        # can be labelled "member-2: ae1" rather than a bare name.
+        if rel is None:
+            return None
+        return {
+            "id": str(rel.id),
+            "name": rel.name,
+            "device": {"id": str(rel.device_id), "name": rel.device.name},
+        }
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
@@ -2659,15 +2667,20 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         self_pk = getattr(self.instance, "pk", None)
 
         # All three self-relations must point at an interface on the same device
-        # and never at the interface itself.
+        # - or on another member of the same virtual chassis, where the
+        # aggregate lives on the master and member ports across the stack join
+        # it (#145) - and never at the interface itself.
+        vc_id = getattr(device, "virtual_chassis_id", None)
         for field in ("parent", "lag", "bridge"):
             rel = attrs.get(field, getattr(self.instance, field, None))
             if rel is None:
                 continue
-            if device is not None and rel.device_id != device.id:
+            if device is not None and rel.device_id != device.id and not (
+                vc_id and rel.device.virtual_chassis_id == vc_id
+            ):
                 raise serializers.ValidationError(
                     {f"{field}_id": f"{field.capitalize()} must be an interface "
-                                    "on the same device."}
+                                    "on the same device or virtual chassis."}
                 )
             if self_pk is not None and rel.pk == self_pk:
                 raise serializers.ValidationError(

@@ -2852,7 +2852,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="children",
         help_text="The interface this one nests under (e.g. a sub-interface "
-                  "ae1.100 → ae1). Must be on the same device.",
+                  "ae1.100 → ae1). Same device or virtual chassis.",
     )
     # LAG / aggregation: members point `lag` at the aggregate
     # interface. The aggregate is whatever interface is referenced here.
@@ -2860,13 +2860,15 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="lag_members",
         help_text="The link-aggregation (LAG/aggregate) interface this one is a "
-                  "member of, e.g. a physical port → ae1. Same device.",
+                  "member of, e.g. a physical port → ae1. Same device or "
+                  "virtual chassis.",
     )
     # Bridge group: members point `bridge` at the bridge.
     bridge = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="bridge_members",
-        help_text="The bridge interface this one belongs to. Same device.",
+        help_text="The bridge interface this one belongs to. Same device or "
+                  "virtual chassis.",
     )
 
     class Meta:

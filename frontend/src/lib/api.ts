@@ -1970,6 +1970,14 @@ export interface PortReservation {
   updated_at: string
 }
 
+/** A parent / LAG / bridge relation. `device` names the owner - on a
+ * virtual chassis the aggregate may live on another member (#145). */
+export interface RelatedInterface {
+  id: string
+  name: string
+  device: { id: string; name: string }
+}
+
 export interface Interface {
   id: string
   device: { id: string; name: string }
@@ -2027,15 +2035,15 @@ export interface Interface {
   /** Virtual / logical interface (sub-interface, LAG, loopback, tunnel). */
   virtual: boolean
   /** The interface this one nests under (sub-interface parent), if any. */
-  parent: { id: string; name: string } | null
+  parent: RelatedInterface | null
   /** Number of interfaces nested under this one. */
   child_count: number
   /** The LAG/aggregate interface this one is a member of, if any. */
-  lag: { id: string; name: string } | null
+  lag: RelatedInterface | null
   /** Number of member interfaces (set when this interface IS a LAG). */
   lag_member_count: number
   /** The bridge interface this one belongs to, if any. */
-  bridge: { id: string; name: string } | null
+  bridge: RelatedInterface | null
   created_at: string
   updated_at: string
 }

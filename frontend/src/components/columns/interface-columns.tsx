@@ -297,7 +297,11 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
             ))}
             {row.original.lag && (
               <span className="text-[11px] text-muted-foreground">
-                · LAG {row.original.lag.name}
+                · LAG{" "}
+                {row.original.lag.device.id !== row.original.device.id
+                  ? `${row.original.lag.device.name}: `
+                  : ""}
+                {row.original.lag.name}
               </span>
             )}
           </div>

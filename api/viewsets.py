@@ -3792,7 +3792,8 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
 
     queryset = (
         Interface.objects.select_related(
-            "device", "vlan", "vrf", "parent", "lag", "bridge", "status"
+            "device", "vlan", "vrf", "status",
+            "parent__device", "lag__device", "bridge__device",
         )
         .prefetch_related(
             "tags", "terminations__cable", "reservations", "ip_addresses", "children",
@@ -3827,6 +3828,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = qs.filter(device_id=device_id)
+            # Every member's ports at once - the parent/LAG/bridge pickers
+            # offer the whole stack (#145).
+            vc_id = self.request.query_params.get("virtual_chassis")
+            if vc_id:
+                qs = qs.filter(device__virtual_chassis_id=vc_id)
         return restrict_for_view(self, qs)
 
     def _check(self, serializer):
