@@ -1109,12 +1109,16 @@ def device_paths(device, viewable_ids=None):
                 continue
             seen_runs.add(run_key)
 
-            runs.append({
-                "origin": {"name": oport.name,
-                           "kind": _KIND_OF.get(okind, "interface")},
-                "steps": steps,
-                "complete": complete,
-            })
+            origin = {"name": oport.name, "kind": _KIND_OF.get(okind, "interface")}
+            # A LAG member's run belongs to its aggregate - the overview groups
+            # the bundle's links under it (the aggregate may sit on another
+            # stack member).
+            olag = getattr(oport, "lag", None) if okind == "interface" else None
+            if olag is not None:
+                origin["lag"] = {"id": str(olag.id), "name": olag.name,
+                                 "device": olag.device.name,
+                                 "elsewhere": olag.device_id != device.id}
+            runs.append({"origin": origin, "steps": steps, "complete": complete})
     # One cable leaving one port, landing in several places, is a breakout -
     # emit it as ONE run carrying its legs so the UI can draw the fan instead
     # of listing the same cable once per leg.

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Waypoints } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import { Layers, Waypoints } from "lucide-react"
 
 import { api, type DevicePathRun } from "@/lib/api"
 import { QueryError } from "@/components/query-error"
@@ -42,13 +43,45 @@ export function DevicePathsList({
 
   return (
     <div className="divide-y divide-border">
-      {(showAll ? runs : runs.slice(0, max)).map((run, i) => (
-        <PathRow
-          key={`${run.origin.name}:${i}`}
-          run={run}
-          onTraceCables={onTraceCables}
-        />
-      ))}
+      {groupByLag(showAll ? runs : runs.slice(0, max)).map((g, gi) =>
+        g.lag ? (
+          // A bundle: the aggregate heads its member links, so two cables
+          // read as one logical uplink rather than two unrelated runs.
+          <div key={`lag:${g.lag.id}`} className="px-1 py-1">
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+              <Link
+                to="/interfaces/$id"
+                params={{ id: g.lag.id }}
+                className="link font-medium"
+              >
+                {g.lag.name}
+              </Link>
+              <span className="text-muted-foreground">
+                · {g.runs.length} {g.runs.length === 1 ? "link" : "links"}
+                {g.lag.elsewhere ? ` · on ${g.lag.device}` : ""}
+              </span>
+            </div>
+            <div className="ml-1.5 border-l border-border pl-2">
+              {g.runs.map((run, i) => (
+                <PathRow
+                  key={`${run.origin.name}:${i}`}
+                  run={run}
+                  onTraceCables={onTraceCables}
+                />
+              ))}
+            </div>
+          </div>
+        ) : (
+          g.runs.map((run, i) => (
+            <PathRow
+              key={`${gi}:${run.origin.name}:${i}`}
+              run={run}
+              onTraceCables={onTraceCables}
+            />
+          ))
+        )
+      )}
       {runs.length > max && (
         <button
           type="button"
@@ -60,6 +93,30 @@ export function DevicePathsList({
       )}
     </div>
   )
+}
+
+/** Consecutive-preserving grouping: runs whose origin port belongs to the same
+ * aggregate collapse into one group (keyed by the aggregate), everything else
+ * stays a solo group in its original position. */
+function groupByLag(runs: DevicePathRun[]) {
+  const groups: { lag: DevicePathRun["origin"]["lag"]; runs: DevicePathRun[] }[] =
+    []
+  const byLag = new Map<string, (typeof groups)[number]>()
+  for (const run of runs) {
+    const lag = run.origin.lag
+    if (!lag) {
+      groups.push({ lag: undefined, runs: [run] })
+      continue
+    }
+    let g = byLag.get(lag.id)
+    if (!g) {
+      g = { lag, runs: [] }
+      byLag.set(lag.id, g)
+      groups.push(g)
+    }
+    g.runs.push(run)
+  }
+  return groups
 }
 
 /** Every cable id across all of a device's runs - for a one-shot "trace

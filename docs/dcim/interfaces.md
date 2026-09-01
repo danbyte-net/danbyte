@@ -132,8 +132,9 @@ type's component templates.
 
 On the device's **Interfaces** tab, each row shows the name, type, enabled state,
 speed, VLAN, cable count, any **IP addresses** attached to it, and the
-description. Sub-interfaces are indented under their parent, and aggregate
-members show their LAG - see
+description. Sub-interfaces are indented under their parent, and the **LAG**
+column ties a bundle together: members show their aggregate, the aggregate
+shows how many links it bundles - see
 [Virtual & aggregate interfaces](virtual-interfaces.md).
 
 ## Attaching IP addresses

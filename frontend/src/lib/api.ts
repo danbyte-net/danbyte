@@ -2658,7 +2658,13 @@ export interface GhostEdgeData {
 }
 
 export interface DevicePathRun {
-  origin: { name: string; kind: TopoPortKind }
+  origin: {
+    name: string
+    kind: TopoPortKind
+    /** The aggregate this port is a member of, when it is one. `elsewhere`:
+     * it sits on another member of the stack. */
+    lag?: { id: string; name: string; device: string; elsewhere: boolean }
+  }
   /** A breakout: the same cable leaving this port and landing in several
    * places. Each leg is the tail after the shared origin chip + segment. */
   legs?: DevicePathRun["steps"][]

@@ -40,14 +40,17 @@ To model it:
 1. Create the aggregate interface (e.g. `ae1`) and tick **Virtual**.
 2. On each physical member port, set its **LAG / aggregate** field to `ae1`.
 
-In the interface list, members show `· LAG ae1` next to their name, and the
-aggregate's detail page shows how many members it has.
+The interface table has a **LAG** column: a member shows its aggregate as a
+chip that opens it, and the aggregate row shows `2 links` - so the bundle reads
+in both directions. On the device overview, the cabled runs of a bundle's
+members are grouped under the aggregate (`ae1 · 2 links`) instead of listing
+as unrelated cables.
 
 **Stacks.** Create the aggregate once, on the virtual chassis master, and pick
 it from any member's ports - the LAG / aggregate picker offers every member's
-interfaces, labelled `member: name` when they live on another member, and the
-list shows `· LAG master: ae1` on those ports. There is no need to mirror the
-aggregate onto each member.
+interfaces, labelled `member: name` when they live on another member. Those
+ports' LAG chip adds `on <master>`, and the overview grouping does the same.
+There is no need to mirror the aggregate onto each member.
 
 ## Bridges
 

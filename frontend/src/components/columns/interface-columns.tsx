@@ -9,6 +9,7 @@ import {
   Unplug,
   Waypoints,
   Workflow,
+  Layers,
 } from "lucide-react"
 
 import { DriftBadge } from "@/components/drift-detail"
@@ -85,6 +86,7 @@ export type InterfaceColumnId =
   | "device"
   | "name"
   | "type"
+  | "lag"
   | "mac"
   | "layer"
   | "enabled"
@@ -102,6 +104,7 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
   "device",
   "name",
   "type",
+  "lag",
   "mac",
   "layer",
   "enabled",
@@ -123,6 +126,7 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
 export const DEVICE_INTERFACE_COLUMNS: InterfaceColumnId[] = [
   "name",
   "type",
+  "lag",
   "mac",
   "layer",
   "enabled",
@@ -295,17 +299,51 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
                 </Badge>
               </Link>
             ))}
-            {row.original.lag && (
-              <span className="text-[11px] text-muted-foreground">
-                · LAG{" "}
-                {row.original.lag.device.id !== row.original.device.id
-                  ? `${row.original.lag.device.name}: `
-                  : ""}
-                {row.original.lag.name}
-              </span>
-            )}
           </div>
         )
+      },
+    }),
+    lag: () => ({
+      id: "lag",
+      header: "LAG",
+      // Bundle membership reads both ways: a member names its aggregate (and
+      // the stack member holding it, when that's elsewhere); the aggregate
+      // itself shows how many links it bundles.
+      cell: ({ row }) => {
+        const r = row.original
+        if (r.lag) {
+          const elsewhere = r.lag.device.id !== r.device.id
+          return (
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <Link
+                to="/interfaces/$id"
+                params={{ id: r.lag.id }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Badge
+                  variant="secondary"
+                  className="h-4 gap-1 px-1.5 font-mono text-[10px] hover:bg-muted"
+                >
+                  <Layers className="h-2.5 w-2.5" />
+                  {r.lag.name}
+                </Badge>
+              </Link>
+              {elsewhere && (
+                <span className="text-[11px] text-muted-foreground">
+                  on {r.lag.device.name}
+                </span>
+              )}
+            </span>
+          )
+        }
+        if (r.lag_member_count > 0)
+          return (
+            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[10px]">
+              <Layers className="h-2.5 w-2.5" />
+              {r.lag_member_count} {r.lag_member_count === 1 ? "link" : "links"}
+            </Badge>
+          )
+        return <span className="text-muted-foreground">-</span>
       },
     }),
     type: () => ({
