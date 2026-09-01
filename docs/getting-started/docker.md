@@ -152,10 +152,89 @@ commented list). The essentials:
 
 ## TLS
 
-The `web` container speaks plain HTTP on `:80` (published as `HTTP_PORT`).
-Terminate TLS in front of it - a host reverse proxy, a cloud load balancer, or a
+The `web` container speaks plain HTTP on `:80` (published as `HTTP_PORT`) and
+HTTPS with a self-signed cert on `:443` (`HTTPS_PORT`). Terminate real TLS in
+front of it - a host reverse proxy, a cloud load balancer, or a
 `caddy`/`traefik` sidecar - then set `DANBYTE_HTTPS=True` and add your external
 URL to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
+
+### Behind your own nginx
+
+A host nginx that owns the public certificate and forwards to the stack. Point
+it at the **HTTPS** port (`8443`): the container's nginx sets
+`X-Forwarded-Proto` from its own listener, so forwarding to the plain `:8080`
+listener tells Django the request was `http` - with `DANBYTE_HTTPS=True` that
+is a redirect loop, and without it CSRF rejects every POST from an `https`
+origin. The self-signed hop on `127.0.0.1` is fine; nginx does not verify
+upstream certificates by default.
+
+```nginx
+# /etc/nginx/sites-available/danbyte.conf  (host nginx, in front of compose)
+upstream danbyte_stack { server 127.0.0.1:8443; }
+
+server {
+    listen 80;
+    server_name danbyte.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name danbyte.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/danbyte.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/danbyte.example.com/privkey.pem;
+
+    client_max_body_size 100m;
+
+    # WebSockets (presence, SSH terminal). The Upgrade/Connection headers
+    # must survive this hop, or daphne only ever sees a plain GET.
+    location /ws/ {
+        proxy_pass https://danbyte_stack;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 3600s;
+    }
+
+    location / {
+        proxy_pass https://danbyte_stack;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+`Host $host` is what makes Django see the public name, so `.env` needs:
+
+```ini
+ALLOWED_HOSTS=danbyte.example.com
+CSRF_TRUSTED_ORIGINS=https://danbyte.example.com
+DANBYTE_HTTPS=True
+```
+
+### WebSocket troubleshooting
+
+`docker compose logs ws` shows daphne's handshake log. What it says narrows the
+cause:
+
+| Log line | Meaning | Look at |
+| --- | --- | --- |
+| no `WSCONNECTING` at all, browser gets 404/400 | The upgrade never reached daphne | The `location /ws/` block above on every proxy hop |
+| `WSREJECT` | The handshake arrived and the app closed it | The close code in the browser (DevTools → Network → WS) |
+| Python traceback | The consumer crashed on connect | Redis / channel layer reachability from the `ws` container |
+
+Close codes the presence socket uses: **4401** - no authenticated session
+reached daphne (the session cookie was not forwarded, or a different
+`DJANGO_SECRET_KEY` on the `ws` service); **4400** - the session has no active
+tenant, or the page opened the socket without an object to watch. Hitting
+`https://<host>:8443/` directly, bypassing the front proxy, tells the two
+layers apart.
 
 ## Upgrading
 
