@@ -344,3 +344,51 @@ class MacDetailVmSightingTests(APITestCase):
         seen = r.json()["seen"]
         self.assertEqual(seen[0]["vm"]["name"], "vr01")
         self.assertNotIn("device", seen[0])
+
+
+class BadFitConstraintTests(APITestCase):
+    """#125 follow-up: one ObjectPermission may span several object types, so
+    a device-shaped constraint can reach the site model - that must fail
+    closed per grant, never 500, and never sink a good sibling grant."""
+
+    def setUp(self):
+        from auth_api.models import ObjectPermission, UserProfile
+
+        org = Organization.objects.create(name="O9", slug="o9")
+        self.tenant = Tenant.objects.create(org=org, name="T9", slug="t9")
+        from api.models import Site
+
+        self.site = Site.objects.create(tenant=self.tenant, name="S9")
+        self.user = User.objects.create_user("mixed9", password="x")
+        prof = UserProfile.objects.create(user=self.user, role="custom")
+        prof.tenants.add(self.tenant)
+        # The foot-gun: device+site in one grant, device-shaped constraint.
+        self.bad = ObjectPermission.objects.create(
+            name="mixed-bad", object_types=["device", "site"],
+            actions=["view", "change"],
+            constraints={"site_id": [str(self.site.id)]},
+        )
+        self.bad.users.add(self.user)
+        self.client.force_login(self.user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_misfit_grant_denies_cleanly(self):
+        r = self.client.get(f"/api/sites/{self.site.id}/")
+        self.assertIn(r.status_code, (403, 404), r.content)  # not 500
+
+    def test_good_grant_survives_a_bad_sibling(self):
+        from auth_api.models import ObjectPermission
+
+        good = ObjectPermission.objects.create(
+            name="site-good", object_types=["site"], actions=["view", "change"]
+        )
+        good.users.add(self.user)
+        r = self.client.get(f"/api/sites/{self.site.id}/")
+        self.assertEqual(r.status_code, 200, r.content)
+        from auth_api import rbac
+
+        self.assertTrue(
+            rbac.can_act_on(self.user, self.tenant, "site", "view", self.site)
+        )
