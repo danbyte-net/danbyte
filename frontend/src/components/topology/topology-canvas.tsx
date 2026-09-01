@@ -50,6 +50,7 @@ import {
 import { resolveLevels } from "./level-organiser"
 import { roleTiers } from "./levels-param"
 import { RoutedEdge } from "./routed-edge"
+import { groupLagEdges, lagBundleLabel, sharedLag } from "./lag-bundles"
 
 // Defined once, outside the component (re-creating nodeTypes each render
 // re-mounts every node - a classic React Flow footgun).
@@ -157,7 +158,7 @@ function edgeStroke(
 }
 
 /** Edge semantics that carry node-avoiding routing. */
-const ROUTABLE = new Set(["cable", "bundle", "groupedge"])
+const ROUTABLE = new Set(["cable", "lagbundle", "bundle", "groupedge"])
 
 /** The full name a cable edge announces on hover - label/number, media,
  * speed, and its endpoint pair(s). Bundles and group edges summarize. */
@@ -187,6 +188,19 @@ function hoverLabel(e: Edge): string | undefined {
       )
     if (r.via?.length) bits.push(`via ${r.via.join(", ")}`)
     return bits.join(" · ")
+  }
+  if (d.sem === "lagbundle" && d.cables) {
+    const lag = sharedLag(d.cables)
+    const names = d.cables
+      .map((c) => c.cable_label || (c.cable_numid ? `#${c.cable_numid}` : ""))
+      .filter(Boolean)
+    const speeds = [...new Set(d.cables.map((c) => c.speed).filter(Boolean))]
+    return [
+      lag ? `${lag.a?.name} ⇄ ${lag.b?.name}` : "Bundle",
+      `${d.cables.length} cable${d.cables.length === 1 ? "" : "s"}`,
+      ...(names.length ? [names.join(", ")] : []),
+      ...(speeds.length === 1 ? [speeds[0] as string] : []),
+    ].join(" · ")
   }
   if (d.sem === "bundle" && d.cables) {
     const types = [
@@ -314,6 +328,9 @@ function build(
     edgeRouting?: "routed" | "straight" | "curved"
     colorMode: EdgeColorMode
     nodeStyle?: NodeStyle
+    /** Fold a link aggregation's member cables into one edge (stencil and
+     * hierarchy views; the flat view bundles every parallel cable anyway). */
+    bundleLags?: boolean
     positions?: Record<string, [number, number]>
     matched?: Set<string> | null
     hiddenPorts?: Set<string>
@@ -352,7 +369,13 @@ function build(
     string,
     { source: string; target: string; cables: BundleMember[] }
   >()
-  for (const e of graph.edges) {
+  // Link aggregation: member cables of one bundle draw as ONE edge - the
+  // logical link people think in - unless the view asks for every cable.
+  const lagFold =
+    !flat && opts.bundleLags !== false
+      ? groupLagEdges(graph.edges)
+      : { bundles: [], rest: graph.edges }
+  for (const e of lagFold.rest) {
     if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) continue
 
     // Aggregated group-to-group edge (group_by mode): ×N cables, width
@@ -494,6 +517,31 @@ function build(
     } as Edge)
   }
 
+  for (const b of lagFold.bundles) {
+    const first = b.edges[0].data?.pairs?.[0]
+    const cables = b.edges.map((e) => e.data).filter(Boolean) as BundleMember[]
+    const strokes = new Set(cables.map((c) => edgeStroke(c, opts.colorMode) ?? ""))
+    const stroke = strokes.size === 1 ? [...strokes][0] || undefined : undefined
+    const marked = cables.some((c) => c.marked)
+    allEdges.push({
+      id: `lag:${b.key}`,
+      source: b.source,
+      target: b.target,
+      ...(first?.a_port ? { sourceHandle: first.a_port } : {}),
+      ...(first?.b_port ? { targetHandle: first.b_port } : {}),
+      type: "smoothstep",
+      pathOptions: { borderRadius: 10 },
+      label: lagBundleLabel(b.lag, cables.length),
+      animated: marked,
+      data: { sem: "lagbundle", cables, lag: b.lag },
+      style: marked
+        ? { strokeWidth: 3, stroke: "var(--primary)" }
+        : { strokeWidth: 2.5, ...(stroke ? { stroke } : {}) },
+      labelStyle: { fontSize: 9, fontWeight: 600 },
+      labelBgStyle: { fill: "var(--card)" },
+    } as Edge)
+  }
+
   if (flat) {
     for (const [key, b] of bundles) {
       const n = b.cables.length
@@ -552,7 +600,11 @@ function build(
         targetHandle: "n",
         type: "smoothstep",
         pathOptions: { borderRadius: 10 },
-        label: speed ? `×${n} · ${speed}` : `×${n}`,
+        label: (() => {
+          const lag = sharedLag(b.cables)
+          const base = lag ? lagBundleLabel(lag, n) : `×${n}`
+          return speed ? `${base} · ${speed}` : base
+        })(),
         data: { sem: "bundle", cables: b.cables },
         style: {
           strokeWidth: 1.75,
@@ -577,7 +629,7 @@ function build(
     for (let i = 0; i < allEdges.length; i++) {
       const ed = allEdges[i]
       const sem = (ed.data as { sem?: string } | undefined)?.sem
-      if (sem !== "cable" && sem !== "bundle" && sem !== "groupedge") continue
+      if (!ROUTABLE.has(sem ?? "")) continue
       if ((deg.get(ed.target) ?? 0) > (deg.get(ed.source) ?? 0)) {
         allEdges[i] = {
           ...ed,
@@ -606,7 +658,7 @@ function build(
     }))
     const hedges = allEdges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
-      if (sem !== "cable") return e
+      if (sem !== "cable" && sem !== "lagbundle") return e
       const baseS = e.sourceHandle ? String(e.sourceHandle) : null
       const baseT = e.targetHandle ? String(e.targetHandle) : null
       if (!baseS || !baseT) return e
@@ -630,14 +682,14 @@ function build(
         nodes: laid,
         edges: hedges.map((e) => {
           const sem = (e.data as { sem?: string } | undefined)?.sem
-          if (sem !== "cable") return e
+          if (sem !== "cable" && sem !== "lagbundle") return e
           return { ...e, type: "default", pathOptions: undefined }
         }),
       }
     const hwp = hierarchyWaypoints(laid, hedges, res.portPos)
     const hrouted = hedges.map((e) => {
       const sem = (e.data as { sem?: string } | undefined)?.sem
-      if (sem !== "cable") return e
+      if (sem !== "cable" && sem !== "lagbundle") return e
       const pts = hwp.get(e.id)
       return pts?.length
         ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }
@@ -883,7 +935,7 @@ function build(
   const routed = edges.map((e) => {
     const sem = (e.data as { sem?: string } | undefined)?.sem
     const wp = routeEdges ? waypoints.get(e.id) : undefined
-    if (sem === "cable" && wp && wp.length > 0) {
+    if ((sem === "cable" || sem === "lagbundle") && wp && wp.length > 0) {
       return {
         ...e,
         type: "routed",
@@ -914,6 +966,8 @@ export interface TopologyCanvasProps {
    * edges - the view for big graphs. */
   nodeStyle?: NodeStyle
   colorMode?: EdgeColorMode
+  /** Fold a link aggregation's member cables into one edge. Default on. */
+  bundleLags?: boolean
   /** Saved-view node positions; nodes not listed get the auto layout. */
   positions?: Record<string, [number, number]>
   /** Bump to discard drags/saved positions and re-run the auto layout. */
@@ -964,6 +1018,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     roleBonds,
     roleDistance,
     edgeRouting = "routed",
+    bundleLags = true,
     nodeStyle = "stencil",
     positions,
     layoutTick = 0,
@@ -1011,6 +1066,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         edgeRouting,
         colorMode,
         nodeStyle,
+        bundleLags,
         // Positions pin whenever the parent supplies them. A deliberate
         // relayout CLEARS them at the source (the page sets positions to
         // undefined before bumping layoutTick) - gating on the tick here
@@ -1030,6 +1086,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       edgeRouting,
       colorMode,
       nodeStyle,
+      bundleLags,
       positions,
       layoutTick,
       matchedIds,
@@ -1353,7 +1410,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           }
         | undefined
       if (data?.sem === "ghost" && data.ghost) onGhostEdge?.(data.ghost)
-      else if (data?.sem === "bundle" && data.cables)
+      else if (
+        (data?.sem === "bundle" || data?.sem === "lagbundle") &&
+        data.cables
+      )
         onSelectBundle?.(data.cables, edge.id)
       else if (data?.sem === "groupedge" && data.group)
         onSelectGroupEdge?.(data.group, edge.id)
@@ -1408,7 +1468,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         })
         const next = cur.map((e) => {
           const d = e.data as { sem?: string; baseS?: string; baseT?: string }
-          if (d?.sem !== "cable" || !d.baseS || !d.baseT) return e
+          if ((d.sem !== "cable" && d.sem !== "lagbundle") || !d.baseS || !d.baseT)
+            return e
           const sS = res.sides.get(e.source)?.[d.baseS] ?? "R"
           const tS = res.sides.get(e.target)?.[d.baseT] ?? "L"
           return {
@@ -1420,7 +1481,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         const wp = hierarchyWaypoints(nextNodes, next, res.portPos)
         return next.map((e) => {
           const sem = (e.data as { sem?: string } | undefined)?.sem
-          if (sem !== "cable") return e
+          if (sem !== "cable" && sem !== "lagbundle") return e
           const pts = wp.get(e.id)
           return pts?.length
             ? { ...e, type: "routed", data: { ...e.data, waypoints: pts } }

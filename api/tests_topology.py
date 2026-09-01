@@ -709,3 +709,47 @@ class DeviceSetAndSpeedTests(_Base):
         bc = by_pair[frozenset((f"dev:{self.b.id}", f"dev:{self.c.id}"))]
         self.assertEqual(ab["speed"], "10G")
         self.assertIsNone(bc["speed"])
+
+
+class LagEdgeTests(_Base):
+    """Edges name the aggregate each end belongs to; a run's origin names its
+    aggregate - what the canvas and the overview fold bundles with."""
+
+    def setUp(self):
+        super().setUp()
+        self.a = Device.objects.create(tenant=self.tenant, name="sw-a")
+        self.b = Device.objects.create(tenant=self.tenant, name="sw-b")
+        self.po1 = Interface.objects.create(device=self.a, name="Po1", type="lag")
+        self.po10 = Interface.objects.create(device=self.b, name="Po10", type="lag")
+        for n in ("eth0", "eth1"):
+            self._cable(
+                Interface.objects.create(device=self.a, name=n, lag=self.po1),
+                Interface.objects.create(device=self.b, name=n, lag=self.po10),
+            )
+        self._cable(
+            Interface.objects.create(device=self.a, name="eth9"),
+            Interface.objects.create(device=self.b, name="eth9"),
+        )
+
+    def test_edges_carry_both_aggregates(self):
+        edges = self._graph()["edges"]
+        self.assertEqual(len(edges), 3)
+        bundled = [e for e in edges if e["data"]["lag"]["a"]]
+        self.assertEqual(len(bundled), 2)
+        for e in bundled:
+            a_is_sw_a = e["source"] == f"dev:{self.a.id}"
+            want_a, want_b = (self.po1, self.po10) if a_is_sw_a else (self.po10, self.po1)
+            self.assertEqual(e["data"]["lag"]["a"], {"id": str(want_a.id), "name": want_a.name})
+            self.assertEqual(e["data"]["lag"]["b"], {"id": str(want_b.id), "name": want_b.name})
+        plain = [e for e in edges if not e["data"]["lag"]["a"]][0]
+        self.assertEqual(plain["data"]["lag"], {"a": None, "b": None})
+
+    def test_device_paths_origin_names_the_aggregate(self):
+        runs = self.client.get(f"/api/devices/{self.a.id}/paths/").json()["runs"]
+        by_origin = {r["origin"]["name"]: r["origin"] for r in runs}
+        self.assertEqual(
+            by_origin["eth0"]["lag"],
+            {"id": str(self.po1.id), "name": "Po1", "device": "sw-a", "elsewhere": False},
+        )
+        self.assertNotIn("lag", by_origin["eth9"])
+

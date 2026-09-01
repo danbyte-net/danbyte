@@ -108,6 +108,9 @@ def _cables_qs(tenant):
         .select_related("status")
         .prefetch_related(
             *[f"terminations__{a}__device" for a in _DEVICE_POINT_ATTRS],
+            # The bundle a port belongs to rides on the edge (and on a run's
+            # origin) - joined here so neither walks it per cable.
+            "terminations__interface__lag__device",
             "terminations__power_feed",
             "terminations__circuit_termination__circuit",
             "terminations__front_port__rear_port",
@@ -342,11 +345,23 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
                     "speed": None,
                     "via": vias,
                     "pairs": [],
+                    # The aggregate each end belongs to, oriented with
+                    # source/target - what lets the canvas fold a bundle's
+                    # member cables into one edge.
+                    "lag": {"a": None, "b": None},
                 },
             }
         e = edges[key]
         src_is_a = e["source"] == f"dev:{da.id}"
         a_port, b_port = (pa.name, pb.name) if src_is_a else (pb.name, pa.name)
+        if not e["data"]["pairs"]:
+            pa_lag = getattr(pa, "lag", None) if ka == "interface" else None
+            pb_lag = getattr(pb, "lag", None) if kb == "interface" else None
+            lag_a, lag_b = (pa_lag, pb_lag) if src_is_a else (pb_lag, pa_lag)
+            e["data"]["lag"] = {
+                "a": {"id": str(lag_a.id), "name": lag_a.name} if lag_a else None,
+                "b": {"id": str(lag_b.id), "name": lag_b.name} if lag_b else None,
+            }
         e["data"]["pairs"].append({
             "a": f"{da.name if src_is_a else db.name}:{a_port}",
             "b": f"{db.name if src_is_a else da.name}:{b_port}",

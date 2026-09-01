@@ -63,6 +63,7 @@ import {
   type EdgeColorMode,
   type NodeStyle,
 } from "@/components/topology/topology-canvas"
+import { sharedLag } from "@/components/topology/lag-bundles"
 import type {
   GroupEdgeInfo,
   TopoGroupData,
@@ -123,6 +124,8 @@ export interface TopologySearch {
   dir?: "lr" | "tb"
   color?: EdgeColorMode
   cables?: "routed" | "straight" | "curved"
+  /** Fold link-aggregation member cables into one edge ("on" by default). */
+  lag?: "on" | "off"
   /** Levels organiser, encoded by `levels-param.ts`. */
   levels?: string
   /** Focused device + how many hops around it. */
@@ -171,6 +174,8 @@ export const Route = createFileRoute("/topology/")({
     if (dir) out.dir = dir
     const color = oneOf(s.color, COLOR_MODES)
     if (color) out.color = color
+    const lag = oneOf(s.lag, LAG_MODES)
+    if (lag) out.lag = lag
     const cables = oneOf(s.cables, ROUTINGS)
     if (cables) out.cables = cables
     const depth = Number(s.depth)
@@ -305,6 +310,7 @@ const TAB_STYLES = ["wiring", "hierarchy", "flat", "logical"] as const
 const COLOR_MODES = ["cable", "type", "status", "speed", "none"] as const
 const DIRS = ["lr", "tb"] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
+const LAG_MODES = ["on", "off"] as const
 const GROUPS = ["none", "site", "location"] as const
 const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
 const tabOfStyle = (v: ViewStyle): TabStyle => (v === "stencil" ? "wiring" : v)
@@ -408,6 +414,7 @@ function TopologyPage() {
     dflt.cables,
     ROUTINGS
   )
+  const [lagMode, setLagMode] = useUrlEnum("lag", "on", LAG_MODES)
   const logical = viewStyle === "logical"
   // Aggregate the graph to one card per site/location; double-click a card
   // (or its panel's button) drills into that group's device view.
@@ -1177,6 +1184,12 @@ function TopologyPage() {
                 </Select>
               </PopoverField>
               <FormCheckbox
+                label="Bundle aggregates"
+                checked={lagMode === "on"}
+                onChange={(v) => setLagMode(v ? "on" : "off")}
+                className="items-center pt-1"
+              />
+              <FormCheckbox
                 label="Show patch panels"
                 checked={!filters.collapse}
                 onChange={(v) => set({ collapse: !v })}
@@ -1325,6 +1338,7 @@ function TopologyPage() {
               roleDistance={roleDistance}
               edgeRouting={edgeRouting}
               nodeStyle={viewStyle}
+              bundleLags={lagMode === "on"}
               positions={positions}
               layoutTick={layoutTick}
               fitKey={graphQs}
@@ -1935,6 +1949,12 @@ function GroupEdgePanel({
 }
 
 /** Flat view: the member cables of a bundled edge, each openable. */
+/** "Po1 ⇄ Po10 · " when every cable in the bundle shares that pair. */
+function lagTitle(cables: BundleMember[]): string {
+  const lag = sharedLag(cables)
+  return lag ? `${lag.a?.name} ⇄ ${lag.b?.name} · ` : ""
+}
+
 function BundlePanel({
   cables,
   onClose,
@@ -1944,7 +1964,7 @@ function BundlePanel({
 }) {
   return (
     <PanelShell
-      title={`${cables.length} cable${cables.length === 1 ? "" : "s"}`}
+      title={`${lagTitle(cables)}${cables.length} cable${cables.length === 1 ? "" : "s"}`}
       onClose={onClose}
     >
       <div className="space-y-1.5">

@@ -2681,6 +2681,12 @@ export interface TopoEdge {
     via?: string[]
     /** Trace map: this cable is part of the traced run. */
     marked?: boolean
+    /** The aggregate each end belongs to (oriented with source/target);
+     * both set = a member link of a bundle the canvas may fold. */
+    lag?: {
+      a: { id: string; name: string } | null
+      b: { id: string; name: string } | null
+    }
     /** Device-map edges: the port names this collapsed link ran through. */
     endpoints?: { a: string; b: string }
     /** Device-map edges touching the origin: the origin's own port name. */
