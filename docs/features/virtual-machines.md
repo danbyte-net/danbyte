@@ -93,7 +93,10 @@ Two different questions, two different fields:
 
 A **VM interface** mirrors a device interface: name, enabled flag, MAC address,
 MTU, speed, and an 802.1Q **VLAN** with an access/trunk mode. Add them from the
-VM's **Components** tab.
+VM's **Components** tab. A **Type** distinguishes what it is: a regular
+**Virtual** NIC (the default), or a **Tunnel** (WireGuard, GRE, VXLAN, tun),
+**Bridge**, or **Loopback** - tunnels and loopbacks carry no MAC or speed, so
+the form drops those fields for them.
 
 IP addresses attach to an interface exactly as on a device. From the VM's
 **Components** tab:

@@ -221,3 +221,36 @@ class SnmpProfileOptionsTests(APITestCase):
         s.save()
         r = self.client.get("/api/monitoring/snmp-profile-options/")
         self.assertEqual(r.status_code, 403)
+
+
+class VmInterfaceKindTests(APITestCase):
+    """#140: VM interfaces carry a kind - a tunnel (wg/gre/tun) is not a
+    virtual NIC and has no meaningful MAC or speed."""
+
+    def test_kind_roundtrips(self):
+        from api.models import Cluster, ClusterType, VirtualMachine
+
+        org = Organization.objects.create(name="O6", slug="o6")
+        tenant = Tenant.objects.create(org=org, name="T6", slug="t6")
+        admin = User.objects.create_superuser("vmk", "v@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(tenant.id)
+        s.save()
+        ct = ClusterType.objects.create(tenant=tenant, name="KVM", slug="kvm")
+        cluster = Cluster.objects.create(tenant=tenant, name="c1", type=ct)
+        vm = VirtualMachine.objects.create(
+            tenant=tenant, name="gw01", cluster=cluster
+        )
+        r = self.client.post("/api/vm-interfaces/", {
+            "vm_id": str(vm.id), "name": "wg0", "kind": "tunnel",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["kind"], "tunnel")
+        r = self.client.get(f"/api/vm-interfaces/?vm={vm.id}")
+        self.assertEqual(r.json()["results"][0]["kind"], "tunnel")
+        # bad kind is a clean 400, not a 500
+        r = self.client.post("/api/vm-interfaces/", {
+            "vm_id": str(vm.id), "name": "x0", "kind": "quantum",
+        }, format="json")
+        self.assertEqual(r.status_code, 400)

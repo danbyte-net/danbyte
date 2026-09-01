@@ -197,6 +197,18 @@ export function VMInterfacesPane({
         ),
       },
       {
+        id: "kind",
+        header: "Type",
+        cell: ({ row }) =>
+          row.original.kind ? (
+            <Badge variant="outline" className="capitalize">
+              {row.original.kind}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">Virtual</span>
+          ),
+      },
+      {
         id: "enabled",
         header: "Enabled",
         cell: ({ row }) =>
@@ -490,6 +502,7 @@ function VMInterfaceForm({
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(iface?.name ?? "")
+  const [kind, setKind] = useState(iface?.kind ?? "")
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [ignoreIps, setIgnoreIps] = useState(iface?.sync_ignore_ips ?? false)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
@@ -519,11 +532,13 @@ function VMInterfaceForm({
       const payload: VMInterfaceWritePayload = {
         vm_id: vmId,
         name: name.trim(),
+        kind,
         enabled,
         sync_ignore_ips: ignoreIps,
-        mac_address: mac.trim(),
+        // A tunnel/loopback has no meaningful MAC or link speed (#140).
+        mac_address: kind === "tunnel" || kind === "loopback" ? "" : mac.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
-        speed: speed.trim(),
+        speed: kind === "tunnel" || kind === "loopback" ? "" : speed.trim(),
         mode,
         vlan_id: vlanId,
         tagged_vlan_ids: mode === "tagged" ? taggedVlanIds : [],
@@ -566,13 +581,19 @@ function VMInterfaceForm({
         error={fieldErrors.name}
       />
       <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="MAC address"
-          value={mac}
-          onChange={setMac}
-          mono
-          placeholder="00:1b:44:11:3a:b7"
-          error={fieldErrors.mac_address}
+        <FormSelect
+          label="Type"
+          value={kind || null}
+          onChange={(v) =>
+            setKind((v ?? "") as "" | "bridge" | "loopback" | "tunnel")
+          }
+          noneLabel="Virtual"
+          options={[
+            { value: "bridge", label: "Bridge" },
+            { value: "loopback", label: "Loopback" },
+            { value: "tunnel", label: "Tunnel" },
+          ]}
+          error={fieldErrors.kind}
         />
         <FormText
           label="MTU"
@@ -582,13 +603,25 @@ function VMInterfaceForm({
           placeholder="1500"
           error={fieldErrors.mtu}
         />
-        <FormText
-          label="Speed"
-          value={speed}
-          onChange={setSpeed}
-          placeholder="10G, 1G, 25G…"
-          error={fieldErrors.speed}
-        />
+        {kind !== "tunnel" && kind !== "loopback" && (
+          <>
+            <FormText
+              label="MAC address"
+              value={mac}
+              onChange={setMac}
+              mono
+              placeholder="00:1b:44:11:3a:b7"
+              error={fieldErrors.mac_address}
+            />
+            <FormText
+              label="Speed"
+              value={speed}
+              onChange={setSpeed}
+              placeholder="10G, 1G, 25G…"
+              error={fieldErrors.speed}
+            />
+          </>
+        )}
       </div>
       {/* ── L2 switching ── */}
       <div className="grid grid-cols-2 gap-3">

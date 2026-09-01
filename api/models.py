@@ -3989,6 +3989,18 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     name = models.CharField(max_length=64)
     enabled = models.BooleanField(default=True)
+    # What the interface IS (#140): a regular virtual NIC (blank), or a
+    # software construct - a tunnel (wg/gre/vxlan/tun), bridge, or loopback -
+    # which carries no meaningful MAC or link speed.
+    KIND_CHOICES = [
+        ("", "Virtual"),
+        ("bridge", "Bridge"),
+        ("loopback", "Loopback"),
+        ("tunnel", "Tunnel"),
+    ]
+    kind = models.CharField(
+        max_length=16, blank=True, default="", choices=KIND_CHOICES,
+    )
     #: Virtualization sync must not record this NIC's guest-reported IPs
     #: (e.g. a Docker bridge that asserts a new address per container).
     sync_ignore_ips = models.BooleanField(default=False)
