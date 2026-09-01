@@ -47,9 +47,20 @@ def _snmp_sightings(tenant, mac: str) -> list[dict]:
 
     key = _hexkey(mac)
     seen: list[dict] = []
-    states = DeviceSnmp.objects.filter(tenant=tenant).select_related("device")
+    states = DeviceSnmp.objects.filter(tenant=tenant).select_related(
+        "device", "vm"
+    )
     for state in states:
-        dev = {"id": str(state.device_id), "name": state.device.name}
+        # A state row belongs to a device OR a VM (#13) - reading
+        # state.device.name on a VM row was a straight 500 (#139).
+        if state.device_id:
+            owner = {
+                "device": {"id": str(state.device_id), "name": state.device.name}
+            }
+        elif state.vm_id:
+            owner = {"vm": {"id": str(state.vm_id), "name": state.vm.name}}
+        else:
+            continue
         ifname = {
             str(o.get("if_index")): o.get("name")
             for o in (state.interfaces or [])
@@ -57,11 +68,11 @@ def _snmp_sightings(tenant, mac: str) -> list[dict]:
         }
         for a in state.arp or []:
             if _hexkey(a.get("mac", "")) == key:
-                seen.append({"device": dev, "source": "arp", "ip": a.get("ip")})
+                seen.append({**owner, "source": "arp", "ip": a.get("ip")})
         for f in state.fdb or []:
             if _hexkey(f.get("mac", "")) == key:
                 seen.append({
-                    "device": dev, "source": "fdb",
+                    **owner, "source": "fdb",
                     "port": ifname.get(str(f.get("if_index") or "")),
                 })
     return seen

@@ -315,3 +315,32 @@ class VmInterfaceParentTests(APITestCase):
             {"parent_id": eth0["id"]}, format="json",
         )
         self.assertEqual(r.status_code, 400)
+
+
+class MacDetailVmSightingTests(APITestCase):
+    """#139: a MAC seen only in a VM's SNMP state 500'd the detail view -
+    the sighting walker read state.device.name on a VM row."""
+
+    def test_vm_sighting_returns_200_with_vm_owner(self):
+        from api.models import Cluster, ClusterType, VirtualMachine
+        from monitoring.models import DeviceSnmp
+
+        org = Organization.objects.create(name="O8", slug="o8")
+        tenant = Tenant.objects.create(org=org, name="T8", slug="t8")
+        admin = User.objects.create_superuser("mvs", "s@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(tenant.id)
+        s.save()
+        ct = ClusterType.objects.create(tenant=tenant, name="K8", slug="k8")
+        cl = Cluster.objects.create(tenant=tenant, name="c8", type=ct)
+        vm = VirtualMachine.objects.create(tenant=tenant, name="vr01", cluster=cl)
+        DeviceSnmp.objects.create(
+            tenant=tenant, vm=vm,
+            arp=[{"mac": "b4:7a:f1:ff:b2:7b", "ip": "10.0.0.9"}],
+        )
+        r = self.client.get("/api/macs/b4%3A7a%3Af1%3Aff%3Ab2%3A7b/")
+        self.assertEqual(r.status_code, 200, r.content)
+        seen = r.json()["seen"]
+        self.assertEqual(seen[0]["vm"]["name"], "vr01")
+        self.assertNotIn("device", seen[0])

@@ -40,17 +40,32 @@ type MacSighting = MacDetail["seen"][number]
 const seenColumns: ColumnDef<MacSighting>[] = [
   {
     id: "device",
-    accessorFn: (s) => s.device.name,
-    header: "Device",
-    cell: ({ row }) => (
-      <Link
-        to="/devices/$id"
-        params={{ id: row.original.device.id }}
-        className="link font-medium"
-      >
-        {row.original.device.name}
-      </Link>
-    ),
+    accessorFn: (s) => s.device?.name ?? s.vm?.name ?? "",
+    header: "Seen by",
+    cell: ({ row }) => {
+      const s = row.original
+      if (s.device)
+        return (
+          <Link
+            to="/devices/$id"
+            params={{ id: s.device.id }}
+            className="link font-medium"
+          >
+            {s.device.name}
+          </Link>
+        )
+      if (s.vm)
+        return (
+          <Link
+            to="/virtual-machines/$id"
+            params={{ id: s.vm.id }}
+            className="link font-medium"
+          >
+            {s.vm.name}
+          </Link>
+        )
+      return <span className="text-muted-foreground">-</span>
+    },
   },
   {
     id: "table",
@@ -169,8 +184,11 @@ function Body({ data }: { data: MacDetail }) {
             </Badge>
             {(data.seen ?? []).length > 0 && (
               <Badge variant="secondary">
-                seen on {new Set(data.seen.map((s) => s.device.id)).size} device
-                {new Set(data.seen.map((s) => s.device.id)).size === 1
+                seen on{" "}
+                {new Set(data.seen.map((s) => s.device?.id ?? s.vm?.id)).size}{" "}
+                device
+                {new Set(data.seen.map((s) => s.device?.id ?? s.vm?.id))
+                  .size === 1
                   ? ""
                   : "s"}
               </Badge>

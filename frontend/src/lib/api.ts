@@ -2813,7 +2813,9 @@ export interface MacDetail {
   /** SNMP sightings - the ARP/FDB rows on polled devices that carry this MAC.
    * A MAC clicked on a monitoring card may exist only here. */
   seen: {
-    device: { id: string; name: string }
+    /** The polled owner - a device OR a VM (#139), never both. */
+    device?: { id: string; name: string } | null
+    vm?: { id: string; name: string } | null
     source: "arp" | "fdb"
     ip?: string | null
     port?: string | null
