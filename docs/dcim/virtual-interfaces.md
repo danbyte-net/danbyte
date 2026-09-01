@@ -53,9 +53,11 @@ The aggregate's page shows a **Bundle** card - protocol, min links (flagged
 when the bundle has fewer members), member count, capacity (the members'
 speeds added up), and the **peer aggregate** its members' cables land on
 (`core1: Po10 · 2 links`). Two peers means an MLAG / vPC pair and reads as
-information, not a fault; members without a peer aggregate are listed. The
-**Members** tab is the interface table filtered to the bundle. A member's own
-page carries a `Member of Po1 · LACP active` chip that opens the aggregate.
+information, not a fault; members without a peer aggregate are listed.
+**Member runs** beside it draws each member cable's end-to-end run - the
+bundle's physical legs. The **Members** tab is the interface table filtered to
+the bundle. A member's own page carries a `Member of Po1 · LACP active` chip
+that opens the aggregate.
 
 The interface table has a **LAG** column: a member shows its aggregate as a
 chip that opens it, and the aggregate row shows `2 links` - so the bundle reads

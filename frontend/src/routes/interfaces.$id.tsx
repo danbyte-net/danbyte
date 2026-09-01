@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import {
   Bookmark,
   Cable as CableIcon,
@@ -43,6 +43,7 @@ import {
 } from "@/components/assign-ip-dialog"
 import { TraceSection } from "@/components/topology/trace-section"
 import { TracePathStrip, TracePreview } from "@/components/cable-trace-path"
+import { PathRow } from "@/components/device-paths-list"
 import {
   DetailHero,
   DetailShell,
@@ -733,6 +734,14 @@ function InterfaceOverview({
             />
           </div>
         )}
+        {lag && lag.count > 0 && (
+          // An aggregate has no cable of its own - its members do. Their runs
+          // are the bundle's physical legs, drawn the way the device overview
+          // draws them.
+          <div className="rounded-lg border border-border bg-card p-4">
+            <LagRuns iface={i} summary={lag} />
+          </div>
+        )}
       </div>
     </div>
   )
@@ -830,3 +839,55 @@ function LagMembers({
     )
   return <DataTable data={rows} columns={columns} embedded />
 }
+
+/** A cabled run as the path-strip row draws it. */
+type Run = React.ComponentProps<typeof PathRow>["run"]
+
+/** The member cables' end-to-end runs, one strip each. Members may sit on
+ * several stack devices, so each device's paths are fetched once (the same
+ * cache key the device overview uses) and filtered to this aggregate. */
+function LagRuns({
+  iface,
+  summary,
+}: {
+  iface: Interface
+  summary: InterfaceLagSummary
+}) {
+  const deviceIds = [...new Set(summary.results.map((r) => r.device.id))]
+  const queries = useQueries({
+    queries: deviceIds.map((id) => ({
+      queryKey: ["device-paths", id],
+      queryFn: () => api<{ runs: Run[] }>(`/api/devices/${id}/paths/`),
+    })),
+  })
+  const loading = queries.some((q) => q.isLoading)
+  const runs = queries
+    .flatMap((q) => q.data?.runs ?? [])
+    .filter((r) => r.origin.lag?.id === iface.id)
+  return (
+    <>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+          Member runs
+        </span>
+        <span className="num text-[10px] text-muted-foreground">
+          {runs.length} of {summary.count} cabled
+        </span>
+      </div>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : runs.length === 0 ? (
+        <p className="text-[12px] text-muted-foreground">
+          No member is cabled yet.
+        </p>
+      ) : (
+        <div className="divide-y divide-border">
+          {runs.map((run, n) => (
+            <PathRow key={`${run.origin.name}:${n}`} run={run} />
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
