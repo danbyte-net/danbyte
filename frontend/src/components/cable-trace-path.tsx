@@ -9,6 +9,7 @@ import { isFiberType } from "@/lib/fiber"
 import type { FiberColorEntry } from "@/lib/fiber"
 import { FiberDot } from "@/components/fiber/fiber-dot"
 import { useFiberPalette } from "@/components/fiber/use-fiber-palette"
+import { useLinkPrefs } from "@/components/link-prefs-provider"
 
 /** The fibre cable's strands as a compact row of coloured dots (the same
  * swatch used on the cable page, tracer stripes and all), capped at 12 with a
@@ -67,9 +68,13 @@ function FiberGlyph({ color }: { color?: string }) {
  * with neighbours. Labels are absolutely positioned (to sit the wire on the row
  * midline), so they don't grow the box on their own - hence this heuristic from
  * the text length at the label (9px) and tag (8px) sizes. */
-function estSegWidth(seg: PathSegment): number {
+function estSegWidth(seg: PathSegment, linkIcons: boolean): number {
   const glyph = seg.fiber && !seg.fiberCount ? 15 : 0
-  const label = seg.label.length * 5.3 + glyph + 8
+  // The label is a link on a real cable, and the "link icon" preference
+  // appends a chain glyph (0.85em + margin at 9px) the text length can't see
+  // - without it the label spilled onto the neighbouring chips.
+  const chain = linkIcons && seg.cableId && !seg.self ? 11 : 0
+  const label = seg.label.length * 5.6 + glyph + chain + 10
   const strandTxt = seg.strand ? `strand ${seg.strand}`.length * 5 + 16 : 0
   const strip =
     !seg.strand && seg.fiber && seg.fiberCount
@@ -148,6 +153,7 @@ export function PathStrip({
 }) {
   const navigate = useNavigate()
   const palette = useFiberPalette()
+  const { linkIcons } = useLinkPrefs()
   return (
     // Symmetric padding: the floating labels need headroom (the scroll
     // container clips vertical overflow), and equal top/bottom keeps the
@@ -259,7 +265,7 @@ export function PathStrip({
           <div
             key={i}
             className="relative shrink-0"
-            style={{ minWidth: estSegWidth(s.seg) }}
+            style={{ minWidth: estSegWidth(s.seg, linkIcons) }}
           >
             <span
               className={
