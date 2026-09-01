@@ -113,8 +113,11 @@ export function ipToBigInt(addr: string): bigint | null {
   if (parts.length !== 4) return null
   let n = 0n
   for (const p of parts) {
+    // Digits only: Number("") is 0, so "192.173.199." (a half-typed address)
+    // would otherwise parse as 192.173.199.0.
+    if (!/^\d{1,3}$/.test(p)) return null
     const v = Number(p)
-    if (!Number.isFinite(v) || v < 0 || v > 255) return null
+    if (v > 255) return null
     n = (n << 8n) | BigInt(v)
   }
   return n
