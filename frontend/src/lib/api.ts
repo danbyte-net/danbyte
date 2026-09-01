@@ -1809,6 +1809,8 @@ export interface FacePort {
   kind: TerminationKind | null
   id: string | null
   connected: boolean
+  /** Real-world name when it differs from the template name ("X1-P1"). */
+  label?: string
   /** free | connected | reserved | marked (mark_connected, no cable). */
   cable_state?: string
   cable_id: string | null
@@ -1970,6 +1972,8 @@ export interface Interface {
   id: string
   device: { id: string; name: string }
   name: string
+  /** Real-world name ("X1-P1") when the name stays template-generic. */
+  label?: string
   /** What the SNMP agent calls this port, when linked (see drift "Link to…"). */
   snmp_name: string
   /** Excluded from SNMP drift - never compared, never flagged stale. */
@@ -2049,6 +2053,7 @@ export interface InterfaceWritePayload {
   wwn?: string
   device_id?: string
   name: string
+  label?: string
   type?: string
   speed?: string
   mtu?: number | null
@@ -2072,6 +2077,7 @@ export interface RearPort {
   id: string
   device: { id: string; name: string }
   name: string
+  label?: string
   positions: number
   is_splitter?: boolean
   mark_connected?: boolean
@@ -2088,6 +2094,7 @@ export interface RearPort {
 export interface RearPortWritePayload {
   device_id: string
   name: string
+  label?: string
   positions?: number
   is_splitter?: boolean
   mark_connected?: boolean
@@ -2100,6 +2107,7 @@ export interface FrontPort {
   id: string
   device: { id: string; name: string }
   name: string
+  label?: string
   rear_port: {
     id: string
     name: string
@@ -2121,6 +2129,7 @@ export interface FrontPort {
 export interface FrontPortWritePayload {
   device_id: string
   name: string
+  label?: string
   rear_port_id: string
   rear_port_position?: number
   mark_connected?: boolean

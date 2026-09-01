@@ -3342,6 +3342,9 @@ class DeviceViewSet(
                             "enabled": bool(getattr(comp, "enabled", True)),
                             "speed": speed if isinstance(speed, str) else "",
                             "type": ctype if isinstance(ctype, str) else "",
+                            # Real-world name, when it differs from the
+                            # template-matching name ("X1-P1" on "Port 1").
+                            "label": getattr(comp, "label", "") or "",
                         })
                 out.append(entry)
             return out

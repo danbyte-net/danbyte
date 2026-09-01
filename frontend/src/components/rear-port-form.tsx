@@ -39,6 +39,7 @@ export function RearPortForm({
   const isPlanning = !!usePlanTarget()
 
   const [name, setName] = useState(port?.name ?? "")
+  const [label, setLabel] = useState(port?.label ?? "")
   const [positions, setPositions] = useState(
     port?.positions != null ? String(port.positions) : "1"
   )
@@ -73,6 +74,7 @@ export function RearPortForm({
       const payload: RearPortWritePayload = {
         device_id: deviceId,
         name: name.trim(),
+        label: label.trim(),
         positions: positions.trim() === "" ? 1 : Number(positions),
         is_splitter: isSplitter,
         mark_connected: markConnected,
@@ -167,6 +169,14 @@ export function RearPortForm({
               isEdit ? undefined : "a [1-12] range adds one port per number"
             }
             error={fieldErrors.name}
+          />
+          <FormText
+            label="Label"
+            hint="Printed name, e.g. X1-P1"
+            value={label}
+            onChange={setLabel}
+            mono
+            error={fieldErrors.label}
           />
           <FormText
             label="Positions"

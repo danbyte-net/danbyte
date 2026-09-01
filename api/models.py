@@ -2698,6 +2698,10 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         Device, on_delete=models.CASCADE, related_name="interfaces"
     )
     name = models.CharField(max_length=64)
+    # The real-world name when it differs from the (template-matching) name -
+    # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
+    # the label carries what's actually printed on it ("X1-P1").
+    label = models.CharField(max_length=64, blank=True, default="")
     snmp_name = models.CharField(
         max_length=128, blank=True, default="",
         help_text="What the agent calls this interface over SNMP (ifName / "
@@ -2895,6 +2899,10 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         Device, on_delete=models.CASCADE, related_name="rear_ports"
     )
     name = models.CharField(max_length=64)
+    # The real-world name when it differs from the (template-matching) name -
+    # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
+    # the label carries what's actually printed on it ("X1-P1").
+    label = models.CharField(max_length=64, blank=True, default="")
     positions = models.PositiveSmallIntegerField(
         default=1, help_text="Number of strands / front-port positions."
     )
@@ -2940,6 +2948,10 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         Device, on_delete=models.CASCADE, related_name="front_ports"
     )
     name = models.CharField(max_length=64)
+    # The real-world name when it differs from the (template-matching) name -
+    # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
+    # the label carries what's actually printed on it ("X1-P1").
+    label = models.CharField(max_length=64, blank=True, default="")
     rear_port = models.ForeignKey(
         RearPort, on_delete=models.CASCADE, related_name="front_ports"
     )

@@ -224,6 +224,11 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
             >
               {row.original.name}
             </Link>
+            {row.original.label && (
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                {row.original.label}
+              </span>
+            )}
             {row.original.virtual && (
               <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
                 virtual

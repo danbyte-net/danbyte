@@ -49,6 +49,7 @@ export function FrontPortForm({
   const planning = !!usePlanTarget()
 
   const [name, setName] = useState(port?.name ?? "")
+  const [label, setLabel] = useState(port?.label ?? "")
   const [rearPortId, setRearPortId] = useState<string | null>(
     port?.rear_port.id ?? null
   )
@@ -133,6 +134,7 @@ export function FrontPortForm({
       const payload: FrontPortWritePayload = {
         device_id: deviceId,
         name: name.trim(),
+        label: label.trim(),
         rear_port_id: rearPortId ?? "",
         rear_port_position: position.trim() === "" ? 1 : Number(position),
         positions: positions.trim() === "" ? 1 : Number(positions),
@@ -250,6 +252,14 @@ export function FrontPortForm({
           }
           error={fieldErrors.name}
         />
+          <FormText
+            label="Label"
+            hint="Printed name, e.g. X1-P1"
+            value={label}
+            onChange={setLabel}
+            mono
+            error={fieldErrors.label}
+          />
         <NameRangeHint name={name} editing={isEdit} noun="front ports" />
         <div className="grid gap-3 @md:grid-cols-2">
           <FormSelect

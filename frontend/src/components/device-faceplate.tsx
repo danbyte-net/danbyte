@@ -1500,7 +1500,14 @@ export function ImagePortsFaceplate({
                 side="top"
                 className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
               >
-                <div className="font-semibold">{fp.name}</div>
+                <div className="font-semibold">
+                  {fp.name}
+                  {fp.label && (
+                    <span className="pl-1.5 font-normal text-muted-foreground">
+                      {fp.label}
+                    </span>
+                  )}
+                </div>
                 <div className="text-muted-foreground">
                   {[kind.replace(/-/g, " "), fp.type]
                     .filter(Boolean)

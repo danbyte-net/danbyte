@@ -70,6 +70,7 @@ export function InterfaceForm({
     iface?.device.id ?? initialDeviceId ?? null
   )
   const [name, setName] = useState(iface?.name ?? "")
+  const [label, setLabel] = useState(iface?.label ?? "")
   const [type, setType] = useState(iface?.type ?? "")
   const [speed, setSpeed] = useState(iface?.speed ?? "")
   const [mtu, setMtu] = useState(iface?.mtu != null ? String(iface.mtu) : "")
@@ -198,6 +199,7 @@ export function InterfaceForm({
       const payload: InterfaceWritePayload = {
         ...(isEdit ? {} : { device_id: deviceId ?? "" }),
         name: name.trim(),
+        label: label.trim(),
         type,
         speed: speed.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
@@ -363,6 +365,14 @@ export function InterfaceForm({
               />
             </div>
             <NameRangeHint name={name} editing={isEdit} noun="interfaces" />
+              <FormText
+                label="Label"
+                hint="Printed name, e.g. X1-P1"
+                value={label}
+                onChange={setLabel}
+                mono
+                error={fieldErrors.label}
+              />
           </FormSection>
 
           <FormSection title="Switching" card>

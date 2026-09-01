@@ -392,3 +392,54 @@ class BadFitConstraintTests(APITestCase):
         self.assertTrue(
             rbac.can_act_on(self.user, self.tenant, "site", "view", self.site)
         )
+
+
+class PortLabelTests(APITestCase):
+    """Ports keep template-matching names (photo markers resolve) and carry
+    the printed name in `label` - X1-P1 on "Port 1"."""
+
+    def test_label_roundtrips_on_all_three_kinds(self):
+        from api.models import Device, FrontPort, RearPort
+
+        org = Organization.objects.create(name="OL", slug="ol")
+        tenant = Tenant.objects.create(org=org, name="TL", slug="tl")
+        admin = User.objects.create_superuser("lbl", "l@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(tenant.id)
+        s.save()
+        dev = Device.objects.create(tenant=tenant, name="panel-l")
+        r = self.client.post("/api/interfaces/", {
+            "device_id": str(dev.id), "name": "Port 1", "label": "X1-P1",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["label"], "X1-P1")
+        rp = RearPort.objects.create(device=dev, name="Rear 1", type="8p8c")
+        r = self.client.post("/api/front-ports/", {
+            "device_id": str(dev.id), "name": "Port F1", "label": "X1-F1",
+            "rear_port_id": str(rp.id), "rear_port_position": 1,
+            "type": "8p8c",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["label"], "X1-F1")
+        r = self.client.patch(f"/api/rear-ports/{rp.id}/", {
+            "label": "X1-R1",
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["label"], "X1-R1")
+        # face-ports carries the label for the photo hover
+        dev.device_type_id = None
+        from api.models import DeviceType
+
+        dt = DeviceType.objects.create(
+            tenant=tenant, name="LT",
+            image_ports={"front": [
+                {"kind": "front-port", "name": "Port F1",
+                 "x": 0.2, "y": 0.5, "w": 0.05, "h": 0.2},
+            ], "rear": []},
+        )
+        dev.device_type = dt
+        dev.save(update_fields=["device_type"])
+        r = self.client.get(f"/api/devices/{dev.id}/face-ports/")
+        entry = r.json()["front"][0]
+        self.assertEqual(entry["label"], "X1-F1")

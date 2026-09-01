@@ -148,6 +148,11 @@ carry through to the links. On very large networks, filter by site first - the
 map will prompt you.
 
 
+Ports carry an optional **Label** - the printed, real-world name (`X1-P1`)
+next to a template-generic **Name** (`Port 1`). Keep the name matching the
+device type so photo markers keep resolving, and put reality in the label: it
+shows beside the name in port tables and in the photo-port hovers.
+
 ## Connecting from a port
 
 You don't have to start from the Cables page: any **uncabled interface** offers

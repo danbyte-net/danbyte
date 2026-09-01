@@ -2688,7 +2688,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     class Meta:
         model = Interface
-        fields = ["id", "device", "device_id", "name", "snmp_name", "snmp_ignore", "is_uplink", "type",
+        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink", "type",
                   "type_display",
                   "speed", "mtu",
                   "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected", "custom_fields",
@@ -2830,7 +2830,7 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = RearPort
-        fields = ["id", "device", "device_id", "name", "positions",
+        fields = ["id", "device", "device_id", "name", "label", "positions",
                   "is_splitter", "type", "mark_connected", "description",
                   "tags", "tag_ids", "cable", "reservation",
                   "front_port_count", "created_at", "updated_at"]
@@ -2896,7 +2896,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = FrontPort
-        fields = ["id", "device", "device_id", "name", "rear_port",
+        fields = ["id", "device", "device_id", "name", "label", "rear_port",
                   "rear_port_id", "rear_port_position", "positions", "type",
                   "mark_connected",
                   "description", "tags", "tag_ids", "cable", "reservation",
