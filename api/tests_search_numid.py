@@ -169,3 +169,55 @@ class MarkerRenameTests(APITestCase):
         # the console-port marker named eth0 stays: kind must match too
         kinds = {(m["kind"], m["name"]) for m in self.dt.image_ports["front"]}
         self.assertIn(("console-port", "eth0"), kinds)
+
+
+class SnmpProfileOptionsTests(APITestCase):
+    """#125 resurfaced: a site-only user could write a binding but was 403'd
+    off the profile list, so the saved binding rendered as an empty select.
+    The options endpoint serves id/name/version to the binding vocabulary."""
+
+    def setUp(self):
+        from auth_api.models import ObjectPermission, UserProfile
+        from monitoring.models import SnmpProfile
+
+        org = Organization.objects.create(name="O5", slug="o5")
+        self.tenant = Tenant.objects.create(org=org, name="T5", slug="t5")
+        SnmpProfile.objects.create(
+            tenant=self.tenant, name="core-v2", slug="core-v2", version="v2c",
+            secret_params={"community": "sekrit"},
+        )
+        self.user = User.objects.create_user("siteonly5", password="x")
+        prof = UserProfile.objects.create(user=self.user, role="custom")
+        prof.tenants.add(self.tenant)
+        op = ObjectPermission.objects.create(
+            name="site-only-5", object_types=["site"],
+            actions=["view", "change"],
+        )
+        op.users.add(self.user)
+        self.client.force_login(self.user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_site_only_user_gets_options_without_secrets(self):
+        r = self.client.get("/api/monitoring/snmp-profile-options/")
+        self.assertEqual(r.status_code, 200, r.content)
+        rows = r.json()["results"]
+        self.assertEqual(
+            rows, [{"id": rows[0]["id"], "name": "core-v2", "version": "v2c"}]
+        )
+        self.assertNotIn("sekrit", r.content.decode())
+
+    def test_unrelated_user_is_refused(self):
+        from auth_api.models import UserProfile
+
+        stranger = User.objects.create_user("nogrants5", password="x")
+        UserProfile.objects.create(user=stranger, role="custom").tenants.add(
+            self.tenant
+        )
+        self.client.force_login(stranger)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        r = self.client.get("/api/monitoring/snmp-profile-options/")
+        self.assertEqual(r.status_code, 403)

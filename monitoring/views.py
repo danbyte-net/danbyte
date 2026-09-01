@@ -268,6 +268,8 @@ def check_now_view(request, ip_id):
         "and a short latency/status sparkline.",
     ),
 )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ip_checks_view(request, ip_id):
@@ -2941,3 +2943,45 @@ def snmp_interface_link_view(request, device_id):
         "interface_id": str(iface.id), "name": iface.name,
         "snmp_name": iface.snmp_name,
     })
+
+
+@extend_schema(
+    summary="SNMP profile picker options (id/name/version)",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The tenant's SNMP profiles as picker options.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def snmp_profile_options_view(request):
+    """The profile catalog as picker options - id/name/version only.
+
+    The full /snmp-profiles/ viewset is RBAC-gated as a credential store, but
+    anyone who may set or read an SNMP binding (device/site/location grants -
+    the binding endpoint's own vocabulary, #125) needs the option list, or the
+    saved binding renders as an empty select and reads as "not saved". No
+    params and no secrets leave here.
+    """
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    u = request.user
+    if not (
+        u.is_superuser
+        or any(
+            rbac.has_action(u, tenant, slug, "view")
+            for slug in ("snmpprofile", "device", "site", "location")
+        )
+    ):
+        return Response({"detail": "Not allowed."}, status=403)
+    rows = SnmpProfile.objects.filter(tenant=tenant).order_by("name")
+    return Response({
+        "results": [
+            {"id": str(p.id), "name": p.name, "version": p.version}
+            for p in rows
+        ]
+    })
+

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, SnmpBinding, SnmpProfileOption } from "@/lib/api"
+import type { SnmpBinding, SnmpProfileOption } from "@/lib/api"
 import {
   Select,
   SelectContent,
@@ -30,9 +30,15 @@ function useBinding(scope: SnmpBinding["scope"], objectId: string) {
       api<SnmpBinding>(`/api/monitoring/snmp-binding/${scope}/${objectId}/`),
   })
   const profiles = useQuery({
-    queryKey: ["snmp-profiles"],
+    // The options endpoint, not the credential-store viewset: anyone who may
+    // set a binding gets the id/name/version list (#125) - a site-scoped
+    // user was 403'd off the full list, so the saved binding rendered as an
+    // empty select and read as "not saved".
+    queryKey: ["snmp-profile-options"],
     queryFn: () =>
-      api<Paginated<SnmpProfileOption>>("/api/monitoring/snmp-profiles/"),
+      api<{ results: SnmpProfileOption[] }>(
+        "/api/monitoring/snmp-profile-options/"
+      ),
     staleTime: 5 * 60_000,
   })
   return { binding, profiles }
