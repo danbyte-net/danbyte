@@ -154,6 +154,7 @@ function toPathSteps(apiSteps: DevicePathRun["steps"]): PathStep[] {
             ports: s.ports.map((p) => ({
               name: p.name,
               interfaceId: p.interface_id ?? undefined,
+              label: p.label,
             })),
           },
         }

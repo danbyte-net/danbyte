@@ -993,6 +993,9 @@ def device_paths(device, viewable_ids=None):
             "ports": [
                 {
                     "name": p.name,
+                    # Printed name ("X1-P1") for panels whose names stay
+                    # template-generic - the trace shows both.
+                    "label": getattr(p, "label", "") or "",
                     "interface_id": str(p.id) if k == "interface" else None,
                 }
                 for p, k in port_pairs

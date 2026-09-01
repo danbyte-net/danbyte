@@ -86,7 +86,12 @@ function estSegWidth(seg: PathSegment): number {
 export type PathChip = {
   deviceId?: string
   device: string
-  ports: { name: string; interfaceId?: string; powerFeedId?: string }[]
+  ports: {
+    name: string
+    label?: string
+    interfaceId?: string
+    powerFeedId?: string
+  }[]
   /** The container is a power panel, not a device - `deviceId` is the panel's,
    * so the chip links to /power-panels/$id and its ports to /power-feeds/$id. */
   powerPanel?: boolean
@@ -237,6 +242,11 @@ export function PathStrip({
                     }
                   >
                     {port.name}
+                    {port.label && (
+                      <span className="pl-1 text-muted-foreground/70">
+                        {port.label}
+                      </span>
+                    )}
                   </span>
                 )
               })}
