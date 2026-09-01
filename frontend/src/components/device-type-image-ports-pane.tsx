@@ -6,7 +6,6 @@ import { Grid3x3, Search, X } from "lucide-react"
 import {
   api,
   type DeviceType,
-  type DeviceTypeWritePayload,
   type ImagePortMarker,
   type ImagePorts,
   type Paginated,
@@ -147,21 +146,51 @@ function interpRowYs(top: number, bottom: number, rows: number): number[] {
  * are normalized 0..1, so the 2D image faceplate and the 3D device face render
  * them live-lit at any size.
  */
+// Palette source when editing a DEVICE override: the device's real
+// components, one endpoint per markable kind.
+const DEVICE_ENDPOINT: Record<string, string> = {
+  interface: "interfaces",
+  "console-port": "console-ports",
+  "console-server-port": "console-server-ports",
+  "power-port": "power-ports",
+  "power-outlet": "power-outlets",
+  "front-port": "front-ports",
+  "rear-port": "rear-ports",
+  "aux-port": "aux-ports",
+  "inventory-item": "inventory-items",
+  "module-bay": "module-bays",
+}
+
 export function DeviceTypeImagePortsPane({
   deviceType,
+  device,
 }: {
   deviceType: DeviceType
+  /** Edit THIS device's override instead of the type's shared layout - the
+   * palette then lists the device's real components (special devices carry
+   * ports the type never templated), and Save writes Device.image_ports. */
+  device?: {
+    id: string
+    name: string
+    image_ports: DeviceType["image_ports"] | null
+  }
 }) {
   const { canDo } = useMe()
-  const canWrite = canDo("devicetype", "change")
+  const canWrite = device
+    ? canDo("device", "change")
+    : canDo("devicetype", "change")
   const qc = useQueryClient()
 
   const templateQueries = useQueries({
     queries: KINDS.map((k) => ({
-      queryKey: [TEMPLATE_QUERY_KEY[k], deviceType.id],
+      queryKey: device
+        ? [`dev-${DEVICE_ENDPOINT[k]}`, device.id]
+        : [TEMPLATE_QUERY_KEY[k], deviceType.id],
       queryFn: () =>
         api<Paginated<PortComponent>>(
-          `/api/${TEMPLATE_ENDPOINT[k]}/?device_type=${deviceType.id}`
+          device
+            ? `/api/${DEVICE_ENDPOINT[k]}/?device=${device.id}&page_size=500`
+            : `/api/${TEMPLATE_ENDPOINT[k]}/?device_type=${deviceType.id}`
         ),
     })),
   })
@@ -176,7 +205,11 @@ export function DeviceTypeImagePortsPane({
 
   const [side, setSide] = useState<Side>("front")
   const [ports, setPorts] = useState<ImagePorts>(
-    () => deviceType.image_ports ?? { front: [], rear: [] }
+    () =>
+      (device ? (device.image_ports ?? deviceType.image_ports) : deviceType.image_ports) ?? {
+        front: [],
+        rear: [],
+      }
   )
   const [dirty, setDirty] = useState(false)
   const [sel, setSel] = useState<number | null>(null)
@@ -199,8 +232,14 @@ export function DeviceTypeImagePortsPane({
   } | null>(null)
 
   useEffect(() => {
-    if (!dirty) setPorts(deviceType.image_ports ?? { front: [], rear: [] })
-  }, [deviceType.image_ports, dirty])
+    if (!dirty)
+      setPorts(
+        (device
+          ? (device.image_ports ?? deviceType.image_ports)
+          : deviceType.image_ports) ?? { front: [], rear: [] }
+      )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceType.image_ports, device?.image_ports, dirty])
 
   const image =
     side === "front" ? deviceType.front_image : deviceType.rear_image
@@ -520,17 +559,42 @@ export function DeviceTypeImagePortsPane({
     toast.success(`Placed ${fillPreview.length} ports`)
   }
 
-  const save = useMutation({
+    const resetToType = useMutation({
+    mutationFn: () =>
+      api<DeviceType>(`/api/devices/${device!.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ image_ports: null }),
+      }),
+    onSuccess: () => {
+      setDirty(false)
+      setSel(null)
+      toast.success("Back on the type's layout")
+      qc.invalidateQueries({ queryKey: ["device", device!.id] })
+      qc.invalidateQueries({ queryKey: ["device-face-ports", device!.id] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+const save = useMutation({
     mutationFn: () => {
       const body: ImagePorts | null =
         ports.front.length || ports.rear.length ? ports : null
+      if (device)
+        return api<DeviceType>(`/api/devices/${device.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify({ image_ports: body }),
+        })
       return api<DeviceType>(`/api/device-types/${deviceType.id}/`, {
         method: "PATCH",
-        body: JSON.stringify({ image_ports: body } as DeviceTypeWritePayload),
+        body: JSON.stringify({ image_ports: body }),
       })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["device-type", deviceType.id] })
+      if (device) {
+        qc.invalidateQueries({ queryKey: ["device", device.id] })
+        qc.invalidateQueries({ queryKey: ["device-face-ports", device.id] })
+      }
       setDirty(false)
       toast.success("Photo ports saved")
     },
@@ -841,7 +905,11 @@ export function DeviceTypeImagePortsPane({
             variant="outline"
             disabled={!dirty}
             onClick={() => {
-              setPorts(deviceType.image_ports ?? { front: [], rear: [] })
+              setPorts(
+                (device
+                  ? (device.image_ports ?? deviceType.image_ports)
+                  : deviceType.image_ports) ?? { front: [], rear: [] }
+              )
               setDirty(false)
               setSel(null)
               setFill(null)
@@ -849,6 +917,16 @@ export function DeviceTypeImagePortsPane({
           >
             Discard changes
           </Button>
+          {device && device.image_ports != null && (
+            <Button
+              variant="ghost"
+              className="text-muted-foreground"
+              disabled={save.isPending}
+              onClick={() => resetToType.mutate()}
+            >
+              Reset to type layout
+            </Button>
+          )}
           <span className="text-[11px] text-muted-foreground">
             {markers.length} on this side · normalized coordinates scale to the
             3D view.

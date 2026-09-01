@@ -2430,6 +2430,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "location", "location_id", "cluster", "cluster_id",
                   "virtual_chassis", "virtual_chassis_id",
                   "vc_position", "vc_priority", "vc_renamed_interfaces",
+                  "image_ports",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
                   "description", "comments", "airflow", "effective_airflow",

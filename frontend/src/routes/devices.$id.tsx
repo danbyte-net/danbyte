@@ -23,6 +23,7 @@ import { toast } from "sonner"
 import { api, DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
 import type {
   Device,
+  DeviceType,
   DeviceChecksResponse,
   DeviceFieldVisibility,
   IPAddress,
@@ -34,6 +35,7 @@ import type {
 } from "@/lib/api"
 import { RackElevation } from "@/components/rack-elevation"
 import { ObjectImages } from "@/components/object-images"
+import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import { ObjectDocuments } from "@/components/object-documents"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -354,6 +356,10 @@ function Body({ device: d }: { device: Device }) {
               (d.power_count || 0) || undefined,
         },
         { value: "images", label: "Images" },
+        // Only when the type has a rack-face photo to place markers on.
+        ...(d.device_type?.front_image || d.device_type?.rear_image
+          ? [{ value: "photo-ports", label: "Photo ports" }]
+          : []),
         {
           value: "snmp",
           label: (
@@ -447,6 +453,9 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="images">
         <ObjectImages apiBase={`/api/devices/${d.id}`} objectType="device" />
+      </DetailTab>
+      <DetailTab value="photo-ports">
+        <DevicePhotoPortsTab device={d} />
       </DetailTab>
       <DetailTab value="services">
         <ServicesPane
@@ -1808,6 +1817,40 @@ function DeviceInterfacesPane({
       <InterfaceTraceDialog
         target={traceTarget}
         onOpenChange={(o) => !o && setTraceTarget(null)}
+      />
+    </div>
+  )
+}
+
+
+/** Per-device photo-port override editor (special devices): same editor as
+ * the type's Photo ports tab, but the palette lists THIS device's real
+ * components and Save writes Device.image_ports. Null = inherit the type. */
+function DevicePhotoPortsTab({ device: d }: { device: Device }) {
+  const dt = useQuery({
+    queryKey: ["device-type", d.device_type?.id],
+    queryFn: () => api<DeviceType>(`/api/device-types/${d.device_type!.id}/`),
+    enabled: !!d.device_type?.id,
+    staleTime: 5 * 60_000,
+  })
+  if (!d.device_type?.id)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No device type - photo ports live on the type's images.
+      </p>
+    )
+  if (!dt.data)
+    return <p className="text-sm text-muted-foreground">Loading…</p>
+  return (
+    <div className="grid gap-3">
+      <p className="text-[11px] text-muted-foreground">
+        {d.image_ports != null
+          ? "This device overrides the type's layout - edits apply to this device only."
+          : "Editing here creates a device-only override; the type's shared layout stays untouched."}
+      </p>
+      <DeviceTypeImagePortsPane
+        deviceType={dt.data}
+        device={{ id: d.id, name: d.name, image_ports: d.image_ports ?? null }}
       />
     </div>
   )

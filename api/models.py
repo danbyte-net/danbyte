@@ -1003,7 +1003,8 @@ def materialize_device_components(device) -> dict[str, int]:
 
     have = _names(device.interfaces)
     made = [
-        Interface(device=device, name=n, type=t.type, enabled=t.enabled,
+        Interface(device=device, name=n, marker_key=n, type=t.type,
+                  enabled=t.enabled,
                   mgmt_only=t.mgmt_only, combo_group=t.combo_group,
                   poe_mode=t.poe_mode, poe_type=t.poe_type,
                   description=t.description)
@@ -1067,7 +1068,8 @@ def materialize_device_components(device) -> dict[str, int]:
     # Rear ports before front ports (front ports map onto rear positions).
     have = _names(device.rear_ports)
     made = [
-        RearPort(device=device, name=n, type=t.type, positions=t.positions,
+        RearPort(device=device, name=n, marker_key=n, type=t.type,
+                 positions=t.positions,
                  is_splitter=t.is_splitter, description=t.description)
         for t in dt.rear_port_templates.all()
         if (n := render_component_name(t.name, pos)) not in have
@@ -1079,7 +1081,7 @@ def materialize_device_components(device) -> dict[str, int]:
     have = _names(device.front_ports)
     made = [
         FrontPort(
-            device=device, name=n, type=t.type,
+            device=device, name=n, marker_key=n, type=t.type,
             rear_port=rears_by_name[
                 render_component_name(t.rear_port_template.name, pos)
             ],
@@ -1192,10 +1194,10 @@ def materialize_device_components(device) -> dict[str, int]:
 #: template stays a ghost on the render rather than a half-made component.
 # Which marker kind each template model's names appear under - the rename
 # hook on _ComponentTemplate.save uses this to follow renames into the
-# type's photo markers and faceplate slots. FrontPortTemplate has no marker
-# kind and needs no entry.
+# type's photo markers and faceplate slots.
 _TEMPLATE_MARKER_KIND = {
     "InterfaceTemplate": "interface",
+    "FrontPortTemplate": "front-port",
     "ConsolePortTemplate": "console-port",
     "ConsoleServerPortTemplate": "console-server-port",
     "PowerPortTemplate": "power-port",
@@ -1248,9 +1250,26 @@ def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
         fields.append("faceplate")
     if fields:
         device_type.save(update_fields=fields)
+    # Child devices' components carry the OLD name as their frozen marker
+    # identity - follow the rename there too, or every placed port on every
+    # existing device of this type orphans at once.
+    _KEY_MODELS = {
+        "interface": Interface,
+        "front-port": FrontPort,
+        "rear-port": RearPort,
+    }
+    model = _KEY_MODELS.get(kind)
+    if model is not None:
+        model.objects.filter(
+            device__device_type=device_type, marker_key=old
+        ).update(marker_key=new)
     return bool(fields)
 
 
+# NOTE: no "front-port" entry on purpose - a bare front port can't be
+# stamped (it needs a rear-port mapping), so front-port markers are excluded
+# from the create/diff paths. They still RESOLVE (viewsets._FACE_PORT_KINDS)
+# and template renames still follow (_TEMPLATE_MARKER_KIND).
 _MARKER_KIND_RELS = {
     "interface": "interfaces",
     "console-port": "console_ports",
@@ -1265,7 +1284,7 @@ _MARKER_KIND_RELS = {
 }
 
 
-def marker_referenced_names(device_type) -> dict[str, set[str]]:
+def marker_referenced_names(device_type, image_ports=None) -> dict[str, set[str]]:
     """Component names the type's faceplate slots and photo markers point at,
     keyed by device relation.
 
@@ -1288,7 +1307,8 @@ def marker_referenced_names(device_type) -> dict[str, set[str]]:
             for slot in group.get("slots", []) or []:
                 if isinstance(slot, dict) and slot.get("t") == "port":
                     note(slot.get("kind", "interface"), slot.get("name"))
-        for marker in (device_type.image_ports or {}).get(side, []) or []:
+        doc = image_ports if image_ports is not None else device_type.image_ports
+        for marker in (doc or {}).get(side, []) or []:
             if isinstance(marker, dict):
                 note(marker.get("kind", "interface"), marker.get("name"))
     return out
@@ -1300,7 +1320,8 @@ def stamp_marker_components(device) -> dict[str, int]:
     dt = device.device_type
     if dt is None:
         return {}
-    wanted = marker_referenced_names(dt)
+    # A device-level photo-port override names components on THIS device.
+    wanted = marker_referenced_names(dt, image_ports=device.image_ports)
     if not wanted:
         return {}
     pos = device.vc_position
@@ -1320,10 +1341,19 @@ def stamp_marker_components(device) -> dict[str, int]:
     }
     created: dict[str, int] = {}
     for rel, names in wanted.items():
+        if rel not in factories:
+            # Front ports need a rear-port mapping - they can't be stamped
+            # bare; the marker resolves once the real port exists.
+            continue
         model, extra = factories[rel]
         have = set(getattr(device, rel).values_list("name", flat=True))
+        keyed = model in (Interface, FrontPort, RearPort)
         made = [
-            model(device=device, name=n, **extra)
+            model(
+                device=device, name=n,
+                **({"marker_key": n} if keyed else {}),
+                **extra,
+            )
             for raw in sorted(names)
             if (n := render_component_name(raw, pos)) not in have
         ]
@@ -1691,6 +1721,10 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=5, choices=FACE_CHOICES, blank=True, default="",
     )
     SIDE_CHOICES = [("left", "Left"), ("right", "Right")]
+    # Per-device photo-port override (#special-devices): same doc shape as
+    # DeviceType.image_ports. Null = inherit the type's layout; a set doc
+    # replaces it entirely for THIS device (face-ports, 2D and 3D renders).
+    image_ports = models.JSONField(null=True, blank=True, default=None)
     rack_side = models.CharField(
         max_length=5, choices=SIDE_CHOICES, blank=True, default="",
         help_text=("Which half of the U a half-width device occupies (the "
@@ -2702,6 +2736,10 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
     # the label carries what's actually printed on it ("X1-P1").
     label = models.CharField(max_length=64, blank=True, default="")
+    # Stable marker identity (#photo-ports): frozen from the template name
+    # at materialization, matched FIRST by photo markers - so the visible
+    # name can be renamed freely and placed ports keep resolving.
+    marker_key = models.CharField(max_length=64, blank=True, default="")
     snmp_name = models.CharField(
         max_length=128, blank=True, default="",
         help_text="What the agent calls this interface over SNMP (ifName / "
@@ -2903,6 +2941,10 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
     # the label carries what's actually printed on it ("X1-P1").
     label = models.CharField(max_length=64, blank=True, default="")
+    # Stable marker identity (#photo-ports): frozen from the template name
+    # at materialization, matched FIRST by photo markers - so the visible
+    # name can be renamed freely and placed ports keep resolving.
+    marker_key = models.CharField(max_length=64, blank=True, default="")
     positions = models.PositiveSmallIntegerField(
         default=1, help_text="Number of strands / front-port positions."
     )
@@ -2952,6 +2994,10 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
     # the label carries what's actually printed on it ("X1-P1").
     label = models.CharField(max_length=64, blank=True, default="")
+    # Stable marker identity (#photo-ports): frozen from the template name
+    # at materialization, matched FIRST by photo markers - so the visible
+    # name can be renamed freely and placed ports keep resolving.
+    marker_key = models.CharField(max_length=64, blank=True, default="")
     rear_port = models.ForeignKey(
         RearPort, on_delete=models.CASCADE, related_name="front_ports"
     )

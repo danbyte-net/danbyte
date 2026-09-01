@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router"
 
 import { api, formatBytes } from "@/lib/api"
 import type {
+  Device,
   DeviceSnmp,
   DeviceType,
   FacePort,
@@ -1058,10 +1059,19 @@ export function ImagePortsFaceplate({
   const image = side === "front" ? dt.data?.front_image : dt.data?.rear_image
   // Memoized: the legend derives from these, and a fresh `[]` every render
   // would make it recompute (and re-report) forever.
-  const markers = useMemo(
-    () => dt.data?.image_ports?.[side] ?? [],
-    [dt.data, side]
-  )
+  // A device-level override (special devices) replaces the type's layout
+  // wholesale; the device payload carries it since api.0149.
+  const devDoc = useQuery({
+    queryKey: ["device", deviceId],
+    queryFn: () => api<Device>(`/api/devices/${deviceId}/`),
+    enabled: !!deviceId,
+    staleTime: 30_000,
+  })
+  const markers = useMemo(() => {
+    const override = devDoc.data?.image_ports
+    const doc = override != null ? override : dt.data?.image_ports
+    return doc?.[side] ?? []
+  }, [devDoc.data, dt.data, side])
   const wantsInventory =
     !!deviceId && markers.some((m) => m.kind === "inventory-item")
   // Console / power / aux / panel-port markers resolve through the same
@@ -1601,6 +1611,9 @@ export function ImagePortsFaceplate({
               >
                 {iface.name}
               </Link>
+              {iface.label && (
+                <div className="text-muted-foreground">{iface.label}</div>
+              )}
               {iface.type_display && <div>{iface.type_display}</div>}
               <div>
                 {state === "disabled"

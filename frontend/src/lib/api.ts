@@ -1258,6 +1258,8 @@ export interface Device {
   id: string
   numid: number | null
   name: string
+  /** Per-device photo-port override; null = inherit the type's layout. */
+  image_ports?: DeviceType["image_ports"] | null
   device_type: {
     id: string
     name: string
@@ -2657,7 +2659,7 @@ export interface DevicePathRun {
         t: "chip"
         device_id: string
         device: string
-        ports: { name: string; interface_id: string | null }[]
+        ports: { name: string; label?: string; interface_id: string | null }[]
         panel: boolean
         origin?: boolean
         /** The far end is a circuit termination; device_id is the circuit. */

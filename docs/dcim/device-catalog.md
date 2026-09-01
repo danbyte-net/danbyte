@@ -447,7 +447,15 @@ keys** (Shift = coarser), or type exact **X / Y / W / H** percentages. A
 **fine-grid snap** keeps rows aligned. Coordinates are stored normalized
 (0–1), so they scale to any render size. Markers reference their template by
 name, and renaming a template follows into them (and into custom faceplate
-slots) automatically - a placed port never orphans on rename.
+slots) automatically - a placed port never orphans on rename. On the device
+side each port carries a frozen **marker identity** (stamped from the template
+at creation), so renaming a device's own port - `Port 1` → `X1-P1` - keeps its
+placed marker resolving too; hovers then show the real name.
+
+A **special device** can override the type's layout entirely: the device page
+grows a **Photo ports** tab (when the type has an image) whose palette lists
+that device's real components and whose Save writes a device-only layout -
+**Reset to type layout** returns to inheritance.
 
 **Bulk place** lays a whole run at once: pick the kind and a from/to port
 range, set rows, numbering direction and optional bank gaps, then anchor the

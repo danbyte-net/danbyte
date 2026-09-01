@@ -3230,7 +3230,13 @@ class DeviceViewSet(
 
         device = self.get_object()
         dt = device.device_type
-        image_ports = (dt.image_ports if dt else None) or {}
+        # A device-level override (special devices) replaces the type's
+        # layout wholesale; null inherits.
+        image_ports = (
+            device.image_ports
+            if device.image_ports is not None
+            else (dt.image_ports if dt else None)
+        ) or {}
         pos = device.vc_position
         drift = self._face_drift(device)
 
@@ -3254,10 +3260,24 @@ class DeviceViewSet(
                 else:
                     comps = comps.select_related("status")
                 comps = list(comps)
-                name_maps[relation] = {c.name: c for c in comps}
+                # marker_key first: the frozen marker identity survives a
+                # rename of the visible name (Interface/Front/RearPort carry
+                # one; other kinds fall through to name matching).
+                by_key = {}
+                for c in comps:
+                    mk = getattr(c, "marker_key", "") or ""
+                    if mk:
+                        by_key.setdefault(mk, c)
+                for c in comps:
+                    by_key.setdefault(c.name, c)
+                name_maps[relation] = by_key
                 # Case/whitespace-insensitive twin (first name wins) - the
                 # same normalization the frontend's normalizePortName applies.
                 norm = {}
+                for c in comps:
+                    mk = getattr(c, "marker_key", "") or ""
+                    if mk:
+                        norm.setdefault(mk.strip().lower(), c)
                 for c in comps:
                     norm.setdefault(c.name.strip().lower(), c)
                 norm_maps[relation] = norm
@@ -3323,6 +3343,7 @@ class DeviceViewSet(
                         # Inventory item - status-coloured, never cable-able.
                         s = comp.status
                         entry.update({
+                            "name": comp.name,
                             "id": str(comp.id),
                             "status": {"id": str(s.id), "name": s.name, "color": s.color}
                             if s else None,
@@ -3334,6 +3355,10 @@ class DeviceViewSet(
                         speed = getattr(comp, "speed", "")
                         ctype = getattr(comp, "type", "")
                         entry.update({
+                            # The component's REAL name - after a rename the
+                            # marker still resolves via marker_key, and the
+                            # hover must say what the port is called NOW.
+                            "name": comp.name,
                             "kind": term_kind,
                             "id": str(comp.id),
                             "connected": term is not None,
@@ -7766,7 +7791,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "has_faceplate": bool(dt and dt.faceplate),
                 # Photo-anchored port markers (per device type; denormalized
                 # here like front_image so the 3D face can overlay them).
-                "image_ports": (dt.image_ports if dt else None) or None,
+                "image_ports": (
+                    d.image_ports
+                    if d.image_ports is not None
+                    else (dt.image_ports if dt else None)
+                ) or None,
                 # The device's REAL power component names - the room lays out
                 # deterministic clickable quads (and cable anchors) for any of
                 # these that no photo marker covers, incl. PDU strip outlets.
