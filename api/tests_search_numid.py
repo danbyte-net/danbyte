@@ -443,3 +443,81 @@ class PortLabelTests(APITestCase):
         r = self.client.get(f"/api/devices/{dev.id}/face-ports/")
         entry = r.json()["front"][0]
         self.assertEqual(entry["label"], "X1-F1")
+
+
+class MarkerKeyTests(APITestCase):
+    """Photo markers resolve by the frozen marker_key, so the visible port
+    name can be renamed freely and the placed port keeps working."""
+
+    def setUp(self):
+        from api.models import Device, DeviceType, FrontPort, RearPort
+
+        org = Organization.objects.create(name="OM", slug="om")
+        self.tenant = Tenant.objects.create(org=org, name="TM", slug="tm")
+        admin = User.objects.create_superuser("mk", "k@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        self.dt = DeviceType.objects.create(
+            tenant=self.tenant, name="MK-1",
+            image_ports={"front": [
+                {"kind": "front-port", "name": "Port 1",
+                 "x": 0.2, "y": 0.5, "w": 0.05, "h": 0.2},
+            ], "rear": []},
+        )
+        self.dev = Device.objects.create(
+            tenant=self.tenant, name="mk-dev", device_type=self.dt
+        )
+        rp = RearPort.objects.create(
+            device=self.dev, name="Rear 1", marker_key="Rear 1", type="8p8c"
+        )
+        self.fp = FrontPort.objects.create(
+            device=self.dev, name="Port 1", marker_key="Port 1",
+            type="8p8c", rear_port=rp, rear_port_position=1,
+        )
+
+    def _front_entry(self):
+        r = self.client.get(f"/api/devices/{self.dev.id}/face-ports/")
+        return r.json()["front"][0]
+
+    def test_rename_keeps_the_marker_resolving(self):
+        r = self.client.patch(
+            f"/api/front-ports/{self.fp.id}/", {"name": "X1-P1"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        e = self._front_entry()
+        self.assertEqual(e["id"], str(self.fp.id))  # still resolves
+        self.assertEqual(e["name"], "X1-P1")  # hover says the REAL name
+        self.assertEqual(e["marker"], "Port 1")
+
+    def test_device_override_wins_over_the_type_layout(self):
+        self.dev.image_ports = {"front": [
+            {"kind": "front-port", "name": "Port 1",
+             "x": 0.7, "y": 0.5, "w": 0.1, "h": 0.3},
+        ], "rear": []}
+        self.dev.save(update_fields=["image_ports"])
+        e = self._front_entry()
+        self.assertEqual(e["id"], str(self.fp.id))
+        # override doc served, not the type's (marker x differs, same name)
+        r = self.client.get(f"/api/devices/{self.dev.id}/")
+        self.assertIsNotNone(r.json()["image_ports"])
+
+    def test_template_rename_follows_into_marker_keys(self):
+        from api.models import FrontPortTemplate, RearPortTemplate
+
+        rpt = RearPortTemplate.objects.create(
+            device_type=self.dt, name="Rear 1"
+        )
+        fpt = FrontPortTemplate.objects.create(
+            device_type=self.dt, name="Port 1", rear_port_template=rpt,
+        )
+        fpt.name = "LC 1"
+        fpt.save()
+        self.fp.refresh_from_db()
+        self.assertEqual(self.fp.marker_key, "LC 1")
+        self.dt.refresh_from_db()
+        self.assertEqual(
+            self.dt.image_ports["front"][0]["name"], "LC 1"
+        )
