@@ -929,7 +929,7 @@ function NavGroup({
   const shown = iconMode || open
 
   return (
-    <SidebarGroup className="py-0.5">
+    <SidebarGroup className="py-0">
       {/* Overrides live on SidebarGroupLabel itself: its base classes
           (text-xs, /70 foreground) win the tailwind-merge against anything
           on the inner button, which is why the first pass changed nothing. */}
@@ -941,7 +941,7 @@ function NavGroup({
       <SidebarGroupLabel
         asChild
         className={cn(
-          "sticky top-0 z-10 h-9 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground",
+          "sticky top-0 z-10 h-8 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground",
           // You-are-here: the group holding the current page wears a primary
           // edge inside the band (inset shadow - no layout shift, respects
           // the rounding).
@@ -963,10 +963,19 @@ function NavGroup({
           />
         </button>
       </SidebarGroupLabel>
-      {/* Breathing room between the section band and its first item - the
-          active-item chip otherwise sits flush against the band. */}
+      {/* You-are-here rail: the category holding the current page gets a
+          primary line down its whole body. Inactive groups keep a transparent
+          border so nothing shifts. The padding keeps the first row and the
+          active-row ring off the band. */}
       {shown && (
-        <SidebarGroupContent className="pt-1.5">{children}</SidebarGroupContent>
+        <SidebarGroupContent
+          className={cn(
+            "border-l-2 pt-1 pb-0.5 pl-1 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:pl-0",
+            hasActive ? "border-primary/60" : "border-transparent"
+          )}
+        >
+          {children}
+        </SidebarGroupContent>
       )}
     </SidebarGroup>
   )
@@ -1080,7 +1089,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <TenantSwitcher />
       </SidebarHeader>
 
-      <SidebarContent className="gap-0">
+      <SidebarContent className="gap-1">
         {/* Collapse/expand every category at once (#43). One state-aware
             button: the label names the action that is available. Hidden in
             the icon rail, where groups are always shown. */}
@@ -1122,14 +1131,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {/* Dashboard sits above the grouped sections - single top-level item. */}
         <FavoritesSection />
 
-        <SidebarGroup className="py-0.5">
+        <SidebarGroup className="py-0">
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-7 text-[13px]"
+                  className="h-6 text-[13px]"
                   tooltip="Dashboard"
                   isActive={pathname === "/"}
                 >
@@ -1153,33 +1162,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             onOpenChange={(o) => setGroupsOpen({ [section.label]: o })}
           >
             {section.clusters.map((cluster, i) => (
-              // You-are-here rail: the cluster holding the current page gets
-              // a vertical primary line down its left edge. Inactive clusters
-              // keep a transparent border so nothing shifts.
-              <div
-                key={cluster.label ?? i}
-                className={cn(
-                  "border-l-2 pl-1 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:pl-0",
-                  cluster.items.some((it) => isPage(it.url))
-                    ? "border-primary/60"
-                    : "border-transparent"
-                )}
-              >
+              <div key={cluster.label ?? i}>
                 {/* Cluster sub-heading. Hidden in the icon-rail (where
                     there's no room for text) and omitted for unlabelled
                     clusters so short sections stay flat. */}
                 {cluster.label && (
-                  <div className="px-2 pt-2 pb-0.5 text-[11px] font-bold tracking-[0.1em] text-primary uppercase group-data-[collapsible=icon]:hidden">
+                  <div className="px-2 pt-1 pb-0 text-[10px] font-bold tracking-[0.1em] text-primary uppercase group-data-[collapsible=icon]:hidden">
                     {cluster.label}
                   </div>
                 )}
-                <SidebarMenu>
+                <SidebarMenu className="gap-0.5">
                   {cluster.items.map((item) => (
                     <SidebarMenuItem key={item.url}>
                       <SidebarMenuButton
                         asChild
                         size="sm"
-                        className="h-7 text-[13px]"
+                        className="h-6 text-[13px]"
                         tooltip={item.title}
                         isActive={isPage(item.url)}
                       >
@@ -1208,13 +1206,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             open={openGroups[label] ?? inGroup(items.map((i) => i.url))}
             onOpenChange={(o) => setGroupsOpen({ [label]: o })}
           >
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               {items.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton
                     asChild
                     size="sm"
-                    className="h-7 text-[13px]"
+                    className="h-6 text-[13px]"
                     tooltip={item.title}
                     isActive={isPage(item.url)}
                   >
@@ -1245,12 +1243,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             }
             onOpenChange={(o) => setGroupsOpen({ Admin: o })}
           >
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-7 text-[13px]"
+                  className="h-6 text-[13px]"
                   tooltip="Users"
                   isActive={isPage("/users")}
                 >
@@ -1264,7 +1262,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-7 text-[13px]"
+                  className="h-6 text-[13px]"
                   tooltip="Groups"
                   isActive={isPage("/groups")}
                 >
@@ -1278,7 +1276,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuButton
                   asChild
                   size="sm"
-                  className="h-7 text-[13px]"
+                  className="h-6 text-[13px]"
                   tooltip="Permissions"
                   isActive={isPage("/permissions")}
                 >
@@ -1296,7 +1294,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       {/* Footer: just the signed-in user - Preferences / Settings / Docs all
           live in its popover now, so the nav stays focused on data pages. */}
       <SidebarFooter>
-        <SidebarMenu>
+        <SidebarMenu className="gap-0.5">
           <SidebarMenuItem>
             <UserMenu />
           </SidebarMenuItem>
@@ -1369,7 +1367,7 @@ function FavoritesSection() {
 
   const hasFavorites = rootFolders.length > 0 || rootBookmarks.length > 0
   return (
-    <SidebarGroup className="py-0.5">
+    <SidebarGroup className="py-0">
       <SidebarGroupLabel className="flex items-center gap-2">
         <Bookmark className="size-4 shrink-0 opacity-60" />
         <span>Favorites</span>
@@ -1383,7 +1381,7 @@ function FavoritesSection() {
         </button>
       </SidebarGroupLabel>
       <SidebarGroupContent>
-        <SidebarMenu>
+        <SidebarMenu className="gap-0.5">
           {hasFavorites ? (
             <>
               {rootBookmarks.map((b) => (
@@ -1578,7 +1576,7 @@ function FavoriteBookmark({ bookmark }: { bookmark: BookmarkRow }) {
       <SidebarMenuButton
         asChild
         size="sm"
-        className="h-7 text-[13px]"
+        className="h-6 text-[13px]"
         tooltip={bookmark.label}
       >
         <FavoriteLink bookmark={bookmark} />
@@ -1619,7 +1617,7 @@ function FavoriteFolder({
       <SidebarMenuButton
         type="button"
         size="sm"
-        className="h-7 text-[13px]"
+        className="h-6 text-[13px]"
         tooltip={folder.name}
         onClick={() => setOpen((v) => !v)}
       >
@@ -1694,7 +1692,7 @@ function TenantSwitcher() {
   const initial = activeTenant?.name.slice(0, 1).toUpperCase() ?? "·"
 
   return (
-    <SidebarMenu>
+    <SidebarMenu className="gap-0.5">
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
