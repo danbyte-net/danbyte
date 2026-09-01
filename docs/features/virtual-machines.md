@@ -96,7 +96,9 @@ MTU, speed, and an 802.1Q **VLAN** with an access/trunk mode. Add them from the
 VM's **Components** tab. A **Type** distinguishes what it is: a regular
 **Virtual** NIC (the default), or a **Tunnel** (WireGuard, GRE, VXLAN, tun),
 **Bridge**, or **Loopback** - tunnels and loopbacks carry no MAC or speed, so
-the form drops those fields for them.
+the form drops those fields for them. Interfaces can also **nest**: pick a
+**Parent interface** (same VM, loops refused) and `wg0` rides under `eth0` -
+the table indents children beneath their parent.
 
 IP addresses attach to an interface exactly as on a device. From the VM's
 **Components** tab:

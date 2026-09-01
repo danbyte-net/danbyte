@@ -5029,7 +5029,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
 
 
 class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
-    queryset = VMInterface.objects.all().order_by(NATURAL_NAME)
+    queryset = VMInterface.objects.select_related("parent").order_by(
+        NATURAL_NAME
+    )
     serializer_class = VMInterfaceSerializer
     pagination_class = StandardPagination
     # Tenant is reached through the VM (VMInterface has no direct tenant FK).

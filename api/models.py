@@ -4001,6 +4001,13 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     kind = models.CharField(
         max_length=16, blank=True, default="", choices=KIND_CHOICES,
     )
+    # Nesting: the interface this one rides on - wg0 over eth0, eth0.100
+    # under eth0, a bridge member under br0. Same-VM only; the serializer
+    # refuses self/cycles. SET_NULL: deleting eth0 must not take wg0's row.
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="children",
+    )
     #: Virtualization sync must not record this NIC's guest-reported IPs
     #: (e.g. a Docker bridge that asserts a new address per container).
     sync_ignore_ips = models.BooleanField(default=False)

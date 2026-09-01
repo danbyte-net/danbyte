@@ -254,3 +254,64 @@ class VmInterfaceKindTests(APITestCase):
             "vm_id": str(vm.id), "name": "x0", "kind": "quantum",
         }, format="json")
         self.assertEqual(r.status_code, 400)
+
+
+class VmInterfaceParentTests(APITestCase):
+    """Nesting: wg0 rides on eth0. Same-VM only, and never a loop."""
+
+    def setUp(self):
+        from api.models import Cluster, ClusterType, VirtualMachine
+
+        org = Organization.objects.create(name="O7", slug="o7")
+        self.tenant = Tenant.objects.create(org=org, name="T7", slug="t7")
+        admin = User.objects.create_superuser("vmp", "p@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        ct = ClusterType.objects.create(tenant=self.tenant, name="K", slug="k")
+        cl = Cluster.objects.create(tenant=self.tenant, name="c", type=ct)
+        self.vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="gw", cluster=cl
+        )
+        self.other_vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="other", cluster=cl
+        )
+
+    def _mk(self, name, **extra):
+        r = self.client.post(
+            "/api/vm-interfaces/",
+            {"vm_id": str(self.vm.id), "name": name, **extra},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        return r.json()
+
+    def test_parent_roundtrips_and_stays_in_the_vm(self):
+        eth0 = self._mk("eth0")
+        wg0 = self._mk("wg0", kind="tunnel", parent_id=eth0["id"])
+        self.assertEqual(wg0["parent"], {"id": eth0["id"], "name": "eth0"})
+        # an interface on another VM is refused as parent
+        r = self.client.post("/api/vm-interfaces/", {
+            "vm_id": str(self.other_vm.id), "name": "eth9",
+        }, format="json")
+        foreign = r.json()["id"]
+        r = self.client.post("/api/vm-interfaces/", {
+            "vm_id": str(self.vm.id), "name": "bad0", "parent_id": foreign,
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_loops_are_refused(self):
+        eth0 = self._mk("eth0")
+        wg0 = self._mk("wg0", parent_id=eth0["id"])
+        r = self.client.patch(
+            f"/api/vm-interfaces/{eth0['id']}/",
+            {"parent_id": wg0["id"]}, format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        # self-parent refused too
+        r = self.client.patch(
+            f"/api/vm-interfaces/{eth0['id']}/",
+            {"parent_id": eth0["id"]}, format="json",
+        )
+        self.assertEqual(r.status_code, 400)

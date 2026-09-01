@@ -4201,6 +4201,43 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
     mode_display = serializers.CharField(source="get_mode_display", read_only=True)
+    parent = serializers.SerializerMethodField()
+    parent_id = TenantScopedPrimaryKeyRelatedField(
+        source="parent", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_parent(self, obj):
+        return (
+            {"id": str(obj.parent_id), "name": obj.parent.name}
+            if obj.parent_id
+            else None
+        )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Nesting stays inside one VM and never loops: wg0 over eth0 is the
+        # point; eth0 over wg0 over eth0 is a render-breaking cycle.
+        parent = attrs.get("parent", getattr(self.instance, "parent", None))
+        if parent is not None:
+            vm = attrs.get("vm", getattr(self.instance, "vm", None))
+            if vm is not None and parent.vm_id != vm.id:
+                raise serializers.ValidationError(
+                    {"parent_id": "Parent must be an interface on the same VM."}
+                )
+            if self.instance is not None:
+                seen = {self.instance.pk}
+                node = parent
+                while node is not None:
+                    if node.pk in seen:
+                        raise serializers.ValidationError(
+                            {"parent_id": "That would create a loop."}
+                        )
+                    seen.add(node.pk)
+                    node = node.parent
+        return attrs
+
     tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
     tagged_vlan_ids = TenantScopedPrimaryKeyRelatedField(
         source="tagged_vlans", queryset=VLAN.objects.all(),
@@ -4227,7 +4264,8 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = VMInterface
-        fields = ["id", "vm", "vm_id", "name", "enabled", "kind", "mac_address",
+        fields = ["id", "vm", "vm_id", "name", "enabled", "kind",
+                  "parent", "parent_id", "mac_address",
                   "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",
                   "vlan", "vlan_id", "mode", "mode_display",

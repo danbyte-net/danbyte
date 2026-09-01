@@ -90,7 +90,31 @@ export function VMInterfacesPane({
     queryFn: () =>
       api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
   })
-  const rows = q.data?.results ?? []
+  // Children render under their parent (wg0 under eth0), indented - the
+  // list reads as the VM's real interface tree. Orphans (parent filtered or
+  // deleted) fall back to the top level.
+  const rows = useMemo(() => {
+    const all = q.data?.results ?? []
+    const byParent = new Map<string, VMInterface[]>()
+    const ids = new Set(all.map((r) => r.id))
+    const roots: VMInterface[] = []
+    for (const r of all) {
+      if (r.parent && ids.has(r.parent.id)) {
+        const list = byParent.get(r.parent.id) ?? []
+        list.push(r)
+        byParent.set(r.parent.id, list)
+      } else {
+        roots.push(r)
+      }
+    }
+    const out: VMInterface[] = []
+    const walk = (r: VMInterface) => {
+      out.push(r)
+      for (const c of byParent.get(r.id) ?? []) walk(c)
+    }
+    roots.forEach(walk)
+    return out
+  }, [q.data])
 
   // Interfaces the hypervisor doesn't report. Raised as drift rather than
   // deleted - a NIC you added is yours, and might be one you're about to
@@ -147,6 +171,9 @@ export function VMInterfacesPane({
         ),
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-2">
+            {row.original.parent && (
+              <span className="pl-3 text-muted-foreground">└</span>
+            )}
             <span className="font-mono font-medium">{row.original.name}</span>
             {fieldDrift[row.original.name] && (
               <Tooltip>
@@ -503,6 +530,9 @@ function VMInterfaceForm({
 
   const [name, setName] = useState(iface?.name ?? "")
   const [kind, setKind] = useState(iface?.kind ?? "")
+  const [parentId, setParentId] = useState<string | null>(
+    iface?.parent?.id ?? null
+  )
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [ignoreIps, setIgnoreIps] = useState(iface?.sync_ignore_ips ?? false)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
@@ -516,6 +546,12 @@ function VMInterfaceForm({
   )
   const [vrfId, setVrfId] = useState<string | null>(iface?.vrf?.id ?? null)
 
+  const siblings = useQuery({
+    queryKey: ["vm-interfaces", vmId],
+    queryFn: () =>
+      api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
+    staleTime: 30_000,
+  })
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
     queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
@@ -533,6 +569,7 @@ function VMInterfaceForm({
         vm_id: vmId,
         name: name.trim(),
         kind,
+        parent_id: parentId,
         enabled,
         sync_ignore_ips: ignoreIps,
         // A tunnel/loopback has no meaningful MAC or link speed (#140).
@@ -581,6 +618,16 @@ function VMInterfaceForm({
         error={fieldErrors.name}
       />
       <div className="grid grid-cols-2 gap-3">
+        <FormSelect
+          label="Parent interface"
+          value={parentId}
+          onChange={setParentId}
+          noneLabel="None"
+          options={(siblings.data?.results ?? [])
+            .filter((row) => row.id !== iface?.id)
+            .map((row) => ({ value: row.id, label: row.name }))}
+          error={fieldErrors.parent_id}
+        />
         <FormSelect
           label="Type"
           value={kind || null}

@@ -3569,6 +3569,8 @@ export interface VMInterface {
   /** "" = regular virtual NIC; bridge / loopback / tunnel are software
    * constructs with no meaningful MAC or link speed (#140). */
   kind: "" | "bridge" | "loopback" | "tunnel"
+  /** The interface this one rides on (wg0 over eth0); same-VM, no loops. */
+  parent: { id: string; name: string } | null
   enabled: boolean
   /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
   sync_ignore_ips: boolean
@@ -3592,6 +3594,7 @@ export interface VMInterfaceWritePayload {
   vm_id: string
   name: string
   kind?: string
+  parent_id?: string | null
   enabled?: boolean
   sync_ignore_ips?: boolean
   mac_address?: string
