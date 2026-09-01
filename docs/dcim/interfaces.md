@@ -134,7 +134,8 @@ On the device's **Interfaces** tab, each row shows the name, type, enabled state
 speed, VLAN, cable count, any **IP addresses** attached to it, and the
 description. Sub-interfaces are indented under their parent, and the **LAG**
 column ties a bundle together: members show their aggregate, the aggregate
-shows how many links it bundles - see
+shows how many links it bundles. An aggregate is an interface of **type LAG**
+with its own Bundle settings (protocol, LACP mode, min links) - see
 [Virtual & aggregate interfaces](virtual-interfaces.md).
 
 ## Attaching IP addresses

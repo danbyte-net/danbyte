@@ -21,7 +21,8 @@ class VirtualInterfaceTests(APITestCase):
         self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
         self.dev = Device.objects.create(tenant=self.tenant, name="fw1")
         self.other = Device.objects.create(tenant=self.tenant, name="fw2")
-        self.ae = Interface.objects.create(device=self.dev, name="ae1")
+        # The aggregate is typed "lag" - membership now requires it.
+        self.ae = Interface.objects.create(device=self.dev, name="ae1", type="lag")
         self.user = get_user_model().objects.create_superuser("admin", "a@b.c", "pw")
         self.client.force_login(self.user)
         sess = self.client.session

@@ -2065,7 +2065,7 @@ def device_snmp_drift_view(request, device_id):
 
 # Drift kinds we summarise per device on the fleet list (in compute order).
 _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
-                "interface_stale", "part_status", "part_missing")
+                "interface_stale", "part_status", "part_missing", "lag_membership")
 
 # Drift kinds that name an Interface row Danbyte ALREADY has - the only ones a
 # per-interface marker can attach to (``?interfaces=1``).
@@ -2076,7 +2076,9 @@ _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
 # observed on. ``switch_link_suggested`` is excluded deliberately: it proposes
 # where an *IP* sits, so its interface is the suggested destination rather than a
 # record that disagrees with reality.
-_INTERFACE_DRIFT_KINDS = ("interface_mismatch", "interface_stale", "ip_missing")
+_INTERFACE_DRIFT_KINDS = (
+    "interface_mismatch", "interface_stale", "ip_missing", "lag_membership",
+)
 
 
 @extend_schema(

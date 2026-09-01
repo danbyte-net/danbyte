@@ -97,6 +97,16 @@ and the core cannot drift on what a PTR lookup means. Explicit nameservers need
 `dnspython`; with no resolvers configured it uses the standard library and adds
 no dependency to the agent.
 
+## LAG membership from an Outpost {#lag-membership}
+
+Interface rows in an SNMP result may carry `lag_if_index` - the ifIndex of the
+aggregate the port belongs to, `""` when it is not a member - and an aggregate
+row reports `type_name: "lag"`. Like `ptr`, the core decides on **whether the
+key is there**: an agent that looked must send `lag_if_index` on every row
+(blank included); one that never looked sends no such key, and its devices
+simply show no membership drift. Additive - no protocol bump; re-sync
+`danbyte_checks` into the agent to pick it up.
+
 ## Transports - which way traffic flows
 
 Sites differ in what their firewall allows, so an Outpost's **transport** is set

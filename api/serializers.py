@@ -2550,6 +2550,9 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     lag = serializers.SerializerMethodField()
     bridge = serializers.SerializerMethodField()
     lag_member_count = serializers.SerializerMethodField()
+    lag_protocol_display = serializers.CharField(
+        source="get_lag_protocol_display", read_only=True
+    )
     # Lenient (CharField, not the model's ChoiceField) so legacy/custom values
     # round-trip; the UI offers the standard dropdown via dcim_choices.
     type = serializers.CharField(required=False, allow_blank=True)
@@ -2621,7 +2624,13 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_lag(self, obj):
-        return self._mini(obj.lag)
+        # The bundle's protocol rides along so a member's page can say
+        # "Member of Po1 · LACP active" without a second request.
+        d = self._mini(obj.lag)
+        if d:
+            d["lag_protocol"] = obj.lag.lag_protocol
+            d["lacp_mode"] = obj.lag.lacp_mode
+        return d
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_bridge(self, obj):
@@ -2698,6 +2707,49 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                     )
                 seen.add(node.pk)
                 node = node.parent
+
+        # Bundles: the aggregate is an interface of type "lag"; members point
+        # at it. Only a membership being SET is checked against the target's
+        # type, so a legacy member (aggregate typed as physical media) still
+        # saves on an unrelated edit - re-picking the LAG is what asks for the
+        # fix.
+        eff_type = attrs.get("type", getattr(self.instance, "type", "") or "")
+        lag_rel = attrs.get("lag", getattr(self.instance, "lag", None))
+        if attrs.get("lag") is not None and attrs["lag"].type != "lag":
+            raise serializers.ValidationError(
+                {"lag_id": "LAG must be an interface of type LAG (Link "
+                           "Aggregation Group). Set that interface's type first."}
+            )
+        if eff_type == "lag" and lag_rel is not None:
+            raise serializers.ValidationError(
+                {"lag_id": "An aggregate can't be a member of another LAG."}
+            )
+        if (
+            self.instance is not None
+            and self.instance.type == "lag"
+            and eff_type != "lag"
+            and self.instance.lag_members.exists()
+        ):
+            raise serializers.ValidationError(
+                {"type": "This interface has LAG members. Remove them before "
+                         "changing its type."}
+            )
+        if eff_type != "lag":
+            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links"):
+                if attrs.get(f):
+                    raise serializers.ValidationError(
+                        {f: "Only an interface of type LAG has bundle settings."}
+                    )
+        if attrs.get("lag_min_links") == 0:
+            raise serializers.ValidationError(
+                {"lag_min_links": "Min links must be at least 1."}
+            )
+        protocol = attrs.get(
+            "lag_protocol", getattr(self.instance, "lag_protocol", "") or ""
+        )
+        if protocol != "lacp":
+            attrs["lacp_mode"] = ""
+            attrs["lacp_rate"] = ""
         return attrs
 
     class Meta:
@@ -2716,6 +2768,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                   "ip_addresses", "tunnel_terminations",
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
+                  "lag_protocol", "lag_protocol_display", "lacp_mode", "lacp_rate",
+                  "lag_min_links",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "tunnel_terminations", "created_at", "updated_at"]
 

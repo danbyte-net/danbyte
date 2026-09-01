@@ -5,14 +5,23 @@ import { useQuery } from "@tanstack/react-query"
 import {
   Bookmark,
   Cable as CableIcon,
+  Layers,
   Pencil,
   Trash2,
   TriangleAlert,
   Workflow,
 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
-import { api, type Interface, type SnmpDriftItem } from "@/lib/api"
+import {
+  api,
+  type Interface,
+  type InterfaceLagSummary,
+  type SnmpDriftItem,
+} from "@/lib/api"
+import { DataTable } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { buildInterfaceColumns } from "@/components/columns/interface-columns"
 import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -69,8 +78,15 @@ function InterfaceDetail() {
 
 function Body({ iface: i }: { iface: Interface }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "ips" | "trace" | "journal" | "history"
+    "overview" | "ips" | "members" | "trace" | "journal" | "history"
   >("overview")
+  const isLag = i.type === "lag"
+  // The bundle summary (members, capacity, peers) - aggregates only.
+  const lag = useQuery({
+    queryKey: ["interface-lag", i.id],
+    queryFn: () => api<InterfaceLagSummary>(`/api/interfaces/${i.id}/lag/`),
+    enabled: isLag,
+  })
   const nav = useNavigate()
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<Interface | null>(null)
@@ -162,7 +178,25 @@ function Body({ iface: i }: { iface: Interface }) {
               ) : (
                 <Badge variant="secondary">Disabled</Badge>
               )}
-              {i.virtual && <Badge variant="secondary">Virtual</Badge>}
+              {isLag ? (
+                <Badge variant="secondary" className="gap-1">
+                  <Layers className="h-3 w-3" /> Aggregate
+                </Badge>
+              ) : (
+                i.virtual && <Badge variant="secondary">Virtual</Badge>
+              )}
+              {i.lag && (
+                <Link to="/interfaces/$id" params={{ id: i.lag.id }}>
+                  <Badge variant="secondary" className="gap-1 hover:bg-muted">
+                    <Layers className="h-3 w-3" />
+                    Member of {i.lag.name}
+                    {lacpLabel(i.lag) ? ` · ${lacpLabel(i.lag)}` : ""}
+                    {i.lag.device.id !== i.device.id
+                      ? ` · on ${i.lag.device.name}`
+                      : ""}
+                  </Badge>
+                </Link>
+              )}
               {!i.cable && i.mark_connected && <UndocumentedBadge />}
               {!i.cable && !i.mark_connected && i.reservation && (
                 <ReservedBadge reservation={i.reservation} />
@@ -220,6 +254,9 @@ function Body({ iface: i }: { iface: Interface }) {
           label: "IP addresses",
           count: i.ip_addresses.length,
         },
+        ...(isLag
+          ? [{ value: "members", label: "Members", count: lag.data?.count }]
+          : []),
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -228,8 +265,17 @@ function Body({ iface: i }: { iface: Interface }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <InterfaceOverview iface={i} />
+        <InterfaceOverview
+          iface={i}
+          lag={isLag ? lag.data : undefined}
+          onMembers={() => setTab("members")}
+        />
       </DetailTab>
+      {isLag && (
+        <DetailTab value="members">
+          <LagMembers iface={i} summary={lag.data} loading={lag.isLoading} />
+        </DetailTab>
+      )}
       <DetailTab value="ips">
         <div className="mb-3 flex items-center justify-end gap-1.5">
           {canAddIp && (
@@ -332,7 +378,16 @@ function Body({ iface: i }: { iface: Interface }) {
 /** The interface's attributes, grouped into labelled tables - the detail that
  * used to crowd the page header. Only headline data (name, state, device,
  * type) stays up top; everything else reads here. */
-function InterfaceOverview({ iface: i }: { iface: Interface }) {
+function InterfaceOverview({
+  iface: i,
+  lag,
+  onMembers,
+}: {
+  iface: Interface
+  /** The bundle summary - set for aggregates once loaded. */
+  lag?: InterfaceLagSummary
+  onMembers: () => void
+}) {
   const attributes: KvRow[] = [
     {
       label: "Enabled",
@@ -534,15 +589,100 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
       label: "Sub-interfaces",
       value: <span className="num">{i.child_count}</span>,
     },
-    ...(i.lag_member_count > 0
-      ? [
-          {
-            label: "LAG members",
-            value: <span className="num">{i.lag_member_count}</span>,
-          } satisfies KvRow,
-        ]
-      : []),
   ]
+
+  // The bundle at a glance. Peers are where the members' cables land: one
+  // aggregate on one device is the plain case; two is MLAG/vPC and reads as
+  // information, never a fault.
+  const bundle: KvRow[] | null =
+    i.type === "lag"
+      ? [
+          { label: "Protocol", value: i.lag_protocol_display || "Static" },
+          ...(i.lag_protocol === "lacp"
+            ? [
+                { label: "LACP mode", value: i.lacp_mode || dash },
+                { label: "LACP rate", value: i.lacp_rate || dash },
+              ]
+            : []),
+          {
+            label: "Min links",
+            value: i.lag_min_links != null ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="num">{i.lag_min_links}</span>
+                {lag?.degraded && (
+                  <Badge variant="warning">below min links</Badge>
+                )}
+              </span>
+            ) : (
+              dash
+            ),
+          },
+          {
+            label: "Members",
+            value: (
+              <button
+                type="button"
+                onClick={onMembers}
+                className="link num text-left"
+              >
+                {lag ? lag.count : i.lag_member_count}
+              </button>
+            ),
+          },
+          {
+            label: "Capacity",
+            value: lag?.capacity ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="num">{lag.capacity}</span>
+                {lag.unparsed_speeds > 0 && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {lag.unparsed_speeds} without a speed
+                  </span>
+                )}
+              </span>
+            ) : (
+              dash
+            ),
+          },
+          {
+            label: lag && lag.peers.length > 1 ? "Peer aggregates" : "Peer aggregate",
+            value: lag && lag.peers.length > 0 ? (
+              <span className="flex flex-col gap-0.5">
+                {lag.peers.map((p) => (
+                  <Link
+                    key={p.id}
+                    to="/interfaces/$id"
+                    params={{ id: p.id }}
+                    className="link font-mono text-[13px]"
+                  >
+                    {p.device.name}: {p.name}
+                    <span className="pl-1 text-muted-foreground">
+                      · {p.members} {p.members === 1 ? "link" : "links"}
+                    </span>
+                  </Link>
+                ))}
+                {lag.mixed_peers && (
+                  <span className="text-[11px] text-muted-foreground">
+                    Ends on {lag.peers.length} devices - only valid for an
+                    MLAG / vPC pair
+                  </span>
+                )}
+                {lag.unpaired.length > 0 && (
+                  <span className="text-[11px] text-muted-foreground">
+                    No peer aggregate: {lag.unpaired.join(", ")}
+                  </span>
+                )}
+              </span>
+            ) : lag && lag.unpaired.length > 0 ? (
+              <span className="text-[11px] text-muted-foreground">
+                No peer aggregate: {lag.unpaired.join(", ")}
+              </span>
+            ) : (
+              dash
+            ),
+          },
+        ]
+      : null
 
   return (
     <div className="space-y-6">
@@ -550,6 +690,7 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <KvCard title="Interface" rows={attributes} />
+          {bundle && <KvCard title="Bundle" rows={bundle} />}
           <KvCard title="Switching" rows={switching} />
           <KvCard title="Relationships" rows={relationships} />
           {i.ip_addresses.length > 0 && (
@@ -641,4 +782,51 @@ function InterfaceDriftAlert({
       </ul>
     </div>
   )
+}
+
+/** "LACP active" / "LACP" / "PAgP" for a member's chip; "" for static. */
+function lacpLabel(lag: NonNullable<Interface["lag"]>): string {
+  if (lag.lag_protocol === "lacp")
+    return lag.lacp_mode ? `LACP ${lag.lacp_mode}` : "LACP"
+  if (lag.lag_protocol === "pagp") return "PAgP"
+  return ""
+}
+
+/** The aggregate's members as the shared interface table. A Device column
+ * appears only when the members span stack members. */
+function LagMembers({
+  iface,
+  summary,
+  loading,
+}: {
+  iface: Interface
+  summary?: InterfaceLagSummary
+  loading: boolean
+}) {
+  const rows = summary?.results ?? []
+  const spansDevices = rows.some((r) => r.device.id !== iface.device.id)
+  const columns = useMemo(
+    () =>
+      buildInterfaceColumns<Interface>({
+        include: [
+          ...(spansDevices ? (["device"] as const) : []),
+          "name",
+          "type",
+          "status",
+          "enabled",
+          "speed",
+          "cables",
+        ],
+      }),
+    [spansDevices]
+  )
+  if (loading)
+    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (rows.length === 0)
+    return (
+      <EmptyState title="No members yet">
+        Set a port's LAG / aggregate field to {iface.name} to add it.
+      </EmptyState>
+    )
+  return <DataTable data={rows} columns={columns} embedded />
 }

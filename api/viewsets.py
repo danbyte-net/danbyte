@@ -594,6 +594,11 @@ class ComponentBulkMixin(FieldWriteAllowList):
             raise ValidationError({"ids": "At most 1000 ids per call."})
         return ids
 
+    def normalize_bulk_updates(self, updates: dict) -> dict:
+        """Hook for model-level invariants that ``Model.save()`` would enforce
+        but a queryset ``update()`` skips. Default: unchanged."""
+        return updates
+
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         ids = self._bulk_ids(request)
@@ -655,6 +660,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
         qs = self.get_queryset().filter(pk__in=ids)
         with transaction.atomic():
             _rows = list(qs)
+            updates = self.normalize_bulk_updates(updates)
             updated = qs.update(**updates) if updates else qs.count()
             if updates:
                 log_bulk_update(_rows, updates)
@@ -3783,11 +3789,24 @@ class NameRangeCreateMixin:
 class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
 
-    bulk_str_fields = ("type", "mode", "speed", "duplex", "description")
+    bulk_str_fields = (
+        "type", "mode", "speed", "duplex", "description",
+        "lag_protocol", "lacp_mode", "lacp_rate",
+    )
     bulk_bool_fields = ("enabled", "mgmt_only", "mark_connected")
-    bulk_int_fields = ("mtu",)
+    bulk_int_fields = ("mtu", "lag_min_links")
     bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
     bulk_name_scope_field = "device_id"
+
+    def normalize_bulk_updates(self, updates):
+        # Mirrors Interface.save(): aggregates are virtual, and LACP knobs
+        # only mean something under LACP.
+        if updates.get("type") == "lag":
+            updates["virtual"] = True
+        if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":
+            updates["lacp_mode"] = ""
+            updates["lacp_rate"] = ""
+        return updates
     bulk_tags = True
 
     queryset = (
@@ -3833,6 +3852,14 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             vc_id = self.request.query_params.get("virtual_chassis")
             if vc_id:
                 qs = qs.filter(device__virtual_chassis_id=vc_id)
+            # `type=lag` feeds the LAG picker (aggregates only); `lag=<id>`
+            # lists a bundle's members.
+            itype = self.request.query_params.get("type")
+            if itype:
+                qs = qs.filter(type=itype)
+            lag_id = self.request.query_params.get("lag")
+            if lag_id:
+                qs = qs.filter(lag_id=lag_id)
         return restrict_for_view(self, qs)
 
     def _check(self, serializer):
@@ -3882,6 +3909,68 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "results": IPAddressSerializer(
                 qs, many=True, context={"request": request}
             ).data,
+        })
+
+    @action(detail=True, methods=["get"], url_path="lag")
+    def lag(self, request, pk=None):
+        """A bundle at a glance: the aggregate's members as full interface
+        rows, plus what only makes sense across them - capacity, the far-end
+        aggregate(s) the members land on, and the min-links verdict. A
+        non-aggregate answers the same shape with no members."""
+        from .speed import fmt_speed, speed_mbps
+
+        iface = self.get_object()
+        members = list(self.get_queryset().filter(lag=iface))
+        rows = InterfaceSerializer(
+            members, many=True, context=self.get_serializer_context()
+        ).data
+        parsed = [v for v in (speed_mbps(m.speed) for m in members) if v]
+        capacity = sum(parsed) if parsed else None
+
+        # Direct cables only: a member landing on a patch panel or left
+        # uncabled counts as unpaired - the trace answers the panel case.
+        own = {
+            t.interface_id: t
+            for t in CableTermination.objects.filter(
+                interface__in=members
+            ).select_related("cable")
+        }
+        far: dict = {}
+        if own:
+            for t in (
+                CableTermination.objects.filter(cable__in=[t.cable for t in own.values()])
+                .exclude(pk__in=[t.pk for t in own.values()])
+                .select_related("interface__lag__device")
+            ):
+                far[t.cable_id] = t.interface
+        peers: dict[str, dict] = {}
+        unpaired: list[str] = []
+        for m in members:
+            t = own.get(m.id)
+            end = far.get(t.cable_id) if t else None
+            if end is None or end.lag_id is None:
+                unpaired.append(m.name)
+                continue
+            p = peers.setdefault(str(end.lag_id), {
+                "id": str(end.lag_id),
+                "name": end.lag.name,
+                "device": {"id": str(end.lag.device_id), "name": end.lag.device.name},
+                "members": 0,
+            })
+            p["members"] += 1
+        return Response({
+            "count": len(members),
+            "results": rows,
+            "capacity_mbps": capacity,
+            "capacity": fmt_speed(capacity) if capacity else "",
+            "unparsed_speeds": len(members) - len(parsed),
+            "min_links": iface.lag_min_links,
+            "degraded": (
+                iface.lag_min_links is not None and len(members) < iface.lag_min_links
+            ),
+            "peers": sorted(peers.values(), key=lambda p: (p["device"]["name"], p["name"])),
+            "unpaired": unpaired,
+            "mixed_peers": len(peers) > 1,
         })
 
     @action(detail=False, methods=["post"], url_path="bulk-create")

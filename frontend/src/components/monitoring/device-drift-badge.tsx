@@ -22,6 +22,7 @@ const COMPONENT_KINDS = new Set([
   "ip_missing",
   "part_status",
   "part_missing",
+  "lag_membership",
 ])
 
 /**
@@ -85,6 +86,7 @@ const KIND_LABEL: Record<string, string> = {
   ip_missing: "IP not recorded on this port",
   part_status: "hardware status",
   part_missing: "unknown part",
+  lag_membership: "LAG membership",
 }
 
 /**

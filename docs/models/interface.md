@@ -138,7 +138,31 @@ The interface a sub-interface nests under.
 
 ### LAG / aggregate
 
-The aggregate interface this port is a member of.
+The aggregate interface this port is a member of. The target must be an
+interface of **type LAG** on the same device or virtual chassis; an aggregate
+can't itself be a member. Changing an aggregate's type away from LAG is
+refused while it has members.
+
+## Bundle
+
+Set on the aggregate (type LAG) only - "Only an interface of type LAG has
+bundle settings." Picking type LAG marks the interface virtual.
+
+### Protocol
+
+`lag_protocol`: blank = static aggregate (no negotiation), `lacp` (802.3ad),
+`pagp`. The port-channel / ae / bond is the logical link; this is the protocol
+negotiating it.
+
+### LACP mode / LACP rate
+
+`lacp_mode` (`active` / `passive`) and `lacp_rate` (`slow` 30 s / `fast` 1 s).
+Only kept under LACP - any other protocol clears them on save.
+
+### Min links
+
+`lag_min_links`: members that must be up for the bundle to count as up
+(at least 1). The detail page flags the bundle when it has fewer members.
 
 ### Bridge
 
@@ -159,4 +183,12 @@ The agent can never report this port - it is skipped by drift comparison.
 
 `cable` (the terminating cable and its status), `ip_addresses`,
 `tunnel_terminations` (VPN ends on this port), `child_count`,
-`lag_member_count`.
+`lag_member_count`, `lag_protocol_display`. A member's `lag` relation carries
+the aggregate's `lag_protocol` and `lacp_mode`.
+
+`GET /api/interfaces/<id>/lag/` returns an aggregate's members as full rows
+plus `capacity` (sum of parseable member speeds), `unparsed_speeds`,
+`min_links` / `degraded`, `peers` (the far-end aggregates its members' direct
+cables land on, with a member count each), `unpaired` (members whose far end
+is uncabled, on a panel, or in no bundle) and `mixed_peers` (more than one
+peer - an MLAG / vPC pair). The list accepts `?type=lag` and `?lag=<id>`.

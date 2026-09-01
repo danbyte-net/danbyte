@@ -19,7 +19,7 @@ imports, operator muscle memory, and external tooling carry over 1:1.
 
 | Group | Examples |
 |---|---|
-| Virtual | `virtual`, `bridge`, `lag` |
+| Virtual | `virtual`, `bridge`, `lag` (the aggregate; carries the bundle settings and is what the LAG picker offers) |
 | Fast Ethernet (100M) | `100base-tx`, `100base-t1`, `100base-fx` |
 | Gigabit Ethernet (1G) | `1000base-t`, `1000base-sx`, `1000base-lx`, `1000base-zx`, BiDi |
 | 2.5 / 5 Gigabit Ethernet | `2.5gbase-t`, `5gbase-t` |

@@ -31,6 +31,9 @@ Element.prototype.hasPointerCapture = () => false
 const NO_CHOICES: DcimChoices = {
   interface_duplex: [],
   interface_modes: [],
+  lag_protocols: [],
+  lacp_modes: [],
+  lacp_rates: [],
   poe_modes: [],
   poe_types: [],
   interface_types: [],

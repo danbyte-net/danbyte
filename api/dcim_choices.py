@@ -641,6 +641,15 @@ def dcim_choices_view(request):
         "interface_modes": flat(
             apps.get_model("api", "Interface")._meta.get_field("mode").flatchoices
         ),
+        "lag_protocols": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lag_protocol").flatchoices
+        ),
+        "lacp_modes": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lacp_mode").flatchoices
+        ),
+        "lacp_rates": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lacp_rate").flatchoices
+        ),
         "feed_legs": flat(
             apps.get_model("api", "PowerOutlet")._meta.get_field("feed_leg").flatchoices
         ),

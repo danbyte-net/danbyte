@@ -1927,6 +1927,9 @@ export interface DcimChoice {
 export interface DcimChoices {
   interface_duplex: DcimChoice[]
   interface_modes: DcimChoice[]
+  lag_protocols: DcimChoice[]
+  lacp_modes: DcimChoice[]
+  lacp_rates: DcimChoice[]
   poe_modes: DcimChoice[]
   poe_types: DcimChoice[]
   interface_types: DcimChoice[]
@@ -1976,7 +1979,40 @@ export interface RelatedInterface {
   id: string
   name: string
   device: { id: string; name: string }
+  /** Set on a `lag` relation: the bundle's protocol, so a member can say
+   * "Member of Po1 · LACP active" without another request. */
+  lag_protocol?: LagProtocol
+  lacp_mode?: LacpMode
 }
+
+/** `GET /api/interfaces/{id}/lag/` - an aggregate's members plus what only
+ * makes sense across them. A non-aggregate answers with no members. */
+export interface InterfaceLagSummary {
+  count: number
+  results: Interface[]
+  /** Sum of the members' parseable speeds. */
+  capacity_mbps: number | null
+  capacity: string
+  unparsed_speeds: number
+  min_links: number | null
+  /** Fewer members than min links. */
+  degraded: boolean
+  /** Far-end aggregates the members' direct cables land on. */
+  peers: {
+    id: string
+    name: string
+    device: { id: string; name: string }
+    members: number
+  }[]
+  /** Members whose far end is uncabled, a panel, or in no bundle. */
+  unpaired: string[]
+  /** More than one peer - an MLAG / vPC pair, informational. */
+  mixed_peers: boolean
+}
+
+export type LagProtocol = "" | "lacp" | "pagp"
+export type LacpMode = "" | "active" | "passive"
+export type LacpRate = "" | "slow" | "fast"
 
 export interface Interface {
   id: string
@@ -2044,6 +2080,13 @@ export interface Interface {
   lag_member_count: number
   /** The bridge interface this one belongs to, if any. */
   bridge: RelatedInterface | null
+  /** Bundle settings - meaningful when `type === "lag"`. Blank protocol =
+   * static aggregate; LACP mode/rate only under LACP. */
+  lag_protocol: LagProtocol
+  lag_protocol_display: string
+  lacp_mode: LacpMode
+  lacp_rate: LacpRate
+  lag_min_links: number | null
   created_at: string
   updated_at: string
 }
@@ -2079,6 +2122,10 @@ export interface InterfaceWritePayload {
   parent_id?: string | null
   lag_id?: string | null
   bridge_id?: string | null
+  lag_protocol?: LagProtocol
+  lacp_mode?: LacpMode
+  lacp_rate?: LacpRate
+  lag_min_links?: number | null
 }
 
 // ─── Patch-panel ports ──────────────────────────────────────────────────────
@@ -5175,7 +5222,9 @@ export type SnmpDriftItem =
       kind: "interface_missing"
       name: string
       if_index: string
-      observed: { mac: string; admin_status: string }
+      /** `type_name` "lag" = the device reports an aggregate; accepting
+       * creates it typed LAG. */
+      observed: { mac: string; admin_status: string; type_name?: string }
     }
   | {
       kind: "interface_mismatch"
@@ -5222,6 +5271,17 @@ export type SnmpDriftItem =
       name: string
       intended: string
       observed: string
+    }
+  | {
+      /** Bundle membership: the aggregate the port reports itself under
+       * ("-" = none) versus its `lag` here. `lag_interface_id` is the
+       * matching aggregate in Danbyte - null until it is accepted. */
+      kind: "lag_membership"
+      interface_id: string
+      name: string
+      intended: string
+      observed: string
+      lag_interface_id: string | null
     }
 
 export interface SnmpNeighbor {

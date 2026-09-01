@@ -2870,12 +2870,41 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="The bridge interface this one belongs to. Same device or "
                   "virtual chassis.",
     )
+    # Bundle settings - meaningful on the aggregate (type "lag") only. The
+    # port-channel / ae / bond IS the logical link; LACP (or PAgP, or nothing
+    # for a static "on" bundle) is the protocol negotiating it, so the
+    # protocol lives here and members just point `lag` at this row.
+    LAG_PROTOCOL_CHOICES = [("lacp", "LACP (802.3ad)"), ("pagp", "PAgP")]
+    LACP_MODE_CHOICES = [("active", "Active"), ("passive", "Passive")]
+    LACP_RATE_CHOICES = [("slow", "Slow (30 s)"), ("fast", "Fast (1 s)")]
+    lag_protocol = models.CharField(
+        max_length=8, blank=True, default="", choices=LAG_PROTOCOL_CHOICES,
+        help_text="Bundling protocol. Blank = static aggregate (no negotiation).",
+    )
+    lacp_mode = models.CharField(
+        max_length=8, blank=True, default="", choices=LACP_MODE_CHOICES,
+    )
+    lacp_rate = models.CharField(
+        max_length=8, blank=True, default="", choices=LACP_RATE_CHOICES,
+    )
+    lag_min_links = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Members that must be up for the bundle to count as up.",
+    )
 
     class Meta:
         unique_together = ("device", "name")
         ordering = ["name"]
 
     def save(self, *args, **kwargs):
+        # An aggregate has no physical port, and LACP knobs mean nothing
+        # without LACP. Normalised here (not only in the serializer) so bulk
+        # edits, imports and shell writes land in the same shape.
+        if self.type == "lag":
+            self.virtual = True
+        if self.lag_protocol != "lacp":
+            self.lacp_mode = ""
+            self.lacp_rate = ""
         super().save(*args, **kwargs)
         # Combo/shared port: only one connector in a group is live at a time.
         # Enabling one disables its siblings on the same device. A queryset

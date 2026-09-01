@@ -35,6 +35,11 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { QuickAddDialog } from "@/components/forms/quick-add"
+
+type LagProtocol = Interface["lag_protocol"]
+type LacpMode = Interface["lacp_mode"]
+type LacpRate = Interface["lacp_rate"]
 
 export interface InterfaceFormProps {
   iface?: Interface
@@ -110,6 +115,16 @@ export function InterfaceForm({
   const [bridgeId, setBridgeId] = useState<string | null>(
     iface?.bridge?.id ?? null
   )
+  // Bundle settings - only an aggregate (type "lag") carries them.
+  const [lagProtocol, setLagProtocol] = useState<LagProtocol>(
+    iface?.lag_protocol ?? ""
+  )
+  const [lacpMode, setLacpMode] = useState<LacpMode>(iface?.lacp_mode ?? "")
+  const [lacpRate, setLacpRate] = useState<LacpRate>(iface?.lacp_rate ?? "")
+  const [lagMinLinks, setLagMinLinks] = useState(
+    iface?.lag_min_links != null ? String(iface.lag_min_links) : ""
+  )
+  const isLag = type === "lag"
   const [tagIds, setTagIds] = useState<number[]>(
     iface?.tags.map((t) => t.id) ?? []
   )
@@ -145,9 +160,31 @@ export function InterfaceForm({
     setParentId(iface.parent?.id ?? null)
     setLagId(iface.lag?.id ?? null)
     setBridgeId(iface.bridge?.id ?? null)
+    setLagProtocol(iface.lag_protocol)
+    setLacpMode(iface.lacp_mode)
+    setLacpRate(iface.lacp_rate)
+    setLagMinLinks(
+      iface.lag_min_links != null ? String(iface.lag_min_links) : ""
+    )
     setTagIds(iface.tags.map((t) => t.id))
     reset()
   }, [iface, reset])
+
+  // Picking the LAG type makes this an aggregate: it is virtual and cannot be
+  // a member itself. Leaving the type drops the bundle settings, which only
+  // an aggregate has.
+  const pickType = (v: string) => {
+    setType(v)
+    if (v === "lag") {
+      setVirtual(true)
+      setLagId(null)
+    } else if (type === "lag") {
+      setLagProtocol("")
+      setLacpMode("")
+      setLacpRate("")
+      setLagMinLinks("")
+    }
+  }
 
   // The device's own site floats its VLANs to the top of both pickers
   // (#136) - shared/other-site VLANs stay reachable below, never hidden.
@@ -187,7 +224,7 @@ export function InterfaceForm({
   const parents = useQuery({
     queryKey: ["interfaces-picker", deviceId, vcId],
     queryFn: () =>
-      api<Paginated<Pick<Interface, "id" | "name" | "device">>>(
+      api<Paginated<Pick<Interface, "id" | "name" | "device" | "type">>>(
         vcId
           ? `/api/interfaces/?virtual_chassis=${vcId}&page_size=1000`
           : `/api/interfaces/?device=${deviceId}`
@@ -231,10 +268,14 @@ export function InterfaceForm({
         tagged_vlan_ids: mode === "tagged" ? taggedVlanIds : [],
         vrf_id: vrfId,
         tag_ids: tagIds,
-        virtual,
+        virtual: isLag || virtual,
         parent_id: parentId,
-        lag_id: lagId,
+        lag_id: isLag ? null : lagId,
         bridge_id: bridgeId,
+        lag_protocol: isLag ? lagProtocol : "",
+        lacp_mode: isLag && lagProtocol === "lacp" ? lacpMode : "",
+        lacp_rate: isLag && lagProtocol === "lacp" ? lacpRate : "",
+        lag_min_links: isLag && lagMinLinks.trim() ? Number(lagMinLinks) : null,
       }
       if (isEdit)
         return saveObject<Interface>({
@@ -323,6 +364,17 @@ export function InterfaceForm({
   const noIfaceText = vcId
     ? "No other interfaces on this stack."
     : "No other interfaces on this device."
+  // The LAG picker offers aggregates only - the bundle a port can join is an
+  // interface of type "lag" on this device or another member of its stack.
+  const lagOptions = (parents.data?.results ?? [])
+    .filter((p) => p.id !== iface?.id && p.type === "lag")
+    .map((p) => ({
+      value: p.id,
+      label: p.device.id === deviceId ? p.name : `${p.device.name}: ${p.name}`,
+    }))
+  const noLagText = vcId
+    ? "No aggregates on this stack yet."
+    : "No aggregates on this device yet."
 
   // A legacy/custom media type still round-trips: surface it at the top of
   // the dropdown instead of silently blanking the field.
@@ -349,7 +401,10 @@ export function InterfaceForm({
               hint={isEdit ? "fixed" : undefined}
               error={fieldErrors.device_id}
             />
-            <div className="grid grid-cols-2 gap-3">
+            {/* Type labels run long ("Link Aggregation Group (LAG)"); the
+                type column takes the larger share so the name field gives
+                way instead of the trigger spilling past the card. */}
+            <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3">
               <FormText
                 label="Name"
                 required
@@ -380,7 +435,7 @@ export function InterfaceForm({
               <FormCombobox
                 label="Type"
                 value={type || null}
-                onChange={(v) => setType(v ?? "")}
+                onChange={(v) => pickType(v ?? "")}
                 noneLabel="No type"
                 placeholder="Pick a type"
                 searchPlaceholder="Search types…"
@@ -620,11 +675,57 @@ export function InterfaceForm({
             />
           </FormSection>
 
+          {isLag && (
+            <FormSection title="Bundle" card>
+              <FormCombobox
+                label="Protocol"
+                value={lagProtocol || null}
+                onChange={(v) => setLagProtocol((v ?? "") as LagProtocol)}
+                noneLabel="Static (no protocol)"
+                placeholder="Static (no protocol)"
+                searchPlaceholder="Search…"
+                emptyText="No protocols."
+                options={choices.lag_protocols}
+                error={fieldErrors.lag_protocol}
+              />
+              {lagProtocol === "lacp" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <FormSelect
+                    label="LACP mode"
+                    value={lacpMode || null}
+                    onChange={(v) => setLacpMode((v ?? "") as LacpMode)}
+                    noneLabel="Not set"
+                    options={choices.lacp_modes}
+                    error={fieldErrors.lacp_mode}
+                  />
+                  <FormSelect
+                    label="LACP rate"
+                    value={lacpRate || null}
+                    onChange={(v) => setLacpRate((v ?? "") as LacpRate)}
+                    noneLabel="Not set"
+                    options={choices.lacp_rates}
+                    error={fieldErrors.lacp_rate}
+                  />
+                </div>
+              )}
+              <FormText
+                label="Min links"
+                value={lagMinLinks}
+                onChange={setLagMinLinks}
+                placeholder="e.g. 2"
+                info="Members that must be up for the bundle to count as up."
+                error={fieldErrors.lag_min_links}
+              />
+            </FormSection>
+          )}
+
           <FormSection title="Nesting" card>
             <FormCheckbox
               label="Virtual interface"
               checked={virtual}
               onChange={setVirtual}
+              disabled={isLag}
+              hint={isLag ? "Aggregates are always virtual." : undefined}
             />
             <FormCombobox
               label="Parent interface"
@@ -639,20 +740,48 @@ export function InterfaceForm({
               options={ifaceOptions}
               error={fieldErrors.parent_id}
             />
-            <div className="grid grid-cols-2 gap-3">
-              <FormCombobox
-                label="LAG / aggregate"
-                value={lagId}
-                onChange={setLagId}
-                noneLabel="Not a LAG member"
-                placeholder={
-                  deviceId ? "Not a LAG member" : "Pick a device first"
-                }
-                searchPlaceholder="Search interfaces…"
-                emptyText={noIfaceText}
-                options={ifaceOptions}
-                error={fieldErrors.lag_id}
-              />
+            <div className={isLag ? "" : "grid grid-cols-2 gap-3"}>
+              {!isLag && (
+                <FormCombobox
+                  label="LAG / aggregate"
+                  value={lagId}
+                  onChange={setLagId}
+                  noneLabel="Not a LAG member"
+                  placeholder={
+                    deviceId ? "Not a LAG member" : "Pick a device first"
+                  }
+                  searchPlaceholder="Search aggregates…"
+                  emptyText={noLagText}
+                  options={lagOptions}
+                  error={fieldErrors.lag_id}
+                  quickAdd={
+                    deviceId ? (
+                      <QuickAddDialog
+                        title="New aggregate"
+                        endpoint="/api/interfaces/"
+                        fixed={{ device_id: deviceId, type: "lag" }}
+                        fields={[
+                          {
+                            name: "name",
+                            label: "Name",
+                            required: true,
+                            placeholder: "Po1 / ae1 / bond0",
+                          },
+                        ]}
+                        onCreated={(c) => {
+                          void qc.invalidateQueries({
+                            queryKey: ["interfaces-picker", deviceId, vcId],
+                          })
+                          void qc.invalidateQueries({
+                            queryKey: ["device-interfaces", deviceId],
+                          })
+                          setLagId(c.id)
+                        }}
+                      />
+                    ) : undefined
+                  }
+                />
+              )}
               <FormCombobox
                 label="Bridge"
                 value={bridgeId}

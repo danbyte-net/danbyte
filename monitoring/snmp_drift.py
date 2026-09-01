@@ -16,6 +16,7 @@ import ipaddress as ipmod
 from django.db import IntegrityError
 
 from api.models import Interface, IPAddress, MACAddress, Prefix, VLAN
+from api.speed import fmt_speed, speed_mbps
 from api.vrf_placement import ANY_VRF, containing_prefix
 
 from .models import DeviceSnmp, MonitoringSettings
@@ -49,18 +50,9 @@ def _suggested_prefix(ip: str) -> str:
     return str(ipmod.ip_network(f"{ip}/{plen}", strict=False))
 
 
-def _fmt_speed(mbps) -> str:
-    """SNMP ifHighSpeed (Mbps) → a human string for Interface.speed, matching the
-    observed card ("10 Gbps" / "100 Mbps"). Blank when unknown."""
-    try:
-        n = int(mbps)
-    except (ValueError, TypeError):
-        return ""
-    if n <= 0:
-        return ""
-    if n >= 1000 and n % 1000 == 0:
-        return f"{n // 1000} Gbps"
-    return f"{n} Mbps"
+# Speed parsing/formatting is shared with the API (bundle capacity) - kept
+# under the old names here so the call sites and tests read unchanged.
+_fmt_speed = fmt_speed
 
 
 #: A port learning more distinct MACs than this is treated as an uplink/trunk
@@ -154,24 +146,55 @@ def _norm(value) -> str:
     return (value or "").strip().lower()
 
 
-def _speed_mbps(value) -> int | None:
-    """Parse a human speed string to Mbps, or None when it isn't one.
+# Observed ifType name → the Danbyte interface type a discovered row is created
+# with. Only the aggregate is mapped: it must be typed "lag" to take members.
+_OBSERVED_TYPE = {"lag": "lag"}
 
-    Interface.speed is free text and legitimately arrives in several shapes -
-    the form suggests "1G"/"25G", sync writes "1 Gbps", operators type
-    "100 Mbps". Comparing the strings would flag "1G" against "1 Gbps" as
-    drift forever, so speeds are compared as numbers or not at all.
-    """
-    m = re.fullmatch(
-        r"\s*(\d+(?:\.\d+)?)\s*(g|gbps|gbit/?s?|m|mbps|mbit/?s?)\s*",
-        str(value or ""), re.IGNORECASE,
-    )
-    if not m:
-        return None
-    n = float(m.group(1))
-    if m.group(2).lower().startswith("g"):
-        n *= 1000
-    return int(n)
+
+def _lag_membership_items(device, observed: list[dict], int_by_name: dict) -> list[dict]:
+    """Bundle membership drift: the aggregate each port reports itself under
+    versus the `lag` it has in Danbyte. Compared by aggregate NAME - on a
+    stack the aggregate lives on the master while the member port sits on
+    another member device, so ids can't be compared. Rows without the
+    ``lag_if_index`` key come from an agent that never looked and say
+    nothing."""
+    by_ifindex = {str(o.get("if_index") or ""): o for o in observed}
+    items: list[dict] = []
+    for o in observed:
+        if "lag_if_index" not in o:
+            continue
+        existing = _match_observed(o, int_by_name)
+        if existing is None or existing.snmp_ignore:
+            continue
+        agg_o = by_ifindex.get(str(o.get("lag_if_index") or "")) if o.get("lag_if_index") else None
+        observed_name = str((agg_o or {}).get("name") or "")
+        intended_name = existing.lag.name if existing.lag_id else ""
+        if _norm(observed_name) == _norm(intended_name):
+            continue
+        if agg_o is not None and intended_name and _norm(agg_o.get("descr")) == _norm(intended_name):
+            continue
+        agg_iface = None
+        if agg_o is not None:
+            agg_iface = _match_observed(agg_o, int_by_name)
+            if agg_iface is None and device.virtual_chassis_id:
+                agg_iface = (
+                    Interface.objects.filter(
+                        device__virtual_chassis_id=device.virtual_chassis_id,
+                        name__iexact=observed_name,
+                    )
+                    .exclude(device=device)
+                    .first()
+                )
+        items.append({
+            "kind": "lag_membership", "interface_id": str(existing.id),
+            "name": existing.name,
+            "intended": intended_name or "-", "observed": observed_name or "-",
+            "lag_interface_id": str(agg_iface.id) if agg_iface else None,
+        })
+    return items
+
+
+_speed_mbps = speed_mbps
 
 
 def _part_drift(device, tenant, state) -> list[dict]:
@@ -393,6 +416,7 @@ def compute_device_drift(
                     "observed": {
                         "mac": o.get("mac", ""),
                         "admin_status": o.get("admin_status", ""),
+                        "type_name": o.get("type_name", ""),
                     },
                 })
             continue
@@ -463,6 +487,9 @@ def compute_device_drift(
                 "has_prefix": has_pfx,
                 "suggested_prefix": "" if has_pfx else _suggested_prefix(ip),
             })
+
+    # 2c. Bundle membership: which aggregate each port belongs to.
+    items.extend(_lag_membership_items(device, observed, int_by_name))
 
     # 3. Stale: Danbyte has it, the device doesn't report it. Report only -
     #    discovery never deletes from the SoT.
@@ -625,6 +652,7 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
             iface = Interface.objects.create(
                 device=device,
                 name=action.get("name", "")[:64],
+                type=_OBSERVED_TYPE.get(str(observed.get("type_name") or ""), ""),
                 mac_address=(observed.get("mac") or "")[:17],
                 enabled=(
                     observed.get("admin_status") != "down"
@@ -723,6 +751,42 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
         row.save(update_fields=["switch", "switch_interface", "updated_at"])
         return True
 
+    if kind == "lag_membership":
+        iface = Interface.objects.filter(
+            pk=action.get("interface_id"), device=device
+        ).first()
+        if iface is None:
+            return False
+        if (action.get("observed") or "-") == "-":
+            iface.lag = None
+            iface.save(update_fields=["lag"])
+            return True
+        agg = (
+            Interface.objects.filter(
+                pk=action.get("lag_interface_id"), device__tenant=tenant
+            )
+            .select_related("device")
+            .first()
+        )
+        if agg is None or agg.pk == iface.pk:
+            return False
+        same_stack = agg.device_id == device.id or (
+            device.virtual_chassis_id is not None
+            and agg.device.virtual_chassis_id == device.virtual_chassis_id
+        )
+        if not same_stack:
+            return False
+        # An aggregate created before types were enforced is promoted; one the
+        # operator typed as physical media is theirs to fix.
+        if agg.type in ("", "virtual"):
+            agg.type = "lag"
+            agg.save(update_fields=["type", "virtual"])
+        elif agg.type != "lag":
+            return False
+        iface.lag = agg
+        iface.save(update_fields=["lag"])
+        return True
+
     return False
 
 
@@ -731,7 +795,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
     fix MAC/admin-status drift on the ones it has, and assign observed IPs (when
     a containing prefix exists). Leaves the device name alone. Returns a summary.
     """
-    summary = {"interfaces_created": 0, "interfaces_updated": 0,
+    summary = {"interfaces_created": 0, "interfaces_updated": 0, "lag_memberships": 0,
                "ips_assigned": 0, "ips_skipped": 0, "vlans_assigned": 0,
                "switch_links": 0}
     state = DeviceSnmp.objects.filter(device=device, tenant=tenant).first()
@@ -797,6 +861,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
                         else None
                     ),
                     speed=speed, vlan=vlan,
+                    type=_OBSERVED_TYPE.get(str(o.get("type_name") or ""), ""),
                 )
             except IntegrityError:
                 iface = Interface.objects.filter(device=device, name=name[:64]).first()
@@ -848,12 +913,15 @@ def sync_device_from_snmp(device, tenant) -> dict:
                 # as settled rather than attaching it twice.
                 ip_rows[ip] = IPAddress.objects.get(tenant=tenant, ip_address=ip)
 
-    # Accept all switch-link suggestions (IP ↔ this switch's port).
+    # Relationship-shaped drift, applied after the interface pass so a just-
+    # created aggregate is there to join: switch links (IP ↔ this switch's
+    # port) and bundle membership.
     for item in compute_device_drift(device, tenant, state=state):
-        if item.get("kind") == "switch_link_suggested" and apply_drift_action(
-            device, tenant, item
-        ):
+        kind = item.get("kind")
+        if kind == "switch_link_suggested" and apply_drift_action(device, tenant, item):
             summary["switch_links"] += 1
+        elif kind == "lag_membership" and apply_drift_action(device, tenant, item):
+            summary["lag_memberships"] += 1
     return summary
 
 
