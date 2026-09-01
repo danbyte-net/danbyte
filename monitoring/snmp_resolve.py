@@ -120,3 +120,37 @@ def resolve_vm_profile(vm, tenant):
     if default is not None:
         return default, "tenant_default"
     return None, None
+
+
+def resolve_snmp_vrf(device, tenant):
+    """The default VRF for SNMP-discovered addresses on ``device`` - most
+    specific binding first (device → role → type → site), then the tenant
+    default. ``None`` = no policy (caller keeps its any-VRF tie-break)."""
+    from api.models import VRF
+
+    from .models import MonitoringSettings, SnmpVrfBinding
+
+    lookups = [
+        (SnmpVrfBinding.SCOPE_DEVICE, device.pk),
+        (SnmpVrfBinding.SCOPE_ROLE, device.role_id),
+        (SnmpVrfBinding.SCOPE_TYPE, device.device_type_id),
+        (SnmpVrfBinding.SCOPE_SITE, device.site_id),
+    ]
+    for scope, oid in lookups:
+        if not oid:
+            continue
+        b = (
+            SnmpVrfBinding.objects.filter(
+                tenant=tenant, scope=scope, object_id=oid
+            )
+            .select_related("vrf")
+            .first()
+        )
+        if b is not None:
+            return b.vrf
+    vrf_id = (
+        MonitoringSettings.objects.filter(tenant=tenant)
+        .values_list("snmp_default_vrf_id", flat=True)
+        .first()
+    )
+    return VRF.objects.filter(pk=vrf_id).first() if vrf_id else None

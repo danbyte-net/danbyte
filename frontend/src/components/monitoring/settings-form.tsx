@@ -2,10 +2,16 @@ import { useEffect, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type MonitoringSettings, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  MonitoringSettings,
+  Paginated,
+  VRFOption,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormText } from "@/components/forms/text"
+import { FormSelect } from "@/components/forms/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import {
@@ -44,6 +50,11 @@ export function MonitoringSettingsForm() {
     queryKey: ["monitoring-settings"],
     queryFn: () => api<MonitoringSettings>("/api/monitoring/settings/"),
   })
+  const vrfsQ = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    staleTime: 5 * 60_000,
+  })
   const statusesQ = useQuery({
     queryKey: ["statuses-all"],
     queryFn: () => api<Paginated<IpStatus>>("/api/statuses/"),
@@ -71,6 +82,8 @@ export function MonitoringSettingsForm() {
 
   if (!draft)
     return <p className="text-sm text-muted-foreground">Loading settings…</p>
+
+  const vrfOptions = vrfsQ.data?.results ?? []
 
   const set = <K extends keyof MonitoringSettings>(
     k: K,
@@ -111,6 +124,7 @@ export function MonitoringSettingsForm() {
           snmp_update_only: draft.snmp_update_only,
           snmp_skip_unrouted_vlans: draft.snmp_skip_unrouted_vlans,
           snmp_mac_from_fdb: draft.snmp_mac_from_fdb,
+          snmp_default_vrf_id: draft.snmp_default_vrf?.id ?? null,
           dns_sync_enabled: draft.dns_sync_enabled,
           dns_clear_on_missing: draft.dns_clear_on_missing,
           dns_preserve_if_alive: draft.dns_preserve_if_alive,
@@ -263,6 +277,25 @@ export function MonitoringSettingsForm() {
               </span>
             </span>
           </label>
+          <FormSelect
+            label="Default VRF for discovered IPs"
+            hint="When neither the interface nor a binding names one"
+            value={draft.snmp_default_vrf?.id ?? null}
+            onChange={(v: string | null) =>
+              set(
+                "snmp_default_vrf",
+                v
+                  ? {
+                      id: v,
+                      name:
+                        vrfOptions.find((o) => o.id === v)?.name ?? "",
+                    }
+                  : null
+              )
+            }
+            noneLabel="None"
+            options={vrfOptions.map((o) => ({ value: o.id, label: o.name }))}
+          />
           <label className="flex items-start gap-2">
             <Checkbox
               checked={draft.snmp_mac_from_fdb}

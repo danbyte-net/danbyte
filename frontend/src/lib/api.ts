@@ -4174,6 +4174,8 @@ export interface MonitoringSettings {
   snmp_update_only: boolean
   snmp_skip_unrouted_vlans: boolean
   snmp_mac_from_fdb: boolean
+  snmp_default_vrf: { id: string; name: string } | null
+  snmp_default_vrf_id?: string | null
   /** Devices whose merged ARP tables feed switch-link suggestions. */
   arp_source_devices?: string[]
   arp_source_devices_detail?: { id: string; name: string }[]

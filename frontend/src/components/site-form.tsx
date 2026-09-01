@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
+import { SnmpVrfControl } from "@/components/snmp-vrf-control"
 import {
   Command,
   CommandEmpty,
@@ -420,6 +421,16 @@ export function SiteForm({
                   SNMP credentials
                 </span>
                 <SnmpBindingControl
+                  scope="site"
+                  objectId={site.id}
+                  canEdit={canDo("site", "change")}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[11px] tracking-[0.08em] text-zinc-500 uppercase">
+                  Discovered-IP VRF
+                </span>
+                <SnmpVrfControl
                   scope="site"
                   objectId={site.id}
                   canEdit={canDo("site", "change")}

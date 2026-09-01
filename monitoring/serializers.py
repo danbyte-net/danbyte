@@ -13,7 +13,7 @@ from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
-from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix
+from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix, VRF
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
@@ -800,6 +800,18 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
     arp_source_devices = TenantScopedPrimaryKeyRelatedField(
         queryset=Device.objects.all(), required=False, many=True
     )
+    snmp_default_vrf = serializers.SerializerMethodField()
+    snmp_default_vrf_id = serializers.PrimaryKeyRelatedField(
+        source="snmp_default_vrf", write_only=True, required=False,
+        allow_null=True, queryset=VRF.objects.all(),
+    )
+
+    def get_snmp_default_vrf(self, obj):
+        return (
+            {"id": str(obj.snmp_default_vrf_id), "name": obj.snmp_default_vrf.name}
+            if obj.snmp_default_vrf_id
+            else None
+        )
     arp_source_devices_detail = serializers.SerializerMethodField()
 
     def validate_dns_resolvers(self, value):
@@ -842,6 +854,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "snmp_import_not_present",
             "snmp_update_only", "snmp_skip_unrouted_vlans",
             "snmp_mac_from_fdb",
+            "snmp_default_vrf", "snmp_default_vrf_id",
             "dns_sync_enabled", "dns_clear_on_missing", "dns_preserve_if_alive",
             "dns_resolvers",
             "renotify_enabled", "renotify_interval_minutes",

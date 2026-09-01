@@ -695,6 +695,12 @@ class MonitoringSettings(TimestampedModel):
         "on the port (the attached device) instead of the port's own hardware "
         "MAC. Ports with several learned MACs are left alone.",
     )
+    snmp_default_vrf = models.ForeignKey(
+        "api.VRF", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+        help_text="VRF that SNMP-discovered addresses land in when neither "
+        "the interface nor a device/role/type/site binding names one.",
+    )
 
     dns_sync_enabled = models.BooleanField(
         default=False,
@@ -1964,6 +1970,50 @@ class SnmpProfileBinding(TimestampedModel):
     def __str__(self) -> str:
         return f"{self.scope}:{self.object_id} → {self.profile_id}"
 
+
+
+class SnmpVrfBinding(TimestampedModel):
+    """The default VRF SNMP-discovered addresses land in, at one level of the
+    device hierarchy. Resolution is most-specific first: **device → device
+    role → device type → site → tenant default** (the tenant default lives on
+    :class:`MonitoringSettings`). Only consulted when the interface itself
+    carries no VRF - an explicit interface VRF always wins.
+
+    Same api-by-object_id shape as :class:`SnmpProfileBinding`, for the same
+    reason: ``api`` never imports ``monitoring``.
+    """
+
+    SCOPE_DEVICE = "device"
+    SCOPE_ROLE = "device_role"
+    SCOPE_TYPE = "device_type"
+    SCOPE_SITE = "site"
+    SCOPE_CHOICES = [
+        (SCOPE_DEVICE, "Device"),
+        (SCOPE_ROLE, "Device role"),
+        (SCOPE_TYPE, "Device type"),
+        (SCOPE_SITE, "Site"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="snmp_vrf_bindings"
+    )
+    scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
+    object_id = models.UUIDField()
+    vrf = models.ForeignKey(
+        "api.VRF", on_delete=models.CASCADE, related_name="snmp_vrf_bindings"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "object_id"],
+                name="uniq_snmpvrfbinding_scope_object",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.scope}:{self.object_id} → {self.vrf_id}"
 
 class SnmpInterfaceSample(TimestampedModel):
     """A point-in-time read of an interface's HC octet counters, for computing

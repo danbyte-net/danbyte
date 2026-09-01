@@ -625,3 +625,11 @@ off by default) shape how SNMP meets your source of truth:
 Port access-VLANs resolve against your existing VLANs by VLAN ID - ungrouped
 first, then grouped (virt-sync groups excluded) - before a new ungrouped VLAN
 is minted.
+
+**Where discovered IPs land (VRF):** an interface's own VRF always wins. When
+it has none, a **default VRF** resolves most-specific first - device → device
+role → device type → site → the tenant default in Monitoring settings. Bind it
+where it fits: the *Discovered-IP VRF* select on the device's SNMP card, the
+device type's Monitoring card, or the site form's Monitoring section. With a
+policy bound, only prefixes in that VRF are candidates - no containing prefix
+there means the address is skipped rather than dropped into the wrong table.

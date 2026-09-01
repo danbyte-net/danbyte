@@ -1210,3 +1210,90 @@ class SnmpSourcePolicyTests(APITestCase):
             for i in compute_device_drift(self.device, self.tenant)
         ]
         self.assertNotIn("mac_address", fields)
+
+
+class SnmpVrfBindingTests(APITestCase):
+    """Default VRF for SNMP-discovered addresses: device → role → type →
+    site → tenant default; the interface's own VRF always wins."""
+
+    def setUp(self):
+        from django.utils import timezone as tz
+
+        from api.models import VRF, DeviceRole, Prefix, Site
+        from core.models import Organization, Tenant
+        from monitoring.models import MonitoringSettings
+
+        org = Organization.objects.create(name="Ov", slug="ov")
+        self.tenant = Tenant.objects.create(org=org, name="Tv", slug="tv")
+        self.site = Site.objects.create(tenant=self.tenant, name="Sv")
+        self.role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Rv", slug="rv"
+        )
+        self.device = Device.objects.create(
+            tenant=self.tenant, name="sw-v", site=self.site, role=self.role
+        )
+        self.vrf_site = VRF.objects.create(tenant=self.tenant, name="site-vrf")
+        self.vrf_dev = VRF.objects.create(tenant=self.tenant, name="dev-vrf")
+        # A containing prefix in each VRF for 10.9.9.0/24.
+        self.p_site = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.9.9.0/24", vrf=self.vrf_site
+        )
+        self.p_dev = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.9.9.0/24", vrf=self.vrf_dev
+        )
+        self.state = DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.device, polled_at=tz.now(),
+            interfaces=[{
+                "if_index": "1", "name": "Gi1/0/1", "admin_status": "up",
+                "ip_addresses": ["10.9.9.5"],
+            }],
+        )
+        self.ms = MonitoringSettings.for_tenant(self.tenant)
+        self.admin = User.objects.create_superuser("vrb", "v@x", "x")
+
+    def test_resolution_order_and_attach(self):
+        from api.models import IPAddress
+        from monitoring.models import SnmpVrfBinding
+        from monitoring.snmp_drift import sync_device_from_snmp
+        from monitoring.snmp_resolve import resolve_snmp_vrf
+
+        # Site binding → site VRF.
+        SnmpVrfBinding.objects.create(
+            tenant=self.tenant, scope="site", object_id=self.site.id,
+            vrf=self.vrf_site,
+        )
+        self.assertEqual(
+            resolve_snmp_vrf(self.device, self.tenant), self.vrf_site
+        )
+        # A device binding is more specific and wins.
+        SnmpVrfBinding.objects.create(
+            tenant=self.tenant, scope="device", object_id=self.device.id,
+            vrf=self.vrf_dev,
+        )
+        self.assertEqual(
+            resolve_snmp_vrf(self.device, self.tenant), self.vrf_dev
+        )
+        # The discovered IP lands in the bound VRF's prefix.
+        sync_device_from_snmp(self.device, self.tenant)
+        ip = IPAddress.objects.get(tenant=self.tenant, ip_address="10.9.9.5")
+        self.assertEqual(ip.prefix_id, self.p_dev.id)
+
+    def test_binding_endpoint_roundtrip(self):
+        self.client.force_login(self.admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        r = self.client.put(
+            f"/api/monitoring/snmp-vrf-binding/site/{self.site.id}/",
+            {"vrf_id": str(self.vrf_site.id)}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["vrf_name"], "site-vrf")
+        r = self.client.get(
+            f"/api/monitoring/snmp-vrf-binding/device/{self.device.id}/"
+        )
+        self.assertEqual(r.json()["effective"]["name"], "site-vrf")
+        r = self.client.delete(
+            f"/api/monitoring/snmp-vrf-binding/site/{self.site.id}/"
+        )
+        self.assertIsNone(r.json()["vrf_id"])

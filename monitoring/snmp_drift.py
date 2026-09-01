@@ -917,8 +917,15 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
         existing.save(update_fields=["assigned_interface", "assigned_device"])
         return "assigned"
     # Scope the prefix search to the interface's VRF when it has one, so the IP
-    # lands in the right routing context.
-    vrf = iface.vrf if iface.vrf_id else _ANY_VRF
+    # lands in the right routing context. Without one, the tenant's default
+    # SNMP VRF policy (device → role → type → site → tenant) narrows the
+    # search; no policy keeps the any-VRF tie-break.
+    if iface.vrf_id:
+        vrf = iface.vrf
+    else:
+        from .snmp_resolve import resolve_snmp_vrf
+
+        vrf = resolve_snmp_vrf(iface.device, tenant) or _ANY_VRF
     prefix = _containing_prefix(tenant, ip, vrf)
     if prefix is None:
         return "skipped"

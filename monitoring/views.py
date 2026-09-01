@@ -2985,3 +2985,88 @@ def snmp_profile_options_view(request):
         ]
     })
 
+@extend_schema(
+    summary="Get / set / clear the default SNMP VRF at one hierarchy level",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The VRF binding at this scope.",
+    ),
+)
+@api_view(["GET", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+def snmp_vrf_binding_view(request, scope, object_id):
+    """The default VRF SNMP-discovered addresses land in, bound at one level
+    (device / device_role / device_type / site). ``PUT {vrf_id}`` sets it
+    (null clears); ``DELETE`` clears. Same access vocabulary as the profile
+    binding: the scope's own grant, or a device grant."""
+    from api.models import VRF
+
+    from .models import SnmpVrfBinding
+    from .snmp_resolve import resolve_snmp_vrf
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    if scope not in dict(SnmpVrfBinding.SCOPE_CHOICES):
+        return Response({"detail": "Invalid scope."}, status=400)
+    action = "change" if request.method in ("PUT", "DELETE") else "view"
+    slugs = {
+        SnmpVrfBinding.SCOPE_SITE: ("site", "device"),
+        SnmpVrfBinding.SCOPE_ROLE: ("devicerole", "device"),
+        SnmpVrfBinding.SCOPE_TYPE: ("devicetype", "device"),
+    }.get(scope, ("device",))
+    if not any(
+        rbac.has_action(request.user, tenant, slug, action) for slug in slugs
+    ):
+        return Response(
+            {"detail": f"You do not have permission to {action} {slugs[0]}s."},
+            status=403,
+        )
+
+    def _payload():
+        b = (
+            SnmpVrfBinding.objects.filter(
+                tenant=tenant, scope=scope, object_id=object_id
+            )
+            .select_related("vrf")
+            .first()
+        )
+        out = {
+            "scope": scope,
+            "object_id": str(object_id),
+            "vrf_id": str(b.vrf_id) if b else None,
+            "vrf_name": b.vrf.name if b else None,
+            "effective": None,
+        }
+        if scope == SnmpVrfBinding.SCOPE_DEVICE:
+            device = Device.objects.filter(pk=object_id, tenant=tenant).first()
+            if device is not None:
+                eff = resolve_snmp_vrf(device, tenant)
+                if eff is not None:
+                    out["effective"] = {"id": str(eff.id), "name": eff.name}
+        return out
+
+    if request.method == "PUT":
+        vid = request.data.get("vrf_id")
+        if vid:
+            vrf = VRF.objects.filter(pk=vid, tenant=tenant).first()
+            if vrf is None:
+                return Response({"detail": "VRF not found."}, status=400)
+            SnmpVrfBinding.objects.update_or_create(
+                tenant=tenant, scope=scope, object_id=object_id,
+                defaults={"vrf": vrf},
+            )
+        else:
+            SnmpVrfBinding.objects.filter(
+                tenant=tenant, scope=scope, object_id=object_id
+            ).delete()
+        return Response(_payload())
+    if request.method == "DELETE":
+        SnmpVrfBinding.objects.filter(
+            tenant=tenant, scope=scope, object_id=object_id
+        ).delete()
+        return Response(_payload())
+    return Response(_payload())
+

@@ -26,6 +26,7 @@ import {
   DetailTab,
 } from "@/components/detail-shell"
 import { ObjectDocuments } from "@/components/object-documents"
+import { SnmpVrfControl } from "@/components/snmp-vrf-control"
 import {
   LocalityBadge,
   PromoteToGlobalButton,
@@ -345,6 +346,16 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
           objectId={d.id}
           canEdit={canDo("devicetype", "change")}
           inline
+        />
+      ),
+    },
+    {
+      label: "Discovered-IP VRF",
+      value: (
+        <SnmpVrfControl
+          scope="device_type"
+          objectId={d.id}
+          canEdit={canDo("devicetype", "change")}
         />
       ),
     },

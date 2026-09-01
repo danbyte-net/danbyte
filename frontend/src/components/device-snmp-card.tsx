@@ -18,6 +18,7 @@ import {
   SnmpBindingControl,
   SnmpBindingHint,
 } from "@/components/snmp-binding-control"
+import { SnmpVrfControl } from "@/components/snmp-vrf-control"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -251,6 +252,11 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
               objectId={deviceId}
               canEdit={canPoll}
               inline
+            />
+            <SnmpVrfControl
+              scope="device"
+              objectId={deviceId}
+              canEdit={canPoll}
             />
             {canPoll && (
               <Button
