@@ -3806,6 +3806,10 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":
             updates["lacp_mode"] = ""
             updates["lacp_rate"] = ""
+        if "speed" in updates:
+            from .speed import normalize_speed
+
+            updates["speed"] = normalize_speed(updates["speed"] or "")
         return updates
     bulk_tags = True
 

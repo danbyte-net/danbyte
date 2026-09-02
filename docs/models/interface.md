@@ -96,7 +96,8 @@ topology treats it as an infrastructure link.
 
 ### Speed
 
-Free-text speed label (`10G`); the type's capability is used when unset.
+Free-text speed label (`10G`); the type's capability is used when unset. A
+bare integer is taken as **kbps** and normalised on save (`1000000` → `1G`).
 
 ### MTU
 

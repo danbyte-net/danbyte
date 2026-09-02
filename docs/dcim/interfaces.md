@@ -72,7 +72,12 @@ taxonomy, and when to pick a fixed-media slug vs a transceiver slug:
 ### Speed
 
 Speed is a free-text field with a **dropdown of common values** (`10M` … `800G`)
-so you can pick quickly or type your own.
+so you can pick quickly or type your own. A **bare number is read as kbps** -
+the convention scrapers and other DCIM tools use for a numeric speed - and is
+rewritten on save to the dropdown's form: `1000000` becomes `1G`, `25000000`
+`25G`, `100000` `100M`, an odd value like `1234000` `1.234G`. Rows already
+stored that way are rewritten once by migration `api.0154`. Anything with a
+unit (`10G`, `1 Gbps`) is kept exactly as typed.
 
 ## Add many interfaces at once
 

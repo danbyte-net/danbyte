@@ -19,6 +19,7 @@ from .dcim_choices import (
     POWER_PORT_TYPE_CHOICES,
     RF_CONNECTOR_CHOICES,
 )
+from .speed import normalize_speed
 from core.models import (
     CustomFieldsMixin,
     Organization,
@@ -2905,6 +2906,8 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         if self.lag_protocol != "lacp":
             self.lacp_mode = ""
             self.lacp_rate = ""
+        # A bare kbps number (what a switch scraper sends) reads as "1G".
+        self.speed = normalize_speed(self.speed)
         super().save(*args, **kwargs)
         # Combo/shared port: only one connector in a group is live at a time.
         # Enabling one disables its siblings on the same device. A queryset
@@ -4105,6 +4108,10 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # Virtual NICs have a real link speed: a VMXNET3 negotiates 10G where an
     # emulated E1000 caps at 1G. Free-form like the physical Interface.speed.
     speed = models.CharField(max_length=64, blank=True, default="")
+
+    def save(self, *args, **kwargs):
+        self.speed = normalize_speed(self.speed)
+        super().save(*args, **kwargs)
     #: Created by a hypervisor sync, mirroring VirtualDisk.created_disk. Without
     #: it the sync cannot tell its own rows from the operator's, so it could
     #: never remove a stale NIC without risking one somebody added by hand.

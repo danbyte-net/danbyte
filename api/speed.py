@@ -15,8 +15,15 @@ _SPEED_RE = re.compile(
 
 
 def speed_mbps(value) -> int | None:
-    """Parse a human speed string to Mbps, or None when it isn't one."""
-    m = _SPEED_RE.fullmatch(str(value or ""))
+    """Parse a human speed string to Mbps, or None when it isn't one.
+
+    A bare integer is **kbps** - the convention switch scrapers and other
+    IPAM/DCIM tools use for a numeric speed field (``1000000`` = 1 Gbps).
+    """
+    text = str(value or "").strip()
+    if text.isdigit():
+        return int(text) // 1000
+    m = _SPEED_RE.fullmatch(text)
     if not m:
         return None
     n = float(m.group(1))
@@ -36,3 +43,21 @@ def fmt_speed(mbps) -> str:
     if n >= 1000 and n % 1000 == 0:
         return f"{n // 1000} Gbps"
     return f"{n} Mbps"
+
+
+def normalize_speed(value: str) -> str:
+    """Rewrite a bare-kbps speed ("1000000") to the dropdown's human form
+    ("1G"); anything else is left exactly as typed. Called on save so the
+    API, the form, bulk edit and imports all land in one shape.
+    """
+    text = (value or "").strip()
+    if not text.isdigit():
+        return value
+    mbps = int(text) / 1000
+    if mbps <= 0:
+        return value
+    if mbps >= 1000:
+        n = mbps / 1000
+        return f"{n:g}G"
+    return f"{mbps:g}M"
+
