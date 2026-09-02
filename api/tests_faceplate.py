@@ -163,6 +163,22 @@ class FaceplateFieldTests(APITestCase):
         ):
             self.assertEqual(self._patch_ports(bad).status_code, 400, bad)
 
+    def test_image_ports_view_scale_round_trips_and_is_bounded(self):
+        # The editor's zoom is saved per side: a fraction of the natural
+        # width, or null for "fit". Nonsense is refused.
+        marker = {"name": "Gi1/0/1", "x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}
+        ok = {"front": [marker], "rear": [], "view": {"front": {"scale": 0.6},
+                                                     "rear": {"scale": None}}}
+        r = self._patch_ports(ok)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["image_ports"]["view"]["front"]["scale"], 0.6)
+        for bad in (
+            {"front": [marker], "view": "big"},
+            {"front": [marker], "view": {"top": {"scale": 1}}},
+            {"front": [marker], "view": {"front": {"scale": 20}}},
+        ):
+            self.assertEqual(self._patch_ports(bad).status_code, 400, bad)
+
     def test_image_ports_accept_photo_only_kinds(self):
         """Hardware parts and MODULE BAYS are placeable on a photo - you mark
         where a chassis's line-card slots physically are."""

@@ -1117,6 +1117,11 @@ export interface ImagePortMarker {
 export interface ImagePorts {
   front: ImagePortMarker[]
   rear: ImagePortMarker[]
+  /** Display-size override per side, saved from the editor. A side that is
+   * present replaces the upload size everywhere the photo is drawn: `scale`
+   * is a fraction of the natural width (1 = pixel-true), null = fit the
+   * pane. A side that is absent draws at its upload size. */
+  view?: { front?: { scale: number | null }; rear?: { scale: number | null } }
 }
 
 export interface DeviceType extends LifecycleInfo {

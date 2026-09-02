@@ -221,7 +221,7 @@ export function DeviceTypeImagePortsPane({
   // Display scale for the photo. null = fit (contain to the pane, never
   // blown past its pixels) - a 143px-wide panel photo used to stretch to
   // full pane width. Markers are %-positioned, so any scale stays true.
-  const [zoom, setZoom] = useState<number | null>(null)
+  const [zoom, setZoomState] = useState<number | null>(null)
   const [naturalW, setNaturalW] = useState<number | null>(null)
   const drag = useRef<{
     mode: "move" | "resize"
@@ -249,6 +249,26 @@ export function DeviceTypeImagePortsPane({
     setDirty(true)
   }
   const setMarkers = (ms: ImagePortMarker[]) => update({ ...ports, [side]: ms })
+  // The zoom is saved with the layout (per side) so the device page and every
+  // other photo surface draw the picture at the size chosen here.
+  // Off = the photo draws at its upload size everywhere; on = this side's
+  // zoom (or Fit) is saved and every surface follows it.
+  const sizeOverride = ports.view?.[side] !== undefined
+  const savedScale = ports.view?.[side]?.scale ?? null
+  useEffect(() => {
+    if (sizeOverride) setZoomState(savedScale)
+  }, [side, sizeOverride, savedScale])
+  const setZoom = (next: number | null | ((z: number | null) => number | null)) => {
+    const z = typeof next === "function" ? next(zoom) : next
+    setZoomState(z)
+    if (sizeOverride) update({ ...ports, view: { ...ports.view, [side]: { scale: z } } })
+  }
+  const setSizeOverride = (on: boolean) => {
+    const view = { ...ports.view }
+    if (on) view[side] = { scale: zoom }
+    else delete view[side]
+    update({ ...ports, view })
+  }
 
   // Placed keys (both sides) so the palette hides what's already down.
   const placed = useMemo(() => {
@@ -637,6 +657,13 @@ const save = useMutation({
           label="Snap to fine grid"
           checked={snap}
           onChange={setSnap}
+        />
+        <FormCheckbox
+          className="text-[12px] text-muted-foreground"
+          label="Use this size everywhere"
+          hint={sizeOverride ? undefined : "upload size"}
+          checked={sizeOverride}
+          onChange={setSizeOverride}
         />
         {canWrite && (
           <Button variant="outline" size="sm" onClick={openFill}>

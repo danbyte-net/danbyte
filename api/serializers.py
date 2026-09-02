@@ -1862,6 +1862,22 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                             f"Marker {k} must be a number in 0..1.")
         if total > 512:
             raise serializers.ValidationError("Too many markers (max 512).")
+        # Display scale per side, saved from the editor's zoom: a fraction of
+        # the natural width, or null for "fit". Every photo surface honours it.
+        view = value.get("view")
+        if view is not None:
+            if not isinstance(view, dict):
+                raise serializers.ValidationError("view must be an object.")
+            for side, v in view.items():
+                if side not in ("front", "rear") or not isinstance(v, dict):
+                    raise serializers.ValidationError(
+                        'view keys are "front" / "rear" objects.')
+                scale = v.get("scale")
+                if scale is not None and (
+                    not isinstance(scale, (int, float)) or not (0.1 <= scale <= 8)
+                ):
+                    raise serializers.ValidationError(
+                        "view scale must be a number in 0.1..8, or null for fit.")
         return value
 
     lifecycle_state = serializers.ReadOnlyField()

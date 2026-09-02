@@ -477,6 +477,12 @@ the **photo faceplate** in place of the schematic one - each marker matched to
 the device's real interface by name (so it carries the same state colour, live
 SNMP dot, hover card and link), and the markers also render **on the device's
 face in the [3D room view](../features/floor-plans.md#the-3d-room-view)**.
+**Size.** By default the photo draws at its upload size (its own pixels,
+never wider than the pane). Tick **Use this size everywhere** in the editor
+and its **Fit** / **−** / **+** zoom is saved with the layout for that side:
+Fit keeps the photo inside the pane, a percentage draws it at that fraction of
+its natural pixels - and the device page's photo panel follows.
+
 Types without photo ports keep using the schematic faceplate builder above.
 
 The palette also offers the type's **[inventory-item](#inventory-items)
