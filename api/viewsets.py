@@ -7670,6 +7670,59 @@ class FloorPlanViewSet(TenantScopedViewSet):
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())
 
+    @action(detail=True, methods=["post"], url_path="clone")
+    def clone(self, request, pk=None):
+        """Copy the plan with everything drawn on it: tiles (their object
+        links included), trays (geometry only - the cables routed through the
+        originals stay where they are), raised-floor areas and walls. The
+        copy lands in the same location as "<name> copy"."""
+        import os
+
+        from django.core.files.base import ContentFile
+        from django.db import transaction
+
+        from auth_api import rbac
+
+        tenant = self._tenant_or_403()
+        if not rbac.has_action(request.user, tenant, "floorplan", "add"):
+            return Response({"detail": "Not allowed."}, status=drf_status.HTTP_403_FORBIDDEN)
+        src = self.get_object()
+        maxlen = FloorPlan._meta.get_field("name").max_length or 128
+        base = f"{src.name} copy"[:maxlen]
+        name, n = base, 2
+        while FloorPlan.objects.filter(
+            tenant=tenant, location=src.location, name=name
+        ).exists():
+            suffix = f" {n}"
+            name = base[: maxlen - len(suffix)] + suffix
+            n += 1
+        skip = {"id", "numid", "name", "background_image", "created_at", "updated_at"}
+        with transaction.atomic():
+            dst = FloorPlan(tenant=tenant, location=src.location, name=name)
+            for f in FloorPlan._meta.concrete_fields:
+                if f.name in skip or f.name in ("tenant", "location"):
+                    continue
+                setattr(dst, f.attname, getattr(src, f.attname))
+            if src.background_image:
+                src.background_image.open("rb")
+                dst.background_image.save(
+                    os.path.basename(src.background_image.name),
+                    ContentFile(src.background_image.read()),
+                    save=False,
+                )
+            dst.save()
+            dst.tags.set(src.tags.all())
+            for rel in ("tiles", "trays", "raised_floor_areas", "walls"):
+                for obj in getattr(src, rel).all():
+                    obj.pk = None
+                    obj.id = None
+                    obj.floor_plan = dst
+                    obj.save()
+        return Response(
+            FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
+            status=drf_status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["get"], url_path="state")
     def state(self, request, pk=None):
         """Live per-tile metrics for linked objects, keyed by tile id.

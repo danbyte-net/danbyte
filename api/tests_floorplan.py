@@ -12,6 +12,7 @@ from .models import (
     FloorPlan,
     FloorPlanTile,
     FloorPlanTray,
+    FloorPlanWall,
     FloorTileType,
     Interface,
     Location,
@@ -962,3 +963,51 @@ class CableFloorPlanResolverTests(_Base):
         tray.cables.add(cable)
         resp = self.client.get(f"/api/cables/{cable.id}/floor-plan/")
         self.assertEqual(resp.json()["plan_id"], str(plan.id))
+
+
+class CloneTests(_Base):
+    """POST /clone/ copies a plan with what is drawn on it."""
+
+    def _plan(self):
+        tt = FloorTileType.objects.create(tenant=self.tenant, name="Rack", color="#334455")
+        plan = FloorPlan.objects.create(
+            tenant=self.tenant, location=self.loc, name="Hall A", grid_width=10,
+            grid_height=8, description="ground floor",
+        )
+        FloorPlanTile.objects.create(floor_plan=plan, tile_type=tt, x=0, y=0)
+        FloorPlanTile.objects.create(
+            floor_plan=plan, tile_type=tt, x=1, y=0, rack=self.rack, link_kind="rack"
+        )
+        FloorPlanTray.objects.create(
+            floor_plan=plan, name="T1", points=[[0, 0], [5, 0]]
+        )
+        FloorPlanWall.objects.create(floor_plan=plan, points=[[0, 0], [0, 5]])
+        return plan
+
+    def test_clone_copies_everything_drawn(self):
+        plan = self._plan()
+        r = self.client.post(f"/api/floor-plans/{plan.id}/clone/")
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body["name"], "Hall A copy")
+        self.assertNotEqual(body["id"], str(plan.id))
+        copy = FloorPlan.objects.get(pk=body["id"])
+        self.assertEqual((copy.grid_width, copy.grid_height, copy.description), (10, 8, "ground floor"))
+        self.assertEqual(copy.location_id, plan.location_id)
+        self.assertEqual(copy.tiles.count(), 2)
+        self.assertEqual(copy.tiles.filter(rack=self.rack).count(), 1)
+        self.assertEqual(copy.trays.count(), 1)
+        self.assertEqual(copy.walls.count(), 1)
+        # The original is untouched, and a second copy gets a distinct name.
+        self.assertEqual(plan.tiles.count(), 2)
+        r2 = self.client.post(f"/api/floor-plans/{plan.id}/clone/")
+        self.assertEqual(r2.json()["name"], "Hall A copy 2")
+
+    def test_clone_is_tenant_scoped(self):
+        foreign = FloorPlan.objects.create(
+            tenant=self.other, location=self.other_loc, name="LON", grid_width=4,
+            grid_height=4,
+        )
+        r = self.client.post(f"/api/floor-plans/{foreign.id}/clone/")
+        self.assertEqual(r.status_code, 404)
+
