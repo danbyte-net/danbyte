@@ -593,6 +593,13 @@ class DeploymentSettings(TimestampedModel):
         "maps to cable #27. Numbers are namespaced per tenant, so each tenant "
         "counts from 1 independently.",
     )
+    # Faceplates and photo panels draw a port that is only "marked connected"
+    # (a cable in it nobody documented) lit like a cabled one.
+    faceplate_mark_connected_lit = models.BooleanField(
+        default=False,
+        help_text="Faceplates and photo ports light up ports marked connected "
+                  "like cabled ones.",
+    )
 
     # ─── in-app updates ──────────────────────────────────────────────────
     # Release repo Danbyte checks for updates. Blank = the official repo. The

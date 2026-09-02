@@ -247,12 +247,17 @@ function Cage({
 
   const i = r.iface
   const state = portState(i)
+  const { faceplateMarkedLit } = useMe()
   const trunk = i.mode === "tagged" || i.mode === "tagged-all"
   const hasVlan = trunk || !!i.vlan
   // Cabled ports wear their speed TIER (shared ramp); free ports get a muted
   // capability outline from their type's max speed; disabled stays neutral.
   const tint = { ...i, type: i.type_display || i.type }
-  const cabled = state !== "free" && state !== "disabled"
+  // A port that is only "marked connected" lights up too when the deployment
+  // asks for it (Settings → Admin → Faceplates).
+  const cabled =
+    (state !== "free" && state !== "disabled") ||
+    (faceplateMarkedLit && cableState(i) === "marked")
   const capability = portCapabilityHex(tint)
   return (
     <HoverCard openDelay={100} closeDelay={80}>
@@ -1019,6 +1024,7 @@ export function ImagePortsFaceplate({
   legendKey?: string
   className?: string
 }) {
+  const { faceplateMarkedLit } = useMe()
   const { canDo } = useMe()
   // Editing a bay writes to the device's parts, so it needs the same permission
   // the Hardware tab does - and a device to write them to. Module bays install
@@ -1578,7 +1584,9 @@ export function ImagePortsFaceplate({
           }
           const state = portState(iface)
           const tint = { ...iface, type: iface.type_display || iface.type }
-          const tiered = state !== "free" && state !== "disabled"
+          const tiered =
+            (state !== "free" && state !== "disabled") ||
+            (faceplateMarkedLit && cableState(iface) === "marked")
           const capability = portCapabilityHex(tint)
           return (
             <HoverCard key={iface.id} openDelay={100} closeDelay={80}>

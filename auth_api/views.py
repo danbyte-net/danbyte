@@ -257,6 +257,8 @@ def me_json(request):
         ),
         # Whether the SPA should surface per-tenant human-readable numbers (numid).
         "human_ids_enabled": ui.human_ids_enabled,
+        # Faceplates light up ports that are only marked connected.
+        "faceplate_mark_connected_lit": ds.faceplate_mark_connected_lit,
         # Whether the in-browser SSH terminal is enabled deployment-wide. The SPA
         # only offers the terminal when this is on; the WS consumer re-checks it
         # (and the connect verb) server-side regardless.

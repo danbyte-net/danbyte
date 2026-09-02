@@ -299,6 +299,8 @@ export interface Me {
   hide_local_login?: boolean
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
+  /** Faceplates / photo ports draw "marked connected" ports lit like cabled. */
+  faceplate_mark_connected_lit?: boolean
   /** Whether the in-browser SSH terminal is enabled deployment-wide. */
   ssh_terminal_enabled?: boolean
   /** First-run wizard: true once this tenant has completed or skipped it. */
@@ -5366,6 +5368,7 @@ export interface DeploymentSettings {
   cert_digest_enabled: boolean
   cert_digest_recipients: string
   human_ids_enabled: boolean
+  faceplate_mark_connected_lit: boolean
   date_format: DateFormat
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */

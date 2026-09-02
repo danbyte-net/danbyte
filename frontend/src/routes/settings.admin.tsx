@@ -62,6 +62,7 @@ function AdminPage() {
         <IdentityCard />
         <DateTimeCard />
         <HumanIdsCard />
+        <FaceplatesCard />
       </SettingsGrid>
     </div>
   )
@@ -227,6 +228,39 @@ function HumanIdsCard() {
         checked={humanIds}
         onChange={setHumanIds}
         hint="Turning this off hides the numbers in the UI; it does not delete them."
+      />
+    </SettingsCard>
+  )
+}
+
+function FaceplatesCard() {
+  const { data, save, savingKey } = useDeploymentSettings()
+  const [lit, setLit] = useState(false)
+
+  useEffect(() => {
+    if (data) setLit(data.faceplate_mark_connected_lit)
+  }, [data])
+
+  if (!data) return null
+  return (
+    <SettingsCard
+      title="Faceplates"
+      description="How the drawn faceplates and photo panels colour their ports."
+      onSave={() =>
+        save.mutate({
+          key: "faceplates",
+          patch: { faceplate_mark_connected_lit: lit },
+        })
+      }
+      dirty={lit !== data.faceplate_mark_connected_lit}
+      saving={savingKey === "faceplates"}
+      saveLabel="Save faceplates"
+    >
+      <FormCheckbox
+        label="Light up ports marked connected"
+        checked={lit}
+        onChange={setLit}
+        hint="A port with an undocumented cable draws like a cabled one."
       />
     </SettingsCard>
   )
