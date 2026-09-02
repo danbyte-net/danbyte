@@ -171,7 +171,10 @@ function VirtualTopologyPage() {
       ) : loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-muted/10 p-2">
+        // Capped to the viewport so the diagram scrolls inside its own box -
+        // the horizontal bar then sits on screen instead of below a page-high
+        // drawing where nobody finds it.
+        <div className="max-h-[calc(100vh-16rem)] overflow-auto rounded-lg border border-border bg-muted/10 p-2">
           <RailDiagram
             sections={sections}
             boxes={boxes}
