@@ -132,12 +132,27 @@ function VirtualChassisPage() {
       {
         id: "status",
         // The members' distinct statuses, so uniform stacks sort together.
-        accessorFn: (r) =>
-          [...new Set(r.members.map((m) => m.status?.name ?? ""))].sort().join(", "),
+        accessorFn: (r) => stackStatus(r),
         header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => (
           <MemberStatusCell members={row.original.members} />
         ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Status",
+            get: (r: VirtualChassis) => stackStatus(r),
+            // One uniform status keeps its colour; a mixed stack lists them.
+            formatValue: (v, sample) => {
+              const s = sample.members.find((m) => m.status?.name === v)?.status
+              return {
+                label: v || "No status",
+                color: s?.color,
+                textColor: s?.text_color ?? undefined,
+              }
+            },
+          },
+        },
       },
       {
         id: "monitoring",
@@ -271,6 +286,15 @@ function mergeRollups(
 
 /** The members' lifecycle statuses, combined: one badge when they all agree,
  * a racing-flag split of the distinct status colors when they don't. */
+/** The stack's status as one string: a single status when every member
+ * agrees, the distinct ones joined when they don't, "" for none. */
+function stackStatus(r: VirtualChassis): string {
+  return [...new Set(r.members.map((m) => m.status?.name ?? ""))]
+    .filter(Boolean)
+    .sort()
+    .join(", ")
+}
+
 function MemberStatusCell({
   members,
 }: {
