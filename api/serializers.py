@@ -3978,7 +3978,7 @@ class CustomFieldSerializer(
         fields = [
             "id", "key", "label", "type", "applies_to", "choices",
             "related_model", "scope_rules",
-            "required", "default", "description", "weight",
+            "required", "hidden", "default", "description", "weight",
             "group", "group_name", "group_weight", "group_collapsed",
             "owning_site", "owning_site_id", "permissions",
             "created_at", "updated_at",

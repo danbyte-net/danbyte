@@ -61,6 +61,7 @@ export function CustomFieldForm({
     (field?.choices ?? []).join("\n")
   )
   const [required, setRequired] = useState(field?.required ?? false)
+  const [hidden, setHidden] = useState(field?.hidden ?? false)
   const [defVal, setDefVal] = useState(field?.default ?? "")
   const [description, setDescription] = useState(field?.description ?? "")
   const [weight, setWeight] = useState(field ? String(field.weight) : "0")
@@ -96,6 +97,7 @@ export function CustomFieldForm({
     setAppliesTo(field.applies_to)
     setChoicesText(field.choices.join("\n"))
     setRequired(field.required)
+    setHidden(field.hidden)
     setDefVal(field.default)
     setDescription(field.description)
     setWeight(String(field.weight))
@@ -137,6 +139,7 @@ export function CustomFieldForm({
               .filter(Boolean)
           : [],
         required,
+        hidden,
         default: defVal.trim(),
         description: description.trim(),
         weight: weightNum,
@@ -249,6 +252,12 @@ export function CustomFieldForm({
               hint="Must be filled in when shown on a form"
               checked={required}
               onChange={setRequired}
+            />
+            <FormCheckbox
+              label="Hidden"
+              checked={hidden}
+              onChange={setHidden}
+              hint="kept on the object and searchable, not shown"
             />
             <FormTextarea
               label="Description"

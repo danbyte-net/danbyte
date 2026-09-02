@@ -33,6 +33,7 @@ from .models import (
     Location, Manufacturer, Prefix, Provider, Rack, RouteTarget, Site, VLAN,
     VirtualMachine, VRF,
 )
+from .cf_search import cf_text_q
 from .serializers import TagSerializer
 from .views import _get_active_tenant
 
@@ -125,6 +126,7 @@ def _search_prefixes(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
         .filter(
             Q(cidr__icontains=q) | Q(description__icontains=q)
             | (_numid_q(Prefix, q) or Q(pk__in=[]))
+            | cf_text_q(Prefix, q)
         )
         .select_related("vrf", "site")
         .order_by("cidr")[:limit]
@@ -153,6 +155,7 @@ def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
             | Q(description__icontains=q)
             | Q(reservation_note__icontains=q)
             | (_numid_q(IPAddress, q) or Q(pk__in=[]))
+            | cf_text_q(IPAddress, q)
         )
         .select_related("status", "role", "assigned_device", "prefix")
         .order_by("ip_address")[:limit]
@@ -175,7 +178,7 @@ def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 
 
 def _search_vlans(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    cond = Q(name__icontains=q) | Q(description__icontains=q)
+    cond = Q(name__icontains=q) | Q(description__icontains=q) | cf_text_q(VLAN, q)
     nq = _numid_q(VLAN, q)
     if nq:
         cond |= nq
@@ -204,7 +207,10 @@ def _search_vlans(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 def _search_vrfs(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     qs = (
         rbac.restrict_queryset(VRF.objects.filter(tenant=tenant), user, tenant, "vrf", "view")
-        .filter(Q(name__icontains=q) | Q(rd__icontains=q) | Q(description__icontains=q))
+        .filter(
+            Q(name__icontains=q) | Q(rd__icontains=q) | Q(description__icontains=q)
+            | cf_text_q(VRF, q)
+        )
         .order_by("name")[:limit]
     )
     return [
@@ -222,7 +228,7 @@ def _search_vrfs(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 def _search_rts(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     qs = (
         rbac.restrict_queryset(RouteTarget.objects.filter(tenant=tenant), user, tenant, "routetarget", "view")
-        .filter(Q(name__icontains=q) | Q(description__icontains=q))
+        .filter(Q(name__icontains=q) | Q(description__icontains=q) | cf_text_q(RouteTarget, q))
         .order_by("name")[:limit]
     )
     return [
@@ -244,6 +250,7 @@ def _search_sites(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
             Q(name__icontains=q)
             | Q(location__icontains=q)
             | Q(description__icontains=q)
+            | cf_text_q(Site, q)
         )
         .order_by("name")[:limit]
     )
@@ -288,7 +295,7 @@ def _search_tenants(q: str, user, limit: int) -> list[dict]:
 
 
 def _search_devices(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    cond = Q(name__icontains=q)
+    cond = Q(name__icontains=q) | cf_text_q(Device, q)
     nq = _numid_q(Device, q)
     if nq:
         cond |= nq
@@ -323,7 +330,7 @@ def _search_vms(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
             "virtualmachine",
             "view",
         )
-        .filter(Q(name__icontains=q))
+        .filter(Q(name__icontains=q) | cf_text_q(VirtualMachine, q))
         .order_by("name")[:limit]
     )
     return [
@@ -374,7 +381,7 @@ def _search_simple(
 ) -> list[dict]:
     """One name-ish search over any tenant-scoped model, RBAC-restricted the
     same way the bespoke searches are."""
-    match = Q()
+    match = cf_text_q(model, q)
     for f in fields:
         match |= Q(**{f"{f}__icontains": q})
     nq = _numid_q(model, q)

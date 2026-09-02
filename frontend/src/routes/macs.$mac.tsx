@@ -26,6 +26,7 @@ import { MacObjectDialog } from "@/components/mac-object-dialog"
 import { MacObjectDeleteDialog } from "@/components/mac-object-delete-dialog"
 import {
   useCustomFieldDefs,
+  useHiddenCustomFieldKeys,
   hasCustomValue,
   formatCustomValue,
 } from "@/components/custom-field-display"
@@ -395,7 +396,8 @@ function MacObjectCard({
 function ObjectCustomFields({ values }: { values: Record<string, unknown> }) {
   const q = useCustomFieldDefs("macaddress")
   const defs = q.data?.results ?? []
-  const seen = new Set(defs.map((d) => d.key))
+  const hiddenCf = useHiddenCustomFieldKeys("macaddress")
+  const seen = new Set([...defs.map((d) => d.key), ...hiddenCf])
   const rows = [
     ...defs
       .filter((d) => hasCustomValue(values[d.key]))

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useHiddenCustomFieldKeys } from "@/components/custom-field-display"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -289,8 +290,9 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
     },
   ]
 
+  const hiddenCf = useHiddenCustomFieldKeys("ipaddress")
   const cfEntries = Object.entries(ip.custom_fields ?? {}).filter(
-    ([k]) => k && !k.startsWith("_")
+    ([k]) => k && !k.startsWith("_") && !hiddenCf.has(k)
   )
   const customFieldRows: KvRow[] = cfEntries.map(([k, v]) => ({
     label: k,

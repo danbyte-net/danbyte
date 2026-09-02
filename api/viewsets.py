@@ -26,6 +26,7 @@ from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
 from .filters import apply_tag_filter
+from .cf_search import cf_text_q
 from .models import (
     Antenna,
     AntennaTemplate,
@@ -1059,7 +1060,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(cidr__icontains=search) | qs.filter(description__icontains=search)
+            qs = qs.filter(cidr__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         # Quick filters used by detail-page panes.
         for key, field in (
             ("vlan", "vlan_id"), ("vrf", "vrf_id"),
@@ -1597,7 +1598,7 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
                 qs.filter(name__icontains=search)
                 | qs.filter(rd__icontains=search)
                 | qs.filter(description__icontains=search)
-            )
+            ) | qs.filter(cf_text_q(qs.model, search))
         rt = self.request.query_params.get("rt")
         if rt:
             qs = qs.filter(import_targets__id=rt) | qs.filter(export_targets__id=rt)
@@ -1639,7 +1640,7 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
@@ -1676,7 +1677,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 qs.filter(name__icontains=search)
                 | qs.filter(location__icontains=search)
                 | qs.filter(description__icontains=search)
-            )
+            ) | qs.filter(cf_text_q(qs.model, search))
         # Sites within a region - powers the region detail page's Sites tab.
         region = self.request.query_params.get("region")
         if region:
@@ -1779,7 +1780,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
             if search.isdigit():
                 qs = qs | super().get_queryset().filter(vlan_id=int(search))
         site = self.request.query_params.get("site")
@@ -1875,7 +1876,7 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             search = self.request.query_params.get("search", "").strip()
             if search:
-                qs = qs.filter(name__icontains=search)
+                qs = qs.filter(name__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         qs = restrict_for_view(self, qs)
         return qs.annotate(usage_count_annotated=Count("tagged_items"))
 
@@ -1952,7 +1953,7 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(label__icontains=search) | qs.filter(key__icontains=search)
+            qs = qs.filter(label__icontains=search) | qs.filter(key__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         model = self.request.query_params.get("model")
         if model:
             qs = qs.filter(applies_to__contains=[model])
@@ -2027,7 +2028,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by("weight", "name")
 
     def _slug(self, serializer, tenant):
@@ -2084,7 +2085,7 @@ class TenantGroupViewSet(viewsets.ModelViewSet):
             )
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
     def perform_create(self, serializer):
@@ -2138,7 +2139,7 @@ class TenantViewSet(viewsets.ModelViewSet):
             qs = qs.filter(pk__in=user_tenants(user).values("pk"))
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
     def perform_create(self, serializer):
@@ -2277,7 +2278,7 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             search = self.request.query_params.get("search", "").strip()
             if search:
-                qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search)
+                qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         if self.usage_relation:
             qs = qs.annotate(usage_count_annotated=Count(self.usage_relation))
         return qs
@@ -2376,7 +2377,7 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         # distinct=True on both: two Counts over different relations in one
         # annotate() join-multiply each other without it (Django fan-out).
         return qs.annotate(
@@ -2842,7 +2843,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s) | qs.filter(model__icontains=s)
-                      | qs.filter(part_number__icontains=s))
+                      | qs.filter(part_number__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             mfr = self.request.query_params.get("manufacturer")
             if mfr:
                 qs = qs.filter(manufacturer_id=mfr)
@@ -3554,7 +3555,7 @@ class DeviceViewSet(
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s) | qs.filter(serial_number__icontains=s)
-                      | qs.filter(asset_tag__icontains=s) | qs.filter(description__icontains=s))
+                      | qs.filter(asset_tag__icontains=s) | qs.filter(description__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             # The with_vc picker reads each device's chassis - pull it in one join.
             if self.request.query_params.get("with_vc") == "1":
                 qs = qs.select_related("virtual_chassis")
@@ -3847,7 +3848,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = qs.filter(device_id=device_id)
@@ -4134,7 +4135,7 @@ class CableViewSet(TenantScopedViewSet):
                       | qs.filter(terminations__interface__name__icontains=s)
                       | qs.filter(terminations__interface__device__name__icontains=s)
                       | qs.filter(terminations__front_port__name__icontains=s)
-                      | qs.filter(terminations__rear_port__name__icontains=s))
+                      | qs.filter(terminations__rear_port__name__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = (qs.filter(terminations__interface__device_id=device_id)
@@ -4422,7 +4423,7 @@ class _DevicePortViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedV
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = qs.filter(device_id=device_id)
@@ -4746,7 +4747,7 @@ class ModuleTypeViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s)
-                      | qs.filter(part_number__icontains=s))
+                      | qs.filter(part_number__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             mfr = self.request.query_params.get("manufacturer")
             if mfr:
                 qs = qs.filter(manufacturer_id=mfr)
@@ -4902,7 +4903,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(
                     description__icontains=s
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
             cluster_count_annotated=Count(self.count_rel)
         ).order_by(NATURAL_NAME)
@@ -5007,7 +5008,7 @@ class ClusterViewSet(TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(
                     description__icontains=s
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
         if self.request:
             ctype = self.request.query_params.get("type")
             if ctype:
@@ -5039,7 +5040,7 @@ class VirtualSwitchViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
@@ -5125,7 +5126,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(
                     description__icontains=s
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
             power = self.request.query_params.get("power")
             if power:
                 qs = qs.filter(power_state=power)
@@ -5199,7 +5200,7 @@ class RackRoleViewSet(_SlugCatalogViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         from django.db.models import Count as _C
         return qs.annotate(rack_count_annotated=_C("racks")).order_by(NATURAL_NAME)
 
@@ -5236,7 +5237,7 @@ class RackTypeViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) \
-                    | qs.filter(manufacturer__name__icontains=s)
+                    | qs.filter(manufacturer__name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             m = self.request.query_params.get("manufacturer")
             if m:
                 qs = qs.filter(manufacturer_id=m)
@@ -5322,7 +5323,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(facility_id__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(facility_id__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
@@ -5421,7 +5422,7 @@ class DeviceRoleViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs
 
     def _slug(self, serializer, tenant):
@@ -5473,7 +5474,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
             platform_count_annotated=Count("platforms")
         ).order_by(NATURAL_NAME)
@@ -5528,7 +5529,7 @@ class PlatformViewSet(DeviceRoleViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             g = self.request.query_params.get("group")
             if g:
                 qs = qs.filter(group_id=g)
@@ -5574,7 +5575,7 @@ class ServiceViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for key, field in (("device", "device_id"), ("vm", "virtual_machine_id")):
                 v = self.request.query_params.get(key)
                 if v:
@@ -5635,7 +5636,7 @@ class ServiceTemplateViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs
 
     def _slug(self, serializer, tenant):
@@ -5685,7 +5686,7 @@ class IPRangeViewSet(TenantScopedViewSet):
                     qs.filter(start_address__icontains=s)
                     | qs.filter(end_address__icontains=s)
                     | qs.filter(description__icontains=s)
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
             for key, field in (
                 ("vrf", "vrf_id"),
                 ("status", "status"),
@@ -5762,7 +5763,7 @@ class RIRViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -5812,7 +5813,7 @@ class AggregateViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(prefix__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(prefix__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             rir = self.request.query_params.get("rir")
             if rir:
                 qs = qs.filter(rir_id=rir)
@@ -5839,7 +5840,7 @@ class ASNViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(description__icontains=s)
+                qs = qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
                 if s.lstrip("asAS").isdigit():
                     qs = qs | super().get_queryset().filter(
                         asn=int(s.lstrip("asAS"))
@@ -5875,7 +5876,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
@@ -5939,7 +5940,7 @@ class FHRPGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
                 if s.isdigit():
                     qs = qs | super().get_queryset().filter(group_id=int(s))
             proto = self.request.query_params.get("protocol")
@@ -5993,7 +5994,7 @@ class _ContactCatalogViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -6091,7 +6092,7 @@ class ContactViewSet(TenantScopedViewSet):
                     qs.filter(name__icontains=s)
                     | qs.filter(title__icontains=s)
                     | qs.filter(email__icontains=s)
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
             group = self.request.query_params.get("group")
             if group:
                 qs = qs.filter(group_id=group)
@@ -6188,7 +6189,7 @@ class ProviderViewSet(TenantScopedViewSet):
                     qs.filter(name__icontains=s)
                     | qs.filter(account__icontains=s)
                     | qs.filter(noc_email__icontains=s)
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6221,7 +6222,7 @@ class CircuitTypeViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6255,7 +6256,7 @@ class CircuitViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(cid__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(cid__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("provider", "provider_id"),
                 ("type", "type_id"),
@@ -6290,7 +6291,7 @@ class ProviderNetworkViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(service_id__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(service_id__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             provider = self.request.query_params.get("provider")
             if provider:
                 qs = qs.filter(provider_id=provider)
@@ -6370,7 +6371,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
@@ -6409,7 +6410,7 @@ class PowerFeedViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("power_panel", "power_panel_id"),
                 ("rack", "rack_id"),
@@ -6440,7 +6441,7 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6554,7 +6555,7 @@ class WirelessLANViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(ssid__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(ssid__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("group", "group_id"),
                 ("status", "status"),
@@ -6585,7 +6586,7 @@ class TunnelGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6618,7 +6619,7 @@ class IPSecProfileViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6648,7 +6649,7 @@ class TunnelViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("group", "group_id"),
                 # "What uses this profile" - the IPSec profile detail page's
@@ -6742,7 +6743,7 @@ class L2VPNViewSet(TenantScopedViewSet):
             if search:
                 qs = (qs.filter(name__icontains=search)
                       | qs.filter(slug__icontains=search)
-                      | qs.filter(description__icontains=search))
+                      | qs.filter(description__icontains=search)) | qs.filter(cf_text_q(qs.model, search))
             t = self.request.query_params.get("type")
             if t:
                 qs = qs.filter(type=t)
@@ -6815,7 +6816,7 @@ class VirtualChassisViewSet(TenantScopedViewSet):
             if search:
                 qs = (qs.filter(name__icontains=search)
                       | qs.filter(domain__icontains=search)
-                      | qs.filter(description__icontains=search))
+                      | qs.filter(description__icontains=search)) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
     def perform_destroy(self, instance):
@@ -6950,7 +6951,7 @@ class RegionViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             parent = self.request.query_params.get("parent")
             if parent:
                 qs = qs.filter(parent_id=parent)
@@ -6990,7 +6991,7 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (("site", "site_id"), ("parent", "parent_id"),
                                  ("status", "status")):
                 val = self.request.query_params.get(param)
@@ -7021,7 +7022,7 @@ class ConfigContextViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by("weight", "name")
 
 
@@ -7036,7 +7037,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             ot = self.request.query_params.get("object_type")
             if ot:
                 qs = qs.filter(object_type=ot)
@@ -7565,7 +7566,7 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs
 
     def _slug(self, serializer, tenant):
@@ -7662,7 +7663,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             loc = self.request.query_params.get("location")
             if loc:
                 qs = qs.filter(location_id=loc)

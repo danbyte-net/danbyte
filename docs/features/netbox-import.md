@@ -164,3 +164,13 @@ Failures (5):
 
 Re-running after fixing the source data (or a Danbyte bug) picks up only the
 rows that didn't make it the first time.
+
+## The NetBox id after import
+
+Every imported object carries its NetBox id and tenant as custom fields
+(`netbox_id`, `netbox_tenant`). The import creates those two definitions
+**hidden**, so they don't clutter cards and tables; the values are still there,
+and every search bar matches them - searching `57` finds the cable that was
+`/cables/57/` in NetBox. Untick *Hidden* on the definitions (Custom fields) to
+show them.
+

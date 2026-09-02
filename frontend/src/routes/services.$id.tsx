@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { useHiddenCustomFieldKeys } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Activity, Pencil, Trash2 } from "lucide-react"
@@ -172,8 +173,9 @@ function ServiceDetailBody({ service: s }: { service: Service }) {
     },
   ]
 
+  const hiddenCf = useHiddenCustomFieldKeys("service")
   const cfEntries = Object.entries(s.custom_fields ?? {}).filter(
-    ([k]) => k && !k.startsWith("_")
+    ([k]) => k && !k.startsWith("_") && !hiddenCf.has(k)
   )
   const customFieldRows: KvRow[] = cfEntries.map(([k, v]) => ({
     label: k,

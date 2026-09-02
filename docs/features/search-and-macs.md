@@ -33,6 +33,10 @@ a jump link on each row.
     number, a tag. You don't need to choose a category first; search figures out
     what each match is.
 
+Custom-field **values** are matched too, on every search bar - the global one
+and each list's filter box - so an imported NetBox id, an asset number or any
+other value you keep in a custom field finds its object, hidden or not.
+
 ## MAC address tracking
 
 The **MAC list** (`/macs`) answers the question "where have I seen this MAC?" It

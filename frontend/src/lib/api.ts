@@ -3901,6 +3901,8 @@ export interface CustomField {
   related_model: string
   scope_rules: CustomFieldScopeRules
   required: boolean
+  /** Value kept and searchable, but no card, table or form shows it. */
+  hidden: boolean
   default: string
   description: string
   weight: number
@@ -3944,6 +3946,7 @@ export interface CustomFieldWritePayload {
   choices: string[]
   scope_rules?: CustomFieldScopeRules
   required: boolean
+  hidden?: boolean
   default?: string
   description?: string
   weight?: number
