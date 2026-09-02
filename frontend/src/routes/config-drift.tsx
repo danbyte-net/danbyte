@@ -11,7 +11,7 @@ import {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { deviceColumn } from "@/components/cells/device-cell"
-import { DataTable } from "@/components/data-table"
+import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -107,7 +107,8 @@ function ConfigTab() {
       }),
       {
         id: "status",
-        header: "Status",
+        accessorFn: (r) => r.status,
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => <DriftStatusBadge status={row.original.status} />,
       },
       {
@@ -229,7 +230,10 @@ function SnmpTab() {
       }),
       {
         id: "status",
-        header: "Status",
+        // Unreachable, then in sync, then by how much drifted.
+        accessorFn: (r) =>
+          r.status === "unreachable" ? -1 : r.status === "in_sync" ? 0 : r.drift_count,
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => <SnmpDriftStatusBadge row={row.original} />,
       },
       {

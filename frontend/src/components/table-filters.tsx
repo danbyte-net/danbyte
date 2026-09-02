@@ -1,5 +1,11 @@
-import { type ColumnDef, type RowData } from "@tanstack/react-table"
+import {
+  type CellContext,
+  type ColumnDef,
+  type RowData,
+} from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
+import { flexRender } from "@tanstack/react-table"
+import { cn } from "@/lib/utils"
 
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
@@ -87,6 +93,12 @@ declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     facet?: FacetDef<TData>
+    /** Set by useTableFilters on a tags column: the rail's current selection
+     * and its toggle, so the chips in the cells filter the table too. */
+    tagFacet?: { active: Set<string>; toggle: (slug: string) => void }
+    /** Enum facets whose cell is a plain badge (status, role, family…) should
+     * not turn into a click target - set when the cell is already a link. */
+    facetClickable?: boolean
     /** Explicit label for the Columns dropdown menu. Overrides the column's
      * string header / prettified id when resolving the menu's display text. */
     label?: string
@@ -118,6 +130,9 @@ interface FacetEntry<TRow> {
 export interface UseTableFiltersResult<TRow> {
   rail: React.ReactNode
   filteredRows: TRow[]
+  /** The columns handed in, with every tags facet wired to the rail - pass
+   * THESE to the table so tag chips toggle the filter. */
+  columns: ColumnDef<TRow, unknown>[]
   /** Number of active facet filters (for header badges). */
   activeCount: number
   /** Toggle one value in an enum/tags facet from OUTSIDE the rail - e.g. a
@@ -374,8 +389,54 @@ export function useTableFilters<TRow>(
     setExprText(expr)
   }, [])
 
+  // Facet columns get the rail's selection + toggle wired into their cells:
+  // a tag chip toggles its tag, and an enum badge (status, role, family…)
+  // toggles its bucket - clicking in the table filters exactly like ticking
+  // the rail. A click that lands on a link or button inside the cell is left
+  // alone, so FK cells keep navigating.
+  const wiredColumns = useMemo(
+    () =>
+      columns.map((col) => {
+        const id =
+          col.id ?? (typeof col.header === "string" ? col.header : undefined)
+        const def = col.meta?.facet
+        if (!id || !def) return col
+        if (def.kind === "tags")
+          return {
+            ...col,
+            meta: {
+              ...col.meta,
+              tagFacet: {
+                active: selectedValues(id),
+                toggle: (slug: string) => toggleValue(id, slug),
+              },
+            },
+          }
+        if (def.kind !== "enum" || col.meta?.facetClickable === false) return col
+        const active = selectedValues(id)
+        const inner = col.cell
+        return {
+          ...col,
+          cell: (ctx: CellContext<TRow, unknown>) => {
+            const value = def.get(ctx.row.original) ?? null
+            return (
+              <FacetClickCell
+                value={value}
+                active={value !== null && active.has(value)}
+                toggle={(v) => toggleValue(id, v)}
+              >
+                {inner ? flexRender(inner, ctx) : String(ctx.getValue() ?? "")}
+              </FacetClickCell>
+            )
+          },
+        }
+      }),
+    [columns, selectedValues, toggleValue]
+  )
+
   return {
     rail,
+    columns: wiredColumns,
     filteredRows,
     activeCount,
     toggleValue,
@@ -492,3 +553,36 @@ function RangeFacetGroup({
     </div>
   )
 }
+
+/** Wraps a facet cell so clicking the badge toggles its bucket. Clicks on a
+ * link or button inside the cell fall through untouched. */
+export function FacetClickCell({
+  value,
+  active,
+  toggle,
+  children,
+}: {
+  value: string | null
+  active: boolean
+  toggle: (value: string) => void
+  children: React.ReactNode
+}) {
+  if (value === null) return <>{children}</>
+  return (
+    <span
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a, button, input, [role=menuitem]"))
+          return
+        e.stopPropagation()
+        toggle(value)
+      }}
+      className={cn(
+        "inline-flex cursor-pointer rounded-md",
+        active && "ring-1 ring-foreground/30 ring-inset"
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+

@@ -238,7 +238,7 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
     vlan: () => ({
       id: "vlan",
       accessorFn: (r) => (r.vlan ? `${r.vlan.vlan_id} · ${r.vlan.name}` : ""),
-      header: "VLAN",
+      header: ({ column }) => <SortHeader column={column} label="VLAN" />,
       cell: ({ row }) => {
         const v = row.original.vlan
         return v ? <VlanBadge vlan={v} /> : dash

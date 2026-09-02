@@ -121,7 +121,7 @@ function ProvidersPage() {
     ],
     [onDelete, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount } =
+  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
     useTableFilters(columns, rows)
 
   return (
@@ -148,7 +148,7 @@ function ProvidersPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={facetColumns}
         flexColumn="noc_email"
         tableId="providers"
       />

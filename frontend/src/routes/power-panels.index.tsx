@@ -88,7 +88,7 @@ function PowerPanelsPage() {
     ],
     [onDelete, humanIds]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount } =
+  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
     useTableFilters(columns, rows)
 
   return (
@@ -115,7 +115,7 @@ function PowerPanelsPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={facetColumns}
         flexColumn="comments"
         tableId="power-panels"
       />

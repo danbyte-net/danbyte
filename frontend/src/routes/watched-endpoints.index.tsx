@@ -106,7 +106,8 @@ function WatchedEndpointsPage() {
       },
       {
         id: "status",
-        header: "Status",
+        accessorFn: (r) => r.last_status,
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => (
           <div className="flex flex-col gap-0.5">
             <span className="flex items-center gap-1.5">

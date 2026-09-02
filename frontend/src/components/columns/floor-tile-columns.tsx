@@ -5,7 +5,7 @@ import type { FloorPlanLinkKind, FloorPlanTile } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { dash } from "@/components/cells/dash"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { selectionColumn } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
@@ -148,7 +148,7 @@ export function buildFloorTileColumns<T extends FloorPlanTile = FloorPlanTile>(
     status: () => ({
       id: "status",
       accessorKey: "status",
-      header: "Status",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
       cell: ({ row }) =>
         row.original.status ? (
           <span className="text-xs capitalize">{row.original.status}</span>

@@ -128,8 +128,15 @@ function IpRangesPage() {
   const handleDelete = useCallback((r: IPRange) => setDeleting(r), [])
   const columns = useMemo<ColumnDef<IPRange>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
-    [handleDelete, canEdit, canDelete, humanIds]
+      buildColumns({
+        onDelete: handleDelete,
+        canEdit,
+        canDelete,
+        humanIds,
+        tagFilter,
+        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+      }),
+    [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
 
   return (
@@ -194,6 +201,8 @@ interface ColumnOpts {
   canEdit: boolean
   canDelete: boolean
   humanIds: boolean
+  tagFilter: Set<string>
+  onToggleTag: (slug: string) => void
 }
 
 function buildColumns({
@@ -201,6 +210,8 @@ function buildColumns({
   canEdit,
   canDelete,
   humanIds,
+  tagFilter,
+  onToggleTag,
 }: ColumnOpts): ColumnDef<IPRange>[] {
   return [
     selectionColumn<IPRange>(),
@@ -292,8 +303,8 @@ function buildColumns({
     },
     tagsColumn<IPRange>({
       getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
+      activeSlugs: tagFilter,
+      onToggle: onToggleTag,
     }),
     timeAgoColumn<IPRange>({
       id: "updated",

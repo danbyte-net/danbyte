@@ -396,7 +396,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
     status: () => ({
       id: "status",
       accessorFn: (r) => r.status?.name ?? "",
-      header: "Status",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
       // Null is Active - the common case renders blank so the column only
       // draws the eye when a port is Planned / Not present / Decommissioning.
       cell: ({ row }) =>
@@ -428,7 +428,8 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
     }),
     vlan: () => ({
       id: "vlan",
-      header: "VLAN",
+      accessorFn: (r) => r.vlan?.vlan_id ?? "",
+      header: ({ column }) => <SortHeader column={column} label="VLAN" />,
       cell: ({ row }) => {
         const r = row.original
         const tagged = r.tagged_vlans?.length ?? 0

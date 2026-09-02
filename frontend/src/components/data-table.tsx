@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { cn } from "@/lib/utils"
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -17,7 +18,14 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { ArrowUpDown, ChevronDown, ChevronRight, Download } from "lucide-react"
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
+  Download,
+} from "lucide-react"
 
 import { ColumnsMenu } from "@/components/column-menu"
 import { useTablePreference } from "@/lib/use-table-preference"
@@ -830,15 +838,20 @@ export function SortHeader({
   }
   label: string
 }) {
+  const sorted = column.getIsSorted()
+  // The active direction reads on the header itself - without it a sort
+  // that reorders only a few rows looks like a click that did nothing.
+  const Icon = sorted === "asc" ? ArrowUp : sorted === "desc" ? ArrowDown : ArrowUpDown
   return (
     <Button
       variant="ghost"
       size="sm"
-      className="-ml-3 h-7 px-2 text-xs"
-      onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      className={cn("-ml-3 h-7 px-2 text-xs", sorted && "text-foreground")}
+      aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
+      onClick={() => column.toggleSorting(sorted === "asc")}
     >
       {label}
-      <ArrowUpDown className="ml-1 h-3 w-3" />
+      <Icon className={cn("ml-1 h-3 w-3", sorted ? "opacity-100" : "opacity-60")} />
     </Button>
   )
 }

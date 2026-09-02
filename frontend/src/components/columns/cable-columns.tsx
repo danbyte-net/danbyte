@@ -7,7 +7,7 @@ import { api } from "@/lib/api"
 import type { Cable, Paginated, Status, Termination } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { fiberColor } from "@/lib/fiber"
-import { selectionColumn } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import {
   DropdownMenu,
@@ -312,7 +312,7 @@ export function buildCableColumns(
     status: () => ({
       id: "status",
       accessorFn: (r) => r.status?.name ?? "",
-      header: "Status",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
       cell: ({ row }) =>
         opts.statusEditable ? (
           <CableStatusCell cable={row.original} canEdit />

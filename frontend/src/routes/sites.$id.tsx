@@ -26,7 +26,7 @@ import { EmptyState } from "@/components/empty-state"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table"
+import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { SiteDeleteDialog } from "@/components/site-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -405,7 +405,8 @@ function SiteLocationsTable({ siteId }: { siteId: string }) {
       },
       {
         id: "status",
-        header: "Status",
+        accessorFn: (r) => r.status?.name ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
     ],

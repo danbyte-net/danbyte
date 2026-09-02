@@ -152,7 +152,7 @@ function L2vpnsPage() {
     [onDelete, humanIds, canEdit, canDelete]
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount } =
+  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
     useTableFilters(columns, rows)
 
   return (
@@ -179,7 +179,7 @@ function L2vpnsPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={facetColumns}
         flexColumn="description"
         tableId="l2vpns"
       />

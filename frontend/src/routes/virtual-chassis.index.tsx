@@ -131,8 +131,10 @@ function VirtualChassisPage() {
       },
       {
         id: "status",
-        header: "Status",
-        enableSorting: false,
+        // The members' distinct statuses, so uniform stacks sort together.
+        accessorFn: (r) =>
+          [...new Set(r.members.map((m) => m.status?.name ?? ""))].sort().join(", "),
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => (
           <MemberStatusCell members={row.original.members} />
         ),
@@ -214,7 +216,7 @@ function VirtualChassisPage() {
     ],
     [monByDevice, onDelete, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount } =
+  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
     useTableFilters(columns, rows)
 
   return (
@@ -241,7 +243,7 @@ function VirtualChassisPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={facetColumns}
         flexColumn="description"
         tableId="virtual-chassis"
       />

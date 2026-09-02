@@ -258,8 +258,8 @@ function DnsNamePage() {
     },
     {
       id: "status",
-      header: "Status",
-      enableSorting: false,
+      accessorFn: (r) => r.ip?.status?.name ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
       cell: ({ row }) =>
         row.original.ip?.status ? (
           <StatusBadge status={row.original.ip.status} />
