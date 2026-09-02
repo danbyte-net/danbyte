@@ -35,7 +35,7 @@ const TRAY_DEFAULT = "#71717a"
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
   fit: () => void
-  focusTile: (tile: FloorPlanTile) => void
+  focusTile: (tile: FloorPlanTile, zoom?: number) => void
   /** Fit the view to a set of cell-unit points (e.g. a cable's route). */
   focusPoints: (points: Pt[]) => void
 }
@@ -385,11 +385,11 @@ export function FloorCanvas({
     if (!apiRef) return
     apiRef.current = {
       fit: () => fitTo(svgRef.current, gw, gh),
-      focusTile: (tile) => {
+      focusTile: (tile, zoom) => {
         const svg = svgRef.current
         if (!svg) return
         const rect = svg.getBoundingClientRect()
-        const k = 1.4
+        const k = zoom ?? 1.4
         const tx = (tile.x + tile.width / 2) * CELL
         const ty = (tile.y + tile.height / 2) * CELL
         setT({ k, x: rect.width / 2 - tx * k, y: rect.height / 2 - ty * k })

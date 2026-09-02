@@ -497,6 +497,7 @@ FLOORPLAN_POPOVER_FIELD_DEFAULTS = [
     "utilization",
     "position",
     "size",
+    "faceplate",
 ]
 
 

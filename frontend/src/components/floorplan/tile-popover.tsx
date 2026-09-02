@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 
 import {
@@ -12,6 +13,7 @@ import {
   type FloorPlanTile,
   type FloorTileRackState,
   type Rack,
+  type ImagePorts,
 } from "@/lib/api"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
@@ -87,9 +89,12 @@ export interface PopoverField {
 function TileFaceplate({
   deviceId,
   deviceTypeId,
+  deviceImagePorts,
 }: {
   deviceId: string
   deviceTypeId: string
+  /** The device's own photo-port override, when it has one. */
+  deviceImagePorts?: ImagePorts | null
 }) {
   const [side, setSide] = useState<FaceplateSide>("front")
   const ifaces = useQuery({
@@ -101,25 +106,41 @@ function TileFaceplate({
   const dt = useQuery({
     queryKey: ["device-type-images", deviceTypeId],
     queryFn: () =>
-      api<{ front_image?: string | null; rear_image?: string | null }>(
-        `/api/device-types/${deviceTypeId}/`
-      ),
+      api<{
+        front_image?: string | null
+        rear_image?: string | null
+        image_ports?: ImagePorts | null
+      }>(`/api/device-types/${deviceTypeId}/`),
     staleTime: 5 * 60_000,
   })
   if (ifaces.isLoading)
     return <p className="text-[11px] text-muted-foreground">Loading…</p>
   // A rear side is only worth offering when there is something to show there.
   const hasRear = !!dt.data?.rear_image
+  // No mapped ports on this side but an uploaded photo: show the photo as
+  // it is, rather than a drawn panel that ignores the picture.
+  const doc = deviceImagePorts ?? dt.data?.image_ports
+  const mapped = (doc?.[side].length ?? 0) > 0
+  const photo = side === "front" ? dt.data?.front_image : dt.data?.rear_image
   return (
     <div className="grid gap-1">
       <div className="overflow-hidden rounded-md border border-border">
-        <FaceplateView
-          deviceId={deviceId}
-          deviceTypeId={deviceTypeId}
-          interfaces={ifaces.data?.results ?? []}
-          side={side}
-          fit="container"
-        />
+        {!mapped && photo ? (
+          <img
+            src={photo}
+            alt={`${side} of the device`}
+            className="mx-auto block h-auto max-h-56 w-auto max-w-full select-none"
+            draggable={false}
+          />
+        ) : (
+          <FaceplateView
+            deviceId={deviceId}
+            deviceTypeId={deviceTypeId}
+            interfaces={ifaces.data?.results ?? []}
+            side={side}
+            fit="container"
+          />
+        )}
       </div>
       {hasRear && (
         <span className="flex items-center gap-0.5 justify-self-end rounded-md border border-border p-0.5">
@@ -381,6 +402,7 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
         <TileFaceplate
           deviceId={tile.linked.id}
           deviceTypeId={linked.device_type.id}
+          deviceImagePorts={linked.image_ports ?? null}
         />
       ) : null,
   },
@@ -578,9 +600,7 @@ export function TilePopover({
         // A faceplate at w-80 was an unreadable postage stamp - the wide
         // variant gets real room, capped to the viewport.
         className={
-          wideRows.length
-            ? "w-[min(38rem,calc(100vw-2rem))] p-3"
-            : "w-64 p-3"
+          wideRows.length ? "w-[min(38rem,calc(100vw-2rem))] p-3" : "w-64 p-3"
         }
         // Unpinned it's a preview: never steal focus, and let the pointer through
         // so moving to the next tile doesn't fight the popover.
@@ -606,9 +626,16 @@ export function TilePopover({
                 ctx.tile.role_type?.name ||
                 "Tile"}
             </p>
-            <dl className="mt-2 grid gap-1 text-[13px]">
-              {pairRows.map((r) => (
-                <div key={r.key} className="grid grid-cols-[5.5rem_1fr] gap-2">
+            {/* Striped two-column rows, like the site map's inspector. */}
+            <dl className="-mx-1.5 mt-2 grid overflow-hidden rounded-md text-[13px]">
+              {pairRows.map((r, i) => (
+                <div
+                  key={r.key}
+                  className={cn(
+                    "grid grid-cols-[5.5rem_1fr] items-center gap-2 px-1.5 py-1",
+                    i % 2 === 1 && "bg-muted/30"
+                  )}
+                >
                   <dt className="text-[11px] text-muted-foreground">
                     {r.label}
                   </dt>

@@ -178,9 +178,11 @@ export const Route = createFileRoute("/floorplans/$id")({
   // router-wide search union and a second meaning breaks its reducer types.)
   validateSearch: (
     s: Record<string, unknown>
-  ): { trace?: string; viz?: "3d" } => ({
+  ): { trace?: string; viz?: "3d"; tile?: string } => ({
     ...(typeof s.trace === "string" ? { trace: s.trace } : {}),
     ...(s.viz === "3d" ? { viz: "3d" as const } : {}),
+    // ?tile=<id> - arrive zoomed onto one tile ("Show on floor plan").
+    ...(typeof s.tile === "string" ? { tile: s.tile } : {}),
   }),
 })
 
@@ -305,7 +307,11 @@ function FloorPlanPage() {
       ),
   })
   const cablePaths = cablePathsQuery.data?.cables ?? []
-  const { trace: traceParam, viz: vizParam } = Route.useSearch()
+  const {
+    trace: traceParam,
+    viz: vizParam,
+    tile: tileParam,
+  } = Route.useSearch()
   const view3d = vizParam === "3d"
   const [show3dHint, setShow3dHint] = useState(true)
 
@@ -613,6 +619,17 @@ function FloorPlanPage() {
 
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
+  // ?tile=<id> → select it and zoom in on it, once the tiles have landed.
+  const focusedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!tileParam || focusedRef.current === tileParam) return
+    const tile = tiles.find((t) => t.id === tileParam)
+    if (!tile) return
+    focusedRef.current = tileParam
+    setSelectedId(tile.id)
+    requestAnimationFrame(() => canvasApi.current?.focusTile(tile, 2.5))
+  }, [tileParam, tiles])
+
   const tracedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!traceParam || tracedRef.current === traceParam) return
@@ -2039,6 +2056,8 @@ function FloorPlanPage() {
             key={selected.id}
             tile={selected}
             planId={plan.id}
+            tileTypes={tileTypes.data?.results ?? []}
+            roles={roles.data?.results ?? []}
             onChange={(patch) => changeTile(selected.id, patch)}
             onRotate={() => rotateTile(selected)}
             onSetFacing={(o) => setTileFacing(selected, o)}
@@ -2275,6 +2294,8 @@ function FovSlider({
 function TileInspector({
   tile,
   planId,
+  tileTypes,
+  roles,
   onChange,
   onRotate,
   onSetFacing,
@@ -2283,6 +2304,8 @@ function TileInspector({
 }: {
   tile: FloorPlanTile
   planId: string
+  tileTypes: FloorTileTypeOption[]
+  roles: DeviceRole[]
   onChange: (patch: Partial<FloorPlanTile>) => void
   onRotate: () => void
   onSetFacing: (o: 0 | 90 | 180 | 270) => void
@@ -2348,6 +2371,51 @@ function TileInspector({
         </Button>
       </div>
 
+      {/* Re-type a placed tile: any tile type (zones stay zones), or a device
+        role standing in as a type. Links and geometry are untouched. */}
+      <FormSelect
+        label="Type"
+        value={
+          tile.tile_type
+            ? `tt:${tile.tile_type.id}`
+            : tile.role_type
+              ? `role:${tile.role_type.id}`
+              : null
+        }
+        onChange={(v) => {
+          if (!v) return
+          const [kind, id] = v.split(":")
+          if (kind === "tt") {
+            const tt = tileTypes.find((t) => t.id === id)
+            if (tt) onChange({ tile_type: tt, role_type: null })
+          } else {
+            const r = roles.find((x) => x.id === id)
+            if (r)
+              onChange({
+                tile_type: null,
+                role_type: {
+                  id: r.id,
+                  name: r.name,
+                  slug: r.slug,
+                  color: r.color,
+                  is_patch_panel: r.is_patch_panel,
+                  has_fov: r.has_fov,
+                },
+              })
+          }
+        }}
+        options={[
+          ...tileTypes
+            .filter((tt) => tt.is_zone === !!tile.tile_type?.is_zone)
+            .map((tt) => ({ value: `tt:${tt.id}`, label: tt.name })),
+          ...(tile.tile_type?.is_zone
+            ? []
+            : roles.map((r) => ({
+                value: `role:${r.id}`,
+                label: `${r.name} (role)`,
+              }))),
+        ]}
+      />
       {/* Facing is the TILE's own property - build-in-advance tiles need it
           set before any rack is linked, so only zones (no front) skip it. */}
       {!tileIsZone(tile) && (

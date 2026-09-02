@@ -285,6 +285,12 @@ Under **View**: **Fit labels to tiles** auto-sizes each tile's text to its
 footprint (so single-cell tiles keep readable names) - the preference is
 saved on the plan; and **Camera FOV cones** shows/hides the camera wedges.
 
+**Changing a tile's type.** Select a placed tile and pick another **Type**
+in the inspector - any tile type, or a device role standing in as one. The
+tile keeps its position, size, label, colour and object link; only the look
+(and the popover rows configured for that type) follow the new type. Zones
+stay zones.
+
 ## Live state on tiles
 
 The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds:
@@ -556,8 +562,20 @@ cable runs, just the trays, or both.
   count and a live health dot. Search it, or click a row to select and zoom to
   that tile. Editors' toggle state is saved with the plan.
 - **Show on floor plan** - the Rack and Device detail pages carry a button
+  that opens the plan zoomed onto the tile; placed on several plans (its own
+  tile and its rack's, or a cloned what-if plan), the button becomes a menu
+  listing them. The Rack and Device detail pages carry a button
   that jumps to where they're placed (a device falls back to *its rack's*
   plan, marked "via rack").
+
+## Cloning a plan
+
+The **Clone** action on the floor plans list copies a plan with everything
+drawn on it - tiles (with their rack / device / panel links), cable trays
+(geometry only; the cables routed through the originals stay where they are),
+raised-floor areas and walls - into the same location as `<name> copy`, and
+opens it. Handy for a second identical floor, or a what-if layout you can throw
+away. Needs the floor-plan add permission.
 
 ## Export
 
@@ -582,10 +600,11 @@ everywhere.
 
 ### Showing the device's panel {#faceplate-field}
 
-Tick **Faceplate** to draw a device-linked tile's front panel in its popover -
-what the box actually looks like, without opening its page. It uses the type's
-photo when that has mapped ports and the drawn panel otherwise, the same choice
-the device page makes, and offers a **rear** toggle when the type has a rear
+Tick **Faceplate** (on by default) to draw a device-linked tile's front panel
+in its popover - what the box actually looks like, without opening its page. It
+uses the type's photo with its mapped ports when there are any, the plain
+uploaded photo when the type has a picture but no ports mapped on that side,
+and the drawn panel otherwise, and offers a **rear** toggle when the type has a rear
 image.
 
 It applies to tiles linked to a **device**; a rack tile has an elevation rather
