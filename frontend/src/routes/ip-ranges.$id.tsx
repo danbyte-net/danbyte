@@ -3,15 +3,25 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
+import type { ColumnDef } from "@tanstack/react-table"
 
-import { api, type IPRange, type IPRangeAvailable } from "@/lib/api"
+import {
+  api,
+  type IPAddress,
+  type IPRange,
+  type IPRangeAvailable,
+} from "@/lib/api"
+import { PrefixIpsTable } from "@/components/prefix-ips-table"
+import { IpDeleteDialog } from "@/components/ip-delete-dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { Button } from "@/components/ui/button"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
+import { DataTable } from "@/components/data-table"
 import { IpRangeDeleteDialog } from "@/components/ip-range-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -128,7 +138,7 @@ function Body({ range: r }: { range: IPRange }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "available", label: "Available" },
+        { value: "available", label: "Addresses" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -139,7 +149,11 @@ function Body({ range: r }: { range: IPRange }) {
         <IpRangeOverview range={r} />
       </DetailTab>
       <DetailTab value="available">
-        <AvailablePanel rangeId={r.id} />
+        {r.prefix ? (
+          <AddressesPanel range={r} prefixId={r.prefix.id} />
+        ) : (
+          <AvailablePanel rangeId={r.id} prefixId={null} />
+        )}
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.iprange" objectId={r.id} />
@@ -157,12 +171,155 @@ function Body({ range: r }: { range: IPRange }) {
   )
 }
 
-function AvailablePanel({ rangeId }: { rangeId: string }) {
+type FreeRow = { address: string; n: number }
+
+const NO_FILTER = new Set<string>()
+const noop = () => {}
+
+/** The range as the ordinary IP table: its registered addresses with every
+ * IP column (status, tags, assignment…) interleaved with the free ones, which
+ * are click-to-add. Compact folds the free rows into "first free · N more". */
+function AddressesPanel({ range, prefixId }: { range: IPRange; prefixId: string }) {
+  const nav = useNavigate()
+  const { canDo } = useMe()
+  const [showAvailable, setShowAvailable] = useState(true)
+  const [compact, setCompact] = useState(false)
+  const [deleting, setDeleting] = useState<IPAddress | null>(null)
+  const avail = useQuery({
+    queryKey: ["ip-range-available", range.id],
+    queryFn: () => api<IPRangeAvailable>(`/api/ip-ranges/${range.id}/available/`),
+  })
+  const onCreateAt = useCallback(
+    (address: string) =>
+      nav({ to: "/ips/new", search: { prefix: prefixId, address } }),
+    [nav, prefixId]
+  )
+  const onEdit = useCallback(
+    (ip: IPAddress) => nav({ to: "/ips/$id/edit", params: { id: ip.id } }),
+    [nav]
+  )
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-4 text-[13px]">
+        {avail.data && (
+          <span className="text-muted-foreground">
+            <span className="num font-medium text-foreground">
+              {avail.data.available.toLocaleString()}
+            </span>{" "}
+            free ·{" "}
+            <span className="num font-medium text-foreground">
+              {avail.data.used.toLocaleString()}
+            </span>{" "}
+            used ·{" "}
+            <span className="num font-medium text-foreground">
+              {avail.data.size.toLocaleString()}
+            </span>{" "}
+            total
+          </span>
+        )}
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={showAvailable}
+            onCheckedChange={(v) => setShowAvailable(!!v)}
+          />
+          <span>Show available</span>
+        </label>
+        {showAvailable && (
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={compact} onCheckedChange={(v) => setCompact(!!v)} />
+            <span>Compact</span>
+          </label>
+        )}
+      </div>
+      <PrefixIpsTable
+        prefixId={prefixId}
+        statusFilter={NO_FILTER}
+        roleFilter={NO_FILTER}
+        tagFilter={NO_FILTER}
+        onToggleTag={noop}
+        search=""
+        showAvailable={showAvailable}
+        showDhcpPool={false}
+        cidr={range.prefix?.cidr ?? ""}
+        span={{ start: range.start_address, end: range.end_address }}
+        compact={compact}
+        hasDescendants={false}
+        onEdit={onEdit}
+        onDelete={setDeleting}
+        onCreateAt={onCreateAt}
+        onSelectedRowsChange={noop}
+        canEdit={canDo("ipaddress", "change")}
+        canDelete={canDo("ipaddress", "delete")}
+        canAdd={canDo("ipaddress", "add")}
+      />
+      <IpDeleteDialog
+        ip={deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        onDeleted={() => setDeleting(null)}
+      />
+    </div>
+  )
+}
+
+function AvailablePanel({
+  rangeId,
+  prefixId,
+}: {
+  rangeId: string
+  prefixId: string | null
+}) {
+  const { canDo } = useMe()
+  const canAdd = canDo("ipaddress", "add") && !!prefixId
   const q = useQuery({
     queryKey: ["ip-range-available", rangeId],
     queryFn: () =>
       api<IPRangeAvailable>(`/api/ip-ranges/${rangeId}/available/`),
   })
+  const rows = useMemo<FreeRow[]>(
+    () => (q.data?.results ?? []).map((address, i) => ({ address, n: i + 1 })),
+    [q.data]
+  )
+  // One row per free address; "Add IP" opens the IP form with the range's
+  // subnet and this address already filled in.
+  const columns = useMemo<ColumnDef<FreeRow>[]>(
+    () => [
+      {
+        id: "n",
+        header: "#",
+        cell: ({ row }) => (
+          <span className="num text-muted-foreground">{row.original.n}</span>
+        ),
+      },
+      {
+        id: "address",
+        header: "Address",
+        cell: ({ row }) => (
+          <span className="font-mono text-[13px]">{row.original.address}</span>
+        ),
+      },
+      ...(canAdd
+        ? [
+            {
+              id: "actions",
+              header: "",
+              cell: ({ row }) => (
+                <div className="flex justify-end">
+                  <Button asChild size="sm" variant="ghost" className="h-7">
+                    <Link
+                      to="/ips/new"
+                      search={{ prefix: prefixId, address: row.original.address }}
+                    >
+                      Add IP
+                    </Link>
+                  </Button>
+                </div>
+              ),
+            } satisfies ColumnDef<FreeRow>,
+          ]
+        : []),
+    ],
+    [canAdd, prefixId]
+  )
 
   return (
     <div>
@@ -193,26 +350,19 @@ function AvailablePanel({ rangeId }: { rangeId: string }) {
               total
             </span>
           </div>
-          {q.data.results.length === 0 ? (
+          {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No free addresses in this range.
             </p>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {q.data.results.map((addr) => (
-                <span
-                  key={addr}
-                  className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground"
-                >
-                  {addr}
-                </span>
-              ))}
+            <>
+              <DataTable data={rows} columns={columns} embedded />
               {q.data.truncated && (
-                <span className="px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                  …more
-                </span>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Showing the first {rows.length} free addresses.
+                </p>
               )}
-            </div>
+            </>
           )}
         </>
       )}

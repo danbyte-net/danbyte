@@ -1,4 +1,6 @@
 import { memo, useCallback, useMemo } from "react"
+import { flexRender } from "@tanstack/react-table"
+import { FacetClickCell } from "@/components/table-filters"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -32,7 +34,7 @@ import { RowActions } from "@/components/row-actions"
 // for free addresses when "Show available" is on.
 export type IpRow =
   | { kind: "registered"; ip: IPAddress }
-  | { kind: "free"; address: string }
+  | { kind: "free"; address: string; more?: number }
 
 // Stable empty fallback so `columns` (which depends on `monitoring`) keeps a
 // constant identity while the bulk status query loads.
@@ -45,6 +47,9 @@ interface PrefixIpsTableProps {
   roleFilter: Set<string>
   tagFilter: Set<string>
   onToggleTag: (slug: string) => void
+  /** Clicking a status / role badge toggles it in the rail, like a tag. */
+  onToggleStatus?: (id: string) => void
+  onToggleRole?: (id: string) => void
   search: string
   showAvailable: boolean
   /** Show the DHCP scope pool's addresses as ghost rows even when they have no
@@ -52,6 +57,12 @@ interface PrefixIpsTableProps {
   showDhcpPool: boolean
   /** The prefix CIDR - needed to enumerate free host addresses. */
   cidr: string
+  /** Limit the table to one span inside the prefix (an IP range): only the
+   * registered IPs inside it, and free addresses enumerated from it. */
+  span?: { start: string; end: string }
+  /** One free row standing for all of them ("first free · N more"), instead
+   * of a row per free address. */
+  compact?: boolean
   hasDescendants: boolean
   onEdit: (ip: IPAddress) => void
   onDelete: (ip: IPAddress) => void
@@ -68,10 +79,14 @@ function PrefixIpsTableImpl({
   roleFilter,
   tagFilter,
   onToggleTag,
+  onToggleStatus,
+  onToggleRole,
   search,
   showAvailable,
   showDhcpPool,
   cidr,
+  span,
+  compact = false,
   hasDescendants,
   onEdit,
   onDelete,
@@ -124,7 +139,15 @@ function PrefixIpsTableImpl({
   )
 
   const rows = useMemo<IpRow[]>(() => {
-    const all = query.data?.results ?? []
+    const spanInts =
+      span && ipToBigInt(span.start) !== null && ipToBigInt(span.end) !== null
+        ? { start: ipToBigInt(span.start)!, end: ipToBigInt(span.end)! }
+        : null
+    const all = (query.data?.results ?? []).filter((ip) => {
+      if (!spanInts) return true
+      const n = ipToBigInt(ip.ip_address)
+      return n !== null && n >= spanInts.start && n <= spanInts.end
+    })
     const q = search.trim().toLowerCase()
     const filtered = all.filter((ip) => {
       if (
@@ -178,7 +201,13 @@ function PrefixIpsTableImpl({
         if (q && !address.toLowerCase().includes(q)) return
         freeRows.push({ kind: "free", address })
       }
-      if (showAvailable) {
+      if (showAvailable && spanInts) {
+        let budget = 4096
+        for (let n = spanInts.start; n <= spanInts.end && budget > 0; n++) {
+          pushFree(n)
+          budget--
+        }
+      } else if (showAvailable) {
         const hosts = enumerableHostInts(cidr)
         if (hosts) for (const n of hosts.ints) pushFree(n)
       } else {
@@ -196,7 +225,13 @@ function PrefixIpsTableImpl({
       }
     }
 
-    const merged = [...registeredRows, ...freeRows]
+    // Compact: the first free address stands for the rest.
+    const first = freeRows[0]
+    const shownFree: IpRow[] =
+      compact && freeRows.length > 1 && first.kind === "free"
+        ? [{ kind: "free", address: first.address, more: freeRows.length - 1 }]
+        : freeRows
+    const merged = [...registeredRows, ...shownFree]
     // Default to numeric address order so registered + free interleave.
     const addrInt = (r: IpRow) =>
       r.kind === "registered"
@@ -214,6 +249,8 @@ function PrefixIpsTableImpl({
     roleFilter,
     tagFilter,
     search,
+    span,
+    compact,
     showAvailable,
     showDhcpPool,
     dhcpSpans,
@@ -300,6 +337,12 @@ function PrefixIpsTableImpl({
         onEdit,
         onDelete,
         onCreateAt,
+        statusFacet: onToggleStatus
+          ? { active: statusFilter, toggle: onToggleStatus }
+          : undefined,
+        roleFacet: onToggleRole
+          ? { active: roleFilter, toggle: onToggleRole }
+          : undefined,
         monitoring,
         cfDefs,
         findRange,
@@ -324,6 +367,10 @@ function PrefixIpsTableImpl({
       canEdit,
       canDelete,
       canAdd,
+      statusFilter,
+      roleFilter,
+      onToggleStatus,
+      onToggleRole,
     ]
   )
 
@@ -397,12 +444,17 @@ interface BuildOpts {
   canEdit: boolean
   canDelete: boolean
   canAdd: boolean
+  /** Status / role facet state - the badges toggle these when set. */
+  statusFacet?: { active: Set<string>; toggle: (id: string) => void }
+  roleFacet?: { active: Set<string>; toggle: (id: string) => void }
 }
 
 function buildColumns({
   hasDescendants,
   activeTagSlugs,
   onToggleTag,
+  statusFacet,
+  roleFacet,
   onEdit,
   onDelete,
   onCreateAt,
@@ -424,12 +476,45 @@ function buildColumns({
     copyButton: true,
     freeRow: {
       address: (r) => (r.kind === "free" ? r.address : ""),
+      onPick: canAdd
+        ? (r) => {
+            if (r.kind === "free") onCreateAt(r.address)
+          }
+        : undefined,
+      more: (r) => (r.kind === "free" ? (r.more ?? 0) : 0),
       statusLabel: "Available",
     },
     dhcpState: dhcpStateForRow,
     cfDefs,
     tagFilter: { activeSlugs: activeTagSlugs, onToggle: onToggleTag },
   })
+
+  // Status / role badges toggle their rail facet when clicked (links inside
+  // a cell keep navigating - FacetClickCell leaves those alone).
+  const wrapFacet = (
+    id: "status" | "role",
+    facet: { active: Set<string>; toggle: (id: string) => void } | undefined,
+    key: (ip: IPAddress) => string | null
+  ) => {
+    if (!facet) return
+    const col = cols.find((c) => c.id === id)
+    if (!col?.cell) return
+    const inner = col.cell
+    col.cell = (ctx) => {
+      const value = ctx.row.original.kind === "registered" ? key(ctx.row.original.ip) : null
+      return (
+        <FacetClickCell
+          value={value}
+          active={value !== null && facet.active.has(value)}
+          toggle={facet.toggle}
+        >
+          {flexRender(inner, ctx)}
+        </FacetClickCell>
+      )
+    }
+  }
+  wrapFacet("status", statusFacet, (ip) => ip.status?.id ?? null)
+  wrapFacet("role", roleFacet, (ip) => ip.role?.id ?? null)
   const insertAfter = (id: string, ...extra: ColumnDef<IpRow>[]) => {
     const i = cols.findIndex((c) => c.id === id)
     cols.splice(i + 1, 0, ...extra)
@@ -552,7 +637,6 @@ function buildColumns({
         const addr = row.original.address
         return (
           <Button
-            variant="ghost"
             size="sm"
             className="h-6 text-[11px]"
             onClick={() => onCreateAt(addr)}

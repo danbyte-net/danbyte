@@ -77,7 +77,14 @@ export interface IpColumnOpts<T> {
   /** Copy-to-clipboard button next to the address (device pane). */
   copyButton?: boolean
   /** Rendering for rows where getIp() returns null (free addresses). */
-  freeRow?: { address: (row: T) => string; statusLabel?: string }
+  freeRow?: {
+    address: (row: T) => string
+    statusLabel?: string
+    /** Clicking the free address itself starts an Add IP at it. */
+    onPick?: (row: T) => void
+    /** Compact mode: how many further free addresses this row stands for. */
+    more?: (row: T) => number
+  }
   /**
    * DHCP badge state per row. Defaults to the registered IP's own `dhcp` field;
    * pass this to also shade *free* rows (which have no IPAddress) as pool space.
@@ -116,12 +123,31 @@ export function buildIpColumns<T = IPAddress>(
       cell: ({ row }) => {
         const ip = getIp(row.original)
         if (!ip) {
-          return opts.freeRow ? (
-            <span className="font-mono text-xs text-muted-foreground italic">
-              {opts.freeRow.address(row.original)}
+          if (!opts.freeRow) return dash
+          const free = opts.freeRow
+          const more = free.more?.(row.original) ?? 0
+          const addr = free.address(row.original)
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              {free.onPick ? (
+                <button
+                  type="button"
+                  onClick={() => free.onPick?.(row.original)}
+                  className="link font-mono text-xs italic"
+                >
+                  {addr}
+                </button>
+              ) : (
+                <span className="font-mono text-xs text-muted-foreground italic">
+                  {addr}
+                </span>
+              )}
+              {more > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  · {more} more available
+                </span>
+              )}
             </span>
-          ) : (
-            dash
           )
         }
         const link = (

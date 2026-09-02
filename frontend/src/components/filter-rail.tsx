@@ -1,4 +1,5 @@
 import { Checkbox } from "@/components/ui/checkbox"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { cn } from "@/lib/utils"
 
 // Shared filter-rail building blocks. Every list page uses these:
@@ -90,15 +91,7 @@ export function FacetGroup({
                 aria-label={opt.label}
               />
               {opt.color ? (
-                <span
-                  className="inline-flex items-center rounded-[5px] px-1.5 py-0.5 text-[11px] font-medium"
-                  style={{
-                    backgroundColor: opt.color,
-                    color: opt.textColor || "#fff",
-                  }}
-                >
-                  {opt.label}
-                </span>
+                <ColorBadge name={opt.label} color={opt.color} />
               ) : (
                 <span className="flex-1">{opt.label}</span>
               )}

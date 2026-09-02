@@ -136,6 +136,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const [roleFilter, setRoleFilter] = useState<Set<string>>(new Set())
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
   const [showAvailable, setShowAvailable] = useState(false)
+  const [compact, setCompact] = useState(false)
   const [showDhcpPool, setShowDhcpPool] = useState(false)
 
   // Children filters/selection.
@@ -368,6 +369,8 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           showAvailable={showAvailable}
           onToggleShowAvailable={setShowAvailable}
           canShowAvailable={canShowAvailable}
+          compact={compact}
+          onToggleCompact={setCompact}
           hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
           showDhcpPool={showDhcpPool}
           onToggleShowDhcpPool={setShowDhcpPool}
@@ -396,8 +399,11 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               roleFilter={roleFilter}
               tagFilter={tagFilter}
               onToggleTag={toggleTag}
+              onToggleStatus={toggleStatus}
+              onToggleRole={toggleRole}
               search={search}
               showAvailable={showAvailable}
+              compact={compact}
               showDhcpPool={showDhcpPool}
               cidr={p.cidr}
               hasDescendants={p.has_descendants}

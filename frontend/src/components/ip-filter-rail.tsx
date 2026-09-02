@@ -2,6 +2,9 @@ import { memo, useMemo } from "react"
 
 import type { IPAddress } from "@/lib/api"
 import { Checkbox } from "@/components/ui/checkbox"
+import { FacetGroup } from "@/components/filter-rail"
+
+type FacetOption = Parameters<typeof FacetGroup>[0]["options"][number]
 
 interface FacetCount {
   id: string
@@ -19,6 +22,14 @@ interface TagFacetCount {
   count: number
 }
 
+const asOption = (f: FacetCount): FacetOption => ({
+  value: f.id,
+  label: f.name,
+  count: f.count,
+  color: f.color,
+  textColor: f.text_color,
+})
+
 export interface IpFilterRailProps {
   rows: IPAddress[]
   statusFilter: Set<string>
@@ -30,6 +41,9 @@ export interface IpFilterRailProps {
   showAvailable: boolean
   onToggleShowAvailable: (v: boolean) => void
   canShowAvailable: boolean
+  /** Fold the free rows into one ("first free · N more"). */
+  compact?: boolean
+  onToggleCompact?: (v: boolean) => void
   /** Prefix has DHCP scope pools - offers the "Show DHCP pool" toggle. */
   hasDhcpPool?: boolean
   showDhcpPool?: boolean
@@ -47,6 +61,8 @@ function IpFilterRailImpl({
   showAvailable,
   onToggleShowAvailable,
   canShowAvailable,
+  compact = false,
+  onToggleCompact,
   hasDhcpPool,
   showDhcpPool,
   onToggleShowDhcpPool,
@@ -63,6 +79,15 @@ function IpFilterRailImpl({
           <span>Show available</span>
         </label>
       )}
+      {canShowAvailable && showAvailable && onToggleCompact && (
+        <label className="-mx-1.5 -mt-3 flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
+          <Checkbox
+            checked={compact}
+            onCheckedChange={(v) => onToggleCompact(!!v)}
+          />
+          <span>Compact</span>
+        </label>
+      )}
       {hasDhcpPool && onToggleShowDhcpPool && (
         <label
           className="-mx-1.5 -mt-3 flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50"
@@ -77,18 +102,25 @@ function IpFilterRailImpl({
       )}
       <FacetGroup
         label="Status"
-        options={facets.status}
+        options={facets.status.map(asOption)}
         selected={statusFilter}
         onToggle={onToggleStatus}
       />
       <FacetGroup
         label="Role"
-        options={facets.role}
+        options={facets.role.map(asOption)}
         selected={roleFilter}
         onToggle={onToggleRole}
       />
-      <TagFacetGroup
-        options={facets.tags}
+      <FacetGroup
+        label="Tags"
+        options={facets.tags.map((t) => ({
+          value: t.slug,
+          label: t.name,
+          count: t.count,
+          color: t.color,
+          textColor: t.text_color,
+        }))}
         selected={tagFilter}
         onToggle={onToggleTag}
       />
@@ -153,94 +185,3 @@ function buildFacets(rows: IPAddress[]) {
   }
 }
 
-function FacetGroup({
-  label,
-  options,
-  selected,
-  onToggle,
-}: {
-  label: string
-  options: FacetCount[]
-  selected: Set<string>
-  onToggle: (v: string) => void
-}) {
-  if (options.length === 0) return null
-  return (
-    <div>
-      <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-        {label}
-      </h3>
-      <ul className="space-y-0.5">
-        {options.map((opt) => (
-          <li key={opt.id}>
-            <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
-              <Checkbox
-                checked={selected.has(opt.id)}
-                onCheckedChange={() => onToggle(opt.id)}
-                aria-label={opt.name}
-              />
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
-                style={{
-                  backgroundColor: opt.color || "var(--muted-foreground)",
-                }}
-              />
-              <span className="flex-1 truncate">{opt.name}</span>
-              <span className="ml-auto text-[11px] text-muted-foreground">
-                {opt.count}
-              </span>
-            </label>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function TagFacetGroup({
-  options,
-  selected,
-  onToggle,
-}: {
-  options: TagFacetCount[]
-  selected: Set<string>
-  onToggle: (slug: string) => void
-}) {
-  if (options.length === 0) return null
-  return (
-    <div>
-      <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-        Tags
-      </h3>
-      <ul className="space-y-0.5">
-        {options.map((opt) => (
-          <li key={opt.slug}>
-            <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
-              <Checkbox
-                checked={selected.has(opt.slug)}
-                onCheckedChange={() => onToggle(opt.slug)}
-                aria-label={opt.name}
-              />
-              {opt.color ? (
-                <span
-                  className="inline-flex items-center rounded-[5px] px-1.5 py-0.5 text-[11px] font-medium"
-                  style={{
-                    backgroundColor: opt.color,
-                    color: opt.text_color || "#fff",
-                  }}
-                >
-                  {opt.name}
-                </span>
-              ) : (
-                <span className="flex-1">{opt.name}</span>
-              )}
-              <span className="ml-auto text-[11px] text-muted-foreground">
-                {opt.count}
-              </span>
-            </label>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
