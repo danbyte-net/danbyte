@@ -61,12 +61,15 @@ server {
     # same-origin so connect-src 'self' covers it). 'unsafe-inline' covers the
     # SSR hydration + chart <style> injection - the remaining hardening step is a
     # nonce-based script-src to drop 'unsafe-inline' (needs SSR nonce plumbing).
+    # connect-src additionally allows GitHub's raw + API hosts: the device-type
+    # import's "Fetch with my browser" option downloads devicetype-library YAML
+    # in the operator's browser (an air-gapped server never sees GitHub).
     # img-src additionally allows tile.openstreetmap.org - the Site map's
     # default raster tiles. If you configure a custom tile server in
     # Settings → Deployment → Map tiles, add its origin here too.
     # report-uri feeds /api/csp-report/ so any real-browser violation is logged
     # (danbyte.csp) rather than silently breaking - watch it before tightening.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com; font-src 'self' data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/" always;
 
     client_max_body_size 512m;
 

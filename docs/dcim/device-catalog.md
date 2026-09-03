@@ -92,6 +92,14 @@ to the [`{position}` token](virtual-chassis.md#position-aware-interface-names)
 (`1/…` → `{position}/…`, Juniper-style `0/…` → `{position:0}/…`) so one
 imported type serves every member of a stack.
 
+**Server without internet access?** Tick **Fetch with my browser**. The links
+you pasted - single files or a whole `/tree/` folder - are downloaded by your
+browser (GitHub allows that cross-origin) and the YAML text is sent to Danbyte,
+exactly as if you had pasted it; the server never contacts GitHub. The tick is
+remembered per browser. It needs the reverse proxy's Content-Security-Policy to
+allow `raw.githubusercontent.com` and `api.github.com` in `connect-src` - the
+shipped nginx template does; a hand-written config must add them.
+
 ### Filtering a long catalog {#filtering}
 
 Import a vendor folder or two and the catalog runs to hundreds of models, so the
