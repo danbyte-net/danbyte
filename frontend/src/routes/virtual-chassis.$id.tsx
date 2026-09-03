@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { PortUtilizationCard } from "@/components/port-utilization-card"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Crown, Pencil, Plus, Trash2, Unlink } from "lucide-react"
@@ -357,6 +358,10 @@ function Overview({
             onLegend={onLegend}
           />
           <FaceplateLegend className="mt-2" content={legend} />
+          {/* Every member's ports summed - the device page's card, stack-wide. */}
+          <div className="mt-6">
+            <PortUtilizationCard vcId={vc.id} />
+          </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
             {vc.member_count} member{vc.member_count === 1 ? "" : "s"}
             {vc.master ? <> · master {vc.master.name}</> : null}

@@ -3071,66 +3071,12 @@ class DeviceViewSet(
 
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):
-        """Connected / reserved / free counts per port kind (issue #64).
-
-        Connected = the port terminates a cable or carries mark_connected
-        (undocumented cable); reserved = its cable's status is "planned"
-        (earmarked but not yet patched) or the uncabled port holds a
-        PortReservation; free = no cable, no hold. ``marked`` is the
-        undocumented subset of connected.
-        """
-        from django.db.models import Exists
-
-        from .models import CableTermination, PortReservation
+        """Connected / reserved / free counts per port kind (issue #64) - see
+        ``port_utilization.utilization_payload`` for the rules."""
+        from .port_utilization import utilization_payload
 
         device = self.get_object()
-        kinds = {
-            "interfaces": ("interfaces", "interface"),
-            "front_ports": ("front_ports", "front_port"),
-            "rear_ports": ("rear_ports", "rear_port"),
-        }
-        out: dict = {}
-        combined = {
-            "total": 0, "connected": 0, "reserved": 0, "free": 0, "marked": 0,
-        }
-        for key, (relation, term_field) in kinds.items():
-            rel = getattr(device, relation)
-            # Not-present / decommissioning interfaces aren't capacity (#105);
-            # same rule as the shared device_port_counts.
-            if relation == "interfaces":
-                rel = rel.exclude(status__excludes_capacity=True)
-            cabled = CableTermination.objects.filter(
-                **{term_field: OuterRef("pk")}
-            )
-            planned = cabled.filter(cable__status__slug="planned")
-            resv = PortReservation.objects.filter(
-                **{term_field: OuterRef("pk")}
-            )
-            qs = rel.annotate(
-                _cabled=Exists(cabled), _planned=Exists(planned),
-                _resv=Exists(resv),
-            )
-            total = rel.count()
-            reserved = qs.filter(
-                Q(_planned=True)
-                | Q(_cabled=False, mark_connected=False, _resv=True)
-            ).count()
-            marked = qs.filter(_cabled=False, mark_connected=True).count()
-            connected = (
-                qs.filter(_cabled=True, _planned=False).count() + marked
-            )
-            row = {
-                "total": total,
-                "connected": connected,
-                "reserved": reserved,
-                "free": total - connected - reserved,
-                "marked": marked,
-            }
-            out[key] = row
-            for k in combined:
-                combined[k] += row[k]
-        out["combined"] = combined
-        return Response(out)
+        return Response(utilization_payload(Device.objects.filter(pk=device.pk)))
 
     @action(detail=False, methods=["get"], url_path="port-utilization")
     def port_utilization_rollup(self, request):
@@ -6818,6 +6764,15 @@ class VirtualChassisViewSet(TenantScopedViewSet):
                       | qs.filter(domain__icontains=search)
                       | qs.filter(description__icontains=search)) | qs.filter(cf_text_q(qs.model, search))
         return qs
+
+    @action(detail=True, methods=["get"], url_path="port-utilization")
+    def port_utilization(self, request, pk=None):
+        """The device card's numbers, summed across every member of the
+        stack - the same rules as ``/api/devices/<id>/port-utilization/``."""
+        from .port_utilization import utilization_payload
+
+        vc = self.get_object()
+        return Response(utilization_payload(Device.objects.filter(virtual_chassis=vc)))
 
     def perform_destroy(self, instance):
         # Deleting a stack releases its members (SET_NULL on the FK) - also

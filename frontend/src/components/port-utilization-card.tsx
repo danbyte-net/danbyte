@@ -34,10 +34,13 @@ export type PortKind = "interfaces" | "front_ports" | "rear_ports"
 
 export function PortUtilizationCard({
   deviceId,
+  vcId,
   onHoverState,
   onPick,
 }: {
-  deviceId: string
+  deviceId?: string
+  /** A whole stack instead of one device - the members' ports summed. */
+  vcId?: string
   /** Hovering a legend entry - lights matching ports on the panel. */
   onHoverState?: (s: CableState | null) => void
   /** Clicking a legend entry (state + the kind holding most of it) or a
@@ -45,8 +48,16 @@ export function PortUtilizationCard({
   onPick?: (s: CableState | null, kind: PortKind) => void
 }) {
   const q = useQuery({
-    queryKey: ["device-port-utilization", deviceId],
-    queryFn: () => api<Payload>(`/api/devices/${deviceId}/port-utilization/`),
+    queryKey: vcId
+      ? ["vc-port-utilization", vcId]
+      : ["device-port-utilization", deviceId],
+    queryFn: () =>
+      api<Payload>(
+        vcId
+          ? `/api/virtual-chassis/${vcId}/port-utilization/`
+          : `/api/devices/${deviceId}/port-utilization/`
+      ),
+    enabled: !!(vcId || deviceId),
     staleTime: 60_000,
   })
   const d = q.data

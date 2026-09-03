@@ -100,6 +100,10 @@ you see every port in the stack.
 A member's own device page shows a **Stack** badge in the header
 (`Stack: name · pos N · master`) linking back to the stack.
 
+**Port utilization** sits under the stack elevation: the same card the device
+page shows - connected / reserved / free per port kind, undocumented cables
+counted as connected - summed across every member.
+
 ## Deleting a stack
 
 Deleting a virtual chassis **releases its members** - their positions and
