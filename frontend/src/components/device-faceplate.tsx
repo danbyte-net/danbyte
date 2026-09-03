@@ -357,13 +357,16 @@ function PortHoverBody({
   const fields = usePortPopoverFields()
   const rows: Record<string, React.ReactNode> = {
     name: (
-      <Link
-        to="/interfaces/$id"
-        params={{ id: i.id }}
-        className="link font-semibold"
-      >
-        {i.name}
-      </Link>
+      <>
+        <Link
+          to="/interfaces/$id"
+          params={{ id: i.id }}
+          className="link font-semibold"
+        >
+          {i.name}
+        </Link>
+        {i.label && <div className="text-muted-foreground">{i.label}</div>}
+      </>
     ),
     type: i.type_display ? <div>{i.type_display}</div> : null,
     state: (
@@ -1642,37 +1645,16 @@ export function ImagePortsFaceplate({
                 side="top"
                 className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
               >
-                <Link
-                  to="/interfaces/$id"
-                  params={{ id: iface.id }}
-                  className="link font-semibold"
-                >
-                  {iface.name}
-                </Link>
-                {iface.label && (
-                  <div className="text-muted-foreground">{iface.label}</div>
-                )}
-                {iface.type_display && <div>{iface.type_display}</div>}
-                <div>
-                  {state === "disabled"
-                    ? "disabled"
-                    : state === "free"
-                      ? "enabled · no cable"
-                      : `up${iface.speed ? ` · ${iface.speed}` : ""}`}
-                </div>
-                {obs && (
-                  <div className="text-muted-foreground">{liveLine(obs)}</div>
-                )}
-                {iface.ip_addresses.slice(0, 3).map((ip) => (
-                  <Link
-                    key={ip.id}
-                    to="/ips/$id"
-                    params={{ id: ip.id }}
-                    className="link"
-                  >
-                    {ip.ip_address}
-                  </Link>
-                ))}
+                <PortHoverBody
+                  i={iface}
+                  state={state}
+                  hasVlan={
+                    !!iface.vlan ||
+                    iface.tagged_vlans.length > 0 ||
+                    iface.mode === "tagged-all"
+                  }
+                  observed={obs}
+                />
               </HoverCardContent>
             </HoverCard>
           )

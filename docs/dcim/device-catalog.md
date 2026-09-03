@@ -477,6 +477,10 @@ the **photo faceplate** in place of the schematic one - each marker matched to
 the device's real interface by name (so it carries the same state colour, live
 SNMP dot, hover card and link), and the markers also render **on the device's
 face in the [3D room view](../features/floor-plans.md#the-3d-room-view)**.
+**Hover.** A photo port's hover card shows the same rows as the drawn
+faceplate's - name and printed label, type, state, VLAN (native / trunk),
+live SNMP state, IPs - in the order set under **Settings → Components**.
+
 **Size.** By default the photo draws at its upload size (its own pixels,
 never wider than the pane). Tick **Use this size everywhere** in the editor
 and its **Fit** / **−** / **+** zoom is saved with the layout for that side:
