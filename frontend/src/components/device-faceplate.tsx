@@ -255,9 +255,11 @@ function Cage({
   const tint = { ...i, type: i.type_display || i.type }
   // A port that is only "marked connected" lights up too when the deployment
   // asks for it (Settings → Admin → Faceplates).
-  const cabled =
-    (state !== "free" && state !== "disabled") ||
-    (faceplateMarkedLit && cableState(i) === "marked")
+  const markedLit = faceplateMarkedLit && cableState(i) === "marked"
+  const cabled = (state !== "free" && state !== "disabled") || markedLit
+  // The tier colour helpers key off "has a cable"; a lit marked port borrows
+  // the cabled path so it draws in its speed tier, not the free grey.
+  const tintAsCabled = markedLit ? { ...tint, cable: true } : tint
   const capability = portCapabilityHex(tint)
   return (
     <HoverCard openDelay={100} closeDelay={80}>
@@ -271,7 +273,7 @@ function Cage({
           data-port-id={i.id}
           style={
             cabled
-              ? { ...style, ...portTintStyle(portHex(tint)) }
+              ? { ...style, ...portTintStyle(portHex(tintAsCabled)) }
               : cableState(i) === "reserved"
                 ? // Directly reserved (no cable yet) - amber outline so the
                   // hold reads on the panel, matching the utilization card.
@@ -1584,9 +1586,9 @@ export function ImagePortsFaceplate({
           }
           const state = portState(iface)
           const tint = { ...iface, type: iface.type_display || iface.type }
-          const tiered =
-            (state !== "free" && state !== "disabled") ||
-            (faceplateMarkedLit && cableState(iface) === "marked")
+          const markedLit = faceplateMarkedLit && cableState(iface) === "marked"
+          const tiered = (state !== "free" && state !== "disabled") || markedLit
+          const tintAsCabled = markedLit ? { ...tint, cable: true } : tint
           const capability = portCapabilityHex(tint)
           return (
             <HoverCard key={iface.id} openDelay={100} closeDelay={80}>
@@ -1604,7 +1606,7 @@ export function ImagePortsFaceplate({
                     // only (capability-tinted when the type tells us) - no fill,
                     // so the artwork stays the star until a port lights up.
                     tiered
-                      ? { ...style, ...portOverlayStyle(portHex(tint)) }
+                      ? { ...style, ...portOverlayStyle(portHex(tintAsCabled)) }
                       : cableState(iface) === "reserved"
                         ? // Directly reserved - amber outline, still no fill.
                           {
