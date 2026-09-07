@@ -41,17 +41,81 @@ import { PlanStaged, useSaveObject } from "@/lib/save-object"
  * An AP's integrated omnis live here as components; an external sector is its
  * own small device whose antenna describes the element and whose RF aux port
  * takes the coax. Nothing here is cable-able - the aux port is the cable end. */
+/** The device's antennas - one query shared by the Hardware pane and the
+ * Overview summary. */
+export function useDeviceAntennas(deviceId: string) {
+  return useQuery({
+    queryKey: ["device-antennas", deviceId],
+    queryFn: () => api<Paginated<Antenna>>(`/api/antennas/?device=${deviceId}`),
+  })
+}
+
+/** One line for the Overview: how many, what kind, the gain, the bands and
+ * the connector - the RF facts an operator checks before a site survey,
+ * without opening Components → Hardware. */
+export function AntennaSummary({ antennas }: { antennas: Antenna[] }) {
+  const choices = useDcimChoices()
+  const label = (
+    list: { value: string; label: string }[] | undefined,
+    v: string
+  ) => list?.find((o) => o.value === v)?.label ?? v
+  const distinct = (vals: string[]) => [...new Set(vals.filter(Boolean))]
+  const types = distinct(antennas.map((a) => a.antenna_type)).map((v) =>
+    label(choices.antenna_types, v)
+  )
+  const gains = antennas
+    .map((a) => (a.gain_dbi != null ? Number(a.gain_dbi) : NaN))
+    .filter((n) => !Number.isNaN(n))
+  const gain =
+    gains.length === 0
+      ? null
+      : Math.min(...gains) === Math.max(...gains)
+        ? `${Math.min(...gains)} dBi`
+        : `${Math.min(...gains)}–${Math.max(...gains)} dBi`
+  const bands = distinct(antennas.flatMap((a) => a.bands))
+  const connectors = distinct(antennas.map((a) => a.connector)).map((v) =>
+    label(choices.rf_connector_types, v)
+  )
+  const polar = distinct(antennas.map((a) => a.polarization)).map((v) =>
+    label(choices.antenna_polarizations, v)
+  )
+  const direct = antennas.filter((a) => a.direct_mount).length
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+      <span className="num">{antennas.length}</span>
+      {types.length > 0 && <span>{types.join(", ")}</span>}
+      {gain && <span className="num">{gain}</span>}
+      {bands.length > 0 && (
+        <span className="inline-flex flex-wrap gap-1">
+          {bands.map((b) => (
+            <Badge key={b} variant="outline" className="text-[10px]">
+              {label(choices.antenna_bands, b)}
+            </Badge>
+          ))}
+        </span>
+      )}
+      {polar.length > 0 && (
+        <span className="text-muted-foreground">{polar.join(" / ")}</span>
+      )}
+      {connectors.length > 0 && <span>{connectors.join(", ")}</span>}
+      {direct > 0 && (
+        <Badge variant="secondary" className="text-[10px]">
+          {direct === antennas.length
+            ? "direct mount"
+            : `${direct} direct mount`}
+        </Badge>
+      )}
+    </span>
+  )
+}
+
 export function DeviceAntennasPane({ deviceId }: { deviceId: string }) {
   const { canDo } = useMe()
   const canWrite = canDo("antenna", "change") || canDo("antenna", "add")
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Antenna | null | "new">(null)
 
-  const q = useQuery({
-    queryKey: ["device-antennas", deviceId],
-    queryFn: () =>
-      api<Paginated<Antenna>>(`/api/antennas/?device=${deviceId}`),
-  })
+  const q = useDeviceAntennas(deviceId)
   const rows = q.data?.results ?? []
 
   useRegisterAddActions(
@@ -75,8 +139,8 @@ export function DeviceAntennasPane({ deviceId }: { deviceId: string }) {
     return (
       <Section title="Antennas" count={0}>
         <p className="p-4 text-sm text-muted-foreground">
-          No antennas. Integrated elements document here; an external antenna
-          is its own device, cabled to an RF aux port.
+          No antennas. Integrated elements document here; an external antenna is
+          its own device, cabled to an RF aux port.
         </p>
         {editing && (
           <AntennaDialog
@@ -146,15 +210,15 @@ function AntennaRow({
   onDelete: () => void
 }) {
   const choices = useDcimChoices()
-  const label = (list: { value: string; label: string }[] | undefined, v: string) =>
-    list?.find((o) => o.value === v)?.label ?? v
+  const label = (
+    list: { value: string; label: string }[] | undefined,
+    v: string
+  ) => list?.find((o) => o.value === v)?.label ?? v
   return (
     <TableRow>
       <TableCell className="font-mono text-xs">{a.name}</TableCell>
       <TableCell className="text-xs">
-        {a.antenna_type
-          ? label(choices.antenna_types, a.antenna_type)
-          : "-"}
+        {a.antenna_type ? label(choices.antenna_types, a.antenna_type) : "-"}
       </TableCell>
       <TableCell className="num text-xs">
         {a.gain_dbi != null ? `${a.gain_dbi} dBi` : "-"}
@@ -180,9 +244,7 @@ function AntennaRow({
       <TableCell className="text-xs">
         {a.direct_mount ? (
           <span className="flex items-center gap-1.5">
-            {a.connector
-              ? label(choices.rf_connector_types, a.connector)
-              : "-"}
+            {a.connector ? label(choices.rf_connector_types, a.connector) : "-"}
             <Badge variant="secondary" className="text-[10px]">
               direct mount
             </Badge>

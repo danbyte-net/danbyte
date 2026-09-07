@@ -2438,12 +2438,14 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return view is None or getattr(view, "action", None) != "list"
 
     def get_hardware_count(self, obj) -> int:
-        # Everything on the Hardware tab: bays, modules, inventory, front/rear.
+        # Everything on the Hardware tab: bays, modules, inventory, antennas,
+        # front/rear.
         if not self._detail_only():
             return 0
         return (
             obj.device_bays.count() + obj.module_bays.count()
             + obj.modules.count() + obj.inventory_items.count()
+            + obj.antennas.count()
             + obj.front_ports.count() + obj.rear_ports.count()
         )
 

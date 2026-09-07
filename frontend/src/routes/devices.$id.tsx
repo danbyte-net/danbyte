@@ -106,7 +106,11 @@ import {
 import { useLegendCollector } from "@/components/speed-scale"
 import { DeviceBaysPane } from "@/components/device-bays-pane"
 import { DeviceInventoryPane } from "@/components/device-inventory-pane"
-import { DeviceAntennasPane } from "@/components/device-antennas-pane"
+import {
+  AntennaSummary,
+  DeviceAntennasPane,
+  useDeviceAntennas,
+} from "@/components/device-antennas-pane"
 import { DeviceModulesPane } from "@/components/device-modules-pane"
 import { DevicePortsPane } from "@/components/device-ports-pane"
 import {
@@ -566,7 +570,7 @@ function DeviceComponents({
           then the pane content padded below - the parent DetailTab is `bare` so
           there's no headroom above the bar. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {/* min-w-0 on this root: without it the flex child grows to its widest
+        {/* min-w-0 on this root: without it the flex child grows to its widest
           table and drags the whole page sideways on laptop widths (#132) -
           wide content must scroll inside its own containers instead. */}
         <div className="flex h-10 min-w-0 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
@@ -596,7 +600,10 @@ function DeviceComponents({
               },
             ]}
           />
-          <div ref={setBarSlot} className="ml-auto flex shrink-0 items-center gap-2">
+          <div
+            ref={setBarSlot}
+            className="ml-auto flex shrink-0 items-center gap-2"
+          >
             {barAdds.length === 1 ? (
               <Button
                 size="sm"
@@ -757,6 +764,7 @@ function DeviceOverview({
         ]
       : []),
   ]
+  const antennas = useDeviceAntennas(d.id).data?.results ?? []
   const hardwareRows: KvRow[] = [
     // Health of the serial-tracked parts, up front - a failed disk used to be
     // invisible until you drilled into Components → Hardware.
@@ -764,6 +772,25 @@ function DeviceOverview({
       label: "Parts",
       value: <DeviceHardwareHealth deviceId={d.id} />,
     },
+    // RF facts for anything with antennas - an AP's gain, bands and
+    // connector read here instead of two tabs down.
+    ...(antennas.length > 0
+      ? [
+          {
+            label: "Antennas",
+            value: (
+              <Link
+                to="/devices/$id"
+                params={{ id: d.id }}
+                search={{ tab: "components", sub: "hardware" }}
+                className="link"
+              >
+                <AntennaSummary antennas={antennas} />
+              </Link>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     ...(humanIds && d.numid != null
       ? [
           {
@@ -1823,7 +1850,6 @@ function DeviceInterfacesPane({
   )
 }
 
-
 /** Per-device photo-port override editor (special devices): same editor as
  * the type's Photo ports tab, but the palette lists THIS device's real
  * components and Save writes Device.image_ports. Null = inherit the type. */
@@ -1840,8 +1866,7 @@ function DevicePhotoPortsTab({ device: d }: { device: Device }) {
         No device type - photo ports live on the type's images.
       </p>
     )
-  if (!dt.data)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!dt.data) return <p className="text-sm text-muted-foreground">Loading…</p>
   return (
     <div className="grid gap-3">
       <p className="text-[11px] text-muted-foreground">

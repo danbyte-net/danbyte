@@ -88,7 +88,7 @@ The default tab lays the device's facts out in four cards:
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform, description, comments          |
-| **Hardware**   | device type, serial number, asset tag, height (U), airflow   |
+| **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face, coordinates            |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
