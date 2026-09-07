@@ -110,6 +110,33 @@ outside the span. Leave it on *Any address in the subnet* to allocate from the
 whole prefix as before. The range stays a documentation object - the IP is
 saved against the subnet, and the range's own page keeps the full free list.
 
+**Allocate only from ranges.** A provider hands you `.61–.67` of a `/24` that
+isn't yours: the `/24` is the right network to record, but Danbyte would still
+treat all 254 hosts as free and suggest `.1` as the next available. Tick
+**Allocate only from ranges** on the prefix and the ranges inside it become
+its allocatable space:
+
+- **Next available** (Subnet details) walks the ranges, not the network - so
+  it works even in a prefix too large to enumerate.
+- **Show available** in the IPs tab lists only the free addresses inside the
+  ranges, and **Add pool** offers each range as a preset in place of *Whole
+  prefix*; a pool straddling a range edge is cut to the range.
+- **Utilisation** counts used against the ranges' size, and the Addressing
+  card shows *Used 1 of 7 · Free 6*; Subnet details gain **Allocation**,
+  **Managed addresses**, **Used** and **Available** rows under the subnet's
+  theoretical capacity.
+- The IP form requires a **Range** pick (a lone range is picked for you), and
+  the API refuses a new address outside every range: *192.173.199.0/24
+  allocates only from its ranges (192.173.199.61–192.173.199.67). Add a range
+  covering this address, or turn off Allocate only from ranges on the prefix.*
+  An address that was already registered outside the ranges keeps saving.
+- Site gateway autospawn skips the prefix when the first/last usable address
+  falls outside the ranges - that gateway is the provider's.
+
+DHCP exclusion ranges never count as allocation ranges: they're space carved
+*out* of a pool. With the option on and no ranges yet, the prefix reports no
+free addresses and no utilisation until you add one.
+
 Containment is surfaced both ways: the prefix IPs tab has a **Range** column
 (the containing range's role chip), and an IP's own detail page shows a
 **Range** row in its Network card - linked, with the range's role and, for

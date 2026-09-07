@@ -47,6 +47,7 @@ different VRFs gets its own gateway, one per VRF.
 | The site's policy is **None** | You've opted out for that site. |
 | You filled in the gateway yourself | Your value wins - no automatic address. |
 | The prefix is IPv6 | An IPv6 `/64` has no obvious "first host" to use as a default gateway. |
+| The prefix allocates only from its ranges and the address falls outside them | That first/last usable address is the provider's gateway, not one you allocate. |
 
 ## Setting or changing the gateway by hand
 

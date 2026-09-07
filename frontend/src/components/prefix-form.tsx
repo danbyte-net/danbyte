@@ -84,6 +84,9 @@ export function PrefixForm({
   const [autoAssignSite, setAutoAssignSite] = useState<boolean>(
     seed?.auto_assign_site ?? false
   )
+  const [allocateFromRanges, setAllocateFromRanges] = useState<boolean>(
+    seed?.allocate_from_ranges ?? false
+  )
   const [vlanId, setVlanId] = useState<string | null>(
     seed?.vlan?.id ?? initial?.vlanId ?? null
   )
@@ -105,6 +108,7 @@ export function PrefixForm({
     setSiteId(prefix.site?.id ?? null)
     setLocationId(prefix.location?.id ?? null)
     setAutoAssignSite(prefix.auto_assign_site)
+    setAllocateFromRanges(prefix.allocate_from_ranges)
     setVlanId(prefix.vlan?.id ?? null)
     setGateway(prefix.gateway ?? "")
     setDescription(prefix.description)
@@ -152,6 +156,7 @@ export function PrefixForm({
         gateway: gateway.trim() || null,
         description: description.trim(),
         auto_assign_site: autoAssignSite,
+        allocate_from_ranges: allocateFromRanges,
         tag_ids: tagIds,
         custom_fields: customFields,
       }
@@ -286,6 +291,12 @@ export function PrefixForm({
               hint="New IPs created here inherit the prefix's site, so site-scoped users and filters pick them up."
               checked={autoAssignSite}
               onChange={setAutoAssignSite}
+            />
+            <FormCheckbox
+              label="Allocate only from ranges"
+              hint="Next available, free rows, pools and utilisation come from the IP ranges inside this prefix; an address outside them is refused. For a provider's slice of a subnet that isn't yours."
+              checked={allocateFromRanges}
+              onChange={setAllocateFromRanges}
             />
           </FormSection>
 

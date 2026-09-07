@@ -262,6 +262,13 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
       cur.trim() === "" ? networkPrefill(selectedPrefix.cidr) : cur
     )
   }, [selectedPrefix, isEdit])
+  // The subnet allocates only from its ranges: the pick is required, and a
+  // lone range is picked for you.
+  const rangesOnly = !!selectedPrefix?.allocate_from_ranges
+  useEffect(() => {
+    if (!rangesOnly || rangeId || ranges.length !== 1) return
+    setRangeId(ranges[0].id)
+  }, [rangesOnly, rangeId, ranges])
 
   const statuses = useQuery({
     queryKey: ["statuses-picker"],
@@ -535,10 +542,16 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                 {ranges.length > 0 && (
                   <FormSelect
                     label="Range"
-                    hint="allocate from a pool inside the subnet"
+                    hint={
+                      rangesOnly
+                        ? "this subnet allocates only from its ranges"
+                        : "allocate from a pool inside the subnet"
+                    }
                     value={rangeId}
                     onChange={setRangeId}
-                    noneLabel="Any address in the subnet"
+                    noneLabel={
+                      rangesOnly ? "Pick a range…" : "Any address in the subnet"
+                    }
                     options={ranges.map((r) => ({
                       value: r.id,
                       label: r.description
@@ -575,7 +588,11 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                     <span className="font-mono text-foreground">
                       {selectedPrefix.cidr}
                     </span>{" "}
-                    - the network part is filled in, just add the host.
+                    {rangesOnly
+                      ? ranges.length > 0
+                        ? "- pick a range above to allocate from it."
+                        : "- allocates only from its ranges, and it has none yet."
+                      : "- the network part is filled in, just add the host."}
                   </p>
                 )
               )}

@@ -306,6 +306,31 @@ def _subnet_details(prefix) -> list[dict] | None:
         "value": f"{usable:,}", "mono": False, "copy": str(usable),
     })
 
+    # Allocating from ranges: the provider's slice is what's managed here,
+    # shown next to the theoretical subnet capacity above.
+    summary = prefix.allocation_summary()
+    if summary is not None:
+        spans = ", ".join(
+            f"{r['start_address']}–{r['end_address']}" for r in summary["ranges"]
+        ) or "no ranges yet"
+        rows.append({
+            "label": "Allocation", "value": spans, "mono": True,
+            "copy": spans,
+        })
+        rows.append({
+            "label": "Managed addresses",
+            "value": f"{summary['size']:,}", "mono": False,
+            "copy": str(summary["size"]),
+        })
+        rows.append({
+            "label": "Used", "value": f"{summary['used']:,}", "mono": False,
+            "copy": str(summary["used"]),
+        })
+        rows.append({
+            "label": "Available", "value": f"{summary['free']:,}", "mono": False,
+            "copy": str(summary["free"]),
+        })
+
     return rows
 
 
@@ -318,10 +343,13 @@ def _next_available_ips(prefix, *, count: int = 5) -> list[str]:
     Only runs for *enumerable* prefixes (≤ ``ENUMERABLE_HOST_CAP`` addresses) -
     a /64 has no meaningful "next free" and we won't iterate 2⁶⁴ hosts.
     """
-    from .models import is_enumerable
+    from .models import ENUMERABLE_HOST_CAP, is_enumerable
 
     net = prefix.network
-    if net is None or not is_enumerable(net):
+    if net is None:
+        return []
+    spans = prefix.allocation_spans()
+    if not spans and (prefix.allocate_from_ranges or not is_enumerable(net)):
         return []
     used = set(
         IPAddress.objects
@@ -329,6 +357,21 @@ def _next_available_ips(prefix, *, count: int = 5) -> list[str]:
         .values_list("ip_address", flat=True)
     )
     out: list[str] = []
+    if spans:
+        # Allocating from ranges: walk the ranges, not the network. A range
+        # is bounded on its own, so no enumerability gate - just a step cap.
+        budget = ENUMERABLE_HOST_CAP
+        for start, end in spans:
+            for n in range(start, end + 1):
+                if budget <= 0:
+                    return out
+                budget -= 1
+                addr = str(ipaddress.ip_address(n))
+                if addr not in used:
+                    out.append(addr)
+                    if len(out) >= count:
+                        return out
+        return out
     # `.hosts()` skips network + broadcast on /30 or shorter, which is what
     # operators want here - those addresses aren't normally assignable.
     for host in net.hosts():
@@ -501,6 +544,10 @@ def _autospawn_gateway(prefix, *, request=None):
         return None
     gw_addr = _gateway_address_for(net, policy)
     if gw_addr is None:
+        return None
+    # The first/last usable of a subnet that isn't yours is the provider's
+    # gateway, not an address you allocate - leave it to the operator.
+    if prefix.allocate_from_ranges and not prefix.in_allocation(gw_addr):
         return None
 
     gateway_role = _tenant_gateway_role(prefix.tenant)

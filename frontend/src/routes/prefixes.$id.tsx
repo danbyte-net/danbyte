@@ -151,8 +151,16 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
 
   // Enumerable = small enough to list every host (any family; the backend caps
   // it). A /64 isn't, so it shows the subnet map instead.
+  // A prefix allocating only from its ranges enumerates those instead, so
+  // the size of the prefix itself stops mattering.
+  const allocationSpans = p.allocation?.ranges.map((r) => ({
+    start: r.start_address,
+    end: r.end_address,
+  }))
   const canShowAvailable =
-    p.is_enumerable && p.status?.name !== "container" && !p.has_descendants
+    (p.is_enumerable || (allocationSpans?.length ?? 0) > 0) &&
+    p.status?.name !== "container" &&
+    !p.has_descendants
 
   // Open the IP create page pre-seeded with `address` from the
   // "next available" picker. We pass `prefix=` so the create page can
@@ -406,6 +414,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
               compact={compact}
               showDhcpPool={showDhcpPool}
               cidr={p.cidr}
+              spans={allocationSpans}
               hasDescendants={p.has_descendants}
               onEdit={handleEditIp}
               onDelete={handleDeleteIp}
@@ -484,6 +493,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           prefixId={p.id}
           cidr={p.cidr}
           dhcpRanges={ipsQuery.data?.dhcp_ranges}
+          allocationRanges={p.allocation?.ranges}
           existingAddresses={ipRows.map((ip) => ip.ip_address)}
           onOpenChange={setShowPool}
         />
@@ -539,13 +549,39 @@ function PrefixOverview({
     { label: "Site", value: p.site?.name ?? dash },
   ]
 
+  const alloc = p.allocation
   const addressing: KvRow[] = [
-    { label: "Used", value: <span className="num">{p.ip_count}</span> },
+    ...(alloc
+      ? [
+          {
+            label: "Allocation",
+            value: alloc.ranges.length ? (
+              <span className="font-mono text-[13px]">
+                {alloc.ranges
+                  .map((r) => `${r.start_address} – ${r.end_address}`)
+                  .join(", ")}
+              </span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400">
+                Ranges only - none defined yet
+              </span>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "Used",
+      value: (
+        <span className="num">
+          {alloc ? `${alloc.used} of ${alloc.size}` : p.ip_count}
+        </span>
+      ),
+    },
     {
       label: "Free",
       value: (
         <span className="num">
-          {p.utilisation_pct !== null ? freeCount(p) : "-"}
+          {alloc ? alloc.free : p.utilisation_pct !== null ? freeCount(p) : "-"}
         </span>
       ),
     },

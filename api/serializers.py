@@ -943,6 +943,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     family = serializers.IntegerField(read_only=True)
     utilisation_pct = serializers.IntegerField(read_only=True, allow_null=True)
     is_enumerable = serializers.BooleanField(read_only=True)
+    allocation = serializers.SerializerMethodField()
     ip_count = serializers.SerializerMethodField()
     child_count = serializers.SerializerMethodField()
     has_descendants = serializers.SerializerMethodField()
@@ -982,6 +983,12 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return str(net)  # normalised (compressed IPv6, canonical form)
 
     @extend_schema_field(OpenApiTypes.BOOL)
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_allocation(self, obj):
+        """``{size, used, free, ranges}`` when the prefix allocates only from
+        its ranges; ``None`` when it allocates from the whole network."""
+        return obj.allocation_summary()
+
     def get_dhcp(self, obj) -> bool:
         """This prefix backs a DHCP scope (annotated by the viewset)."""
         return getattr(obj, "dhcp_scope_n", 0) > 0
@@ -1128,6 +1135,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "site", "vlan", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
+            "allocate_from_ranges", "allocation",
             "monitoring_engine",
             "tags",
             "custom_fields",
@@ -1303,6 +1311,25 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                 raise serializers.ValidationError(
                     {"ip_address": f"{ip_str} is not inside the prefix {prefix.cidr}."}
                 )
+            # A prefix that allocates only from its ranges refuses an address
+            # outside every range - but only when the address or prefix is
+            # what's being set; renaming a legacy IP still saves.
+            if (
+                ("ip_address" in attrs or "prefix" in attrs)
+                and prefix.allocate_from_ranges
+                and not prefix.in_allocation(ip_str)
+            ):
+                spans = ", ".join(
+                    f"{r['start_address']}–{r['end_address']}"
+                    for r in (prefix.allocation_summary() or {}).get("ranges", [])
+                ) or "none defined yet"
+                raise serializers.ValidationError({
+                    "ip_address": (
+                        f"{prefix.cidr} allocates only from its ranges ({spans}). "
+                        "Add a range covering this address, or turn off "
+                        "Allocate only from ranges on the prefix."
+                    )
+                })
         return attrs
 
     def get_is_primary_for_device(self, obj) -> bool:

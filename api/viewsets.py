@@ -1314,6 +1314,20 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         description = (request.data.get("description") or "").strip()
 
         wanted = [str(ipmod.ip_address(n)) for n in range(int(start), int(end) + 1)]
+        if prefix.allocate_from_ranges:
+            # Only the prefix's ranges are allocatable - a pool outside them
+            # is refused outright, one straddling them is cut to the ranges.
+            spans = prefix.allocation_spans()
+            inside = [
+                a for a in wanted
+                if any(lo <= int(ipmod.ip_address(a)) <= hi for lo, hi in spans)
+            ]
+            if not inside:
+                raise ValidationError({
+                    "start": f"{prefix.cidr} allocates only from its ranges - "
+                             "pick a span inside one of them."
+                })
+            wanted = inside
         # Never mint the prefix's network/broadcast as host rows (v4, /30 and up).
         skip_addrs: set[str] = set()
         if isinstance(net, ipmod.IPv4Network) and net.prefixlen <= 30:

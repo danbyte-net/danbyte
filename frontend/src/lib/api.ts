@@ -198,6 +198,11 @@ export interface Prefix {
   description: string
   auto_discover: boolean
   auto_assign_site: boolean
+  /** Only the IP ranges inside the prefix are allocatable. */
+  allocate_from_ranges: boolean
+  /** The allocation ranges' accounting when `allocate_from_ranges` is on;
+   * null when the prefix allocates from its whole network. */
+  allocation: PrefixAllocation | null
   monitoring_engine?: { id: string; name: string; is_local: boolean } | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -584,6 +589,13 @@ export interface TagOption {
 
 // ─── Write payloads ────────────────────────────────────────────────────
 
+export interface PrefixAllocation {
+  size: number
+  used: number
+  free: number
+  ranges: { id: string; start_address: string; end_address: string }[]
+}
+
 export interface PrefixWritePayload {
   cidr: string
   status_id?: string | null
@@ -594,6 +606,7 @@ export interface PrefixWritePayload {
   gateway?: string | null
   description?: string
   auto_assign_site?: boolean
+  allocate_from_ranges?: boolean
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
 }

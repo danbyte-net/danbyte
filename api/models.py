@@ -2249,6 +2249,13 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "(so site-scoped users/filters pick them up).",
     )
     description = models.TextField(blank=True)
+    allocate_from_ranges = models.BooleanField(
+        default=False,
+        help_text="Only the IP ranges inside this prefix are allocatable: next "
+        "available, free rows, pools and utilisation come from them, and a new "
+        "address outside every range is refused. For a provider handing out a "
+        "slice of a subnet that isn't yours.",
+    )
     auto_discover = models.BooleanField(
         default=False,
         help_text="Opt in to periodic ICMP discovery - responders not yet "
@@ -2349,6 +2356,11 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # forever ~0%, which is noise, so leave it blank (UI shows nothing).
         if n.version == 6 and not is_enumerable(n):
             return None
+        if self.allocate_from_ranges:
+            summary = self.allocation_summary()
+            if not summary or summary["size"] == 0:
+                return None
+            return min(100, int(round(100 * summary["used"] / summary["size"])))
         if n.num_addresses <= 2:
             capacity = n.num_addresses
         else:
@@ -2357,6 +2369,76 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             return None
         used = self.ip_addresses.count()
         return min(100, int(round(100 * used / capacity)))
+
+    # ── Allocation from ranges ────────────────────────────────────────────
+    # A provider hands out .61-.67 of a /24 that isn't yours. With
+    # ``allocate_from_ranges`` on, the ranges under the prefix ARE its
+    # allocatable space: next available, free rows, pools and utilisation come
+    # from them, and the IP serializer refuses an address outside every range.
+    # DHCP exclusions are carved OUT of a pool, so they never count as one.
+
+    def allocation_ranges(self):
+        """The ranges this prefix allocates from, in address order."""
+        return (
+            self.ip_ranges.filter(dhcp_exclusions__isnull=True)
+            .order_by("start_address")
+        )
+
+    def allocation_spans(self) -> list[tuple[int, int]]:
+        """``[(start, end)]`` as ints for every well-formed allocation range
+        of this prefix's family. Empty when the option is off."""
+        if not self.allocate_from_ranges:
+            return []
+        net = self.network
+        out: list[tuple[int, int]] = []
+        for rng in self.allocation_ranges():
+            s, e = rng._start_ip, rng._end_ip
+            if s is None or e is None or s.version != e.version or int(e) < int(s):
+                continue
+            if net is not None and s.version != net.version:
+                continue
+            out.append((int(s), int(e)))
+        out.sort()
+        return out
+
+    def in_allocation(self, address: str) -> bool:
+        """Whether ``address`` falls inside one of the allocation ranges."""
+        try:
+            n = int(ipaddress.ip_address(address))
+        except ValueError:
+            return False
+        return any(s <= n <= e for s, e in self.allocation_spans())
+
+    def allocation_summary(self) -> dict | None:
+        """``{size, used, free, ranges}`` for the allocation ranges, or
+        ``None`` when the prefix allocates from its whole network. ``used``
+        counts this prefix's IPs that sit inside a range."""
+        if not self.allocate_from_ranges:
+            return None
+        spans = self.allocation_spans()
+        size = sum(e - s + 1 for s, e in spans)
+        used = 0
+        if spans:
+            for raw in self.ip_addresses.values_list("ip_address", flat=True):
+                try:
+                    n = int(ipaddress.ip_address(raw))
+                except ValueError:
+                    continue
+                if any(s <= n <= e for s, e in spans):
+                    used += 1
+        return {
+            "size": size,
+            "used": used,
+            "free": max(0, size - used),
+            "ranges": [
+                {
+                    "id": str(r.id),
+                    "start_address": r.start_address,
+                    "end_address": r.end_address,
+                }
+                for r in self.allocation_ranges()
+            ],
+        }
 
 
 class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):

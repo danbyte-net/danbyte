@@ -33,12 +33,16 @@ export function IpPoolDialog({
   prefixId,
   cidr,
   dhcpRanges,
+  allocationRanges,
   existingAddresses,
   onOpenChange,
 }: {
   prefixId: string
   cidr: string
   dhcpRanges?: DhcpScopeRange[]
+  /** The prefix allocates only from these ranges: they replace the
+   * whole-prefix preset. */
+  allocationRanges?: { id: string; start_address: string; end_address: string }[]
   /** Addresses already registered in the prefix - for the live skip count. */
   existingAddresses: string[]
   onOpenChange: (open: boolean) => void
@@ -47,11 +51,28 @@ export function IpPoolDialog({
   const usable = useMemo(() => cidrHostRange(cidr), [cidr])
   // Default to the prefix's first DHCP pool when it has one - that's the
   // common reason to bulk-add - and keep the select ticked accordingly.
+  const firstAlloc = allocationRanges?.[0]
   const [preset, setPreset] = useState<string | null>(
-    dhcpRanges?.[0] ? `dhcp:${dhcpRanges[0].scope_id}` : usable ? "prefix" : null
+    dhcpRanges?.[0]
+      ? `dhcp:${dhcpRanges[0].scope_id}`
+      : firstAlloc
+        ? `range:${firstAlloc.id}`
+        : allocationRanges
+          ? null
+          : usable
+            ? "prefix"
+            : null
   )
-  const [start, setStart] = useState(dhcpRanges?.[0]?.start ?? usable?.start ?? "")
-  const [end, setEnd] = useState(dhcpRanges?.[0]?.end ?? usable?.end ?? "")
+  const [start, setStart] = useState(
+    dhcpRanges?.[0]?.start ??
+      firstAlloc?.start_address ??
+      (allocationRanges ? "" : (usable?.start ?? ""))
+  )
+  const [end, setEnd] = useState(
+    dhcpRanges?.[0]?.end ??
+      firstAlloc?.end_address ??
+      (allocationRanges ? "" : (usable?.end ?? ""))
+  )
   const [statusId, setStatusId] = useState("")
   const [roleId, setRoleId] = useState("")
   const [description, setDescription] = useState("")
@@ -77,7 +98,16 @@ export function IpPoolDialog({
         start: r.start,
         end: r.end,
       })
-    if (usable)
+    if (allocationRanges) {
+      // Allocating only from ranges: those are the pools, never the prefix.
+      for (const r of allocationRanges)
+        out.push({
+          value: `range:${r.id}`,
+          label: `Range: ${r.start_address}–${r.end_address}`,
+          start: r.start_address,
+          end: r.end_address,
+        })
+    } else if (usable)
       out.push({
         value: "prefix",
         label: `Whole prefix (${usable.start}–${usable.end})`,
@@ -85,7 +115,7 @@ export function IpPoolDialog({
         end: usable.end,
       })
     return out
-  }, [dhcpRanges, usable])
+  }, [dhcpRanges, allocationRanges, usable])
 
   const applyPreset = (v: string | null) => {
     setPreset(v)

@@ -60,6 +60,9 @@ interface PrefixIpsTableProps {
   /** Limit the table to one span inside the prefix (an IP range): only the
    * registered IPs inside it, and free addresses enumerated from it. */
   span?: { start: string; end: string }
+  /** The prefix allocates only from these ranges: free addresses are
+   * enumerated from them instead of the whole prefix. */
+  spans?: { start: string; end: string }[]
   /** One free row standing for all of them ("first free · N more"), instead
    * of a row per free address. */
   compact?: boolean
@@ -86,6 +89,7 @@ function PrefixIpsTableImpl({
   showDhcpPool,
   cidr,
   span,
+  spans,
   compact = false,
   hasDescendants,
   onEdit,
@@ -207,6 +211,17 @@ function PrefixIpsTableImpl({
           pushFree(n)
           budget--
         }
+      } else if (showAvailable && spans) {
+        let budget = 4096
+        for (const sp of spans) {
+          const a = ipToBigInt(sp.start)
+          const b = ipToBigInt(sp.end)
+          if (a === null || b === null) continue
+          for (let n = a; n <= b && budget > 0; n++) {
+            pushFree(n)
+            budget--
+          }
+        }
       } else if (showAvailable) {
         const hosts = enumerableHostInts(cidr)
         if (hosts) for (const n of hosts.ints) pushFree(n)
@@ -250,6 +265,7 @@ function PrefixIpsTableImpl({
     tagFilter,
     search,
     span,
+    spans,
     compact,
     showAvailable,
     showDhcpPool,
