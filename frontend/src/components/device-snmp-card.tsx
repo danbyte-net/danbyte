@@ -214,7 +214,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
     {
       id: "ips",
       header: "IP addresses",
-      cell: (i) => <IpLinks ips={i.ip_addresses} idByAddr={ipIdByAddr} />,
+      cell: (i) => <IpLinks ips={i.ip_addresses ?? []} idByAddr={ipIdByAddr} />,
     },
     {
       id: "descr",

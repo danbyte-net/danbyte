@@ -5216,7 +5216,8 @@ export interface SnmpInterface {
   speed_mbps: string
   // OSI hints from SNMP: L3 if the interface has an IP (ipAddrTable), else L2.
   layer: "L2" | "L3" | ""
-  ip_addresses: string[]
+  /** Absent on rows from an agent that never looked. */
+  ip_addresses?: string[]
   // Access (PVID) VLAN from Q-BRIDGE-MIB, when the device is a switch.
   vlan: string
   vlan_name: string
