@@ -946,8 +946,7 @@ const save = useMutation({
           </Button>
           {device && device.image_ports != null && (
             <Button
-              variant="ghost"
-              className="text-muted-foreground"
+              variant="outline"
               disabled={save.isPending}
               onClick={() => resetToType.mutate()}
             >
