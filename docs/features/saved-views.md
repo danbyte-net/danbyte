@@ -18,7 +18,9 @@ name, a VLAN, a site) keeps navigating; only badges that are plain values
 toggle. This works on every list with a filter rail, including the embedded
 tables on detail pages. The **Monitoring** rollup badge on devices and
 prefixes is a facet too: the rail lists the observed states (Up, Degraded,
-Down, Stale, Unknown) and the column sorts.
+Down, Stale, Unknown), **Mixed** for a split badge whose checks sit in more
+than one state, and **Not monitored** for rows without a rollup; the column
+sorts.
 
 ## Saving one
 

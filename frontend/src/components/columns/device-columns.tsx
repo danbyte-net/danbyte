@@ -133,6 +133,15 @@ export function DeviceIpRef({
   )
 }
 
+/** Facet bucket for a monitoring rollup: the single state, `mixed` when the
+ * checks sit in more than one state (the split badge), `__none__` without a
+ * rollup. */
+function monitoringBucket(e: BulkStatusEntry | undefined): string {
+  if (!e || !e.status) return "__none__"
+  const present = Object.values(e.counts ?? {}).filter((n) => n > 0)
+  return present.length > 1 ? "mixed" : e.status
+}
+
 function monitoringTooltip(e: BulkStatusEntry): string {
   const counts = e.counts ?? {}
   const parts = Object.entries(counts).map(([s, n]) => `${n} ${s}`)
@@ -377,7 +386,7 @@ export function buildDeviceColumns<T extends Device = Device>(
     }),
     monitoring: () => ({
       id: "monitoring",
-      accessorFn: (r) => opts.monitoring?.[r.id]?.status ?? "",
+      accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),
       header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
       cell: ({ row }) => {
         const e = opts.monitoring?.[row.original.id]
@@ -389,14 +398,18 @@ export function buildDeviceColumns<T extends Device = Device>(
         )
       },
       // The rollup is a facet like any status: the rail lists the observed
-      // states and the badge in the row toggles its bucket. Rows without a
-      // rollup yet (no checks, still loading) stay out of the count.
+      // states and the badge in the row toggles its bucket. A split badge
+      // (checks in more than one state) is its own "Mixed" bucket rather than
+      // hiding under its worst state, and rows with no rollup read as "Not
+      // monitored" like the "No status" bucket next door.
       meta: {
         facet: {
           kind: "enum",
           label: "Monitoring",
-          get: (r: T) => opts.monitoring?.[r.id]?.status ?? null,
+          get: (r: T) => monitoringBucket(opts.monitoring?.[r.id]),
           formatValue: (v) => {
+            if (v === "__none__") return { label: "Not monitored" }
+            if (v === "mixed") return { label: "Mixed" }
             const s = v as keyof typeof STATUS_LABEL
             return {
               label: STATUS_LABEL[s],
