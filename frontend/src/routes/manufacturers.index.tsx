@@ -44,8 +44,14 @@ function ManufacturersPage() {
     [handleDelete, canEdit, canDelete, humanIds]
   )
   // Columns declare their own filterability via meta.facet.
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -75,7 +81,7 @@ function ManufacturersPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="description"
         tableId="manufacturers"
       />

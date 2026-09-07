@@ -62,7 +62,11 @@ export function PolicyTable<T extends { id: string }>({
     [buildColumns, pendingId, policyByTarget, profiles, save, templates]
   )
   const allRows = rows.data?.results ?? []
-  const { rail, filteredRows } = useTableFilters(columns, allRows)
+  const {
+    rail,
+    filteredRows,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows)
 
   return (
     <FilteredTable
@@ -72,7 +76,7 @@ export function PolicyTable<T extends { id: string }>({
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         tableId={tableId}
         exportName={exportName}
         flexColumn="name"

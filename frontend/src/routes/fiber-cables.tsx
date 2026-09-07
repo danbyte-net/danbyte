@@ -41,7 +41,12 @@ function FiberCablesPage() {
       }),
     [humanIds]
   )
-  const { rail, filteredRows, activeCount } = useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -63,7 +68,7 @@ function FiberCablesPage() {
       ) : (
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           flexColumn="a"
           tableId="fiber-cables"
         />

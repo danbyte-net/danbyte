@@ -105,8 +105,14 @@ function TunnelGroupsPage() {
     [onDelete, humanIds]
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -132,7 +138,7 @@ function TunnelGroupsPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         onSelectedRowsChange={setSelectedRows}
         flexColumn="description"
         tableId="tunnel-groups"

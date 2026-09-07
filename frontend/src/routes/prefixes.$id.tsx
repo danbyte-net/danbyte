@@ -3,7 +3,14 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { ChevronRight, CopyPlus, Layers, Pencil, Plus, Search } from "lucide-react"
+import {
+  ChevronRight,
+  CopyPlus,
+  Layers,
+  Pencil,
+  Plus,
+  Search,
+} from "lucide-react"
 
 import {
   api,
@@ -43,7 +50,7 @@ import {
   hasCustomValue,
   useCustomFieldDefs,
 } from "@/components/custom-field-display"
-import { useTableFilters } from "@/components/table-filters"
+import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
 import { IpFilterRail } from "@/components/ip-filter-rail"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import {
@@ -287,7 +294,11 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
             </Button>
           )}
           {canAddIp && canShowAvailable && (
-            <Button size="sm" variant="outline" onClick={() => setShowPool(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowPool(true)}
+            >
               <Layers className="h-3.5 w-3.5" /> Add pool
             </Button>
           )}
@@ -907,22 +918,26 @@ function ChildPrefixesPane({
   // including the depth chevrons and the always-visible row actions.
   const columns = useMemo<ColumnDef<NestedPrefix>[]>(
     () =>
-      buildPrefixColumns<NestedPrefix>({
-        selection: true,
-        nested: true,
-        include: [...includeCols],
-        cfDefs,
-        tagFilter: {
-          activeSlugs: tagSelection,
-          onToggle: (slug) => toggleValue("tags", slug),
-        },
-        actions: {
-          onEdit,
-          onDelete,
-          canEdit: (p) => objCan(p, "change", canEdit),
-          canDelete: (p) => objCan(p, "delete", canDelete),
-        },
-      }),
+      wireFacetColumns(
+        buildPrefixColumns<NestedPrefix>({
+          selection: true,
+          nested: true,
+          include: [...includeCols],
+          cfDefs,
+          tagFilter: {
+            activeSlugs: tagSelection,
+            onToggle: (slug) => toggleValue("tags", slug),
+          },
+          actions: {
+            onEdit,
+            onDelete,
+            canEdit: (p) => objCan(p, "change", canEdit),
+            canDelete: (p) => objCan(p, "delete", canDelete),
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
     [
       onEdit,
       onDelete,
@@ -931,6 +946,7 @@ function ChildPrefixesPane({
       includeCols,
       cfDefs,
       tagSelection,
+      selectedValues,
       toggleValue,
     ]
   )

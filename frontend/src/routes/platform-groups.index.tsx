@@ -42,8 +42,14 @@ function PlatformGroupsPage() {
       buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
     [handleDelete, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -73,7 +79,7 @@ function PlatformGroupsPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="description"
         tableId="platform-groups"
       />

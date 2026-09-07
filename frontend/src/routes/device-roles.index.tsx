@@ -50,8 +50,14 @@ function DeviceRolesPage() {
       }),
     [handleDelete, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -81,7 +87,7 @@ function DeviceRolesPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="description"
         tableId="device-roles"
       />

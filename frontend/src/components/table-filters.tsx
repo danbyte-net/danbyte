@@ -395,42 +395,7 @@ export function useTableFilters<TRow>(
   // the rail. A click that lands on a link or button inside the cell is left
   // alone, so FK cells keep navigating.
   const wiredColumns = useMemo(
-    () =>
-      columns.map((col) => {
-        const id =
-          col.id ?? (typeof col.header === "string" ? col.header : undefined)
-        const def = col.meta?.facet
-        if (!id || !def) return col
-        if (def.kind === "tags")
-          return {
-            ...col,
-            meta: {
-              ...col.meta,
-              tagFacet: {
-                active: selectedValues(id),
-                toggle: (slug: string) => toggleValue(id, slug),
-              },
-            },
-          }
-        if (def.kind !== "enum" || col.meta?.facetClickable === false) return col
-        const active = selectedValues(id)
-        const inner = col.cell
-        return {
-          ...col,
-          cell: (ctx: CellContext<TRow, unknown>) => {
-            const value = def.get(ctx.row.original) ?? null
-            return (
-              <FacetClickCell
-                value={value}
-                active={value !== null && active.has(value)}
-                toggle={(v) => toggleValue(id, v)}
-              >
-                {inner ? flexRender(inner, ctx) : String(ctx.getValue() ?? "")}
-              </FacetClickCell>
-            )
-          },
-        }
-      }),
+    () => wireFacetColumns(columns, selectedValues, toggleValue),
     [columns, selectedValues, toggleValue]
   )
 
@@ -554,6 +519,54 @@ function RangeFacetGroup({
   )
 }
 
+/** Wire a column set to a rail's selection: a tags column gets the active
+ * slugs + toggle on its meta, and an enum-facet column's cell is wrapped so
+ * clicking the badge toggles that bucket. `useTableFilters` returns its input
+ * columns wired this way; a list that renders a different column set than the
+ * one it derived the rail from (nesting, actions, monitoring extras) wires
+ * the render set with this directly. */
+export function wireFacetColumns<TRow>(
+  columns: ColumnDef<TRow, unknown>[],
+  selectedValues: (id: string) => Set<string>,
+  toggleValue: (id: string, value: string) => void
+): ColumnDef<TRow, unknown>[] {
+  return columns.map((col) => {
+    const id =
+      col.id ?? (typeof col.header === "string" ? col.header : undefined)
+    const def = col.meta?.facet
+    if (!id || !def) return col
+    if (def.kind === "tags")
+      return {
+        ...col,
+        meta: {
+          ...col.meta,
+          tagFacet: {
+            active: selectedValues(id),
+            toggle: (slug: string) => toggleValue(id, slug),
+          },
+        },
+      }
+    if (def.kind !== "enum" || col.meta?.facetClickable === false) return col
+    const active = selectedValues(id)
+    const inner = col.cell
+    return {
+      ...col,
+      cell: (ctx: CellContext<TRow, unknown>) => {
+        const value = def.get(ctx.row.original) ?? null
+        return (
+          <FacetClickCell
+            value={value}
+            active={value !== null && active.has(value)}
+            toggle={(v) => toggleValue(id, v)}
+          >
+            {inner ? flexRender(inner, ctx) : String(ctx.getValue() ?? "")}
+          </FacetClickCell>
+        )
+      },
+    }
+  })
+}
+
 /** Wraps a facet cell so clicking the badge toggles its bucket. Clicks on a
  * link or button inside the cell fall through untouched. */
 export function FacetClickCell({
@@ -571,7 +584,9 @@ export function FacetClickCell({
   return (
     <span
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest("a, button, input, [role=menuitem]"))
+        if (
+          (e.target as HTMLElement).closest("a, button, input, [role=menuitem]")
+        )
           return
         e.stopPropagation()
         toggle(value)
@@ -585,4 +600,3 @@ export function FacetClickCell({
     </span>
   )
 }
-

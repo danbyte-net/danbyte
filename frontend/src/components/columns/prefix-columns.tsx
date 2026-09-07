@@ -10,6 +10,11 @@ import type {
 } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import {
+  STATUS_COLOR,
+  STATUS_LABEL,
+  STATUS_TEXT,
+} from "@/components/monitoring/charts"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
@@ -222,8 +227,8 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
     }),
     monitoring: () => ({
       id: "monitoring",
-      header: "Monitoring",
-      enableSorting: false,
+      accessorFn: (r) => opts.monitoring?.[r.id]?.status ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
       cell: ({ row }) => {
         const e = opts.monitoring?.[row.original.id]
         if (!e || !e.status) return dash
@@ -232,6 +237,24 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
             <MixedStatusBadge counts={e.counts} status={e.status} />
           </span>
         )
+      },
+      // The rollup is a facet like any status: the rail lists the observed
+      // states and the badge in the row toggles its bucket. Rows without a
+      // rollup yet (no checks, still loading) stay out of the count.
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Monitoring",
+          get: (r: T) => opts.monitoring?.[r.id]?.status ?? null,
+          formatValue: (v) => {
+            const s = v as keyof typeof STATUS_LABEL
+            return {
+              label: STATUS_LABEL[s],
+              color: STATUS_COLOR[s],
+              textColor: STATUS_TEXT[s],
+            }
+          },
+        },
       },
     }),
     vrf: () => vrfColumn<T>({ get: (p) => p.vrf }),

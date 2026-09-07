@@ -65,8 +65,14 @@ function IpsPage() {
     if (scope) seed.scope = [scope]
     return seed
   }, [status, role, scope])
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, allRows, initialEnums)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell
@@ -102,7 +108,7 @@ function IpsPage() {
       ) : (
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           flexColumn="description"
           tableId="ips"
         />

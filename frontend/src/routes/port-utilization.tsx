@@ -171,8 +171,14 @@ function PortUtilizationPage() {
     []
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, searched)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, searched)
 
   return (
     <ListPageShell
@@ -195,7 +201,7 @@ function PortUtilizationPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="name"
         tableId="port-utilization"
         exportName="port-utilization"

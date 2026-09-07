@@ -123,8 +123,14 @@ function CertificateRequestsPage() {
     []
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -153,7 +159,7 @@ function CertificateRequestsPage() {
       ) : (
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           flexColumn="common_name"
           tableId="certificate-requests"
         />

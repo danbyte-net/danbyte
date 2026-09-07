@@ -75,8 +75,14 @@ function CertificatesPage() {
       seed.self_signed = [self_signed]
     return seed
   }, [expiry, self_signed])
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, allRows, initialEnums)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell
@@ -121,7 +127,7 @@ function CertificatesPage() {
       ) : (
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           flexColumn="issuer"
           tableId="certificates"
         />

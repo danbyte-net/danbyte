@@ -241,8 +241,14 @@ function PortReservationsPage() {
     [canRelease, canEdit, release]
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, searched)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, searched)
 
   return (
     <ListPageShell
@@ -276,7 +282,7 @@ function PortReservationsPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="note"
         tableId="port-reservations"
         exportName="port-reservations"

@@ -50,8 +50,14 @@ function CircuitsPage() {
       }),
     [onDelete, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -82,7 +88,7 @@ function CircuitsPage() {
       <CircuitsMapStrip />
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="endpoints"
         tableId="circuits"
       />

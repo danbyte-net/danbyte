@@ -95,10 +95,11 @@ export function DenySubnetsPanel() {
     ],
     [remove]
   )
-  const { rail, filteredRows } = useTableFilters(
-    columns,
-    deny.data?.results ?? []
-  )
+  const {
+    rail,
+    filteredRows,
+    columns: wiredColumns,
+  } = useTableFilters(columns, deny.data?.results ?? [])
 
   return (
     <div className="flex flex-col gap-3">
@@ -136,7 +137,7 @@ export function DenySubnetsPanel() {
       <FilteredTable rail={rail}>
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           tableId="monitoring-config-prefix-deny"
           exportName="monitoring-prefix-deny"
         />

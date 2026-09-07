@@ -114,7 +114,11 @@ export function PrefixPolicyTable() {
     ]
   )
   const allRows = rows.data?.results ?? []
-  const { rail, filteredRows } = useTableFilters(columns, allRows)
+  const {
+    rail,
+    filteredRows,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows)
 
   return (
     <FilteredTable
@@ -124,7 +128,7 @@ export function PrefixPolicyTable() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         groupBy="vrfName"
         renderGroupHeader={renderVrfGroupHeader}
         initialColumnVisibility={{ vrfName: false }}

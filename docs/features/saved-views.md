@@ -8,6 +8,18 @@ A view is a search and a set of filters, under a name. Instead of rebuilding
 "decommissioning switches in Aarhus" every morning, save it once and pick it
 from the **Views** menu on that list.
 
+## Filtering from the table
+
+A badge in a row is a filter you can click. A status, role, family, or any
+other facet badge toggles its bucket in the rail exactly like ticking it
+there, and a tag chip does the same for its tag - the rail shows the
+selection and the badge gains a thin ring. A badge that is a link (a device
+name, a VLAN, a site) keeps navigating; only badges that are plain values
+toggle. This works on every list with a filter rail, including the embedded
+tables on detail pages. The **Monitoring** rollup badge on devices and
+prefixes is a facet too: the rail lists the observed states (Up, Degraded,
+Down, Stale, Unknown) and the column sorts.
+
 ## Saving one
 
 1. Filter the list however you like - the search box, the filter rail, or both.

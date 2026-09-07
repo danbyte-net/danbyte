@@ -52,8 +52,14 @@ function MacsPage() {
   }, [allRows, q])
 
   const columns = useMemo<ColumnDef<MacEntry>[]>(() => buildColumns(), [])
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -89,7 +95,7 @@ function MacsPage() {
       ) : (
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           flexColumn="description"
         />
       )}
