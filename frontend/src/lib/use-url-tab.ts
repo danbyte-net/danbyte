@@ -79,7 +79,9 @@ export function useUrlTab<T extends string = string>(
   // then applies the pin.
   const [stored, setStored] = useState<string | null>(null)
   useEffect(() => {
-    setStored(known ? null : readStoredDefault(pageKey))
+    // Re-read on every tab change too, so a pin set moments ago applies to
+    // the next write.
+    setStored(readStoredDefault(pageKey))
   }, [known, pageKey])
   const preferred =
     stored && (!valid || valid.includes(stored as T))
@@ -88,12 +90,16 @@ export function useUrlTab<T extends string = string>(
   const tab = (known ? raw : preferred) as T
 
   const setTab = (value: string) => {
+    // Drop the param only for the tab a bare URL already resolves to - the
+    // PINNED default when there is one. Stripping it for the hard-coded
+    // default made Overview unreachable on a page whose pin is another tab:
+    // the bare URL resolved straight back to the pin.
     void navigate({
       to: ".",
       replace: false,
       search: (prev: Record<string, unknown>) => ({
         ...prev,
-        [key]: value === defaultTab ? undefined : value,
+        [key]: value === preferred ? undefined : value,
       }),
     })
   }
