@@ -98,6 +98,16 @@ export interface IpColumnOpts<T> {
   actions?: ActionsColumnOpts<T>
 }
 
+/** Facet bucket through `getIp`: a row that carries no IP (a free address
+ * in the prefix table) is not counted and its cell is not a click target; an
+ * IP without the value lands in the "none" bucket. */
+function ipBucket(
+  ip: IPAddress | null | undefined,
+  key: (ip: IPAddress) => string | null | undefined
+): string | null {
+  return ip ? (key(ip) ?? "__none__") : null
+}
+
 /** Stable facet bucket for a custom-field value (null = not counted). */
 function cfFacetKey(v: unknown): string | null {
   if (v === null || v === undefined || v === "") return null
@@ -244,7 +254,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Status",
-          get: (r: T) => getIp(r)?.status?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.status?.id),
           formatValue: (_v, sample) => {
             const s = getIp(sample)?.status
             return {
@@ -268,7 +278,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Role",
-          get: (r: T) => getIp(r)?.role?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.role?.id),
           formatValue: (_v, sample) => {
             const role = getIp(sample)?.role
             return {
@@ -295,7 +305,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "VLAN",
-          get: (r: T) => getIp(r)?.prefix?.vlan?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.prefix?.vlan?.id),
           formatValue: (_v, sample) => {
             const v = getIp(sample)?.prefix?.vlan
             return { label: v ? `${v.vlan_id} · ${v.name}` : "No VLAN" }
@@ -319,7 +329,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Zone",
-          get: (r: T) => getIp(r)?.prefix?.vlan?.zone?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.prefix?.vlan?.zone?.id),
           formatValue: (_v, sample) => ({
             label: getIp(sample)?.prefix?.vlan?.zone?.name ?? "No zone",
           }),
@@ -338,7 +348,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Scope",
-          get: (r: T) => getIp(r)?.scope ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.scope),
           formatValue: (v) => ({
             label: v ? v[0].toUpperCase() + v.slice(1) : "-",
           }),
@@ -471,7 +481,10 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: d.label,
-          get: (r: T) => cfFacetKey(getIp(r)?.custom_fields?.[d.key]),
+          get: (r: T) => {
+            const ip = getIp(r)
+            return ip ? cfFacetKey(ip.custom_fields?.[d.key]) : null
+          },
         },
       },
     })

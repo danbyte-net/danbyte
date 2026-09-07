@@ -16,7 +16,7 @@ there, and a tag chip does the same for its tag - the rail shows the
 selection and the badge gains a thin ring. A badge that is a link (a device
 name, a VLAN, a site) keeps navigating; only badges that are plain values
 toggle. This works on every list with a filter rail, including the embedded
-tables on detail pages. The **Monitoring** rollup badge on devices and
+tables on detail pages, a prefix's IPs tab and a range's Addresses tab. The **Monitoring** rollup badge on devices and
 prefixes is a facet too: the rail lists the observed states (Up, Degraded,
 Down, Stale, Unknown), **Mixed** for a split badge whose checks sit in more
 than one state, and **Not monitored** for rows without a rollup; the column

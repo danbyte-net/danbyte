@@ -14,7 +14,7 @@ import {
 } from "@/lib/api"
 import { PrefixIpsTable } from "@/components/prefix-ips-table"
 import { IpDeleteDialog } from "@/components/ip-delete-dialog"
-import { Checkbox } from "@/components/ui/checkbox"
+import { IpRailToggles } from "@/components/ip-rail-toggles"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DhcpBadge } from "@/components/dhcp-badge"
@@ -173,13 +173,18 @@ function Body({ range: r }: { range: IPRange }) {
 
 type FreeRow = { address: string; n: number }
 
-const NO_FILTER = new Set<string>()
 const noop = () => {}
 
 /** The range as the ordinary IP table: its registered addresses with every
  * IP column (status, tags, assignment…) interleaved with the free ones, which
  * are click-to-add. Compact folds the free rows into "first free · N more". */
-function AddressesPanel({ range, prefixId }: { range: IPRange; prefixId: string }) {
+function AddressesPanel({
+  range,
+  prefixId,
+}: {
+  range: IPRange
+  prefixId: string
+}) {
   const nav = useNavigate()
   const { canDo } = useMe()
   const [showAvailable, setShowAvailable] = useState(true)
@@ -187,7 +192,8 @@ function AddressesPanel({ range, prefixId }: { range: IPRange; prefixId: string 
   const [deleting, setDeleting] = useState<IPAddress | null>(null)
   const avail = useQuery({
     queryKey: ["ip-range-available", range.id],
-    queryFn: () => api<IPRangeAvailable>(`/api/ip-ranges/${range.id}/available/`),
+    queryFn: () =>
+      api<IPRangeAvailable>(`/api/ip-ranges/${range.id}/available/`),
   })
   const onCreateAt = useCallback(
     (address: string) =>
@@ -217,27 +223,18 @@ function AddressesPanel({ range, prefixId }: { range: IPRange; prefixId: string 
             total
           </span>
         )}
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={showAvailable}
-            onCheckedChange={(v) => setShowAvailable(!!v)}
-          />
-          <span>Show available</span>
-        </label>
-        {showAvailable && (
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={compact} onCheckedChange={(v) => setCompact(!!v)} />
-            <span>Compact</span>
-          </label>
-        )}
       </div>
       <PrefixIpsTable
         prefixId={prefixId}
-        statusFilter={NO_FILTER}
-        roleFilter={NO_FILTER}
-        tagFilter={NO_FILTER}
-        onToggleTag={noop}
-        search=""
+        railExtras={
+          <IpRailToggles
+            showAvailable={showAvailable}
+            onToggleShowAvailable={setShowAvailable}
+            canShowAvailable
+            compact={compact}
+            onToggleCompact={setCompact}
+          />
+        }
         showAvailable={showAvailable}
         showDhcpPool={false}
         cidr={range.prefix?.cidr ?? ""}
@@ -307,7 +304,10 @@ function AvailablePanel({
                   <Button asChild size="sm" variant="ghost" className="h-7">
                     <Link
                       to="/ips/new"
-                      search={{ prefix: prefixId, address: row.original.address }}
+                      search={{
+                        prefix: prefixId,
+                        address: row.original.address,
+                      }}
                     >
                       Add IP
                     </Link>

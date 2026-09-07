@@ -1,6 +1,12 @@
-import { memo, useCallback, useMemo } from "react"
-import { flexRender } from "@tanstack/react-table"
-import { FacetClickCell } from "@/components/table-filters"
+import { memo, useCallback, useMemo, useState } from "react"
+import type { ReactNode } from "react"
+import { Search } from "lucide-react"
+import { useTableFilters } from "@/components/table-filters"
+import { Input } from "@/components/ui/input"
+import {
+  monitoringBucket,
+  monitoringFacet,
+} from "@/components/columns/monitoring-facet"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -20,7 +26,7 @@ import type { DhcpState } from "@/components/dhcp-badge"
 import { objCan } from "@/lib/use-me"
 import { ipToBigInt, bigIntToIp, enumerableHostInts } from "@/lib/prefix-tree"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
-import { DataTable } from "@/components/data-table"
+import { DataTable, SortHeader } from "@/components/data-table"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { dash } from "@/components/cells/dash"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -42,15 +48,9 @@ const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
 interface PrefixIpsTableProps {
   prefixId: string
-  // Active filter sets - table calls back when a tag/etc gets toggled inline.
-  statusFilter: Set<string>
-  roleFilter: Set<string>
-  tagFilter: Set<string>
-  onToggleTag: (slug: string) => void
-  /** Clicking a status / role badge toggles it in the rail, like a tag. */
-  onToggleStatus?: (id: string) => void
-  onToggleRole?: (id: string) => void
-  search: string
+  /** Non-facet controls for the rail (Show available, Compact, DHCP pool);
+   * the facets themselves derive from the columns. */
+  railExtras?: ReactNode
   showAvailable: boolean
   /** Show the DHCP scope pool's addresses as ghost rows even when they have no
    * IP row yet - the pool laid out without creating anything. */
@@ -78,13 +78,7 @@ interface PrefixIpsTableProps {
 
 function PrefixIpsTableImpl({
   prefixId,
-  statusFilter,
-  roleFilter,
-  tagFilter,
-  onToggleTag,
-  onToggleStatus,
-  onToggleRole,
-  search,
+  railExtras,
   showAvailable,
   showDhcpPool,
   cidr,
@@ -137,152 +131,42 @@ function PrefixIpsTableImpl({
   )
   const inPool = useCallback(
     (n: bigint) =>
-      !inExclusion(n) &&
-      dhcpSpans.some((s) => n >= s.start && n <= s.end),
+      !inExclusion(n) && dhcpSpans.some((s) => n >= s.start && n <= s.end),
     [dhcpSpans, inExclusion]
   )
 
-  const rows = useMemo<IpRow[]>(() => {
-    const spanInts =
+  // Registered addresses inside the span, as table rows - the set the filter
+  // rail derives its facets from. Free rows never carry a facet value.
+  const spanInts = useMemo(
+    () =>
       span && ipToBigInt(span.start) !== null && ipToBigInt(span.end) !== null
         ? { start: ipToBigInt(span.start)!, end: ipToBigInt(span.end)! }
-        : null
-    const all = (query.data?.results ?? []).filter((ip) => {
-      if (!spanInts) return true
-      const n = ipToBigInt(ip.ip_address)
-      return n !== null && n >= spanInts.start && n <= spanInts.end
-    })
-    const q = search.trim().toLowerCase()
-    const filtered = all.filter((ip) => {
-      if (
-        statusFilter.size > 0 &&
-        (!ip.status || !statusFilter.has(ip.status.id))
-      )
-        return false
-      if (roleFilter.size > 0 && (!ip.role || !roleFilter.has(ip.role.id)))
-        return false
-      if (tagFilter.size > 0 && !ip.tags.some((t) => tagFilter.has(t.slug)))
-        return false
-      if (q) {
-        const haystack =
-          ip.ip_address +
-          " " +
-          (ip.description || "") +
-          " " +
-          (ip.assigned_device?.name || "") +
-          " " +
-          (ip.reservation_note || "")
-        if (!haystack.toLowerCase().includes(q)) return false
-      }
-      return true
-    })
-    const registeredRows: IpRow[] = filtered.map((ip) => ({
-      kind: "registered",
-      ip,
-    }))
+        : null,
+    [span]
+  )
+  const registered = useMemo<IpRow[]>(
+    () =>
+      (query.data?.results ?? [])
+        .filter((ip) => {
+          if (!spanInts) return true
+          const n = ipToBigInt(ip.ip_address)
+          return n !== null && n >= spanInts.start && n <= spanInts.end
+        })
+        .map((ip) => ({ kind: "registered" as const, ip })),
+    [query.data, spanInts]
+  )
 
-    // Ghost rows for unregistered addresses. Only when no status/role/tag
-    // filter is active (free addresses have none).
-    //   "Show available" - every free host in the prefix (≤ enumeration cap;
-    //     null = too big, e.g. a /64).
-    //   "Show DHCP pool" - just the scope pool's free addresses, laid out
-    //     without creating anything. Pools are bounded ranges, so this works
-    //     even in prefixes too large to enumerate fully.
-    const freeRows: IpRow[] = []
-    const noFacetFilter =
-      statusFilter.size === 0 && roleFilter.size === 0 && tagFilter.size === 0
-    if ((showAvailable || showDhcpPool) && noFacetFilter) {
-      const taken = new Set<bigint>()
-      for (const ip of all) {
-        const b = ipToBigInt(ip.ip_address)
-        if (b !== null) taken.add(b)
-      }
-      const family: 4 | 6 = cidr.includes(":") ? 6 : 4
-      const pushFree = (n: bigint) => {
-        if (taken.has(n)) return
-        taken.add(n) // dedupe across sources (prefix hosts vs pool spans)
-        const address = bigIntToIp(n, family)
-        if (q && !address.toLowerCase().includes(q)) return
-        freeRows.push({ kind: "free", address })
-      }
-      if (showAvailable && spanInts) {
-        let budget = 4096
-        for (let n = spanInts.start; n <= spanInts.end && budget > 0; n++) {
-          pushFree(n)
-          budget--
-        }
-      } else if (showAvailable && spans) {
-        let budget = 4096
-        for (const sp of spans) {
-          const a = ipToBigInt(sp.start)
-          const b = ipToBigInt(sp.end)
-          if (a === null || b === null) continue
-          for (let n = a; n <= b && budget > 0; n++) {
-            pushFree(n)
-            budget--
-          }
-        }
-      } else if (showAvailable) {
-        const hosts = enumerableHostInts(cidr)
-        if (hosts) for (const n of hosts.ints) pushFree(n)
-      } else {
-        // Pool-only view: enumerate each scope span directly (skipping the
-        // exclusion holes), capped so a misconfigured giant range can't flood
-        // the table.
-        let budget = 4096
-        for (const s of dhcpSpans) {
-          for (let n = s.start; n <= s.end && budget > 0; n++) {
-            if (s.exclusions.some((e) => n >= e.start && n <= e.end)) continue
-            pushFree(n)
-            budget--
-          }
-        }
-      }
-    }
-
-    // Compact: the first free address stands for the rest.
-    const first = freeRows[0]
-    const shownFree: IpRow[] =
-      compact && freeRows.length > 1 && first.kind === "free"
-        ? [{ kind: "free", address: first.address, more: freeRows.length - 1 }]
-        : freeRows
-    const merged = [...registeredRows, ...shownFree]
-    // Default to numeric address order so registered + free interleave.
-    const addrInt = (r: IpRow) =>
-      r.kind === "registered"
-        ? (ipToBigInt(r.ip.ip_address) ?? 0n)
-        : (ipToBigInt(r.address) ?? 0n)
-    merged.sort((a, b) => {
-      const av = addrInt(a)
-      const bv = addrInt(b)
-      return av < bv ? -1 : av > bv ? 1 : 0
-    })
-    return merged
-  }, [
-    query.data,
-    statusFilter,
-    roleFilter,
-    tagFilter,
-    search,
-    span,
-    spans,
-    compact,
-    showAvailable,
-    showDhcpPool,
-    dhcpSpans,
-    cidr,
-  ])
-
-  // Monitoring status for the registered IPs in view (bulk, decoupled query).
+  // Monitoring status for the registered IPs (bulk, decoupled query) - for
+  // every row in the span, so the rail can facet on it before filtering.
   const ipIds = useMemo(
     () =>
-      rows
+      registered
         .filter(
           (r): r is Extract<IpRow, { kind: "registered" }> =>
             r.kind === "registered"
         )
         .map((r) => r.ip.id),
-    [rows]
+    [registered]
   )
   const monQuery = useQuery({
     queryKey: ["ip-mon-status", ipIds],
@@ -348,17 +232,9 @@ function PrefixIpsTableImpl({
     () =>
       buildColumns({
         hasDescendants,
-        activeTagSlugs: tagFilter,
-        onToggleTag,
         onEdit,
         onDelete,
         onCreateAt,
-        statusFacet: onToggleStatus
-          ? { active: statusFilter, toggle: onToggleStatus }
-          : undefined,
-        roleFacet: onToggleRole
-          ? { active: roleFilter, toggle: onToggleRole }
-          : undefined,
         monitoring,
         cfDefs,
         findRange,
@@ -370,8 +246,6 @@ function PrefixIpsTableImpl({
       }),
     [
       hasDescendants,
-      tagFilter,
-      onToggleTag,
       onEdit,
       onDelete,
       onCreateAt,
@@ -383,12 +257,123 @@ function PrefixIpsTableImpl({
       canEdit,
       canDelete,
       canAdd,
-      statusFilter,
-      roleFilter,
-      onToggleStatus,
-      onToggleRole,
     ]
   )
+
+  // The shared rail + click-to-filter wiring, over the registered rows.
+  const {
+    rail,
+    columns: wiredColumns,
+    filteredRows,
+    activeCount,
+  } = useTableFilters(columns, registered, undefined, { railExtras })
+  const [search, setSearch] = useState("")
+
+  const rows = useMemo<IpRow[]>(() => {
+    const q = search.trim().toLowerCase()
+    const registeredRows = filteredRows.filter((r) => {
+      if (r.kind !== "registered" || !q) return true
+      const ip = r.ip
+      const haystack =
+        ip.ip_address +
+        " " +
+        (ip.description || "") +
+        " " +
+        (ip.assigned_device?.name || "") +
+        " " +
+        (ip.reservation_note || "")
+      return haystack.toLowerCase().includes(q)
+    })
+
+    // Ghost rows for unregistered addresses. Only when no facet is active
+    // (free addresses have none).
+    //   "Show available" - every free host in the prefix (≤ enumeration cap;
+    //     null = too big, e.g. a /64).
+    //   "Show DHCP pool" - just the scope pool's free addresses, laid out
+    //     without creating anything. Pools are bounded ranges, so this works
+    //     even in prefixes too large to enumerate fully.
+    const freeRows: IpRow[] = []
+    if ((showAvailable || showDhcpPool) && activeCount === 0) {
+      const taken = new Set<bigint>()
+      for (const r of registered) {
+        if (r.kind !== "registered") continue
+        const b = ipToBigInt(r.ip.ip_address)
+        if (b !== null) taken.add(b)
+      }
+      const family: 4 | 6 = cidr.includes(":") ? 6 : 4
+      const pushFree = (n: bigint) => {
+        if (taken.has(n)) return
+        taken.add(n) // dedupe across sources (prefix hosts vs pool spans)
+        const address = bigIntToIp(n, family)
+        if (q && !address.toLowerCase().includes(q)) return
+        freeRows.push({ kind: "free", address })
+      }
+      if (showAvailable && spanInts) {
+        let budget = 4096
+        for (let n = spanInts.start; n <= spanInts.end && budget > 0; n++) {
+          pushFree(n)
+          budget--
+        }
+      } else if (showAvailable && spans) {
+        let budget = 4096
+        for (const sp of spans) {
+          const a = ipToBigInt(sp.start)
+          const b = ipToBigInt(sp.end)
+          if (a === null || b === null) continue
+          for (let n = a; n <= b && budget > 0; n++) {
+            pushFree(n)
+            budget--
+          }
+        }
+      } else if (showAvailable) {
+        const hosts = enumerableHostInts(cidr)
+        if (hosts) for (const n of hosts.ints) pushFree(n)
+      } else {
+        // Pool-only view: enumerate each scope span directly (skipping the
+        // exclusion holes), capped so a misconfigured giant range can't flood
+        // the table.
+        let budget = 4096
+        for (const s of dhcpSpans) {
+          for (let n = s.start; n <= s.end && budget > 0; n++) {
+            if (s.exclusions.some((e) => n >= e.start && n <= e.end)) continue
+            pushFree(n)
+            budget--
+          }
+        }
+      }
+    }
+
+    // Compact: the first free address stands for the rest.
+    const first = freeRows[0]
+    const shownFree: IpRow[] =
+      compact && freeRows.length > 1 && first.kind === "free"
+        ? [{ kind: "free", address: first.address, more: freeRows.length - 1 }]
+        : freeRows
+    const merged = [...registeredRows, ...shownFree]
+    // Default to numeric address order so registered + free interleave.
+    const addrInt = (r: IpRow) =>
+      r.kind === "registered"
+        ? (ipToBigInt(r.ip.ip_address) ?? 0n)
+        : (ipToBigInt(r.address) ?? 0n)
+    merged.sort((a, b) => {
+      const av = addrInt(a)
+      const bv = addrInt(b)
+      return av < bv ? -1 : av > bv ? 1 : 0
+    })
+    return merged
+  }, [
+    filteredRows,
+    registered,
+    activeCount,
+    search,
+    spanInts,
+    spans,
+    compact,
+    showAvailable,
+    showDhcpPool,
+    dhcpSpans,
+    cidr,
+  ])
 
   const handleSelected = useCallback(
     (selected: IpRow[]) => {
@@ -429,15 +414,36 @@ function PrefixIpsTableImpl({
   }
 
   return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      flexColumn="description"
-      stickyHeader
-      onSelectedRowsChange={handleSelected}
-      initialColumnVisibility={initialVisibility}
-      tableId="prefix-ips"
-    />
+    <div className="flex min-h-0 flex-1">
+      {rail}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+          <span className="num text-[11px] text-muted-foreground">
+            {rows.length} row{rows.length === 1 ? "" : "s"}
+          </span>
+          <div className="relative ml-auto">
+            <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Filter IPs…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 w-64 pl-8 text-xs"
+            />
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-3">
+          <DataTable
+            data={rows}
+            columns={wiredColumns}
+            flexColumn="description"
+            stickyHeader
+            onSelectedRowsChange={handleSelected}
+            initialColumnVisibility={initialVisibility}
+            tableId="prefix-ips"
+          />
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -447,8 +453,6 @@ export const PrefixIpsTable = memo(PrefixIpsTableImpl)
 
 interface BuildOpts {
   hasDescendants: boolean
-  activeTagSlugs: Set<string>
-  onToggleTag: (slug: string) => void
   onEdit: (ip: IPAddress) => void
   onDelete: (ip: IPAddress) => void
   onCreateAt: (address: string) => void
@@ -460,17 +464,10 @@ interface BuildOpts {
   canEdit: boolean
   canDelete: boolean
   canAdd: boolean
-  /** Status / role facet state - the badges toggle these when set. */
-  statusFacet?: { active: Set<string>; toggle: (id: string) => void }
-  roleFacet?: { active: Set<string>; toggle: (id: string) => void }
 }
 
 function buildColumns({
   hasDescendants,
-  activeTagSlugs,
-  onToggleTag,
-  statusFacet,
-  roleFacet,
   onEdit,
   onDelete,
   onCreateAt,
@@ -502,35 +499,8 @@ function buildColumns({
     },
     dhcpState: dhcpStateForRow,
     cfDefs,
-    tagFilter: { activeSlugs: activeTagSlugs, onToggle: onToggleTag },
   })
 
-  // Status / role badges toggle their rail facet when clicked (links inside
-  // a cell keep navigating - FacetClickCell leaves those alone).
-  const wrapFacet = (
-    id: "status" | "role",
-    facet: { active: Set<string>; toggle: (id: string) => void } | undefined,
-    key: (ip: IPAddress) => string | null
-  ) => {
-    if (!facet) return
-    const col = cols.find((c) => c.id === id)
-    if (!col?.cell) return
-    const inner = col.cell
-    col.cell = (ctx) => {
-      const value = ctx.row.original.kind === "registered" ? key(ctx.row.original.ip) : null
-      return (
-        <FacetClickCell
-          value={value}
-          active={value !== null && facet.active.has(value)}
-          toggle={facet.toggle}
-        >
-          {flexRender(inner, ctx)}
-        </FacetClickCell>
-      )
-    }
-  }
-  wrapFacet("status", statusFacet, (ip) => ip.status?.id ?? null)
-  wrapFacet("role", roleFacet, (ip) => ip.role?.id ?? null)
   const insertAfter = (id: string, ...extra: ColumnDef<IpRow>[]) => {
     const i = cols.findIndex((c) => c.id === id)
     cols.splice(i + 1, 0, ...extra)
@@ -559,16 +529,19 @@ function buildColumns({
     })
   }
 
+  const rollup = (r: IpRow) =>
+    r.kind === "registered" ? monitoring[r.ip.id] : null
   insertAfter("status", {
     id: "monitoring",
-    header: "Monitoring",
-    enableSorting: false,
+    accessorFn: (r) => monitoringBucket(rollup(r) ?? undefined),
+    header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
     cell: ({ row }) => {
       if (row.original.kind !== "registered") return null
       const e = monitoring[row.original.ip.id]
       if (!e || !e.status) return dash
       return <MixedStatusBadge counts={e.counts} status={e.status} />
     },
+    meta: { facet: monitoringFacet<IpRow>(rollup) },
   })
 
   if (hasRanges) {

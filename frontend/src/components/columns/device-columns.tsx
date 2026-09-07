@@ -5,10 +5,9 @@ import { UtilCell } from "@/components/cells/util-cell"
 import type { BulkStatusEntry, ComplianceViolation, Device } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import {
-  STATUS_COLOR,
-  STATUS_LABEL,
-  STATUS_TEXT,
-} from "@/components/monitoring/charts"
+  monitoringBucket,
+  monitoringFacet,
+} from "@/components/columns/monitoring-facet"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -131,15 +130,6 @@ export function DeviceIpRef({
       {ip.ip_address}
     </Link>
   )
-}
-
-/** Facet bucket for a monitoring rollup: the single state, `mixed` when the
- * checks sit in more than one state (the split badge), `__none__` without a
- * rollup. */
-function monitoringBucket(e: BulkStatusEntry | undefined): string {
-  if (!e || !e.status) return "__none__"
-  const present = Object.values(e.counts ?? {}).filter((n) => n > 0)
-  return present.length > 1 ? "mixed" : e.status
 }
 
 function monitoringTooltip(e: BulkStatusEntry): string {
@@ -403,21 +393,7 @@ export function buildDeviceColumns<T extends Device = Device>(
       // hiding under its worst state, and rows with no rollup read as "Not
       // monitored" like the "No status" bucket next door.
       meta: {
-        facet: {
-          kind: "enum",
-          label: "Monitoring",
-          get: (r: T) => monitoringBucket(opts.monitoring?.[r.id]),
-          formatValue: (v) => {
-            if (v === "__none__") return { label: "Not monitored" }
-            if (v === "mixed") return { label: "Mixed" }
-            const s = v as keyof typeof STATUS_LABEL
-            return {
-              label: STATUS_LABEL[s],
-              color: STATUS_COLOR[s],
-              textColor: STATUS_TEXT[s],
-            }
-          },
-        },
+        facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]),
       },
     }),
     primary_ip: () =>

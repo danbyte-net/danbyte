@@ -160,7 +160,12 @@ export function useTableFilters<TRow>(
   // Seed enum facets on first render, e.g. from a URL search param so a link
   // like `/devices?type=<id>` lands on the pre-filtered table (cross-object
   // linkage). Keyed by column.id → the values to preselect.
-  initialEnums?: Record<string, string[]>
+  initialEnums?: Record<string, string[]>,
+  railOpts?: {
+    /** Extra controls at the top of the rail, above the facets - toggles
+     * that belong to this table but are not facets (Show available…). */
+    railExtras?: React.ReactNode
+  }
 ): UseTableFiltersResult<TRow> {
   // Memoize: a new facets array reference every render would cascade
   // through every downstream useMemo and trigger an infinite update loop
@@ -319,8 +324,9 @@ export function useTableFilters<TRow>(
 
   // Render the rail.
   const rail =
-    facets.length === 0 ? null : (
+    facets.length === 0 && !railOpts?.railExtras ? null : (
       <FilterRail>
+        {railOpts?.railExtras}
         <ExpressionFilter value={exprText} onChange={setExprText} rows={rows} />
         {facets.map(({ id, def }) => {
           const label = def.label ?? id

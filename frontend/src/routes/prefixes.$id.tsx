@@ -3,14 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import {
-  ChevronRight,
-  CopyPlus,
-  Layers,
-  Pencil,
-  Plus,
-  Search,
-} from "lucide-react"
+import { ChevronRight, CopyPlus, Layers, Pencil, Plus } from "lucide-react"
 
 import {
   api,
@@ -51,7 +44,7 @@ import {
   useCustomFieldDefs,
 } from "@/components/custom-field-display"
 import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
-import { IpFilterRail } from "@/components/ip-filter-rail"
+import { IpRailToggles } from "@/components/ip-rail-toggles"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import {
   AutoDiscoverButton,
@@ -64,7 +57,6 @@ import { IpBulkBar } from "@/components/ip-bulk-bar"
 import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import {
   DetailHero,
@@ -137,11 +129,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const [showPool, setShowPool] = useState(false)
   const [selectedIps, setSelectedIps] = useState<IPAddress[]>([])
 
-  // IP filter state.
-  const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
-  const [roleFilter, setRoleFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  // IP table toggles (the facets live inside the table's own rail).
   const [showAvailable, setShowAvailable] = useState(false)
   const [compact, setCompact] = useState(false)
   const [showDhcpPool, setShowDhcpPool] = useState(false)
@@ -202,19 +190,6 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const handleDeleteChild = useCallback(
     (cp: Prefix) => setDeletingChild(cp),
     []
-  )
-
-  const toggleStatus = useCallback(
-    (v: string) => toggle(statusFilter, v, setStatusFilter),
-    [statusFilter]
-  )
-  const toggleRole = useCallback(
-    (v: string) => toggle(roleFilter, v, setRoleFilter),
-    [roleFilter]
-  )
-  const toggleTag = useCallback(
-    (v: string) => toggle(tagFilter, v, setTagFilter),
-    [tagFilter]
   )
 
   const closeDeletePrefix = useCallback((o: boolean) => {
@@ -377,66 +352,34 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="ips" bare>
-        <IpFilterRail
-          rows={ipRows}
-          statusFilter={statusFilter}
-          roleFilter={roleFilter}
-          tagFilter={tagFilter}
-          onToggleStatus={toggleStatus}
-          onToggleRole={toggleRole}
-          onToggleTag={toggleTag}
-          showAvailable={showAvailable}
-          onToggleShowAvailable={setShowAvailable}
-          canShowAvailable={canShowAvailable}
-          compact={compact}
-          onToggleCompact={setCompact}
-          hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
-          showDhcpPool={showDhcpPool}
-          onToggleShowDhcpPool={setShowDhcpPool}
-        />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-            <span className="num text-[11px] text-muted-foreground">
-              {ipRows.length} row{ipRows.length === 1 ? "" : "s"}
-            </span>
-            <div className="ml-auto flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Filter IPs…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 w-64 pl-8 text-xs"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto p-3">
-            <PrefixIpsTable
-              prefixId={p.id}
-              statusFilter={statusFilter}
-              roleFilter={roleFilter}
-              tagFilter={tagFilter}
-              onToggleTag={toggleTag}
-              onToggleStatus={toggleStatus}
-              onToggleRole={toggleRole}
-              search={search}
+        <PrefixIpsTable
+          prefixId={p.id}
+          railExtras={
+            <IpRailToggles
               showAvailable={showAvailable}
+              onToggleShowAvailable={setShowAvailable}
+              canShowAvailable={canShowAvailable}
               compact={compact}
+              onToggleCompact={setCompact}
+              hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
               showDhcpPool={showDhcpPool}
-              cidr={p.cidr}
-              spans={allocationSpans}
-              hasDescendants={p.has_descendants}
-              onEdit={handleEditIp}
-              onDelete={handleDeleteIp}
-              onCreateAt={openAddIpAt}
-              onSelectedRowsChange={setSelectedIps}
-              canEdit={canDo("ipaddress", "change")}
-              canDelete={canDo("ipaddress", "delete")}
-              canAdd={canAddIp}
+              onToggleShowDhcpPool={setShowDhcpPool}
             />
-          </div>
-        </div>
+          }
+          showAvailable={showAvailable}
+          compact={compact}
+          showDhcpPool={showDhcpPool}
+          cidr={p.cidr}
+          spans={allocationSpans}
+          hasDescendants={p.has_descendants}
+          onEdit={handleEditIp}
+          onDelete={handleDeleteIp}
+          onCreateAt={openAddIpAt}
+          onSelectedRowsChange={setSelectedIps}
+          canEdit={canDo("ipaddress", "change")}
+          canDelete={canDo("ipaddress", "delete")}
+          canAdd={canAddIp}
+        />
       </DetailTab>
 
       <DetailTab value="children" bare>
@@ -985,11 +928,4 @@ function ChildPrefixesPane({
       </div>
     </>
   )
-}
-
-function toggle<T>(current: Set<T>, value: T, setter: (s: Set<T>) => void) {
-  const next = new Set(current)
-  if (next.has(value)) next.delete(value)
-  else next.add(value)
-  setter(next)
 }
