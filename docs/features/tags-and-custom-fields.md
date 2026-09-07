@@ -121,6 +121,11 @@ input for its type, and on the object's overview.
     must be filled in, and select/multiselect values must come from your list.
     Any problems are reported next to the field.
 
+**Hidden.** Tick *Hidden* on a definition and its values stay on the objects
+- and stay searchable - but no detail card, table column or form shows them.
+Meant for bookkeeping fields such as an imported NetBox id that nobody needs to
+read on every page. Untick to bring them back.
+
 ## Custom field groups
 
 When a tenant has many custom fields, one flat list gets unwieldy. **Groups**

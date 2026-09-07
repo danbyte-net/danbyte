@@ -16,6 +16,7 @@ import ipaddress as ipmod
 from django.db import IntegrityError
 
 from api.models import Interface, IPAddress, MACAddress, Prefix, VLAN
+from api.speed import fmt_speed, speed_mbps
 from api.vrf_placement import ANY_VRF, containing_prefix
 
 from .models import DeviceSnmp, MonitoringSettings
@@ -49,18 +50,9 @@ def _suggested_prefix(ip: str) -> str:
     return str(ipmod.ip_network(f"{ip}/{plen}", strict=False))
 
 
-def _fmt_speed(mbps) -> str:
-    """SNMP ifHighSpeed (Mbps) → a human string for Interface.speed, matching the
-    observed card ("10 Gbps" / "100 Mbps"). Blank when unknown."""
-    try:
-        n = int(mbps)
-    except (ValueError, TypeError):
-        return ""
-    if n <= 0:
-        return ""
-    if n >= 1000 and n % 1000 == 0:
-        return f"{n // 1000} Gbps"
-    return f"{n} Mbps"
+# Speed parsing/formatting is shared with the API (bundle capacity) - kept
+# under the old names here so the call sites and tests read unchanged.
+_fmt_speed = fmt_speed
 
 
 #: A port learning more distinct MACs than this is treated as an uplink/trunk
@@ -91,32 +83,118 @@ def _skip_not_present(tenant) -> bool:
     return not opted_in
 
 
+def _snmp_policy(tenant) -> dict:
+    """The tenant's SNMP source-of-truth policy flags, one plain read (no
+    get-or-create - same rule as _skip_not_present)."""
+    row = (
+        MonitoringSettings.objects.filter(tenant=tenant)
+        .values("snmp_update_only", "snmp_skip_unrouted_vlans",
+                "snmp_mac_from_fdb")
+        .first()
+    )
+    return row or {
+        "snmp_update_only": False,
+        "snmp_skip_unrouted_vlans": False,
+        "snmp_mac_from_fdb": False,
+    }
+
+
+def _is_unrouted_vlan(o: dict) -> bool:
+    """Cisco exposes every L2 VLAN as an ifTable pseudo-interface (ifType
+    l2vlan / ifDescr "unrouted VLAN 401"). Those are VLANs, not ports. A
+    routed SVI reports ifType l3vlan/propVirtual and is NOT matched here."""
+    if str(o.get("type_name") or "") == "l2vlan":
+        return True
+    return str(o.get("descr") or "").lower().startswith("unrouted vlan")
+
+
+def _fdb_single_macs(state) -> dict:
+    """if_index → the ONE MAC learned on that port, from the FDB. Ports with
+    several learners (trunks, uplinks) map to None so callers skip them."""
+    seen: dict = {}
+    for row in state.fdb or []:
+        idx = str(row.get("if_index") or "")
+        if not idx or not row.get("mac"):
+            continue
+        if idx in seen and seen[idx] != row["mac"]:
+            seen[idx] = None
+        else:
+            seen.setdefault(idx, row["mac"])
+    return seen
+
+
 def _is_not_present(o: dict) -> bool:
     return str(o.get("oper_status") or "").lower() == "notpresent"
+
+
+def _not_present_status(tenant):
+    """The tenant's "Not present" interface status, or None if renamed away.
+
+    Stamped on ports imported while the agent reports them notPresent (#105)
+    so they read as absent hardware, not as ports someone switched off.
+    """
+    from api.models import Status
+
+    return (
+        Status.objects.filter(tenant=tenant, slug="not_present")
+        .filter(available_to__contains=["interface"])
+        .first()
+    )
 
 
 def _norm(value) -> str:
     return (value or "").strip().lower()
 
 
-def _speed_mbps(value) -> int | None:
-    """Parse a human speed string to Mbps, or None when it isn't one.
+# Observed ifType name → the Danbyte interface type a discovered row is created
+# with. Only the aggregate is mapped: it must be typed "lag" to take members.
+_OBSERVED_TYPE = {"lag": "lag"}
 
-    Interface.speed is free text and legitimately arrives in several shapes -
-    the form suggests "1G"/"25G", sync writes "1 Gbps", operators type
-    "100 Mbps". Comparing the strings would flag "1G" against "1 Gbps" as
-    drift forever, so speeds are compared as numbers or not at all.
-    """
-    m = re.fullmatch(
-        r"\s*(\d+(?:\.\d+)?)\s*(g|gbps|gbit/?s?|m|mbps|mbit/?s?)\s*",
-        str(value or ""), re.IGNORECASE,
-    )
-    if not m:
-        return None
-    n = float(m.group(1))
-    if m.group(2).lower().startswith("g"):
-        n *= 1000
-    return int(n)
+
+def _lag_membership_items(device, observed: list[dict], int_by_name: dict) -> list[dict]:
+    """Bundle membership drift: the aggregate each port reports itself under
+    versus the `lag` it has in Danbyte. Compared by aggregate NAME - on a
+    stack the aggregate lives on the master while the member port sits on
+    another member device, so ids can't be compared. Rows without the
+    ``lag_if_index`` key come from an agent that never looked and say
+    nothing."""
+    by_ifindex = {str(o.get("if_index") or ""): o for o in observed}
+    items: list[dict] = []
+    for o in observed:
+        if "lag_if_index" not in o:
+            continue
+        existing = _match_observed(o, int_by_name)
+        if existing is None or existing.snmp_ignore:
+            continue
+        agg_o = by_ifindex.get(str(o.get("lag_if_index") or "")) if o.get("lag_if_index") else None
+        observed_name = str((agg_o or {}).get("name") or "")
+        intended_name = existing.lag.name if existing.lag_id else ""
+        if _norm(observed_name) == _norm(intended_name):
+            continue
+        if agg_o is not None and intended_name and _norm(agg_o.get("descr")) == _norm(intended_name):
+            continue
+        agg_iface = None
+        if agg_o is not None:
+            agg_iface = _match_observed(agg_o, int_by_name)
+            if agg_iface is None and device.virtual_chassis_id:
+                agg_iface = (
+                    Interface.objects.filter(
+                        device__virtual_chassis_id=device.virtual_chassis_id,
+                        name__iexact=observed_name,
+                    )
+                    .exclude(device=device)
+                    .first()
+                )
+        items.append({
+            "kind": "lag_membership", "interface_id": str(existing.id),
+            "name": existing.name,
+            "intended": intended_name or "-", "observed": observed_name or "-",
+            "lag_interface_id": str(agg_iface.id) if agg_iface else None,
+        })
+    return items
+
+
+_speed_mbps = speed_mbps
 
 
 def _part_drift(device, tenant, state) -> list[dict]:
@@ -294,6 +372,10 @@ def compute_device_drift(
         skip_absent = _skip_not_present(tenant)
     if skip_absent:
         observed = [o for o in observed if not _is_not_present(o)]
+    policy = _snmp_policy(tenant)
+    if policy["snmp_skip_unrouted_vlans"]:
+        observed = [o for o in observed if not _is_unrouted_vlan(o)]
+    fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
     obs_by_name = {_norm(o["name"]): o for o in observed}
     intended = (
         list(intended_interfaces) if intended_interfaces is not None
@@ -325,14 +407,18 @@ def compute_device_drift(
     for name, o in obs_by_name.items():
         existing = _match_observed(o, int_by_name)
         if existing is None:
-            items.append({
-                "kind": "interface_missing",
-                "name": o["name"], "if_index": o.get("if_index", ""),
-                "observed": {
-                    "mac": o.get("mac", ""),
-                    "admin_status": o.get("admin_status", ""),
-                },
-            })
+            # Update-only fleets: the operator is the source of truth for
+            # WHICH ports exist - never propose adding one.
+            if not policy["snmp_update_only"]:
+                items.append({
+                    "kind": "interface_missing",
+                    "name": o["name"], "if_index": o.get("if_index", ""),
+                    "observed": {
+                        "mac": o.get("mac", ""),
+                        "admin_status": o.get("admin_status", ""),
+                        "type_name": o.get("type_name", ""),
+                    },
+                })
             continue
         # This intended port has been seen (by name or by descr), so it can't
         # also be reported stale below.
@@ -341,12 +427,18 @@ def compute_device_drift(
         # doesn't drift as "new"), but produces no items in either direction.
         if existing.snmp_ignore:
             continue
-        # MAC mismatch (separator-insensitive - see _norm_mac).
-        if o.get("mac") and _norm_mac(o["mac"]) != _norm_mac(existing.mac_address):
+        # MAC mismatch (separator-insensitive - see _norm_mac). With the
+        # MAC-table policy the compared value is the port's single learned
+        # MAC (the attached device); several learners → no proposal.
+        if fdb_macs is None:
+            obs_mac = o.get("mac")
+        else:
+            obs_mac = fdb_macs.get(str(o.get("if_index") or ""))
+        if obs_mac and _norm_mac(obs_mac) != _norm_mac(existing.mac_address):
             items.append({
                 "kind": "interface_mismatch", "interface_id": str(existing.id),
                 "name": existing.name, "field": "mac_address",
-                "intended": existing.mac_address, "observed": o["mac"],
+                "intended": existing.mac_address, "observed": obs_mac,
             })
         # Admin enabled mismatch.
         if o.get("admin_status") in ("up", "down"):
@@ -395,6 +487,9 @@ def compute_device_drift(
                 "has_prefix": has_pfx,
                 "suggested_prefix": "" if has_pfx else _suggested_prefix(ip),
             })
+
+    # 2c. Bundle membership: which aggregate each port belongs to.
+    items.extend(_lag_membership_items(device, observed, int_by_name))
 
     # 3. Stale: Danbyte has it, the device doesn't report it. Report only -
     #    discovery never deletes from the SoT.
@@ -557,10 +652,16 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
             iface = Interface.objects.create(
                 device=device,
                 name=action.get("name", "")[:64],
+                type=_OBSERVED_TYPE.get(str(observed.get("type_name") or ""), ""),
                 mac_address=(observed.get("mac") or "")[:17],
                 enabled=(
                     observed.get("admin_status") != "down"
                     and not _is_not_present(observed)
+                ),
+                status=(
+                    _not_present_status(tenant)
+                    if _is_not_present(observed)
+                    else None
                 ),
             )
         except IntegrityError:
@@ -650,6 +751,42 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
         row.save(update_fields=["switch", "switch_interface", "updated_at"])
         return True
 
+    if kind == "lag_membership":
+        iface = Interface.objects.filter(
+            pk=action.get("interface_id"), device=device
+        ).first()
+        if iface is None:
+            return False
+        if (action.get("observed") or "-") == "-":
+            iface.lag = None
+            iface.save(update_fields=["lag"])
+            return True
+        agg = (
+            Interface.objects.filter(
+                pk=action.get("lag_interface_id"), device__tenant=tenant
+            )
+            .select_related("device")
+            .first()
+        )
+        if agg is None or agg.pk == iface.pk:
+            return False
+        same_stack = agg.device_id == device.id or (
+            device.virtual_chassis_id is not None
+            and agg.device.virtual_chassis_id == device.virtual_chassis_id
+        )
+        if not same_stack:
+            return False
+        # An aggregate created before types were enforced is promoted; one the
+        # operator typed as physical media is theirs to fix.
+        if agg.type in ("", "virtual"):
+            agg.type = "lag"
+            agg.save(update_fields=["type", "virtual"])
+        elif agg.type != "lag":
+            return False
+        iface.lag = agg
+        iface.save(update_fields=["lag"])
+        return True
+
     return False
 
 
@@ -658,7 +795,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
     fix MAC/admin-status drift on the ones it has, and assign observed IPs (when
     a containing prefix exists). Leaves the device name alone. Returns a summary.
     """
-    summary = {"interfaces_created": 0, "interfaces_updated": 0,
+    summary = {"interfaces_created": 0, "interfaces_updated": 0, "lag_memberships": 0,
                "ips_assigned": 0, "ips_skipped": 0, "vlans_assigned": 0,
                "switch_links": 0}
     state = DeviceSnmp.objects.filter(device=device, tenant=tenant).first()
@@ -672,6 +809,8 @@ def sync_device_from_snmp(device, tenant) -> dict:
     existing = _intent_by_observed_name(Interface.objects.filter(device=device))
     ip_rows = _observed_ip_rows(tenant, state.interfaces or [])
     skip_absent = _skip_not_present(tenant)
+    policy = _snmp_policy(tenant)
+    fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
     for o in (state.interfaces or []):
         name = o.get("name")
         # Pre-allocated stack ports: not real hardware, not intent.
@@ -681,6 +820,9 @@ def sync_device_from_snmp(device, tenant) -> dict:
             )
             continue
         if not name:
+            continue
+        # L2 VLAN pseudo-interfaces: VLANs, not ports (policy, see drift).
+        if policy["snmp_skip_unrouted_vlans"] and _is_unrouted_vlan(o):
             continue
         speed = _fmt_speed(o.get("speed_mbps"))
         vlan = _resolve_observed_vlan(tenant, o)
@@ -694,19 +836,32 @@ def sync_device_from_snmp(device, tenant) -> dict:
         if iface is not None and iface.snmp_ignore:
             continue
         if iface is None:
+            # Update-only fleets never create ports from SNMP.
+            if policy["snmp_update_only"]:
+                continue
             try:
+                created_mac = (
+                    fdb_macs.get(str(o.get("if_index") or ""))
+                    if fdb_macs is not None
+                    else o.get("mac")
+                )
                 iface = Interface.objects.create(
                     device=device, name=name[:64],
-                    mac_address=(o.get("mac") or "")[:17],
+                    mac_address=(created_mac or "")[:17],
                     # A notPresent port only reaches here when the
-                    # tenant opted in. It's a slot with no hardware, so it
-                    # lands DISABLED - importing them as ordinary enabled
-                    # ports is what buried the real ones (#97).
+                    # tenant opted in. It's a slot with no hardware: it lands
+                    # disabled AND carries the Not present status (#97, #105).
                     enabled=(
                         o.get("admin_status") != "down"
                         and not _is_not_present(o)
                     ),
+                    status=(
+                        _not_present_status(tenant)
+                        if _is_not_present(o)
+                        else None
+                    ),
                     speed=speed, vlan=vlan,
+                    type=_OBSERVED_TYPE.get(str(o.get("type_name") or ""), ""),
                 )
             except IntegrityError:
                 iface = Interface.objects.filter(device=device, name=name[:64]).first()
@@ -719,8 +874,12 @@ def sync_device_from_snmp(device, tenant) -> dict:
                 existing[_norm(name)] = iface
         else:
             changed = []
-            if o.get("mac") and _norm_mac(o["mac"]) != _norm_mac(iface.mac_address):
-                iface.mac_address = o["mac"][:17]
+            if fdb_macs is None:
+                obs_mac = o.get("mac")
+            else:
+                obs_mac = fdb_macs.get(str(o.get("if_index") or ""))
+            if obs_mac and _norm_mac(obs_mac) != _norm_mac(iface.mac_address):
+                iface.mac_address = obs_mac[:17]
                 changed.append("mac_address")
             if o.get("admin_status") in ("up", "down"):
                 en = o["admin_status"] == "up"
@@ -754,12 +913,15 @@ def sync_device_from_snmp(device, tenant) -> dict:
                 # as settled rather than attaching it twice.
                 ip_rows[ip] = IPAddress.objects.get(tenant=tenant, ip_address=ip)
 
-    # Accept all switch-link suggestions (IP ↔ this switch's port).
+    # Relationship-shaped drift, applied after the interface pass so a just-
+    # created aggregate is there to join: switch links (IP ↔ this switch's
+    # port) and bundle membership.
     for item in compute_device_drift(device, tenant, state=state):
-        if item.get("kind") == "switch_link_suggested" and apply_drift_action(
-            device, tenant, item
-        ):
+        kind = item.get("kind")
+        if kind == "switch_link_suggested" and apply_drift_action(device, tenant, item):
             summary["switch_links"] += 1
+        elif kind == "lag_membership" and apply_drift_action(device, tenant, item):
+            summary["lag_memberships"] += 1
     return summary
 
 
@@ -785,6 +947,16 @@ def _resolve_observed_vlan(tenant, o: dict):
     if not (1 <= vid <= 4094):
         return None
     vlan = VLAN.objects.filter(tenant=tenant, vlan_id=vid, group__isnull=True).first()
+    if vlan is None:
+        # Grouped VLANs count too (site-scoped groups are the norm on larger
+        # estates) - same resolution order as virt sync's match_existing_vlans:
+        # ungrouped first, then by group name, virt-sync groups excluded.
+        vlan = (
+            VLAN.objects.filter(tenant=tenant, vlan_id=vid)
+            .exclude(group__slug__startswith="virt-")
+            .order_by("group__name")
+            .first()
+        )
     if vlan is None:
         vlan = VLAN.objects.create(
             tenant=tenant, vlan_id=vid,
@@ -813,8 +985,15 @@ def _attach_observed_ip(tenant, iface, ip: str) -> str:
         existing.save(update_fields=["assigned_interface", "assigned_device"])
         return "assigned"
     # Scope the prefix search to the interface's VRF when it has one, so the IP
-    # lands in the right routing context.
-    vrf = iface.vrf if iface.vrf_id else _ANY_VRF
+    # lands in the right routing context. Without one, the tenant's default
+    # SNMP VRF policy (device → role → type → site → tenant) narrows the
+    # search; no policy keeps the any-VRF tie-break.
+    if iface.vrf_id:
+        vrf = iface.vrf
+    else:
+        from .snmp_resolve import resolve_snmp_vrf
+
+        vrf = resolve_snmp_vrf(iface.device, tenant) or _ANY_VRF
     prefix = _containing_prefix(tenant, ip, vrf)
     if prefix is None:
         return "skipped"

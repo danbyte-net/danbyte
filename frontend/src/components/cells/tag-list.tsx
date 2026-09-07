@@ -1,5 +1,6 @@
 import { type ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/ui/badge"
+import { SortHeader } from "@/components/data-table"
 import { cn, cssColor } from "@/lib/utils"
 import { type Tag } from "@/lib/api"
 
@@ -95,18 +96,30 @@ interface TagsColumnOpts<T> {
 //     onToggle: (slug) => toggle(tagFilter, slug, setTagFilter),
 //   })
 export function tagsColumn<T>(opts: TagsColumnOpts<T>): ColumnDef<T, unknown> {
+  const label = opts.header ?? "Tags"
   return {
     id: "tags",
-    header: opts.header ?? "Tags",
-    enableSorting: false,
-    cell: ({ row }) => (
-      <TagList
-        tags={opts.getTags(row.original)}
-        activeSlugs={opts.activeSlugs}
-        onToggle={opts.onToggle}
-        inline
-      />
-    ),
+    // Sorts by the tag names, so rows sharing a tag land together.
+    accessorFn: (r) =>
+      opts
+        .getTags(r)
+        .map((t) => t.name.toLowerCase())
+        .sort()
+        .join(", "),
+    header: ({ column }) => <SortHeader column={column} label={label} />,
+    // A chip is always a filter toggle: the explicit handler when the page
+    // owns its tag filter, else the auto rail's facet (see useTableFilters).
+    cell: ({ row, column }) => {
+      const facet = column.columnDef.meta?.tagFacet
+      return (
+        <TagList
+          tags={opts.getTags(row.original)}
+          activeSlugs={opts.activeSlugs ?? facet?.active}
+          onToggle={opts.onToggle ?? facet?.toggle}
+          inline
+        />
+      )
+    },
     meta: {
       facet: {
         kind: "tags",

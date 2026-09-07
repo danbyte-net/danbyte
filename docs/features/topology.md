@@ -217,6 +217,18 @@ The toolbar groups its controls to stay uncluttered: a **Filters** popover
 **Display** popover (layout axis, cables routed/straight, colour-by, and *Show
 patch panels*). **Search** and **Levels** stay on the bar.
 
+## Link aggregation bundles
+
+Member cables of one bundle - both ends in an aggregate, the same pair of
+aggregates - draw as **one thicker edge** labelled `Po1 ⇄ Po10 ×2`, the
+logical link rather than its physical legs. A port-channel that fans out to a
+vPC / MLAG pair is two bundles, one per far-end aggregate. Hover names the
+aggregates, the member cables and the speed; click opens the same bundle panel
+as a flat-view `×N` edge, titled by the aggregates. **Display → Bundle
+aggregates** turns the fold off (`?lag=off` in the URL) to see every cable;
+the flat view already bundles every parallel cable and simply names the
+aggregates when all of them share one.
+
 ## Edge coloring
 
 The **color mode** select paints edges by:

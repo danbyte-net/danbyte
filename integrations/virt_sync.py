@@ -264,15 +264,41 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
         vswitch.kind = kind
         vswitch.save(update_fields=["kind"])
     vlan = None
+    made_vlan = False
     if tag is not None:
-        grp = _network_group(source, c)
-        vlan, made_vlan = VLAN.objects.get_or_create(
-            tenant=source.tenant, group=grp, vlan_id=tag,
-            defaults={"name": name or f"{bridge} VLAN {tag}"},
-        )
-        if made_vlan:
-            logger.info("created VLAN %s (%s) in group %r",
-                        tag, vlan.name, grp.name)
+        # Opt-in (#116): the operator's own VLAN with this VID, before minting
+        # a duplicate in the per-source group. Ungrouped first (the tenant-wide
+        # constraint guarantees at most one), then any non-virt group - by
+        # group name, so several matches resolve the same way every sync.
+        if source.match_existing_vlans:
+            vlan = VLAN.objects.filter(
+                tenant=source.tenant, vlan_id=tag, group__isnull=True
+            ).first()
+            if vlan is None:
+                grouped = list(
+                    VLAN.objects.filter(tenant=source.tenant, vlan_id=tag)
+                    .exclude(group__slug__startswith="virt-")
+                    .select_related("group")
+                    .order_by("group__name")[:2]
+                )
+                if len(grouped) > 1:
+                    logger.info(
+                        "VID %s exists in several groups; matching %r",
+                        tag, grouped[0].group.name,
+                    )
+                vlan = grouped[0] if grouped else None
+            if vlan is not None:
+                logger.info("matched existing VLAN %s (%s) for %s",
+                            tag, vlan.name, bridge)
+        if vlan is None:
+            grp = _network_group(source, c)
+            vlan, made_vlan = VLAN.objects.get_or_create(
+                tenant=source.tenant, group=grp, vlan_id=tag,
+                defaults={"name": name or f"{bridge} VLAN {tag}"},
+            )
+            if made_vlan:
+                logger.info("created VLAN %s (%s) in group %r",
+                            tag, vlan.name, grp.name)
     ext_key = f"{bridge}:{tag}" if tag is not None else bridge
     vn, made_net = VirtNetwork.objects.get_or_create(
         source=source, ext_key=ext_key,
@@ -286,10 +312,33 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     if vn.vswitch_id is None:
         vn.vswitch = vswitch
         changed.append("vswitch")
-    if vn.vlan_id is None and vlan is not None:
-        vn.vlan = vlan
-        vn.created_vlan = True
-        changed += ["vlan", "created_vlan"]
+    migrated_from = None
+    if vlan is not None:
+        if vn.vlan_id is None:
+            vn.vlan = vlan
+            # Only when the sync minted the row: a matched operator VLAN must
+            # never be marked sync-created, or pruning could take it.
+            vn.created_vlan = made_vlan
+            changed += ["vlan", "created_vlan"]
+        elif (
+            source.match_existing_vlans
+            and not made_vlan
+            and vn.created_vlan
+            and vn.vlan_id != vlan.id
+        ):
+            # Matching was turned on AFTER this network minted its own VLAN:
+            # re-point the network at the operator's VLAN so prefixes and
+            # addresses resolve through the real one, not the copy. The
+            # network keeps its hypervisor name; only the VLAN link moves.
+            # An operator-chosen VLAN (created_vlan False) is never touched.
+            migrated_from = vn.vlan_id
+            vn.vlan = vlan
+            vn.created_vlan = False
+            changed += ["vlan", "created_vlan"]
+            logger.info(
+                "re-pointed network %r from its minted VLAN to existing "
+                "VLAN %s (%s)", vn.name or ext_key, vlan.vlan_id, vlan.name,
+            )
     vn.save(update_fields=changed)
     # The direct NIC-to-network statement. The VM page renders from this, not
     # from a shared VLAN - vCenter never supplies a VLAN on the NIC, so the
@@ -307,7 +356,13 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
                 logger.info("linked %s/%s to network %r",
                             guest.vm.name, iface.name, vn.name or ext_key)
             # Blank-fill the access VLAN (never overwrite operator intent).
-            if vlan is not None and iface.vlan_id is None:
+            # A NIC still riding the minted VLAN this network just migrated
+            # away from follows it to the operator's VLAN - that value came
+            # from the sync, not the operator.
+            if vlan is not None and (
+                iface.vlan_id is None
+                or (migrated_from and iface.vlan_id == migrated_from)
+            ):
                 iface.vlan = vlan
                 if not iface.mode:
                     iface.mode = "access"
@@ -911,26 +966,31 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
             _queue_change(guest, "new_guest", detail, now, fresh_changes)
         return
 
-    # Already linked. Sync-created rows track the hypervisor's specs; adopted
-    # rows are operator-owned and only ever blank-filled.
+    # Already linked. Sync-created rows track the hypervisor's specs. Adopted
+    # rows are operator-owned: their drift is RAISED for a human, never applied
+    # directly - the same treatment operator-created interfaces get in
+    # _diff_interfaces. (They used to raise nothing at all, so a RAM change on
+    # the hypervisor was silently invisible on an adopted VM forever.)
     vm = guest.vm
-    if guest.created_vm:
-        diffs = {}
-        for field, value in specs.items():
-            if value is not None and getattr(vm, field) != value:
-                diffs[field] = {"danbyte": getattr(vm, field), "hypervisor": value}
-        if diffs:
-            if apply:
-                for field, pair in diffs.items():
-                    setattr(vm, field, pair["hypervisor"])
-                vm.save(update_fields=list(diffs))
-                _clear_change(guest, "spec_change")
-            else:
-                _queue_change(guest, "spec_change", diffs, now, fresh_changes)
-        else:
+    diffs = {}
+    for field, value in specs.items():
+        if value is not None and getattr(vm, field) not in (None, 0) \
+                and getattr(vm, field) != value:
+            diffs[field] = {"danbyte": getattr(vm, field), "hypervisor": value}
+    if diffs:
+        if apply and guest.created_vm:
+            for field, pair in diffs.items():
+                setattr(vm, field, pair["hypervisor"])
+            vm.save(update_fields=list(diffs))
             _clear_change(guest, "spec_change")
-    _blank_fill(vm, {} if guest.created_vm else specs, source, guest, place,
-                os_info)
+        else:
+            _queue_change(guest, "spec_change", diffs, now, fresh_changes)
+    else:
+        _clear_change(guest, "spec_change")
+    # Blank fields are blank-fill territory for BOTH kinds of row - filling an
+    # empty value is not a disagreement, so it never goes through the drift
+    # queue (and a sync-created VM whose spec arrived late still gets it).
+    _blank_fill(vm, specs, source, guest, place, os_info)
 
 
 def _reported_ips(entries) -> list:
@@ -2079,7 +2139,25 @@ def apply_change(change) -> None:
                 vm.save(update_fields=fields)
     elif change.kind == "iface_change":
         _accept_iface_change(guest, change.detail or {})
+    elif change.kind == "iface_extra":
+        _accept_iface_extra(guest, change.detail or {})
     change.delete()
+
+
+def _accept_iface_extra(guest, detail: dict) -> None:
+    """Take the hypervisor's word that these interfaces are gone.
+
+    Only operator-created rows reach this change kind - ones the sync itself
+    created are removed without asking - so accepting deletes records a human
+    entered. Named rows only: an interface added since the change was queued
+    isn't in ``names`` and survives.
+    """
+    from api.models import VMInterface
+
+    names = (detail or {}).get("names") or []
+    if guest.vm is None or not names:
+        return
+    VMInterface.objects.filter(vm=guest.vm, name__in=names).delete()
 
 
 def _accept_iface_change(guest, detail: dict) -> None:

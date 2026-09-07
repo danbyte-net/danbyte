@@ -12,19 +12,43 @@ import {
   type Prefix,
   type TagOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FormCombobox, FormSelect, FormTags } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormCombobox,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormTags,
+  FormText,
+  type SelectOption,
+} from "@/components/forms"
+import { CheckStatusBadge } from "./status-badge"
 import { KINDS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const TRIGGER_STATUSES: CheckStatus[] = ["down", "stale", "degraded"]
-const SEVERITIES: { value: AlertSeverity; label: string }[] = [
-  { value: "critical", label: "Critical" },
-  { value: "warning", label: "Warning" },
-  { value: "info", label: "Info" },
-]
+
+// Severity is a fixed policy scale, not a catalog row - but it renders as a
+// tinted badge in the rules table, so the picker shows the same pill rather
+// than bare text.
+const SEV_VARIANT: Record<
+  AlertSeverity,
+  "destructive" | "warning" | "secondary"
+> = { critical: "destructive", warning: "warning", info: "secondary" }
+
+const SEVERITIES: SelectOption[] = (
+  ["critical", "warning", "info"] as AlertSeverity[]
+).map((s) => ({
+  value: s,
+  label: (
+    <Badge variant={SEV_VARIANT[s]} className="capitalize">
+      {s}
+    </Badge>
+  ),
+}))
 
 export function RuleForm({
   rule,
@@ -119,114 +143,103 @@ export function RuleForm({
         e.preventDefault()
         if (name.trim()) save.mutate()
       }}
-      className="grid max-w-2xl gap-5"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Name">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Critical infra down"
-            autoFocus
-            required
-          />
-        </Field>
-        <FormSelect
-          label="Severity"
-          value={severity}
-          onChange={(v) => setSeverity((v as AlertSeverity) ?? "critical")}
-          options={SEVERITIES}
+      <FormSection title="Rule" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus
+          value={name}
+          onChange={setName}
+          placeholder="Critical infra down"
         />
-      </div>
 
-      <Field
-        label="Match check kinds"
-        hint="Leave all unticked to match any kind."
-      >
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-          {KINDS.map((k) => (
-            <label
-              key={k.value}
-              className="flex items-center gap-2 text-[13px]"
-            >
-              <Checkbox
-                checked={kinds.includes(k.value)}
-                onCheckedChange={() => toggle(kinds, k.value, setKinds)}
-              />
-              {k.value}
-            </label>
-          ))}
-        </div>
-      </Field>
-
-      <Field
-        label="Trigger on status"
-        hint="Leave all unticked to match any bad status."
-      >
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-          {TRIGGER_STATUSES.map((s) => (
-            <label key={s} className="flex items-center gap-2 text-[13px]">
-              <Checkbox
-                checked={statuses.includes(s)}
-                onCheckedChange={() => toggle(statuses, s, setStatuses)}
-              />
-              {s}
-            </label>
-          ))}
-        </div>
-      </Field>
-
-      <FormTags
-        label="IP tags"
-        hint="Only IPs carrying any of these tags. Empty = any."
-        value={tagIds}
-        onChange={setTagIds}
-      />
-
-      <FormCombobox
-        label="Within prefix"
-        value={prefixId}
-        onChange={setPrefixId}
-        noneLabel="Any prefix"
-        placeholder="Any prefix"
-        searchPlaceholder="Search prefixes…"
-        emptyText="No prefixes."
-        options={(prefixesQ.data?.results ?? []).map((p) => ({
-          value: p.id,
-          label: p.cidr,
-        }))}
-      />
-
-      <div className="flex items-center justify-between border-t border-border pt-4">
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={enabled}
-            onCheckedChange={(v) => setEnabled(!!v)}
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormSelect
+            label="Severity"
+            value={severity}
+            onChange={(v) => setSeverity((v as AlertSeverity) ?? "critical")}
+            options={SEVERITIES}
           />
-          Enabled
-        </label>
-        <Field label="Weight" className="w-28">
-          <Input
+          <FormText
+            label="Weight"
             type="number"
+            mono
             value={weight}
-            onChange={(e) => setWeight(e.target.value)}
+            onChange={setWeight}
+            info="Lower weights match first - the first matching rule sets the alert's severity."
           />
-        </Field>
-      </div>
+        </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={save.isPending}
+        <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
+      </FormSection>
+
+      <FormSection title="Matchers" card>
+        <Field
+          label="Match check kinds"
+          hint="Leave all unticked to match any kind."
         >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={!name.trim() || save.isPending}>
-          {save.isPending ? "Saving…" : isEdit ? "Save rule" : "Create rule"}
-        </Button>
-      </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {KINDS.map((k) => (
+              <label
+                key={k.value}
+                className="flex items-center gap-2 text-[13px]"
+              >
+                <Checkbox
+                  checked={kinds.includes(k.value)}
+                  onCheckedChange={() => toggle(kinds, k.value, setKinds)}
+                />
+                {k.value}
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        <Field
+          label="Trigger on status"
+          hint="Leave all unticked to match any bad status."
+        >
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {TRIGGER_STATUSES.map((s) => (
+              <label key={s} className="flex items-center gap-2 text-[13px]">
+                <Checkbox
+                  checked={statuses.includes(s)}
+                  onCheckedChange={() => toggle(statuses, s, setStatuses)}
+                />
+                <CheckStatusBadge status={s} />
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        <FormTags
+          label="IP tags"
+          hint="Only IPs carrying any of these tags. Empty = any."
+          value={tagIds}
+          onChange={setTagIds}
+        />
+
+        <FormCombobox
+          label="Within prefix"
+          value={prefixId}
+          onChange={setPrefixId}
+          noneLabel="Any prefix"
+          placeholder="Any prefix"
+          searchPlaceholder="Search prefixes…"
+          emptyText="No prefixes."
+          options={(prefixesQ.data?.results ?? []).map((p) => ({
+            value: p.id,
+            label: p.cidr,
+          }))}
+        />
+      </FormSection>
+
+      <FormFooter
+        onCancel={onCancel}
+        submitting={save.isPending}
+        submitLabel={isEdit ? "Save rule" : "Create rule"}
+      />
     </form>
   )
 }

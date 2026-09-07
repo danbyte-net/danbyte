@@ -1,12 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
+import { useMe } from "@/lib/use-me"
 import type { IPAddress, Paginated } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
+import { TableActions } from "@/components/table-actions"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { useTableFilters } from "@/components/table-filters"
@@ -28,6 +31,8 @@ export const Route = createFileRoute("/ips/")({
 })
 
 function IpsPage() {
+  const { canDo } = useMe()
+  const canAdd = canDo("ipaddress", "add")
   const { status, role, scope } = Route.useSearch()
   const [q, setQ] = useState("")
 
@@ -60,8 +65,14 @@ function IpsPage() {
     if (scope) seed.scope = [scope]
     return seed
   }, [status, role, scope])
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, allRows, initialEnums)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell
@@ -72,6 +83,16 @@ function IpsPage() {
         objectType: "ipaddress",
         filters: { snapshot, restore, activeCount },
       }}
+      actions={
+        <>
+          <TableActions ioType="ipaddress" />
+          {canAdd && (
+            <Button size="sm" asChild>
+              <Link to="/ips/new">Add IP</Link>
+            </Button>
+          )}
+        </>
+      }
       search={{
         value: q,
         onChange: setQ,
@@ -87,7 +108,7 @@ function IpsPage() {
       ) : (
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           flexColumn="description"
           tableId="ips"
         />

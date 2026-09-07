@@ -13,7 +13,7 @@ import type {
 import {
   FormCombobox,
   FormFooter,
-  FormRow,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -103,99 +103,106 @@ export function FloorPlanForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="Hall A"
-        error={fieldErrors.name}
-      />
-      <FormRow>
-        <FormCombobox
-          label="Site"
-          hint="Narrows the location list"
-          value={siteId}
-          onChange={(v) => {
-            setSiteId(v)
-            setLocationId(null) // locations are per-site
-          }}
-          options={sites.options.map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          placeholder="Select a site…"
-          searchPlaceholder="Search sites…"
-          emptyText="No sites."
-        />
-        <FormCombobox
-          label="Location"
-          hint="The room / floor this lays out"
-          value={locationId}
-          onChange={setLocationId}
-          options={(locations.data?.results ?? []).map((l) => ({
-            value: l.id,
-            label: l.name,
-          }))}
-          placeholder="Select a location…"
-          searchPlaceholder="Search locations…"
-          emptyText="No locations."
-          error={fieldErrors.location_id}
-        />
-      </FormRow>
-      <FormRow>
+      <FormSection title="Floor plan" card>
         <FormText
-          label="Grid width"
-          hint="Cells (1–512)"
-          type="number"
-          min={1}
-          max={512}
-          value={gridWidth}
-          onChange={setGridWidth}
-          error={fieldErrors.grid_width}
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="Hall A"
+          error={fieldErrors.name}
         />
-        <FormText
-          label="Grid height"
-          hint="Cells (1–512)"
-          type="number"
-          min={1}
-          max={512}
-          value={gridHeight}
-          onChange={setGridHeight}
-          error={fieldErrors.grid_height}
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormCombobox
+            label="Site"
+            hint="Narrows the location list"
+            value={siteId}
+            onChange={(v) => {
+              setSiteId(v)
+              setLocationId(null) // locations are per-site
+            }}
+            options={sites.options.map((s) => ({
+              value: s.id,
+              label: s.name,
+            }))}
+            placeholder="Select a site…"
+            searchPlaceholder="Search sites…"
+            emptyText="No sites."
+          />
+          <FormCombobox
+            label="Location"
+            required
+            hint="The room / floor this lays out"
+            value={locationId}
+            onChange={setLocationId}
+            options={(locations.data?.results ?? []).map((l) => ({
+              value: l.id,
+              label: l.name,
+            }))}
+            placeholder="Select a location…"
+            searchPlaceholder="Search locations…"
+            emptyText="No locations."
+            error={fieldErrors.location_id}
+          />
+        </div>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
         />
-      </FormRow>
-      <FormRow>
-        <FormText
-          label="Cell size (mm)"
-          hint="Physical size of one grid cell - 600 = a raised-floor tile"
-          type="number"
-          min={50}
-          max={5000}
-          value={cellMm}
-          onChange={setCellMm}
-          error={fieldErrors.cell_mm}
-        />
-        <FormText
-          label="Ceiling height (mm)"
-          hint="Used by the 3D view and overhead tray defaults"
-          type="number"
-          min={1000}
-          max={20000}
-          value={ceilingMm}
-          onChange={setCeilingMm}
-          error={fieldErrors.ceiling_mm}
-        />
-      </FormRow>
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      </FormSection>
+
+      <FormSection title="Grid" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Grid width"
+            hint="Cells (1–512)"
+            type="number"
+            min={1}
+            max={512}
+            value={gridWidth}
+            onChange={setGridWidth}
+            error={fieldErrors.grid_width}
+          />
+          <FormText
+            label="Grid height"
+            hint="Cells (1–512)"
+            type="number"
+            min={1}
+            max={512}
+            value={gridHeight}
+            onChange={setGridHeight}
+            error={fieldErrors.grid_height}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Cell size (mm)"
+            hint="Physical size of one grid cell - 600 = a raised-floor tile"
+            type="number"
+            min={50}
+            max={5000}
+            value={cellMm}
+            onChange={setCellMm}
+            error={fieldErrors.cell_mm}
+          />
+          <FormText
+            label="Ceiling height (mm)"
+            hint="Used by the 3D view and overhead tray defaults"
+            type="number"
+            min={1000}
+            max={20000}
+            value={ceilingMm}
+            onChange={setCeilingMm}
+            error={fieldErrors.ceiling_mm}
+          />
+        </div>
+      </FormSection>
+
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

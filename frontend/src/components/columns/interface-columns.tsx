@@ -1,11 +1,15 @@
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 import {
   Cable as CableIcon,
   EyeOff,
   Pencil,
+  Unplug,
   Waypoints,
   Workflow,
+  Layers,
 } from "lucide-react"
 
 import { DriftBadge } from "@/components/drift-detail"
@@ -14,10 +18,13 @@ import type { InterfaceDriftEntry } from "@/components/monitoring/device-drift-b
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import type { PlannedTargetRow } from "@/components/planning/planned-change-badge"
 
-import type { Interface, SnmpDriftItem } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { Cable, Interface, SnmpDriftItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { CableStatusControl } from "@/components/cable-status-control"
+import { CableDeleteDialog } from "@/components/cable-delete-dialog"
 import {
   MarkConnectedToggle,
   PortReserveAction,
@@ -79,9 +86,11 @@ export type InterfaceColumnId =
   | "device"
   | "name"
   | "type"
+  | "lag"
   | "mac"
   | "layer"
   | "enabled"
+  | "status"
   | "speed"
   | "mtu"
   | "vlan"
@@ -95,9 +104,11 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
   "device",
   "name",
   "type",
+  "lag",
   "mac",
   "layer",
   "enabled",
+  "status",
   "speed",
   "mtu",
   "vlan",
@@ -115,9 +126,11 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
 export const DEVICE_INTERFACE_COLUMNS: InterfaceColumnId[] = [
   "name",
   "type",
+  "lag",
   "mac",
   "layer",
   "enabled",
+  "status",
   "speed",
   "vlan",
   "vrf",
@@ -215,6 +228,11 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
             >
               {row.original.name}
             </Link>
+            {row.original.label && (
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                {row.original.label}
+              </span>
+            )}
             {row.original.virtual && (
               <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
                 virtual
@@ -281,13 +299,51 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
                 </Badge>
               </Link>
             ))}
-            {row.original.lag && (
-              <span className="text-[11px] text-muted-foreground">
-                · LAG {row.original.lag.name}
-              </span>
-            )}
           </div>
         )
+      },
+    }),
+    lag: () => ({
+      id: "lag",
+      header: "LAG",
+      // Bundle membership reads both ways: a member names its aggregate (and
+      // the stack member holding it, when that's elsewhere); the aggregate
+      // itself shows how many links it bundles.
+      cell: ({ row }) => {
+        const r = row.original
+        if (r.lag) {
+          const elsewhere = r.lag.device.id !== r.device.id
+          return (
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <Link
+                to="/interfaces/$id"
+                params={{ id: r.lag.id }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Badge
+                  variant="secondary"
+                  className="h-4 gap-1 px-1.5 font-mono text-[10px] hover:bg-muted"
+                >
+                  <Layers className="h-2.5 w-2.5" />
+                  {r.lag.name}
+                </Badge>
+              </Link>
+              {elsewhere && (
+                <span className="text-[11px] text-muted-foreground">
+                  on {r.lag.device.name}
+                </span>
+              )}
+            </span>
+          )
+        }
+        if (r.lag_member_count > 0)
+          return (
+            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[10px]">
+              <Layers className="h-2.5 w-2.5" />
+              {r.lag_member_count} {r.lag_member_count === 1 ? "link" : "links"}
+            </Badge>
+          )
+        return <span className="text-muted-foreground">-</span>
       },
     }),
     type: () => ({
@@ -337,6 +393,17 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
           <Badge variant="secondary">Disabled</Badge>
         ),
     }),
+    status: () => ({
+      id: "status",
+      accessorFn: (r) => r.status?.name ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
+      // Null is Active - the common case renders blank so the column only
+      // draws the eye when a port is Planned / Not present / Decommissioning.
+      cell: ({ row }) =>
+        row.original.status ? (
+          <StatusBadge status={row.original.status} />
+        ) : null,
+    }),
     speed: () => ({
       id: "speed",
       accessorKey: "speed",
@@ -361,7 +428,8 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
     }),
     vlan: () => ({
       id: "vlan",
-      header: "VLAN",
+      accessorFn: (r) => r.vlan?.vlan_id ?? "",
+      header: ({ column }) => <SortHeader column={column} label="VLAN" />,
       cell: ({ row }) => {
         const r = row.original
         const tagged = r.tagged_vlans?.length ?? 0
@@ -485,6 +553,7 @@ export interface InterfaceActionsOpts<T extends Interface> {
   canAssignIp: boolean
   canEdit: boolean
   canChangeCable: boolean
+  canDeleteCable: boolean
   canConnect: boolean
   canReserve: boolean
   onTrace: (target: { id: string; name: string }) => void
@@ -504,6 +573,48 @@ export interface InterfaceActionsOpts<T extends Interface> {
  * Returns `null` when the user can do none of add-IP / assign-IP / edit, so the
  * caller can omit the column entirely.
  */
+
+
+/** Disconnect (delete) the cable on a cabled row (#137) - fetches the full
+ * cable when clicked so the shared delete dialog can name both ends. */
+function CableDisconnectAction({
+  cableId,
+  ifaceName,
+}: {
+  cableId: string
+  ifaceName: string
+}) {
+  const [open, setOpen] = useState(false)
+  const cableQ = useQuery({
+    queryKey: ["cable", cableId],
+    queryFn: () => api<Cable>(`/api/cables/${cableId}/`),
+    enabled: open,
+    staleTime: 10_000,
+  })
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-muted-foreground hover:text-destructive"
+        title="Disconnect cable"
+        aria-label={`Disconnect ${ifaceName}`}
+        onClick={() => setOpen(true)}
+      >
+        <Unplug className="h-3.5 w-3.5" />
+      </Button>
+      {open && (
+        <CableDeleteDialog
+          cable={cableQ.data ?? null}
+          onOpenChange={(o) => {
+            if (!o) setOpen(false)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
 export function buildInterfaceActionsColumn<T extends Interface>(
   opts: InterfaceActionsOpts<T>
 ): ColumnDef<T> | null {
@@ -513,6 +624,7 @@ export function buildInterfaceActionsColumn<T extends Interface>(
     canAssignIp,
     canEdit,
     canChangeCable,
+    canDeleteCable,
     canConnect,
     canReserve,
     onTrace,
@@ -535,16 +647,24 @@ export function buildInterfaceActionsColumn<T extends Interface>(
             />
           )}
           {iface.cable ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7"
-              title="Trace this run"
-              aria-label={`Trace ${iface.name}`}
-              onClick={() => onTrace({ id: iface.id, name: iface.name })}
-            >
-              <Waypoints className="h-3.5 w-3.5" />
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                title="Trace this run"
+                aria-label={`Trace ${iface.name}`}
+                onClick={() => onTrace({ id: iface.id, name: iface.name })}
+              >
+                <Waypoints className="h-3.5 w-3.5" />
+              </Button>
+              {canDeleteCable && (
+                <CableDisconnectAction
+                  cableId={iface.cable.id}
+                  ifaceName={iface.name}
+                />
+              )}
+            </>
           ) : (
             !iface.virtual && (
               <>

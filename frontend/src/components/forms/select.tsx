@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { TruncatedText } from "@/components/ui/truncated-text"
 import { Field, type FieldProps } from "./field"
 
 type Base = Omit<FieldProps, "children">
@@ -26,6 +27,12 @@ export interface FormSelectProps extends Base {
   noneLabel?: string
   placeholder?: string
   disabled?: boolean
+}
+
+/** Tooltip text for an option whose label is a node (a coloured badge, say) -
+ * the string it was built from, when we can see one. */
+function labelText(label: ReactNode): string {
+  return typeof label === "string" ? label : ""
 }
 
 // Internal sentinel - the Select primitive disallows the empty string as a
@@ -49,6 +56,7 @@ export function FormSelect({
   ...field
 }: FormSelectProps) {
   const stringValue = value === null || value === undefined ? NONE : value
+  const selected = options.find((o) => o.value === stringValue)
 
   return (
     <Field {...field}>
@@ -58,7 +66,16 @@ export function FormSelect({
         disabled={disabled}
       >
         <SelectTrigger className="w-full">
-          <SelectValue placeholder={placeholder} />
+          {/* Radix renders the chosen item's own node; wrapping it keeps a
+              long label inside its field instead of pushing into the next
+              one, and hands the full text back on hover (#124). */}
+          <SelectValue placeholder={placeholder}>
+            {selected !== undefined ? (
+              <TruncatedText title={labelText(selected.label)}>
+                {selected.label}
+              </TruncatedText>
+            ) : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {allowKeep && <SelectItem value={KEEP_VALUE}>(keep)</SelectItem>}

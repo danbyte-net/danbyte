@@ -19,6 +19,7 @@ STATUSABLE_MODELS = [
     ("cluster", "Clusters"),
     ("virtualmachine", "Virtual machines"),
     ("cable", "Cables"),
+    ("interface", "Interfaces"),
     ("circuit", "Circuits"),
     ("powerfeed", "Power feeds"),
     ("wirelesslan", "Wireless LANs"),
@@ -52,6 +53,9 @@ BUILTIN_STATUS_COLORS = {
     "empty": "#71717a",
     "not_connected": "#71717a",
     "decommissioned": "#71717a",
+    # Hardware the device reports as absent (SNMP notPresent) - not a fault,
+    # just nothing installed behind the connector.
+    "not_present": "#71717a",
     "retired": "#71717a",
     # Maintenance & outage workflows (issue #20).
     "tentative": "#a1a1aa",
@@ -78,6 +82,7 @@ STATUS_MODEL_SEEDS = [
     ("cluster", "Cluster", "active"),
     ("virtualmachine", "VirtualMachine", "active"),
     ("cable", "Cable", "connected"),
+    ("interface", "Interface", "active"),
     ("circuit", "Circuit", "active"),
     ("powerfeed", "PowerFeed", "active"),
     ("wirelesslan", "WirelessLAN", "active"),
@@ -100,6 +105,11 @@ STATUS_MODEL_VALUES = {
     "cluster": ["active", "planned", "staging", "offline", "decommissioning"],
     "virtualmachine": ["active", "offline", "planned", "staged", "decommissioning"],
     "cable": ["connected", "planned", "not_connected", "decommissioning"],
+    # Interfaces (#105): lifecycle, NOT the admin flag - ``enabled`` stays the
+    # device-reported admin state. "not_present" is a pre-allocated stack port
+    # or empty slot the agent reports; it and "decommissioning" are stamped
+    # ``excludes_capacity`` so port utilization doesn't count phantom ports.
+    "interface": ["active", "disabled", "planned", "not_present", "decommissioning"],
     "circuit": ["planned", "provisioning", "active", "offline", "deprovisioning", "decommissioned"],
     "powerfeed": ["planned", "active", "offline", "failed"],
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
@@ -134,6 +144,10 @@ STATUS_SEMANTIC_FLAGS = {
     "cancelled": {"is_closed": True},
     "rescheduled": {"is_closed": True},
     "resolved": {"is_closed": True},
+    # Interface lifecycle (#105): these ports aren't capacity - the hardware
+    # is absent or on its way out.
+    "not_present": {"excludes_capacity": True},
+    "decommissioning": {"excludes_capacity": True},
 }
 
 # model slug → default status value (None for ipaddress → fall back to "active").

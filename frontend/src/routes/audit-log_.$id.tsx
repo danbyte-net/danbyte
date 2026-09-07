@@ -1,4 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+
+import { useReturnTo } from "@/lib/return-to"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
@@ -10,8 +12,12 @@ import { Button } from "@/components/ui/button"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/audit-log_/$id")({
+  // `from` carries the filtered list href so Back can return to it.
+  validateSearch: (s: Record<string, unknown>): { from?: string } =>
+    typeof s.from === "string" ? { from: s.from } : {},
   component: ChangeLogDetail,
 })
 
@@ -27,6 +33,9 @@ const ACTION_VARIANT: Record<
  */
 function ChangeLogDetail() {
   const { id } = Route.useParams()
+  const { from } = Route.useSearch()
+  const back = useReturnTo(from)
+  const nav = useNavigate()
   const q = useQuery({
     queryKey: ["changelog-entry", id],
     queryFn: () => api<ChangeLogEntry>(`/api/changelog/${id}/`),
@@ -35,6 +44,7 @@ function ChangeLogDetail() {
   // The same object's full history, for Previous / Next navigation between
   // its changes (newest first, mirroring the History tab ordering).
   const e = q.data
+  usePageTitle(e ? `${e.object_label} ${e.object_repr}` : null)
   const historyQ = useQuery({
     enabled: !!e,
     queryKey: ["changelog", e?.object_type, e?.object_id],
@@ -112,10 +122,16 @@ function ChangeLogDetail() {
     <div className="flex h-full flex-1 flex-col">
       <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
         <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Button variant="ghost" size="sm" asChild className="h-6 px-1">
-            <Link to="/audit-log">
-              <ChevronLeft className="h-3 w-3" /> Change log
-            </Link>
+          {/* Back returns to the list AS IT WAS - a bare <Link to="/audit-log">
+              drops the filters, which is maddening when you're working
+              through several entries of one filtered view (#109). */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1"
+            onClick={() => back(() => nav({ to: "/audit-log" }))}
+          >
+            <ChevronLeft className="h-3 w-3" /> Change log
           </Button>
           <ChevronRight className="h-3 w-3 opacity-60" />
           <span className="font-semibold tracking-tight text-foreground">

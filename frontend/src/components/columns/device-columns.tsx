@@ -4,6 +4,10 @@ import { UtilCell } from "@/components/cells/util-cell"
 
 import type { BulkStatusEntry, ComplianceViolation, Device } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import {
+  monitoringBucket,
+  monitoringFacet,
+} from "@/components/columns/monitoring-facet"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -372,8 +376,8 @@ export function buildDeviceColumns<T extends Device = Device>(
     }),
     monitoring: () => ({
       id: "monitoring",
-      header: "Monitoring",
-      enableSorting: false,
+      accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),
+      header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
       cell: ({ row }) => {
         const e = opts.monitoring?.[row.original.id]
         if (!e || !e.status) return dash
@@ -382,6 +386,14 @@ export function buildDeviceColumns<T extends Device = Device>(
             <MixedStatusBadge counts={e.counts} status={e.status} />
           </span>
         )
+      },
+      // The rollup is a facet like any status: the rail lists the observed
+      // states and the badge in the row toggles its bucket. A split badge
+      // (checks in more than one state) is its own "Mixed" bucket rather than
+      // hiding under its worst state, and rows with no rollup read as "Not
+      // monitored" like the "No status" bucket next door.
+      meta: {
+        facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]),
       },
     }),
     primary_ip: () =>

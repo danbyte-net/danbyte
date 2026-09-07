@@ -93,12 +93,13 @@ from .cable_points import (  # noqa: E402
 )
 
 
-# A power feed terminates on a PowerPanel, not a device - it has no `device`
-# relation to prefetch and no place in device↔device topology. Prefetch the
-# device chain only for the device-bearing points; pull the power feed itself
-# without a device lookup (an invalid `power_feed__device` prefetch 500s the
-# paths endpoint for any cable that terminates on a power feed).
-_DEVICE_POINT_ATTRS = tuple(a for a in _POINT_ATTRS if a != "power_feed")
+# A power feed terminates on a PowerPanel and a circuit end on a Circuit -
+# neither has a `device` relation to prefetch, nor a place in device↔device
+# topology. Prefetch the device chain only for the device-bearing points and
+# pull the other two without a device lookup (an invalid `power_feed__device`
+# prefetch 500s the paths endpoint for any cable that terminates on one).
+_NON_DEVICE_POINTS = ("power_feed", "circuit_termination")
+_DEVICE_POINT_ATTRS = tuple(a for a in _POINT_ATTRS if a not in _NON_DEVICE_POINTS)
 
 
 def _cables_qs(tenant):
@@ -107,7 +108,11 @@ def _cables_qs(tenant):
         .select_related("status")
         .prefetch_related(
             *[f"terminations__{a}__device" for a in _DEVICE_POINT_ATTRS],
+            # The bundle a port belongs to rides on the edge (and on a run's
+            # origin) - joined here so neither walks it per cable.
+            "terminations__interface__lag__device",
             "terminations__power_feed",
+            "terminations__circuit_termination__circuit",
             "terminations__front_port__rear_port",
         )
     )
@@ -118,14 +123,31 @@ def _physical_links(tenant):
 
     Returns ``[(cable, dev_a, port_a, kind_a, dev_b, port_b, kind_b)]``.
     """
+    from types import SimpleNamespace
+
     links = []
     for cab in _cables_qs(tenant):
         a_ends, b_ends = [], []
         for t in cab.terminations.all():
             kind, obj = _term_point(t)
-            # Only device-bearing endpoints form device↔device links; skip a
-            # power feed (it terminates on a PowerPanel, which has no device_id).
-            if obj is None or getattr(obj, "device_id", None) is None:
+            if obj is None:
+                continue
+            # A circuit end has no device, but it IS a real endpoint - without
+            # this, a port cabled to the provider's demarc reported "nothing
+            # cabled" on its own page (#118). Shim it into the (device, port)
+            # shape the walk speaks: the circuit is the "device", the side is
+            # the "port".
+            if kind == "circuit_termination":
+                dev = SimpleNamespace(id=obj.circuit_id, name=obj.circuit.cid)
+                port = SimpleNamespace(
+                    id=obj.id, name=f"Side {obj.term_side}",
+                    device_id=obj.circuit_id, device=dev,
+                )
+                (a_ends if t.end == "A" else b_ends).append((kind, port))
+                continue
+            # Power feeds terminate on a PowerPanel (no device_id) - skipped
+            # here as before; they have their own surfaces.
+            if getattr(obj, "device_id", None) is None:
                 continue
             (a_ends if t.end == "A" else b_ends).append((kind, obj))
         for ka, pa in a_ends:
@@ -323,11 +345,23 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
                     "speed": None,
                     "via": vias,
                     "pairs": [],
+                    # The aggregate each end belongs to, oriented with
+                    # source/target - what lets the canvas fold a bundle's
+                    # member cables into one edge.
+                    "lag": {"a": None, "b": None},
                 },
             }
         e = edges[key]
         src_is_a = e["source"] == f"dev:{da.id}"
         a_port, b_port = (pa.name, pb.name) if src_is_a else (pb.name, pa.name)
+        if not e["data"]["pairs"]:
+            pa_lag = getattr(pa, "lag", None) if ka == "interface" else None
+            pb_lag = getattr(pb, "lag", None) if kb == "interface" else None
+            lag_a, lag_b = (pa_lag, pb_lag) if src_is_a else (pb_lag, pa_lag)
+            e["data"]["lag"] = {
+                "a": {"id": str(lag_a.id), "name": lag_a.name} if lag_a else None,
+                "b": {"id": str(lag_b.id), "name": lag_b.name} if lag_b else None,
+            }
         e["data"]["pairs"].append({
             "a": f"{da.name if src_is_a else db.name}:{a_port}",
             "b": f"{db.name if src_is_a else da.name}:{b_port}",
@@ -953,6 +987,14 @@ def device_paths(device, viewable_ids=None):
     def chip(dev, port_pairs, panel):
         """``port_pairs`` = [(port_obj, kind)] - interface ports carry their
         id so the frontend can make the name itself a click target."""
+        # A circuit end: the "device" is the circuit, the chip links there.
+        if any(k == "circuit_termination" for _, k in port_pairs):
+            return {
+                "t": "chip", "device_id": str(dev.id), "device": dev.name,
+                "ports": [{"name": p.name, "interface_id": None}
+                          for p, _ in port_pairs],
+                "panel": panel, "circuit": True,
+            }
         # Redact devices outside the caller's view scope - a physical run can
         # cross into another site's device; show that a hop exists without
         # leaking its identity.
@@ -966,6 +1008,9 @@ def device_paths(device, viewable_ids=None):
             "ports": [
                 {
                     "name": p.name,
+                    # Printed name ("X1-P1") for panels whose names stay
+                    # template-generic - the trace shows both.
+                    "label": getattr(p, "label", "") or "",
                     "interface_id": str(p.id) if k == "interface" else None,
                 }
                 for p, k in port_pairs
@@ -1064,18 +1109,55 @@ def device_paths(device, viewable_ids=None):
             cable_ids = frozenset(
                 s["cable_id"] for s in steps if s["t"] == "seg" and s.get("cable_id")
             )
-            if cable_ids and cable_ids in seen_runs:
+            # Identify a run by its cables AND the ports it touches. The
+            # ports set collapses mirror images (a panel's run found from its
+            # front and again from its rear is one run) while keeping a
+            # breakout's legs apart - they share a cable but end elsewhere.
+            touched = frozenset(
+                (st.get("device_id"), p["name"])
+                for st in steps
+                if st["t"] == "chip"
+                for p in st.get("ports", [])
+            )
+            run_key = (cable_ids, touched)
+            if cable_ids and run_key in seen_runs:
                 continue
-            seen_runs.add(cable_ids)
+            seen_runs.add(run_key)
 
-            runs.append({
-                "origin": {"name": oport.name,
-                           "kind": _KIND_OF.get(okind, "interface")},
-                "steps": steps,
-                "complete": complete,
-            })
-    runs.sort(key=lambda r: r["origin"]["name"])
-    return {"runs": runs}
+            origin = {"name": oport.name, "kind": _KIND_OF.get(okind, "interface")}
+            # A LAG member's run belongs to its aggregate - the overview groups
+            # the bundle's links under it (the aggregate may sit on another
+            # stack member).
+            olag = getattr(oport, "lag", None) if okind == "interface" else None
+            if olag is not None:
+                origin["lag"] = {"id": str(olag.id), "name": olag.name,
+                                 "device": olag.device.name,
+                                 "elsewhere": olag.device_id != device.id}
+            runs.append({"origin": origin, "steps": steps, "complete": complete})
+    # One cable leaving one port, landing in several places, is a breakout -
+    # emit it as ONE run carrying its legs so the UI can draw the fan instead
+    # of listing the same cable once per leg.
+    grouped: list[dict] = []
+    index: dict[tuple, dict] = {}
+    for r in runs:
+        cables = tuple(
+            s["cable_id"] for s in r["steps"]
+            if s["t"] == "seg" and s.get("cable_id")
+        )
+        key = (r["origin"]["name"], cables)
+        first = index.get(key)
+        if first is None:
+            index[key] = r
+            grouped.append(r)
+            continue
+        # Second+ landing for this port/cable: keep the shared head, collect
+        # the tails as legs.
+        head = 2  # origin chip + its segment
+        first.setdefault("legs", [first["steps"][head:]])
+        first["legs"].append(r["steps"][head:])
+        first["complete"] = first["complete"] and r["complete"]
+    grouped.sort(key=lambda r: r["origin"]["name"])
+    return {"runs": grouped}
 
 
 def cable_strand_path(cable, strand):
@@ -1131,11 +1213,29 @@ def cable_strand_path(cable, strand):
             "panel": True, "ports": ports,
         }
 
+    def offbox_chip(kind, port):
+        """A chip for an endpoint that isn't on a device: a power feed hangs
+        off a panel, a circuit end off a circuit. Both are real endpoints, so
+        they render as a chip named by whatever they do hang off."""
+        if kind == "circuit_termination":
+            owner, name = port.circuit, f"Side {port.term_side}"
+        else:
+            owner, name = port.power_panel, port.name
+        return {
+            "t": "chip", "device_id": str(owner.id),
+            "device": getattr(owner, "name", None) or owner.cid,
+            "panel": False,
+            "ports": [{"name": name, "interface_id": None}],
+            **({"circuit": True} if kind == "circuit_termination" else {}),
+        }
+
     def walk_out(kind, port):
         """Steps from the cable end outward (crossing panels at `strand`) to the
         far endpoint, ordered cable→far. Returns (steps, complete)."""
         steps, seen, position = [], set(), strand
-        dev = port.device
+        dev = getattr(port, "device", None)
+        if dev is None:
+            return [offbox_chip(kind, port)], True
         while True:
             if kind not in ("front_port", "rear_port"):
                 steps.append(dev_chip(dev, port, kind))

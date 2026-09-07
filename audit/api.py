@@ -408,6 +408,20 @@ class ChangeLogViewSet(viewsets.ReadOnlyModelViewSet):
         p = self.request.query_params
         object_id = p.get("object_id")
 
+        # Multi-object history (the device time machine: one device plus its
+        # interfaces). Same tenant/visibility gates as the single-id path;
+        # bounded so the filter can't become a table scan.
+        object_ids = p.get("object_ids")
+        if object_ids:
+            ids = [x for x in object_ids.split(",") if x][:500]
+            qs = self.queryset.filter(object_id__in=ids).filter(
+                _tenant_gate(tenant)
+            )
+            otype = p.get("object_type")
+            if otype:
+                qs = qs.filter(object_type=otype)
+            return qs.filter(vis) if vis is not None else qs
+
         # Per-object history (a detail-page History tab): scope to that object,
         # within the active tenant (tenant-less component rows bound by site).
         if object_id:

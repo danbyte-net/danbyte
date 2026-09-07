@@ -9,22 +9,23 @@ import {
   type ManufacturerOption,
   type Paginated,
   type PlatformOption,
-  type TagOption,
 } from "@/lib/api"
 import {
-  Field,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormCombobox,
+  FormDate,
   FormFooter,
+  FormSection,
   FormSelect,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
-  LifecycleFormSection,
   lifecycleFormValue,
   lifecyclePayload,
 } from "@/components/lifecycle-fields"
@@ -121,12 +122,6 @@ export function DeviceTypeForm({
     queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
-
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: DeviceTypeWritePayload = {
@@ -176,162 +171,221 @@ export function DeviceTypeForm({
       }}
       className="grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="Catalyst 9300"
-        error={fieldErrors.name}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Device type" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              placeholder="Catalyst 9300"
+              error={fieldErrors.name}
+            />
+            <FormSelect
+              label="Manufacturer"
+              value={manufacturerId}
+              onChange={setManufacturerId}
+              noneLabel="No manufacturer"
+              options={(manufacturers.data?.results ?? []).map((m) => ({
+                value: m.id,
+                label: m.name,
+              }))}
+              error={fieldErrors.manufacturer_id}
+            />
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Model"
+                value={model}
+                onChange={setModel}
+                placeholder="C9300-48P"
+                error={fieldErrors.model}
+              />
+              <FormText
+                label="Part number"
+                value={partNumber}
+                onChange={setPartNumber}
+                error={fieldErrors.part_number}
+              />
+            </div>
+            <FormCombobox
+              label="Platform"
+              hint="optional - default OS for devices of this type"
+              value={platformId}
+              onChange={setPlatformId}
+              options={(platforms.data?.results ?? []).map((p) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+              noneLabel="No platform"
+              placeholder="Select a platform…"
+              searchPlaceholder="Search platforms…"
+              emptyText="No platforms."
+              error={fieldErrors.platform_id}
+            />
+          </FormSection>
+
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Chassis" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Rack units (U)"
+                type="number"
+                value={uHeight}
+                onChange={setUHeight}
+                hint="0 for non-rack"
+                error={fieldErrors.u_height}
+              />
+              <FormSelect
+                label="Rack width"
+                hint="half = two per U"
+                value={rackWidth}
+                onChange={(v) => setRackWidth(v === "half" ? "half" : "full")}
+                options={[
+                  { value: "full", label: "Full width (19″)" },
+                  { value: "half", label: "Half width (2 side-by-side)" },
+                ]}
+                error={fieldErrors.rack_width}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Airflow"
+                hint="optional"
+                value={airflow}
+                onChange={setAirflow}
+                noneLabel="Unspecified"
+                placeholder="Unspecified"
+                options={[
+                  { value: "front-to-rear", label: "Front to rear" },
+                  { value: "rear-to-front", label: "Rear to front" },
+                  { value: "left-to-right", label: "Left to right" },
+                  { value: "right-to-left", label: "Right to left" },
+                  { value: "passive", label: "Passive" },
+                  { value: "mixed", label: "Mixed" },
+                ]}
+                error={fieldErrors.airflow}
+              />
+              <div className="grid grid-cols-[1fr_90px] gap-2">
+                <FormText
+                  label="Weight"
+                  type="number"
+                  value={String(weight)}
+                  onChange={setWeight}
+                  hint="optional"
+                  error={fieldErrors.weight}
+                />
+                <FormSelect
+                  label="Unit"
+                  value={weightUnit}
+                  onChange={(v) => v && setWeightUnit(v)}
+                  options={[
+                    { value: "kg", label: "kg" },
+                    { value: "g", label: "g" },
+                    { value: "lb", label: "lb" },
+                    { value: "oz", label: "oz" },
+                  ]}
+                />
+              </div>
+            </div>
+            <FormSelect
+              label="Subdevice role"
+              hint="optional - chassis nesting"
+              value={subdeviceRole}
+              onChange={setSubdeviceRole}
+              noneLabel="Neither"
+              placeholder="Neither"
+              options={[
+                { value: "parent", label: "Parent (chassis with device bays)" },
+                {
+                  value: "child",
+                  label: "Child (installs into a parent's bay)",
+                },
+              ]}
+              error={fieldErrors.subdevice_role}
+            />
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <FormCheckbox
+                label="Full depth"
+                hint="occupies both rack faces"
+                checked={isFullDepth}
+                onChange={setIsFullDepth}
+              />
+              <FormCheckbox
+                label="Exclude from utilisation"
+                hint="blanking panels, cable management"
+                checked={excludeUtil}
+                onChange={setExcludeUtil}
+              />
+            </div>
+          </FormSection>
+
+          <FormSection title="Lifecycle" card>
+            <p className="text-[11px] text-muted-foreground">
+              All optional. Release + end of support draw the lifetime bar; the
+              worst passed milestone sets the badge.
+            </p>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormDate
+                label="Released"
+                value={lifecycle.release_date}
+                onChange={(v) =>
+                  setLifecycle({ ...lifecycle, release_date: v })
+                }
+                hint="GA / first ship"
+                error={fieldErrors.release_date}
+              />
+              <FormDate
+                label="End of sale"
+                value={lifecycle.end_of_sale}
+                onChange={(v) => setLifecycle({ ...lifecycle, end_of_sale: v })}
+                error={fieldErrors.end_of_sale}
+              />
+              <FormDate
+                label="End of security updates"
+                value={lifecycle.end_of_security_updates}
+                onChange={(v) =>
+                  setLifecycle({ ...lifecycle, end_of_security_updates: v })
+                }
+                error={fieldErrors.end_of_security_updates}
+              />
+              <FormDate
+                label="End of support (EoL)"
+                value={lifecycle.end_of_support}
+                onChange={(v) =>
+                  setLifecycle({ ...lifecycle, end_of_support: v })
+                }
+                error={fieldErrors.end_of_support}
+              />
+            </div>
+            <FormText
+              label="Vendor notice URL"
+              value={lifecycle.lifecycle_url}
+              onChange={(v) => setLifecycle({ ...lifecycle, lifecycle_url: v })}
+              placeholder="https://vendor.example.com/eol/…"
+              error={fieldErrors.lifecycle_url}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
-      <FormSelect
-        label="Manufacturer"
-        value={manufacturerId}
-        onChange={setManufacturerId}
-        noneLabel="No manufacturer"
-        options={(manufacturers.data?.results ?? []).map((m) => ({
-          value: m.id,
-          label: m.name,
-        }))}
-        error={fieldErrors.manufacturer_id}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Model"
-          value={model}
-          onChange={setModel}
-          placeholder="C9300-48P"
-          error={fieldErrors.model}
-        />
-        <FormText
-          label="Part number"
-          value={partNumber}
-          onChange={setPartNumber}
-          error={fieldErrors.part_number}
-        />
-      </div>
-      <FormCombobox
-        label="Platform"
-        hint="optional - default OS for devices of this type"
-        value={platformId}
-        onChange={setPlatformId}
-        options={(platforms.data?.results ?? []).map((p) => ({
-          value: p.id,
-          label: p.name,
-        }))}
-        noneLabel="No platform"
-        placeholder="Select a platform…"
-        searchPlaceholder="Search platforms…"
-        emptyText="No platforms."
-        error={fieldErrors.platform_id}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="Rack units (U)"
-          type="number"
-          value={uHeight}
-          onChange={setUHeight}
-          hint="0 for non-rack"
-          error={fieldErrors.u_height}
-        />
-        <FormSelect
-          label="Rack width"
-          hint="half = two per U"
-          value={rackWidth}
-          onChange={(v) => setRackWidth(v === "half" ? "half" : "full")}
-          options={[
-            { value: "full", label: "Full width (19″)" },
-            { value: "half", label: "Half width (2 side-by-side)" },
-          ]}
-          error={fieldErrors.rack_width}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Airflow"
-          hint="optional"
-          value={airflow}
-          onChange={setAirflow}
-          noneLabel="Unspecified"
-          placeholder="Unspecified"
-          options={[
-            { value: "front-to-rear", label: "Front to rear" },
-            { value: "rear-to-front", label: "Rear to front" },
-            { value: "left-to-right", label: "Left to right" },
-            { value: "right-to-left", label: "Right to left" },
-            { value: "passive", label: "Passive" },
-            { value: "mixed", label: "Mixed" },
-          ]}
-          error={fieldErrors.airflow}
-        />
-        <div className="grid grid-cols-[1fr_90px] gap-2">
-          <FormText
-            label="Weight"
-            type="number"
-            value={String(weight)}
-            onChange={setWeight}
-            hint="optional"
-            error={fieldErrors.weight}
-          />
-          <FormSelect
-            label="Unit"
-            value={weightUnit}
-            onChange={(v) => v && setWeightUnit(v)}
-            options={[
-              { value: "kg", label: "kg" },
-              { value: "g", label: "g" },
-              { value: "lb", label: "lb" },
-              { value: "oz", label: "oz" },
-            ]}
-          />
-        </div>
-      </div>
-      <FormSelect
-        label="Subdevice role"
-        hint="optional - chassis nesting"
-        value={subdeviceRole}
-        onChange={setSubdeviceRole}
-        noneLabel="Neither"
-        placeholder="Neither"
-        options={[
-          { value: "parent", label: "Parent (chassis with device bays)" },
-          { value: "child", label: "Child (installs into a parent's bay)" },
-        ]}
-        error={fieldErrors.subdevice_role}
-      />
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
-        <FormCheckbox
-          label="Full depth"
-          hint="occupies both rack faces"
-          checked={isFullDepth}
-          onChange={setIsFullDepth}
-        />
-        <FormCheckbox
-          label="Exclude from utilisation"
-          hint="blanking panels, cable management"
-          checked={excludeUtil}
-          onChange={setExcludeUtil}
-        />
-      </div>
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <LifecycleFormSection
-        value={lifecycle}
-        onChange={setLifecycle}
-        errors={fieldErrors}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
       <CustomFieldInputs
         model="devicetype"
         value={customFields}

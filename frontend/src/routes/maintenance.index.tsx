@@ -8,7 +8,7 @@ import { api, type MaintenanceEvent, type Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { useDateFormat } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table"
+import { DataTable, SortHeader } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { actionsColumn } from "@/components/columns/actions-column"
@@ -112,7 +112,8 @@ function MaintenancePage() {
       },
       {
         id: "status",
-        header: "Status",
+        accessorFn: (e) => e.status.name,
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
         meta: {
           facet: {
             kind: "enum",
@@ -175,8 +176,14 @@ function MaintenancePage() {
     [canEdit, formatDateTime]
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, allRows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows)
 
   return (
     <ListPageShell
@@ -205,7 +212,7 @@ function MaintenancePage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         tableId="maintenance-events"
         flexColumn="name"
       />

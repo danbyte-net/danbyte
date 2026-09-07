@@ -366,6 +366,50 @@ class SnmpBindingAndRunScopeTests(_ScopedMonitoringBase):
         )
         self.assertEqual(response.status_code, 200, response.content)
 
+    def test_site_binding_accepts_a_site_grant_too(self):
+        """#125: the site form renders the SNMP control beside the site's own
+        fields, so a user who can change the site must be able to save it -
+        they used to need an unconstrained DEVICE grant on top, and the select
+        silently snapped back without one."""
+        self._grant("site", actions=("view", "change"), sites=(self.site_a,))
+        self._login()
+        r = self.client.put(
+            f"/api/monitoring/snmp-binding/site/{self.site_a.id}/",
+            {"profile_id": None},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        # The engine binding next to it takes the same grant.
+        r = self.client.put(
+            f"/api/monitoring/engine-binding/site/{self.site_a.id}/",
+            {"engine_id": None},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        # But their grant's OTHER site stays out of reach.
+        r = self.client.put(
+            f"/api/monitoring/snmp-binding/site/{self.site_b.id}/",
+            {"profile_id": None},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 404, r.content)
+
+    def test_a_constrained_site_grant_is_not_skipped(self):
+        """The device path skipped every constrained grant wholesale; the site
+        path must not inherit that - a name-constrained site grant that covers
+        the row still counts."""
+        self._grant(
+            "site", actions=("view", "change"),
+            constraints={"name": "Site A"},
+        )
+        self._login()
+        r = self.client.put(
+            f"/api/monitoring/snmp-binding/site/{self.site_a.id}/",
+            {"profile_id": None},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
     def test_progress_ids_are_tenant_and_owner_bound(self):
         self._login()
         other = User.objects.create_user("other-r5", password="x")

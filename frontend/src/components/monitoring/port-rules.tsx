@@ -184,7 +184,7 @@ export function PortRulesList() {
         open={editing !== null}
         onOpenChange={(o) => !o && setEditing(null)}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               {editing === "new" ? "New port rule" : "Edit port rule"}

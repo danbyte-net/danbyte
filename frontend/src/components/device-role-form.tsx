@@ -15,7 +15,7 @@ import {
   FormCombobox,
   FormCheckbox,
   FormFooter,
-  FormRow,
+  FormSection,
   FormTags,
   FormText,
   FormTextarea,
@@ -138,90 +138,95 @@ export function DeviceRoleForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={onNameChange}
-        placeholder="Core switch"
-        error={fieldErrors.name}
-      />
-      <FormRow>
-        <FormText
-          label="Slug"
-          hint="URL-safe id"
-          required
-          placeholder="core-switch"
-          value={slug}
-          onChange={(v) => {
-            setSlugDirty(true)
-            setSlug(slugify(v))
-          }}
-          mono
-          error={fieldErrors.slug}
+      <FormSection title="Device role" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            placeholder="Core switch"
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            placeholder="core-switch"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+        </div>
+        <FormCombobox
+          label="Config template"
+          hint="optional"
+          value={configTemplateId}
+          onChange={setConfigTemplateId}
+          options={(templates.data?.results ?? []).map((t) => ({
+            value: t.id,
+            label: t.name,
+          }))}
+          noneLabel="No config template"
+          placeholder="Select a template…"
+          searchPlaceholder="Search templates…"
+          emptyText="No device export templates."
+          error={fieldErrors.config_template_id}
         />
-      </FormRow>
-      <FormRow>
-        <FormColor
-          label="Color"
-          value={color}
-          onChange={setColor}
-          error={fieldErrors.color}
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
         />
-        <FormIcon
-          label="Icon"
-          hint="shown in the role's badge on maps"
-          value={icon}
-          onChange={setIcon}
-          error={fieldErrors.icon}
+        <FormCheckbox
+          label="Patch-panel role"
+          hint="Devices with this role are passive patch panels - hidden in the topology map by default and kept out of the level tiers."
+          checked={isPatchPanel}
+          onChange={setIsPatchPanel}
         />
-      </FormRow>
-      <FormCheckbox
-        label="Patch-panel role"
-        hint="Devices with this role are passive patch panels - hidden in the topology map by default and kept out of the level tiers."
-        checked={isPatchPanel}
-        onChange={setIsPatchPanel}
-      />
-      <FormCheckbox
-        label="Camera field of view"
-        hint="Floor-plan tiles typed by this role get a direction / angle / reach cone (e.g. a CCTV role)."
-        checked={hasFov}
-        onChange={setHasFov}
-      />
-      <FormCombobox
-        label="Config template"
-        hint="optional"
-        value={configTemplateId}
-        onChange={setConfigTemplateId}
-        options={(templates.data?.results ?? []).map((t) => ({
-          value: t.id,
-          label: t.name,
-        }))}
-        noneLabel="No config template"
-        placeholder="Select a template…"
-        searchPlaceholder="Search templates…"
-        emptyText="No device export templates."
-        error={fieldErrors.config_template_id}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <CustomFieldInputs
-        model="devicerole"
-        value={customFields}
-        onChange={setCustomFields}
-      />
+        <FormCheckbox
+          label="Camera field of view"
+          hint="Floor-plan tiles typed by this role get a direction / angle / reach cone (e.g. a CCTV role)."
+          checked={hasFov}
+          onChange={setHasFov}
+        />
+      </FormSection>
+
+      <FormSection title="Appearance" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormColor
+            label="Color"
+            value={color}
+            onChange={setColor}
+            error={fieldErrors.color}
+          />
+          <FormIcon
+            label="Icon"
+            hint="shown in the role's badge on maps"
+            value={icon}
+            onChange={setIcon}
+            error={fieldErrors.icon}
+          />
+        </div>
+      </FormSection>
+
       <FormTags
         label="Tags"
         value={tagIds}
         onChange={setTagIds}
         error={fieldErrors.tag_ids}
+      />
+      <CustomFieldInputs
+        model="devicerole"
+        value={customFields}
+        onChange={setCustomFields}
       />
       <FormFooter
         onCancel={onCancel}

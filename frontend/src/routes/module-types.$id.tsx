@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Trash2 } from "lucide-react"
@@ -141,6 +142,11 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
       <DetailTab value="overview">
         <div className="grid gap-6 lg:grid-cols-2">
           <KvCard title="Module type" rows={rows} />
+          <CustomFieldValues
+            model="moduletype"
+            values={m.custom_fields}
+            layout="cards"
+          />
         </div>
         <div className="mt-6">
           <InterfaceTemplatesPane moduleTypeId={m.id} />

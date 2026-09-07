@@ -35,13 +35,16 @@ const TRAY_DEFAULT = "#71717a"
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
   fit: () => void
-  focusTile: (tile: FloorPlanTile) => void
+  focusTile: (tile: FloorPlanTile, zoom?: number) => void
   /** Fit the view to a set of cell-unit points (e.g. a cable's route). */
   focusPoints: (points: Pt[]) => void
 }
 
 /** Pixel size of one grid cell in world coordinates. */
 export const CELL = 40
+/** Pixels a tile's drawn rect sits inside its cell footprint, so adjacent
+ * tiles show a seam instead of touching strokes. */
+export const GUTTER = 2
 
 /** A normalized palette entry - a FloorTileType or a DeviceRole. */
 export interface PaletteEntry {
@@ -382,11 +385,11 @@ export function FloorCanvas({
     if (!apiRef) return
     apiRef.current = {
       fit: () => fitTo(svgRef.current, gw, gh),
-      focusTile: (tile) => {
+      focusTile: (tile, zoom) => {
         const svg = svgRef.current
         if (!svg) return
         const rect = svg.getBoundingClientRect()
-        const k = 1.4
+        const k = zoom ?? 1.4
         const tx = (tile.x + tile.width / 2) * CELL
         const ty = (tile.y + tile.height / 2) * CELL
         setT({ k, x: rect.width / 2 - tx * k, y: rect.height / 2 - ty * k })
@@ -1880,21 +1883,35 @@ function TileShape({
       role="img"
       aria-label={tileTooltip(tile, live)}
     >
+      {/* The rect sits a gutter inside the cell footprint so adjacent tiles
+          get a visible seam instead of touching strokes. Linked tiles fill
+          heavier than unlinked planning tiles - same read as the 3D room's
+          solid cabinets vs ghost massing - which replaces the old link dot. */}
       <rect
-        width={w}
-        height={h}
-        rx={6}
+        x={GUTTER}
+        y={GUTTER}
+        width={w - GUTTER * 2}
+        height={h - GUTTER * 2}
+        rx={5}
         fill={fill}
-        fillOpacity={0.18}
+        fillOpacity={tile.linked ? 0.26 : 0.13}
         stroke={checkColor ?? fill}
-        strokeWidth={selected ? 2.5 : checkColor ? 2 : 1.25}
+        strokeOpacity={selected || checkColor ? 1 : 0.55}
+        strokeWidth={selected ? 2 : checkColor ? 2 : 1}
         strokeDasharray={dashed ? "6 3" : undefined}
       />
       {/* Facing is the tile's own property (build-in-advance): every
           non-zone tile shows its front edge, linked or not - otherwise the
           bulk facing arrows change unlinked tiles invisibly. */}
       {!tileIsZone(tile) && (
-        <FacingEdge w={w} h={h} orientation={tile.orientation} color={fill} />
+        <g transform={`translate(${GUTTER},${GUTTER})`}>
+          <FacingEdge
+            w={w - GUTTER * 2}
+            h={h - GUTTER * 2}
+            orientation={tile.orientation}
+            color={fill}
+          />
+        </g>
       )}
       {/* Icons live in the palette rail only - tiles stay clean: color,
           label, and live state. */}
@@ -1914,25 +1931,28 @@ function TileShape({
         // Rack tiles: a thin utilization bar along the bottom edge.
         <g pointerEvents="none">
           <rect
-            x={3}
-            y={h - 7}
-            width={w - 6}
+            x={GUTTER + 3}
+            y={h - GUTTER - 7}
+            width={w - GUTTER * 2 - 6}
             height={4}
             rx={2}
             className="fill-foreground/10"
           />
           <rect
-            x={3}
-            y={h - 7}
-            width={Math.max(2, (w - 6) * Math.min(1, utilization))}
+            x={GUTTER + 3}
+            y={h - GUTTER - 7}
+            width={Math.max(
+              2,
+              (w - GUTTER * 2 - 6) * Math.min(1, utilization)
+            )}
             height={4}
             rx={2}
             fill={utilizationColor(utilization)}
           />
           {w >= CELL * 2 && (
             <text
-              x={w - 4}
-              y={h - 10}
+              x={w - GUTTER - 4}
+              y={h - GUTTER - 10}
               textAnchor="end"
               fontSize={8}
               fill="currentColor"
@@ -1943,15 +1963,6 @@ function TileShape({
             </text>
           )}
         </g>
-      )}
-      {tile.linked && (
-        <circle
-          cx={w - 7}
-          cy={7}
-          r={3.5}
-          fill={checkColor ?? fill}
-          data-linked="1"
-        />
       )}
       {selected && editable && (
         <rect
@@ -1971,11 +1982,13 @@ function TileShape({
 }
 
 /**
- * A rack tile's facing indicator: a thin threshold line floating just OUTSIDE
- * the edge the cabinet's FRONT (door) points at - like a door mark on an
- * architectural plan. Outside the rect so it never collides with the
- * utilization bar, label, or link dot inside the tile. Orientation matches
- * the 3D room: 0 = up (north), 90 = right, 180 = down, 270 = left.
+ * A rack tile's facing indicator: a thin accent bar hugging the INSIDE of the
+ * edge the cabinet's FRONT (door) points at - a door threshold on an
+ * architectural plan. Inside the rect because adjacent tiles share edges: the
+ * old outside placement bled straight into the neighbouring cell. It renders
+ * before the utilization bar/label, so those draw over it where they meet.
+ * Orientation matches the 3D room: 0 = up (north), 90 = right, 180 = down,
+ * 270 = left.
  */
 function FacingEdge({
   w,
@@ -1988,17 +2001,17 @@ function FacingEdge({
   orientation: number
   color: string
 }) {
-  const t = 3 // line thickness
-  const gap = 3 // distance outside the tile edge
+  const t = 3 // bar thickness
+  const edge = 1.5 // sits just inside the tile's stroke
   const inset = 7 // corner clearance (keeps the rounded corners clean)
   const bar =
     orientation === 90
-      ? { x: w + gap, y: inset, width: t, height: h - inset * 2 }
+      ? { x: w - edge - t, y: inset, width: t, height: h - inset * 2 }
       : orientation === 180
-        ? { x: inset, y: h + gap, width: w - inset * 2, height: t }
+        ? { x: inset, y: h - edge - t, width: w - inset * 2, height: t }
         : orientation === 270
-          ? { x: -gap - t, y: inset, width: t, height: h - inset * 2 }
-          : { x: inset, y: -gap - t, width: w - inset * 2, height: t }
+          ? { x: edge, y: inset, width: t, height: h - inset * 2 }
+          : { x: inset, y: edge, width: w - inset * 2, height: t }
   return (
     <rect {...bar} rx={t / 2} fill={color} opacity={0.9} pointerEvents="none" />
   )

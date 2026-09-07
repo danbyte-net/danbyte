@@ -8,6 +8,7 @@ function NewPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "L2VPNs", to: "/l2vpns" }, { label: "Add" }]}
       title="Add L2VPN"
       subtitle="A layer-2 VPN overlay (EVPN, VXLAN, VPWS, …)."

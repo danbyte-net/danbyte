@@ -27,7 +27,10 @@ from api.models import IPAddress
 from core.models import Tenant
 
 from .engines import engine_for_ip
-from .models import CheckAssignment, CheckState, MonitoringEngine, MonitoringPolicy
+from .models import (
+    CheckAssignment, CheckState, MonitoringEngine, MonitoringPolicy,
+    MonitoringSettings,
+)
 from .resolver import resolve_effective_checks
 from .worker import effective_interval, run_generic, run_icmp_sweep
 
@@ -194,8 +197,16 @@ def check_engine_health(now=None) -> dict:
                 eng.stale_since = None
                 eng.save(update_fields=["stale_since"])
             continue
-        threshold = timedelta(
-            seconds=max(3 * (eng.poll_interval_seconds or 60), 180)
+        # Configurable per tenant (#129); 0 = automatic 3x poll interval.
+        minutes = MonitoringSettings.for_tenant(
+            eng.tenant
+        ).engine_offline_after_minutes
+        threshold = (
+            timedelta(minutes=minutes)
+            if minutes
+            else timedelta(
+                seconds=max(3 * (eng.poll_interval_seconds or 60), 180)
+            )
         )
         # Never-seen engines age from creation, so a just-enrolled Outpost
         # gets the same grace window before it's called unreachable.

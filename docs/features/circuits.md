@@ -19,7 +19,28 @@ A provider is the company you lease a circuit from.
 2. Give it a **name**.
 3. Optionally fill in the **account number**, **portal URL**, and **NOC email /
    phone** so support details live right next to the circuits.
-4. Save.
+4. Optionally fill in the **support** details - see below.
+5. Save.
+
+### Provider support details
+
+What you need in your hand when you open a ticket, kept on the provider rather
+than in somebody's mailbox:
+
+- **Support contract** - the reference you quote when filing a case. Separate
+  from the account number above: with the same provider these are routinely
+  two different references.
+- **Support phone** - the line you call, when it differs from the NOC number.
+- **Support hours** - a weekly schedule plus the time zone it is stated in,
+  the same control [contacts use](contacts.md#working-hours). The provider page
+  shows it as one line with an **Open now** / **Outside hours** badge, so you
+  can see whether it's worth calling before you dial.
+- **Account manager** - pick an existing **contact** where one exists, so their
+  own phone, email and hours come along; type a **name** instead for a vendor
+  rep nobody has made a record for.
+
+These appear in their own **Support** card on the provider page, rather than
+mixed in with the billing fields.
 
 ## Add a circuit type
 
@@ -74,6 +95,9 @@ lives on the side it belongs to.
 2. Add the **A side** (usually your site) and the **Z side** (the far site or a
    provider network).
 3. Fill in speeds / cross-connect / patch-panel details as known.
+4. Cable the side that lands in your rack to the port it lands on - see
+   [Cabling a circuit](../dcim/cabling.md#cabling-a-circuit). A termination
+   takes one cable, and the trace from that port then runs out to the circuit.
 
 ### Circuit status
 

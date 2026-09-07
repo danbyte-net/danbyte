@@ -10,7 +10,7 @@ import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ImportBundleDialog } from "@/components/device-bundle"
 import { buildDeviceTypeColumns } from "@/components/columns/device-type-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
 import { DeviceTypeBulkBar } from "@/components/device-type-bulk-bar"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
@@ -65,23 +65,35 @@ function DeviceTypesPage() {
   const handleDelete = useCallback((d: DeviceType) => setDeleting(d), [])
   const columns = useMemo<ColumnDef<DeviceType>[]>(
     () =>
-      buildDeviceTypeColumns<DeviceType>({
-        selection: true,
-        humanIds,
-        omit: ["part_number"],
-        tagFilter: {
-          activeSlugs: tagSelection,
-          onToggle: (slug) => toggleValue("tags", slug),
-        },
-        actions: {
-          editTo: "/device-types/$id/edit",
-          editParams: (d) => ({ id: d.id }),
-          canEdit: (d) => objCan(d, "change", canEdit),
-          onDelete: handleDelete,
-          canDelete: (d) => objCan(d, "delete", canDelete),
-        },
-      }),
-    [handleDelete, canEdit, canDelete, humanIds, tagSelection, toggleValue]
+      wireFacetColumns(
+        buildDeviceTypeColumns<DeviceType>({
+          selection: true,
+          humanIds,
+          omit: ["part_number"],
+          tagFilter: {
+            activeSlugs: tagSelection,
+            onToggle: (slug) => toggleValue("tags", slug),
+          },
+          actions: {
+            editTo: "/device-types/$id/edit",
+            editParams: (d) => ({ id: d.id }),
+            canEdit: (d) => objCan(d, "change", canEdit),
+            onDelete: handleDelete,
+            canDelete: (d) => objCan(d, "delete", canDelete),
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
+    [
+      handleDelete,
+      canEdit,
+      canDelete,
+      humanIds,
+      tagSelection,
+      selectedValues,
+      toggleValue,
+    ]
   )
 
   return (

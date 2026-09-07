@@ -1,10 +1,19 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { type VirtualChassis, type VirtualChassisWritePayload } from "@/lib/api"
 import {
+  api,
+  type Paginated,
+  type TagOption,
+  type VirtualChassis,
+  type VirtualChassisWritePayload,
+} from "@/lib/api"
+import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import {
+  Field,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -37,6 +46,14 @@ export function VirtualChassisForm({
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
     item?.custom_fields ?? {}
   )
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const tags = useQuery({
+    queryKey: ["tags-picker"],
+    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    staleTime: 10 * 60_000,
+  })
 
   useEffect(() => {
     if (!item) return
@@ -45,6 +62,7 @@ export function VirtualChassisForm({
     setDescription(item.description)
     setComments(item.comments)
     setCustomFields(item.custom_fields ?? {})
+    setTagIds(item.tags.map((t) => t.id))
     reset()
   }, [item, reset])
 
@@ -56,6 +74,7 @@ export function VirtualChassisForm({
         description: description.trim(),
         comments: comments.trim(),
         custom_fields: customFields,
+        tag_ids: tagIds,
       }
       return saveObject<VirtualChassis>({
         objectType: "api.virtualchassis",
@@ -84,44 +103,59 @@ export function VirtualChassisForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="stack-fra-01"
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Domain"
-        hint="optional"
-        value={domain}
-        onChange={setDomain}
-        mono
-        placeholder="stack-domain-1"
-        error={fieldErrors.domain}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormTextarea
-        label="Comments"
-        hint="optional"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
+      <FormSection title="Virtual chassis" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            placeholder="stack-fra-01"
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Domain"
+            hint="optional"
+            value={domain}
+            onChange={setDomain}
+            mono
+            placeholder="stack-domain-1"
+            error={fieldErrors.domain}
+          />
+        </div>
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTextarea
+          label="Comments"
+          hint="optional"
+          value={comments}
+          onChange={setComments}
+          error={fieldErrors.comments}
+        />
+      </FormSection>
+
       <CustomFieldInputs
         model="virtualchassis"
         value={customFields}
         onChange={setCustomFields}
       />
+      <Field label="Tags" error={fieldErrors.tag_ids}>
+        <TagMultiSelect
+          options={tags.data?.results ?? []}
+          value={tagIds}
+          onChange={setTagIds}
+        />
+      </Field>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

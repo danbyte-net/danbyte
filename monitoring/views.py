@@ -44,6 +44,7 @@ from .models import (
     CheckResult,
     CheckState,
     DeviceSnmp,
+    MonitoringEngine,
     MonitoringSettings,
     SnmpProfile,
     SnmpProfileBinding,
@@ -267,6 +268,8 @@ def check_now_view(request, ip_id):
         "and a short latency/status sparkline.",
     ),
 )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ip_checks_view(request, ip_id):
@@ -1887,6 +1890,46 @@ def device_snmp_poll_view(request, device_id):
         if profile is None:
             return Response({"detail": "SNMP profile not found."}, status=400)
 
+    # A device whose site/location is bound to an Outpost polls from THERE -
+    # central polling would report outpost-only networks unreachable (#128).
+    # The agent pulls work, so "now" means its next poll: stamp the request
+    # and answer 202; the same profile/target validation still applies so the
+    # caller gets an actionable error instead of a queue that never delivers.
+    from .engines import engine_for_device
+
+    engine = engine_for_device(device)
+    if engine.kind != MonitoringEngine.LOCAL and engine.enabled:
+        from .snmp_poll import _device_target
+        from .snmp_resolve import resolve_device_profile
+
+        if profile is None:
+            profile, _src = resolve_device_profile(device, tenant)
+        if profile is None:
+            return Response(
+                {"detail": "No SNMP profile resolves for this device - assign "
+                 "one on the device, its role, its type, or set a tenant "
+                 "default."},
+                status=400,
+            )
+        if not _device_target(device):
+            return Response(
+                {"detail": "Device has no primary IP or name to poll."},
+                status=400,
+            )
+        engine.snmp_requested_at = timezone.now()
+        engine.save(update_fields=["snmp_requested_at"])
+        detail = f"Queued on Outpost '{engine.name}' - results land on its next pass."
+        if engine.stale_since is not None:
+            detail = (
+                f"Queued, but Outpost '{engine.name}' is currently unreachable "
+                "- it will poll when it reconnects."
+            )
+        return Response(
+            {"queued": True, "engine": engine.name,
+             "engine_stale": engine.stale_since is not None, "detail": detail},
+            status=202,
+        )
+
     # profile=None → poll_device resolves it (device → role → type → default).
     state, reason = poll_device(device, tenant, profile)
     if reason == "no_profile":
@@ -2022,7 +2065,7 @@ def device_snmp_drift_view(request, device_id):
 
 # Drift kinds we summarise per device on the fleet list (in compute order).
 _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
-                "interface_stale", "part_status", "part_missing")
+                "interface_stale", "part_status", "part_missing", "lag_membership")
 
 # Drift kinds that name an Interface row Danbyte ALREADY has - the only ones a
 # per-interface marker can attach to (``?interfaces=1``).
@@ -2033,7 +2076,9 @@ _DRIFT_KINDS = ("device_field", "interface_missing", "interface_mismatch",
 # observed on. ``switch_link_suggested`` is excluded deliberately: it proposes
 # where an *IP* sits, so its interface is the suggested destination rather than a
 # record that disagrees with reality.
-_INTERFACE_DRIFT_KINDS = ("interface_mismatch", "interface_stale", "ip_missing")
+_INTERFACE_DRIFT_KINDS = (
+    "interface_mismatch", "interface_stale", "ip_missing", "lag_membership",
+)
 
 
 @extend_schema(
@@ -2504,14 +2549,29 @@ def _binding_target(tenant, scope, object_id):
 
 
 def _can_access_binding_target(user, tenant, scope, target, action) -> bool:
+    """Row gate for one binding target - the target's own vocabulary OR devices.
+
+    A site/location binding is reachable two ways: it is an edit of that site
+    or location (the site form renders the control next to the site's own
+    fields), and it is an SNMP default for every device under it (a
+    device-scoped operator's concern). Either grant suffices. It used to
+    demand an UNCONSTRAINED device grant alone, so a user whose site edits all
+    worked could have exactly the SNMP half refused, with the select snapping
+    back and nothing else visibly wrong (#125). Role/type bindings affect a
+    fleet with no site of their own, so those stay device-gated.
+    """
     if user.is_superuser:
         return True
     if scope == SnmpProfileBinding.SCOPE_DEVICE:
         return rbac.can_act_on(user, tenant, "device", action, target)
     if scope == SnmpProfileBinding.SCOPE_SITE:
-        return _device_grant_covers_site(user, tenant, action, target.pk)
+        return rbac.can_act_on(
+            user, tenant, "site", action, target
+        ) or _device_grant_covers_site(user, tenant, action, target.pk)
     if scope == SnmpProfileBinding.SCOPE_LOCATION:
-        return _device_grant_covers_site(user, tenant, action, target.site_id)
+        return rbac.can_act_on(
+            user, tenant, "location", action, target
+        ) or _device_grant_covers_site(user, tenant, action, target.site_id)
     return _device_grant_covers_site(user, tenant, action, None)
 
 
@@ -2565,9 +2625,18 @@ def snmp_binding_view(request, scope, object_id):
     if scope not in dict(SnmpProfileBinding.SCOPE_CHOICES):
         return Response({"detail": "Invalid scope."}, status=400)
     action = "change" if request.method in ("PUT", "DELETE") else "view"
-    if not rbac.has_action(request.user, tenant, "device", action):
+    # Site/location bindings accept the scope's own grant as well as a device
+    # grant - see _can_access_binding_target for why.
+    slugs = {
+        SnmpProfileBinding.SCOPE_SITE: ("site", "device"),
+        SnmpProfileBinding.SCOPE_LOCATION: ("location", "device"),
+    }.get(scope, ("device",))
+    if not any(
+        rbac.has_action(request.user, tenant, slug, action) for slug in slugs
+    ):
         return Response(
-            {"detail": f"You do not have permission to {action} devices."}, status=403
+            {"detail": f"You do not have permission to {action} {slugs[0]}s."},
+            status=403,
         )
     target = _binding_target(tenant, scope, object_id)
     if target is None or not _can_access_binding_target(
@@ -2876,3 +2945,130 @@ def snmp_interface_link_view(request, device_id):
         "interface_id": str(iface.id), "name": iface.name,
         "snmp_name": iface.snmp_name,
     })
+
+
+@extend_schema(
+    summary="SNMP profile picker options (id/name/version)",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The tenant's SNMP profiles as picker options.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def snmp_profile_options_view(request):
+    """The profile catalog as picker options - id/name/version only.
+
+    The full /snmp-profiles/ viewset is RBAC-gated as a credential store, but
+    anyone who may set or read an SNMP binding (device/site/location grants -
+    the binding endpoint's own vocabulary, #125) needs the option list, or the
+    saved binding renders as an empty select and reads as "not saved". No
+    params and no secrets leave here.
+    """
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    u = request.user
+    if not (
+        u.is_superuser
+        or any(
+            rbac.has_action(u, tenant, slug, "view")
+            for slug in ("snmpprofile", "device", "site", "location")
+        )
+    ):
+        return Response({"detail": "Not allowed."}, status=403)
+    rows = SnmpProfile.objects.filter(tenant=tenant).order_by("name")
+    return Response({
+        "results": [
+            {"id": str(p.id), "name": p.name, "version": p.version}
+            for p in rows
+        ]
+    })
+
+@extend_schema(
+    summary="Get / set / clear the default SNMP VRF at one hierarchy level",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The VRF binding at this scope.",
+    ),
+)
+@api_view(["GET", "PUT", "DELETE"])
+@permission_classes([IsAuthenticated])
+def snmp_vrf_binding_view(request, scope, object_id):
+    """The default VRF SNMP-discovered addresses land in, bound at one level
+    (device / device_role / device_type / site). ``PUT {vrf_id}`` sets it
+    (null clears); ``DELETE`` clears. Same access vocabulary as the profile
+    binding: the scope's own grant, or a device grant."""
+    from api.models import VRF
+
+    from .models import SnmpVrfBinding
+    from .snmp_resolve import resolve_snmp_vrf
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    if scope not in dict(SnmpVrfBinding.SCOPE_CHOICES):
+        return Response({"detail": "Invalid scope."}, status=400)
+    action = "change" if request.method in ("PUT", "DELETE") else "view"
+    slugs = {
+        SnmpVrfBinding.SCOPE_SITE: ("site", "device"),
+        SnmpVrfBinding.SCOPE_ROLE: ("devicerole", "device"),
+        SnmpVrfBinding.SCOPE_TYPE: ("devicetype", "device"),
+    }.get(scope, ("device",))
+    if not any(
+        rbac.has_action(request.user, tenant, slug, action) for slug in slugs
+    ):
+        return Response(
+            {"detail": f"You do not have permission to {action} {slugs[0]}s."},
+            status=403,
+        )
+
+    def _payload():
+        b = (
+            SnmpVrfBinding.objects.filter(
+                tenant=tenant, scope=scope, object_id=object_id
+            )
+            .select_related("vrf")
+            .first()
+        )
+        out = {
+            "scope": scope,
+            "object_id": str(object_id),
+            "vrf_id": str(b.vrf_id) if b else None,
+            "vrf_name": b.vrf.name if b else None,
+            "effective": None,
+        }
+        if scope == SnmpVrfBinding.SCOPE_DEVICE:
+            device = Device.objects.filter(pk=object_id, tenant=tenant).first()
+            if device is not None:
+                eff = resolve_snmp_vrf(device, tenant)
+                if eff is not None:
+                    out["effective"] = {"id": str(eff.id), "name": eff.name}
+        return out
+
+    if request.method == "PUT":
+        vid = request.data.get("vrf_id")
+        if vid:
+            vrf = VRF.objects.filter(pk=vid, tenant=tenant).first()
+            if vrf is None:
+                return Response({"detail": "VRF not found."}, status=400)
+            SnmpVrfBinding.objects.update_or_create(
+                tenant=tenant, scope=scope, object_id=object_id,
+                defaults={"vrf": vrf},
+            )
+        else:
+            SnmpVrfBinding.objects.filter(
+                tenant=tenant, scope=scope, object_id=object_id
+            ).delete()
+        return Response(_payload())
+    if request.method == "DELETE":
+        SnmpVrfBinding.objects.filter(
+            tenant=tenant, scope=scope, object_id=object_id
+        ).delete()
+        return Response(_payload())
+    return Response(_payload())
+

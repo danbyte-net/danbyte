@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
@@ -12,6 +12,16 @@ import {
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Dialog,
   DialogContent,
@@ -32,6 +42,18 @@ const KIND_VARIANT: Record<
   iface_extra: "secondary",
   iface_change: "secondary",
 }
+
+/** What accepting each kind DOES, in Danbyte - "Accept" alone hides whether
+ * a row is written, created or deleted. Nothing here ever touches the
+ * hypervisor: the integration only reads from it. */
+const ACCEPT_LABEL: Record<VirtChange["kind"], string> = {
+  new_guest: "Add VM",
+  spec_change: "Take specs",
+  removed_guest: "Delete VM",
+  iface_extra: "Delete interface",
+  iface_change: "Take values",
+}
+const DESTRUCTIVE: VirtChange["kind"][] = ["removed_guest", "iface_extra"]
 
 // Interface fields as they appear in an iface_change payload.
 const IFACE_LABELS: Record<string, string> = {
@@ -103,12 +125,15 @@ function ChangeDetail({ c }: { c: VirtChange }) {
   }
   if (c.kind === "iface_change") {
     // {interfaces: {name: {field: {danbyte, hypervisor}}}}
-    const ifaces = (c.detail as {
-      interfaces?: Record<
-        string,
-        Record<string, { danbyte: unknown; hypervisor: unknown }>
-      >
-    }).interfaces ?? {}
+    const ifaces =
+      (
+        c.detail as {
+          interfaces?: Record<
+            string,
+            Record<string, { danbyte: unknown; hypervisor: unknown }>
+          >
+        }
+      ).interfaces ?? {}
     return (
       <span className="flex flex-wrap items-center gap-1">
         {Object.entries(ifaces).flatMap(([name, fields]) =>
@@ -145,15 +170,10 @@ function ChangeDetail({ c }: { c: VirtChange }) {
   )
 }
 
-/** The review inbox for one virtualization source - accept applies a change,
- * ignore dismisses it until it changes again. */
-export function VirtChangesDialog({
-  source,
-  onOpenChange,
-}: {
-  source: VirtualizationSource
-  onOpenChange: (open: boolean) => void
-}) {
+/** The review inbox for one virtualization source. Rendered inline on the
+ * source's own page and inside {@link VirtChangesDialog} from the list. */
+export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
+  const [confirm, setConfirm] = useState<VirtChange | null>(null)
   const qc = useQueryClient()
   const query = useQuery({
     queryKey: ["virt-changes", source.id],
@@ -230,13 +250,23 @@ export function VirtChangesDialog({
           <span className="flex justify-end gap-1">
             <Button
               size="sm"
+              variant={
+                DESTRUCTIVE.includes(row.original.kind)
+                  ? "destructive"
+                  : "default"
+              }
               className="h-7 px-2 text-xs"
               disabled={resolve.isPending}
-              onClick={() =>
+              onClick={() => {
+                // Deleting inventory a person entered deserves a beat.
+                if (DESTRUCTIVE.includes(row.original.kind)) {
+                  setConfirm(row.original)
+                  return
+                }
                 resolve.mutate({ c: row.original, action: "accept" })
-              }
+              }}
             >
-              Accept
+              {ACCEPT_LABEL[row.original.kind]}
             </Button>
             <Button
               size="sm"
@@ -257,31 +287,81 @@ export function VirtChangesDialog({
   )
 
   return (
+    <>
+      {query.data && rows.length === 0 ? (
+        <EmptyState title="Nothing to review.">
+          The inventory matches the hypervisor. New VMs, spec changes and
+          removals will appear here after the next sync.
+        </EmptyState>
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          tableId="virt-changes"
+          flexColumn="detail"
+        />
+      )}
+      <AlertDialog
+        open={!!confirm}
+        onOpenChange={(o) => !o && setConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm?.kind === "removed_guest"
+                ? `Delete ${confirm?.vm_name || "this VM"} from Danbyte?`
+                : "Delete these interfaces from Danbyte?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirm?.kind === "removed_guest"
+                ? "The hypervisor no longer has this VM. Its Danbyte record and everything hanging off it goes."
+                : "The hypervisor doesn't report these interfaces, so accepting removes the Danbyte rows - including anything cabled or addressed on them."}{" "}
+              Nothing on the hypervisor is touched either way.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={(e) => {
+                e.preventDefault()
+                if (confirm) resolve.mutate({ c: confirm, action: "accept" })
+                setConfirm(null)
+              }}
+            >
+              Delete in Danbyte
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  )
+}
+
+/** The same inbox as a modal, opened from the sources list. */
+export function VirtChangesDialog({
+  source,
+  onOpenChange,
+}: {
+  source: VirtualizationSource
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent size="3xl">
+      <DialogContent size="6xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
             Pending changes - {source.name}
             <InfoTip>
-              This source is in {source.sync_mode} mode, so nothing is applied
-              until you accept it. Accept writes the change to the inventory;
-              ignore hides it until it changes again.
+              Danbyte only ever READS from a hypervisor - nothing here can
+              change anything on {source.name}. This source is in{" "}
+              {source.sync_mode} mode, so nothing is applied until you accept
+              it, and accepting writes to the Danbyte inventory only. Ignore
+              hides a row until it changes again.
             </InfoTip>
           </DialogTitle>
         </DialogHeader>
-        {query.data && rows.length === 0 ? (
-          <EmptyState title="Nothing to review.">
-            The inventory matches the hypervisor. New VMs, spec changes and
-            removals will appear here after the next sync.
-          </EmptyState>
-        ) : (
-          <DataTable
-            data={rows}
-            columns={columns}
-            tableId="virt-changes"
-            flexColumn="detail"
-          />
-        )}
+        <VirtChangesPanel source={source} />
       </DialogContent>
     </Dialog>
   )

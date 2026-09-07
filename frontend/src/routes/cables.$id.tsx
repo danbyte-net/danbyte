@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import {
   AutoRouteButton,
@@ -59,14 +60,20 @@ function CableDetail() {
 }
 
 function TerminationBox({ t }: { t: Termination }) {
-  // A power feed hangs off a power panel, not a device - the API surfaces the
-  // panel under the same `device` key, so both halves of the box point at the
-  // power pages instead of a device that doesn't exist.
+  // Not every endpoint sits on a device: a power feed hangs off a power panel
+  // and a circuit end off a circuit. The API surfaces the owner under the same
+  // `device` key either way, so point the link at the page that owner has.
   const feed = t.kind === "power_feed"
+  const circuit = t.kind === "circuit_termination"
+  const ownerTo = feed
+    ? "/power-panels/$id"
+    : circuit
+      ? "/circuits/$id"
+      : "/devices/$id"
   return (
     <div className="rounded-lg border border-border px-4 py-3">
       <Link
-        to={feed ? "/power-panels/$id" : "/devices/$id"}
+        to={ownerTo}
         params={{ id: t.device.id }}
         className="link font-mono text-xs text-muted-foreground"
       >
@@ -124,6 +131,9 @@ function Body({ cable: c }: { cable: Cable }) {
       }
     }
     const ids = [...(c.a_terminations ?? []), ...(c.b_terminations ?? [])]
+      // Off-box ends carry their owner's id under `device`; the topology map
+      // takes device ids only, so don't hand it a circuit or a panel.
+      .filter((t) => t.kind !== "circuit_termination" && t.kind !== "power_feed")
       .map((t) => t.device?.id)
       .filter((x): x is string => !!x)
     const uniq = [...new Set(ids)]
@@ -307,6 +317,11 @@ function CableOverview({ cable: c }: { cable: Cable }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <KvCard title="Cable" rows={details} />
         <KvCard title="Physical" rows={physical} />
+        <CustomFieldValues
+          model="cable"
+          values={c.custom_fields}
+          layout="cards"
+        />
       </div>
       <CableRoutingCard cableId={c.id} />
       {c.is_fiber && modelling !== "off" && <CableFibers cable={c} />}

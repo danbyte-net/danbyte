@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/search")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -31,6 +32,7 @@ export const Route = createFileRoute("/search")({
 const RESULTS_LIMIT = 50
 
 function SearchResultsPage() {
+  usePageTitle("Search")
   const { q } = Route.useSearch()
   const [activeGroup, setActiveGroup] = useState<string>("all")
 

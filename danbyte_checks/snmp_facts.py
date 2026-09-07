@@ -150,6 +150,42 @@ _IANA_IFTYPE = {
     "117": "ethernet", "142": "ipForward",
 }
 
+# Link aggregation membership. IEEE8023-LAG-MIB names the aggregate a port is
+# attached to (authoritative on LACP gear); IF-MIB ifStackTable is the
+# fallback - a member port stacks under its aggregate (higher.lower index).
+_DOT3AD_AGG_PORT_ATTACHED_AGG_ID = "1.2.840.10006.300.43.1.2.1.1.13"
+_IF_STACK_STATUS = "1.3.6.1.2.1.31.1.2.1.3"
+_IFTYPE_LAG = "161"
+
+
+def parse_lag_membership(
+    agg_attached: dict, if_stack: dict, if_types: dict
+) -> dict[str, str]:
+    """Member ifIndex → aggregate ifIndex.
+
+    ``agg_attached`` is dot3adAggPortAttachedAggID keyed by port ifIndex (0 or
+    the port itself = not attached). ``if_stack`` is ifStackStatus keyed
+    ``"higher.lower"``; only an active row whose higher layer is an
+    ieee8023adLag interface counts, so VLAN-over-port and tunnel stacking stay
+    out. The LAG MIB wins where both answer.
+    """
+    out: dict[str, str] = {}
+    for idx, agg in agg_attached.items():
+        agg = str(agg or "")
+        idx = str(idx)
+        if agg not in ("", "0") and agg != idx:
+            out[idx] = agg
+    for key, status in if_stack.items():
+        higher, _, lower = str(key).partition(".")
+        if str(status) not in ("1", "active"):
+            continue
+        if higher in ("", "0") or lower in ("", "0") or lower in out:
+            continue
+        if str(if_types.get(higher, "")) == _IFTYPE_LAG:
+            out[lower] = higher
+    return out
+
+
 # Q-BRIDGE-MIB (802.1Q) - for per-interface access VLAN (PVID). VLAN membership
 # is keyed by *bridge port*, not ifIndex, so we also read the bridge-port→ifIndex
 # map. (Tagged-VLAN egress bitmaps are a later add; the access/untagged VLAN is
@@ -272,6 +308,21 @@ async def fetch_interfaces(
         vlan_cols["base"], vlan_cols["pvid"], vlan_cols["names"]
     )
 
+    # Link aggregation: which aggregate each port belongs to. Optional tables
+    # again; `lag_if_index` is always emitted (blank = not a member) so the
+    # core can tell "not a member" from "this agent never looked".
+    lag_cols: dict[str, dict] = {}
+    for ckey, base in (
+        ("agg", _DOT3AD_AGG_PORT_ATTACHED_AGG_ID),
+        ("stack", _IF_STACK_STATUS),
+    ):
+        lag_cols[ckey] = await _walk_column(mod, engine, auth, transport, base)
+    lag_of = parse_lag_membership(
+        lag_cols["agg"], lag_cols["stack"],
+        {i: r.get("type", "") for i, r in rows.items()},
+    )
+    aggregate_ids = set(lag_of.values())
+
     out = []
     for if_index, r in rows.items():
         ips = ip_by_ifindex.get(if_index, [])
@@ -282,7 +333,13 @@ async def fetch_interfaces(
             "descr": r.get("descr", ""),
             "alias": r.get("alias", ""),
             "type": r.get("type", ""),
-            "type_name": _IANA_IFTYPE.get(r.get("type", ""), ""),
+            # An aggregate is "lag" even where the box reports it as
+            # propVirtual (Cisco IOS) - being a membership target decides.
+            "type_name": (
+                "lag" if if_index in aggregate_ids
+                else _IANA_IFTYPE.get(r.get("type", ""), "")
+            ),
+            "lag_if_index": lag_of.get(if_index, ""),
             "mtu": r.get("mtu", ""),
             "mac": _fmt_mac(r["mac"]) if r.get("mac") else "",
             "admin_status": _IF_STATUS.get(r.get("admin_status", ""), r.get("admin_status", "")),

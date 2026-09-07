@@ -18,6 +18,7 @@ function EditWebhookPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Webhooks", to: "/webhooks" },
         { label: q.data?.name ?? "…" },

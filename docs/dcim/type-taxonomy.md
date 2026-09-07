@@ -19,7 +19,7 @@ imports, operator muscle memory, and external tooling carry over 1:1.
 
 | Group | Examples |
 |---|---|
-| Virtual | `virtual`, `bridge`, `lag` |
+| Virtual | `virtual`, `bridge`, `lag` (the aggregate; carries the bundle settings and is what the LAG picker offers) |
 | Fast Ethernet (100M) | `100base-tx`, `100base-t1`, `100base-fx` |
 | Gigabit Ethernet (1G) | `1000base-t`, `1000base-sx`, `1000base-lx`, `1000base-zx`, BiDi |
 | 2.5 / 5 Gigabit Ethernet | `2.5gbase-t`, `5gbase-t` |
@@ -69,6 +69,13 @@ The curated lists only control what the dropdown *offers*. Deployments can
 trim/extend the lists in `api/dcim_choices.py`.
 
 ## Research notes - what was added and why
+
+**RF / antenna connectors on aux ports (#111).** RP-SMA, SMA, N-type, MMCX,
+U.FL, QMA and 4.3-10 joined the aux-port vocabulary so the coax run from an AP
+to an external antenna documents as an ordinary cable between RF aux ports. The
+antenna itself is a component (type, gain in dBi, picked bands, polarization,
+connector, direct-mount flag) - structured so a future coverage view can
+consume it. Faceplates draw the RF slugs with the antenna stub glyph.
 
 Added in the 2026-07 expansion:
 

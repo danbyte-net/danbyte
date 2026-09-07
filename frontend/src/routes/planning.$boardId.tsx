@@ -29,6 +29,7 @@ import { BoardCanvas } from "@/components/planning/board-canvas"
 import { BoardDialog } from "@/components/planning/board-dialog"
 import { MilestoneManagerDialog } from "@/components/planning/milestone-manager"
 import { TaskDetailSheet } from "@/components/planning/task-detail"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/planning/$boardId")({
   // ?task=<id> opens that task's sheet - how a staged planned change returns
@@ -53,6 +54,7 @@ function BoardPage() {
     queryKey: ["planning-board", boardId],
     queryFn: () => api<PlanningBoard>(`/api/planning/boards/${boardId}/`),
   })
+  usePageTitle(boardQ.data?.name ?? null)
   const statusesQ = useQuery({
     queryKey: ["planning-statuses", boardId],
     queryFn: () =>

@@ -116,8 +116,15 @@ function RtsPage() {
 
   const columns = useMemo<ColumnDef<RouteTarget>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
-    [handleDelete, canEdit, canDelete, humanIds]
+      buildColumns({
+        onDelete: handleDelete,
+        canEdit,
+        canDelete,
+        humanIds,
+        tagFilter,
+        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+      }),
+    [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
 
   return (
@@ -176,6 +183,8 @@ interface ColumnOpts {
   canEdit: boolean
   canDelete: boolean
   humanIds: boolean
+  tagFilter: Set<string>
+  onToggleTag: (slug: string) => void
 }
 
 function buildColumns({
@@ -183,6 +192,8 @@ function buildColumns({
   canEdit,
   canDelete,
   humanIds,
+  tagFilter,
+  onToggleTag,
 }: ColumnOpts): ColumnDef<RouteTarget>[] {
   return [
     selectionColumn<RouteTarget>(),
@@ -245,8 +256,8 @@ function buildColumns({
     },
     tagsColumn<RouteTarget>({
       getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
+      activeSlugs: tagFilter,
+      onToggle: onToggleTag,
     }),
     timeAgoColumn<RouteTarget>({
       id: "updated",

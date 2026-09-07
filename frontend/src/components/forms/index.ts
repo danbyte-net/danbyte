@@ -8,7 +8,7 @@
 
 export { Field } from "./field"
 export type { FieldProps } from "./field"
-export { FormSection } from "./section"
+export { FormColumn, FormColumns, FormSection } from "./section"
 export { FormText } from "./text"
 export type { FormTextProps } from "./text"
 export { FormDate } from "./date"
@@ -46,3 +46,4 @@ export { useFieldErrors } from "./use-field-errors"
 
 export { CheckList } from "./check-list"
 export type { CheckOption } from "./check-list"
+export { FormStatusSelect } from "./status-select"

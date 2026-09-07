@@ -23,6 +23,7 @@ import { toast } from "sonner"
 import { api, DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
 import type {
   Device,
+  DeviceType,
   DeviceChecksResponse,
   DeviceFieldVisibility,
   IPAddress,
@@ -34,6 +35,7 @@ import type {
 } from "@/lib/api"
 import { RackElevation } from "@/components/rack-elevation"
 import { ObjectImages } from "@/components/object-images"
+import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import { ObjectDocuments } from "@/components/object-documents"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -104,6 +106,11 @@ import {
 import { useLegendCollector } from "@/components/speed-scale"
 import { DeviceBaysPane } from "@/components/device-bays-pane"
 import { DeviceInventoryPane } from "@/components/device-inventory-pane"
+import {
+  AntennaSummary,
+  DeviceAntennasPane,
+  useDeviceAntennas,
+} from "@/components/device-antennas-pane"
 import { DeviceModulesPane } from "@/components/device-modules-pane"
 import { DevicePortsPane } from "@/components/device-ports-pane"
 import {
@@ -163,6 +170,7 @@ const DEVICE_TABS = [
   "ips",
   "components",
   "images",
+  "photo-ports",
   "snmp",
   "services",
   "certificates",
@@ -252,6 +260,7 @@ function Body({ device: d }: { device: Device }) {
       presence={{ type: "device", id: d.id }}
       actions={
         <>
+          {" "}
           <ShowOnFloorPlan deviceId={d.id} rackId={d.rack?.id} />
           <ShowOnSiteMap
             deviceId={d.id}
@@ -352,6 +361,10 @@ function Body({ device: d }: { device: Device }) {
               (d.power_count || 0) || undefined,
         },
         { value: "images", label: "Images" },
+        // Only when the type has a rack-face photo to place markers on.
+        ...(d.device_type?.front_image || d.device_type?.rear_image
+          ? [{ value: "photo-ports", label: "Photo ports" }]
+          : []),
         {
           value: "snmp",
           label: (
@@ -446,6 +459,9 @@ function Body({ device: d }: { device: Device }) {
       <DetailTab value="images">
         <ObjectImages apiBase={`/api/devices/${d.id}`} objectType="device" />
       </DetailTab>
+      <DetailTab value="photo-ports">
+        <DevicePhotoPortsTab device={d} />
+      </DetailTab>
       <DetailTab value="services">
         <ServicesPane
           parent={{ kind: "device", id: d.id }}
@@ -462,7 +478,19 @@ function Body({ device: d }: { device: Device }) {
         <ContactsPanel objectType="api.device" objectId={d.id} />
       </DetailTab>
       <DetailTab value="documents">
-        <ObjectDocuments objectType="api.device" objectId={d.id} />
+        <ObjectDocuments
+          objectType="api.device"
+          objectId={d.id}
+          inheritedFrom={
+            d.device_type
+              ? {
+                  objectType: "api.devicetype",
+                  objectId: d.device_type.id,
+                  label: "From device type",
+                }
+              : undefined
+          }
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.device" objectId={d.id} />
@@ -541,8 +569,11 @@ function DeviceComponents({
       {/* Sub-tab bar as a flush full-width strip (matches the main tab strip),
           then the pane content padded below - the parent DetailTab is `bare` so
           there's no headroom above the bar. */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-10 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* min-w-0 on this root: without it the flex child grows to its widest
+          table and drags the whole page sideways on laptop widths (#132) -
+          wide content must scroll inside its own containers instead. */}
+        <div className="flex h-10 min-w-0 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)] lg:px-6">
           <SegmentedTabs
             value={sub}
             onValueChange={setSub}
@@ -569,7 +600,10 @@ function DeviceComponents({
               },
             ]}
           />
-          <div ref={setBarSlot} className="ml-auto flex items-center gap-2">
+          <div
+            ref={setBarSlot}
+            className="ml-auto flex shrink-0 items-center gap-2"
+          >
             {barAdds.length === 1 ? (
               <Button
                 size="sm"
@@ -620,6 +654,7 @@ function DeviceComponents({
               <div className="space-y-8">
                 <DeviceBaysPane deviceId={d.id} />
                 <DeviceModulesPane deviceId={d.id} />
+                <DeviceAntennasPane deviceId={d.id} />
                 <DeviceInventoryPane deviceId={d.id} />
                 <DevicePortsPane deviceId={d.id} initialCabled={cabled} />
               </div>
@@ -729,6 +764,7 @@ function DeviceOverview({
         ]
       : []),
   ]
+  const antennas = useDeviceAntennas(d.id).data?.results ?? []
   const hardwareRows: KvRow[] = [
     // Health of the serial-tracked parts, up front - a failed disk used to be
     // invisible until you drilled into Components → Hardware.
@@ -736,6 +772,25 @@ function DeviceOverview({
       label: "Parts",
       value: <DeviceHardwareHealth deviceId={d.id} />,
     },
+    // RF facts for anything with antennas - an AP's gain, bands and
+    // connector read here instead of two tabs down.
+    ...(antennas.length > 0
+      ? [
+          {
+            label: "Antennas",
+            value: (
+              <Link
+                to="/devices/$id"
+                params={{ id: d.id }}
+                search={{ tab: "components", sub: "hardware" }}
+                className="link"
+              >
+                <AntennaSummary antennas={antennas} />
+              </Link>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     ...(humanIds && d.numid != null
       ? [
           {
@@ -1485,6 +1540,7 @@ function DeviceInterfacesPane({
   const { canDo } = useMe()
   const canConnect = canDo("cable", "add")
   const canChangeCable = canDo("cable", "change")
+  const canDeleteCable = canDo("cable", "delete")
   const canReserve = canDo("portreservation", "add")
   const barSlot = useContext(BarSlotContext)
   const [assignTarget, setAssignTarget] = useState<AssignIpTarget | null>(null)
@@ -1602,6 +1658,7 @@ function DeviceInterfacesPane({
       canAssignIp,
       canEdit,
       canChangeCable,
+      canDeleteCable,
       canConnect,
       canReserve,
       onTrace: setTraceTarget,
@@ -1716,6 +1773,7 @@ function DeviceInterfacesPane({
             canAssignIp,
             canEdit,
             canChangeCable,
+            canDeleteCable,
             canConnect,
             canReserve,
             onTrace: setTraceTarget,
@@ -1746,6 +1804,12 @@ function DeviceInterfacesPane({
         fields={[
           { key: "enabled", label: "Enabled", kind: "bool" },
           { key: "mark_connected", label: "Mark connected", kind: "bool" },
+          {
+            key: "status_id",
+            label: "Status",
+            kind: "status",
+            statusModel: "interface",
+          },
           {
             key: "type",
             label: "Type",
@@ -1781,6 +1845,38 @@ function DeviceInterfacesPane({
       <InterfaceTraceDialog
         target={traceTarget}
         onOpenChange={(o) => !o && setTraceTarget(null)}
+      />
+    </div>
+  )
+}
+
+/** Per-device photo-port override editor (special devices): same editor as
+ * the type's Photo ports tab, but the palette lists THIS device's real
+ * components and Save writes Device.image_ports. Null = inherit the type. */
+function DevicePhotoPortsTab({ device: d }: { device: Device }) {
+  const dt = useQuery({
+    queryKey: ["device-type", d.device_type?.id],
+    queryFn: () => api<DeviceType>(`/api/device-types/${d.device_type!.id}/`),
+    enabled: !!d.device_type?.id,
+    staleTime: 5 * 60_000,
+  })
+  if (!d.device_type?.id)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No device type - photo ports live on the type's images.
+      </p>
+    )
+  if (!dt.data) return <p className="text-sm text-muted-foreground">Loading…</p>
+  return (
+    <div className="grid gap-3">
+      <p className="text-[11px] text-muted-foreground">
+        {d.image_ports != null
+          ? "This device overrides the type's layout - edits apply to this device only."
+          : "Editing here creates a device-only override; the type's shared layout stays untouched."}
+      </p>
+      <DeviceTypeImagePortsPane
+        deviceType={dt.data}
+        device={{ id: d.id, name: d.name, image_ports: d.image_ports ?? null }}
       />
     </div>
   )

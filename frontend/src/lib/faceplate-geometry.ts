@@ -158,6 +158,9 @@ const FAMILY_MATCHERS: [RegExp, ConnectorFamily][] = [
   [/^audio|^3\.5mm/, "audio"],
   // Wireless / cellular - a stub antenna.
   [/^ieee802\.1[15]|^gsm$|^cdma$|^lte$|^4g$|^5g$|^other-wireless$/, "antenna"],
+  // RF connectors on aux ports (#111) - drawn as the antenna stub, which is
+  // what a coax bulkhead looks like at faceplate scale.
+  [/^rp-sma$|^sma$|^n-type$|^mmcx$|^u\.fl$|^qma$|^4\.3-10$/, "antenna"],
   // Copper media / backplane / legacy WAN / broadband / stacking → RJ45-ish.
   [
     /base-t|base-k|^t1$|^e1$|^t3$|^e3$|xdsl$|docsis$|^moca$|stackwise|flexstack|summitstack|juniper-vcp/,

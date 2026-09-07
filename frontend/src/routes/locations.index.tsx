@@ -136,8 +136,14 @@ function LocationsPage() {
   // Rail derives from the columns' facet metadata (Status, Site) - filter
   // first, then nest, so children of a hidden parent surface at the root
   // instead of dangling indented under nothing.
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, allRows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows)
   const rows = useMemo(() => nestByParent(filteredRows), [filteredRows])
 
   return (
@@ -164,7 +170,7 @@ function LocationsPage() {
     >
       <DataTable
         data={rows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="name"
         tableId="locations"
       />

@@ -47,6 +47,9 @@ export function useMe() {
     /** Can edit deployment-wide settings (global email/LDAP, updates) - a
      * tenant-narrowed admin grant does NOT qualify. */
     canManageDeployment: !!me.can_manage_deployment,
+    /** May grant or revoke superuser status. Gates the Superuser checkbox -
+     * without it the server silently strips the flag anyway. */
+    canGrantSuperuser: !!me.can_grant_superuser,
     /** The install's display name - shown in the sidebar header, browser title,
      * and login pages. Set under Settings → Deployment; blank falls back to the
      * product name. */
@@ -54,6 +57,10 @@ export function useMe() {
     /** Whether to surface per-tenant human-readable numbers (numid). Defaults
      * to true unless the deployment toggle is explicitly off. */
     humanIds: me.human_ids_enabled !== false,
+    /** Faceplates light up ports that are only marked connected. */
+    faceplateMarkedLit: me.faceplate_mark_connected_lit === true,
+    /** Rendered faceplates print the interface prefix before each port group. */
+    faceplateGroupLabels: me.faceplate_group_labels === true,
     /** May the user invite viewers to this specific site (delegation)?
      * True for admins/global editors ("all") or when the site is in their
      * delegable set. Always false when the deployment toggle is off. */

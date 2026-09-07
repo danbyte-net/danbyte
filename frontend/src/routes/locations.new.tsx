@@ -10,6 +10,7 @@ function NewLocationPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Locations", to: "/locations" }, { label: "Add" }]}
       title="Add location"
       subtitle="A physical location within a site (building, floor, room…)."

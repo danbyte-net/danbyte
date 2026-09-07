@@ -217,8 +217,13 @@ class BulkAgreementTests(_Base):
             "type": "10gbase-x-sfpp",
             "mode": "access",
             "duplex": "full",
+            "lag_protocol": "lacp",
+            "lacp_mode": "active",
+            "lacp_rate": "fast",
+            "lag_min_links": 2,
             "vlan_id": None,
             "vrf_id": None,
+            "status_id": None,
         }
         advertised = {d.key for d in fields_for(Interface)}
         self.assertTrue(

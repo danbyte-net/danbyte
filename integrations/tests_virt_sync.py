@@ -191,6 +191,8 @@ class ProxmoxSyncTests(TestCase):
         VirtualMachine.objects.create(
             tenant=self.tenant, name="router-vm", cluster=cluster
         )
+        self.source.sync_mode = "auto"
+        self.source.save(update_fields=["sync_mode"])
         self.sync()
         with mock.patch.object(
             virt_sync, "proxmox_get",
@@ -294,6 +296,121 @@ class ProxmoxSyncTests(TestCase):
         iface = VMInterface.objects.get(vm__name="router-vm", name="net0")
         self.assertEqual(iface.vlan, vlan)
         self.assertEqual(iface.mode, "access")
+
+    def test_match_existing_vlans_links_the_operators_vlan(self):
+        """#116: with the toggle on, a tagged network resolves to the tenant's
+        own VLAN with that VID - and through Prefix.vlan, its prefixes -
+        instead of minting a duplicate in the per-source group."""
+        from integrations.models import VirtNetwork
+
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="corp-10"
+        )
+        self.prefix.vlan = mine
+        self.prefix.save(update_fields=["vlan"])
+        self.source.sync_networks = True
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["sync_networks", "match_existing_vlans"])
+        self.sync()
+
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        self.assertEqual(vn.vlan, mine)
+        # Never marked sync-created: pruning must not take an operator VLAN.
+        self.assertFalse(vn.created_vlan)
+        # No duplicate row in the source's own group.
+        self.assertEqual(VLAN.objects.filter(vlan_id=10).count(), 1)
+        # The NIC lands on the operator VLAN, whose prefixes follow via the
+        # existing Prefix.vlan FK.
+        iface = VMInterface.objects.get(vm__name="router-vm", name="net0")
+        self.assertEqual(iface.vlan, mine)
+        self.assertIn(self.prefix, mine.prefixes.all())
+
+    def test_match_existing_vlans_off_keeps_minting(self):
+        # Flag off: shipped behavior unchanged - a new VLAN in the virt group
+        # even though VID 10 exists ungrouped.
+        VLAN.objects.create(tenant=self.tenant, vlan_id=10, name="corp-10")
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        self.assertEqual(VLAN.objects.filter(vlan_id=10).count(), 2)
+
+    def test_enabling_match_repoints_a_minted_network(self):
+        """Turning the toggle on after networks already minted their own VLANs
+        must migrate them: the network keeps its hypervisor name but its VLAN
+        link (and every NIC the sync parked on the minted copy) moves to the
+        operator's VLAN. The reported symptom was both VLANs staying attached."""
+        from integrations.models import VirtNetwork
+
+        # Pass 1, toggle off: the sync mints VID 10 in the per-source group.
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        minted = vn.vlan
+        self.assertTrue(vn.created_vlan)
+
+        # The operator's own VLAN 10 appears, and the toggle goes on.
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="corp-10"
+        )
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["match_existing_vlans"])
+        self.sync()
+
+        vn.refresh_from_db()
+        self.assertEqual(vn.vlan, mine)
+        self.assertFalse(vn.created_vlan)
+        iface = VMInterface.objects.get(vm__name="router-vm", name="net0")
+        self.assertEqual(iface.vlan, mine)
+        # The minted copy is left for the operator to delete - never pruned
+        # automatically while anything else might reference it.
+        self.assertTrue(VLAN.objects.filter(pk=minted.pk).exists())
+
+    def test_match_never_repoints_an_operator_chosen_vlan(self):
+        """A VLAN the operator set on the network by hand (created_vlan False)
+        stays, even when a VID match exists elsewhere."""
+        from integrations.models import VirtNetwork
+
+        self.source.sync_networks = True
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["sync_networks", "match_existing_vlans"])
+        chosen = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=999, name="hand-picked"
+        )
+        self.sync()
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        VirtNetwork.objects.filter(pk=vn.pk).update(
+            vlan=chosen, created_vlan=False
+        )
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="corp-10"
+        )
+        self.sync()
+        vn.refresh_from_db()
+        self.assertEqual(vn.vlan, chosen)
+        self.assertTrue(mine.pk)  # the match target existed and was ignored
+
+    def test_match_prefers_ungrouped_then_group_name(self):
+        from api.models import VLANGroup
+
+        g_a = VLANGroup.objects.create(tenant=self.tenant, name="Alpha", slug="alpha")
+        g_b = VLANGroup.objects.create(tenant=self.tenant, name="Beta", slug="beta")
+        in_b = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-beta", group=g_b
+        )
+        in_a = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-alpha", group=g_a
+        )
+        self.source.sync_networks = True
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["sync_networks", "match_existing_vlans"])
+        self.sync()
+        from integrations.models import VirtNetwork
+
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        # No ungrouped VID 10 → the alphabetically-first group wins, every sync.
+        self.assertEqual(vn.vlan, in_a)
+        self.assertNotEqual(vn.vlan, in_b)
 
     def test_networks_off_by_default(self):
         self.sync()  # source.sync_networks defaults False
@@ -426,6 +543,90 @@ class ProxmoxModeTests(TestCase):
         c.refresh_from_db()
         self.assertTrue(c.ignored)  # preserved across sync
         self.assertEqual(counts["pending"], 1)  # only vmid 101 still pending
+
+    def _bumped_sync(self, **over):
+        """Re-sync with vmid 100's resource row altered."""
+        bumped = [dict(r) for r in RESOURCES]
+        bumped[0] = {**bumped[0], **over}
+
+        def bumped_get(source, path):
+            if path.startswith("cluster/resources"):
+                return bumped
+            return fake_get(source, path)
+
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=bumped_get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def test_auto_mode_applies_a_spec_change_directly(self):
+        # The mirror branch itself - a changed value, not an idempotent
+        # re-sync. Was only ever exercised via review + accept before.
+        self.source.sync_mode = "auto"
+        self.source.save(update_fields=["sync_mode"])
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual((vm.vcpus, vm.memory_mb), (4, 4096))
+        self._bumped_sync(maxcpu=8, maxmem=8 * 1024**3)
+        vm.refresh_from_db()
+        self.assertEqual((vm.vcpus, vm.memory_mb), (8, 8192))
+        from integrations.models import VirtChange
+
+        self.assertFalse(VirtChange.objects.filter(kind="spec_change").exists())
+
+    def test_adopted_vm_spec_drift_is_raised_never_applied(self):
+        # An operator's own VM re-sized on the hypervisor: the change must
+        # surface as drift - the silence used to hide it forever - but mirror
+        # mode must NOT rewrite an operator-owned row. Same contract as
+        # operator-created interfaces in _diff_interfaces.
+        cluster_type = ClusterType.objects.create(
+            tenant=self.tenant, name="Proxmox VE"
+        )
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="DB-CLUSTER01", type=cluster_type
+        )
+        VirtualMachine.objects.create(
+            tenant=self.tenant, name="router-vm", cluster=cluster,
+            vcpus=4, memory_mb=4096,
+        )
+        # Mirror mode on purpose: the point is that even auto must not
+        # rewrite an operator-owned row.
+        self.source.sync_mode = "auto"
+        self.source.save(update_fields=["sync_mode"])
+        self.sync()  # adopts by name; created_vm stays False
+        from integrations.models import VirtChange, VirtGuest
+
+        guest = VirtGuest.objects.get(vmid="100")
+        self.assertFalse(guest.created_vm)
+
+        self._bumped_sync(maxmem=8 * 1024**3)
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual(vm.memory_mb, 4096)  # never auto-applied
+        change = VirtChange.objects.get(kind="spec_change")
+        self.assertEqual(
+            change.detail["memory_mb"], {"danbyte": 4096, "hypervisor": 8192}
+        )
+        # Accepting it is the human decision that applies it.
+        virt_sync.apply_change(change)
+        vm.refresh_from_db()
+        self.assertEqual(vm.memory_mb, 8192)
+
+    def test_adopted_vm_blank_specs_fill_without_drift(self):
+        # A blank field is not a disagreement - filling it must not queue a
+        # review item.
+        cluster_type = ClusterType.objects.create(
+            tenant=self.tenant, name="Proxmox VE"
+        )
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="DB-CLUSTER01", type=cluster_type
+        )
+        VirtualMachine.objects.create(
+            tenant=self.tenant, name="router-vm", cluster=cluster
+        )
+        self.sync()
+        vm = VirtualMachine.objects.get(name="router-vm")
+        self.assertEqual((vm.vcpus, vm.memory_mb), (4, 4096))
+        from integrations.models import VirtChange
+
+        self.assertFalse(VirtChange.objects.filter(kind="spec_change").exists())
 
     def test_spec_change_queued_in_review_applied_on_accept(self):
         from integrations.models import VirtChange, VirtGuest
@@ -784,6 +985,35 @@ class VirtChangeApiTests(TestCase):
         self.client = APIClient()
         self.client.force_login(self.user)
         self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+
+    def test_accepting_iface_extra_deletes_the_named_interfaces(self):
+        """Accept on "Interface not on hypervisor" takes the hypervisor's
+        word: the Danbyte rows go. It used to no-op, so the button dismissed
+        the row while claiming to apply it."""
+        from api.models import Cluster, ClusterType, VirtualMachine, VMInterface
+        from integrations.models import VirtChange
+
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="pve")
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="c1", type=ctype
+        )
+        vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="vm1", cluster=cluster
+        )
+        self.guest.vm = vm
+        self.guest.save(update_fields=["vm"])
+        VMInterface.objects.create(vm=vm, name="Network Adapter 1")
+        VMInterface.objects.create(vm=vm, name="keep-me")
+        change = VirtChange.objects.create(
+            source=self.source, guest=self.guest, kind="iface_extra",
+            detail={"names": ["Network Adapter 1"]},
+        )
+
+        r = self.client.post(f"/api/virt-changes/{change.id}/accept/")
+        self.assertEqual(r.status_code, 200, r.content)
+        names = set(VMInterface.objects.filter(vm=vm).values_list("name", flat=True))
+        self.assertEqual(names, {"keep-me"})
+        self.assertFalse(VirtChange.objects.filter(pk=change.pk).exists())
 
     def test_list_hides_ignored_by_default(self):
         from integrations.models import VirtChange, VirtGuest

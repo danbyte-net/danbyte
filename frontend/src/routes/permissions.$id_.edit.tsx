@@ -18,6 +18,7 @@ function EditPermissionPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Permissions", to: "/permissions" },
         { label: q.data?.name ?? "…" },

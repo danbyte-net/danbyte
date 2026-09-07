@@ -12,6 +12,7 @@ import {
 import {
   FormCombobox,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -111,51 +112,54 @@ export function PlatformGroupForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={onNameChange}
-        placeholder="Windows"
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Slug"
-        hint="URL-safe id"
-        required
-        placeholder="windows"
-        value={slug}
-        onChange={(v) => {
-          setSlugDirty(true)
-          setSlug(slugify(v))
-        }}
-        mono
-        error={fieldErrors.slug}
-      />
-      <FormCombobox
-        label="Parent group"
-        hint="optional - nest under another group"
-        value={parentId}
-        onChange={setParentId}
-        options={parentOptions.map((g) => ({
-          value: g.id,
-          label: g.name,
-        }))}
-        noneLabel="No parent"
-        placeholder="Select a parent group…"
-        searchPlaceholder="Search groups…"
-        emptyText="No platform groups."
-        error={fieldErrors.parent_id}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      <FormSection title="Platform group" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            placeholder="Windows"
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            placeholder="windows"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+        </div>
+        <FormCombobox
+          label="Parent group"
+          hint="optional - nest under another group"
+          value={parentId}
+          onChange={setParentId}
+          options={parentOptions.map((g) => ({
+            value: g.id,
+            label: g.name,
+          }))}
+          noneLabel="No parent"
+          placeholder="Select a parent group…"
+          searchPlaceholder="Search groups…"
+          emptyText="No platform groups."
+          error={fieldErrors.parent_id}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

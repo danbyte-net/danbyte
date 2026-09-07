@@ -19,7 +19,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from .forms import LoginForm, UserForm
-from .permissions import PERMISSIONS, can_manage_admin, require_perm, user_perms
+from .permissions import PERMISSIONS, can_manage_admin, require_perm, user_perms, can_grant_superuser
 
 
 def login_view(request):
@@ -181,6 +181,10 @@ def me_json(request):
                 request.build_absolute_uri(ds.login_logo.url)
                 if ds.login_logo else None
             ),
+            # The login page needs this before anyone signs in; it reveals
+            # only "this install prefers SSO", which the provider list at
+            # /api/auth/sso/providers/ says anyway.
+            "hide_local_login": ds.hide_local_login,
         })
 
     from api.views import _get_active_tenant
@@ -233,6 +237,7 @@ def me_json(request):
         "permissions": permissions,
         "can_manage_users": can_manage_users,
         "can_manage_deployment": can_manage_deployment(user),
+        "can_grant_superuser": can_grant_superuser(user),
         "mfa": {
             "require_mfa": bool(profile and profile.require_mfa),
             "totp_confirmed": bool(profile and profile.mfa_totp_confirmed),
@@ -252,6 +257,10 @@ def me_json(request):
         ),
         # Whether the SPA should surface per-tenant human-readable numbers (numid).
         "human_ids_enabled": ui.human_ids_enabled,
+        # Faceplates light up ports that are only marked connected.
+        "faceplate_mark_connected_lit": ds.faceplate_mark_connected_lit,
+        # Rendered faceplates print the interface prefix before each port group.
+        "faceplate_group_labels": ds.faceplate_group_labels,
         # Whether the in-browser SSH terminal is enabled deployment-wide. The SPA
         # only offers the terminal when this is on; the WS consumer re-checks it
         # (and the connect verb) server-side regardless.

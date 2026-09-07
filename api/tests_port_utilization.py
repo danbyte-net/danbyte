@@ -120,6 +120,29 @@ class PortUtilizationTests(APITestCase):
         self.assertEqual(body["interfaces"]["marked"], 0)
         self.assertEqual(body["interfaces"]["connected"], 1)
 
+    def test_excluded_status_ports_leave_the_math(self):
+        """A Not-present stack port is not capacity - free or otherwise
+        (#105). Only the excludes_capacity flag matters, not the slug."""
+        absent = Status.objects.create(
+            tenant=self.tenant, name="Not Present", slug="not_present",
+            available_to=["interface"], excludes_capacity=True,
+        )
+        Interface.objects.create(device=self.dev, name="Gi1")
+        Interface.objects.create(device=self.dev, name="2/1", status=absent)
+        Interface.objects.create(device=self.dev, name="2/2", status=absent)
+
+        r = self.client.get(f"/api/devices/{self.dev.id}/port-utilization/")
+        self.assertEqual(r.status_code, 200, r.content)
+        combined = r.json()["combined"]
+        self.assertEqual(combined["total"], 1)
+        self.assertEqual(combined["free"], 1)
+
+        from api.models import Device as D
+        from api.port_utilization import device_port_counts
+
+        counts = device_port_counts(D.objects.filter(pk=self.dev.pk))
+        self.assertEqual(counts[self.dev.id]["total"], 1)
+
     def test_rollup_lists_port_devices_fullest_first(self):
         # pp-01: 1 of 2 interfaces cabled (50%); sw-01: 1 of 1 (100%).
         i1 = Interface.objects.create(device=self.dev, name="Gi1")
@@ -138,3 +161,30 @@ class PortUtilizationTests(APITestCase):
         self.assertEqual(rows[0]["reserved"], 1)
         self.assertEqual(rows[1]["pct"], 50)
         self.assertEqual(rows[1]["free"], 1)
+
+
+class StackPortUtilizationTests(PortUtilizationTests):
+    """/api/virtual-chassis/<id>/port-utilization/ sums the members."""
+
+    def test_stack_sums_its_members(self):
+        from .models import VirtualChassis
+
+        vc = VirtualChassis.objects.create(tenant=self.tenant, name="stack")
+        Device.objects.filter(pk__in=[self.dev.pk, self.other.pk]).update(virtual_chassis=vc)
+        i1 = Interface.objects.create(device=self.dev, name="Gi1")
+        Interface.objects.create(device=self.dev, name="Gi2")
+        i3 = Interface.objects.create(device=self.other, name="Gi1")
+        Interface.objects.create(device=self.other, name="Gi2", mark_connected=True)
+        self._cable(interface=i1)
+        self._cable(status=self.planned, interface=i3)
+        Device.objects.create(tenant=self.tenant, name="loner")  # not in the stack
+        body = self.client.get(f"/api/virtual-chassis/{vc.id}/port-utilization/").json()
+        self.assertEqual(
+            body["interfaces"],
+            {"total": 4, "connected": 2, "reserved": 1, "free": 1, "marked": 1},
+        )
+        self.assertEqual(body["combined"]["total"], 4)
+        # The per-device card is unchanged by the refactor.
+        one = self.client.get(f"/api/devices/{self.dev.id}/port-utilization/").json()
+        self.assertEqual(one["interfaces"]["connected"], 1)
+

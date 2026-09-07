@@ -27,6 +27,7 @@ const KIND_LABELS: Record<string, string> = {
   rear_ports: "Rear ports",
   front_ports: "Front ports",
   aux_ports: "Aux ports",
+  antennas: "Antennas",
   inventory_items: "Inventory",
   device_bays: "Device bays",
   module_bays: "Module bays",

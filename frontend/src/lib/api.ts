@@ -198,6 +198,11 @@ export interface Prefix {
   description: string
   auto_discover: boolean
   auto_assign_site: boolean
+  /** Only the IP ranges inside the prefix are allocatable. */
+  allocate_from_ranges: boolean
+  /** The allocation ranges' accounting when `allocate_from_ranges` is on;
+   * null when the prefix allocates from its whole network. */
+  allocation: PrefixAllocation | null
   monitoring_engine?: { id: string; name: string; is_local: boolean } | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -286,13 +291,23 @@ export interface Me {
   /** Deployment-tier admin (global email/LDAP/updates). Stricter than
    * can_manage_users - a tenant-narrowed grant doesn't qualify. */
   can_manage_deployment?: boolean
+  /** May set/clear is_superuser - superuser, or an UNSCOPED grant carrying
+   * the grant_superuser verb on users. */
+  can_grant_superuser?: boolean
   can_edit_tenant?: boolean
   deployment_name?: string
   /** Custom browser-tab icon URL (Admin → Identity); null/absent = default. */
   favicon_url?: string | null
   login_logo_url?: string | null
+  /** Hide the local username/password form when SSO providers exist (#119).
+   * Cosmetic de-emphasis - the API keeps accepting local credentials. */
+  hide_local_login?: boolean
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
+  /** Faceplates / photo ports draw "marked connected" ports lit like cabled. */
+  faceplate_mark_connected_lit?: boolean
+  /** Rendered faceplates print the interface prefix before each port group. */
+  faceplate_group_labels?: boolean
   /** Whether the in-browser SSH terminal is enabled deployment-wide. */
   ssh_terminal_enabled?: boolean
   /** First-run wizard: true once this tenant has completed or skipped it. */
@@ -375,6 +390,8 @@ export type RBACAction =
   | "delete"
   | "connect"
   | "reveal"
+  | "subscribe"
+  | "grant_superuser"
 
 export interface RBACUser {
   id: number
@@ -561,6 +578,7 @@ export interface VLANOption {
   id: string
   vlan_id: number
   name: string
+  site?: { id: string; name: string } | null
 }
 
 export interface TagOption {
@@ -573,6 +591,13 @@ export interface TagOption {
 
 // ─── Write payloads ────────────────────────────────────────────────────
 
+export interface PrefixAllocation {
+  size: number
+  used: number
+  free: number
+  ranges: { id: string; start_address: string; end_address: string }[]
+}
+
 export interface PrefixWritePayload {
   cidr: string
   status_id?: string | null
@@ -583,6 +608,7 @@ export interface PrefixWritePayload {
   gateway?: string | null
   description?: string
   auto_assign_site?: boolean
+  allocate_from_ranges?: boolean
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
 }
@@ -784,6 +810,8 @@ export interface IPAddress {
   discovered: boolean
   flap_exclude: boolean
   is_primary_for_device: boolean
+  /** This address is its VM's primary IP (#122). */
+  is_primary_for_vm?: boolean
   is_secondary_for_device?: boolean
   is_oob_for_device?: boolean
   description: string
@@ -1106,6 +1134,11 @@ export interface ImagePortMarker {
 export interface ImagePorts {
   front: ImagePortMarker[]
   rear: ImagePortMarker[]
+  /** Display-size override per side, saved from the editor. A side that is
+   * present replaces the upload size everywhere the photo is drawn: `scale`
+   * is a fraction of the natural width (1 = pixel-true), null = fit the
+   * pane. A side that is absent draws at its upload size. */
+  view?: { front?: { scale: number | null }; rear?: { scale: number | null } }
 }
 
 export interface DeviceType extends LifecycleInfo {
@@ -1142,6 +1175,8 @@ export interface DeviceType extends LifecycleInfo {
   /** Every component-template kind summed - detail responses only (0 on
    * list, where it isn't rendered). */
   component_count: number
+  /** Per-kind template counts, keyed by the Components tab's sub slugs. */
+  component_counts?: Record<string, number>
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string
@@ -1245,6 +1280,8 @@ export interface Device {
   id: string
   numid: number | null
   name: string
+  /** Per-device photo-port override; null = inherit the type's layout. */
+  image_ports?: DeviceType["image_ports"] | null
   device_type: {
     id: string
     name: string
@@ -1550,6 +1587,8 @@ export interface RackRoleWritePayload {
 export interface RackRoleOption {
   id: string
   name: string
+  /** The picker serialises it and the form renders it as a ColorBadge. */
+  color?: string | null
 }
 
 export type RackStatus =
@@ -1740,8 +1779,10 @@ export type TerminationKind =
   | "power_outlet"
   | "power_feed"
   | "aux_port"
+  | "circuit_termination"
 
-/** A cable's endpoint: a port and which device it's on. */
+/** A cable's endpoint: a port and which device it's on. For a circuit end the
+ * "device" is the circuit and the "name" is its side (#118). */
 export interface Termination {
   kind: TerminationKind
   id: string
@@ -1750,6 +1791,27 @@ export interface Termination {
 }
 
 /** Lightweight cable a port is on (or null). */
+/** A radiating element on a device (#111) - L1 inventory, never cabled
+ * itself (the coax terminates on an RF aux port). */
+export interface Antenna {
+  id: string
+  device: { id: string; name: string }
+  name: string
+  antenna_type: string
+  /** Peak gain in dBi; numeric so a coverage calculator can consume it. */
+  gain_dbi: string | null
+  /** Band slugs; multi-band is several entries. */
+  bands: string[]
+  polarization: string
+  connector: string
+  direct_mount: boolean
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface CableMini {
   id: string
   type: string
@@ -1771,6 +1833,8 @@ export interface FacePort {
   kind: TerminationKind | null
   id: string | null
   connected: boolean
+  /** Real-world name when it differs from the template name ("X1-P1"). */
+  label?: string
   /** free | connected | reserved | marked (mark_connected, no cable). */
   cable_state?: string
   cable_id: string | null
@@ -1885,6 +1949,9 @@ export interface DcimChoice {
 export interface DcimChoices {
   interface_duplex: DcimChoice[]
   interface_modes: DcimChoice[]
+  lag_protocols: DcimChoice[]
+  lacp_modes: DcimChoice[]
+  lacp_rates: DcimChoice[]
   poe_modes: DcimChoice[]
   poe_types: DcimChoice[]
   interface_types: DcimChoice[]
@@ -1894,6 +1961,10 @@ export interface DcimChoices {
   power_port_types: DcimChoice[]
   power_outlet_types: DcimChoice[]
   aux_port_types: DcimChoice[]
+  antenna_types: DcimChoice[]
+  antenna_bands: DcimChoice[]
+  antenna_polarizations: DcimChoice[]
+  rf_connector_types: DcimChoice[]
   feed_legs: DcimChoice[]
   /** Connector value → fibre count, to pre-fill FrontPort.positions. */
   connector_fibers: Record<string, number>
@@ -1924,10 +1995,53 @@ export interface PortReservation {
   updated_at: string
 }
 
+/** A parent / LAG / bridge relation. `device` names the owner - on a
+ * virtual chassis the aggregate may live on another member (#145). */
+export interface RelatedInterface {
+  id: string
+  name: string
+  device: { id: string; name: string }
+  /** Set on a `lag` relation: the bundle's protocol, so a member can say
+   * "Member of Po1 · LACP active" without another request. */
+  lag_protocol?: LagProtocol
+  lacp_mode?: LacpMode
+}
+
+/** `GET /api/interfaces/{id}/lag/` - an aggregate's members plus what only
+ * makes sense across them. A non-aggregate answers with no members. */
+export interface InterfaceLagSummary {
+  count: number
+  results: Interface[]
+  /** Sum of the members' parseable speeds. */
+  capacity_mbps: number | null
+  capacity: string
+  unparsed_speeds: number
+  min_links: number | null
+  /** Fewer members than min links. */
+  degraded: boolean
+  /** Far-end aggregates the members' direct cables land on. */
+  peers: {
+    id: string
+    name: string
+    device: { id: string; name: string }
+    members: number
+  }[]
+  /** Members whose far end is uncabled, a panel, or in no bundle. */
+  unpaired: string[]
+  /** More than one peer - an MLAG / vPC pair, informational. */
+  mixed_peers: boolean
+}
+
+export type LagProtocol = "" | "lacp" | "pagp"
+export type LacpMode = "" | "active" | "passive"
+export type LacpRate = "" | "slow" | "fast"
+
 export interface Interface {
   id: string
   device: { id: string; name: string }
   name: string
+  /** Real-world name ("X1-P1") when the name stays template-generic. */
+  label?: string
   /** What the SNMP agent calls this port, when linked (see drift "Link to…"). */
   snmp_name: string
   /** Excluded from SNMP drift - never compared, never flagged stale. */
@@ -1939,9 +2053,14 @@ export interface Interface {
   speed: string
   mtu: number | null
   enabled: boolean
+  /** Lifecycle status (Active / Disabled / Planned / Not present /
+   * Decommissioning). Null reads as Active; distinct from `enabled`,
+   * the device-reported admin flag. */
+  status: StatusMini | null
   mgmt_only: boolean
   mark_connected: boolean
   combo_group: string
+  custom_fields: Record<string, unknown>
   duplex: string
   poe_mode: string
   poe_type: string
@@ -1974,20 +2093,28 @@ export interface Interface {
   /** Virtual / logical interface (sub-interface, LAG, loopback, tunnel). */
   virtual: boolean
   /** The interface this one nests under (sub-interface parent), if any. */
-  parent: { id: string; name: string } | null
+  parent: RelatedInterface | null
   /** Number of interfaces nested under this one. */
   child_count: number
   /** The LAG/aggregate interface this one is a member of, if any. */
-  lag: { id: string; name: string } | null
+  lag: RelatedInterface | null
   /** Number of member interfaces (set when this interface IS a LAG). */
   lag_member_count: number
   /** The bridge interface this one belongs to, if any. */
-  bridge: { id: string; name: string } | null
+  bridge: RelatedInterface | null
+  /** Bundle settings - meaningful when `type === "lag"`. Blank protocol =
+   * static aggregate; LACP mode/rate only under LACP. */
+  lag_protocol: LagProtocol
+  lag_protocol_display: string
+  lacp_mode: LacpMode
+  lacp_rate: LacpRate
+  lag_min_links: number | null
   created_at: string
   updated_at: string
 }
 
 export interface InterfaceWritePayload {
+  status_id?: string | null
   /** Discovery link - the agent's name for this port ("" unlinks). */
   snmp_name?: string
   snmp_ignore?: boolean
@@ -1999,8 +2126,9 @@ export interface InterfaceWritePayload {
   poe_mode?: string
   poe_type?: string
   wwn?: string
-  device_id: string
+  device_id?: string
   name: string
+  label?: string
   type?: string
   speed?: string
   mtu?: number | null
@@ -2016,6 +2144,10 @@ export interface InterfaceWritePayload {
   parent_id?: string | null
   lag_id?: string | null
   bridge_id?: string | null
+  lag_protocol?: LagProtocol
+  lacp_mode?: LacpMode
+  lacp_rate?: LacpRate
+  lag_min_links?: number | null
 }
 
 // ─── Patch-panel ports ──────────────────────────────────────────────────────
@@ -2024,6 +2156,7 @@ export interface RearPort {
   id: string
   device: { id: string; name: string }
   name: string
+  label?: string
   positions: number
   is_splitter?: boolean
   mark_connected?: boolean
@@ -2040,6 +2173,7 @@ export interface RearPort {
 export interface RearPortWritePayload {
   device_id: string
   name: string
+  label?: string
   positions?: number
   is_splitter?: boolean
   mark_connected?: boolean
@@ -2052,6 +2186,7 @@ export interface FrontPort {
   id: string
   device: { id: string; name: string }
   name: string
+  label?: string
   rear_port: {
     id: string
     name: string
@@ -2073,6 +2208,7 @@ export interface FrontPort {
 export interface FrontPortWritePayload {
   device_id: string
   name: string
+  label?: string
   rear_port_id: string
   rear_port_position?: number
   mark_connected?: boolean
@@ -2567,6 +2703,12 @@ export interface TopoEdge {
     via?: string[]
     /** Trace map: this cable is part of the traced run. */
     marked?: boolean
+    /** The aggregate each end belongs to (oriented with source/target);
+     * both set = a member link of a bundle the canvas may fold. */
+    lag?: {
+      a: { id: string; name: string } | null
+      b: { id: string; name: string } | null
+    }
     /** Device-map edges: the port names this collapsed link ran through. */
     endpoints?: { a: string; b: string }
     /** Device-map edges touching the origin: the origin's own port name. */
@@ -2591,15 +2733,26 @@ export interface GhostEdgeData {
 }
 
 export interface DevicePathRun {
-  origin: { name: string; kind: TopoPortKind }
+  origin: {
+    name: string
+    kind: TopoPortKind
+    /** The aggregate this port is a member of, when it is one. `elsewhere`:
+     * it sits on another member of the stack. */
+    lag?: { id: string; name: string; device: string; elsewhere: boolean }
+  }
+  /** A breakout: the same cable leaving this port and landing in several
+   * places. Each leg is the tail after the shared origin chip + segment. */
+  legs?: DevicePathRun["steps"][]
   steps: (
     | {
         t: "chip"
         device_id: string
         device: string
-        ports: { name: string; interface_id: string | null }[]
+        ports: { name: string; label?: string; interface_id: string | null }[]
         panel: boolean
         origin?: boolean
+        /** The far end is a circuit termination; device_id is the circuit. */
+        circuit?: boolean
       }
     | {
         t: "seg"
@@ -2760,7 +2913,9 @@ export interface MacDetail {
   /** SNMP sightings - the ARP/FDB rows on polled devices that carry this MAC.
    * A MAC clicked on a monitoring card may exist only here. */
   seen: {
-    device: { id: string; name: string }
+    /** The polled owner - a device OR a VM (#139), never both. */
+    device?: { id: string; name: string } | null
+    vm?: { id: string; name: string } | null
     source: "arp" | "fdb"
     ip?: string | null
     port?: string | null
@@ -3029,7 +3184,22 @@ export interface ContactRoleOption {
   slug: string
 }
 
-export interface Contact {
+/** A weekly opening schedule, keyed "0" (Mon) to "6" (Sun); a missing day is
+ * closed. Each day holds a LIST of spans, so a schedule with a break
+ * ("08:00-12:00, 13:00-17:00") is representable. Shared by contacts (#66) and
+ * providers (#67). */
+export type BusinessHours = Record<string, [string, string][]>
+
+/** The read-only pair the API derives from a schedule. `open_now` is null when
+ * no hours are recorded - "unknown" is not "closed". */
+export interface BusinessHoursReads {
+  business_hours: BusinessHours
+  business_hours_tz: string
+  business_hours_display: string
+  open_now: boolean | null
+}
+
+export interface Contact extends BusinessHoursReads {
   id: string
   numid: number | null
   name: string
@@ -3064,6 +3234,8 @@ export interface ContactWritePayload {
   link?: string
   comments?: string
   group_id?: string | null
+  business_hours?: BusinessHours
+  business_hours_tz?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
 }
@@ -3496,6 +3668,11 @@ export interface VMInterface {
   id: string
   vm: { id: string; name: string; status: StatusMini | null }
   name: string
+  /** "" = regular virtual NIC; bridge / loopback / tunnel are software
+   * constructs with no meaningful MAC or link speed (#140). */
+  kind: "" | "bridge" | "loopback" | "tunnel"
+  /** The interface this one rides on (wg0 over eth0); same-VM, no loops. */
+  parent: { id: string; name: string } | null
   enabled: boolean
   /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
   sync_ignore_ips: boolean
@@ -3518,6 +3695,8 @@ export interface VMInterface {
 export interface VMInterfaceWritePayload {
   vm_id: string
   name: string
+  kind?: string
+  parent_id?: string | null
   enabled?: boolean
   sync_ignore_ips?: boolean
   mac_address?: string
@@ -3627,6 +3806,7 @@ export interface DeviceSyncResponse {
 
 export interface ServiceTemplate {
   id: string
+  custom_fields: Record<string, unknown>
   numid: number | null
   name: string
   slug: string
@@ -3736,6 +3916,8 @@ export interface CustomField {
   related_model: string
   scope_rules: CustomFieldScopeRules
   required: boolean
+  /** Value kept and searchable, but no card, table or form shows it. */
+  hidden: boolean
   default: string
   description: string
   weight: number
@@ -3779,6 +3961,7 @@ export interface CustomFieldWritePayload {
   choices: string[]
   scope_rules?: CustomFieldScopeRules
   required: boolean
+  hidden?: boolean
   default?: string
   description?: string
   weight?: number
@@ -3838,6 +4021,7 @@ export interface SearchResponse {
     device_types: SearchHit[]
     manufacturers: SearchHit[]
     circuits: SearchHit[]
+    cables: SearchHit[]
     providers: SearchHit[]
     contacts: SearchHit[]
     interfaces: SearchHit[]
@@ -3863,6 +4047,7 @@ export const SEARCH_GROUPS: Array<{
   { key: "device_types", label: "Device types" },
   { key: "manufacturers", label: "Manufacturers" },
   { key: "circuits", label: "Circuits" },
+  { key: "cables", label: "Cables" },
   { key: "providers", label: "Providers" },
   { key: "contacts", label: "Contacts" },
   { key: "tags", label: "Tags" },
@@ -4089,6 +4274,11 @@ export interface MonitoringSkipStatus {
 export interface MonitoringSettings {
   /** Import interfaces SNMP reports as notPresent (pre-allocated ports). */
   snmp_import_not_present: boolean
+  snmp_update_only: boolean
+  snmp_skip_unrouted_vlans: boolean
+  snmp_mac_from_fdb: boolean
+  snmp_default_vrf: { id: string; name: string } | null
+  snmp_default_vrf_id?: string | null
   /** Devices whose merged ARP tables feed switch-link suggestions. */
   arp_source_devices?: string[]
   arp_source_devices_detail?: { id: string; name: string }[]
@@ -4117,6 +4307,7 @@ export interface MonitoringSettings {
   discovery_all_prefixes: boolean
   cleanup_enabled: boolean
   cleanup_after_days: number
+  engine_offline_after_minutes: number
   flap_exclude_ip_statuses: string[]
   flap_exclude_ip_status_detail: MonitoringSkipStatus[]
   /** Tenant default monitoring engine (id) - null = the local built-in. */
@@ -5025,7 +5216,8 @@ export interface SnmpInterface {
   speed_mbps: string
   // OSI hints from SNMP: L3 if the interface has an IP (ipAddrTable), else L2.
   layer: "L2" | "L3" | ""
-  ip_addresses: string[]
+  /** Absent on rows from an agent that never looked. */
+  ip_addresses?: string[]
   // Access (PVID) VLAN from Q-BRIDGE-MIB, when the device is a switch.
   vlan: string
   vlan_name: string
@@ -5062,7 +5254,9 @@ export type SnmpDriftItem =
       kind: "interface_missing"
       name: string
       if_index: string
-      observed: { mac: string; admin_status: string }
+      /** `type_name` "lag" = the device reports an aggregate; accepting
+       * creates it typed LAG. */
+      observed: { mac: string; admin_status: string; type_name?: string }
     }
   | {
       kind: "interface_mismatch"
@@ -5109,6 +5303,17 @@ export type SnmpDriftItem =
       name: string
       intended: string
       observed: string
+    }
+  | {
+      /** Bundle membership: the aggregate the port reports itself under
+       * ("-" = none) versus its `lag` here. `lag_interface_id` is the
+       * matching aggregate in Danbyte - null until it is accepted. */
+      kind: "lag_membership"
+      interface_id: string
+      name: string
+      intended: string
+      observed: string
+      lag_interface_id: string | null
     }
 
 export interface SnmpNeighbor {
@@ -5174,6 +5379,7 @@ export interface DeploymentSettings {
   config_drift_interval_minutes: number
   config_drift_last_run: string | null
   ssh_terminal_enabled: boolean
+  hide_local_login: boolean
   digest_enabled: boolean
   digest_frequency: "daily" | "weekly"
   digest_weekday: number
@@ -5181,6 +5387,8 @@ export interface DeploymentSettings {
   cert_digest_enabled: boolean
   cert_digest_recipients: string
   human_ids_enabled: boolean
+  faceplate_mark_connected_lit: boolean
+  faceplate_group_labels: boolean
   date_format: DateFormat
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */
@@ -5717,7 +5925,7 @@ export interface ProviderOption {
   slug: string
 }
 
-export interface Provider {
+export interface Provider extends BusinessHoursReads {
   id: string
   numid: number | null
   name: string
@@ -5726,6 +5934,10 @@ export interface Provider {
   portal_url: string
   noc_email: string
   noc_phone: string
+  support_contract: string
+  support_phone: string
+  account_manager: ContactMini | null
+  account_manager_name: string
   comments: string
   circuit_count: number
   tags: Tag[]
@@ -5741,6 +5953,12 @@ export interface ProviderWritePayload {
   portal_url?: string
   noc_email?: string
   noc_phone?: string
+  support_contract?: string
+  support_phone?: string
+  account_manager_id?: string | null
+  account_manager_name?: string
+  business_hours?: BusinessHours
+  business_hours_tz?: string
   comments?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -5813,8 +6031,19 @@ export interface ProviderNetworkWritePayload {
 export type CircuitTermSide = "A" | "Z"
 
 export interface CircuitTermination {
+  connected_to?: {
+    kind: string
+    id: string
+    name: string
+    device: { id: string; name: string }
+  } | null
   id: string
+  /** The owning circuit, so an end can label itself away from its circuit. */
+  circuit?: { id: string; numid: number | null; cid: string }
   term_side: CircuitTermSide
+  /** The cable landing on this end, or null - a circuit end is a cable
+   * endpoint like a port is (#118). */
+  cable?: CableMini | null
   site: SiteOption | null
   provider_network: ProviderNetworkOption | null
   port_speed_kbps: number | null
@@ -5989,6 +6218,9 @@ export interface WirelessLAN {
   auth_type: WirelessAuthType
   auth_type_display: string
   auth_cipher: WirelessAuthCipher
+  /** Whether a PSK is stored (#68). The value itself is never serialised -
+   * fetch it from `POST /api/wireless-lans/{id}/reveal-psk/`. */
+  psk_set: boolean
   description: string
   comments: string
   tags: Tag[]
@@ -6004,6 +6236,9 @@ export interface WirelessLANWritePayload {
   vlan_id?: string | null
   auth_type?: WirelessAuthType
   auth_cipher?: WirelessAuthCipher
+  /** Write-only. Send only when setting or rotating it; omit to keep the
+   * stored key, or send null to clear it. */
+  psk?: string | null
   description?: string
   comments?: string
   tag_ids?: number[]
@@ -7316,6 +7551,7 @@ export interface VirtualizationSource {
   poll_interval_minutes: number
   sync_disks: boolean
   sync_networks: boolean
+  match_existing_vlans: boolean
   /** Create each hypervisor node/host as a Device. Off by default. */
   sync_hosts: boolean
   /** Enrich those Devices with model, vendor and serial over vSphere SOAP.

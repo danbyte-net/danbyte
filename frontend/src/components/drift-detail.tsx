@@ -26,6 +26,8 @@ export function driftKey(item: SnmpDriftItem): string {
       return `ip_missing:${item.interface_id}:${item.ip}`
     case "switch_link_suggested":
       return `switch_link:${item.ip_id}:${item.interface_id}`
+    case "lag_membership":
+      return `lag_membership:${item.interface_id}`
     case "part_status":
       return `part_status:${item.part_id}`
     case "part_missing":
@@ -64,6 +66,9 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
       <span className={ROW}>
         <Badge variant="secondary">new interface</Badge>
         <span className={MONO}>{item.name}</span>
+        {item.observed.type_name === "lag" && (
+          <Badge variant="secondary">LAG</Badge>
+        )}
         {item.observed.mac && (
           <span className={`${MONO} text-[11px] text-muted-foreground`}>
             {item.observed.mac}
@@ -137,6 +142,22 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
         <span className={`${MONO} line-through opacity-60`}>{item.intended}</span>
         <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className={MONO}>{item.observed}</span>
+      </span>
+    )
+  }
+  if (item.kind === "lag_membership") {
+    return (
+      <span className={ROW}>
+        <Badge variant="secondary">LAG member</Badge>
+        <span className={MONO}>{item.name}</span>
+        <span className={`${MONO} line-through opacity-60`}>{item.intended}</span>
+        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <span className={MONO}>{item.observed}</span>
+        {item.observed !== "-" && !item.lag_interface_id && (
+          <span className="text-[11px] text-muted-foreground">
+            accept {item.observed} first
+          </span>
+        )}
       </span>
     )
   }

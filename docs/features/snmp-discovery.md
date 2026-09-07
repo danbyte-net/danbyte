@@ -146,6 +146,9 @@ intended configuration and lists the differences:
 - **MAC, admin-status, VLAN or speed mismatch** on an interface you already have.
 - **Stale** - Danbyte has an interface the device no longer reports (shown for
   awareness; discovery never deletes from the SoT).
+- **LAG membership** (`lag_membership`) - the aggregate a port reports itself
+  under differs from its **LAG / aggregate** in Danbyte. See
+  [Link aggregation](#lag-discovery).
 
 Wherever a component is *drawn*, a difference shows as an **amber outline** next
 to the record rather than replacing it: on the photo faceplate, on the
@@ -254,6 +257,38 @@ linked would keep drifting as *not seen on device* forever.
     duplicate is the actual problem - delete or rename the port you don't want,
     then link. Danbyte refuses the link and says so rather than accepting one
     that can't work.
+
+### Link aggregation {#lag-discovery}
+
+The agent reads the bundle a port belongs to from IEEE8023-LAG-MIB
+(`dot3adAggPortAttachedAggID`), falling back to IF-MIB's `ifStackTable` where a
+port stacks under an aggregate interface. Every observed interface row then
+carries `lag_if_index` - the aggregate's ifIndex, blank when the port is not a
+member - and an aggregate reports `type_name: lag` even where the box calls it
+propVirtual.
+
+What that does in the inbox:
+
+- A **new interface** row for an aggregate carries a `LAG` badge; accepting it
+  creates the interface with **type LAG** (so it can take members).
+- A **LAG member** row shows `Gi0/1  Po1 → Po2` (or `- → Po1` for a port that
+  joined a bundle, `Po1 → -` for one that left). Accept sets - or clears - the
+  port's **LAG / aggregate**. If the aggregate does not exist here yet the row
+  says *accept Po1 first* and cannot be applied until it does.
+- Membership is compared by aggregate **name**, so a stack reports the master's
+  `Po1` on every member without false drift, and accept resolves the aggregate
+  across the virtual chassis.
+- **Update only** still reports membership - it is a field on a port you
+  already have, not a new port.
+- An aggregate created before types were enforced (blank or Virtual) is
+  promoted to type LAG on accept; one typed as physical media is refused - fix
+  its type first.
+- **Sync from SNMP** creates missing aggregates typed LAG and applies
+  memberships after the interface pass (`lag_memberships` in the summary).
+
+An Outpost older than this feature never sends `lag_if_index`; its devices show
+no membership drift until the agent is updated (see
+[Outposts](../monitoring/outposts.md#lag-membership)).
 
 ### Sync from SNMP
 
@@ -608,3 +643,28 @@ disk-status column is what you point the sensor at.
   editing the device itself, not merely tenant membership.
 - **Manage profiles & bindings** - gated to users who can change the device /
   manage settings.
+
+Three more per-tenant policies (Monitoring settings → SNMP discovery, all
+off by default) shape how SNMP meets your source of truth:
+
+- **Only update existing interfaces** - SNMP never adds ports; drift and sync
+  only touch fields (MAC, speed, VLAN, enabled) on interfaces you created.
+- **Skip unrouted VLAN pseudo-interfaces** - Cisco lists every L2 VLAN in the
+  interface table (`unrouted VLAN 401`); with this on they're ignored as the
+  VLANs they are. Routed SVIs are unaffected.
+- **Interface MAC from the MAC table** - the MAC drift/sync value becomes the
+  address *learned* on the port (the attached device, per the switch's MAC
+  table) instead of the port's own hardware MAC. Ports with several learned
+  MACs are left alone.
+
+Port access-VLANs resolve against your existing VLANs by VLAN ID - ungrouped
+first, then grouped (virt-sync groups excluded) - before a new ungrouped VLAN
+is minted.
+
+**Where discovered IPs land (VRF):** an interface's own VRF always wins. When
+it has none, a **default VRF** resolves most-specific first - device → device
+role → device type → site → the tenant default in Monitoring settings. Bind it
+where it fits: the *Discovered-IP VRF* select on the device's SNMP card, the
+device type's Monitoring card, or the site form's Monitoring section. With a
+policy bound, only prefixes in that VRF are candidates - no containing prefix
+there means the address is skipped rather than dropped into the wrong table.

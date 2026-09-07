@@ -48,8 +48,14 @@ function WirelessLANsPage() {
     [onDelete, humanIds]
   )
 
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -75,7 +81,7 @@ function WirelessLANsPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="ssid"
         tableId="wireless-lans"
       />

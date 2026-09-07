@@ -123,6 +123,11 @@ class CustomField(TimestampedModel):
         help_text="Optional structured visibility/reference scope rules.",
     )
     required = models.BooleanField(default=False)
+    # The value stays on the object (and in search) but no card, table or form
+    # shows it - for bookkeeping fields such as an imported NetBox id.
+    hidden = models.BooleanField(
+        default=False, help_text="Keep the value but don't show it in the UI."
+    )
     default = models.CharField(
         max_length=255, blank=True, default="",
         help_text="Default value, stored as text and coerced by type.",

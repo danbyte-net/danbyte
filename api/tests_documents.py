@@ -212,6 +212,28 @@ class DocumentTenantIsolationTests(_Base):
         )
 
 
+class DeviceTypeDocumentTests(_Base):
+    """Manuals attach to the MODEL and carry to every unit: the device page
+    lists its type's documents read-only next to the device's own."""
+
+    def test_devicetype_documents_list_by_type_and_id(self):
+        dt = self.device.device_type
+        r = self.client.post("/api/documents/", {
+            "object_type": "api.devicetype", "object_id": str(dt.id),
+            "name": "MX hardware manual", "file": self._pdf("mx.pdf"),
+        }, format="multipart")
+        self.assertEqual(r.status_code, 201, r.content)
+        u = self._member("dtviewer", [(["devicetype", "document"], ["view"])])
+        self._login(u)
+        r = self.client.get(
+            f"/api/documents/?object_type=api.devicetype&object_id={dt.id}"
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            [d["name"] for d in r.json()["results"]], ["MX hardware manual"]
+        )
+
+
 class DocumentCategoryTests(_Base):
     def test_category_crud(self):
         r = self.client.post(

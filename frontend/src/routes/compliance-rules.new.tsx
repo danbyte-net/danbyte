@@ -12,6 +12,7 @@ function NewRulePage() {
   const back = () => nav({ to: "/compliance", search: { tab: "rules" } })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Compliance", to: "/compliance" },
         { label: "New rule" },

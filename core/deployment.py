@@ -101,6 +101,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "config_drift_interval_minutes",
             "config_drift_last_run",
             "ssh_terminal_enabled",
+            "hide_local_login",
             "digest_enabled",
             "digest_frequency",
             "digest_weekday",
@@ -108,6 +109,8 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "cert_digest_enabled",
             "cert_digest_recipients",
             "human_ids_enabled",
+            "faceplate_mark_connected_lit",
+            "faceplate_group_labels",
             "date_format",
             "time_style",
             "display_timezone",
@@ -473,6 +476,9 @@ FLOORPLAN_POPOVER_FIELDS = [
     "linked_primary_ip",
     "linked_serial",
     "linked_asset_tag",
+    # A picture of the box, for device-linked tiles (#102). Off by default:
+    # it fetches the device's ports, and the default popover is fetch-free.
+    "faceplate",
 ]
 
 # Custom fields ride a generic `cf_<key>` convention rather than being enumerated
@@ -493,6 +499,7 @@ FLOORPLAN_POPOVER_FIELD_DEFAULTS = [
     "utilization",
     "position",
     "size",
+    "faceplate",
 ]
 
 

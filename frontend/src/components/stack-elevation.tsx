@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import type { Interface, VirtualChassisMember } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
+import { DeviceMonitoringBadge } from "@/components/monitoring/device-monitoring"
 import { FaceplateView } from "@/components/device-faceplate"
 import type { FaceplateMode } from "@/components/device-faceplate"
 import type { LegendReporter } from "@/components/speed-scale"
@@ -159,6 +160,9 @@ function MemberBar({
               </span>
             )}
             {m.status && <StatusBadge status={m.status} />}
+            {/* Live check state for members with monitored IPs/services -
+                renders nothing for unmonitored boxes. */}
+            <DeviceMonitoringBadge deviceId={m.id} />
           </span>
         </div>
         {hasPanel && (

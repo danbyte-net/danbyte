@@ -72,7 +72,12 @@ taxonomy, and when to pick a fixed-media slug vs a transceiver slug:
 ### Speed
 
 Speed is a free-text field with a **dropdown of common values** (`10M` … `800G`)
-so you can pick quickly or type your own.
+so you can pick quickly or type your own. A **bare number is read as kbps** -
+the convention scrapers and other DCIM tools use for a numeric speed - and is
+rewritten on save to the dropdown's form: `1000000` becomes `1G`, `25000000`
+`25G`, `100000` `100M`, an odd value like `1234000` `1.234G`. Rows already
+stored that way are rewritten once by migration `api.0154`. Anything with a
+unit (`10G`, `1 Gbps`) is kept exactly as typed.
 
 ## Add many interfaces at once
 
@@ -102,6 +107,7 @@ The State checkboxes:
 | Flag | Meaning |
 |---|---|
 | **Enabled** | Administratively up. |
+| **Status** | Lifecycle: Active (default), Disabled, Planned, Not present, Decommissioning. Not present = hardware the agent reports as absent; it and Decommissioning don't count as capacity in port utilization. |
 | **Management only** | Out-of-band management port; excluded from data-plane views. |
 | **Mark connected** | A cable is physically in the port, just not documented yet - counts as connected in [port utilization](devices.md#the-device-page) and clears itself when a real cable is attached. |
 | **Reserved** | A [port reservation](cabling.md#port-reservations) - hold the port before the far end is known. Released automatically when a cable lands. |
@@ -131,8 +137,10 @@ type's component templates.
 
 On the device's **Interfaces** tab, each row shows the name, type, enabled state,
 speed, VLAN, cable count, any **IP addresses** attached to it, and the
-description. Sub-interfaces are indented under their parent, and aggregate
-members show their LAG - see
+description. Sub-interfaces are indented under their parent, and the **LAG**
+column ties a bundle together: members show their aggregate, the aggregate
+shows how many links it bundles. An aggregate is an interface of **type LAG**
+with its own Bundle settings (protocol, LACP mode, min links) - see
 [Virtual & aggregate interfaces](virtual-interfaces.md).
 
 ## Attaching IP addresses

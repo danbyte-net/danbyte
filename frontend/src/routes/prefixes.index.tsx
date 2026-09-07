@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
 import { useCustomFieldDefs } from "@/components/custom-field-display"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { useViolationMap } from "@/components/compliance/violation-badge"
@@ -65,6 +65,24 @@ function PrefixesPage() {
   const cfQuery = useCustomFieldDefs("prefix")
   const cfDefs = useMemo(() => cfQuery.data?.results ?? [], [cfQuery.data])
 
+  // Monitoring roll-up status for every listed prefix (separate query so the
+  // api app stays decoupled from the monitoring app). Merged into the table
+  // as a status column and into the rail as a facet - fetched for all rows,
+  // not the filtered ones, so filtering on the rollup can't starve itself.
+  const prefixIds = useMemo(() => allRows.map((r) => r.id), [allRows])
+  const monQuery = useQuery({
+    queryKey: ["prefix-mon-status", prefixIds],
+    // POST - a page of UUIDs makes a URL longer than proxy request-line
+    // limits (gunicorn 400s at ~110 ids), which blanked the whole column.
+    queryFn: () =>
+      api<BulkStatusResponse>("/api/monitoring/status/", {
+        method: "POST",
+        body: JSON.stringify({ prefixes: prefixIds }),
+      }),
+    enabled: prefixIds.length > 0,
+  })
+  const monitoring = monQuery.data?.statuses ?? EMPTY_MON
+
   // The filter rail derives from the factory's facet metadata (status, VLAN,
   // site, VRF, utilisation, tags + one facet per tenant custom field), so a
   // new facetable column - or a new custom field - shows up automatically.
@@ -75,9 +93,10 @@ function PrefixesPage() {
       buildPrefixColumns<Prefix>({
         omit: ["vrf"],
         cfDefs,
+        monitoring,
         vrfGroupColumn: true,
       }),
-    [cfDefs]
+    [cfDefs, monitoring]
   )
   const { status: statusFilter, family: familyFilter } = Route.useSearch()
   const initialEnums = useMemo(() => {
@@ -116,50 +135,39 @@ function PrefixesPage() {
     })
   }, [filteredRows])
 
-  // Monitoring roll-up status for the visible prefixes (separate query so the
-  // api app stays decoupled from the monitoring app). Merged into the table as
-  // a status column.
-  const prefixIds = useMemo(() => rows.map((r) => r.id), [rows])
-  const monQuery = useQuery({
-    queryKey: ["prefix-mon-status", prefixIds],
-    // POST - a page of UUIDs makes a URL longer than proxy request-line
-    // limits (gunicorn 400s at ~110 ids), which blanked the whole column.
-    queryFn: () =>
-      api<BulkStatusResponse>("/api/monitoring/status/", {
-        method: "POST",
-        body: JSON.stringify({ prefixes: prefixIds }),
-      }),
-    enabled: prefixIds.length > 0,
-  })
-  const monitoring = monQuery.data?.statuses ?? EMPTY_MON
   const violations = useViolationMap()
 
   const columns = useMemo<ColumnDef<NestedPrefix>[]>(
     () =>
-      buildPrefixColumns<NestedPrefix>({
-        // VRF renders as the group banner (hidden vrfName column), not a
-        // per-row column.
-        omit: ["vrf"],
-        selection: true,
-        nested: true,
-        violations,
-        monitoring,
-        cfDefs,
-        tagFilter: {
-          activeSlugs: tagSelection,
-          onToggle: (slug) => toggleValue("tags", slug),
-        },
-        vrfGroupColumn: true,
-        actions: {
-          editTo: "/prefixes/$id/edit",
-          editParams: (p) => ({ id: p.id }),
-          canEdit: (p) => objCan(p, "change", canEdit),
-          onDelete: setDeleting,
-          canDelete: (p) => objCan(p, "delete", canDelete),
-        },
-      }),
+      wireFacetColumns(
+        buildPrefixColumns<NestedPrefix>({
+          // VRF renders as the group banner (hidden vrfName column), not a
+          // per-row column.
+          omit: ["vrf"],
+          selection: true,
+          nested: true,
+          violations,
+          monitoring,
+          cfDefs,
+          tagFilter: {
+            activeSlugs: tagSelection,
+            onToggle: (slug) => toggleValue("tags", slug),
+          },
+          vrfGroupColumn: true,
+          actions: {
+            editTo: "/prefixes/$id/edit",
+            editParams: (p) => ({ id: p.id }),
+            canEdit: (p) => objCan(p, "change", canEdit),
+            onDelete: setDeleting,
+            canDelete: (p) => objCan(p, "delete", canDelete),
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
     [
       tagSelection,
+      selectedValues,
       toggleValue,
       cfDefs,
       monitoring,

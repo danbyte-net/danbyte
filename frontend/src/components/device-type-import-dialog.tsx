@@ -16,6 +16,16 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { FormCheckbox } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
+import { fetchLibraryDocs } from "@/lib/github-library"
+
+const VIA_BROWSER_KEY = "danbyte-devicetype-import-via-browser"
+function loadViaBrowser(): boolean {
+  try {
+    return localStorage.getItem(VIA_BROWSER_KEY) === "1"
+  } catch {
+    return false
+  }
+}
 
 interface ImportResult {
   ok: boolean
@@ -66,6 +76,22 @@ export function DeviceTypeImportDialog({
   const [text, setText] = useState("")
   const [files, setFiles] = useState<{ name: string; content: string }[]>([])
   const [stack, setStack] = useState(false)
+  // Air-gapped server, connected operator: the browser downloads the YAML
+  // and posts the text - the server never talks to GitHub. Remembered per
+  // browser, since an air-gapped install needs it every time.
+  const [viaBrowser, setViaBrowserState] = useState(loadViaBrowser)
+  const setViaBrowser = (v: boolean) => {
+    setViaBrowserState(v)
+    try {
+      localStorage.setItem(VIA_BROWSER_KEY, v ? "1" : "0")
+    } catch {
+      /* private mode etc. - the tick still works for this session */
+    }
+  }
+  const [fetching, setFetching] = useState<{
+    done: number
+    total: number
+  } | null>(null)
   const [results, setResults] = useState<ImportResult[] | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
   const bgDone = useRef(false)
@@ -141,11 +167,37 @@ export function DeviceTypeImportDialog({
   }
 
   const run = useMutation({
-    mutationFn: () =>
-      api<{ results: ImportResult[] }>("/api/device-types/import-yaml/", {
-        method: "POST",
-        body: JSON.stringify({ items: buildItems(), stack_positions: stack }),
-      }),
+    mutationFn: async () => {
+      let items = buildItems()
+      let fetchFailures: ImportResult[] = []
+      if (viaBrowser) {
+        // Links get resolved and downloaded here; YAML and files pass through.
+        const urls = items.filter((i) => i.startsWith("http"))
+        const rest = items.filter((i) => !i.startsWith("http"))
+        const report = await fetchLibraryDocs(urls, (done, total) =>
+          setFetching({ done, total })
+        )
+        setFetching(null)
+        items = [...rest, ...report.docs.map((d) => d.content)]
+        fetchFailures = report.failures.map((f) => ({
+          name: f.url.split("/").pop() ?? f.url,
+          id: null,
+          ok: false,
+          error: `Browser fetch failed: ${f.error}`,
+          created: {},
+          skipped: [],
+        }))
+        if (items.length === 0) return { results: fetchFailures }
+      }
+      const data = await api<{ results: ImportResult[] }>(
+        "/api/device-types/import-yaml/",
+        {
+          method: "POST",
+          body: JSON.stringify({ items, stack_positions: stack }),
+        }
+      )
+      return { results: [...fetchFailures, ...data.results] }
+    },
     onSuccess: (data) => {
       setResults(data.results)
       const ok = data.results.filter((r) => r.ok).length
@@ -178,11 +230,17 @@ export function DeviceTypeImportDialog({
   }
 
   const items = buildItems()
-  const folderUrl = folderUrlOf(items)
+  // With the browser doing the fetching, a folder link is expanded here too -
+  // the server-side background importer is only for a connected server.
+  const folderUrl = viaBrowser ? null : folderUrlOf(items)
   const bgActive =
     !!runId && bg?.status !== "success" && bg?.status !== "failed"
   const canRun =
-    items.length > 0 && !run.isPending && !startBg.isPending && !bgActive
+    items.length > 0 &&
+    !run.isPending &&
+    !startBg.isPending &&
+    !bgActive &&
+    !fetching
 
   return (
     <Dialog
@@ -248,6 +306,18 @@ export function DeviceTypeImportDialog({
             checked={stack}
             onChange={setStack}
           />
+          <FormCheckbox
+            className="text-[12px] text-muted-foreground"
+            label="Fetch with my browser"
+            hint="for a server without internet access - the links are downloaded here and the YAML is sent up"
+            checked={viaBrowser}
+            onChange={setViaBrowser}
+          />
+          {fetching && (
+            <p className="num text-[12px] text-muted-foreground">
+              Fetching {fetching.done} of {fetching.total} files…
+            </p>
+          )}
 
           {runId && bg && (
             <div className="rounded-md border border-border p-3">

@@ -60,6 +60,10 @@ const FIELD_META: Record<string, { label: string; hint: string }> = {
   linked_primary_ip: { label: "Primary IP", hint: "Devices only" },
   linked_serial: { label: "Serial", hint: "Devices only" },
   linked_asset_tag: { label: "Asset tag", hint: "Devices only" },
+  faceplate: {
+    label: "Faceplate",
+    hint: "Devices only - the front/rear panel",
+  },
 }
 
 /** Groups for the "add a field" picker, so 25+ keys stay navigable. */
@@ -97,6 +101,7 @@ const GROUPS: { title: string; keys: string[] }[] = [
       "linked_primary_ip",
       "linked_serial",
       "linked_asset_tag",
+      "faceplate",
     ],
   },
 ]

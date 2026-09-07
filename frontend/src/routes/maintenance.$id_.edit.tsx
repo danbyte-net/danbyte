@@ -22,6 +22,7 @@ function EditMaintenanceEventPage() {
   const back = () => nav({ to: "/maintenance" })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Maintenance", to: "/maintenance" },
         { label: q.data?.name ?? "…" },

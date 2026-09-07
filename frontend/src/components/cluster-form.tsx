@@ -15,6 +15,8 @@ import {
   FormCombobox,
   QuickAddDialog,
   FormFooter,
+  FormSection,
+  FormStatusSelect,
   FormTags,
   FormText,
   FormTextarea,
@@ -146,125 +148,135 @@ export function ClusterForm({ cluster, onSaved, onCancel }: ClusterFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="prod-cluster-01"
-        error={fieldErrors.name}
-      />
+      <FormSection title="Cluster" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="prod-cluster-01"
+          error={fieldErrors.name}
+        />
 
-      <FormCombobox
-        label="Type"
-        hint="required"
-        value={typeId}
-        onChange={(v) => {
-          setTypeId(v)
-          setClientErrors((e) => ({ ...e, type_id: "" }))
-        }}
-        options={(types.data?.results ?? []).map((t) => ({
-          value: t.id,
-          label: t.name,
-        }))}
-        placeholder="Select a cluster type…"
-        searchPlaceholder="Search types…"
-        emptyText="No cluster types."
-        error={clientErrors.type_id || fieldErrors.type_id}
-        quickAdd={
-          <QuickAddDialog
-            title="New cluster type"
-            endpoint="/api/cluster-types/"
-            fields={[
-              { name: "name", label: "Name", required: true },
-              { name: "description", label: "Description", type: "textarea" },
-            ]}
-            onCreated={(t) => {
-              qc.invalidateQueries({ queryKey: ["cluster-types-picker"] })
-              setTypeId(t.id)
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormCombobox
+            label="Type"
+            required
+            value={typeId}
+            onChange={(v) => {
+              setTypeId(v)
               setClientErrors((e) => ({ ...e, type_id: "" }))
             }}
+            options={(types.data?.results ?? []).map((t) => ({
+              value: t.id,
+              label: t.name,
+            }))}
+            placeholder="Select a cluster type…"
+            searchPlaceholder="Search types…"
+            emptyText="No cluster types."
+            error={clientErrors.type_id || fieldErrors.type_id}
+            quickAdd={
+              <QuickAddDialog
+                title="New cluster type"
+                endpoint="/api/cluster-types/"
+                fields={[
+                  { name: "name", label: "Name", required: true },
+                  {
+                    name: "description",
+                    label: "Description",
+                    type: "textarea",
+                  },
+                ]}
+                onCreated={(t) => {
+                  qc.invalidateQueries({ queryKey: ["cluster-types-picker"] })
+                  setTypeId(t.id)
+                  setClientErrors((e) => ({ ...e, type_id: "" }))
+                }}
+              />
+            }
           />
-        }
-      />
 
-      <FormCombobox
-        label="Group"
-        hint="optional"
-        value={groupId}
-        onChange={setGroupId}
-        options={(groups.data?.results ?? []).map((g) => ({
-          value: g.id,
-          label: g.name,
-        }))}
-        noneLabel="No group"
-        placeholder="Select a cluster group…"
-        searchPlaceholder="Search groups…"
-        emptyText="No cluster groups."
-        error={fieldErrors.group_id}
-        quickAdd={
-          <QuickAddDialog
-            title="New cluster group"
-            endpoint="/api/cluster-groups/"
-            fields={[
-              { name: "name", label: "Name", required: true },
-              { name: "description", label: "Description", type: "textarea" },
-            ]}
-            onCreated={(g) => {
-              qc.invalidateQueries({ queryKey: ["cluster-groups-picker"] })
-              setGroupId(g.id)
-            }}
+          <FormCombobox
+            label="Group"
+            hint="optional"
+            value={groupId}
+            onChange={setGroupId}
+            options={(groups.data?.results ?? []).map((g) => ({
+              value: g.id,
+              label: g.name,
+            }))}
+            noneLabel="No group"
+            placeholder="Select a cluster group…"
+            searchPlaceholder="Search groups…"
+            emptyText="No cluster groups."
+            error={fieldErrors.group_id}
+            quickAdd={
+              <QuickAddDialog
+                title="New cluster group"
+                endpoint="/api/cluster-groups/"
+                fields={[
+                  { name: "name", label: "Name", required: true },
+                  {
+                    name: "description",
+                    label: "Description",
+                    type: "textarea",
+                  },
+                ]}
+                onCreated={(g) => {
+                  qc.invalidateQueries({ queryKey: ["cluster-groups-picker"] })
+                  setGroupId(g.id)
+                }}
+              />
+            }
           />
-        }
-      />
+        </div>
 
-      <FormCombobox
-        label="Site"
-        hint="optional"
-        value={siteId}
-        onChange={setSiteId}
-        options={sites.options.map((s) => ({
-          value: s.id,
-          label: s.name,
-        }))}
-        noneLabel="No site"
-        placeholder="Select a site…"
-        searchPlaceholder="Search sites…"
-        emptyText="No sites."
-        error={fieldErrors.site_id}
-      />
+        <FormStatusSelect
+          value={statusId}
+          onChange={setStatusId}
+          options={statuses.data?.results ?? []}
+          noneLabel="No status"
+          placeholder="Select a status…"
+          error={fieldErrors.status_id}
+        />
 
-      {/* A cluster's site describes the cluster: central compute often runs
-          branch-office workloads, so VMs keep their own site unless asked. */}
-      <FormCheckbox
-        label="Give VMs on this cluster its site"
-        hint="Only VMs with no site of their own - an existing one is kept"
-        checked={applySiteToVms}
-        onChange={setApplySiteToVms}
-      />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
 
-      <FormCombobox
-        label="Status"
-        value={statusId}
-        onChange={setStatusId}
-        options={(statuses.data?.results ?? []).map((s) => ({
-          value: s.id,
-          label: s.name,
-        }))}
-        noneLabel="No status"
-        placeholder="Select a status…"
-        error={fieldErrors.status_id}
-      />
+      <FormSection title="Site" card>
+        <FormCombobox
+          label="Site"
+          hint="optional"
+          value={siteId}
+          onChange={setSiteId}
+          options={sites.options.map((s) => ({
+            value: s.id,
+            label: s.name,
+          }))}
+          noneLabel="No site"
+          placeholder="Select a site…"
+          searchPlaceholder="Search sites…"
+          emptyText="No sites."
+          error={fieldErrors.site_id}
+        />
 
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+        {/* A cluster's site describes the cluster: central compute often runs
+            branch-office workloads, so VMs keep their own site unless asked. */}
+        <FormCheckbox
+          label="Give VMs on this cluster its site"
+          hint="Only VMs with no site of their own - an existing one is kept"
+          checked={applySiteToVms}
+          onChange={setApplySiteToVms}
+        />
+      </FormSection>
 
       <FormTags
         label="Tags"

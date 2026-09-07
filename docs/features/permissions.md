@@ -27,11 +27,31 @@ Three pieces work together:
 The four things a permission can allow on a type of object are **view**, **add**,
 **change**, and **delete**.
 
-Two extra **capability** verbs apply to a couple of types and are never implied
+A few extra **capability** verbs apply to specific types and are never implied
 by *change*: **connect** (on devices - open a [Connect launcher or the SSH
-terminal](device-access.md)) and **reveal** (on device credentials - read the
-referenced secret). The permission form only offers these on the types that use
-them.
+terminal](device-access.md)), **reveal** (on device credentials and wireless
+LANs - read the referenced secret), **subscribe** (on notification channels -
+self-service opt-in/out), and **grant superuser** (on users - see below). The
+permission form only offers these on the types that use them.
+
+### Granting superuser without being one
+
+**grant superuser** on the *user* type lets its holder set or clear the
+**Superuser** flag on accounts - so a trusted user-admin can promote and demote
+without holding superuser themselves. The rules keep it contained:
+
+- It counts **only on a grant with no tenant scoping**. Superuser is global, so
+  a tenant-narrowed grant carrying the verb is ignored.
+- On an existing superuser's account, a holder may **only** flip the flags -
+  password, email, and reset links on superuser targets remain superuser-only,
+  so the verb can revoke without inheriting account takeover.
+- Arming **grants superuser** on an [SSO group mapping](sso.md) needs the same
+  verb - the mapping *is* a superuser grant.
+- Every flip of the flag lands in the [change log](change-log.md), whoever
+  makes it.
+
+Without the verb (or superuser), the Superuser checkbox isn't shown, and the
+API silently ignores the flag - fail closed, as before.
 
 ## Built-in roles
 
@@ -82,7 +102,10 @@ rows*.
 3. Choose the **object types** it applies to - pick specific ones, or **All
    object types**.
 4. Tick the **actions** you're granting: view, add, change, delete.
-5. (Optional) Limit it to certain **tenants**. Leave empty to cover every tenant
+5. (Optional) Limit it to certain **tenants**. A tenant named here also
+   **grants access to that tenant**: members of the group can switch to it
+   without being added to it on their user page - the grant is the
+   authorisation. Leave empty to cover every tenant
    the person can reach.
 6. (Optional) Limit it to certain **sites**. This narrows the object types that
    *belong to* a site - devices, prefixes, IPs, VLANs, racks, interfaces, and

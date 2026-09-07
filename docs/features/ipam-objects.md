@@ -49,6 +49,19 @@ network topology rails. Colour precedence: the VLAN's own colour, then its
 zone's colour (zones stay firewall semantics - inside/outside/prod - never a
 colour requirement), then a neutral badge / blue palette shade.
 
+### Prefixes on a VLAN
+
+The VLAN page's **Prefixes** tab lists the prefixes bridged onto it, and is
+where you wire them up:
+
+- **Assign prefix** pulls an *existing* prefix onto the VLAN - a searchable
+  list, one click per prefix, several in a row. A prefix already on another
+  VLAN shows which one, and picking it moves it.
+- **Add prefix** creates a brand-new prefix with the VLAN pre-filled on the
+  form.
+
+Both respect your prefix permissions (*change* and *add* respectively).
+
 ### VLAN groups
 
 A **VLAN group** is a named grouping that scopes VID uniqueness and defines a
@@ -63,6 +76,13 @@ valid VID range:
     You can't delete a VLAN group that still contains VLANs. Move or remove its
     VLANs first.
 
+**Free addresses in the IPs tab.** For a prefix small enough to enumerate,
+**Show available** in the filter rail interleaves the unregistered addresses
+with the registered ones: a free address is click-to-add (so is its blue
+**+ Add** button), opening the IP form at that address. **Compact** folds the
+free rows into one - the first free address with "N more available" - when the
+registered addresses are what you came to see.
+
 ## IP ranges
 
 An **IP range** is a contiguous, inclusive span of addresses (a start and an end
@@ -72,10 +92,50 @@ Deprecated), an optional role from your IP-role catalog, a description, tags, an
 custom fields, and - like prefixes and IPs - it lives inside a VRF.
 
 A range can optionally point at a **parent prefix**. Picking one sets and locks
-the range's VRF to match the prefix. The range's detail page shows an
-**available addresses** panel: the addresses inside the span that aren't yet
-recorded as IPs, with used / available / total counts (very large ranges are
-truncated so the page stays fast).
+the range's VRF to match the prefix. The range's **Addresses** tab is the
+ordinary IP table cut to the span: the registered addresses with every IP
+column (status, role, tags, assignment…) interleaved with the free ones.
+**Show available** toggles the free rows; a free address is click-to-add (so
+is its blue **+ Add** button), opening the IP form with the subnet and address
+filled in. **Compact** folds the free rows into one - the first free address
+with "N more available" - for a range where the used addresses are what you
+came to see. Free / used / total counts sit above the table (very large ranges
+are capped so the page stays fast).
+
+**Allocating from a range.** When you add an IP and the chosen subnet contains
+ranges, a **Range** field appears - pick one to treat it as the pool: the form
+shows how many addresses are free, offers the first free ones as one-click
+picks with a **Next free** button, and nudges when the typed address falls
+outside the span. Leave it on *Any address in the subnet* to allocate from the
+whole prefix as before. The range stays a documentation object - the IP is
+saved against the subnet, and the range's own page keeps the full free list.
+
+**Allocate only from ranges.** A provider hands you `.61–.67` of a `/24` that
+isn't yours: the `/24` is the right network to record, but Danbyte would still
+treat all 254 hosts as free and suggest `.1` as the next available. Tick
+**Allocate only from ranges** on the prefix and the ranges inside it become
+its allocatable space:
+
+- **Next available** (Subnet details) walks the ranges, not the network - so
+  it works even in a prefix too large to enumerate.
+- **Show available** in the IPs tab lists only the free addresses inside the
+  ranges, and **Add pool** offers each range as a preset in place of *Whole
+  prefix*; a pool straddling a range edge is cut to the range.
+- **Utilisation** counts used against the ranges' size, and the Addressing
+  card shows *Used 1 of 7 · Free 6*; Subnet details gain **Allocation**,
+  **Managed addresses**, **Used** and **Available** rows under the subnet's
+  theoretical capacity.
+- The IP form requires a **Range** pick (a lone range is picked for you), and
+  the API refuses a new address outside every range: *192.173.199.0/24
+  allocates only from its ranges (192.173.199.61–192.173.199.67). Add a range
+  covering this address, or turn off Allocate only from ranges on the prefix.*
+  An address that was already registered outside the ranges keeps saving.
+- Site gateway autospawn skips the prefix when the first/last usable address
+  falls outside the ranges - that gateway is the provider's.
+
+DHCP exclusion ranges never count as allocation ranges: they're space carved
+*out* of a pool. With the option on and no ranges yet, the prefix reports no
+free addresses and no utilisation until you add one.
 
 Containment is surfaced both ways: the prefix IPs tab has a **Range** column
 (the containing range's role chip), and an IP's own detail page shows a
@@ -89,7 +149,8 @@ address blocks (ARIN, RIPE, RFC 1918, and so on), each flagged as public or
 private.
 
 An **aggregate** is a top-level block of address space allocated from a RIR.
-Prefixes live *under* aggregates. For IPv4 aggregates, Danbyte rolls up how much
+Prefixes live *under* aggregates. The aggregate page's **Prefixes tab** lists
+every prefix carved inside the block, with the count in the tab title. For IPv4 aggregates, Danbyte rolls up how much
 of the block is covered by child prefixes and shows it as a utilisation bar
 (IPv6 spaces are too large to express as a percentage). A RIR's detail page lists
 its aggregates.

@@ -1,17 +1,27 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import {
   Bookmark,
   Cable as CableIcon,
+  Layers,
   Pencil,
   Trash2,
   TriangleAlert,
   Workflow,
 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
-import { api, type Interface, type SnmpDriftItem } from "@/lib/api"
+import {
+  api,
+  type Interface,
+  type InterfaceLagSummary,
+  type SnmpDriftItem,
+} from "@/lib/api"
+import { DataTable } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { buildInterfaceColumns } from "@/components/columns/interface-columns"
 import { DriftDescription, driftKey } from "@/components/drift-detail"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,6 +43,7 @@ import {
 } from "@/components/assign-ip-dialog"
 import { TraceSection } from "@/components/topology/trace-section"
 import { TracePathStrip, TracePreview } from "@/components/cable-trace-path"
+import { PathRow } from "@/components/device-paths-list"
 import {
   DetailHero,
   DetailShell,
@@ -68,8 +79,15 @@ function InterfaceDetail() {
 
 function Body({ iface: i }: { iface: Interface }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "ips" | "trace" | "journal" | "history"
+    "overview" | "ips" | "members" | "trace" | "journal" | "history"
   >("overview")
+  const isLag = i.type === "lag"
+  // The bundle summary (members, capacity, peers) - aggregates only.
+  const lag = useQuery({
+    queryKey: ["interface-lag", i.id],
+    queryFn: () => api<InterfaceLagSummary>(`/api/interfaces/${i.id}/lag/`),
+    enabled: isLag,
+  })
   const nav = useNavigate()
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<Interface | null>(null)
@@ -161,7 +179,25 @@ function Body({ iface: i }: { iface: Interface }) {
               ) : (
                 <Badge variant="secondary">Disabled</Badge>
               )}
-              {i.virtual && <Badge variant="secondary">Virtual</Badge>}
+              {isLag ? (
+                <Badge variant="secondary" className="gap-1">
+                  <Layers className="h-3 w-3" /> Aggregate
+                </Badge>
+              ) : (
+                i.virtual && <Badge variant="secondary">Virtual</Badge>
+              )}
+              {i.lag && (
+                <Link to="/interfaces/$id" params={{ id: i.lag.id }}>
+                  <Badge variant="secondary" className="gap-1 hover:bg-muted">
+                    <Layers className="h-3 w-3" />
+                    Member of {i.lag.name}
+                    {lacpLabel(i.lag) ? ` · ${lacpLabel(i.lag)}` : ""}
+                    {i.lag.device.id !== i.device.id
+                      ? ` · on ${i.lag.device.name}`
+                      : ""}
+                  </Badge>
+                </Link>
+              )}
               {!i.cable && i.mark_connected && <UndocumentedBadge />}
               {!i.cable && !i.mark_connected && i.reservation && (
                 <ReservedBadge reservation={i.reservation} />
@@ -219,6 +255,9 @@ function Body({ iface: i }: { iface: Interface }) {
           label: "IP addresses",
           count: i.ip_addresses.length,
         },
+        ...(isLag
+          ? [{ value: "members", label: "Members", count: lag.data?.count }]
+          : []),
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -227,8 +266,17 @@ function Body({ iface: i }: { iface: Interface }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <InterfaceOverview iface={i} />
+        <InterfaceOverview
+          iface={i}
+          lag={isLag ? lag.data : undefined}
+          onMembers={() => setTab("members")}
+        />
       </DetailTab>
+      {isLag && (
+        <DetailTab value="members">
+          <LagMembers iface={i} summary={lag.data} loading={lag.isLoading} />
+        </DetailTab>
+      )}
       <DetailTab value="ips">
         <div className="mb-3 flex items-center justify-end gap-1.5">
           {canAddIp && (
@@ -331,7 +379,16 @@ function Body({ iface: i }: { iface: Interface }) {
 /** The interface's attributes, grouped into labelled tables - the detail that
  * used to crowd the page header. Only headline data (name, state, device,
  * type) stays up top; everything else reads here. */
-function InterfaceOverview({ iface: i }: { iface: Interface }) {
+function InterfaceOverview({
+  iface: i,
+  lag,
+  onMembers,
+}: {
+  iface: Interface
+  /** The bundle summary - set for aggregates once loaded. */
+  lag?: InterfaceLagSummary
+  onMembers: () => void
+}) {
   const attributes: KvRow[] = [
     {
       label: "Enabled",
@@ -533,15 +590,100 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
       label: "Sub-interfaces",
       value: <span className="num">{i.child_count}</span>,
     },
-    ...(i.lag_member_count > 0
-      ? [
-          {
-            label: "LAG members",
-            value: <span className="num">{i.lag_member_count}</span>,
-          } satisfies KvRow,
-        ]
-      : []),
   ]
+
+  // The bundle at a glance. Peers are where the members' cables land: one
+  // aggregate on one device is the plain case; two is MLAG/vPC and reads as
+  // information, never a fault.
+  const bundle: KvRow[] | null =
+    i.type === "lag"
+      ? [
+          { label: "Protocol", value: i.lag_protocol_display || "Static" },
+          ...(i.lag_protocol === "lacp"
+            ? [
+                { label: "LACP mode", value: i.lacp_mode || dash },
+                { label: "LACP rate", value: i.lacp_rate || dash },
+              ]
+            : []),
+          {
+            label: "Min links",
+            value: i.lag_min_links != null ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="num">{i.lag_min_links}</span>
+                {lag?.degraded && (
+                  <Badge variant="warning">below min links</Badge>
+                )}
+              </span>
+            ) : (
+              dash
+            ),
+          },
+          {
+            label: "Members",
+            value: (
+              <button
+                type="button"
+                onClick={onMembers}
+                className="link num text-left"
+              >
+                {lag ? lag.count : i.lag_member_count}
+              </button>
+            ),
+          },
+          {
+            label: "Capacity",
+            value: lag?.capacity ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="num">{lag.capacity}</span>
+                {lag.unparsed_speeds > 0 && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {lag.unparsed_speeds} without a speed
+                  </span>
+                )}
+              </span>
+            ) : (
+              dash
+            ),
+          },
+          {
+            label: lag && lag.peers.length > 1 ? "Peer aggregates" : "Peer aggregate",
+            value: lag && lag.peers.length > 0 ? (
+              <span className="flex flex-col gap-0.5">
+                {lag.peers.map((p) => (
+                  <Link
+                    key={p.id}
+                    to="/interfaces/$id"
+                    params={{ id: p.id }}
+                    className="link font-mono text-[13px]"
+                  >
+                    {p.device.name}: {p.name}
+                    <span className="pl-1 text-muted-foreground">
+                      · {p.members} {p.members === 1 ? "link" : "links"}
+                    </span>
+                  </Link>
+                ))}
+                {lag.mixed_peers && (
+                  <span className="text-[11px] text-muted-foreground">
+                    Ends on {lag.peers.length} devices - only valid for an
+                    MLAG / vPC pair
+                  </span>
+                )}
+                {lag.unpaired.length > 0 && (
+                  <span className="text-[11px] text-muted-foreground">
+                    No peer aggregate: {lag.unpaired.join(", ")}
+                  </span>
+                )}
+              </span>
+            ) : lag && lag.unpaired.length > 0 ? (
+              <span className="text-[11px] text-muted-foreground">
+                No peer aggregate: {lag.unpaired.join(", ")}
+              </span>
+            ) : (
+              dash
+            ),
+          },
+        ]
+      : null
 
   return (
     <div className="space-y-6">
@@ -549,8 +691,37 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <KvCard title="Interface" rows={attributes} />
+          {bundle && <KvCard title="Bundle" rows={bundle} />}
           <KvCard title="Switching" rows={switching} />
           <KvCard title="Relationships" rows={relationships} />
+          {i.ip_addresses.length > 0 && (
+            // The addresses at a glance - the IP tab stays where they're
+            // assigned and removed.
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border px-4 py-2">
+                <h2 className="text-sm font-semibold">IP addresses</h2>
+                <Badge variant="secondary">{i.ip_addresses.length}</Badge>
+              </div>
+              <ul className="divide-y divide-border">
+                {i.ip_addresses.map((ip) => (
+                  <li key={ip.id}>
+                    <Link
+                      to="/ips/$id"
+                      params={{ id: ip.id }}
+                      className="link block px-4 py-2 font-mono text-[13px] hover:bg-muted/60"
+                    >
+                      {ip.ip_address}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <CustomFieldValues
+            model="interface"
+            values={i.custom_fields}
+            layout="cards"
+          />
         </div>
         {i.cable && (
           <div className="rounded-lg border border-border bg-card p-4">
@@ -561,6 +732,14 @@ function InterfaceOverview({ iface: i }: { iface: Interface }) {
               originInterfaceId={i.id}
               originDeviceId={i.device.id}
             />
+          </div>
+        )}
+        {lag && lag.count > 0 && (
+          // An aggregate has no cable of its own - its members do. Their runs
+          // are the bundle's physical legs, drawn the way the device overview
+          // draws them.
+          <div className="rounded-lg border border-border bg-card p-4">
+            <LagRuns iface={i} summary={lag} />
           </div>
         )}
       </div>
@@ -613,3 +792,102 @@ function InterfaceDriftAlert({
     </div>
   )
 }
+
+/** "LACP active" / "LACP" / "PAgP" for a member's chip; "" for static. */
+function lacpLabel(lag: NonNullable<Interface["lag"]>): string {
+  if (lag.lag_protocol === "lacp")
+    return lag.lacp_mode ? `LACP ${lag.lacp_mode}` : "LACP"
+  if (lag.lag_protocol === "pagp") return "PAgP"
+  return ""
+}
+
+/** The aggregate's members as the shared interface table. A Device column
+ * appears only when the members span stack members. */
+function LagMembers({
+  iface,
+  summary,
+  loading,
+}: {
+  iface: Interface
+  summary?: InterfaceLagSummary
+  loading: boolean
+}) {
+  const rows = summary?.results ?? []
+  const spansDevices = rows.some((r) => r.device.id !== iface.device.id)
+  const columns = useMemo(
+    () =>
+      buildInterfaceColumns<Interface>({
+        include: [
+          ...(spansDevices ? (["device"] as const) : []),
+          "name",
+          "type",
+          "status",
+          "enabled",
+          "speed",
+          "cables",
+        ],
+      }),
+    [spansDevices]
+  )
+  if (loading)
+    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (rows.length === 0)
+    return (
+      <EmptyState title="No members yet">
+        Set a port's LAG / aggregate field to {iface.name} to add it.
+      </EmptyState>
+    )
+  return <DataTable data={rows} columns={columns} embedded />
+}
+
+/** A cabled run as the path-strip row draws it. */
+type Run = React.ComponentProps<typeof PathRow>["run"]
+
+/** The member cables' end-to-end runs, one strip each. Members may sit on
+ * several stack devices, so each device's paths are fetched once (the same
+ * cache key the device overview uses) and filtered to this aggregate. */
+function LagRuns({
+  iface,
+  summary,
+}: {
+  iface: Interface
+  summary: InterfaceLagSummary
+}) {
+  const deviceIds = [...new Set(summary.results.map((r) => r.device.id))]
+  const queries = useQueries({
+    queries: deviceIds.map((id) => ({
+      queryKey: ["device-paths", id],
+      queryFn: () => api<{ runs: Run[] }>(`/api/devices/${id}/paths/`),
+    })),
+  })
+  const loading = queries.some((q) => q.isLoading)
+  const runs = queries
+    .flatMap((q) => q.data?.runs ?? [])
+    .filter((r) => r.origin.lag?.id === iface.id)
+  return (
+    <>
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+          Member runs
+        </span>
+        <span className="num text-[10px] text-muted-foreground">
+          {runs.length} of {summary.count} cabled
+        </span>
+      </div>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : runs.length === 0 ? (
+        <p className="text-[12px] text-muted-foreground">
+          No member is cabled yet.
+        </p>
+      ) : (
+        <div className="divide-y divide-border">
+          {runs.map((run, n) => (
+            <PathRow key={`${run.origin.name}:${n}`} run={run} />
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+

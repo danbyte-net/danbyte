@@ -28,10 +28,12 @@ from rest_framework.response import Response
 from core.models import Tag, Tenant
 from auth_api import rbac
 from .models import (
+    Cable,
     Circuit, Cluster, Contact, Device, DeviceType, IPAddress, Interface,
     Location, Manufacturer, Prefix, Provider, Rack, RouteTarget, Site, VLAN,
     VirtualMachine, VRF,
 )
+from .cf_search import cf_text_q
 from .serializers import TagSerializer
 from .views import _get_active_tenant
 
@@ -121,7 +123,11 @@ def search(request):
 def _search_prefixes(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     qs = (
         rbac.restrict_queryset(Prefix.objects.filter(tenant=tenant), user, tenant, "prefix", "view")
-        .filter(Q(cidr__icontains=q) | Q(description__icontains=q))
+        .filter(
+            Q(cidr__icontains=q) | Q(description__icontains=q)
+            | (_numid_q(Prefix, q) or Q(pk__in=[]))
+            | cf_text_q(Prefix, q)
+        )
         .select_related("vrf", "site")
         .order_by("cidr")[:limit]
     )
@@ -148,6 +154,8 @@ def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
             Q(ip_address__icontains=q)
             | Q(description__icontains=q)
             | Q(reservation_note__icontains=q)
+            | (_numid_q(IPAddress, q) or Q(pk__in=[]))
+            | cf_text_q(IPAddress, q)
         )
         .select_related("status", "role", "assigned_device", "prefix")
         .order_by("ip_address")[:limit]
@@ -170,7 +178,10 @@ def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 
 
 def _search_vlans(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    cond = Q(name__icontains=q) | Q(description__icontains=q)
+    cond = Q(name__icontains=q) | Q(description__icontains=q) | cf_text_q(VLAN, q)
+    nq = _numid_q(VLAN, q)
+    if nq:
+        cond |= nq
     if q.isdigit():
         # Exact match on VLAN ID - IntegerField doesn't support icontains
         # cleanly across all backends.
@@ -196,7 +207,10 @@ def _search_vlans(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 def _search_vrfs(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     qs = (
         rbac.restrict_queryset(VRF.objects.filter(tenant=tenant), user, tenant, "vrf", "view")
-        .filter(Q(name__icontains=q) | Q(rd__icontains=q) | Q(description__icontains=q))
+        .filter(
+            Q(name__icontains=q) | Q(rd__icontains=q) | Q(description__icontains=q)
+            | cf_text_q(VRF, q)
+        )
         .order_by("name")[:limit]
     )
     return [
@@ -214,7 +228,7 @@ def _search_vrfs(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
 def _search_rts(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
     qs = (
         rbac.restrict_queryset(RouteTarget.objects.filter(tenant=tenant), user, tenant, "routetarget", "view")
-        .filter(Q(name__icontains=q) | Q(description__icontains=q))
+        .filter(Q(name__icontains=q) | Q(description__icontains=q) | cf_text_q(RouteTarget, q))
         .order_by("name")[:limit]
     )
     return [
@@ -236,6 +250,7 @@ def _search_sites(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
             Q(name__icontains=q)
             | Q(location__icontains=q)
             | Q(description__icontains=q)
+            | cf_text_q(Site, q)
         )
         .order_by("name")[:limit]
     )
@@ -280,9 +295,13 @@ def _search_tenants(q: str, user, limit: int) -> list[dict]:
 
 
 def _search_devices(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
+    cond = Q(name__icontains=q) | cf_text_q(Device, q)
+    nq = _numid_q(Device, q)
+    if nq:
+        cond |= nq
     qs = (
         rbac.restrict_queryset(Device.objects.filter(tenant=tenant), user, tenant, "device", "view")
-        .filter(Q(name__icontains=q))
+        .filter(cond)
         .order_by("name")[:limit]
     )
     return [
@@ -311,7 +330,7 @@ def _search_vms(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
             "virtualmachine",
             "view",
         )
-        .filter(Q(name__icontains=q))
+        .filter(Q(name__icontains=q) | cf_text_q(VirtualMachine, q))
         .order_by("name")[:limit]
     )
     return [
@@ -341,6 +360,9 @@ _SIMPLE_GROUPS: dict[str, dict] = {
     "providers":    {"model": Provider,     "slug": "provider",     "fields": ("name", "slug"),          "url": "/providers/{id}",     "sub": None},
     "contacts":     {"model": Contact,      "slug": "contact",      "fields": ("name", "title"),         "url": "/contacts/{id}",      "sub": "title"},
     "interfaces":   {"model": Interface,    "slug": "interface",    "fields": ("name",),                 "url": "/interfaces/{id}",    "sub": "device", "scope": "device__tenant"},
+    # Cables have no name to type, but their printed label carries the short
+    # id - an all-digit query finds them by numid (label field matched too).
+    "cables":       {"model": Cable,        "slug": "cable",        "fields": ("label",),                "url": "/cables/{id}",        "sub": None},
 }
 
 
@@ -359,9 +381,12 @@ def _search_simple(
 ) -> list[dict]:
     """One name-ish search over any tenant-scoped model, RBAC-restricted the
     same way the bespoke searches are."""
-    match = Q()
+    match = cf_text_q(model, q)
     for f in fields:
         match |= Q(**{f"{f}__icontains": q})
+    nq = _numid_q(model, q)
+    if nq:
+        match |= nq
     qs = (
         rbac.restrict_queryset(
             model.objects.filter(**{scope: tenant}), user, tenant, slug, "view"
@@ -405,6 +430,21 @@ def _search_tags(q: str, tenant: Tenant, limit: int) -> list[dict]:
         }
         for t in serialized
     ]
+
+
+def _numid_q(model, q: str):
+    """Exact per-tenant number match for an all-digit query, on models that
+    carry a numid - so the short id printed on a label finds its object."""
+    if not q.isdigit():
+        return None
+    try:
+        model._meta.get_field("numid")
+    except Exception:  # noqa: BLE001 - model without a numid
+        return None
+    try:
+        return Q(numid=int(q))
+    except (TypeError, ValueError):
+        return None
 
 
 def _empty_groups() -> dict[str, list]:

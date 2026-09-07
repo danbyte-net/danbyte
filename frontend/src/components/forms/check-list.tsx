@@ -1,7 +1,11 @@
 import { Checkbox } from "@/components/ui/checkbox"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { cn } from "@/lib/utils"
 
 export interface CheckOption<V extends string | number> {
+  /** Catalog colour: the row renders the object's ColorBadge instead of
+   * plain text, so a role or status looks the same here as in a table. */
+  color?: string | null
   value: V
   label: string
   hint?: string
@@ -47,7 +51,13 @@ export function CheckList<V extends string | number>({
             checked={set.has(o.value)}
             onCheckedChange={() => toggle(o.value)}
           />
-          <span className="flex-1 truncate">{o.label}</span>
+          {o.color ? (
+            <span className="flex-1 truncate">
+              <ColorBadge name={o.label} color={o.color} />
+            </span>
+          ) : (
+            <span className="flex-1 truncate">{o.label}</span>
+          )}
           {o.hint && (
             <span className="text-[11px] text-muted-foreground">{o.hint}</span>
           )}

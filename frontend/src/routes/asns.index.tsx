@@ -98,8 +98,15 @@ function AsnsPage() {
   const handleDelete = useCallback((a: ASN) => setDeleting(a), [])
   const columns = useMemo<ColumnDef<ASN>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
-    [handleDelete, canEdit, canDelete, humanIds]
+      buildColumns({
+        onDelete: handleDelete,
+        canEdit,
+        canDelete,
+        humanIds,
+        tagFilter,
+        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+      }),
+    [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
 
   return (
@@ -158,11 +165,15 @@ function buildColumns({
   canEdit,
   canDelete,
   humanIds,
+  tagFilter,
+  onToggleTag,
 }: {
   onDelete: (a: ASN) => void
   canEdit: boolean
   canDelete: boolean
   humanIds: boolean
+  tagFilter: Set<string>
+  onToggleTag: (slug: string) => void
 }): ColumnDef<ASN>[] {
   return [
     selectionColumn<ASN>(),
@@ -219,8 +230,8 @@ function buildColumns({
     },
     tagsColumn<ASN>({
       getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
+      activeSlugs: tagFilter,
+      onToggle: onToggleTag,
     }),
     timeAgoColumn<ASN>({
       id: "updated",

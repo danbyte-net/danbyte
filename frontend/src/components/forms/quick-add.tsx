@@ -56,11 +56,16 @@ export function QuickAddDialog({
   title,
   endpoint,
   fields,
+  fixed,
   onCreated,
 }: {
   title: string
   endpoint: string
   fields: QuickAddField[]
+  /** Values sent with every create that the dialog never shows - the owning
+   * device, a forced type (e.g. `{device_id, type: "lag"}` for "New
+   * aggregate"). Dialog fields win on a key clash. */
+  fixed?: Record<string, unknown>
   onCreated: (created: MiniNamed) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -70,7 +75,7 @@ export function QuickAddDialog({
     mutationFn: () =>
       api<MiniNamed>(endpoint, {
         method: "POST",
-        body: JSON.stringify(vals),
+        body: JSON.stringify({ ...fixed, ...vals }),
       }),
     onSuccess: (obj) => {
       toast.success(`Created ${obj.name}`)

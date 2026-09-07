@@ -76,6 +76,7 @@ import { Route as ConfigContextsRouteImport } from './routes/config-contexts'
 import { Route as ComplianceRouteImport } from './routes/compliance'
 import { Route as CircuitsRouteImport } from './routes/circuits'
 import { Route as CircuitTypesRouteImport } from './routes/circuit-types'
+import { Route as ChangeLogRouteImport } from './routes/change-log'
 import { Route as CablesRouteImport } from './routes/cables'
 import { Route as AutomationTargetsRouteImport } from './routes/automation-targets'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
@@ -330,6 +331,7 @@ import { Route as CircuitsIdRouteImport } from './routes/circuits.$id'
 import { Route as CircuitTypesNewRouteImport } from './routes/circuit-types.new'
 import { Route as CircuitTypesIdRouteImport } from './routes/circuit-types.$id'
 import { Route as ChannelsNewRouteImport } from './routes/channels.new'
+import { Route as ChangeLogIdRouteImport } from './routes/change-log_.$id'
 import { Route as CertificatesIdRouteImport } from './routes/certificates.$id'
 import { Route as CertificateRequestsIdRouteImport } from './routes/certificate-requests.$id'
 import { Route as CablesNewRouteImport } from './routes/cables.new'
@@ -748,6 +750,11 @@ const CircuitsRoute = CircuitsRouteImport.update({
 const CircuitTypesRoute = CircuitTypesRouteImport.update({
   id: '/circuit-types',
   path: '/circuit-types',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChangeLogRoute = ChangeLogRouteImport.update({
+  id: '/change-log',
+  path: '/change-log',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CablesRoute = CablesRouteImport.update({
@@ -2023,6 +2030,11 @@ const ChannelsNewRoute = ChannelsNewRouteImport.update({
   path: '/channels/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChangeLogIdRoute = ChangeLogIdRouteImport.update({
+  id: '/change-log_/$id',
+  path: '/change-log/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CertificatesIdRoute = CertificatesIdRouteImport.update({
   id: '/certificates/$id',
   path: '/certificates/$id',
@@ -2453,6 +2465,7 @@ export interface FileRoutesByFullPath {
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
   '/cables': typeof CablesRouteWithChildren
+  '/change-log': typeof ChangeLogRoute
   '/circuit-types': typeof CircuitTypesRouteWithChildren
   '/circuits': typeof CircuitsRouteWithChildren
   '/compliance': typeof ComplianceRoute
@@ -2533,6 +2546,7 @@ export interface FileRoutesByFullPath {
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
   '/certificates/$id': typeof CertificatesIdRoute
+  '/change-log/$id': typeof ChangeLogIdRoute
   '/channels/new': typeof ChannelsNewRoute
   '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
@@ -2856,6 +2870,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/audit-log': typeof AuditLogRoute
+  '/change-log': typeof ChangeLogRoute
   '/compliance': typeof ComplianceRoute
   '/config-drift': typeof ConfigDriftRoute
   '/deploy-runs': typeof DeployRunsRoute
@@ -2884,6 +2899,7 @@ export interface FileRoutesByTo {
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
   '/certificates/$id': typeof CertificatesIdRoute
+  '/change-log/$id': typeof ChangeLogIdRoute
   '/channels/new': typeof ChannelsNewRoute
   '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
@@ -3212,6 +3228,7 @@ export interface FileRoutesById {
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
   '/cables': typeof CablesRouteWithChildren
+  '/change-log': typeof ChangeLogRoute
   '/circuit-types': typeof CircuitTypesRouteWithChildren
   '/circuits': typeof CircuitsRouteWithChildren
   '/compliance': typeof ComplianceRoute
@@ -3292,6 +3309,7 @@ export interface FileRoutesById {
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
   '/certificates/$id': typeof CertificatesIdRoute
+  '/change-log_/$id': typeof ChangeLogIdRoute
   '/channels/new': typeof ChannelsNewRoute
   '/circuit-types/$id': typeof CircuitTypesIdRoute
   '/circuit-types/new': typeof CircuitTypesNewRoute
@@ -3621,6 +3639,7 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/automation-targets'
     | '/cables'
+    | '/change-log'
     | '/circuit-types'
     | '/circuits'
     | '/compliance'
@@ -3701,6 +3720,7 @@ export interface FileRouteTypes {
     | '/cables/new'
     | '/certificate-requests/$id'
     | '/certificates/$id'
+    | '/change-log/$id'
     | '/channels/new'
     | '/circuit-types/$id'
     | '/circuit-types/new'
@@ -4024,6 +4044,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/audit-log'
+    | '/change-log'
     | '/compliance'
     | '/config-drift'
     | '/deploy-runs'
@@ -4052,6 +4073,7 @@ export interface FileRouteTypes {
     | '/cables/new'
     | '/certificate-requests/$id'
     | '/certificates/$id'
+    | '/change-log/$id'
     | '/channels/new'
     | '/circuit-types/$id'
     | '/circuit-types/new'
@@ -4379,6 +4401,7 @@ export interface FileRouteTypes {
     | '/audit-log'
     | '/automation-targets'
     | '/cables'
+    | '/change-log'
     | '/circuit-types'
     | '/circuits'
     | '/compliance'
@@ -4459,6 +4482,7 @@ export interface FileRouteTypes {
     | '/cables/new'
     | '/certificate-requests/$id'
     | '/certificates/$id'
+    | '/change-log_/$id'
     | '/channels/new'
     | '/circuit-types/$id'
     | '/circuit-types/new'
@@ -4787,6 +4811,7 @@ export interface RootRouteChildren {
   AuditLogRoute: typeof AuditLogRoute
   AutomationTargetsRoute: typeof AutomationTargetsRouteWithChildren
   CablesRoute: typeof CablesRouteWithChildren
+  ChangeLogRoute: typeof ChangeLogRoute
   CircuitTypesRoute: typeof CircuitTypesRouteWithChildren
   CircuitsRoute: typeof CircuitsRouteWithChildren
   ComplianceRoute: typeof ComplianceRoute
@@ -4858,6 +4883,7 @@ export interface RootRouteChildren {
   AuditLogIdRoute: typeof AuditLogIdRoute
   CertificateRequestsIdRoute: typeof CertificateRequestsIdRoute
   CertificatesIdRoute: typeof CertificatesIdRoute
+  ChangeLogIdRoute: typeof ChangeLogIdRoute
   ChannelsNewRoute: typeof ChannelsNewRoute
   ClusterGroupsIdRoute: typeof ClusterGroupsIdRoute
   ClusterGroupsNewRoute: typeof ClusterGroupsNewRoute
@@ -5417,6 +5443,13 @@ declare module '@tanstack/react-router' {
       path: '/circuit-types'
       fullPath: '/circuit-types'
       preLoaderRoute: typeof CircuitTypesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/change-log': {
+      id: '/change-log'
+      path: '/change-log'
+      fullPath: '/change-log'
+      preLoaderRoute: typeof ChangeLogRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cables': {
@@ -7197,6 +7230,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChannelsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/change-log_/$id': {
+      id: '/change-log_/$id'
+      path: '/change-log/$id'
+      fullPath: '/change-log/$id'
+      preLoaderRoute: typeof ChangeLogIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/certificates/$id': {
       id: '/certificates/$id'
       path: '/certificates/$id'
@@ -8803,6 +8843,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditLogRoute: AuditLogRoute,
   AutomationTargetsRoute: AutomationTargetsRouteWithChildren,
   CablesRoute: CablesRouteWithChildren,
+  ChangeLogRoute: ChangeLogRoute,
   CircuitTypesRoute: CircuitTypesRouteWithChildren,
   CircuitsRoute: CircuitsRouteWithChildren,
   ComplianceRoute: ComplianceRoute,
@@ -8874,6 +8915,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditLogIdRoute: AuditLogIdRoute,
   CertificateRequestsIdRoute: CertificateRequestsIdRoute,
   CertificatesIdRoute: CertificatesIdRoute,
+  ChangeLogIdRoute: ChangeLogIdRoute,
   ChannelsNewRoute: ChannelsNewRoute,
   ClusterGroupsIdRoute: ClusterGroupsIdRoute,
   ClusterGroupsNewRoute: ClusterGroupsNewRoute,

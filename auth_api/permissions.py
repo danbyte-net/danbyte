@@ -107,13 +107,43 @@ def can_manage_deployment(user) -> bool:
     return "change" in effective_actions(user, None).get("user", set())
 
 
+def can_grant_superuser(user) -> bool:
+    """May this user set or clear ``is_superuser`` on accounts?
+
+    Superusers, plus holders of the ``grant_superuser`` capability verb on the
+    ``user`` type via a tenant-UNSCOPED grant. Superuser is a global power, so
+    the check runs with ``tenant=None`` - applicable_permissions skips every
+    tenant-scoped grant there, mirroring can_manage_deployment's rationale.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_superuser:
+        return True
+    from .rbac import has_action
+
+    return has_action(user, None, "user", "grant_superuser")
+
+
 def user_tenants(user):
     """QuerySet of Tenants this user is allowed to operate within.
 
-    Admins and superusers always see every active tenant in the org. A
-    reader/custom user is restricted to the tenants explicitly granted on
-    their UserProfile.
+    Admins and superusers always see every active tenant in the org. Everyone
+    else gets the union of two sources:
+
+    * the tenants explicitly granted on their UserProfile, and
+    * tenants **named on an enabled RBAC grant** that reaches them - directly
+      or via a group. A grant scoped to tenant X *is* an authorisation for X;
+      requiring a second, manual membership step made group-held grants dead
+      weight until an admin also edited every member's profile (the permission
+      gate in rbac.applicable_permissions resolved the group fine - it was
+      this activation gate that dropped it).
+
+    Tenant-UNSCOPED grants (empty tenants set) deliberately do not widen this:
+    their documented meaning is "every tenant the user can access", so letting
+    them grant access would turn every unscoped grant into all-tenant access.
     """
+    from django.db.models import Q
+
     from core.models import Tenant
     if not getattr(user, "is_authenticated", False):
         return Tenant.objects.none()
@@ -124,7 +154,14 @@ def user_tenants(user):
         return Tenant.objects.none()
     if profile.role == "admin":
         return Tenant.objects.filter(is_active=True)
-    return profile.tenants.filter(is_active=True)
+    granted = Tenant.objects.filter(
+        is_active=True,
+        object_permissions__enabled=True,
+    ).filter(
+        Q(object_permissions__users=user)
+        | Q(object_permissions__groups__in=user.groups.all())
+    )
+    return (profile.tenants.filter(is_active=True) | granted).distinct()
 
 
 def user_can_access_tenant(user, tenant) -> bool:

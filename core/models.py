@@ -355,6 +355,15 @@ class DeploymentSettings(TimestampedModel):
         help_text="Custom logo shown on the login page. Blank = the Danbyte "
         "logo. A wide transparent PNG works best.",
     )
+    # De-emphasis, not lockout (#119): the login page hides the local form and
+    # leads with the SSO buttons, but POST /api/auth/login/ keeps accepting
+    # local and LDAP credentials, and a "sign in locally" link reveals the
+    # form - the break-glass when the IdP is down.
+    hide_local_login = models.BooleanField(
+        default=False,
+        help_text="Hide the username/password form on the login page when SSO "
+        "providers exist. Local and LDAP sign-in stay reachable via a link.",
+    )
 
     # ─── optional built-in device fields (admin-controlled visibility) ─────
     device_field_visibility = models.JSONField(
@@ -583,6 +592,21 @@ class DeploymentSettings(TimestampedModel):
         "(numid) alongside their UUID - e.g. so a cable physically tagged '27' "
         "maps to cable #27. Numbers are namespaced per tenant, so each tenant "
         "counts from 1 independently.",
+    )
+    # Faceplates and photo panels draw a port that is only "marked connected"
+    # (a cable in it nobody documented) lit like a cabled one.
+    faceplate_mark_connected_lit = models.BooleanField(
+        default=False,
+        help_text="Faceplates and photo ports light up ports marked connected "
+                  "like cabled ones.",
+    )
+    # The derived interface prefix ("Ethernet1/") in front of each port group
+    # on a rendered faceplate. Off by default: on dense switches it pushes the
+    # panel past its card and every device spawns with a scrollbar.
+    faceplate_group_labels = models.BooleanField(
+        default=False,
+        help_text="Rendered faceplates print each port group's interface prefix "
+                  "(Ethernet1/) in front of its cages.",
     )
 
     # ─── in-app updates ──────────────────────────────────────────────────

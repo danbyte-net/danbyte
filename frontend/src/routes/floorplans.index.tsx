@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Copy } from "lucide-react"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { locationColumn } from "@/components/cells/location-cell"
 import { siteColumn } from "@/components/cells/site-cell"
@@ -49,9 +50,30 @@ function FloorPlansPage() {
   const rows = query.data?.results ?? []
 
   const handleDelete = useCallback((p: FloorPlan) => setDeleting(p), [])
+  const nav = useNavigate()
+  const qcList = useQueryClient()
+  // Server-side copy - tiles, trays, areas and walls come along - then straight
+  // into the new plan.
+  const clone = useMutation({
+    mutationFn: (p: FloorPlan) =>
+      api<FloorPlan>(`/api/floor-plans/${p.id}/clone/`, { method: "POST" }),
+    onSuccess: (created) => {
+      void qcList.invalidateQueries({ queryKey: ["floor-plans"] })
+      toast.success(`Cloned as ${created.name}`)
+      void nav({ to: "/floorplans/$id", params: { id: created.id } })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const handleClone = useCallback((p: FloorPlan) => clone.mutate(p), [clone])
   const columns = useMemo<ColumnDef<FloorPlan>[]>(
-    () => buildColumns({ onDelete: handleDelete, canDelete, humanIds }),
-    [handleDelete, canDelete, humanIds]
+    () =>
+      buildColumns({
+        onDelete: handleDelete,
+        onClone: canAdd ? handleClone : undefined,
+        canDelete,
+        humanIds,
+      }),
+    [handleDelete, handleClone, canAdd, canDelete, humanIds]
   )
 
   return (
@@ -87,10 +109,12 @@ function FloorPlansPage() {
 
 function buildColumns({
   onDelete,
+  onClone,
   canDelete,
   humanIds,
 }: {
   onDelete: (p: FloorPlan) => void
+  onClone?: (p: FloorPlan) => void
   canDelete: boolean
   humanIds: boolean
 }): ColumnDef<FloorPlan>[] {
@@ -151,6 +175,19 @@ function buildColumns({
       cell: ({ row }) => (
         <RowActions
           onDelete={canDelete ? () => onDelete(row.original) : undefined}
+          extra={
+            onClone ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                title="Clone plan"
+                onClick={() => onClone(row.original)}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            ) : undefined
+          }
         />
       ),
     },

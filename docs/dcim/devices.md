@@ -88,7 +88,7 @@ The default tab lays the device's facts out in four cards:
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform, description, comments          |
-| **Hardware**   | device type, serial number, asset tag, height (U), airflow   |
+| **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face, coordinates            |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
@@ -105,7 +105,13 @@ checkbox on the interface / front-port / rear-port forms) when a cable is
 physically in it but nobody has documented the cable yet - it counts as
 connected, the row shows an *Undocumented* badge with a green tint, the
 legend shows how many are *undocumented*, and the flag clears itself the
-moment a real cable is attached to the port. Reserving works two ways: create
+moment a real cable is attached to the port. Faceplates and photo panels draw
+such a port dimmed by default; **Settings → Admin → Faceplates → Light up
+ports marked connected** makes them draw it lit, like a cabled one. The same
+card's **Show interface prefixes on rendered faceplates** prints the derived
+prefix (`Ethernet1/`) in front of each port group; it is off by default
+because on a dense switch it pushes the panel past its card. Label slots you
+place yourself in the faceplate editor always show. Reserving works two ways: create
 the cable ahead of time as *Planned* and the port counts as held, or reserve
 the single port directly when the far end isn't known yet. Most useful on
 patch panels and access switches, where "how full is this thing" is the

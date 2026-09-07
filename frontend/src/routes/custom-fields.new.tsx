@@ -16,6 +16,7 @@ function NewCustomFieldPage() {
         { label: "Add" },
       ]}
       title="Add custom field"
+      wide
       subtitle="Declare a field that extends the custom_fields data on your objects."
     >
       <CustomFieldForm

@@ -2,10 +2,16 @@ import { useEffect, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type MonitoringSettings, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  MonitoringSettings,
+  Paginated,
+  VRFOption,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormText } from "@/components/forms/text"
+import { FormSelect } from "@/components/forms/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import {
@@ -18,6 +24,7 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { INTERVALS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
+import { cn } from "@/lib/utils"
 
 // Named cadence options (minutes) for the discovery interval picker.
 const MINUTE_INTERVALS = [
@@ -42,6 +49,11 @@ export function MonitoringSettingsForm() {
   const settingsQ = useQuery({
     queryKey: ["monitoring-settings"],
     queryFn: () => api<MonitoringSettings>("/api/monitoring/settings/"),
+  })
+  const vrfsQ = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    staleTime: 5 * 60_000,
   })
   const statusesQ = useQuery({
     queryKey: ["statuses-all"],
@@ -70,6 +82,8 @@ export function MonitoringSettingsForm() {
 
   if (!draft)
     return <p className="text-sm text-muted-foreground">Loading settings…</p>
+
+  const vrfOptions = vrfsQ.data?.results ?? []
 
   const set = <K extends keyof MonitoringSettings>(
     k: K,
@@ -107,6 +121,10 @@ export function MonitoringSettingsForm() {
           stale_after_days: Number(draft.stale_after_days),
           skip_ip_statuses: draft.skip_ip_statuses,
           snmp_import_not_present: draft.snmp_import_not_present,
+          snmp_update_only: draft.snmp_update_only,
+          snmp_skip_unrouted_vlans: draft.snmp_skip_unrouted_vlans,
+          snmp_mac_from_fdb: draft.snmp_mac_from_fdb,
+          snmp_default_vrf_id: draft.snmp_default_vrf?.id ?? null,
           dns_sync_enabled: draft.dns_sync_enabled,
           dns_clear_on_missing: draft.dns_clear_on_missing,
           dns_preserve_if_alive: draft.dns_preserve_if_alive,
@@ -129,6 +147,9 @@ export function MonitoringSettingsForm() {
           cleanup_after_days: Number(draft.cleanup_after_days),
           flap_exclude_ip_statuses: draft.flap_exclude_ip_statuses,
           arp_source_devices: draft.arp_source_devices ?? [],
+          engine_offline_after_minutes: Number(
+            draft.engine_offline_after_minutes
+          ),
         })
       }}
     >
@@ -170,6 +191,12 @@ export function MonitoringSettingsForm() {
               hint="Down this long → stale (0 = off)"
               value={draft.stale_after_days}
               onChange={(v) => set("stale_after_days", v)}
+            />
+            <NumberField
+              label="Outpost offline after N minutes"
+              hint="No contact this long → offline alert (0 = 3× its poll interval)"
+              value={draft.engine_offline_after_minutes}
+              onChange={(v) => set("engine_offline_after_minutes", v)}
             />
           </div>
         </Section>
@@ -215,6 +242,74 @@ export function MonitoringSettingsForm() {
               <span className="text-[11px] text-muted-foreground">
                 Stackable switches report ports for members that aren't
                 installed. Off = drift and sync skip them.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.snmp_update_only}
+              onCheckedChange={(v) => set("snmp_update_only", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                Only update existing interfaces
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                SNMP never adds ports - drift and sync touch fields (MAC,
+                speed, VLAN) on ports you created.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.snmp_skip_unrouted_vlans}
+              onCheckedChange={(v) => set("snmp_skip_unrouted_vlans", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                Skip unrouted VLAN pseudo-interfaces
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Cisco lists every L2 VLAN in the interface table. Routed SVIs
+                stay.
+              </span>
+            </span>
+          </label>
+          <FormSelect
+            label="Default VRF for discovered IPs"
+            hint="When neither the interface nor a binding names one"
+            value={draft.snmp_default_vrf?.id ?? null}
+            onChange={(v: string | null) =>
+              set(
+                "snmp_default_vrf",
+                v
+                  ? {
+                      id: v,
+                      name:
+                        vrfOptions.find((o) => o.id === v)?.name ?? "",
+                    }
+                  : null
+              )
+            }
+            noneLabel="None"
+            options={vrfOptions.map((o) => ({ value: o.id, label: o.name }))}
+          />
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={draft.snmp_mac_from_fdb}
+              onCheckedChange={(v) => set("snmp_mac_from_fdb", !!v)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">
+                Interface MAC from the MAC table
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                The address learned on the port (the attached device) instead
+                of the port's own hardware MAC. Ports with several learners
+                are left alone.
               </span>
             </span>
           </label>
@@ -512,27 +607,37 @@ export function MonitoringSettingsForm() {
               {(draft.arp_source_devices_detail ?? []).map((d) => (
                 <span
                   key={d.id}
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs"
+                  // Dashed until Save has actually written it - the saved
+                  // list is whatever the server last returned.
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs",
+                    (settingsQ.data?.arp_source_devices ?? []).includes(d.id)
+                      ? "border-border"
+                      : "border-dashed border-primary/60"
+                  )}
                 >
                   {d.name}
                   <button
                     type="button"
                     aria-label={`Remove ${d.name}`}
                     className="text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      set(
-                        "arp_source_devices",
-                        (draft.arp_source_devices ?? []).filter(
-                          (id) => id !== d.id
-                        )
+                    onClick={() =>
+                      // One atomic update: two set() calls in a row both
+                      // spread the same stale draft, so the second silently
+                      // discarded the first - the ids list never changed and
+                      // saves went out empty (issue #127).
+                      setDraft((cur) =>
+                        cur && {
+                          ...cur,
+                          arp_source_devices: (
+                            cur.arp_source_devices ?? []
+                          ).filter((id) => id !== d.id),
+                          arp_source_devices_detail: (
+                            cur.arp_source_devices_detail ?? []
+                          ).filter((x) => x.id !== d.id),
+                        }
                       )
-                      set(
-                        "arp_source_devices_detail",
-                        (draft.arp_source_devices_detail ?? []).filter(
-                          (x) => x.id !== d.id
-                        )
-                      )
-                    }}
+                    }
                   >
                     ×
                   </button>
@@ -544,19 +649,27 @@ export function MonitoringSettingsForm() {
             label="Add ARP source"
             value={null}
             excludeIds={draft.arp_source_devices ?? []}
-            onChange={(v) => {
-              if (!v || (draft.arp_source_devices ?? []).includes(v)) return
-              set("arp_source_devices", [
-                ...(draft.arp_source_devices ?? []),
-                v,
-              ])
-              // The picker only hands back the id; show it until the next
-              // reload fills in the server detail.
-              set("arp_source_devices_detail", [
-                ...(draft.arp_source_devices_detail ?? []),
-                { id: v, name: "(added)" },
-              ])
+            onPickLabel={(id, label) => {
+              // The picker hands the display name over with the id, so the
+              // chip shows the real device immediately - dashed until Save.
+              // One atomic update (see the remove handler / issue #127).
+              if (!id || (draft.arp_source_devices ?? []).includes(id)) return
+              setDraft(
+                (cur) =>
+                  cur && {
+                    ...cur,
+                    arp_source_devices: [
+                      ...(cur.arp_source_devices ?? []),
+                      id,
+                    ],
+                    arp_source_devices_detail: [
+                      ...(cur.arp_source_devices_detail ?? []),
+                      { id, name: label },
+                    ],
+                  }
+              )
             }}
+            onChange={() => {}}
           />
           <p className="text-[11px] text-muted-foreground">
             On L2-only networks a switch's own ARP table is nearly empty - add

@@ -34,7 +34,10 @@ templates**.
 
 Special tokens always available: `{{ url }}` (the object's absolute page URL),
 `{{ qr }}` (the resolved QR value), and `{{ obj }}` (the object under a generic
-name).
+name). Cable labels also get each end: `{{ a }}` / `{{ b }}` (the devices),
+`{{ a_port }}` / `{{ b_port }}` (the port, rendered with its device), and
+`{{ a_port_name }}` / `{{ b_port_name }}` (the bare port name, for short
+labels).
 
 ## Printing
 

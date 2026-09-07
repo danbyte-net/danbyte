@@ -6,6 +6,7 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
 import {
+  type VRFOption,
   api,
   type Paginated,
   type VLANOption,
@@ -89,7 +90,31 @@ export function VMInterfacesPane({
     queryFn: () =>
       api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
   })
-  const rows = q.data?.results ?? []
+  // Children render under their parent (wg0 under eth0), indented - the
+  // list reads as the VM's real interface tree. Orphans (parent filtered or
+  // deleted) fall back to the top level.
+  const rows = useMemo(() => {
+    const all = q.data?.results ?? []
+    const byParent = new Map<string, VMInterface[]>()
+    const ids = new Set(all.map((r) => r.id))
+    const roots: VMInterface[] = []
+    for (const r of all) {
+      if (r.parent && ids.has(r.parent.id)) {
+        const list = byParent.get(r.parent.id) ?? []
+        list.push(r)
+        byParent.set(r.parent.id, list)
+      } else {
+        roots.push(r)
+      }
+    }
+    const out: VMInterface[] = []
+    const walk = (r: VMInterface) => {
+      out.push(r)
+      for (const c of byParent.get(r.id) ?? []) walk(c)
+    }
+    roots.forEach(walk)
+    return out
+  }, [q.data])
 
   // Interfaces the hypervisor doesn't report. Raised as drift rather than
   // deleted - a NIC you added is yours, and might be one you're about to
@@ -146,6 +171,9 @@ export function VMInterfacesPane({
         ),
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-2">
+            {row.original.parent && (
+              <span className="pl-3 text-muted-foreground">└</span>
+            )}
             <span className="font-mono font-medium">{row.original.name}</span>
             {fieldDrift[row.original.name] && (
               <Tooltip>
@@ -194,6 +222,18 @@ export function VMInterfacesPane({
             )}
           </span>
         ),
+      },
+      {
+        id: "kind",
+        header: "Type",
+        cell: ({ row }) =>
+          row.original.kind ? (
+            <Badge variant="outline" className="capitalize">
+              {row.original.kind}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">Virtual</span>
+          ),
       },
       {
         id: "enabled",
@@ -489,6 +529,10 @@ function VMInterfaceForm({
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(iface?.name ?? "")
+  const [kind, setKind] = useState(iface?.kind ?? "")
+  const [parentId, setParentId] = useState<string | null>(
+    iface?.parent?.id ?? null
+  )
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [ignoreIps, setIgnoreIps] = useState(iface?.sync_ignore_ips ?? false)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
@@ -502,6 +546,12 @@ function VMInterfaceForm({
   )
   const [vrfId, setVrfId] = useState<string | null>(iface?.vrf?.id ?? null)
 
+  const siblings = useQuery({
+    queryKey: ["vm-interfaces", vmId],
+    queryFn: () =>
+      api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
+    staleTime: 30_000,
+  })
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
     queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
@@ -509,7 +559,7 @@ function VMInterfaceForm({
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>("/api/vrfs/"),
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
 
@@ -518,11 +568,14 @@ function VMInterfaceForm({
       const payload: VMInterfaceWritePayload = {
         vm_id: vmId,
         name: name.trim(),
+        kind,
+        parent_id: parentId,
         enabled,
         sync_ignore_ips: ignoreIps,
-        mac_address: mac.trim(),
+        // A tunnel/loopback has no meaningful MAC or link speed (#140).
+        mac_address: kind === "tunnel" || kind === "loopback" ? "" : mac.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
-        speed: speed.trim(),
+        speed: kind === "tunnel" || kind === "loopback" ? "" : speed.trim(),
         mode,
         vlan_id: vlanId,
         tagged_vlan_ids: mode === "tagged" ? taggedVlanIds : [],
@@ -565,13 +618,29 @@ function VMInterfaceForm({
         error={fieldErrors.name}
       />
       <div className="grid grid-cols-2 gap-3">
-        <FormText
-          label="MAC address"
-          value={mac}
-          onChange={setMac}
-          mono
-          placeholder="00:1b:44:11:3a:b7"
-          error={fieldErrors.mac_address}
+        <FormSelect
+          label="Parent interface"
+          value={parentId}
+          onChange={setParentId}
+          noneLabel="None"
+          options={(siblings.data?.results ?? [])
+            .filter((row) => row.id !== iface?.id)
+            .map((row) => ({ value: row.id, label: row.name }))}
+          error={fieldErrors.parent_id}
+        />
+        <FormSelect
+          label="Type"
+          value={kind || null}
+          onChange={(v) =>
+            setKind((v ?? "") as "" | "bridge" | "loopback" | "tunnel")
+          }
+          noneLabel="Virtual"
+          options={[
+            { value: "bridge", label: "Bridge" },
+            { value: "loopback", label: "Loopback" },
+            { value: "tunnel", label: "Tunnel" },
+          ]}
+          error={fieldErrors.kind}
         />
         <FormText
           label="MTU"
@@ -581,13 +650,25 @@ function VMInterfaceForm({
           placeholder="1500"
           error={fieldErrors.mtu}
         />
-        <FormText
-          label="Speed"
-          value={speed}
-          onChange={setSpeed}
-          placeholder="10G, 1G, 25G…"
-          error={fieldErrors.speed}
-        />
+        {kind !== "tunnel" && kind !== "loopback" && (
+          <>
+            <FormText
+              label="MAC address"
+              value={mac}
+              onChange={setMac}
+              mono
+              placeholder="00:1b:44:11:3a:b7"
+              error={fieldErrors.mac_address}
+            />
+            <FormText
+              label="Speed"
+              value={speed}
+              onChange={setSpeed}
+              placeholder="10G, 1G, 25G…"
+              error={fieldErrors.speed}
+            />
+          </>
+        )}
       </div>
       {/* ── L2 switching ── */}
       <div className="grid grid-cols-2 gap-3">
@@ -656,6 +737,7 @@ function VMInterfaceForm({
         options={(vrfs.data?.results ?? []).map((v) => ({
           value: v.id,
           label: v.name,
+          color: v.color,
         }))}
         error={fieldErrors.vrf_id}
       />

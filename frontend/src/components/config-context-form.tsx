@@ -13,6 +13,7 @@ import {
   Field,
   FormCheckbox,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -156,94 +157,98 @@ export function ConfigContextForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid max-w-2xl gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-[1fr_auto_auto] items-end gap-4">
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          error={fieldErrors.name}
-        />
-        <FormText
-          label="Weight"
-          type="number"
-          hint="higher wins"
-          value={weight}
-          onChange={(v) => {
-            setWeight(v)
-            setWeightError(null)
-          }}
-          error={weightError ?? fieldErrors.weight}
-        />
+      <FormSection title="Context" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Weight"
+            type="number"
+            hint="higher wins"
+            value={weight}
+            onChange={(v) => {
+              setWeight(v)
+              setWeightError(null)
+            }}
+            error={weightError ?? fieldErrors.weight}
+          />
+        </div>
         <FormCheckbox
           label="Active"
           checked={isActive}
           onChange={setIsActive}
-          className="pb-2"
         />
-      </div>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
 
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      <FormSection title="Data" card>
+        <FormTextarea
+          label="Data (JSON)"
+          hint="Merged onto matching devices/VMs"
+          rows={8}
+          value={dataText}
+          onChange={(v) => {
+            setDataText(v)
+            setJsonError(null)
+          }}
+          error={jsonError ?? fieldErrors.data}
+        />
+      </FormSection>
 
-      <FormTextarea
-        label="Data (JSON)"
-        hint="Merged onto matching devices/VMs"
-        rows={8}
-        value={dataText}
-        onChange={(v) => {
-          setDataText(v)
-          setJsonError(null)
-        }}
-        error={jsonError ?? fieldErrors.data}
-      />
-
-      <p className="text-[11px] text-muted-foreground">
-        Assignment - a context applies to a device/VM that matches{" "}
-        <span className="font-medium">all</span> the dimensions you set below.
-        Leave a dimension empty to match everything.
-      </p>
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Regions">
-          <CheckList
-            options={opt(regions.data?.results)}
-            value={regionIds}
-            onChange={setRegionIds}
-            empty="No regions."
-          />
-        </Field>
-        <Field label="Sites">
-          <CheckList
-            options={opt(sites.data?.results)}
-            value={siteIds}
-            onChange={setSiteIds}
-            empty="No sites."
-          />
-        </Field>
-        <Field label="Device roles">
-          <CheckList
-            options={opt(roles.data?.results)}
-            value={roleIds}
-            onChange={setRoleIds}
-            empty="No roles."
-          />
-        </Field>
-        <Field label="Platforms">
-          <CheckList
-            options={opt(platforms.data?.results)}
-            value={platformIds}
-            onChange={setPlatformIds}
-            empty="No platforms."
-          />
-        </Field>
-      </div>
+      <FormSection title="Assignment" card>
+        <p className="text-[11px] text-muted-foreground">
+          A context applies to a device/VM that matches{" "}
+          <span className="font-medium">all</span> the dimensions set here.
+          Leave a dimension empty to match everything.
+        </p>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <Field label="Regions">
+            <CheckList
+              options={opt(regions.data?.results)}
+              value={regionIds}
+              onChange={setRegionIds}
+              empty="No regions."
+            />
+          </Field>
+          <Field label="Sites">
+            <CheckList
+              options={opt(sites.data?.results)}
+              value={siteIds}
+              onChange={setSiteIds}
+              empty="No sites."
+            />
+          </Field>
+          <Field label="Device roles">
+            <CheckList
+              options={opt(roles.data?.results)}
+              value={roleIds}
+              onChange={setRoleIds}
+              empty="No roles."
+            />
+          </Field>
+          <Field label="Platforms">
+            <CheckList
+              options={opt(platforms.data?.results)}
+              value={platformIds}
+              onChange={setPlatformIds}
+              empty="No platforms."
+            />
+          </Field>
+        </div>
+      </FormSection>
 
       <FormFooter
         onCancel={onCancel}

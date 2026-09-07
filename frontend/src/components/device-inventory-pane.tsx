@@ -3,13 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
+  inventorySpeedSuggestions,
+  INVENTORY_MEDIA_OPTIONS,
   api,
   bytesToUnit,
   formatBytes,
   INVENTORY_KIND_OPTIONS,
-  INVENTORY_MEDIA_OPTIONS,
-  inventorySpeedSuggestions,
-  STORAGE_UNITS,
   unitToBytes,
   type InventoryItemKind,
   type InventoryItemRow,
@@ -45,6 +44,10 @@ import { NameRangeHint } from "@/components/name-range-hint"
 import { QueryError } from "@/components/query-error"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useMe } from "@/lib/use-me"
+import {
+  PartHardwareFields,
+  partFieldsFor,
+} from "@/components/part-hardware-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
@@ -424,9 +427,14 @@ export function InventoryItemDialog({
         serial_number: serial.trim(),
         asset_tag: assetTag.trim(),
         kind,
-        media: kind === "disk" ? media : "",
-        capacity_bytes: unitToBytes(capacity, capacityUnit),
-        speed: speed.trim(),
+        // Only fields the kind carries are sent from the form; a hidden
+        // field keeps the row's stored value so an edit of a Redfish-synced
+        // part never wipes facts the BMC wrote.
+        media: partFieldsFor(kind).media ? media : "",
+        capacity_bytes: partFieldsFor(kind).capacity
+          ? unitToBytes(capacity, capacityUnit)
+          : (item?.capacity_bytes ?? null),
+        speed: partFieldsFor(kind).speed ? speed.trim() : (item?.speed ?? ""),
         description: description.trim(),
         status_id: statusId,
       }
@@ -537,44 +545,18 @@ export function InventoryItemDialog({
               error={fieldErrors.status_id}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {kind === "disk" && (
-              <FormSelect
-                label="Media"
-                value={media || null}
-                onChange={(v) => setMedia((v ?? "") as InventoryMedia)}
-                options={INVENTORY_MEDIA_OPTIONS}
-                placeholder="-"
-                error={fieldErrors.media}
-              />
-            )}
-            <FormText
-              label="Speed"
-              value={speed}
-              onChange={setSpeed}
-              placeholder="7200 RPM / PCIe 4.0 x4"
-              suggestions={inventorySpeedSuggestions(kind, media)}
-              error={fieldErrors.speed}
-            />
-          </div>
-          <div className="grid grid-cols-[1fr_100px] gap-3">
-            <FormText
-              label="Capacity"
-              type="number"
-              value={capacity}
-              onChange={setCapacity}
-              error={fieldErrors.capacity_bytes}
-            />
-            <FormSelect
-              label="Unit"
-              value={capacityUnit}
-              onChange={(v) => v && setCapacityUnit(v as StorageUnit)}
-              options={STORAGE_UNITS.map((u) => ({
-                value: u.value,
-                label: u.value,
-              }))}
-            />
-          </div>
+          <PartHardwareFields
+            kind={kind}
+            media={media}
+            onMedia={(v) => setMedia(v as InventoryMedia)}
+            speed={speed}
+            onSpeed={setSpeed}
+            capacity={capacity}
+            onCapacity={setCapacity}
+            capacityUnit={capacityUnit}
+            onCapacityUnit={setCapacityUnit}
+            errors={fieldErrors}
+          />
           <div className="grid grid-cols-2 gap-3">
             <FormCombobox
               label="Parent part"

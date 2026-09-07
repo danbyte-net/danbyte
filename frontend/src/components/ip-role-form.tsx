@@ -7,6 +7,8 @@ import {
   FormCheckbox,
   FormColor,
   FormFooter,
+  FormIcon,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -82,57 +84,63 @@ export function IpRoleForm({ role, onSaved, onCancel }: IpRoleFormProps) {
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="Gateway"
-        error={fieldErrors.name}
-      />
-      <FormColor
-        label="Color"
-        value={color}
-        onChange={setColor}
-        error={fieldErrors.color}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormText
-        label="Icon"
-        value={icon}
-        onChange={setIcon}
-        mono
-        hint="Lucide icon name (crown, router, shield-check…)"
-        error={fieldErrors.icon}
-      />
-      <FormText
-        label="Weight"
-        type="number"
-        value={weight}
-        onChange={setWeight}
-        hint="Lower sorts first"
-        error={fieldErrors.weight}
-      />
-      <FormCheckbox
-        label="Gateway role"
-        hint="Drives prefix gateway autospawn (one per tenant)"
-        checked={isGateway}
-        onChange={setIsGateway}
-      />
-      <FormCheckbox
-        label="Virtual / shared"
-        hint="VIP, HSRP/VRRP, anycast"
-        checked={isVirtual}
-        onChange={setIsVirtual}
-      />
+      <FormSection title="IP role" card>
+        <FormText
+          label="Name"
+          required
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="Gateway"
+          error={fieldErrors.name}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormText
+          label="Weight"
+          type="number"
+          value={weight}
+          onChange={setWeight}
+          hint="Lower sorts first"
+          error={fieldErrors.weight}
+        />
+        <FormCheckbox
+          label="Gateway role"
+          hint="Drives prefix gateway autospawn (one per tenant)"
+          checked={isGateway}
+          onChange={setIsGateway}
+        />
+        <FormCheckbox
+          label="Virtual / shared"
+          hint="VIP, HSRP/VRRP, anycast"
+          checked={isVirtual}
+          onChange={setIsVirtual}
+        />
+      </FormSection>
+
+      <FormSection title="Appearance" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormColor
+            label="Color"
+            value={color}
+            onChange={setColor}
+            error={fieldErrors.color}
+          />
+          <FormIcon
+            label="Icon"
+            value={icon}
+            onChange={setIcon}
+            hint="shown on the role's badge"
+            error={fieldErrors.icon}
+          />
+        </div>
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

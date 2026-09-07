@@ -21,6 +21,7 @@ function EditPrefixPage() {
 
   return (
     <EditPageShell
+      wide
       presenceType="prefix"
       presenceId={id}
       crumbs={[

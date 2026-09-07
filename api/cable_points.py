@@ -26,7 +26,7 @@ from __future__ import annotations
 POINT_ATTRS = (
     "interface", "front_port", "rear_port", "console_port",
     "console_server_port", "power_port", "power_outlet", "aux_port",
-    "power_feed",
+    "power_feed", "circuit_termination",
 )
 
 # Visual family shown on stencil port rows / trace nodes.
@@ -34,7 +34,7 @@ KIND_OF = {
     "interface": "interface", "front_port": "front", "rear_port": "rear",
     "console_port": "console", "console_server_port": "console",
     "power_port": "power", "power_outlet": "power", "aux_port": "aux",
-    "power_feed": "power",
+    "power_feed": "power", "circuit_termination": "circuit",
 }
 
 # Stable node-id prefix per kind (keeps trace node ids collision-free).
@@ -42,7 +42,7 @@ NODE_PREFIX = {
     "interface": "if", "front_port": "fp", "rear_port": "rp",
     "console_port": "cp", "console_server_port": "csp",
     "power_port": "pp", "power_outlet": "po", "aux_port": "ap",
-    "power_feed": "pfd",
+    "power_feed": "pfd", "circuit_termination": "ct",
 }
 
 

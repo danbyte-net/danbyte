@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, SnmpBinding, SnmpProfileOption } from "@/lib/api"
+import type { SnmpBinding, SnmpProfileOption } from "@/lib/api"
 import {
   Select,
   SelectContent,
@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { apiErrorToast } from "@/lib/api-toast"
+import { isUserInitiated } from "@/lib/user-activation"
 
 const INHERIT = "__inherit__"
 
@@ -30,9 +31,15 @@ function useBinding(scope: SnmpBinding["scope"], objectId: string) {
       api<SnmpBinding>(`/api/monitoring/snmp-binding/${scope}/${objectId}/`),
   })
   const profiles = useQuery({
-    queryKey: ["snmp-profiles"],
+    // The options endpoint, not the credential-store viewset: anyone who may
+    // set a binding gets the id/name/version list (#125) - a site-scoped
+    // user was 403'd off the full list, so the saved binding rendered as an
+    // empty select and read as "not saved".
+    queryKey: ["snmp-profile-options"],
     queryFn: () =>
-      api<Paginated<SnmpProfileOption>>("/api/monitoring/snmp-profiles/"),
+      api<{ results: SnmpProfileOption[] }>(
+        "/api/monitoring/snmp-profile-options/"
+      ),
     staleTime: 5 * 60_000,
   })
   return { binding, profiles }
@@ -83,8 +90,15 @@ export function SnmpBindingControl({
   const select = (
     <Select
       value={value}
-      onValueChange={(v) => set.mutate(v === INHERIT ? null : v)}
-      disabled={!canEdit || set.isPending}
+      onValueChange={(v) => {
+        const next = v === INHERIT ? null : v
+        // Autofill fires a change on the form's hidden native select with no
+        // gesture behind it; saving that would wipe the stored binding (#125).
+        if (!isUserInitiated() || next === (binding.data?.profile_id ?? null))
+          return
+        set.mutate(next)
+      }}
+      disabled={!canEdit || set.isPending || binding.isPending}
     >
       <SelectTrigger className="h-8 w-60 text-xs">
         <SelectValue placeholder="-" />

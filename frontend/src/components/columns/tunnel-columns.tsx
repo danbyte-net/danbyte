@@ -90,7 +90,7 @@ export function buildTunnelColumns<T extends Tunnel = Tunnel>(
     status: () => ({
       id: "status",
       accessorFn: (r) => r.status?.name ?? "",
-      header: "Status",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
       cell: ({ row }) => <StatusBadge status={row.original.status} />,
       meta: {
         facet: {

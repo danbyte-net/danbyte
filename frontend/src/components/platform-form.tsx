@@ -14,6 +14,7 @@ import {
 import {
   FormCombobox,
   FormFooter,
+  FormSection,
   FormTags,
   FormText,
   FormTextarea,
@@ -147,109 +148,116 @@ export function PlatformForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={onNameChange}
-        placeholder="Cisco IOS-XE 17"
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Slug"
-        hint="URL-safe id"
-        required
-        placeholder="cisco-ios-xe-17"
-        value={slug}
-        onChange={(v) => {
-          setSlugDirty(true)
-          setSlug(slugify(v))
-        }}
-        mono
-        error={fieldErrors.slug}
-      />
-      <FormCombobox
-        label="Group"
-        hint="optional"
-        value={groupId}
-        onChange={setGroupId}
-        options={(groups.data?.results ?? []).map((g) => ({
-          value: g.id,
-          label: g.name,
-        }))}
-        noneLabel="No group"
-        placeholder="Select a group…"
-        searchPlaceholder="Search groups…"
-        emptyText="No platform groups."
-        error={fieldErrors.group_id}
-        quickAdd={
-          <QuickAddDialog
-            title="New platform group"
-            endpoint="/api/platform-groups/"
-            fields={[{ name: "name", label: "Name", required: true }]}
-            onCreated={(g) => {
-              qc.invalidateQueries({ queryKey: ["platform-groups-picker"] })
-              qc.invalidateQueries({ queryKey: ["platform-groups"] })
-              setGroupId(g.id)
-            }}
+      <FormSection title="Platform" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            placeholder="Cisco IOS-XE 17"
+            error={fieldErrors.name}
           />
-        }
-      />
-      <FormCombobox
-        label="Manufacturer"
-        hint="optional"
-        value={manufacturerId}
-        onChange={setManufacturerId}
-        options={(manufacturers.data?.results ?? []).map((m) => ({
-          value: m.id,
-          label: m.name,
-        }))}
-        noneLabel="No manufacturer"
-        placeholder="Select a manufacturer…"
-        searchPlaceholder="Search manufacturers…"
-        emptyText="No manufacturers."
-        error={fieldErrors.manufacturer_id}
-        quickAdd={
-          <QuickAddDialog
-            title="New manufacturer"
-            endpoint="/api/manufacturers/"
-            fields={[{ name: "name", label: "Name", required: true }]}
-            onCreated={(m) => {
-              qc.invalidateQueries({ queryKey: ["manufacturers-picker"] })
-              setManufacturerId(m.id)
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            placeholder="cisco-ios-xe-17"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
             }}
+            mono
+            error={fieldErrors.slug}
           />
-        }
-      />
-      <FormCombobox
-        label="Config template"
-        hint="optional"
-        value={configTemplateId}
-        onChange={setConfigTemplateId}
-        options={(templates.data?.results ?? []).map((t) => ({
-          value: t.id,
-          label: t.name,
-        }))}
-        noneLabel="No config template"
-        placeholder="Select a template…"
-        searchPlaceholder="Search templates…"
-        emptyText="No device export templates."
-        error={fieldErrors.config_template_id}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <LifecycleFormSection
-        value={lifecycle}
-        onChange={setLifecycle}
-        errors={fieldErrors}
-      />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormCombobox
+            label="Group"
+            hint="optional"
+            value={groupId}
+            onChange={setGroupId}
+            options={(groups.data?.results ?? []).map((g) => ({
+              value: g.id,
+              label: g.name,
+            }))}
+            noneLabel="No group"
+            placeholder="Select a group…"
+            searchPlaceholder="Search groups…"
+            emptyText="No platform groups."
+            error={fieldErrors.group_id}
+            quickAdd={
+              <QuickAddDialog
+                title="New platform group"
+                endpoint="/api/platform-groups/"
+                fields={[{ name: "name", label: "Name", required: true }]}
+                onCreated={(g) => {
+                  qc.invalidateQueries({ queryKey: ["platform-groups-picker"] })
+                  qc.invalidateQueries({ queryKey: ["platform-groups"] })
+                  setGroupId(g.id)
+                }}
+              />
+            }
+          />
+          <FormCombobox
+            label="Manufacturer"
+            hint="optional"
+            value={manufacturerId}
+            onChange={setManufacturerId}
+            options={(manufacturers.data?.results ?? []).map((m) => ({
+              value: m.id,
+              label: m.name,
+            }))}
+            noneLabel="No manufacturer"
+            placeholder="Select a manufacturer…"
+            searchPlaceholder="Search manufacturers…"
+            emptyText="No manufacturers."
+            error={fieldErrors.manufacturer_id}
+            quickAdd={
+              <QuickAddDialog
+                title="New manufacturer"
+                endpoint="/api/manufacturers/"
+                fields={[{ name: "name", label: "Name", required: true }]}
+                onCreated={(m) => {
+                  qc.invalidateQueries({ queryKey: ["manufacturers-picker"] })
+                  setManufacturerId(m.id)
+                }}
+              />
+            }
+          />
+        </div>
+        <FormCombobox
+          label="Config template"
+          hint="optional"
+          value={configTemplateId}
+          onChange={setConfigTemplateId}
+          options={(templates.data?.results ?? []).map((t) => ({
+            value: t.id,
+            label: t.name,
+          }))}
+          noneLabel="No config template"
+          placeholder="Select a template…"
+          searchPlaceholder="Search templates…"
+          emptyText="No device export templates."
+          error={fieldErrors.config_template_id}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        {/* Carries its own "Lifecycle" heading, so it sits inside the card as
+            a divided sub-group rather than getting a second title above it. */}
+        <LifecycleFormSection
+          value={lifecycle}
+          onChange={setLifecycle}
+          errors={fieldErrors}
+        />
+      </FormSection>
       <FormTags
         label="Tags"
         value={tagIds}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { DevicePicker } from "@/components/device-picker"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Radar, Trash2 } from "lucide-react"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -320,6 +321,9 @@ function ServiceForm({
   )
   const [monitored, setMonitored] = useState(service?.monitored ?? false)
   const [templateId, setTemplateId] = useState<string | null>(null)
+  // Opened from the fleet Services list there's no parent yet - the operator
+  // picks the device here (#112). Device/VM tabs pass `parent` and hide this.
+  const [pickedDeviceId, setPickedDeviceId] = useState<string | null>(null)
 
   // "From template" (create only) - pick a saved ServiceTemplate and stamp its
   // name / protocol / ports / description into the form. A reusable definition
@@ -373,6 +377,8 @@ function ServiceForm({
       if (!isEdit && parent) {
         if (parent.kind === "device") payload.device_id = parent.id
         else payload.virtual_machine_id = parent.id
+      } else if (!isEdit && pickedDeviceId) {
+        payload.device_id = pickedDeviceId
       }
       return saveObject<Service>({
         objectType: "api.service",
@@ -400,6 +406,14 @@ function ServiceForm({
       }}
       className="grid gap-4"
     >
+      {!isEdit && !parent && (
+        <DevicePicker
+          label="Device"
+          value={pickedDeviceId}
+          onChange={setPickedDeviceId}
+          error={fieldErrors.device_id}
+        />
+      )}
       {!isEdit && templateOptions.length > 0 && (
         <FormCombobox
           label="From template"
@@ -429,7 +443,8 @@ function ServiceForm({
           setPortErrors({ tcp: null, udp: null })
         }}
         errors={{
-          tcp: portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
+          tcp:
+            portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
           udp: portErrors.udp,
         }}
       />

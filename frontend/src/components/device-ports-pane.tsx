@@ -104,7 +104,14 @@ export function DevicePortsPane({
         id: "name",
         header: "Rear port",
         cell: ({ row }) => (
-          <span className="font-mono font-medium">{row.original.name}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono font-medium">{row.original.name}</span>
+            {row.original.label && (
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                {row.original.label}
+              </span>
+            )}
+          </span>
         ),
       },
       {
@@ -261,7 +268,14 @@ export function DevicePortsPane({
         id: "name",
         header: "Front port",
         cell: ({ row }) => (
-          <span className="font-mono font-medium">{row.original.name}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono font-medium">{row.original.name}</span>
+            {row.original.label && (
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                {row.original.label}
+              </span>
+            )}
+          </span>
         ),
       },
       {

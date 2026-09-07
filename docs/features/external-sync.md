@@ -116,6 +116,10 @@ order of everything else.
 
 ### What it will not do
 
+- **It never writes to a hypervisor.** The client can log in and read; there
+  is no code path that creates, changes or deletes anything on vCenter or
+  Proxmox. Accepting a change writes to the Danbyte inventory only, in every
+  sync mode.
 - **It never creates a site.** Sites are physical facts you own. A rule points
   at a real site, and the hierarchy only ever *matches* one by name. When
   nothing matches, nothing is placed and the connection's **Last sync** badge
@@ -125,6 +129,33 @@ order of everything else.
 
 Rules apply to Proxmox too - it has no datacenters or folders, so cluster and
 host rules are the useful ones there.
+
+## Reviewing changes
+
+A source in **review** mode queues what it found instead of applying it. The
+queue lives on the source's **Review** tab (and in the Pending changes dialog
+on the sources list). Each row's button says what accepting does in Danbyte:
+
+| Row | Accept |
+|---|---|
+| New VM on hypervisor | Creates the VM record; NICs and IPs fill in on the next sync |
+| Specs changed | Copies vCPU / RAM / disk onto the VM |
+| Interface fields differ | Copies the hypervisor's MAC / MTU / VLAN onto the interface |
+| Interface not on hypervisor | **Deletes** the Danbyte interfaces the hypervisor doesn't report |
+| VM removed from hypervisor | **Deletes** the Danbyte VM record |
+
+The two deleting rows ask for confirmation first, and only ever reach the
+queue for records a person created - rows the sync itself made are cleaned up
+without asking. **Ignore** hides a row until that difference changes again.
+
+!!! note "Spec changes on VMs you created yourself"
+    A re-sized VM (more RAM, more vCPUs) always surfaces. On a VM the *sync*
+    created, mirror mode applies the new specs directly and review mode queues
+    a *Specs changed* row. On a VM *you* created that the sync adopted, the
+    change is **always queued for review, in every mode** - an operator-owned
+    record is never rewritten behind your back, same as your own interfaces.
+    Earlier versions raised nothing at all for adopted VMs, so a hypervisor
+    re-size was silently invisible.
 
 ## The sync log
 

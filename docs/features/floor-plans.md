@@ -156,9 +156,10 @@ uploaded blueprint textures it.
   cords land exactly on them.
 - **Build in advance**: a typed tile needs no linked object - paint the
   future rack row now (bulk *Set type* makes this one sweep) and link real
-  racks as they land. In 3D, unlinked non-zone tiles render as translucent
-  ghost boxes with their type name, so the planned room reads as a room
-  rather than empty floor. Scroll-zoom dollies **toward the pointer**, so
+  racks as they land. In 3D, non-rack tiles render as translucent ghost
+  boxes so the planned room reads as a room rather than empty floor. Each
+  carries a camera-facing name tag - the tile's label, else its linked
+  device's name, else the type name. Scroll-zoom dollies **toward the pointer**, so
   getting close to a far corner of a big hall is one scroll, not a slow
   W-key flight.
 - **Airflow** (View menu, 3D): draws each device's cooling direction as
@@ -255,7 +256,7 @@ read-only viewer.
 | Place a tile | Click a palette entry to arm it, then click a cell (default size) or drag a rectangle (walls, aisles) |
 | Move | Drag a tile - snaps to cells |
 | Resize | Drag the corner handle of the selected tile |
-| Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest |
+| Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces |
 | Label / color / status | The inspector panel (label overrides the linked object's name; status renders planned/reserved dashed, decommissioning faded) |
 | Link to an object | Inspector → Link: rack and device use the advanced pickers, power panel/feed and nested plans a searchable dropdown |
 | Delete | Select + `Delete`, or the inspector button |
@@ -283,6 +284,12 @@ change rather than an exit, so neither is guarded.
 Under **View**: **Fit labels to tiles** auto-sizes each tile's text to its
 footprint (so single-cell tiles keep readable names) - the preference is
 saved on the plan; and **Camera FOV cones** shows/hides the camera wedges.
+
+**Changing a tile's type.** Select a placed tile and pick another **Type**
+in the inspector - any tile type, or a device role standing in as one. The
+tile keeps its position, size, label, colour and object link; only the look
+(and the popover rows configured for that type) follow the new type. Zones
+stay zones.
 
 ## Live state on tiles
 
@@ -540,6 +547,9 @@ cable runs, just the trays, or both.
 
 - **Search** (Layout mode, header): type a tile's label, linked object, or
   type name and jump straight to it - the canvas pans and zooms to the hit.
+- **On this plan** (right rail): every placed tile grouped by device role and
+  tile type, with its own search over the same fields. A labelled tile shows
+  its linked object's real name as a muted second line.
 - **Fit** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
@@ -552,8 +562,20 @@ cable runs, just the trays, or both.
   count and a live health dot. Search it, or click a row to select and zoom to
   that tile. Editors' toggle state is saved with the plan.
 - **Show on floor plan** - the Rack and Device detail pages carry a button
+  that opens the plan zoomed onto the tile; placed on several plans (its own
+  tile and its rack's, or a cloned what-if plan), the button becomes a menu
+  listing them. The Rack and Device detail pages carry a button
   that jumps to where they're placed (a device falls back to *its rack's*
   plan, marked "via rack").
+
+## Cloning a plan
+
+The **Clone** action on the floor plans list copies a plan with everything
+drawn on it - tiles (with their rack / device / panel links), cable trays
+(geometry only; the cables routed through the originals stay where they are),
+raised-floor areas and walls - into the same location as `<name> copy`, and
+opens it. Handy for a second identical floor, or a what-if layout you can throw
+away. Needs the floor-plan add permission.
 
 ## Export
 
@@ -575,6 +597,21 @@ create/move/delete lands in the [change log](change-log.md).
 and in what order. A field with nothing to say for a given tile is skipped
 automatically - no rack utilization on a wall tile - so turning one on is safe
 everywhere.
+
+### Showing the device's panel {#faceplate-field}
+
+Tick **Faceplate** (on by default) to draw a device-linked tile's front panel
+in its popover - what the box actually looks like, without opening its page. It
+uses the type's photo with its mapped ports when there are any, the plain
+uploaded photo when the type has a picture but no ports mapped on that side,
+and the drawn panel otherwise, and offers a **rear** toggle when the type has a rear
+image.
+
+It applies to tiles linked to a **device**; a rack tile has an elevation rather
+than a faceplate, so the row is skipped there. Unlike the other rows, this one
+fetches the device's ports when the popover opens - which is why it is **off by
+default**: the standard popover answers entirely from data the plan has already
+loaded.
 
 The list is the **deployment default**. A tenant that overrides its UI policy
 (**Settings → This tenant → General**) carries its own list, resolved the same

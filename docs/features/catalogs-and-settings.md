@@ -12,7 +12,9 @@ manage yourself, and both drive defaults and behaviour elsewhere in the app.
 
 A **status** describes the operational state of an object - for example
 *Active*, *Reserved*, or *Deprecated*. Each status has a name, a color (shown as
-a badge wherever the status appears), and an optional description.
+a badge wherever the status appears), and an optional description. The
+statuses list shows the badge and, beside it, a **Color** column with the raw
+hex value, sortable, so the exact value can be read or copied off the table.
 
 Statuses are **shared across object types**: one *Active* row can be made
 available to devices, prefixes, IP addresses, racks, … so it reads identically

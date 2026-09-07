@@ -310,7 +310,7 @@ export function PortReservationDialog({
 
   return (
     <Dialog open={target !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>
             {existing ? "Reserved port" : "Reserve port"}

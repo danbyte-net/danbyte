@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
@@ -166,6 +167,7 @@ function AsnOverview({ asn: a }: { asn: ASN }) {
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="ASN" rows={details} />
       <KvCard title="Assignment" rows={assignment} />
+      <CustomFieldValues model="asn" values={a.custom_fields} layout="cards" />
     </div>
   )
 }

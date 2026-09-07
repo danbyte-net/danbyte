@@ -61,8 +61,14 @@ function VirtualMachinesPage() {
   )
 
   const allRows = query.data?.results ?? []
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, allRows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows)
 
   return (
     <ListPageShell
@@ -92,7 +98,7 @@ function VirtualMachinesPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="primary_ip"
         tableId="virtual-machines"
       />

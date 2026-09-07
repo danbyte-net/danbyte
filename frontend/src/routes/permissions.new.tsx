@@ -10,6 +10,7 @@ function NewPermissionPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Permissions", to: "/permissions" }, { label: "Add" }]}
       title="Add permission"
       subtitle="Grant actions on object types to groups or users, optionally scoped by tenant and constraints."

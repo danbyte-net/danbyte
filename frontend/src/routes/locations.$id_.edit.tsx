@@ -18,6 +18,7 @@ function EditLocationPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Locations", to: "/locations" },
         { label: q.data?.name ?? "…" },

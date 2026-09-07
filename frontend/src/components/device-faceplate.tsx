@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router"
 
 import { api, formatBytes } from "@/lib/api"
 import type {
+  Device,
   DeviceSnmp,
   DeviceType,
   FacePort,
@@ -76,6 +77,7 @@ import {
 } from "@/components/ui/hover-card"
 import { cableState } from "@/lib/cable-state"
 import { cn } from "@/lib/utils"
+import { TruncatedText } from "@/components/ui/truncated-text"
 
 /**
  * Draws a device's front panel at millimetre-true scale - the "switch
@@ -245,12 +247,19 @@ function Cage({
 
   const i = r.iface
   const state = portState(i)
+  const { faceplateMarkedLit } = useMe()
   const trunk = i.mode === "tagged" || i.mode === "tagged-all"
   const hasVlan = trunk || !!i.vlan
   // Cabled ports wear their speed TIER (shared ramp); free ports get a muted
   // capability outline from their type's max speed; disabled stays neutral.
   const tint = { ...i, type: i.type_display || i.type }
-  const cabled = state !== "free" && state !== "disabled"
+  // A port that is only "marked connected" lights up too when the deployment
+  // asks for it (Settings → Admin → Faceplates).
+  const markedLit = faceplateMarkedLit && cableState(i) === "marked"
+  const cabled = (state !== "free" && state !== "disabled") || markedLit
+  // The tier colour helpers key off "has a cable"; a lit marked port borrows
+  // the cabled path so it draws in its speed tier, not the free grey.
+  const tintAsCabled = markedLit ? { ...tint, cable: true } : tint
   const capability = portCapabilityHex(tint)
   return (
     <HoverCard openDelay={100} closeDelay={80}>
@@ -259,9 +268,12 @@ function Cage({
           to="/interfaces/$id"
           params={{ id: i.id }}
           data-cable-state={cableState(i)}
+          data-port-name={i.name}
+          data-port-kind="interface"
+          data-port-id={i.id}
           style={
             cabled
-              ? { ...style, ...portTintStyle(portHex(tint)) }
+              ? { ...style, ...portTintStyle(portHex(tintAsCabled)) }
               : cableState(i) === "reserved"
                 ? // Directly reserved (no cable yet) - amber outline so the
                   // hold reads on the panel, matching the utilization card.
@@ -345,13 +357,16 @@ function PortHoverBody({
   const fields = usePortPopoverFields()
   const rows: Record<string, React.ReactNode> = {
     name: (
-      <Link
-        to="/interfaces/$id"
-        params={{ id: i.id }}
-        className="link font-semibold"
-      >
-        {i.name}
-      </Link>
+      <>
+        <Link
+          to="/interfaces/$id"
+          params={{ id: i.id }}
+          className="link font-semibold"
+        >
+          {i.name}
+        </Link>
+        {i.label && <div className="text-muted-foreground">{i.label}</div>}
+      </>
     ),
     type: i.type_display ? <div>{i.type_display}</div> : null,
     state: (
@@ -423,10 +438,15 @@ function GroupBlock({
   group: g,
   scale,
   observed,
+  showLabel,
 }: {
   group: ResolvedGroup
   scale: number
   observed?: Map<string, ObservedPort> | null
+  /** Print the derived interface prefix ("Ethernet1/") before the cages -
+   * a deployment setting, off by default: on dense switches it pushes the
+   * panel past its card. Authored label slots always render. */
+  showLabel: boolean
 }) {
   const cells = g.resolved.filter((r) => r.slot.t !== "label")
   const labels = g.resolved.filter((r) => r.slot.t === "label")
@@ -441,10 +461,13 @@ function GroupBlock({
       className="flex items-center gap-2"
       style={g.gapMm ? { marginLeft: Math.round(g.gapMm * scale) } : undefined}
     >
-      {g.label && (
-        <span className="num w-fit shrink-0 font-mono text-[9px] text-muted-foreground">
+      {showLabel && g.label && (
+        // Auto-derived from the interface prefix, which can be arbitrarily
+        // long - capped so it can't run into the next group's cages (#130);
+        // hover reveals the full name only when actually clipped.
+        <TruncatedText className="num block w-fit max-w-[72px] shrink-0 font-mono text-[9px] text-muted-foreground">
           {g.label}
-        </span>
+        </TruncatedText>
       )}
       {labels.map((r, i) => (
         <Cage key={`lbl-${i}`} r={r} scale={scale} />
@@ -497,6 +520,7 @@ function FaceplateLanes({
   scale: number
   observed?: Map<string, ObservedPort> | null
 }) {
+  const { faceplateGroupLabels } = useMe()
   const byLane = new Map<number, ResolvedGroup[]>()
   for (const g of resolved.groups) {
     const lane = g.u ?? 1
@@ -536,7 +560,12 @@ function FaceplateLanes({
                   style={{ columnGap: Math.round(PANEL_MM.groupGap * scale) }}
                 >
                   {divider && <div className="h-8 w-px shrink-0 bg-border" />}
-                  <GroupBlock group={g} scale={scale} observed={observed} />
+                  <GroupBlock
+                    group={g}
+                    scale={scale}
+                    observed={observed}
+                    showLabel={faceplateGroupLabels}
+                  />
                 </div>
               )
             })}
@@ -1011,6 +1040,7 @@ export function ImagePortsFaceplate({
   legendKey?: string
   className?: string
 }) {
+  const { faceplateMarkedLit } = useMe()
   const { canDo } = useMe()
   // Editing a bay writes to the device's parts, so it needs the same permission
   // the Hardware tab does - and a device to write them to. Module bays install
@@ -1051,10 +1081,26 @@ export function ImagePortsFaceplate({
   const image = side === "front" ? dt.data?.front_image : dt.data?.rear_image
   // Memoized: the legend derives from these, and a fresh `[]` every render
   // would make it recompute (and re-report) forever.
-  const markers = useMemo(
-    () => dt.data?.image_ports?.[side] ?? [],
-    [dt.data, side]
-  )
+  // A device-level override (special devices) replaces the type's layout
+  // wholesale; the device payload carries it since api.0149.
+  const devDoc = useQuery({
+    queryKey: ["device", deviceId],
+    queryFn: () => api<Device>(`/api/devices/${deviceId}/`),
+    enabled: !!deviceId,
+    staleTime: 30_000,
+  })
+  const photoDoc = useMemo(() => {
+    const override = devDoc.data?.image_ports
+    return override != null ? override : dt.data?.image_ports
+  }, [devDoc.data, dt.data])
+  const markers = useMemo(() => photoDoc?.[side] ?? [], [photoDoc, side])
+  // Display size: the upload size (natural pixels, capped to the pane) unless
+  // the editor saved an override for this side - a fraction of the natural
+  // width, or null for "fit the pane". A raw `w-full` used to blow a portrait
+  // photo up to the column's width.
+  const photoView = photoDoc?.view?.[side]
+  const photoScale = photoView ? (photoView.scale ?? null) : 1
+  const [photoW, setPhotoW] = useState<number | null>(null)
   const wantsInventory =
     !!deviceId && markers.some((m) => m.kind === "inventory-item")
   // Console / power / aux / panel-port markers resolve through the same
@@ -1198,460 +1244,482 @@ export function ImagePortsFaceplate({
   if (!image) return null
 
   return (
-    <div
-      className={cn(
-        "relative w-full overflow-hidden rounded-md border border-border bg-muted/30",
-        className
-      )}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={image}
-        alt={`${side} panel`}
-        className="block w-full select-none"
-        draggable={false}
-      />
-      {markers.map((m, idx) => {
-        // Interface markers resolve to a real interface (state + link);
-        // other kinds render as a static marker with a name tooltip.
-        const kind = m.kind || "interface"
-        const name = renderTemplateName(m.name, vcPosition ?? null)
-        const iface =
-          kind === "interface"
-            ? (ifaceByName.get(normalizePortName(name)) ?? null)
-            : null
-        const obs = observed?.get(normalizePortName(name))
-        const style = {
-          left: `${(m.x - m.w / 2) * 100}%`,
-          top: `${(m.y - m.h / 2) * 100}%`,
-          width: `${m.w * 100}%`,
-          height: `${m.h * 100}%`,
+    <div className={cn("flex w-full justify-center", className)}>
+      <div
+        className="relative inline-block max-w-full overflow-hidden rounded-md border border-border bg-muted/30"
+        style={
+          photoScale != null && photoW
+            ? { width: Math.round(photoW * photoScale) }
+            : undefined
         }
-        // Hardware markers (disk bays…) - coloured by the PART's lifecycle
-        // status (failed = red), not the port speed ramp.
-        if (kind === "inventory-item") {
-          const item = itemByName.get(normalizePortName(name))
-          const hex = item?.status?.color || "#64748b"
-          // An empty bay: the marker is drawn but no part fills it. With write
-          // access it's the install affordance - click to fit hardware here,
-          // named after the bay so a sensor keyed on that name picks it up.
-          if (!item)
-            return canEditParts ? (
-              <button
-                key={`${m.name}-${idx}`}
-                type="button"
-                style={style}
-                title={`${name} - empty, click to install hardware`}
-                onClick={() => setPartDialog({ item: null, name })}
-                className="absolute cursor-pointer rounded-[2px] border border-dashed border-border/70 bg-background/20 hover:border-primary hover:bg-primary/10"
-              />
-            ) : (
-              <span
-                key={`${m.name}-${idx}`}
-                style={style}
-                title={`${name} (no matching part)`}
-                className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
-              />
-            )
-          return (
-            <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
-              <HoverCardTrigger asChild>
-                {canEditParts ? (
-                  <button
-                    type="button"
-                    style={{
-                      ...style,
-                      borderColor: hex,
-                      backgroundColor: `${hex}40`,
-                    }}
-                    title={
-                      partDrift.get(item.id)
-                        ? `${item.name} - SNMP says ${partDrift.get(item.id)}, click to review`
-                        : `${item.name} - click to edit`
-                    }
-                    onClick={() => setPartDialog({ item, name })}
-                    className={cn(
-                      "absolute cursor-pointer rounded-[2px] border-2 transition-opacity hover:opacity-100 hover:ring-2 hover:ring-primary/40",
-                      // Observed health disagrees with the set status: ring it
-                      // rather than recolouring, so the bay keeps showing the
-                      // SoT and the drift reads as a separate signal.
-                      partDrift.get(item.id) &&
-                        "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
-                    )}
-                  />
-                ) : (
-                  <span
-                    style={{
-                      ...style,
-                      borderColor: hex,
-                      backgroundColor: `${hex}40`,
-                    }}
-                    className="absolute rounded-[2px] border-2 transition-opacity hover:opacity-100"
-                  />
-                )}
-              </HoverCardTrigger>
-              <HoverCardContent
-                side="top"
-                className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
-              >
-                <div className="font-semibold">{item.name}</div>
-                <div className="text-muted-foreground">
-                  {[
-                    item.kind !== "other" ? item.kind : "",
-                    item.media,
-                    formatBytes(item.capacity_bytes),
-                    item.speed,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || "hardware"}
-                </div>
-                {item.status && (
-                  <div style={{ color: item.status.color || undefined }}>
-                    {item.status.name}
-                  </div>
-                )}
-                {item.manufacturer?.name && (
-                  <div className="text-muted-foreground">
-                    {item.manufacturer.name}
-                    {item.part_id ? ` · ${item.part_id}` : ""}
-                  </div>
-                )}
-                {item.serial_number && (
-                  <div className="text-muted-foreground">
-                    SN {item.serial_number}
-                  </div>
-                )}
-                {item.asset_tag && (
-                  <div className="text-muted-foreground">
-                    Asset {item.asset_tag}
-                  </div>
-                )}
-                {item.parent?.name && (
-                  <div className="text-muted-foreground">
-                    in {item.parent.name}
-                  </div>
-                )}
-                {/* The last thing the sensors read for this part, so a red bay
-                    says what the agent actually returned, not just "failed". */}
-                {sensorByName.get(normalizePortName(name)) && (
-                  <div className="text-muted-foreground">
-                    SNMP {sensorByName.get(normalizePortName(name))}
-                  </div>
-                )}
-                {/* Set status vs observed health, side by side - the difference
-                    is the point, and accepting it stays in the drift inbox. */}
-                {partDrift.get(item.id) && (
-                  <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
-                    drift · SNMP says {partDrift.get(item.id)}
-                  </div>
-                )}
-                {canEditParts && (
-                  <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
-                    Click to edit
-                  </div>
-                )}
-              </HoverCardContent>
-            </HoverCard>
-          )
-        }
-        // Module bays (line-card slots) read OCCUPANCY: an installed bay is
-        // filled, a free one is the same faint outline an idle port wears.
-        // Without a device (a type preview) every bay is definitionally
-        // unoccupied - that's an empty slot, not a broken marker.
-        if (kind === "module-bay") {
-          const fp = portByMarker.get(m.name)
-          if (deviceId && !fp?.id)
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={image}
+          alt={`${side} panel`}
+          onLoad={(e) => setPhotoW(e.currentTarget.naturalWidth)}
+          className={cn(
+            "block select-none",
+            photoScale != null
+              ? "w-full"
+              : "h-auto max-h-[60vh] w-auto max-w-full"
+          )}
+          draggable={false}
+        />
+        {markers.map((m, idx) => {
+          // Interface markers resolve to a real interface (state + link);
+          // other kinds render as a static marker with a name tooltip.
+          const kind = m.kind || "interface"
+          const name = renderTemplateName(m.name, vcPosition ?? null)
+          const iface =
+            kind === "interface"
+              ? (ifaceByName.get(normalizePortName(name)) ?? null)
+              : null
+          const obs = observed?.get(normalizePortName(name))
+          const style = {
+            left: `${(m.x - m.w / 2) * 100}%`,
+            top: `${(m.y - m.h / 2) * 100}%`,
+            width: `${m.w * 100}%`,
+            height: `${m.h * 100}%`,
+          }
+          // Hardware markers (disk bays…) - coloured by the PART's lifecycle
+          // status (failed = red), not the port speed ramp.
+          if (kind === "inventory-item") {
+            const item = itemByName.get(normalizePortName(name))
+            const hex = item?.status?.color || "#64748b"
+            // An empty bay: the marker is drawn but no part fills it. With write
+            // access it's the install affordance - click to fit hardware here,
+            // named after the bay so a sensor keyed on that name picks it up.
+            if (!item)
+              return canEditParts ? (
+                <button
+                  key={`${m.name}-${idx}`}
+                  type="button"
+                  style={style}
+                  title={`${name} - empty, click to install hardware`}
+                  onClick={() => setPartDialog({ item: null, name })}
+                  className="absolute cursor-pointer rounded-[2px] border border-dashed border-border/70 bg-background/20 hover:border-primary hover:bg-primary/10"
+                />
+              ) : (
+                <span
+                  key={`${m.name}-${idx}`}
+                  style={style}
+                  title={`${name} (no matching part)`}
+                  className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+                />
+              )
             return (
-              <span
+              <HoverCard
                 key={`${m.name}-${idx}`}
-                style={style}
-                title={`${name} (not on this device)`}
-                className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
-              />
-            )
-          const mod = fp?.module ?? null
-          const hex = bayHex(!!mod)
-          // An EMPTY bay on a real device is the install affordance - click to
-          // seat a module, exactly like an empty disk bay installs hardware.
-          // (Removal stays on the Modules pane; occupied bays just report.)
-          const installable = !mod && !!fp?.id && canEditParts
-          const bayStyle = mod
-            ? { ...style, ...portOverlayStyle(hex) }
-            : { ...style, borderColor: `${hex}59` }
-          return (
-            <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
-              <HoverCardTrigger asChild>
-                {installable ? (
-                  <button
-                    type="button"
-                    style={bayStyle}
-                    title={`${name} - empty, click to install a module`}
-                    onClick={() =>
-                      fp.id && setInstallBay({ id: fp.id, name: fp.name })
-                    }
-                    className="absolute cursor-pointer rounded-[2px] border-2 hover:ring-2 hover:ring-primary/40"
-                  />
-                ) : (
-                  <span
-                    style={bayStyle}
-                    className="absolute rounded-[2px] border-2"
-                  />
-                )}
-              </HoverCardTrigger>
-              <HoverCardContent
-                side="top"
-                className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+                openDelay={100}
+                closeDelay={80}
               >
-                <div className="font-semibold">{name}</div>
-                <div className="text-muted-foreground">module bay</div>
-                {mod ? (
-                  <>
-                    <div>{mod.module_type.name}</div>
-                    {mod.serial_number && (
-                      <div className="text-muted-foreground">
-                        SN {mod.serial_number}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div>Empty</div>
-                )}
-                {installable && (
-                  <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
-                    Click to install a module
-                  </div>
-                )}
-              </HoverCardContent>
-            </HoverCard>
-          )
-        }
-        // A non-interface port kind (power inlet, console, aux, panel port):
-        // resolved through /face-ports/, drawn as a real cage - cabled ports
-        // tinted, free ones outlined - with drift ringed like everywhere else.
-        if (kind !== "interface") {
-          const fp = portByMarker.get(m.name)
-          if (!fp?.id)
-            return (
-              <span
-                key={`${m.name}-${idx}`}
-                style={style}
-                title={`${name} (not on this device)`}
-                className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
-              />
-            )
-          const hex = fp.connected ? PORT_NEUTRAL.cabled : PORT_NEUTRAL.free
-          // A FREE port is the connect affordance - click opens the cable
-          // maker in place with this end already on side A. Cabled markers
-          // keep the plain hovercard; unknown marker kinds stay inert.
-          const termKind = markerTerminationKind(kind)
-          const connectable = !fp.connected && !!termKind && canConnect
-          const portStyle = fp.connected
-            ? { ...style, ...portOverlayStyle(hex) }
-            : {
-                ...style,
-                borderColor: `${hex}59`,
-                ["--port-color" as never]: hex,
-              }
-          const portClass = cn(
-            "absolute rounded-[2px] border-2",
-            fp.drift &&
-              "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
-          )
-          return (
-            <HoverCard key={`${m.name}-${idx}`} openDelay={100} closeDelay={80}>
-              <HoverCardTrigger asChild>
-                {connectable ? (
-                  <button
-                    type="button"
-                    style={portStyle}
-                    data-cable-state={fp.cable_state}
-                    title={`${fp.name} - free, click to connect a cable`}
-                    onClick={() =>
-                      fp.id &&
-                      setConnect({ id: fp.id, kind: termKind, name: fp.name })
-                    }
-                    className={cn(
-                      portClass,
-                      "cursor-pointer hover:ring-2 hover:ring-primary/40"
-                    )}
-                  />
-                ) : (
-                  <span
-                    style={portStyle}
-                    data-cable-state={fp.cable_state}
-                    className={portClass}
-                  />
-                )}
-              </HoverCardTrigger>
-              <HoverCardContent
-                side="top"
-                className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
-              >
-                <div className="font-semibold">{fp.name}</div>
-                <div className="text-muted-foreground">
-                  {[kind.replace(/-/g, " "), fp.type]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
-                <div>{fp.connected ? "cabled" : "free"}</div>
-                {fp.drift && (
-                  <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
-                    drift · {fp.drift}
-                  </div>
-                )}
-                {connectable && (
-                  <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
-                    Click to connect a cable
-                  </div>
-                )}
-              </HoverCardContent>
-            </HoverCard>
-          )
-        }
-        if (!iface) {
-          return (
-            <span
-              key={`${m.name}-${idx}`}
-              style={style}
-              title={`${name} (not on this device)`}
-              className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
-            />
-          )
-        }
-        const state = portState(iface)
-        const tint = { ...iface, type: iface.type_display || iface.type }
-        const tiered = state !== "free" && state !== "disabled"
-        const capability = portCapabilityHex(tint)
-        return (
-          <HoverCard key={iface.id} openDelay={100} closeDelay={80}>
-            <HoverCardTrigger asChild>
-              <Link
-                to="/interfaces/$id"
-                params={{ id: iface.id }}
-                data-cable-state={cableState(iface)}
-                style={
-                  // On a photo: cabled markers get an OPAQUE tier border +
-                  // solid-enough fill; idle markers are a VERY faint outline
-                  // only (capability-tinted when the type tells us) - no fill,
-                  // so the artwork stays the star until a port lights up.
-                  tiered
-                    ? { ...style, ...portOverlayStyle(portHex(tint)) }
-                    : cableState(iface) === "reserved"
-                      ? // Directly reserved - amber outline, still no fill.
-                        {
-                          ...style,
-                          borderColor: "#f59e0bb3",
-                          backgroundColor: "transparent",
-                          ["--port-color" as never]: "#f59e0b",
-                        }
-                      : {
-                          ...style,
-                          borderColor: `${capability ?? "#a1a1aa"}59`, // ~35%
-                          backgroundColor: "transparent",
-                          ["--port-color" as never]: capability ?? "#a1a1aa",
-                        }
-                }
-                className={cn(
-                  "absolute rounded-[2px] border-2 transition-opacity hover:opacity-100",
-                  state === "disabled" && "border-dashed"
-                )}
-              >
-                {obs && (
-                  <span
-                    className={cn(
-                      "absolute -top-1 -right-1 h-2 w-2 rounded-full ring-1 ring-background",
-                      liveDotClass(obs)
-                    )}
-                    aria-hidden
-                  />
-                )}
-              </Link>
-            </HoverCardTrigger>
-            <HoverCardContent
-              side="top"
-              className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
-            >
-              <Link
-                to="/interfaces/$id"
-                params={{ id: iface.id }}
-                className="link font-semibold"
-              >
-                {iface.name}
-              </Link>
-              {iface.type_display && <div>{iface.type_display}</div>}
-              <div>
-                {state === "disabled"
-                  ? "disabled"
-                  : state === "free"
-                    ? "enabled · no cable"
-                    : `up${iface.speed ? ` · ${iface.speed}` : ""}`}
-              </div>
-              {obs && (
-                <div className="text-muted-foreground">{liveLine(obs)}</div>
-              )}
-              {iface.ip_addresses.slice(0, 3).map((ip) => (
-                <Link
-                  key={ip.id}
-                  to="/ips/$id"
-                  params={{ id: ip.id }}
-                  className="link"
+                <HoverCardTrigger asChild>
+                  {canEditParts ? (
+                    <button
+                      type="button"
+                      style={{
+                        ...style,
+                        borderColor: hex,
+                        backgroundColor: `${hex}40`,
+                      }}
+                      title={
+                        partDrift.get(item.id)
+                          ? `${item.name} - SNMP says ${partDrift.get(item.id)}, click to review`
+                          : `${item.name} - click to edit`
+                      }
+                      onClick={() => setPartDialog({ item, name })}
+                      className={cn(
+                        "absolute cursor-pointer rounded-[2px] border-2 transition-opacity hover:opacity-100 hover:ring-2 hover:ring-primary/40",
+                        // Observed health disagrees with the set status: ring it
+                        // rather than recolouring, so the bay keeps showing the
+                        // SoT and the drift reads as a separate signal.
+                        partDrift.get(item.id) &&
+                          "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
+                      )}
+                    />
+                  ) : (
+                    <span
+                      style={{
+                        ...style,
+                        borderColor: hex,
+                        backgroundColor: `${hex}40`,
+                      }}
+                      className="absolute rounded-[2px] border-2 transition-opacity hover:opacity-100"
+                    />
+                  )}
+                </HoverCardTrigger>
+                <HoverCardContent
+                  side="top"
+                  className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
                 >
-                  {ip.ip_address}
+                  <div className="font-semibold">{item.name}</div>
+                  <div className="text-muted-foreground">
+                    {[
+                      item.kind !== "other" ? item.kind : "",
+                      item.media,
+                      formatBytes(item.capacity_bytes),
+                      item.speed,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "hardware"}
+                  </div>
+                  {item.status && (
+                    <div style={{ color: item.status.color || undefined }}>
+                      {item.status.name}
+                    </div>
+                  )}
+                  {item.manufacturer?.name && (
+                    <div className="text-muted-foreground">
+                      {item.manufacturer.name}
+                      {item.part_id ? ` · ${item.part_id}` : ""}
+                    </div>
+                  )}
+                  {item.serial_number && (
+                    <div className="text-muted-foreground">
+                      SN {item.serial_number}
+                    </div>
+                  )}
+                  {item.asset_tag && (
+                    <div className="text-muted-foreground">
+                      Asset {item.asset_tag}
+                    </div>
+                  )}
+                  {item.parent?.name && (
+                    <div className="text-muted-foreground">
+                      in {item.parent.name}
+                    </div>
+                  )}
+                  {/* The last thing the sensors read for this part, so a red bay
+                    says what the agent actually returned, not just "failed". */}
+                  {sensorByName.get(normalizePortName(name)) && (
+                    <div className="text-muted-foreground">
+                      SNMP {sensorByName.get(normalizePortName(name))}
+                    </div>
+                  )}
+                  {/* Set status vs observed health, side by side - the difference
+                    is the point, and accepting it stays in the drift inbox. */}
+                  {partDrift.get(item.id) && (
+                    <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
+                      drift · SNMP says {partDrift.get(item.id)}
+                    </div>
+                  )}
+                  {canEditParts && (
+                    <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
+                      Click to edit
+                    </div>
+                  )}
+                </HoverCardContent>
+              </HoverCard>
+            )
+          }
+          // Module bays (line-card slots) read OCCUPANCY: an installed bay is
+          // filled, a free one is the same faint outline an idle port wears.
+          // Without a device (a type preview) every bay is definitionally
+          // unoccupied - that's an empty slot, not a broken marker.
+          if (kind === "module-bay") {
+            const fp = portByMarker.get(m.name)
+            if (deviceId && !fp?.id)
+              return (
+                <span
+                  key={`${m.name}-${idx}`}
+                  style={style}
+                  title={`${name} (not on this device)`}
+                  className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+                />
+              )
+            const mod = fp?.module ?? null
+            const hex = bayHex(!!mod)
+            // An EMPTY bay on a real device is the install affordance - click to
+            // seat a module, exactly like an empty disk bay installs hardware.
+            // (Removal stays on the Modules pane; occupied bays just report.)
+            const installable = !mod && !!fp?.id && canEditParts
+            const bayStyle = mod
+              ? { ...style, ...portOverlayStyle(hex) }
+              : { ...style, borderColor: `${hex}59` }
+            return (
+              <HoverCard
+                key={`${m.name}-${idx}`}
+                openDelay={100}
+                closeDelay={80}
+              >
+                <HoverCardTrigger asChild>
+                  {installable ? (
+                    <button
+                      type="button"
+                      style={bayStyle}
+                      title={`${name} - empty, click to install a module`}
+                      onClick={() =>
+                        fp.id && setInstallBay({ id: fp.id, name: fp.name })
+                      }
+                      className="absolute cursor-pointer rounded-[2px] border-2 hover:ring-2 hover:ring-primary/40"
+                    />
+                  ) : (
+                    <span
+                      style={bayStyle}
+                      className="absolute rounded-[2px] border-2"
+                    />
+                  )}
+                </HoverCardTrigger>
+                <HoverCardContent
+                  side="top"
+                  className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+                >
+                  <div className="font-semibold">{name}</div>
+                  <div className="text-muted-foreground">module bay</div>
+                  {mod ? (
+                    <>
+                      <div>{mod.module_type.name}</div>
+                      {mod.serial_number && (
+                        <div className="text-muted-foreground">
+                          SN {mod.serial_number}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div>Empty</div>
+                  )}
+                  {installable && (
+                    <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
+                      Click to install a module
+                    </div>
+                  )}
+                </HoverCardContent>
+              </HoverCard>
+            )
+          }
+          // A non-interface port kind (power inlet, console, aux, panel port):
+          // resolved through /face-ports/, drawn as a real cage - cabled ports
+          // tinted, free ones outlined - with drift ringed like everywhere else.
+          if (kind !== "interface") {
+            const fp = portByMarker.get(m.name)
+            if (!fp?.id)
+              return (
+                <span
+                  key={`${m.name}-${idx}`}
+                  style={style}
+                  title={`${name} (not on this device)`}
+                  className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+                />
+              )
+            const hex = fp.connected ? PORT_NEUTRAL.cabled : PORT_NEUTRAL.free
+            // A FREE port is the connect affordance - click opens the cable
+            // maker in place with this end already on side A. Cabled markers
+            // keep the plain hovercard; unknown marker kinds stay inert.
+            const termKind = markerTerminationKind(kind)
+            const connectable = !fp.connected && !!termKind && canConnect
+            const portStyle = fp.connected
+              ? { ...style, ...portOverlayStyle(hex) }
+              : {
+                  ...style,
+                  borderColor: `${hex}59`,
+                  ["--port-color" as never]: hex,
+                }
+            const portClass = cn(
+              "absolute rounded-[2px] border-2",
+              fp.drift &&
+                "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
+            )
+            return (
+              <HoverCard
+                key={`${m.name}-${idx}`}
+                openDelay={100}
+                closeDelay={80}
+              >
+                <HoverCardTrigger asChild>
+                  {connectable ? (
+                    <button
+                      type="button"
+                      style={portStyle}
+                      data-cable-state={fp.cable_state}
+                      data-port-name={fp.name}
+                      data-port-kind={termKind ?? ""}
+                      data-port-id={fp.id ?? ""}
+                      title={`${fp.name} - free, click to connect a cable`}
+                      onClick={() =>
+                        fp.id &&
+                        setConnect({ id: fp.id, kind: termKind, name: fp.name })
+                      }
+                      className={cn(
+                        portClass,
+                        "cursor-pointer hover:ring-2 hover:ring-primary/40"
+                      )}
+                    />
+                  ) : (
+                    <span
+                      style={portStyle}
+                      data-cable-state={fp.cable_state}
+                      data-port-name={fp.name}
+                      data-port-kind={termKind ?? ""}
+                      data-port-id={fp.id ?? ""}
+                      className={portClass}
+                    />
+                  )}
+                </HoverCardTrigger>
+                <HoverCardContent
+                  side="top"
+                  className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+                >
+                  <div className="font-semibold">
+                    {fp.name}
+                    {fp.label && (
+                      <span className="pl-1.5 font-normal text-muted-foreground">
+                        {fp.label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-muted-foreground">
+                    {[kind.replace(/-/g, " "), fp.type]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                  <div>{fp.connected ? "cabled" : "free"}</div>
+                  {fp.drift && (
+                    <div className="font-sans text-[10px] text-amber-600 dark:text-amber-400">
+                      drift · {fp.drift}
+                    </div>
+                  )}
+                  {connectable && (
+                    <div className="pt-0.5 font-sans text-[10px] text-muted-foreground">
+                      Click to connect a cable
+                    </div>
+                  )}
+                </HoverCardContent>
+              </HoverCard>
+            )
+          }
+          if (!iface) {
+            return (
+              <span
+                key={`${m.name}-${idx}`}
+                style={style}
+                title={`${name} (not on this device)`}
+                className="absolute rounded-[2px] border border-dashed border-border/70 bg-background/20"
+              />
+            )
+          }
+          const state = portState(iface)
+          const tint = { ...iface, type: iface.type_display || iface.type }
+          const markedLit = faceplateMarkedLit && cableState(iface) === "marked"
+          const tiered = (state !== "free" && state !== "disabled") || markedLit
+          const tintAsCabled = markedLit ? { ...tint, cable: true } : tint
+          const capability = portCapabilityHex(tint)
+          return (
+            <HoverCard key={iface.id} openDelay={100} closeDelay={80}>
+              <HoverCardTrigger asChild>
+                <Link
+                  to="/interfaces/$id"
+                  params={{ id: iface.id }}
+                  data-cable-state={cableState(iface)}
+                  data-port-name={iface.name}
+                  data-port-kind="interface"
+                  data-port-id={iface.id}
+                  style={
+                    // On a photo: cabled markers get an OPAQUE tier border +
+                    // solid-enough fill; idle markers are a VERY faint outline
+                    // only (capability-tinted when the type tells us) - no fill,
+                    // so the artwork stays the star until a port lights up.
+                    tiered
+                      ? { ...style, ...portOverlayStyle(portHex(tintAsCabled)) }
+                      : cableState(iface) === "reserved"
+                        ? // Directly reserved - amber outline, still no fill.
+                          {
+                            ...style,
+                            borderColor: "#f59e0bb3",
+                            backgroundColor: "transparent",
+                            ["--port-color" as never]: "#f59e0b",
+                          }
+                        : {
+                            ...style,
+                            borderColor: `${capability ?? "#a1a1aa"}59`, // ~35%
+                            backgroundColor: "transparent",
+                            ["--port-color" as never]: capability ?? "#a1a1aa",
+                          }
+                  }
+                  className={cn(
+                    "absolute rounded-[2px] border-2 transition-opacity hover:opacity-100",
+                    state === "disabled" && "border-dashed"
+                  )}
+                >
+                  {obs && (
+                    <span
+                      className={cn(
+                        "absolute -top-1 -right-1 h-2 w-2 rounded-full ring-1 ring-background",
+                        liveDotClass(obs)
+                      )}
+                      aria-hidden
+                    />
+                  )}
                 </Link>
-              ))}
-            </HoverCardContent>
-          </HoverCard>
-        )
-      })}
-      {/* The real part editor, not a copy of it - so changing a disk's status
+              </HoverCardTrigger>
+              <HoverCardContent
+                side="top"
+                className="grid gap-0.5 font-mono text-[11px] whitespace-nowrap"
+              >
+                <PortHoverBody
+                  i={iface}
+                  state={state}
+                  hasVlan={
+                    !!iface.vlan ||
+                    iface.tagged_vlans.length > 0 ||
+                    iface.mode === "tagged-all"
+                  }
+                  observed={obs}
+                />
+              </HoverCardContent>
+            </HoverCard>
+          )
+        })}
+        {/* The real part editor, not a copy of it - so changing a disk's status
           from the faceplate is the same write (and the same audit trail) as
           editing it on the Hardware tab. Shares its query key, so the bay
           recolours on save. */}
-      {canEditParts && partDialog && (
-        <InventoryItemDialog
-          deviceId={deviceId!}
-          item={partDialog.item}
-          initialName={partDialog.name}
-          siblings={inventory.data?.results ?? []}
-          open
-          onOpenChange={(o) => {
-            if (!o) setPartDialog(null)
-          }}
-        />
-      )}
-      {/* Same deal for module bays: the Modules pane's install dialog, not a
+        {canEditParts && partDialog && (
+          <InventoryItemDialog
+            deviceId={deviceId!}
+            item={partDialog.item}
+            initialName={partDialog.name}
+            siblings={inventory.data?.results ?? []}
+            open
+            onOpenChange={(o) => {
+              if (!o) setPartDialog(null)
+            }}
+          />
+        )}
+        {/* Same deal for module bays: the Modules pane's install dialog, not a
           copy - the write, the toast, and the cache invalidations are shared,
           so the bay marker flips to occupied on save. */}
-      {canEditParts && deviceId && installBay && (
-        <InstallModuleDialog
-          deviceId={deviceId}
-          bay={installBay}
-          onOpenChange={(o) => {
-            if (!o) setInstallBay(null)
-          }}
-        />
-      )}
-      {/* In-place cable maker for a clicked free port. Conditionally mounted
+        {canEditParts && deviceId && installBay && (
+          <InstallModuleDialog
+            deviceId={deviceId}
+            bay={installBay}
+            onOpenChange={(o) => {
+              if (!o) setInstallBay(null)
+            }}
+          />
+        )}
+        {/* In-place cable maker for a clicked free port. Conditionally mounted
           AND keyed: CableForm seeds initialA at mount only, so a stale mount
           would keep the previous port. */}
-      <Dialog open={!!connect} onOpenChange={(o) => !o && setConnect(null)}>
-        <DialogContent size="2xl" className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Connect a cable from {deviceName ? `${deviceName}:` : ""}
-              {connect?.name}
-            </DialogTitle>
-          </DialogHeader>
-          {connect && (
-            <CableForm
-              key={connect.id}
-              initialA={[{ kind: connect.kind, id: connect.id }]}
-              onSaved={() => setConnect(null)}
-              onCancel={() => setConnect(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+        <Dialog open={!!connect} onOpenChange={(o) => !o && setConnect(null)}>
+          <DialogContent size="2xl" className="max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                Connect a cable from {deviceName ? `${deviceName}:` : ""}
+                {connect?.name}
+              </DialogTitle>
+            </DialogHeader>
+            {connect && (
+              <CableForm
+                key={connect.id}
+                initialA={[{ kind: connect.kind, id: connect.id }]}
+                onSaved={() => setConnect(null)}
+                onCancel={() => setConnect(null)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   )
 }

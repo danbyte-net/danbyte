@@ -18,6 +18,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { WirelessLANDeleteDialog } from "@/components/wireless-lan-delete-dialog"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import { RevealPskButton } from "@/components/reveal-psk-button"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 
@@ -136,6 +137,20 @@ function Body({ wlan: w }: { wlan: WirelessLAN }) {
   )
 }
 
+/** "Stored" plus a reveal button, or a plain "Not set". The key itself is
+ * never in the page payload - revealing is a separate, audited request that
+ * needs the `reveal` grant on wireless LANs (#68). */
+function PskRow({ lan }: { lan: WirelessLAN }) {
+  const { canDo } = useMe()
+  if (!lan.psk_set) return <span className="text-muted-foreground">Not set</span>
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="font-mono text-[13px]">••••••••</span>
+      {canDo("wirelesslan", "reveal") && <RevealPskButton id={lan.id} />}
+    </span>
+  )
+}
+
 function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
   const { humanIds } = useMe()
 
@@ -208,6 +223,10 @@ function WlanOverview({ wlan: w }: { wlan: WirelessLAN }) {
       ) : (
         dash
       ),
+    },
+    {
+      label: "Pre-shared key",
+      value: <PskRow lan={w} />,
     },
   ]
 

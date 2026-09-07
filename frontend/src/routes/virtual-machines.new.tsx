@@ -11,6 +11,7 @@ function NewVmPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Virtual machines", to: "/virtual-machines" },
         { label: "Add" },
@@ -22,7 +23,9 @@ function NewVmPage() {
         onSaved={(vm) =>
           nav({ to: "/virtual-machines/$id", params: { id: vm.id } })
         }
-        onCancel={() => nav({ to: "/virtual-machines", search: { device: undefined } })}
+        onCancel={() =>
+          nav({ to: "/virtual-machines", search: { device: undefined } })
+        }
       />
     </EditPageShell>
   )

@@ -92,7 +92,9 @@ The dialog takes a **start** and **end** address, an optional **status**,
 shortcut that fills the range from:
 
 - a **DHCP scope pool** on the prefix (see [Windows DHCP & DNS sync](windows-sync.md)), or
-- the **whole prefix** (its usable host range).
+- the **whole prefix** (its usable host range) - or, on a prefix that
+  [allocates only from its ranges](ipam-objects.md#ip-ranges), each **range**
+  instead; a pool straddling a range edge is cut to the range.
 
 Addresses that already exist are skipped, and the prefix's network and broadcast
 addresses are never created. A single pool is capped at 1024 addresses - add a

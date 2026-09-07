@@ -27,6 +27,10 @@ So the form opens with a **Subnet** picker. To find the right one quickly:
 1. (Optional) narrow by **Site** and/or **VRF**.
 2. Pick the **Subnet** - the list filters to subnets in that site/VRF.
 3. The network part of the address is filled in for you; just type the host part.
+   A subnet that holds IP ranges offers a **Range** field - pick one to get
+   its free addresses as one-click picks and a **Next free** button. On a
+   subnet that [allocates only from its ranges](../features/ipam-objects.md#ip-ranges)
+   the pick is required and an address outside every range is refused.
 4. Set status, role, DNS name, etc., and save.
 
 ## Assign an existing IP

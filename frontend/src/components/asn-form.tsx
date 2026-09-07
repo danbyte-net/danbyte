@@ -9,23 +9,19 @@ import {
   type ASNWritePayload,
   type Paginated,
   type RIROption,
-  type TagOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { SiteMultiSelect } from "@/components/cells/site-multi-select"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { useFieldErrors } from "@/components/forms"
+import {
+  Field,
+  FormFooter,
+  FormSection,
+  FormSelect,
+  FormTags,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface AsnFormProps {
@@ -33,8 +29,6 @@ export interface AsnFormProps {
   onSaved: (saved: ASN) => void
   onCancel: () => void
 }
-
-const NONE = "__none__"
 
 export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
   const isEdit = !!asn
@@ -72,11 +66,6 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
     staleTime: 10 * 60_000,
   })
   const sites = useSiteOptions()
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -117,63 +106,60 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
       }}
       className="grid gap-4"
     >
-      <Field label="AS number" error={fieldErrors.asn}>
-        <Input
-          autoFocus={!isEdit}
-          required
-          type="number"
-          min={1}
-          max={4294967295}
-          placeholder="65001"
-          value={number}
-          onChange={(e) => setNumber(e.target.value)}
-          className="font-mono"
-        />
-      </Field>
+      <FormSection title="ASN" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="AS number"
+            required
+            autoFocus={!isEdit}
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={4294967295}
+            mono
+            value={number}
+            onChange={setNumber}
+            placeholder="65001"
+            error={fieldErrors.asn}
+          />
+          <FormSelect
+            label="RIR"
+            value={rirId}
+            onChange={setRirId}
+            options={(rirs.data?.results ?? []).map((r) => ({
+              value: r.id,
+              label: r.name,
+            }))}
+            noneLabel="No RIR"
+            placeholder="No RIR"
+            error={fieldErrors.rir_id}
+          />
+        </div>
 
-      <Field label="RIR" hint="optional" error={fieldErrors.rir_id}>
-        <Select
-          value={rirId ?? NONE}
-          onValueChange={(v) => setRirId(v === NONE ? null : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="No RIR" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No RIR</SelectItem>
-            {rirs.data?.results.map((r) => (
-              <SelectItem key={r.id} value={r.id}>
-                {r.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
+        <Field label="Sites" error={fieldErrors.site_ids}>
+          <SiteMultiSelect
+            options={sites.options}
+            value={siteIds}
+            onChange={setSiteIds}
+          />
+        </Field>
 
-      <Field label="Sites" hint="optional">
-        <SiteMultiSelect
-          options={sites.options}
-          value={siteIds}
-          onChange={setSiteIds}
-        />
-      </Field>
-
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
+        <FormTextarea
+          label="Description"
           rows={3}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="e.g. Edge / transit AS"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="asn"
@@ -181,48 +167,11 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create ASN"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create ASN"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string
-  hint?: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs">{label}</Label>
-        {hint && (
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
-        )}
-      </div>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

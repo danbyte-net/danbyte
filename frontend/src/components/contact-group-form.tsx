@@ -11,6 +11,7 @@ import {
 import {
   FormCombobox,
   FormFooter,
+  FormSection,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -106,45 +107,48 @@ export function ContactGroupForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={onNameChange}
-        error={fieldErrors.name}
-      />
-      <FormText
-        label="Slug"
-        hint="URL-safe id"
-        required
-        placeholder="noc"
-        value={slug}
-        onChange={(v) => {
-          setSlugDirty(true)
-          setSlug(slugify(v))
-        }}
-        mono
-        error={fieldErrors.slug}
-      />
-      <FormCombobox
-        label="Parent group"
-        hint="optional"
-        value={parentId}
-        onChange={setParentId}
-        options={parentOptions}
-        noneLabel="No parent"
-        placeholder="No parent"
-        error={fieldErrors.parent_id}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+      <FormSection title="Contact group" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={onNameChange}
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Slug"
+            hint="URL-safe id"
+            placeholder="noc"
+            value={slug}
+            onChange={(v) => {
+              setSlugDirty(true)
+              setSlug(slugify(v))
+            }}
+            mono
+            error={fieldErrors.slug}
+          />
+        </div>
+        <FormCombobox
+          label="Parent group"
+          hint="optional"
+          value={parentId}
+          onChange={setParentId}
+          options={parentOptions}
+          noneLabel="No parent"
+          placeholder="No parent"
+          error={fieldErrors.parent_id}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

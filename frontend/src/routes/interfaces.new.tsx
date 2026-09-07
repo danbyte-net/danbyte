@@ -1,3 +1,4 @@
+import { toast } from "sonner"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 
 import { InterfaceForm } from "@/components/interface-form"
@@ -19,6 +20,7 @@ function NewInterfacePage() {
   const { device } = Route.useSearch()
   return (
     <EditPageShell
+      wide
       className="max-w-5xl"
       crumbs={[{ label: "Interfaces", to: "/interfaces" }, { label: "Add" }]}
       title="Add interface"
@@ -26,13 +28,24 @@ function NewInterfacePage() {
     >
       <InterfaceForm
         initialDeviceId={device}
-        onSaved={(i, count) =>
+        onSaved={(i, count) => {
           // A [a-b] name range creates several - show them together on the
           // device rather than dropping onto the last one.
-          count > 1
-            ? nav({ to: "/devices/$id", params: { id: i.device.id } })
-            : nav({ to: "/interfaces/$id", params: { id: i.id } })
-        }
+          if (count > 1) {
+            void nav({ to: "/devices/$id", params: { id: i.device.id } })
+            return
+          }
+          void nav({ to: "/interfaces/$id", params: { id: i.id } })
+          // Addressing a port right after making it is the common next move,
+          // and the IP form owns the fields an IP actually needs.
+          toast("Give it an address?", {
+            action: {
+              label: "Add an IP",
+              onClick: () =>
+                nav({ to: "/ips/new", search: { interface: i.id } }),
+            },
+          })
+        }}
         onCancel={() => nav({ to: "/interfaces" })}
       />
     </EditPageShell>

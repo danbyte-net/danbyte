@@ -33,6 +33,7 @@ SITE_PATHS: dict[str, str] = {
     "powerport": "device__site",
     "poweroutlet": "device__site",
     "auxport": "device__site",
+    "antenna": "device__site",
     # Denormalized on the row (its port could be any of nine kinds).
     "portreservation": "site",
     "inventoryitem": "device__site",
@@ -81,6 +82,7 @@ CATALOG_SITE_PATHS: dict[str, str] = {
     "rearporttemplate": "device_type__owning_site",
     "frontporttemplate": "device_type__owning_site",
     "auxporttemplate": "device_type__owning_site",
+    "antennatemplate": "device_type__owning_site",
     "devicebaytemplate": "device_type__owning_site",
     "modulebaytemplate": "device_type__owning_site",
     "inventoryitemtemplate": "device_type__owning_site",

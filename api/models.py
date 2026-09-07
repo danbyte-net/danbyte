@@ -8,13 +8,18 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from .dcim_choices import (
+    ANTENNA_BAND_CHOICES,
+    ANTENNA_POLARIZATION_CHOICES,
+    ANTENNA_TYPE_CHOICES,
     AUX_PORT_TYPE_CHOICES,
     CABLE_TYPE_CHOICES,
     CONSOLE_PORT_TYPE_CHOICES,
     INTERFACE_TYPE_CHOICES,
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
+    RF_CONNECTOR_CHOICES,
 )
+from .speed import normalize_speed
 from core.models import (
     CustomFieldsMixin,
     Organization,
@@ -521,6 +526,21 @@ class _ComponentTemplate(TimestampedModel):
     def __str__(self) -> str:
         return f"{self.device_type.name}:{self.name}"
 
+    def save(self, *args, **kwargs):
+        # Photo markers and faceplate slots reference templates by NAME, so a
+        # rename must follow into them or the placed port silently orphans.
+        old = None
+        if self.pk:
+            old = (
+                type(self)._default_manager.filter(pk=self.pk)
+                .values_list("name", flat=True)
+                .first()
+            )
+        super().save(*args, **kwargs)
+        kind = _TEMPLATE_MARKER_KIND.get(type(self).__name__)
+        if kind and old and old != self.name and self.device_type_id:
+            rename_marker_refs(self.device_type, kind, old, self.name)
+
 
 class InterfaceTemplate(_ComponentTemplate):
     device_type = models.ForeignKey(
@@ -586,6 +606,53 @@ class AuxPortTemplate(_ComponentTemplate):
     type = models.CharField(
         max_length=32, blank=True, default="", choices=AUX_PORT_TYPE_CHOICES
     )
+
+    class Meta:
+        unique_together = ("device_type", "name")
+        ordering = ["name"]
+
+
+def validate_antenna_bands(value):
+    """The band list holds validated slugs only - a future coverage
+    calculator must never meet free text here (#111)."""
+    from django.core.exceptions import ValidationError
+
+    valid = {slug for slug, _ in ANTENNA_BAND_CHOICES}
+    if not isinstance(value, list):
+        raise ValidationError("Bands are a list of band slugs.")
+    bad = [b for b in value if b not in valid]
+    if bad:
+        raise ValidationError(
+            f"Unknown band(s): {', '.join(map(str, bad))}. "
+            f"Valid: {', '.join(sorted(valid))}."
+        )
+
+
+class AntennaTemplate(_ComponentTemplate):
+    """Template for an antenna (#111), so the device library can seed an AP's
+    integrated elements onto every device built from the type."""
+
+    device_type = models.ForeignKey(
+        DeviceType, on_delete=models.CASCADE,
+        related_name="antenna_templates",
+    )
+    antenna_type = models.CharField(
+        max_length=16, blank=True, default="", choices=ANTENNA_TYPE_CHOICES
+    )
+    gain_dbi = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    bands = models.JSONField(
+        default=list, blank=True, validators=[validate_antenna_bands]
+    )
+    polarization = models.CharField(
+        max_length=16, blank=True, default="",
+        choices=ANTENNA_POLARIZATION_CHOICES,
+    )
+    connector = models.CharField(
+        max_length=16, blank=True, default="", choices=RF_CONNECTOR_CHOICES
+    )
+    direct_mount = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("device_type", "name")
@@ -937,7 +1004,8 @@ def materialize_device_components(device) -> dict[str, int]:
 
     have = _names(device.interfaces)
     made = [
-        Interface(device=device, name=n, type=t.type, enabled=t.enabled,
+        Interface(device=device, name=n, marker_key=n, type=t.type,
+                  enabled=t.enabled,
                   mgmt_only=t.mgmt_only, combo_group=t.combo_group,
                   poe_mode=t.poe_mode, poe_type=t.poe_type,
                   description=t.description)
@@ -1001,7 +1069,8 @@ def materialize_device_components(device) -> dict[str, int]:
     # Rear ports before front ports (front ports map onto rear positions).
     have = _names(device.rear_ports)
     made = [
-        RearPort(device=device, name=n, type=t.type, positions=t.positions,
+        RearPort(device=device, name=n, marker_key=n, type=t.type,
+                 positions=t.positions,
                  is_splitter=t.is_splitter, description=t.description)
         for t in dt.rear_port_templates.all()
         if (n := render_component_name(t.name, pos)) not in have
@@ -1013,7 +1082,7 @@ def materialize_device_components(device) -> dict[str, int]:
     have = _names(device.front_ports)
     made = [
         FrontPort(
-            device=device, name=n, type=t.type,
+            device=device, name=n, marker_key=n, type=t.type,
             rear_port=rears_by_name[
                 render_component_name(t.rear_port_template.name, pos)
             ],
@@ -1036,6 +1105,20 @@ def materialize_device_components(device) -> dict[str, int]:
     ]
     AuxPort.objects.bulk_create(made)
     created["aux_ports"] = len(made)
+
+    have = _names(device.antennas)
+    made = [
+        Antenna(
+            device=device, name=n, antenna_type=t.antenna_type,
+            gain_dbi=t.gain_dbi, bands=list(t.bands or []),
+            polarization=t.polarization, connector=t.connector,
+            direct_mount=t.direct_mount, description=t.description,
+        )
+        for t in dt.antenna_templates.all()
+        if (n := render_component_name(t.name, pos)) not in have
+    ]
+    Antenna.objects.bulk_create(made)
+    created["antennas"] = len(made)
 
     have = _names(device.inventory_items)
     made = [
@@ -1110,6 +1193,84 @@ def materialize_device_components(device) -> dict[str, int]:
 #: diff. Front ports are deliberately absent: a marker cannot express the
 #: rear-port mapping a FrontPort requires, so a front-port marker with no
 #: template stays a ghost on the render rather than a half-made component.
+# Which marker kind each template model's names appear under - the rename
+# hook on _ComponentTemplate.save uses this to follow renames into the
+# type's photo markers and faceplate slots.
+_TEMPLATE_MARKER_KIND = {
+    "InterfaceTemplate": "interface",
+    "FrontPortTemplate": "front-port",
+    "ConsolePortTemplate": "console-port",
+    "ConsoleServerPortTemplate": "console-server-port",
+    "PowerPortTemplate": "power-port",
+    "PowerOutletTemplate": "power-outlet",
+    "RearPortTemplate": "rear-port",
+    "AuxPortTemplate": "aux-port",
+    "AntennaTemplate": "antenna",
+    "InventoryItemTemplate": "inventory-item",
+    "ModuleBayTemplate": "module-bay",
+}
+
+
+def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
+    """Follow a component-template rename into the type's photo markers
+    (``image_ports``) and custom faceplate slots - both reference components
+    by (kind, name), so a rename otherwise orphans the placed port. Returns
+    True when anything was rewritten."""
+    fields = []
+    ip = device_type.image_ports
+    ip_changed = False
+    if isinstance(ip, dict):
+        for side in ("front", "rear"):
+            for marker in ip.get(side) or []:
+                if (
+                    isinstance(marker, dict)
+                    and marker.get("kind", "interface") == kind
+                    and marker.get("name") == old
+                ):
+                    marker["name"] = new
+                    ip_changed = True
+    if ip_changed:
+        fields.append("image_ports")
+    fp = device_type.faceplate
+    fp_changed = False
+    if isinstance(fp, dict):
+        for side in ("front", "rear"):
+            for group in fp.get(side) or []:
+                if not isinstance(group, dict):
+                    continue
+                for slot in group.get("slots") or []:
+                    if (
+                        isinstance(slot, dict)
+                        and slot.get("t") == "port"
+                        and slot.get("kind", "interface") == kind
+                        and slot.get("name") == old
+                    ):
+                        slot["name"] = new
+                        fp_changed = True
+    if fp_changed:
+        fields.append("faceplate")
+    if fields:
+        device_type.save(update_fields=fields)
+    # Child devices' components carry the OLD name as their frozen marker
+    # identity - follow the rename there too, or every placed port on every
+    # existing device of this type orphans at once.
+    _KEY_MODELS = {
+        "interface": Interface,
+        "front-port": FrontPort,
+        "rear-port": RearPort,
+    }
+    model = _KEY_MODELS.get(kind)
+    if model is not None:
+        model.objects.filter(
+            device__device_type=device_type, marker_key=old
+        ).update(marker_key=new)
+    return bool(fields)
+
+
+# NOTE: no "front-port" entry on purpose - a bare front port can't be
+# stamped (it needs a rear-port mapping), so front-port markers are excluded
+# from the create/diff paths. They still RESOLVE (viewsets._FACE_PORT_KINDS)
+# and template renames still follow (_TEMPLATE_MARKER_KIND).
 _MARKER_KIND_RELS = {
     "interface": "interfaces",
     "console-port": "console_ports",
@@ -1118,12 +1279,13 @@ _MARKER_KIND_RELS = {
     "power-outlet": "power_outlets",
     "rear-port": "rear_ports",
     "aux-port": "aux_ports",
+    "antenna": "antennas",
     "inventory-item": "inventory_items",
     "module-bay": "module_bays",
 }
 
 
-def marker_referenced_names(device_type) -> dict[str, set[str]]:
+def marker_referenced_names(device_type, image_ports=None) -> dict[str, set[str]]:
     """Component names the type's faceplate slots and photo markers point at,
     keyed by device relation.
 
@@ -1146,7 +1308,8 @@ def marker_referenced_names(device_type) -> dict[str, set[str]]:
             for slot in group.get("slots", []) or []:
                 if isinstance(slot, dict) and slot.get("t") == "port":
                     note(slot.get("kind", "interface"), slot.get("name"))
-        for marker in (device_type.image_ports or {}).get(side, []) or []:
+        doc = image_ports if image_ports is not None else device_type.image_ports
+        for marker in (doc or {}).get(side, []) or []:
             if isinstance(marker, dict):
                 note(marker.get("kind", "interface"), marker.get("name"))
     return out
@@ -1158,7 +1321,8 @@ def stamp_marker_components(device) -> dict[str, int]:
     dt = device.device_type
     if dt is None:
         return {}
-    wanted = marker_referenced_names(dt)
+    # A device-level photo-port override names components on THIS device.
+    wanted = marker_referenced_names(dt, image_ports=device.image_ports)
     if not wanted:
         return {}
     pos = device.vc_position
@@ -1172,15 +1336,25 @@ def stamp_marker_components(device) -> dict[str, int]:
         "power_outlets": (PowerOutlet, {"type": "other"}),
         "rear_ports": (RearPort, {}),
         "aux_ports": (AuxPort, {"type": "other"}),
+        "antennas": (Antenna, {}),
         "inventory_items": (InventoryItem, {}),
         "module_bays": (ModuleBay, {}),
     }
     created: dict[str, int] = {}
     for rel, names in wanted.items():
+        if rel not in factories:
+            # Front ports need a rear-port mapping - they can't be stamped
+            # bare; the marker resolves once the real port exists.
+            continue
         model, extra = factories[rel]
         have = set(getattr(device, rel).values_list("name", flat=True))
+        keyed = model in (Interface, FrontPort, RearPort)
         made = [
-            model(device=device, name=n, **extra)
+            model(
+                device=device, name=n,
+                **({"marker_key": n} if keyed else {}),
+                **extra,
+            )
             for raw in sorted(names)
             if (n := render_component_name(raw, pos)) not in have
         ]
@@ -1202,6 +1376,7 @@ _SYNC_KINDS = [
     ("rear_ports", "rear_port_templates", True),
     ("front_ports", "front_port_templates", True),
     ("aux_ports", "aux_port_templates", True),
+    ("antennas", "antenna_templates", True),
     ("inventory_items", "inventory_item_templates", True),
     ("device_bays", "device_bay_templates", True),
     ("module_bays", "module_bay_templates", True),
@@ -1257,7 +1432,7 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
         order = [
             "front_ports", "power_outlets", "services", "interfaces",
             "console_ports", "console_server_ports", "aux_ports",
-            "inventory_items", "device_bays", "module_bays",
+            "antennas", "inventory_items", "device_bays", "module_bays",
             "rear_ports", "power_ports",
         ]
         for dev_rel in order:
@@ -1547,6 +1722,10 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=5, choices=FACE_CHOICES, blank=True, default="",
     )
     SIDE_CHOICES = [("left", "Left"), ("right", "Right")]
+    # Per-device photo-port override (#special-devices): same doc shape as
+    # DeviceType.image_ports. Null = inherit the type's layout; a set doc
+    # replaces it entirely for THIS device (face-ports, 2D and 3D renders).
+    image_ports = models.JSONField(null=True, blank=True, default=None)
     rack_side = models.CharField(
         max_length=5, choices=SIDE_CHOICES, blank=True, default="",
         help_text=("Which half of the U a half-width device occupies (the "
@@ -2070,6 +2249,13 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "(so site-scoped users/filters pick them up).",
     )
     description = models.TextField(blank=True)
+    allocate_from_ranges = models.BooleanField(
+        default=False,
+        help_text="Only the IP ranges inside this prefix are allocatable: next "
+        "available, free rows, pools and utilisation come from them, and a new "
+        "address outside every range is refused. For a provider handing out a "
+        "slice of a subnet that isn't yours.",
+    )
     auto_discover = models.BooleanField(
         default=False,
         help_text="Opt in to periodic ICMP discovery - responders not yet "
@@ -2170,6 +2356,11 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # forever ~0%, which is noise, so leave it blank (UI shows nothing).
         if n.version == 6 and not is_enumerable(n):
             return None
+        if self.allocate_from_ranges:
+            summary = self.allocation_summary()
+            if not summary or summary["size"] == 0:
+                return None
+            return min(100, int(round(100 * summary["used"] / summary["size"])))
         if n.num_addresses <= 2:
             capacity = n.num_addresses
         else:
@@ -2178,6 +2369,76 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             return None
         used = self.ip_addresses.count()
         return min(100, int(round(100 * used / capacity)))
+
+    # ── Allocation from ranges ────────────────────────────────────────────
+    # A provider hands out .61-.67 of a /24 that isn't yours. With
+    # ``allocate_from_ranges`` on, the ranges under the prefix ARE its
+    # allocatable space: next available, free rows, pools and utilisation come
+    # from them, and the IP serializer refuses an address outside every range.
+    # DHCP exclusions are carved OUT of a pool, so they never count as one.
+
+    def allocation_ranges(self):
+        """The ranges this prefix allocates from, in address order."""
+        return (
+            self.ip_ranges.filter(dhcp_exclusions__isnull=True)
+            .order_by("start_address")
+        )
+
+    def allocation_spans(self) -> list[tuple[int, int]]:
+        """``[(start, end)]`` as ints for every well-formed allocation range
+        of this prefix's family. Empty when the option is off."""
+        if not self.allocate_from_ranges:
+            return []
+        net = self.network
+        out: list[tuple[int, int]] = []
+        for rng in self.allocation_ranges():
+            s, e = rng._start_ip, rng._end_ip
+            if s is None or e is None or s.version != e.version or int(e) < int(s):
+                continue
+            if net is not None and s.version != net.version:
+                continue
+            out.append((int(s), int(e)))
+        out.sort()
+        return out
+
+    def in_allocation(self, address: str) -> bool:
+        """Whether ``address`` falls inside one of the allocation ranges."""
+        try:
+            n = int(ipaddress.ip_address(address))
+        except ValueError:
+            return False
+        return any(s <= n <= e for s, e in self.allocation_spans())
+
+    def allocation_summary(self) -> dict | None:
+        """``{size, used, free, ranges}`` for the allocation ranges, or
+        ``None`` when the prefix allocates from its whole network. ``used``
+        counts this prefix's IPs that sit inside a range."""
+        if not self.allocate_from_ranges:
+            return None
+        spans = self.allocation_spans()
+        size = sum(e - s + 1 for s, e in spans)
+        used = 0
+        if spans:
+            for raw in self.ip_addresses.values_list("ip_address", flat=True):
+                try:
+                    n = int(ipaddress.ip_address(raw))
+                except ValueError:
+                    continue
+                if any(s <= n <= e for s, e in spans):
+                    used += 1
+        return {
+            "size": size,
+            "used": used,
+            "free": max(0, size - used),
+            "ranges": [
+                {
+                    "id": str(r.id),
+                    "start_address": r.start_address,
+                    "end_address": r.end_address,
+                }
+                for r in self.allocation_ranges()
+            ],
+        }
 
 
 class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
@@ -2494,6 +2755,12 @@ class Status(_LabeledChoice):
                    "outage event leaves the open list, the calendar's open "
                    "count, and releases its silence."),
     )
+    excludes_capacity = models.BooleanField(
+        default=False,
+        help_text=("Ports carrying this status don't count as capacity in "
+                   "port utilization - the hardware isn't there (interface "
+                   "'Not present' / 'Decommissioning')."),
+    )
 
     class Meta(_LabeledChoice.Meta):
         verbose_name_plural = "statuses"
@@ -2548,6 +2815,14 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         Device, on_delete=models.CASCADE, related_name="interfaces"
     )
     name = models.CharField(max_length=64)
+    # The real-world name when it differs from the (template-matching) name -
+    # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
+    # the label carries what's actually printed on it ("X1-P1").
+    label = models.CharField(max_length=64, blank=True, default="")
+    # Stable marker identity (#photo-ports): frozen from the template name
+    # at materialization, matched FIRST by photo markers - so the visible
+    # name can be renamed freely and placed ports keep resolving.
+    marker_key = models.CharField(max_length=64, blank=True, default="")
     snmp_name = models.CharField(
         max_length=128, blank=True, default="",
         help_text="What the agent calls this interface over SNMP (ifName / "
@@ -2576,6 +2851,14 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     speed = models.CharField(max_length=64, blank=True)
     mtu = models.IntegerField(blank=True, null=True)
     enabled = models.BooleanField(default=True)
+    # Lifecycle, distinct from ``enabled`` (the admin flag the device
+    # reports): a port can be enabled in config yet Not present in the rack
+    # (a pre-allocated stack port), or disabled by an operator while very
+    # much installed. Null reads as Active (#105).
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="interfaces",
+    )
     poe_mode = models.CharField(max_length=8, blank=True, default="")
     poe_type = models.CharField(max_length=32, blank=True, default="")
     mgmt_only = models.BooleanField(
@@ -2652,7 +2935,7 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="children",
         help_text="The interface this one nests under (e.g. a sub-interface "
-                  "ae1.100 → ae1). Must be on the same device.",
+                  "ae1.100 → ae1). Same device or virtual chassis.",
     )
     # LAG / aggregation: members point `lag` at the aggregate
     # interface. The aggregate is whatever interface is referenced here.
@@ -2660,13 +2943,36 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="lag_members",
         help_text="The link-aggregation (LAG/aggregate) interface this one is a "
-                  "member of, e.g. a physical port → ae1. Same device.",
+                  "member of, e.g. a physical port → ae1. Same device or "
+                  "virtual chassis.",
     )
     # Bridge group: members point `bridge` at the bridge.
     bridge = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="bridge_members",
-        help_text="The bridge interface this one belongs to. Same device.",
+        help_text="The bridge interface this one belongs to. Same device or "
+                  "virtual chassis.",
+    )
+    # Bundle settings - meaningful on the aggregate (type "lag") only. The
+    # port-channel / ae / bond IS the logical link; LACP (or PAgP, or nothing
+    # for a static "on" bundle) is the protocol negotiating it, so the
+    # protocol lives here and members just point `lag` at this row.
+    LAG_PROTOCOL_CHOICES = [("lacp", "LACP (802.3ad)"), ("pagp", "PAgP")]
+    LACP_MODE_CHOICES = [("active", "Active"), ("passive", "Passive")]
+    LACP_RATE_CHOICES = [("slow", "Slow (30 s)"), ("fast", "Fast (1 s)")]
+    lag_protocol = models.CharField(
+        max_length=8, blank=True, default="", choices=LAG_PROTOCOL_CHOICES,
+        help_text="Bundling protocol. Blank = static aggregate (no negotiation).",
+    )
+    lacp_mode = models.CharField(
+        max_length=8, blank=True, default="", choices=LACP_MODE_CHOICES,
+    )
+    lacp_rate = models.CharField(
+        max_length=8, blank=True, default="", choices=LACP_RATE_CHOICES,
+    )
+    lag_min_links = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Members that must be up for the bundle to count as up.",
     )
 
     class Meta:
@@ -2674,6 +2980,16 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         ordering = ["name"]
 
     def save(self, *args, **kwargs):
+        # An aggregate has no physical port, and LACP knobs mean nothing
+        # without LACP. Normalised here (not only in the serializer) so bulk
+        # edits, imports and shell writes land in the same shape.
+        if self.type == "lag":
+            self.virtual = True
+        if self.lag_protocol != "lacp":
+            self.lacp_mode = ""
+            self.lacp_rate = ""
+        # A bare kbps number (what a switch scraper sends) reads as "1G".
+        self.speed = normalize_speed(self.speed)
         super().save(*args, **kwargs)
         # Combo/shared port: only one connector in a group is live at a time.
         # Enabling one disables its siblings on the same device. A queryset
@@ -2737,6 +3053,14 @@ class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         Device, on_delete=models.CASCADE, related_name="rear_ports"
     )
     name = models.CharField(max_length=64)
+    # The real-world name when it differs from the (template-matching) name -
+    # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
+    # the label carries what's actually printed on it ("X1-P1").
+    label = models.CharField(max_length=64, blank=True, default="")
+    # Stable marker identity (#photo-ports): frozen from the template name
+    # at materialization, matched FIRST by photo markers - so the visible
+    # name can be renamed freely and placed ports keep resolving.
+    marker_key = models.CharField(max_length=64, blank=True, default="")
     positions = models.PositiveSmallIntegerField(
         default=1, help_text="Number of strands / front-port positions."
     )
@@ -2782,6 +3106,14 @@ class FrontPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         Device, on_delete=models.CASCADE, related_name="front_ports"
     )
     name = models.CharField(max_length=64)
+    # The real-world name when it differs from the (template-matching) name -
+    # a panel keeps generic "Port 1..N" ports so photo markers resolve, and
+    # the label carries what's actually printed on it ("X1-P1").
+    label = models.CharField(max_length=64, blank=True, default="")
+    # Stable marker identity (#photo-ports): frozen from the template name
+    # at materialization, matched FIRST by photo markers - so the visible
+    # name can be renamed freely and placed ports keep resolving.
+    marker_key = models.CharField(max_length=64, blank=True, default="")
     rear_port = models.ForeignKey(
         RearPort, on_delete=models.CASCADE, related_name="front_ports"
     )
@@ -3031,8 +3363,8 @@ class Module(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """An auxiliary physical connector on a device - USB data ports, video
     outputs (HDMI/VGA/DP), card slots, grounding lugs: everything no other
-    component type models. Not cable-terminable (yet). Tenant scope inherited
-    via device."""
+    component type models. Cable-terminable (a POINT_FIELDS member) since the
+    port-reservation work. Tenant scope inherited via device."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     device = models.ForeignKey(
@@ -3041,6 +3373,58 @@ class AuxPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     name = models.CharField(max_length=64)
     type = models.CharField(
         max_length=32, blank=True, default="", choices=AUX_PORT_TYPE_CHOICES
+    )
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        unique_together = ("device", "name")
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.device.name}:{self.name}"
+
+
+class Antenna(TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A radiating element on a device (#111) - pure L1 inventory.
+
+    An indoor AP's four internal omnis are documented as components here;
+    an external sector on a mast is a small *device* of its own whose Antenna
+    component describes the element and whose RF aux port takes the coax.
+    Deliberately NOT cable-terminable: the coax run terminates on an aux port
+    with an RF connector type - the antenna is what hangs off it.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="antennas"
+    )
+    name = models.CharField(max_length=64)
+    antenna_type = models.CharField(
+        max_length=16, blank=True, default="", choices=ANTENNA_TYPE_CHOICES
+    )
+    #: Numeric on purpose - "5 dBi" as text is useless to a calculator.
+    gain_dbi = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Peak gain in dBi.",
+    )
+    #: Multi-band = several entries; "multi" is not itself a band.
+    bands = models.JSONField(
+        default=list, blank=True, validators=[validate_antenna_bands],
+        help_text="Band slugs, e.g. [\"2.4ghz\", \"5ghz\"].",
+    )
+    polarization = models.CharField(
+        max_length=16, blank=True, default="",
+        choices=ANTENNA_POLARIZATION_CHOICES,
+    )
+    connector = models.CharField(
+        max_length=16, blank=True, default="", choices=RF_CONNECTOR_CHOICES,
+        help_text="RF connector, for external elements. Blank for internal.",
+    )
+    #: Screwed straight onto the device's connector - no coax run to document
+    #: (deku-m's edge case, so it doesn't fall between internal and external).
+    direct_mount = models.BooleanField(
+        default=False,
+        help_text="Mounted directly on the device connector, no cable.",
     )
     description = models.CharField(max_length=255, blank=True, default="")
 
@@ -3191,7 +3575,7 @@ class CableTermination(TimestampedModel):
     POINT_FIELDS = [
         "interface", "front_port", "rear_port", "console_port",
         "console_server_port", "power_port", "power_outlet", "power_feed",
-        "aux_port",
+        "aux_port", "circuit_termination",
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -3236,6 +3620,13 @@ class CableTermination(TimestampedModel):
         AuxPort, on_delete=models.CASCADE, null=True, blank=True,
         related_name="terminations",
     )
+    # A circuit's end is a cable endpoint like any port: the provider's
+    # handoff lands on a real switch port, and until this existed you could
+    # only record it as free text in pp_info (#118).
+    circuit_termination = models.ForeignKey(
+        "CircuitTermination", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="terminations",
+    )
 
     class Meta:
         ordering = ["end"]
@@ -3254,7 +3645,7 @@ class CableTermination(TimestampedModel):
                                     "interface", "front_port", "rear_port",
                                     "console_port", "console_server_port",
                                     "power_port", "power_outlet", "power_feed",
-                                    "aux_port",
+                                    "aux_port", "circuit_termination",
                                 ]
                                 if other != set_field
                             },
@@ -3263,7 +3654,7 @@ class CableTermination(TimestampedModel):
                             "interface", "front_port", "rear_port",
                             "console_port", "console_server_port",
                             "power_port", "power_outlet", "power_feed",
-                            "aux_port",
+                            "aux_port", "circuit_termination",
                         ]
                     ],
                     _connector=models.Q.OR,
@@ -3272,6 +3663,11 @@ class CableTermination(TimestampedModel):
             models.UniqueConstraint(
                 fields=["interface"], condition=models.Q(interface__isnull=False),
                 name="uniq_termination_interface",
+            ),
+            models.UniqueConstraint(
+                fields=["circuit_termination"],
+                condition=models.Q(circuit_termination__isnull=False),
+                name="uniq_termination_circuit_termination",
             ),
             models.UniqueConstraint(
                 fields=["front_port"], condition=models.Q(front_port__isnull=False),
@@ -3405,9 +3801,19 @@ def retire_port_placeholders(terminations) -> None:
             for p in ports:
                 if p.pk in set(clearable):
                     p.mark_connected = False
-        PortReservation.objects.filter(
-            Q(**{f"{field}__in": ids})
-        ).delete()
+        # Only device-side ports can be reserved - a circuit end has no
+        # reservation column to filter on.
+        if field in PortReservation.POINT_FIELDS:
+            PortReservation.objects.filter(
+                Q(**{f"{field}__in": ids})
+            ).delete()
+
+
+# The device-side cable points only: you reserve a port on a box, not the
+# circuit end that lands on it (and PortReservation has no FK for one).
+_RESERVABLE_POINTS = [
+    f for f in CableTermination.POINT_FIELDS if f != "circuit_termination"
+]
 
 
 class PortReservation(TimestampedModel):
@@ -3416,7 +3822,7 @@ class PortReservation(TimestampedModel):
     ends picked): a reservation names exactly one port. Released automatically
     when a cable termination lands on the port."""
 
-    POINT_FIELDS = CableTermination.POINT_FIELDS
+    POINT_FIELDS = _RESERVABLE_POINTS
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -3484,11 +3890,11 @@ class PortReservation(TimestampedModel):
                             f"{set_field}__isnull": False,
                             **{
                                 f"{other}__isnull": True
-                                for other in CableTermination.POINT_FIELDS
+                                for other in _RESERVABLE_POINTS
                                 if other != set_field
                             },
                         })
-                        for set_field in CableTermination.POINT_FIELDS
+                        for set_field in _RESERVABLE_POINTS
                     ],
                     _connector=models.Q.OR,
                 ),
@@ -3498,7 +3904,7 @@ class PortReservation(TimestampedModel):
                     fields=[f], condition=models.Q(**{f"{f}__isnull": False}),
                     name=f"uniq_reservation_{f}",
                 )
-                for f in CableTermination.POINT_FIELDS
+                for f in _RESERVABLE_POINTS
             ],
         ]
 
@@ -3757,6 +4163,25 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     name = models.CharField(max_length=64)
     enabled = models.BooleanField(default=True)
+    # What the interface IS (#140): a regular virtual NIC (blank), or a
+    # software construct - a tunnel (wg/gre/vxlan/tun), bridge, or loopback -
+    # which carries no meaningful MAC or link speed.
+    KIND_CHOICES = [
+        ("", "Virtual"),
+        ("bridge", "Bridge"),
+        ("loopback", "Loopback"),
+        ("tunnel", "Tunnel"),
+    ]
+    kind = models.CharField(
+        max_length=16, blank=True, default="", choices=KIND_CHOICES,
+    )
+    # Nesting: the interface this one rides on - wg0 over eth0, eth0.100
+    # under eth0, a bridge member under br0. Same-VM only; the serializer
+    # refuses self/cycles. SET_NULL: deleting eth0 must not take wg0's row.
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="children",
+    )
     #: Virtualization sync must not record this NIC's guest-reported IPs
     #: (e.g. a Docker bridge that asserts a new address per container).
     sync_ignore_ips = models.BooleanField(default=False)
@@ -3765,6 +4190,10 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # Virtual NICs have a real link speed: a VMXNET3 negotiates 10G where an
     # emulated E1000 caps at 1G. Free-form like the physical Interface.speed.
     speed = models.CharField(max_length=64, blank=True, default="")
+
+    def save(self, *args, **kwargs):
+        self.speed = normalize_speed(self.speed)
+        super().save(*args, **kwargs)
     #: Created by a hypervisor sync, mirroring VirtualDisk.created_disk. Without
     #: it the sync cannot tell its own rows from the operator's, so it could
     #: never remove a stale NIC without risking one somebody added by hand.
@@ -3958,6 +4387,7 @@ class DeviceTypeImportRun(TimestampedModel):
     KIND_CHOICES = [
         ("library", "Library import"),
         ("image_reimport", "Image reimport"),
+        ("component_sync", "Component sync"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -3969,9 +4399,11 @@ class DeviceTypeImportRun(TimestampedModel):
     )
     #: library: the github.com /tree/ folder URL being imported.
     #: image_reimport: the normalised elevation-images base URL.
-    source_url = models.CharField(max_length=512)
+    #: component_sync: blank - it pushes a local type at its own devices.
+    source_url = models.CharField(max_length=512, blank=True, default="")
     stack_positions = models.BooleanField(default=False)
     #: Kind-specific knobs. image_reimport: {"overwrite": bool, "dry_run": bool}.
+    #: component_sync: {"device_type": "<uuid>", "remove_extra": bool}.
     options = models.JSONField(default=dict, blank=True)
     status = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default="queued"
@@ -4947,6 +5379,17 @@ class Contact(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     email = models.EmailField(blank=True, default="")
     address = models.TextField(blank=True, default="")
     link = models.URLField(blank=True, default="")
+    # When this contact is actually reachable (#66) - see api.business_hours
+    # for the shape. Empty means "unknown", which reads differently from
+    # "closed" when you are deciding who to escalate to at 02:00.
+    business_hours = models.JSONField(
+        default=dict, blank=True,
+        help_text="Weekly working hours, keyed 0 (Mon) to 6 (Sun).",
+    )
+    business_hours_tz = models.CharField(
+        max_length=63, blank=True, default="",
+        help_text="IANA zone the working hours are stated in.",
+    )
     comments = models.TextField(blank=True, default="")
 
     class Meta:
@@ -5023,6 +5466,34 @@ class Provider(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     portal_url = models.URLField(blank=True, default="")
     noc_email = models.EmailField(blank=True, default="")
     noc_phone = models.CharField(max_length=64, blank=True, default="")
+    # What you need in hand to open a ticket (#67). `account` above is the
+    # billing relationship; this is the support one - with the same provider
+    # they are routinely different references.
+    support_contract = models.CharField(
+        max_length=128, blank=True, default="",
+        help_text="Contract/reference quoted when opening a support case.",
+    )
+    support_phone = models.CharField(max_length=64, blank=True, default="")
+    # Same shape as Contact.business_hours - see api.business_hours.
+    business_hours = models.JSONField(
+        default=dict, blank=True,
+        help_text="Weekly support hours, keyed 0 (Mon) to 6 (Sun).",
+    )
+    business_hours_tz = models.CharField(
+        max_length=63, blank=True, default="",
+        help_text="IANA zone the support hours are stated in.",
+    )
+    # A real Contact where one exists, so the person's own phone, email and
+    # hours come along; the free-text name is the fallback for a vendor rep
+    # nobody has made a record for.
+    account_manager = models.ForeignKey(
+        "Contact", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="account_manager_for",
+    )
+    account_manager_name = models.CharField(
+        max_length=128, blank=True, default="",
+        help_text="Used when the account manager has no Contact record.",
+    )
     comments = models.TextField(blank=True, default="")
 
     class Meta:
@@ -5343,6 +5814,18 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
     auth_cipher = models.CharField(
         max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
     )
+    # The PSK itself is deliberately NOT a field here (#68). Danbyte holds only
+    # a reference; the key lives in the deployment's secret store, the same
+    # arrangement DeviceCredential uses. A wireless key is a credential, and
+    # credentials do not sit in a documentation database in plaintext.
+    psk_secret_provider = models.CharField(
+        max_length=8, blank=True, default="",
+        help_text="Which secret store holds the PSK, stamped at write-time.",
+    )
+    psk_secret_path = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
+    )
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
 
@@ -5351,6 +5834,62 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
 
     def __str__(self) -> str:
         return self.ssid
+
+    @property
+    def psk_set(self) -> bool:
+        return bool(self.psk_secret_path)
+
+    def store_psk(self, value: str) -> None:
+        """Write the PSK into the active store under ``wireless-lans/<id>``,
+        stamping which provider took it. Fail-closed: raises
+        :class:`SecretStoreDisabled` when no store is configured, because the
+        alternative is a wireless key sitting in the database in the clear."""
+        from core.models import DeploymentSettings
+        from monitoring.secret_store import require_secret_store
+
+        store = require_secret_store()
+        if not self.psk_secret_path:
+            self.psk_secret_path = f"wireless-lans/{self.id}"
+        self.psk_secret_provider = (
+            DeploymentSettings.load().secrets_provider or ""
+        ).strip()
+        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
+
+    def resolve_psk(self) -> str:
+        """Read the PSK back at use-time. Only the reveal action calls this -
+        never list or detail serialization."""
+        from monitoring.secret_store import SecretStoreError, require_secret_store
+
+        if not self.psk_secret_path:
+            raise SecretStoreError("No PSK is set for this SSID.")
+        store = require_secret_store()
+        value = store.get(self.tenant_id, self.psk_secret_path)
+        if value is None:
+            raise SecretStoreError(
+                f"No secret found at '{self.psk_secret_path}' in the "
+                "configured store."
+            )
+        return value.get("psk", "")
+
+    def clear_psk(self) -> None:
+        """Forget the PSK, removing it from the store as well as the reference.
+
+        Best-effort on the store side: if it is unreachable the reference still
+        goes, because leaving a row pointing at a key nobody can read is worse
+        than an orphaned entry an operator can prune."""
+        path = self.psk_secret_path
+        self.psk_secret_path = ""
+        self.psk_secret_provider = ""
+        if not path:
+            return
+        from monitoring.secret_store import SecretStoreError, active_secret_store
+
+        try:
+            store = active_secret_store()
+            if store is not None:
+                store.delete(self.tenant_id, path)
+        except SecretStoreError:
+            pass
 
 
 # ─── VPN ─────────────────────────────────────────────────────────────────────

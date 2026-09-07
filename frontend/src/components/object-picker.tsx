@@ -84,6 +84,7 @@ export interface ObjectPickerProps {
   value: string | null
   onChange: (v: string | null) => void
   label: string
+  required?: boolean
   hint?: string
   /** Explanation via the (i) info-icon popover beside the label. */
   info?: React.ReactNode
@@ -107,6 +108,10 @@ export interface ObjectPickerProps {
    * combobox - context-relevant options float to the top, everything else
    * stays reachable below. */
   preferQuery?: string
+  /** Called with the picked option's display label alongside onChange - for
+   * callers that keep their own id list and want the name without another
+   * fetch (both the combobox and the advanced dialog deliver it). */
+  onPickLabel?: (id: string, label: string) => void
 }
 
 /**
@@ -124,6 +129,7 @@ export function ObjectPicker<
   value,
   onChange,
   label,
+  required,
   hint,
   info,
   error,
@@ -137,6 +143,7 @@ export function ObjectPicker<
   customFieldId,
   initialFilters,
   preferQuery,
+  onPickLabel,
 }: ObjectPickerProps & { spec: ObjectPickerSpec<T, O> }) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
@@ -202,12 +209,24 @@ export function ObjectPicker<
   }, [options, missingSelected, selected.data, spec])
 
   return (
-    <Field label={label} hint={hint} info={info} error={error}>
-      <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1">
+    <Field
+      label={label}
+      hint={hint}
+      info={info}
+      error={error}
+      required={required}
+    >
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 [&:has(>*:nth-child(3))]:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <div className="min-w-0">
           <Combobox
             value={value}
-            onChange={onChange}
+            onChange={(v) => {
+              onChange(v)
+              if (v && onPickLabel) {
+                const o = mergedOptions.find((x) => x.value === v)
+                if (o) onPickLabel(v, o.label)
+              }
+            }}
             options={mergedOptions}
             noneLabel={noneLabel}
             placeholder={placeholder ?? `Pick a ${spec.noun}`}
@@ -237,8 +256,16 @@ export function ObjectPicker<
         exclude={exclude}
         customFieldId={customFieldId}
         initialFilters={initialFilters}
-        onSelect={(id) => {
+        onSelect={(id, row) => {
           onChange(id)
+          if (onPickLabel) {
+            onPickLabel(
+              id,
+              spec.detailLabel
+                ? spec.detailLabel(row)
+                : ((row as { name?: string }).name ?? id)
+            )
+          }
           setAdvancedOpen(false)
         }}
       />
@@ -313,7 +340,7 @@ function ObjectSearchDialog<T extends { id: string }>({
   spec: ObjectPickerSpec<T>
   open: boolean
   onOpenChange: (v: boolean) => void
-  onSelect: (id: string) => void
+  onSelect: (id: string, row: T) => void
   exclude: Set<string>
   customFieldId?: string
   initialFilters?: Record<string, string>
@@ -381,7 +408,7 @@ function ObjectSearchDialog<T extends { id: string }>({
       <DialogContent
         size="3xl"
         overlayClassName="lg:left-60"
-        className="flex max-h-[85vh] w-full flex-col gap-4 overflow-hidden lg:left-[calc(50%+7.5rem)]"
+        className="flex max-h-[85vh] flex-col gap-4 overflow-hidden lg:left-[calc(50%+7.5rem)]"
       >
         <DialogHeader>
           <DialogTitle>Find a {spec.noun}</DialogTitle>
@@ -431,7 +458,7 @@ function ObjectSearchDialog<T extends { id: string }>({
                         ? "cursor-not-allowed opacity-50"
                         : "cursor-pointer"
                     }
-                    onClick={() => !state.disabled && onSelect(row.id)}
+                    onClick={() => !state.disabled && onSelect(row.id, row)}
                   >
                     {spec.columns.map((c, i) => (
                       <TableCell

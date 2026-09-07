@@ -14,8 +14,11 @@ import {
 import {
   Field,
   FormColor,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -23,7 +26,7 @@ import {
 } from "@/components/forms"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { CableTerminationSide } from "@/components/cable-termination-side"
+import { CableEndpointPicker } from "@/components/cable-endpoint-picker"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -149,6 +152,9 @@ export function CableForm({
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["cables"] })
       qc.invalidateQueries({ queryKey: ["cable", saved.id] })
+      // The drawn run caches its own trace - without this, a colour or type
+      // change only showed after a reload.
+      qc.invalidateQueries({ queryKey: ["trace"] })
       qc.invalidateQueries({ queryKey: ["interfaces"] })
       // Singular keys are separate caches - the port DETAIL pages read
       // ["interface", id] / ["front-port", id] / ["rear-port", id], which
@@ -194,90 +200,107 @@ export function CableForm({
       }}
       className="grid gap-4"
     >
-      <CableTerminationSide
-        label="A side"
-        hint="One or more ports - breakout uses 1 here, many on B"
-        error={fieldErrors.a}
-        value={a}
-        onChange={setA}
-        initialTerminations={cable?.a_terminations}
-      />
-      <CableTerminationSide
-        label="B side"
-        error={fieldErrors.b}
-        value={b}
-        onChange={setB}
-        initialTerminations={cable?.b_terminations}
-      />
+      {/* The two ends side by side - a cable is two endpoints, and picking
+          a port off the panel beats hunting a dropdown. Everything the cable
+          itself carries (label, type, colour, length) sits below, spanning
+          both, because it belongs to neither end. */}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="A side" card>
+            <CableEndpointPicker
+              label="Ports"
+              error={fieldErrors.a}
+              value={a}
+              onChange={setA}
+              seedDeviceId={cable?.a_terminations?.[0]?.device?.id ?? null}
+              hint="One or more ports - a breakout uses one here, several on B"
+            />
+          </FormSection>
+        </FormColumn>
+        <FormColumn>
+          <FormSection title="B side" card>
+            <CableEndpointPicker
+              label="Ports"
+              error={fieldErrors.b}
+              value={b}
+              onChange={setB}
+              seedDeviceId={cable?.b_terminations?.[0]?.device?.id ?? null}
+            />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
-      <FormText
-        label="Label"
-        hint="What's printed on the cable's physical tag (optional)."
-        value={label}
-        onChange={setLabel}
-        error={fieldErrors.label}
-      />
-
-      <div className="grid grid-cols-2 gap-3">
-        <FormCombobox
-          label="Type"
-          value={type || null}
-          onChange={(v) => setType(v ?? "")}
-          noneLabel="No type"
-          placeholder="Pick a type"
-          searchPlaceholder="Search types…"
-          emptyText="No types."
-          options={cableTypeOptions}
-          error={fieldErrors.type}
-        />
-        <FormCombobox
-          label="Status"
-          value={statusId}
-          onChange={setStatusId}
-          options={(statuses.data?.results ?? []).map((s) => ({
-            value: s.id,
-            label: s.name,
-          }))}
-          noneLabel="No status"
-          placeholder="Select a status…"
-          error={fieldErrors.status_id}
-        />
-      </div>
-      <div className="grid grid-cols-[1fr_120px] gap-3">
+      <FormSection title="Cable" card>
         <FormText
-          label="Length"
-          type="number"
-          value={length}
-          onChange={setLength}
-          error={fieldErrors.length}
+          label="Label"
+          hint="What's printed on the cable's physical tag (optional)."
+          value={label}
+          onChange={setLabel}
+          error={fieldErrors.label}
         />
-        <FormSelect
-          label="Unit"
-          value={lengthUnit}
-          onChange={(v) => v && setLengthUnit(v)}
-          options={LENGTH_UNITS}
+
+        <div className="grid grid-cols-2 gap-3">
+          <FormCombobox
+            label="Type"
+            value={type || null}
+            onChange={(v) => setType(v ?? "")}
+            noneLabel="No type"
+            placeholder="Pick a type"
+            searchPlaceholder="Search types…"
+            emptyText="No types."
+            options={cableTypeOptions}
+            error={fieldErrors.type}
+          />
+          <FormCombobox
+            label="Status"
+            value={statusId}
+            onChange={setStatusId}
+            options={(statuses.data?.results ?? []).map((s) => ({
+              value: s.id,
+              label: s.name,
+            }))}
+            noneLabel="No status"
+            placeholder="Select a status…"
+            error={fieldErrors.status_id}
+          />
+        </div>
+        <div className="grid grid-cols-[1fr_120px] gap-3">
+          <FormText
+            label="Length"
+            type="number"
+            value={length}
+            onChange={setLength}
+            error={fieldErrors.length}
+          />
+          <FormSelect
+            label="Unit"
+            value={lengthUnit}
+            onChange={(v) => v && setLengthUnit(v)}
+            options={LENGTH_UNITS}
+          />
+        </div>
+        <FormColor
+          label="Color"
+          hint="The physical cable's color"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
         />
-      </div>
-      <FormColor
-        label="Color"
-        hint="The physical cable's color"
-        value={color}
-        onChange={setColor}
-        error={fieldErrors.color}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
         />
-      </Field>
+        <Field label="Tags" error={fieldErrors.tag_ids}>
+          <TagMultiSelect
+            options={tags.data?.results ?? []}
+            value={tagIds}
+            onChange={setTagIds}
+          />
+        </Field>
+      </FormSection>
+
       <CustomFieldInputs
         model="cable"
         value={customFields}

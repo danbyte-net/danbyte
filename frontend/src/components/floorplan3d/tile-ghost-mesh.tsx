@@ -1,7 +1,7 @@
 import { cellToWorld } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
-import { FaceLabel } from "./text-sprite"
+import { TextSprite } from "./text-sprite"
 
 /**
  * Planning massing for tiles that aren't racks: a translucent box with the
@@ -28,7 +28,9 @@ export function TileGhostMesh({
   const w = x1 - x0
   const d = z1 - z0
   const tint = tile.color || "#71717a"
-  const name = tile.label || tile.type_name || ""
+  // Same fallback as the 2D canvas: manual label, else the linked device's
+  // name, else the tile type ("build in advance" massing).
+  const name = tile.label || tile.device_name || tile.type_name || ""
   return (
     <group position={[x0 + w / 2, 0, z0 + d / 2]}>
       <mesh position={[0, GHOST_H / 2, 0]} raycast={() => null}>
@@ -47,13 +49,11 @@ export function TileGhostMesh({
         <boxGeometry args={[w * 0.94, 0.024, d * 0.94]} />
         <meshStandardMaterial color={tint} transparent opacity={0.45} />
       </mesh>
+      {/* Billboarded so the name reads from ANY camera angle - a flat plate
+          on a 2 m box is legible from one side of the room only. Floats just
+          above the massing, like the rack HUD labels. */}
       {name && (
-        <FaceLabel
-          text={name}
-          heightM={0.09}
-          align="center"
-          position={[0, GHOST_H + 0.08, 0]}
-        />
+        <TextSprite text={name} heightM={0.16} position={[0, GHOST_H + 0.2, 0]} />
       )}
     </group>
   )

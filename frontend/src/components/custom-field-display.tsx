@@ -17,8 +17,23 @@ export function useCustomFieldDefs(model: string) {
     queryKey: ["custom-fields-for", model],
     queryFn: () =>
       api<Paginated<CustomField>>(`/api/custom-fields/?model=${model}`),
+    // Hidden definitions never reach a card, table or form - the value
+    // stays on the object and in search.
+    select: (d) => ({ ...d, results: d.results.filter((f) => !f.hidden) }),
     staleTime: 5 * 60_000,
   })
+}
+
+/** Keys whose definition is hidden - for pages that list raw values. */
+export function useHiddenCustomFieldKeys(model: string): Set<string> {
+  const q = useQuery({
+    queryKey: ["custom-fields-all", model],
+    queryFn: () =>
+      api<Paginated<CustomField>>(`/api/custom-fields/?model=${model}`),
+  })
+  return new Set(
+    (q.data?.results ?? []).filter((f) => f.hidden).map((f) => f.key)
+  )
 }
 
 export function hasCustomValue(v: unknown): boolean {

@@ -195,3 +195,81 @@ class ImageAttachmentTests(APITestCase):
             body = r.json()
             self.assertIsNone(body["width"])
             self.assertEqual(body["extension"], "png")
+
+
+class DownscaleOnUploadTests(APITestCase):
+    """Oversized photos shrink on the way in - aspect preserved, never warped
+    - and small ones pass through byte-identical (api.images)."""
+
+    def _big_png(self, w=4000, h=1000) -> bytes:
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (w, h), (30, 30, 30)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_oversized_upload_is_downscaled_keeping_aspect(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from api.images import downscale_image
+
+        up = SimpleUploadedFile("big.png", self._big_png(), "image/png")
+        out = downscale_image(up)
+        img = Image.open(io.BytesIO(out.read()))
+        self.assertEqual(img.size, (2000, 500))
+
+    def test_small_upload_passes_through_untouched(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from api.images import downscale_image
+
+        up = SimpleUploadedFile("small.png", _png_bytes(), "image/png")
+        self.assertIs(downscale_image(up), up)
+
+    def test_non_image_passes_through(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from api.images import downscale_image
+
+        up = SimpleUploadedFile("notes.txt", b"not an image", "text/plain")
+        self.assertIs(downscale_image(up), up)
+
+    def test_resize_verb_shrinks_a_stored_face(self):
+        from django.contrib.auth.models import User as U
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from api.models import DeviceType
+
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="Orz", slug="orz")
+        tenant = Tenant.objects.create(org=org, name="Trz", slug="trz")
+        admin = U.objects.create_superuser("rsz", "r@x", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(tenant.id)
+        s.save()
+        dt = DeviceType.objects.create(tenant=tenant, name="RSZ-1")
+        # Seed a 1800x600 front image directly (past the upload path).
+        buf = io.BytesIO()
+        Image.new("RGB", (1800, 600), (40, 40, 40)).save(buf, format="PNG")
+        r = self.client.post(
+            f"/api/device-types/{dt.id}/images/",
+            {"front_image": SimpleUploadedFile("f.png", buf.getvalue(), "image/png")},
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(
+            f"/api/device-types/{dt.id}/images/", {"resize_front": "800"}
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        dt.refresh_from_db()
+        with dt.front_image.open("rb") as fh:
+            img = Image.open(io.BytesIO(fh.read()))
+        self.assertEqual(img.size, (800, 267))
+        # No image on the other face → actionable 400, not a crash.
+        r = self.client.post(
+            f"/api/device-types/{dt.id}/images/", {"resize_rear": "800"}
+        )
+        self.assertEqual(r.status_code, 400)

@@ -128,6 +128,10 @@ export function CanvasLegend({
         ) : (
           <>
             <RowItem swatch={<Line />} label="Cable" />
+            <RowItem
+              swatch={<Line width={2.5} />}
+              label="LAG bundle (Po1 ⇄ Po10 ×N)"
+            />
             <RowItem swatch={<Line dash="10 4" />} label="Via patch panels" />
             <RowItem
               swatch={<Line dash="6 4" width={1.5} />}

@@ -4,7 +4,7 @@ from __future__ import annotations
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
 
-from api.models import DeviceType, InterfaceTemplate, Manufacturer
+from api.models import Device, DeviceRole, DeviceType, Interface, InterfaceTemplate, Manufacturer
 from core.models import Organization, Tenant
 
 
@@ -41,6 +41,35 @@ class ComponentRenameCloneTests(APITestCase):
         self.assertEqual(
             names, {"GigabitEthernet1/0/1", "GigabitEthernet1/0/2", "GigabitEthernet1/0/3"}
         )
+
+    def test_bulk_rename_follows_into_markers_and_child_keys(self):
+        # A photo marker + a faceplate slot reference Gi1/0/1 by name, and a
+        # device of this type carries it as its frozen marker key. The bulk
+        # path must rename all three like a single template save does -
+        # otherwise sync-from-type keeps expecting the old name.
+        self.dt.image_ports = {"front": [{"kind": "interface", "name": "Gi1/0/1", "x": 1, "y": 1}]}
+        self.dt.faceplate = {
+            "front": [{"slots": [{"t": "port", "kind": "interface", "name": "Gi1/0/1"}]}]
+        }
+        self.dt.save(update_fields=["image_ports", "faceplate"])
+        role = DeviceRole.objects.create(tenant=self.tenant, name="R", slug="r")
+        dev = Device.objects.create(
+            tenant=self.tenant, name="sw", device_type=self.dt, role=role
+        )
+        iface = Interface.objects.create(device=dev, name="Gi1/0/1", marker_key="Gi1/0/1")
+        r = self.client.post(
+            "/api/interface-templates/bulk-rename/",
+            {"ids": self._ids(), "find": "Gi1/", "replace": "Gi{position}/"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.dt.refresh_from_db()
+        self.assertEqual(self.dt.image_ports["front"][0]["name"], "Gi{position}/0/1")
+        self.assertEqual(
+            self.dt.faceplate["front"][0]["slots"][0]["name"], "Gi{position}/0/1"
+        )
+        iface.refresh_from_db()
+        self.assertEqual(iface.marker_key, "Gi{position}/0/1")
 
     def test_bulk_rename_rejects_collision(self):
         # Rename Gi1/0/2 → Gi1/0/1 (already exists, not in the rename set) → 400.

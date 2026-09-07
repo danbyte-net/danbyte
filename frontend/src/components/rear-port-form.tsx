@@ -1,22 +1,17 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import { type RearPort, type RearPortWritePayload } from "@/lib/api"
 import {
-  api,
-  type Paginated,
-  type RearPort,
-  type RearPortWritePayload,
-  type TagOption,
-} from "@/lib/api"
-import {
+  FormSection,
   Field,
   FormCheckbox,
   FormFooter,
+  FormTags,
   FormText,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { NameRangeHint } from "@/components/name-range-hint"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
@@ -44,6 +39,7 @@ export function RearPortForm({
   const isPlanning = !!usePlanTarget()
 
   const [name, setName] = useState(port?.name ?? "")
+  const [label, setLabel] = useState(port?.label ?? "")
   const [positions, setPositions] = useState(
     port?.positions != null ? String(port.positions) : "1"
   )
@@ -73,17 +69,12 @@ export function RearPortForm({
     reset()
   }, [port, reset])
 
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
-
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: RearPortWritePayload = {
         device_id: deviceId,
         name: name.trim(),
+        label: label.trim(),
         positions: positions.trim() === "" ? 1 : Number(positions),
         is_splitter: isSplitter,
         mark_connected: markConnected,
@@ -162,56 +153,69 @@ export function RearPortForm({
         e.preventDefault()
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
+      <FormSection title="Rear port" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            mono
+            placeholder="Rear1"
+            hint={
+              isEdit ? undefined : "a [1-12] range adds one port per number"
+            }
+            error={fieldErrors.name}
+          />
+          <FormText
+            label="Label"
+            hint="Printed name, e.g. X1-P1"
+            value={label}
+            onChange={setLabel}
+            mono
+            error={fieldErrors.label}
+          />
+          <FormText
+            label="Positions"
+            type="number"
+            min={1}
+            value={positions}
+            onChange={setPositions}
+            placeholder="1"
+            error={fieldErrors.positions}
+          />
+        </div>
+        <NameRangeHint name={name} editing={isEdit} noun="rear ports" />
         <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          mono
-          placeholder="Rear1"
-          hint={isEdit ? undefined : "a [1-12] range adds one port per number"}
-          error={fieldErrors.name}
+          label="Type"
+          value={type}
+          onChange={setType}
+          placeholder="8p8c, lc, mpo…"
+          error={fieldErrors.type}
         />
-        <FormText
-          label="Positions"
-          type="number"
-          required
-          value={positions}
-          onChange={setPositions}
-          placeholder="1"
-          error={fieldErrors.positions}
-        />
-      </div>
-      <NameRangeHint name={name} editing={isEdit} noun="rear ports" />
-      <FormText
-        label="Type"
-        value={type}
-        onChange={setType}
-        placeholder="8p8c, lc, mpo…"
-        error={fieldErrors.type}
-      />
-      <Field label="Splitter" error={fieldErrors.is_splitter}>
-        <FormCheckbox
-          label={
-            <>
-              Optical splitter (PON){" "}
-              <span className="text-muted-foreground">
-                - every front port carries the input signal
-              </span>
-            </>
-          }
-          checked={isSplitter}
-          onChange={(v) => {
-            setIsSplitter(v)
-            if (v) setPositions("1")
-          }}
-        />
-      </Field>
-      <Field label="Cabling">
+        <Field label="Splitter" error={fieldErrors.is_splitter}>
+          <FormCheckbox
+            label={
+              <>
+                Optical splitter (PON){" "}
+                <span className="text-muted-foreground">
+                  - every front port carries the input signal
+                </span>
+              </>
+            }
+            checked={isSplitter}
+            onChange={(v) => {
+              setIsSplitter(v)
+              if (v) setPositions("1")
+            }}
+          />
+        </Field>
+      </FormSection>
+
+      <FormSection title="State" card>
         <FormCheckbox
           label="Mark connected"
           checked={markConnected}
@@ -230,29 +234,32 @@ export function RearPortForm({
             }}
           />
         )}
-      </Field>
-      {reserved && !port?.cable && (
+        {reserved && !port?.cable && (
+          <FormText
+            label="Reservation note"
+            value={reserveNote}
+            onChange={setReserveNote}
+            placeholder="Who or what this port is for"
+          />
+        )}
+      </FormSection>
+
+      <FormSection title="Notes" card>
         <FormText
-          label="Reservation note"
-          value={reserveNote}
-          onChange={setReserveNote}
-          placeholder="Who or what this port is for"
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          placeholder="Optional"
+          error={fieldErrors.description}
         />
-      )}
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="Optional"
-        error={fieldErrors.description}
+      </FormSection>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
       />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
-        />
-      </Field>
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

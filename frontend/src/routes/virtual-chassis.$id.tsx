@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { PortUtilizationCard } from "@/components/port-utilization-card"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Crown, Pencil, Plus, Trash2, Unlink } from "lucide-react"
@@ -33,9 +34,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TagList } from "@/components/cells/tag-list"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
+import { DeviceMonitoringBadge } from "@/components/monitoring/device-monitoring"
 import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-dialog"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { useLegendCollector } from "@/components/speed-scale"
@@ -116,6 +119,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
     canAssignIp: canDo("ipaddress", "change"),
     canEdit: canDo("interface", "change"),
     canChangeCable: canDo("cable", "change"),
+    canDeleteCable: canDo("cable", "delete"),
     canConnect: canDo("cable", "add"),
     canReserve: canDo("portreservation", "add"),
     onTrace: setTraceTarget,
@@ -283,6 +287,38 @@ function Overview({
       label: "Members",
       value: <span className="num">{vc.member_count}</span>,
     },
+    // The stack's addresses (the master's, in practice) belong on the card,
+    // not just the list view's columns.
+    {
+      label: "Primary IP",
+      value: vc.primary_ip ? (
+        <Link
+          to="/ips/$id"
+          params={{ id: vc.primary_ip.id }}
+          className="link font-mono text-[13px]"
+        >
+          {vc.primary_ip.ip_address}
+        </Link>
+      ) : (
+        dash
+      ),
+      copy: vc.primary_ip?.ip_address,
+    },
+    {
+      label: "OOB IP",
+      value: vc.oob_ip ? (
+        <Link
+          to="/ips/$id"
+          params={{ id: vc.oob_ip.id }}
+          className="link font-mono text-[13px]"
+        >
+          {vc.oob_ip.ip_address}
+        </Link>
+      ) : (
+        dash
+      ),
+      copy: vc.oob_ip?.ip_address,
+    },
   ]
 
   const notes: KvRow[] = [
@@ -322,6 +358,10 @@ function Overview({
             onLegend={onLegend}
           />
           <FaceplateLegend className="mt-2" content={legend} />
+          {/* Every member's ports summed - the device page's card, stack-wide. */}
+          <div className="mt-6">
+            <PortUtilizationCard vcId={vc.id} />
+          </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
             {vc.member_count} member{vc.member_count === 1 ? "" : "s"}
             {vc.master ? <> · master {vc.master.name}</> : null}
@@ -336,6 +376,11 @@ function Overview({
         <div className="grid content-start gap-6">
           <KvCard title="Virtual chassis" rows={attributes} />
           <KvCard title="Notes" rows={notes} />
+          <CustomFieldValues
+            model="virtualchassis"
+            values={vc.custom_fields}
+            layout="cards"
+          />
         </div>
       </div>
       <MembersTable vc={vc} members={members} />
@@ -480,7 +525,10 @@ function MembersTable({
                     {mono(m.serial_number)}
                   </TableCell>
                   <TableCell className="py-2">
-                    <StatusBadge status={m.status} />
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusBadge status={m.status} />
+                      <DeviceMonitoringBadge deviceId={m.id} />
+                    </span>
                   </TableCell>
                   {(canEditDevice || canEditVc) && (
                     <TableCell className="py-1 text-right whitespace-nowrap">

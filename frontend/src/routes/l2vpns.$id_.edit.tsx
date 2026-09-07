@@ -18,6 +18,7 @@ function EditPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "L2VPNs", to: "/l2vpns" },
         { label: q.data?.name ?? "…" },

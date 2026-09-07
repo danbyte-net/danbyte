@@ -22,6 +22,7 @@ function EditRulePage() {
 
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Compliance", to: "/compliance" },
         { label: "Edit rule" },

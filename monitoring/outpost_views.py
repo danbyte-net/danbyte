@@ -253,6 +253,9 @@ def outpost_work_view(request):
         "poll_interval_seconds": eng.poll_interval_seconds,
         # Tells the agent to run a discovery sweep now (a "Discover now" click).
         "sweep_pending": eng.sweep_requested_at is not None,
+        # A device's "Poll now" routed here (#128): run the SNMP cycle on this
+        # poll instead of the periodic cadence. Old agents ignore the key.
+        "snmp_pending": eng.snmp_requested_at is not None,
         # Reverse DNS this Outpost should do itself. An agent too old to know
         # this key simply ignores it and the core keeps resolving centrally.
         "dns": _dns_directive(eng),
@@ -372,7 +375,9 @@ def outpost_snmp_work_view(request):
     only). The agent fetches facts/interfaces/topology for each and posts back."""
     eng = request.auth
     eng.last_seen_at = timezone.now()
-    eng.save(update_fields=["last_seen_at"])
+    # The pending "Poll now" request (#128) is served by this fetch.
+    eng.snmp_requested_at = None
+    eng.save(update_fields=["last_seen_at", "snmp_requested_at"])
     return Response({
         "devices": build_snmp_work(eng),
         "interval_seconds": SNMP_POLL_INTERVAL_SECONDS,

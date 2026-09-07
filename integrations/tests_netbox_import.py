@@ -131,7 +131,7 @@ class CorrectnessTests(ImporterBase):
         sub = m.Interface.objects.get(name="Gi0/1.100")
         self.assertEqual(gi.lag_id, po.id)
         self.assertEqual(sub.parent_id, gi.id)
-        self.assertEqual(gi.speed, "1000000")
+        self.assertEqual(gi.speed, "1G")  # bare kbps normalises on save
         self.assertEqual(gi.duplex, "full")
         self.assertTrue(sub.virtual)
 

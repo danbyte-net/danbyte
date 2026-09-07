@@ -18,6 +18,7 @@ function EditCircuitPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Circuits", to: "/circuits" },
         { label: q.data?.cid ?? "…" },

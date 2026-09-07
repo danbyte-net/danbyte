@@ -46,7 +46,8 @@ a lot of data fast - typography and spacing serve that, not decoration.
   and TanStack `Link`s alike all use `.link`.
 - **Mono font**: for every IP, CIDR, MAC, serial, ID, UUID, custom-field key.
 - **Tabular nums**: on every counter, percentage, timestamp.
-- **Radii**: `rounded-md` and `rounded-lg` only. `rounded-full` for status dots and avatars.
+- **Radii**: `rounded-md` and `rounded-lg` only. `rounded-full` for presence/health dots and avatars.
+- **Statuses are pills, never dots.** A status renders as its `ColorBadge` pill everywhere it appears - table cells, dropdown options, the selected value of a select. A colored dot beside a plain name is not an acceptable compact form of a status.
 - **Badges are squarish, never pills.** Every count/label chip uses the
   `Badge` primitive (`rounded-[5px]`) - including chips floating over a
   canvas (map, floor plan, topology). Do not hand-roll `rounded-full` pill
@@ -55,6 +56,13 @@ a lot of data fast - typography and spacing serve that, not decoration.
   `warning`, `success`) as **separate badges per severity**, not one combined
   pill. Chips overlaying a tinted/tiled canvas sit on a solid
   `bg-background/95 rounded-md border` backdrop so the tint reads.
+- **Tooltips never go white in dark mode.** The plain tooltip is a chip:
+  inverted on light (dark chip, light text), but on dark it steps *up* to a
+  raised surface rather than inverting all the way to near-white, which
+  glared against the zinc palette. Rich content - headings, muted secondary
+  text, semantic colour - uses `variant="panel"` instead, because those
+  colours are chosen against the page background. Use the shared `Tooltip`
+  or `InfoTip`, never a `title=` attribute.
 - **Shadows**: don't. Borders define edges. Exception: dropdowns/popovers get `shadow-sm`.
 
 See `/CLAUDE.md` for the canonical class snippets per component (button,

@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
-import { KvCard, dash } from "@/components/kv-card"
+import { KvCard, dash, mono } from "@/components/kv-card"
+import { BusinessHoursSummary } from "@/components/business-hours-field"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ProviderDeleteDialog } from "@/components/provider-delete-dialog"
@@ -208,6 +209,46 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
     },
   ]
 
+  // The details you actually need in your hand when filing a case, kept in
+  // their own card rather than buried among the billing fields (#67).
+  const support: KvRow[] = [
+    {
+      label: "Contract",
+      value: p.support_contract ? mono(p.support_contract) : dash,
+      copy: p.support_contract || undefined,
+    },
+    {
+      label: "Support phone",
+      value: p.support_phone ? mono(p.support_phone) : dash,
+      copy: p.support_phone || undefined,
+    },
+    {
+      label: "Support hours",
+      value: (
+        <BusinessHoursSummary
+          display={p.business_hours_display}
+          openNow={p.open_now}
+        />
+      ),
+    },
+    {
+      label: "Account manager",
+      value: p.account_manager ? (
+        <Link
+          to="/contacts/$id"
+          params={{ id: p.account_manager.id }}
+          className="link"
+        >
+          {p.account_manager.name}
+        </Link>
+      ) : p.account_manager_name ? (
+        <span>{p.account_manager_name}</span>
+      ) : (
+        dash
+      ),
+    },
+  ]
+
   const record: KvRow[] = [
     { label: "Created", value: <TimeCell iso={p.created_at} /> },
     { label: "Updated", value: <TimeCell iso={p.updated_at} /> },
@@ -227,6 +268,7 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Provider" rows={details} />
+      <KvCard title="Support" rows={support} />
       <KvCard title="Record" rows={record} />
       <KvCard title="Notes" rows={notes} />
     </div>

@@ -671,12 +671,27 @@ function AssignDeviceDialog({
 }) {
   const qc = useQueryClient()
   const [deviceId, setDeviceId] = useState<string | null>(null)
+  // Half-width types need to say which half of the U they occupy - without
+  // this the Assign path simply couldn't place them.
+  const [rackSide, setRackSide] = useState<"left" | "right">("left")
+  const picked = useQuery({
+    queryKey: ["device", deviceId],
+    queryFn: () => api<Device>(`/api/devices/${deviceId}/`),
+    enabled: !!deviceId,
+    staleTime: 30_000,
+  })
+  const halfWidth = picked.data?.device_type?.rack_width === "half"
 
   const assign = useMutation({
     mutationFn: () =>
       api<Device>(`/api/devices/${deviceId}/`, {
         method: "PATCH",
-        body: JSON.stringify({ rack_id: rack.id, position: unit, face }),
+        body: JSON.stringify({
+          rack_id: rack.id,
+          position: unit,
+          face,
+          rack_side: halfWidth ? rackSide : "",
+        }),
       }),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["rack-devices", rack.id] })
@@ -709,6 +724,16 @@ function AssignDeviceDialog({
           </DialogDescription>
         </DialogHeader>
         <DevicePicker value={deviceId} onChange={setDeviceId} />
+        {halfWidth && (
+          <SegmentedTabs
+            value={rackSide}
+            onValueChange={(v) => setRackSide(v as "left" | "right")}
+            items={[
+              { value: "left", label: "Left half" },
+              { value: "right", label: "Right half" },
+            ]}
+          />
+        )}
         <div className="flex items-center justify-end gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel

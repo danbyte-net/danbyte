@@ -677,6 +677,31 @@ class MonitoringSettings(TimestampedModel):
         "(pre-allocated stack ports). Off = skip them on sync and drift.",
     )
 
+    # ─── SNMP → source-of-truth policy (all opt-in; defaults keep the
+    #     shipped behaviour) ────────────────────────────────────────────
+    snmp_update_only = models.BooleanField(
+        default=False,
+        help_text="SNMP never ADDS interfaces - drift and sync only update "
+        "fields on ports that already exist.",
+    )
+    snmp_skip_unrouted_vlans = models.BooleanField(
+        default=False,
+        help_text="Skip L2 VLAN pseudo-interfaces (Cisco's 'unrouted VLAN N' "
+        "ifTable rows) - they are VLANs, not ports. Routed SVIs stay.",
+    )
+    snmp_mac_from_fdb = models.BooleanField(
+        default=False,
+        help_text="Interface MAC drift/sync uses the MAC-table entry learned "
+        "on the port (the attached device) instead of the port's own hardware "
+        "MAC. Ports with several learned MACs are left alone.",
+    )
+    snmp_default_vrf = models.ForeignKey(
+        "api.VRF", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+        help_text="VRF that SNMP-discovered addresses land in when neither "
+        "the interface nor a device/role/type/site binding names one.",
+    )
+
     dns_sync_enabled = models.BooleanField(
         default=False,
         help_text="Resolve reverse DNS (PTR) for monitored IPs and store it as "
@@ -824,6 +849,10 @@ class MonitoringSettings(TimestampedModel):
     # ─── distributed engines ─────────────────────────────────────────────
     # Tenant-wide default engine - used when a target's site/location doesn't
     # pin one. Null falls back to the tenant's built-in local engine.
+    # Minutes without contact before a remote engine is flagged offline and
+    # the channels are notified (#129). 0 = automatic: 3x its poll interval,
+    # minimum 3 minutes.
+    engine_offline_after_minutes = models.PositiveIntegerField(default=0)
     default_engine = models.ForeignKey(
         "MonitoringEngine",
         on_delete=models.SET_NULL,
@@ -918,6 +947,10 @@ class MonitoringEngine(TimestampedModel):
     # its *next* poll instead of waiting for the periodic cycle; cleared when it
     # pulls sweep-work.
     sweep_requested_at = models.DateTimeField(null=True, blank=True)
+    # Set by a device's "Poll now" when this engine owns it (#128), so the
+    # Outpost runs its SNMP discovery cycle on the next poll instead of
+    # waiting for the periodic one; cleared when it pulls snmp-work.
+    snmp_requested_at = models.DateTimeField(null=True, blank=True)
     # SSH-transport connection - how Danbyte dials *in* to the Outpost host.
     ssh_host = models.CharField(max_length=255, blank=True)
     ssh_port = models.PositiveIntegerField(default=22)
@@ -1937,6 +1970,50 @@ class SnmpProfileBinding(TimestampedModel):
     def __str__(self) -> str:
         return f"{self.scope}:{self.object_id} → {self.profile_id}"
 
+
+
+class SnmpVrfBinding(TimestampedModel):
+    """The default VRF SNMP-discovered addresses land in, at one level of the
+    device hierarchy. Resolution is most-specific first: **device → device
+    role → device type → site → tenant default** (the tenant default lives on
+    :class:`MonitoringSettings`). Only consulted when the interface itself
+    carries no VRF - an explicit interface VRF always wins.
+
+    Same api-by-object_id shape as :class:`SnmpProfileBinding`, for the same
+    reason: ``api`` never imports ``monitoring``.
+    """
+
+    SCOPE_DEVICE = "device"
+    SCOPE_ROLE = "device_role"
+    SCOPE_TYPE = "device_type"
+    SCOPE_SITE = "site"
+    SCOPE_CHOICES = [
+        (SCOPE_DEVICE, "Device"),
+        (SCOPE_ROLE, "Device role"),
+        (SCOPE_TYPE, "Device type"),
+        (SCOPE_SITE, "Site"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="snmp_vrf_bindings"
+    )
+    scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
+    object_id = models.UUIDField()
+    vrf = models.ForeignKey(
+        "api.VRF", on_delete=models.CASCADE, related_name="snmp_vrf_bindings"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "object_id"],
+                name="uniq_snmpvrfbinding_scope_object",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.scope}:{self.object_id} → {self.vrf_id}"
 
 class SnmpInterfaceSample(TimestampedModel):
     """A point-in-time read of an interface's HC octet counters, for computing

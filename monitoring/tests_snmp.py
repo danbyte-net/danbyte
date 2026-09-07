@@ -1107,3 +1107,193 @@ class SnmpSiteLocationBindingTests(APITestCase):
         self.assertEqual(
             self.client.get(url).json()["profile_id"], str(self.p_site.id)
         )
+
+
+class SnmpSourcePolicyTests(APITestCase):
+    """The tenant SNMP source-of-truth policies: update-only, unrouted-VLAN
+    skip, and MAC-from-FDB - all opt-in, defaults keep shipped behaviour."""
+
+    def setUp(self):
+        from django.utils import timezone as tz
+
+        from core.models import Organization, Tenant
+
+        self._tz = tz
+        org = Organization.objects.create(name="Op", slug="op")
+        self.tenant = Tenant.objects.create(org=org, name="Tp", slug="tp")
+        self.device = Device.objects.create(tenant=self.tenant, name="sw-p")
+        self.state = DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.device,
+            polled_at=self._tz.now(),
+            interfaces=[
+                {"if_index": "1", "name": "Gi1/0/1",
+                 "mac": "aa:aa:aa:aa:aa:01", "admin_status": "up"},
+                {"if_index": "9", "name": "VLAN-401", "type_name": "l2vlan",
+                 "descr": "unrouted VLAN 401", "admin_status": "up"},
+            ],
+            fdb=[
+                {"mac": "bb:bb:bb:bb:bb:01", "if_index": "1"},
+            ],
+        )
+
+    def _settings(self, **kw):
+        from monitoring.models import MonitoringSettings
+
+        ms = MonitoringSettings.for_tenant(self.tenant)
+        for k, v in kw.items():
+            setattr(ms, k, v)
+        ms.save()
+
+    def test_update_only_suppresses_adds_everywhere(self):
+        from monitoring.snmp_drift import (
+            compute_device_drift,
+            sync_device_from_snmp,
+        )
+
+        self._settings(snmp_update_only=True)
+        kinds = [i["kind"] for i in compute_device_drift(self.device, self.tenant)]
+        self.assertNotIn("interface_missing", kinds)
+        summary = sync_device_from_snmp(self.device, self.tenant)
+        self.assertEqual(summary["interfaces_created"], 0)
+        self.assertEqual(Interface.objects.filter(device=self.device).count(), 0)
+        # existing ports still get field updates
+        Interface.objects.create(
+            device=self.device, name="Gi1/0/1", mac_address="00:00:00:00:00:00"
+        )
+        summary = sync_device_from_snmp(self.device, self.tenant)
+        self.assertEqual(summary["interfaces_updated"], 1)
+
+    def test_unrouted_vlan_rows_skip_when_opted_in(self):
+        from monitoring.snmp_drift import (
+            compute_device_drift,
+            sync_device_from_snmp,
+        )
+
+        names = [i.get("name") for i in compute_device_drift(self.device, self.tenant)]
+        self.assertIn("VLAN-401", names)  # default: shipped behaviour
+        self._settings(snmp_skip_unrouted_vlans=True)
+        names = [i.get("name") for i in compute_device_drift(self.device, self.tenant)]
+        self.assertNotIn("VLAN-401", names)
+        sync_device_from_snmp(self.device, self.tenant)
+        self.assertFalse(
+            Interface.objects.filter(device=self.device, name="VLAN-401").exists()
+        )
+
+    def test_mac_from_fdb_uses_the_learned_address(self):
+        from monitoring.snmp_drift import compute_device_drift
+
+        Interface.objects.create(
+            device=self.device, name="Gi1/0/1", mac_address="00:00:00:00:00:00"
+        )
+        self._settings(snmp_mac_from_fdb=True)
+        macs = {
+            i["name"]: i["observed"]
+            for i in compute_device_drift(self.device, self.tenant)
+            if i.get("field") == "mac_address"
+        }
+        self.assertEqual(macs["Gi1/0/1"], "bb:bb:bb:bb:bb:01")
+
+    def test_multi_learner_port_is_left_alone(self):
+        from monitoring.snmp_drift import compute_device_drift
+
+        self.state.fdb = [
+            {"mac": "bb:bb:bb:bb:bb:01", "if_index": "1"},
+            {"mac": "cc:cc:cc:cc:cc:02", "if_index": "1"},
+        ]
+        self.state.save(update_fields=["fdb"])
+        Interface.objects.create(
+            device=self.device, name="Gi1/0/1", mac_address="00:00:00:00:00:00"
+        )
+        self._settings(snmp_mac_from_fdb=True)
+        fields = [
+            i.get("field")
+            for i in compute_device_drift(self.device, self.tenant)
+        ]
+        self.assertNotIn("mac_address", fields)
+
+
+class SnmpVrfBindingTests(APITestCase):
+    """Default VRF for SNMP-discovered addresses: device → role → type →
+    site → tenant default; the interface's own VRF always wins."""
+
+    def setUp(self):
+        from django.utils import timezone as tz
+
+        from api.models import VRF, DeviceRole, Prefix, Site
+        from core.models import Organization, Tenant
+        from monitoring.models import MonitoringSettings
+
+        org = Organization.objects.create(name="Ov", slug="ov")
+        self.tenant = Tenant.objects.create(org=org, name="Tv", slug="tv")
+        self.site = Site.objects.create(tenant=self.tenant, name="Sv")
+        self.role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Rv", slug="rv"
+        )
+        self.device = Device.objects.create(
+            tenant=self.tenant, name="sw-v", site=self.site, role=self.role
+        )
+        self.vrf_site = VRF.objects.create(tenant=self.tenant, name="site-vrf")
+        self.vrf_dev = VRF.objects.create(tenant=self.tenant, name="dev-vrf")
+        # A containing prefix in each VRF for 10.9.9.0/24.
+        self.p_site = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.9.9.0/24", vrf=self.vrf_site
+        )
+        self.p_dev = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.9.9.0/24", vrf=self.vrf_dev
+        )
+        self.state = DeviceSnmp.objects.create(
+            tenant=self.tenant, device=self.device, polled_at=tz.now(),
+            interfaces=[{
+                "if_index": "1", "name": "Gi1/0/1", "admin_status": "up",
+                "ip_addresses": ["10.9.9.5"],
+            }],
+        )
+        self.ms = MonitoringSettings.for_tenant(self.tenant)
+        self.admin = User.objects.create_superuser("vrb", "v@x", "x")
+
+    def test_resolution_order_and_attach(self):
+        from api.models import IPAddress
+        from monitoring.models import SnmpVrfBinding
+        from monitoring.snmp_drift import sync_device_from_snmp
+        from monitoring.snmp_resolve import resolve_snmp_vrf
+
+        # Site binding → site VRF.
+        SnmpVrfBinding.objects.create(
+            tenant=self.tenant, scope="site", object_id=self.site.id,
+            vrf=self.vrf_site,
+        )
+        self.assertEqual(
+            resolve_snmp_vrf(self.device, self.tenant), self.vrf_site
+        )
+        # A device binding is more specific and wins.
+        SnmpVrfBinding.objects.create(
+            tenant=self.tenant, scope="device", object_id=self.device.id,
+            vrf=self.vrf_dev,
+        )
+        self.assertEqual(
+            resolve_snmp_vrf(self.device, self.tenant), self.vrf_dev
+        )
+        # The discovered IP lands in the bound VRF's prefix.
+        sync_device_from_snmp(self.device, self.tenant)
+        ip = IPAddress.objects.get(tenant=self.tenant, ip_address="10.9.9.5")
+        self.assertEqual(ip.prefix_id, self.p_dev.id)
+
+    def test_binding_endpoint_roundtrip(self):
+        self.client.force_login(self.admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        r = self.client.put(
+            f"/api/monitoring/snmp-vrf-binding/site/{self.site.id}/",
+            {"vrf_id": str(self.vrf_site.id)}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["vrf_name"], "site-vrf")
+        r = self.client.get(
+            f"/api/monitoring/snmp-vrf-binding/device/{self.device.id}/"
+        )
+        self.assertEqual(r.json()["effective"]["name"], "site-vrf")
+        r = self.client.delete(
+            f"/api/monitoring/snmp-vrf-binding/site/{self.site.id}/"
+        )
+        self.assertIsNone(r.json()["vrf_id"])

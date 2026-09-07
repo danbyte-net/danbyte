@@ -117,7 +117,11 @@ export function ProfilesPanel() {
     ],
     [patch, templates]
   )
-  const { rail, filteredRows } = useTableFilters(columns, profiles)
+  const {
+    rail,
+    filteredRows,
+    columns: wiredColumns,
+  } = useTableFilters(columns, profiles)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -129,7 +133,7 @@ export function ProfilesPanel() {
       <FilteredTable rail={rail}>
         <DataTable
           data={filteredRows}
-          columns={columns}
+          columns={wiredColumns}
           tableId="monitoring-config-profiles"
           exportName="monitoring-profiles"
         />

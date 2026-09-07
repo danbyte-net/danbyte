@@ -96,11 +96,33 @@ def _as_list(value):
 
 
 def _norm_mac(raw: str) -> str:
-    """Windows ClientIds look like ``aa-bb-cc-00-11-22`` - normalise to colons."""
+    """Windows ClientIds look like ``aa-bb-cc-00-11-22`` - normalise to colons.
+
+    Anything that isn't a 48-bit MAC comes back as-is: a ClientId may be an
+    RFC 4361 client identifier, a DUID, or a 20-byte Infiniband GUID, and the
+    lease/reservation row keeps whatever the server actually reported.
+    """
     hexed = re.sub(r"[^0-9a-fA-F]", "", raw or "")
     if len(hexed) == 12:
         return ":".join(hexed[i : i + 2] for i in range(0, 12, 2)).lower()
     return (raw or "").lower()
+
+
+# A canonical 48-bit MAC, which is all IPAddress.mac_address holds.
+_MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+
+
+def _mac_for_ip(value: str) -> str:
+    """The value if it really is a MAC, else blank.
+
+    ``IPAddress.mac_address`` is ``varchar(17)`` and documented as a 48-bit
+    MAC. A longer ClientId assigned to it aborted the whole scope's sync with
+    *"value too long for type character varying(17)"* - one client with a DUID
+    took its entire scope down (#115). Nothing is lost by skipping it: the
+    lease and reservation rows keep the raw identifier, and a DUID was never a
+    MAC to begin with.
+    """
+    return value if _MAC_RE.match(value or "") else ""
 
 
 def _parse_when(iso: str | None):
@@ -397,6 +419,7 @@ def _adopt_ip(conn, scope, ip: str, mac: str, dns_name: str, note: str):
         )
         created = True
     changed = created
+    mac = _mac_for_ip(mac)
     if mac and not row.mac_address:
         row.mac_address, changed = mac, True
     if dns_name and not row.dns_name:

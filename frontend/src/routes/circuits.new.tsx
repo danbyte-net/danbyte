@@ -10,6 +10,7 @@ function NewCircuitPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Circuits", to: "/circuits" }, { label: "Add" }]}
       title="Add circuit"
       subtitle="A data circuit leased from a provider."

@@ -1,4 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table"
+import { SortHeader } from "@/components/data-table"
 
 import type { DeployRun } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -60,7 +61,8 @@ export function buildDeployRunColumns(
     }),
     status: () => ({
       id: "status",
-      header: "Status",
+      accessorFn: (r) => r.status,
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
       cell: ({ row }) => (
         <span className="flex items-center gap-2">
           <DeployRunStatus status={row.original.status} />

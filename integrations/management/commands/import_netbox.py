@@ -242,6 +242,31 @@ def _addr(a: str | None) -> str | None:
     return a.split("/")[0] if a else a
 
 
+def ensure_netbox_fields(tenant) -> None:
+    """The definitions behind the ``netbox_id`` / ``netbox_tenant`` values the
+    import stamps on every object - hidden by default (bookkeeping, not
+    something to read on every card), searchable like any custom field, and
+    one click away from visible on the Custom fields page."""
+    from django.apps import apps
+
+    applies = sorted(
+        m._meta.model_name
+        for m in apps.get_app_config("api").get_models()
+        if any(f.name == "custom_fields" for f in m._meta.fields)
+    )
+    for key, label, ftype, desc in (
+        ("netbox_id", "NetBox ID", "integer",
+         "The object's id in the NetBox it was imported from."),
+        ("netbox_tenant", "NetBox tenant", "text",
+         "The NetBox tenant the object belonged to."),
+    ):
+        CustomField.objects.get_or_create(
+            tenant=tenant, key=key,
+            defaults={"label": label, "type": ftype, "applies_to": applies,
+                      "hidden": True, "description": desc, "weight": 900},
+        )
+
+
 class _Importer:
     def __init__(self, cmd, client: NetBoxClient, tenant: Tenant, opts: dict,
                  on_progress=None):
@@ -2162,6 +2187,7 @@ class Command(BaseCommand):
     def handle(self, *args, **o):
         tenant = self._resolve_tenant(o.get("tenant"), o.get("org"))
         seeded = seed_builtin_statuses(tenant)
+        ensure_netbox_fields(tenant)
         self.stdout.write(
             f"Target tenant: {tenant.org.name} / {tenant.slug}  "
             f"(statuses ready: {seeded} seeded/verified)"

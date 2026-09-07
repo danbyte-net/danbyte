@@ -2,6 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import { IdMultiSelect } from "@/components/cells/id-multi-select"
+
 import {
   api,
   type CustomField,
@@ -20,7 +22,10 @@ import {
 import {
   Field,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormFooter,
+  FormSection,
   FormSelect,
   FormText,
   FormTextarea,
@@ -56,6 +61,7 @@ export function CustomFieldForm({
     (field?.choices ?? []).join("\n")
   )
   const [required, setRequired] = useState(field?.required ?? false)
+  const [hidden, setHidden] = useState(field?.hidden ?? false)
   const [defVal, setDefVal] = useState(field?.default ?? "")
   const [description, setDescription] = useState(field?.description ?? "")
   const [weight, setWeight] = useState(field ? String(field.weight) : "0")
@@ -91,6 +97,7 @@ export function CustomFieldForm({
     setAppliesTo(field.applies_to)
     setChoicesText(field.choices.join("\n"))
     setRequired(field.required)
+    setHidden(field.hidden)
     setDefVal(field.default)
     setDescription(field.description)
     setWeight(String(field.weight))
@@ -132,6 +139,7 @@ export function CustomFieldForm({
               .filter(Boolean)
           : [],
         required,
+        hidden,
         default: defVal.trim(),
         description: description.trim(),
         weight: weightNum,
@@ -168,122 +176,149 @@ export function CustomFieldForm({
       }}
       className="grid gap-4"
     >
-      <FormText
-        label="Key"
-        required
-        mono
-        autoFocus={!isEdit}
-        value={key}
-        onChange={setKey}
-        hint="The JSON key, e.g. owner_team"
-        placeholder="owner_team"
-        error={fieldErrors.key}
-      />
-      <FormText
-        label="Label"
-        required
-        value={label}
-        onChange={setLabel}
-        placeholder="Owner team"
-        error={fieldErrors.label}
-      />
-      <FormSelect
-        label="Type"
-        value={type}
-        onChange={(v) => v && setType(v as CustomFieldType)}
-        options={CUSTOM_FIELD_TYPES.map((t) => ({
-          value: t.value,
-          label: t.label,
-        }))}
-        error={fieldErrors.type}
-      />
-
-      {type === "object" && (
-        <FormSelect
-          label="Referenced model"
-          value={relatedModel}
-          onChange={setRelatedModel}
-          placeholder="Pick a model"
-          options={(meta.data?.reference_models ?? []).map((r) => ({
-            value: r.value,
-            label: r.label,
-          }))}
-          hint="The field's value is one object of this model, picked with the advanced search."
-          error={fieldErrors.related_model}
-        />
-      )}
-
-      {needsChoices && (
-        <FormTextarea
-          label="Choices"
-          hint="One per line"
-          value={choicesText}
-          onChange={setChoicesText}
-          rows={4}
-          placeholder={"production\nstaging\ndev"}
-          error={fieldErrors.choices}
-        />
-      )}
-
-      <Field
-        label="Applies to"
-        hint="Which objects can carry this field"
-        error={fieldErrors.applies_to}
-      >
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {modelOptions.map((m) => (
-            <FormCheckbox
-              key={m.value}
-              label={m.label}
-              checked={appliesTo.includes(m.value)}
-              onChange={() => toggleModel(m.value)}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Field" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Key"
+                required
+                mono
+                autoFocus={!isEdit}
+                value={key}
+                onChange={setKey}
+                hint="The JSON key, e.g. owner_team"
+                placeholder="owner_team"
+                error={fieldErrors.key}
+              />
+              <FormText
+                label="Label"
+                required
+                value={label}
+                onChange={setLabel}
+                placeholder="Owner team"
+                error={fieldErrors.label}
+              />
+            </div>
+            <FormSelect
+              label="Type"
+              value={type}
+              onChange={(v) => v && setType(v as CustomFieldType)}
+              options={CUSTOM_FIELD_TYPES.map((t) => ({
+                value: t.value,
+                label: t.label,
+              }))}
+              error={fieldErrors.type}
             />
-          ))}
-        </div>
-      </Field>
 
-      <ScopeRulesEditor value={scopeRules} onChange={setScopeRules} />
+            {type === "object" && (
+              <FormSelect
+                label="Referenced model"
+                value={relatedModel}
+                onChange={setRelatedModel}
+                placeholder="Pick a model"
+                options={(meta.data?.reference_models ?? []).map((r) => ({
+                  value: r.value,
+                  label: r.label,
+                }))}
+                hint="The field's value is one object of this model, picked with the advanced search."
+                error={fieldErrors.related_model}
+              />
+            )}
 
-      <FormText
-        label="Default value"
-        value={defVal}
-        onChange={setDefVal}
-        hint="Optional initial value (stored as text)"
-        error={fieldErrors.default}
-      />
-      <FormCheckbox
-        label="Required"
-        hint="Must be filled in when shown on a form"
-        checked={required}
-        onChange={setRequired}
-      />
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        placeholder="What this field is for"
-        error={fieldErrors.description}
-      />
-      <FormText
-        label="Weight"
-        type="number"
-        value={weight}
-        onChange={(v) => {
-          setWeight(v)
-          setWeightError(null)
-        }}
-        hint="Display order, low → high"
-        error={weightError ?? fieldErrors.weight}
-      />
-      <FormSelect
-        label="Group"
-        value={group}
-        onChange={setGroup}
-        noneLabel="- None -"
-        options={groupOptions}
-        hint="Optional section heading this field shows under."
-        error={fieldErrors.group}
-      />
+            {needsChoices && (
+              <FormTextarea
+                label="Choices"
+                hint="One per line"
+                value={choicesText}
+                onChange={setChoicesText}
+                rows={4}
+                placeholder={"production\nstaging\ndev"}
+                error={fieldErrors.choices}
+              />
+            )}
+          </FormSection>
+
+          <FormSection title="Behaviour" card>
+            <FormText
+              label="Default value"
+              value={defVal}
+              onChange={setDefVal}
+              hint="Optional initial value (stored as text)"
+              error={fieldErrors.default}
+            />
+            <FormCheckbox
+              label="Required"
+              hint="Must be filled in when shown on a form"
+              checked={required}
+              onChange={setRequired}
+            />
+            <FormCheckbox
+              label="Hidden"
+              checked={hidden}
+              onChange={setHidden}
+              hint="kept on the object and searchable, not shown"
+            />
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              placeholder="What this field is for"
+              error={fieldErrors.description}
+            />
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Applies to" card>
+            <Field
+              label="Objects"
+              hint="Which objects can carry this field"
+              error={fieldErrors.applies_to}
+            >
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                {modelOptions.map((m) => (
+                  <FormCheckbox
+                    key={m.value}
+                    label={m.label}
+                    checked={appliesTo.includes(m.value)}
+                    onChange={() => toggleModel(m.value)}
+                  />
+                ))}
+              </div>
+            </Field>
+          </FormSection>
+
+          <FormSection title="Scope" card>
+            <ScopeRulesEditor value={scopeRules} onChange={setScopeRules} />
+          </FormSection>
+
+          <FormSection title="Placement" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Group"
+                value={group}
+                onChange={setGroup}
+                noneLabel="- None -"
+                options={groupOptions}
+                hint="Optional section heading this field shows under."
+                error={fieldErrors.group}
+              />
+              <FormText
+                label="Weight"
+                type="number"
+                value={weight}
+                onChange={(v) => {
+                  setWeight(v)
+                  setWeightError(null)
+                }}
+                hint="Display order, low → high"
+                error={weightError ?? fieldErrors.weight}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormFooter
         onCancel={onCancel}
@@ -293,6 +328,91 @@ export function CustomFieldForm({
     </form>
   )
 }
+
+/** One include/exclude rule, boxed. The two dropdowns are a pair - bare and
+ * side by side they read as four unrelated controls rather than one rule, so
+ * the box (and the heading inside it) is what says they belong together. */
+function ScopeRule({
+  label,
+  options,
+  include,
+  exclude,
+  onChange,
+}: {
+  label: string
+  options: { id: string; name: string }[]
+  include: string[]
+  exclude: string[]
+  onChange: (side: "include" | "exclude", ids: string[]) => void
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border p-3">
+      <span className="text-xs font-medium">{label}</span>
+      <div className="grid gap-2 md:grid-cols-2">
+        <div className="grid gap-1">
+          <span className="text-[11px] text-muted-foreground">Show only</span>
+          <IdMultiSelect
+            options={options}
+            value={include}
+            onChange={(ids) => onChange("include", ids)}
+          />
+        </div>
+        <div className="grid gap-1">
+          <span className="text-[11px] text-muted-foreground">Hide</span>
+          <IdMultiSelect
+            options={options}
+            value={exclude}
+            onChange={(ids) => onChange("exclude", ids)}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+/** The same boxed pair for the comma-separated rules, so every rule in the
+ * Scope section reads as one unit instead of six loose inputs. */
+function ScopeTextRule({
+  label,
+  includeLabel,
+  excludeLabel,
+  includeValue,
+  excludeValue,
+  onChange,
+  includePlaceholder,
+  excludePlaceholder,
+}: {
+  label: string
+  includeLabel: string
+  excludeLabel: string
+  includeValue: string
+  excludeValue: string
+  onChange: (side: "include" | "exclude", raw: string) => void
+  includePlaceholder: string
+  excludePlaceholder: string
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border p-3">
+      <span className="text-xs font-medium">{label}</span>
+      <div className="grid gap-2 md:grid-cols-2">
+        <FormText
+          label={includeLabel}
+          value={includeValue}
+          onChange={(v) => onChange("include", v)}
+          placeholder={includePlaceholder}
+        />
+        <FormText
+          label={excludeLabel}
+          value={excludeValue}
+          onChange={(v) => onChange("exclude", v)}
+          placeholder={excludePlaceholder}
+        />
+      </div>
+    </div>
+  )
+}
+
 
 function ScopeRulesEditor({
   value,
@@ -338,15 +458,6 @@ function ScopeRulesEditor({
     }
     onChange(next)
   }
-  const toggle = (
-    key: keyof CustomFieldScopeRules,
-    side: "include" | "exclude",
-    id: string,
-    checked: boolean
-  ) => {
-    const cur = value[key]?.[side] ?? []
-    setRule(key, side, checked ? [...cur, id] : cur.filter((x) => x !== id))
-  }
   const csv = (key: keyof CustomFieldScopeRules, side: "include" | "exclude") =>
     (value[key]?.[side] ?? []).join(", ")
   const setCsv = (
@@ -360,106 +471,73 @@ function ScopeRulesEditor({
       raw.split(",").map((s) => s.trim())
     )
 
+  // No box or heading of its own: the enclosing FormSection card supplies
+  // both, and nesting a second frame inside it read as a form-in-a-form.
   return (
-    <div className="grid gap-3 rounded-md border border-border p-3">
-      <div>
-        <div className="text-xs font-medium">Visibility &amp; Scope</div>
-        <div className="text-xs text-muted-foreground">
-          Empty rules keep the field visible and object pickers unrestricted.
-        </div>
-      </div>
-      <Field label="Device type whitelist / blacklist">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {(deviceTypes.data?.results ?? []).map((d) => (
-            <div key={d.id} className="grid gap-1">
-              <FormCheckbox
-                label={`Show ${d.name}`}
-                checked={(value.device_types?.include ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_types", "include", d.id, on)}
-              />
-              <FormCheckbox
-                label={`Hide ${d.name}`}
-                checked={(value.device_types?.exclude ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_types", "exclude", d.id, on)}
-              />
-            </div>
-          ))}
-        </div>
-      </Field>
-      <Field label="Device role whitelist / blacklist">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {(deviceRoles.data?.results ?? []).map((d) => (
-            <div key={d.id} className="grid gap-1">
-              <FormCheckbox
-                label={`Show ${d.name}`}
-                checked={(value.device_roles?.include ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_roles", "include", d.id, on)}
-              />
-              <FormCheckbox
-                label={`Hide ${d.name}`}
-                checked={(value.device_roles?.exclude ?? []).includes(d.id)}
-                onChange={(on) => toggle("device_roles", "exclude", d.id, on)}
-              />
-            </div>
-          ))}
-        </div>
-      </Field>
-      <Field label="Tag whitelist / blacklist">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {(tags.data?.results ?? []).map((t) => (
-            <div key={t.slug} className="grid gap-1">
-              <FormCheckbox
-                label={`Show ${t.name}`}
-                checked={(value.tags?.include ?? []).includes(t.slug)}
-                onChange={(on) => toggle("tags", "include", t.slug, on)}
-              />
-              <FormCheckbox
-                label={`Hide ${t.name}`}
-                checked={(value.tags?.exclude ?? []).includes(t.slug)}
-                onChange={(on) => toggle("tags", "exclude", t.slug, on)}
-              />
-            </div>
-          ))}
-        </div>
-      </Field>
-      <div className="grid gap-3 md:grid-cols-2">
-        <FormText
-          label="VLAN ranges allowed"
-          value={csv("vlan_ranges", "include")}
-          onChange={(v) => setCsv("vlan_ranges", "include", v)}
-          placeholder="100-199, 300"
-        />
-        <FormText
-          label="VLAN ranges blocked"
-          value={csv("vlan_ranges", "exclude")}
-          onChange={(v) => setCsv("vlan_ranges", "exclude", v)}
-          placeholder="50, 900-999"
-        />
-        <FormText
-          label="IP/prefix ranges allowed"
-          value={csv("ip_ranges", "include")}
-          onChange={(v) => setCsv("ip_ranges", "include", v)}
-          placeholder="10.0.0.0/8, 2001:db8::/32"
-        />
-        <FormText
-          label="IP/prefix ranges blocked"
-          value={csv("ip_ranges", "exclude")}
-          onChange={(v) => setCsv("ip_ranges", "exclude", v)}
-          placeholder="10.0.9.0/24"
-        />
-        <FormText
-          label="Name contains"
-          value={csv("name_patterns", "include")}
-          onChange={(v) => setCsv("name_patterns", "include", v)}
-          placeholder="core, edge"
-        />
-        <FormText
-          label="Name excludes"
-          value={csv("name_patterns", "exclude")}
-          onChange={(v) => setCsv("name_patterns", "exclude", v)}
-          placeholder="test, retired"
-        />
-      </div>
+    <div className="grid gap-3">
+      <p className="text-xs text-muted-foreground">
+        Empty rules keep the field visible and object pickers unrestricted.
+      </p>
+      <ScopeRule
+        label="Device types"
+        options={(deviceTypes.data?.results ?? []).map((d) => ({
+          id: d.id,
+          name: d.name,
+        }))}
+        include={value.device_types?.include ?? []}
+        exclude={value.device_types?.exclude ?? []}
+        onChange={(side, ids) => setRule("device_types", side, ids)}
+      />
+      <ScopeRule
+        label="Device roles"
+        options={(deviceRoles.data?.results ?? []).map((d) => ({
+          id: d.id,
+          name: d.name,
+        }))}
+        include={value.device_roles?.include ?? []}
+        exclude={value.device_roles?.exclude ?? []}
+        onChange={(side, ids) => setRule("device_roles", side, ids)}
+      />
+      <ScopeRule
+        label="Tags"
+        options={(tags.data?.results ?? []).map((t) => ({
+          id: t.slug,
+          name: t.name,
+        }))}
+        include={value.tags?.include ?? []}
+        exclude={value.tags?.exclude ?? []}
+        onChange={(side, ids) => setRule("tags", side, ids)}
+      />
+      <ScopeTextRule
+        label="VLAN ranges"
+        includeLabel="Allowed"
+        excludeLabel="Blocked"
+        includeValue={csv("vlan_ranges", "include")}
+        excludeValue={csv("vlan_ranges", "exclude")}
+        onChange={(side, v) => setCsv("vlan_ranges", side, v)}
+        includePlaceholder="100-199, 300"
+        excludePlaceholder="50, 900-999"
+      />
+      <ScopeTextRule
+        label="IP/prefix ranges"
+        includeLabel="Allowed"
+        excludeLabel="Blocked"
+        includeValue={csv("ip_ranges", "include")}
+        excludeValue={csv("ip_ranges", "exclude")}
+        onChange={(side, v) => setCsv("ip_ranges", side, v)}
+        includePlaceholder="10.0.0.0/8, 2001:db8::/32"
+        excludePlaceholder="10.0.9.0/24"
+      />
+      <ScopeTextRule
+        label="Name"
+        includeLabel="Contains"
+        excludeLabel="Excludes"
+        includeValue={csv("name_patterns", "include")}
+        excludeValue={csv("name_patterns", "exclude")}
+        onChange={(side, v) => setCsv("name_patterns", side, v)}
+        includePlaceholder="core, edge"
+        excludePlaceholder="test, retired"
+      />
     </div>
   )
 }

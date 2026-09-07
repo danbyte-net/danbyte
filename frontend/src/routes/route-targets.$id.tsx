@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -210,6 +211,11 @@ function RtOverview({ rt: r }: { rt: RouteTarget }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Details" rows={details} />
+      <CustomFieldValues
+        model="routetarget"
+        values={r.custom_fields}
+        layout="cards"
+      />
     </div>
   )
 }

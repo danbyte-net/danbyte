@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { StateBadge, fmtDuration } from "./jobs.index"
+import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/jobs/$id")({ component: JobDetailPage })
 
@@ -27,6 +28,7 @@ function JobDetailPage() {
     refetchInterval: (query) =>
       TERMINAL.has(query.state.data?.state ?? "") ? false : 2000,
   })
+  usePageTitle(q.data?.func_short ?? null)
 
   if (!can("jobs.manage")) {
     return (

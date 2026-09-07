@@ -108,6 +108,7 @@ const KIND_TITLE: Record<TemplateKind, string> = {
   "module-bay": "Module bays", // not placeable on faceplates (M1)
   "device-bay": "Device bays", // not placeable on faceplates
   "inventory-item": "Inventory", // not placeable on faceplates
+  antenna: "Antennas", // photo markers only, like inventory
   interface: "Interfaces",
   "console-port": "Console ports",
   "console-server-port": "Console server ports",

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { api, type Interface } from "@/lib/api"
 import { safeReturnPath } from "@/lib/return-url"
 import { InterfaceForm } from "@/components/interface-form"
+import { InterfaceRelatedStrip } from "@/components/related-objects-strip"
 import { EditPageShell } from "@/components/edit-page-shell"
 import { QueryError } from "@/components/query-error"
 import { PendingFieldsProvider } from "@/lib/pending-fields"
@@ -36,6 +37,7 @@ function EditInterfacePage() {
   }
   return (
     <EditPageShell
+      wide
       className="max-w-5xl"
       crumbs={[
         { label: "Interfaces", to: "/interfaces" },
@@ -50,7 +52,10 @@ function EditInterfacePage() {
       {q.isError && <QueryError error={q.error} />}
       <PendingFieldsProvider objectType="api.interface" objectId={id}>
         {q.data && (
-          <InterfaceForm iface={q.data} onSaved={back} onCancel={back} />
+          <>
+            <InterfaceRelatedStrip iface={q.data} />
+            <InterfaceForm iface={q.data} onSaved={back} onCancel={back} />
+          </>
         )}
       </PendingFieldsProvider>
     </EditPageShell>

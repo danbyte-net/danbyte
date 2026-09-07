@@ -73,9 +73,13 @@ interface DocDialogState {
 export function ObjectDocuments({
   objectType,
   objectId,
+  inheritedFrom,
 }: {
   objectType: string
   objectId: string
+  /** Documents attached to a parent object (a device's type) shown read-only
+   * below this object's own - manuals attached once carry to every unit. */
+  inheritedFrom?: { objectType: string; objectId: string; label: string }
 }) {
   const { canDo } = useMe()
   const canAdd = canDo("document", "add")
@@ -95,6 +99,19 @@ export function ObjectDocuments({
       ),
   })
 
+  const inheritedQ = useQuery({
+    queryKey: [
+      "object-documents",
+      inheritedFrom?.objectType ?? "",
+      inheritedFrom?.objectId ?? "",
+    ],
+    queryFn: () =>
+      api<Paginated<Document>>(
+        `/api/documents/?object_type=${inheritedFrom!.objectType}&object_id=${inheritedFrom!.objectId}`
+      ),
+    enabled: !!inheritedFrom,
+  })
+
   const categories = useQuery({
     queryKey: ["document-categories"],
     queryFn: () =>
@@ -110,6 +127,13 @@ export function ObjectDocuments({
   )
   const current = docs.filter((d) => !supersededIds.has(d.id))
   const older = docs.filter((d) => supersededIds.has(d.id))
+  // Inherited docs render current versions only, read-only - editing them
+  // belongs on the object they're attached to.
+  const inheritedDocs = inheritedQ.data?.results ?? []
+  const inheritedSuperseded = new Set(
+    inheritedDocs.map((d) => d.supersedes).filter(Boolean) as string[]
+  )
+  const inherited = inheritedDocs.filter((d) => !inheritedSuperseded.has(d.id))
 
   return (
     <div className="space-y-4">
@@ -227,6 +251,28 @@ export function ObjectDocuments({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {inheritedFrom && inherited.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            {inheritedFrom.label}
+          </h3>
+          <ul className="space-y-2">
+            {inherited.map((d) => (
+              <DocumentRow
+                key={d.id}
+                doc={d}
+                canChange={false}
+                canAdd={false}
+                canDelete={false}
+                onEdit={() => {}}
+                onSupersede={() => {}}
+                onDelete={() => {}}
+              />
+            ))}
+          </ul>
         </div>
       )}
 

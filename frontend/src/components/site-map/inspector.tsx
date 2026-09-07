@@ -65,7 +65,20 @@ function num(v: number | string) {
 
 const INSPECTOR_W_KEY = "site-map:inspector-w"
 const INSPECTOR_W_DEFAULT = 288 // = the old fixed w-72
-const clampW = (w: number) => Math.min(640, Math.max(INSPECTOR_W_DEFAULT, w))
+// The hard 640 ceiling still let the inspector swallow the map on a narrow
+// window (sidebar + palette are fixed width, so at 1280px the map was down to
+// ~96px, and negative in layout mode - #108). Cap against the viewport so at
+// least 400px of map always survives; the floor wins if the two conflict.
+const clampW = (w: number) => {
+  const ceiling = Math.max(
+    INSPECTOR_W_DEFAULT,
+    Math.min(
+      640,
+      (typeof window === "undefined" ? 1920 : window.innerWidth) - 400
+    )
+  )
+  return Math.min(ceiling, Math.max(INSPECTOR_W_DEFAULT, w))
+}
 
 function InspectorShell({
   kind,

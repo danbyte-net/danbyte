@@ -19,6 +19,7 @@ from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
 from .models import (
+    Antenna, AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
@@ -653,6 +654,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         return value.lower()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         group = attrs.get("group", getattr(self.instance, "group", None))
         vid = attrs.get("vlan_id", getattr(self.instance, "vlan_id", None))
         if group is not None and vid is not None:
@@ -941,6 +943,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     family = serializers.IntegerField(read_only=True)
     utilisation_pct = serializers.IntegerField(read_only=True, allow_null=True)
     is_enumerable = serializers.BooleanField(read_only=True)
+    allocation = serializers.SerializerMethodField()
     ip_count = serializers.SerializerMethodField()
     child_count = serializers.SerializerMethodField()
     has_descendants = serializers.SerializerMethodField()
@@ -980,6 +983,12 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return str(net)  # normalised (compressed IPv6, canonical form)
 
     @extend_schema_field(OpenApiTypes.BOOL)
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_allocation(self, obj):
+        """``{size, used, free, ranges}`` when the prefix allocates only from
+        its ranges; ``None`` when it allocates from the whole network."""
+        return obj.allocation_summary()
+
     def get_dhcp(self, obj) -> bool:
         """This prefix backs a DHCP scope (annotated by the viewset)."""
         return getattr(obj, "dhcp_scope_n", 0) > 0
@@ -1072,6 +1081,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
            normal /16 ⊃ /24 nesting). Gated on the flag so existing hierarchies
            aren't retroactively rejected.
         """
+        attrs = super().validate(attrs)
         import ipaddress
 
         request = self.context.get("request")
@@ -1125,6 +1135,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "site", "vlan", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
+            "allocate_from_ranges", "allocation",
             "monitoring_engine",
             "tags",
             "custom_fields",
@@ -1226,6 +1237,9 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     prefix = PrefixMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     is_primary_for_device = serializers.SerializerMethodField()
+    # A VM's primary IP is the same idea one level up (#122): the address the
+    # VM answers on. VMs carry no secondary/OOB - those are hardware notions.
+    is_primary_for_vm = serializers.SerializerMethodField()
     is_secondary_for_device = serializers.SerializerMethodField()
     is_oob_for_device = serializers.SerializerMethodField()
     scope = serializers.SerializerMethodField()
@@ -1297,11 +1311,34 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                 raise serializers.ValidationError(
                     {"ip_address": f"{ip_str} is not inside the prefix {prefix.cidr}."}
                 )
+            # A prefix that allocates only from its ranges refuses an address
+            # outside every range - but only when the address or prefix is
+            # what's being set; renaming a legacy IP still saves.
+            if (
+                ("ip_address" in attrs or "prefix" in attrs)
+                and prefix.allocate_from_ranges
+                and not prefix.in_allocation(ip_str)
+            ):
+                spans = ", ".join(
+                    f"{r['start_address']}–{r['end_address']}"
+                    for r in (prefix.allocation_summary() or {}).get("ranges", [])
+                ) or "none defined yet"
+                raise serializers.ValidationError({
+                    "ip_address": (
+                        f"{prefix.cidr} allocates only from its ranges ({spans}). "
+                        "Add a range covering this address, or turn off "
+                        "Allocate only from ranges on the prefix."
+                    )
+                })
         return attrs
 
     def get_is_primary_for_device(self, obj) -> bool:
         dev = obj.assigned_device
         return bool(dev and dev.primary_ip_id == obj.id)
+
+    def get_is_primary_for_vm(self, obj) -> bool:
+        vm = obj.assigned_vm
+        return bool(vm and vm.primary_ip_id == obj.id)
 
     def get_is_secondary_for_device(self, obj) -> bool:
         dev = obj.assigned_device
@@ -1393,6 +1430,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "discovered",
             "flap_exclude",
             "is_primary_for_device",
+            "is_primary_for_vm",
             "is_secondary_for_device",
             "is_oob_for_device",
             "scope",
@@ -1659,6 +1697,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     )
     device_count = serializers.SerializerMethodField()
     component_count = serializers.SerializerMethodField()
+    component_counts = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
 
@@ -1670,6 +1709,34 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     def get_device_count(self, obj) -> int:
         v = getattr(obj, "device_count_annotated", None)
         return v if v is not None else obj.device_set.count()
+
+    #: Overview-card breakdown: keys are the Components tab's sub-tab slugs,
+    #: so each row can deep-link straight to its section.
+    _COMPONENT_COUNT_RELS = [
+        ("interface", "interface_templates"),
+        ("console-port", "console_port_templates"),
+        ("console-server-port", "console_server_port_templates"),
+        ("power-port", "power_port_templates"),
+        ("power-outlet", "power_outlet_templates"),
+        ("rear-port", "rear_port_templates"),
+        ("front-port", "front_port_templates"),
+        ("device-bay", "device_bay_templates"),
+        ("module-bay", "module_bay_templates"),
+        ("inventory-item", "inventory_item_templates"),
+        ("aux-port", "aux_port_templates"),
+        ("antenna", "antenna_templates"),
+    ]
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_component_counts(self, obj):
+        view = self.context.get("view")
+        if view is not None and getattr(view, "action", None) == "list":
+            return {}
+        return {
+            slug: n
+            for slug, rel in self._COMPONENT_COUNT_RELS
+            if (n := getattr(obj, rel).count())
+        }
 
     def get_component_count(self, obj) -> int:
         # The Components tab's total - every template kind summed. Detail
@@ -1687,6 +1754,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
             + obj.front_port_templates.count()
             + obj.rear_port_templates.count()
             + obj.aux_port_templates.count()
+            + obj.antenna_templates.count()
             + obj.device_bay_templates.count()
             + obj.module_bay_templates.count()
             + obj.inventory_item_templates.count()
@@ -1712,7 +1780,9 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     # slots). Those two are photo-only - the schematic faceplate stays
     # port-only, and a module bay appears there as a group's `bay` placeholder
     # instead.
-    _PHOTO_MARKER_KINDS = _FACEPLATE_SLOT_KINDS | {"inventory-item", "module-bay"}
+    _PHOTO_MARKER_KINDS = _FACEPLATE_SLOT_KINDS | {
+        "inventory-item", "module-bay", "antenna",
+    }
 
     def validate_faceplate(self, value):
         if value is None:
@@ -1819,6 +1889,22 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                             f"Marker {k} must be a number in 0..1.")
         if total > 512:
             raise serializers.ValidationError("Too many markers (max 512).")
+        # Display scale per side, saved from the editor's zoom: a fraction of
+        # the natural width, or null for "fit". Every photo surface honours it.
+        view = value.get("view")
+        if view is not None:
+            if not isinstance(view, dict):
+                raise serializers.ValidationError("view must be an object.")
+            for side, v in view.items():
+                if side not in ("front", "rear") or not isinstance(v, dict):
+                    raise serializers.ValidationError(
+                        'view keys are "front" / "rear" objects.')
+                scale = v.get("scale")
+                if scale is not None and (
+                    not isinstance(scale, (int, float)) or not (0.1 <= scale <= 8)
+                ):
+                    raise serializers.ValidationError(
+                        "view scale must be a number in 0.1..8, or null for fit.")
         return value
 
     lifecycle_state = serializers.ReadOnlyField()
@@ -1834,7 +1920,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "subdevice_role", "exclude_from_utilization",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
-                  "tags", "tag_ids", "device_count", "component_count",
+                  "tags", "tag_ids", "device_count", "component_count", "component_counts",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "component_count",
                   "front_image", "rear_image",
@@ -1984,6 +2070,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Exactly one of file / url - mirrors the DB CheckConstraint, but as an
         # actionable field error instead of an IntegrityError.
         has_file = attrs.get("file") if "file" in attrs else (
@@ -2351,12 +2438,14 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return view is None or getattr(view, "action", None) != "list"
 
     def get_hardware_count(self, obj) -> int:
-        # Everything on the Hardware tab: bays, modules, inventory, front/rear.
+        # Everything on the Hardware tab: bays, modules, inventory, antennas,
+        # front/rear.
         if not self._detail_only():
             return 0
         return (
             obj.device_bays.count() + obj.module_bays.count()
             + obj.modules.count() + obj.inventory_items.count()
+            + obj.antennas.count()
             + obj.front_ports.count() + obj.rear_ports.count()
         )
 
@@ -2386,6 +2475,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "location", "location_id", "cluster", "cluster_id",
                   "virtual_chassis", "virtual_chassis_id",
                   "vc_position", "vc_priority", "vc_renamed_interfaces",
+                  "image_ports",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
                   "description", "comments", "airflow", "effective_airflow",
@@ -2425,6 +2515,15 @@ def _termination_repr(t) -> dict:
     p = _point_of(t)
     # A power feed hangs off a panel, not a device - surface the panel under
     # the same "device" key so the cable UI renders one consistent shape.
+    if isinstance(p, CircuitTermination):
+        # A circuit end belongs to a circuit, not a device: show the circuit
+        # as the "device" and the side (A/Z) as the port.
+        return {
+            "kind": _point_kind(t),
+            "id": str(p.id),
+            "name": f"Side {p.term_side}",
+            "device": {"id": str(p.circuit_id), "name": p.circuit.cid},
+        }
     if isinstance(p, PowerFeed):
         parent = {"id": str(p.power_panel_id), "name": p.power_panel.name}
     else:
@@ -2462,7 +2561,9 @@ def _point_reservation(point):
     }
 
 
-class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "interface"
+
     def update(self, instance, validated_data):
         obj = super().update(instance, validated_data)
         # A port marked connected can't also be held for later - the mark
@@ -2494,6 +2595,9 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     lag = serializers.SerializerMethodField()
     bridge = serializers.SerializerMethodField()
     lag_member_count = serializers.SerializerMethodField()
+    lag_protocol_display = serializers.CharField(
+        source="get_lag_protocol_display", read_only=True
+    )
     # Lenient (CharField, not the model's ChoiceField) so legacy/custom values
     # round-trip; the UI offers the standard dropdown via dcim_choices.
     type = serializers.CharField(required=False, allow_blank=True)
@@ -2536,7 +2640,15 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     @staticmethod
     def _mini(rel):
-        return {"id": str(rel.id), "name": rel.name} if rel else None
+        # The owning device rides along so a relation on another stack member
+        # can be labelled "member-2: ae1" rather than a bare name.
+        if rel is None:
+            return None
+        return {
+            "id": str(rel.id),
+            "name": rel.name,
+            "device": {"id": str(rel.device_id), "name": rel.device.name},
+        }
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
@@ -2557,7 +2669,13 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_lag(self, obj):
-        return self._mini(obj.lag)
+        # The bundle's protocol rides along so a member's page can say
+        # "Member of Po1 · LACP active" without a second request.
+        d = self._mini(obj.lag)
+        if d:
+            d["lag_protocol"] = obj.lag.lag_protocol
+            d["lacp_mode"] = obj.lag.lacp_mode
+        return d
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_bridge(self, obj):
@@ -2603,15 +2721,20 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         self_pk = getattr(self.instance, "pk", None)
 
         # All three self-relations must point at an interface on the same device
-        # and never at the interface itself.
+        # - or on another member of the same virtual chassis, where the
+        # aggregate lives on the master and member ports across the stack join
+        # it (#145) - and never at the interface itself.
+        vc_id = getattr(device, "virtual_chassis_id", None)
         for field in ("parent", "lag", "bridge"):
             rel = attrs.get(field, getattr(self.instance, field, None))
             if rel is None:
                 continue
-            if device is not None and rel.device_id != device.id:
+            if device is not None and rel.device_id != device.id and not (
+                vc_id and rel.device.virtual_chassis_id == vc_id
+            ):
                 raise serializers.ValidationError(
                     {f"{field}_id": f"{field.capitalize()} must be an interface "
-                                    "on the same device."}
+                                    "on the same device or virtual chassis."}
                 )
             if self_pk is not None and rel.pk == self_pk:
                 raise serializers.ValidationError(
@@ -2629,14 +2752,57 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                     )
                 seen.add(node.pk)
                 node = node.parent
+
+        # Bundles: the aggregate is an interface of type "lag"; members point
+        # at it. Only a membership being SET is checked against the target's
+        # type, so a legacy member (aggregate typed as physical media) still
+        # saves on an unrelated edit - re-picking the LAG is what asks for the
+        # fix.
+        eff_type = attrs.get("type", getattr(self.instance, "type", "") or "")
+        lag_rel = attrs.get("lag", getattr(self.instance, "lag", None))
+        if attrs.get("lag") is not None and attrs["lag"].type != "lag":
+            raise serializers.ValidationError(
+                {"lag_id": "LAG must be an interface of type LAG (Link "
+                           "Aggregation Group). Set that interface's type first."}
+            )
+        if eff_type == "lag" and lag_rel is not None:
+            raise serializers.ValidationError(
+                {"lag_id": "An aggregate can't be a member of another LAG."}
+            )
+        if (
+            self.instance is not None
+            and self.instance.type == "lag"
+            and eff_type != "lag"
+            and self.instance.lag_members.exists()
+        ):
+            raise serializers.ValidationError(
+                {"type": "This interface has LAG members. Remove them before "
+                         "changing its type."}
+            )
+        if eff_type != "lag":
+            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links"):
+                if attrs.get(f):
+                    raise serializers.ValidationError(
+                        {f: "Only an interface of type LAG has bundle settings."}
+                    )
+        if attrs.get("lag_min_links") == 0:
+            raise serializers.ValidationError(
+                {"lag_min_links": "Min links must be at least 1."}
+            )
+        protocol = attrs.get(
+            "lag_protocol", getattr(self.instance, "lag_protocol", "") or ""
+        )
+        if protocol != "lacp":
+            attrs["lacp_mode"] = ""
+            attrs["lacp_rate"] = ""
         return attrs
 
     class Meta:
         model = Interface
-        fields = ["id", "device", "device_id", "name", "snmp_name", "snmp_ignore", "is_uplink", "type",
+        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink", "type",
                   "type_display",
                   "speed", "mtu",
-                  "enabled", "mgmt_only", "combo_group", "mark_connected",
+                  "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected", "custom_fields",
                   "duplex", "poe_mode",
                   "poe_type",
                   "wwn", "mac_address", "mac_addresses", "description",
@@ -2647,6 +2813,8 @@ class InterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "ip_addresses", "tunnel_terminations",
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
+                  "lag_protocol", "lag_protocol_display", "lacp_mode", "lacp_rate",
+                  "lag_min_links",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "tunnel_terminations", "created_at", "updated_at"]
 
@@ -2746,6 +2914,7 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         return obj.front_ports.count()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         splitter = attrs.get(
             "is_splitter",
             self.instance.is_splitter if self.instance else False,
@@ -2774,7 +2943,7 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = RearPort
-        fields = ["id", "device", "device_id", "name", "positions",
+        fields = ["id", "device", "device_id", "name", "label", "positions",
                   "is_splitter", "type", "mark_connected", "description",
                   "tags", "tag_ids", "cable", "reservation",
                   "front_port_count", "created_at", "updated_at"]
@@ -2816,6 +2985,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         return _point_cable(obj)
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Run the model's range/overlap check (DRF doesn't call clean()).
         from django.core.exceptions import ValidationError as DjangoError
 
@@ -2839,7 +3009,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = FrontPort
-        fields = ["id", "device", "device_id", "name", "rear_port",
+        fields = ["id", "device", "device_id", "name", "label", "rear_port",
                   "rear_port_id", "rear_port_position", "positions", "type",
                   "mark_connected",
                   "description", "tags", "tag_ids", "cable", "reservation",
@@ -2979,6 +3149,50 @@ class ConsolePortTemplateSerializer(_ComponentTemplateSerializer):
 class AuxPortTemplateSerializer(_ComponentTemplateSerializer):
     class Meta(_ComponentTemplateSerializer.Meta):
         model = AuxPortTemplate
+
+
+class AntennaSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
+                        serializers.ModelSerializer):
+    """A device's radiating elements (#111). Not a port: nothing to cable,
+    so no cable/reservation fields - the coax terminates on an RF aux port."""
+
+    cf_model = "antenna"
+    device = serializers.SerializerMethodField()
+    device_id = serializers.PrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+    class Meta:
+        model = Antenna
+        fields = ["id", "device", "device_id", "name", "antenna_type",
+                  "gain_dbi", "bands", "polarization", "connector",
+                  "direct_mount", "description", "tags", "tag_ids",
+                  "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class AntennaTemplateSerializer(_ComponentTemplateSerializer):
+    # The base declares a `type` CharField for the port templates; an antenna
+    # template has `antenna_type` instead. None removes the inherited field.
+    type = None
+
+    class Meta(_ComponentTemplateSerializer.Meta):
+        model = AntennaTemplate
+        fields = [
+            f for f in _ComponentTemplateSerializer.Meta.fields if f != "type"
+        ] + [
+            "antenna_type", "gain_dbi", "bands", "polarization",
+            "connector", "direct_mount",
+        ]
 
 
 class DeviceBayTemplateSerializer(_ComponentTemplateSerializer):
@@ -3137,6 +3351,7 @@ class InventoryItemSerializer(
         )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         parent = attrs.get("parent")
         device = attrs.get("device") or (
             self.instance.device if self.instance else None
@@ -3180,6 +3395,7 @@ class DeviceBaySerializer(TaggableSerializerMixin, NumIdModelSerializer):
     )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         child = attrs.get("installed_device")
         parent = attrs.get("device") or (
             self.instance.device if self.instance else None
@@ -3293,6 +3509,7 @@ class ModuleSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         ]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         bay = attrs.get("module_bay") or (
             self.instance.module_bay if self.instance else None
         )
@@ -3346,6 +3563,7 @@ class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
         return {"id": str(t.id), "name": t.name} if t else None
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         ppt = attrs.get("power_port_template")
         dt = attrs.get("device_type") or (
             self.instance.device_type if self.instance else None
@@ -3365,6 +3583,7 @@ class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
 
 class RearPortTemplateSerializer(_ComponentTemplateSerializer):
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         splitter = attrs.get(
             "is_splitter",
             self.instance.is_splitter if self.instance else False,
@@ -3399,6 +3618,7 @@ class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
         return {"id": str(t.id), "name": t.name}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         rpt = attrs.get("rear_port_template") or (
             self.instance.rear_port_template if self.instance else None
         )
@@ -3458,6 +3678,7 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         "power_outlet": PowerOutlet,
         "power_feed": PowerFeed,
         "aux_port": AuxPort,
+        "circuit_termination": CircuitTermination,
     }
 
     @extend_schema_field(serializers.ListField())
@@ -3483,6 +3704,7 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         return out
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         from api.views import _get_active_tenant
         request = self.context.get("request")
         tenant = _get_active_tenant(request) if request is not None else None
@@ -3505,11 +3727,14 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
 
         for side, pts in (("a", a or []), ("b", b or [])):
             for kind, obj in pts:
-                # Power feeds carry their own tenant FK; every other point
-                # kind inherits tenant via its device.
-                obj_tenant_id = (
-                    obj.tenant_id if kind == "power_feed" else obj.device.tenant_id
-                )
+                # Power feeds carry their own tenant FK and circuit ends
+                # inherit via the circuit; every other kind via its device.
+                if kind == "power_feed":
+                    obj_tenant_id = obj.tenant_id
+                elif kind == "circuit_termination":
+                    obj_tenant_id = obj.circuit.tenant_id
+                else:
+                    obj_tenant_id = obj.device.tenant_id
                 if tenant is not None and obj_tenant_id != tenant.id:
                     raise serializers.ValidationError({side: "Pick a port in the current tenant."})
                 clash = CableTermination.objects.filter(**{kind: obj})
@@ -3517,6 +3742,20 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
                     clash = clash.exclude(cable=self.instance)
                 if clash.exists():
                     raise serializers.ValidationError({side: f"{obj} is already cabled."})
+
+            # One END of a cable is one connector family. Several ports on a
+            # side is normal - a QSFP breakout fans out to four SFPs, an MPO
+            # trunk lands on twelve front ports, a Y cord feeds two inlets -
+            # and those ports may sit on DIFFERENT devices (the four legs of a
+            # breakout routinely land in four servers). Mixing KINDS on one
+            # end is not a looser model, it's a typo: no cable is half network
+            # and half power.
+            kinds = {k for k, _ in pts}
+            if len(kinds) > 1:
+                raise serializers.ValidationError(
+                    {side: "One end of a cable is one kind of port - "
+                           f"got {', '.join(sorted(kinds))}."}
+                )
 
         # ── Fibre strands ──────────────────────────────────────────────────
         eff_type = attrs.get("type", getattr(self.instance, "type", ""))
@@ -3622,7 +3861,7 @@ class PortReservationSerializer(NumIdModelSerializer):
     site = serializers.SerializerMethodField()
     claimed_by = serializers.SerializerMethodField()
     kind = serializers.ChoiceField(
-        choices=list(CableTermination.POINT_FIELDS), write_only=True,
+        choices=list(PortReservation.POINT_FIELDS), write_only=True,
         required=False,
     )
     port_id = serializers.UUIDField(write_only=True, required=False)
@@ -3644,6 +3883,7 @@ class PortReservationSerializer(NumIdModelSerializer):
         return obj.claimed_by.username if obj.claimed_by_id else ""
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         from api.views import _get_active_tenant
 
         if self.instance is not None:
@@ -3767,7 +4007,7 @@ class CustomFieldSerializer(
         fields = [
             "id", "key", "label", "type", "applies_to", "choices",
             "related_model", "scope_rules",
-            "required", "default", "description", "weight",
+            "required", "hidden", "default", "description", "weight",
             "group", "group_name", "group_weight", "group_collapsed",
             "owning_site", "owning_site_id", "permissions",
             "created_at", "updated_at",
@@ -3775,6 +4015,7 @@ class CustomFieldSerializer(
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         ftype = attrs.get("type", getattr(self.instance, "type", "text"))
         choices = attrs.get("choices", getattr(self.instance, "choices", None) or [])
         if ftype in ("select", "multiselect") and not choices:
@@ -4073,6 +4314,43 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
     mode_display = serializers.CharField(source="get_mode_display", read_only=True)
+    parent = serializers.SerializerMethodField()
+    parent_id = TenantScopedPrimaryKeyRelatedField(
+        source="parent", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_parent(self, obj):
+        return (
+            {"id": str(obj.parent_id), "name": obj.parent.name}
+            if obj.parent_id
+            else None
+        )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Nesting stays inside one VM and never loops: wg0 over eth0 is the
+        # point; eth0 over wg0 over eth0 is a render-breaking cycle.
+        parent = attrs.get("parent", getattr(self.instance, "parent", None))
+        if parent is not None:
+            vm = attrs.get("vm", getattr(self.instance, "vm", None))
+            if vm is not None and parent.vm_id != vm.id:
+                raise serializers.ValidationError(
+                    {"parent_id": "Parent must be an interface on the same VM."}
+                )
+            if self.instance is not None:
+                seen = {self.instance.pk}
+                node = parent
+                while node is not None:
+                    if node.pk in seen:
+                        raise serializers.ValidationError(
+                            {"parent_id": "That would create a loop."}
+                        )
+                    seen.add(node.pk)
+                    node = node.parent
+        return attrs
+
     tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
     tagged_vlan_ids = TenantScopedPrimaryKeyRelatedField(
         source="tagged_vlans", queryset=VLAN.objects.all(),
@@ -4099,7 +4377,8 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = VMInterface
-        fields = ["id", "vm", "vm_id", "name", "enabled", "mac_address",
+        fields = ["id", "vm", "vm_id", "name", "enabled", "kind",
+                  "parent", "parent_id", "mac_address",
                   "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",
                   "vlan", "vlan_id", "mode", "mode_display",
@@ -4155,6 +4434,7 @@ class RackTypeAccessorySerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
         if dt is not None and dt.u_height != 0:
             raise serializers.ValidationError(
@@ -4265,6 +4545,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         return {"id": str(l.id), "name": l.name} if l else None
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # A rack's location must live in the rack's site.
         location = attrs.get("location", getattr(self.instance, "location", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
@@ -4623,7 +4904,9 @@ class ProtocolPortsSerializerMixin:
         return out
 
 
-class ServiceSerializer(ProtocolPortsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class ServiceSerializer(CustomFieldsSerializerMixin, ProtocolPortsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "service"
+
     protocol_display = serializers.CharField(
         source="get_protocol_display", read_only=True
     )
@@ -4688,7 +4971,9 @@ class ServiceTemplateMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "protocol", "ports", "protocol_ports"]
 
 
-class ServiceTemplateSerializer(ProtocolPortsSerializerMixin, NumIdModelSerializer):
+class ServiceTemplateSerializer(CustomFieldsSerializerMixin, ProtocolPortsSerializerMixin, NumIdModelSerializer):
+    cf_model = "servicetemplate"
+
     slug = serializers.SlugField(required=False, allow_blank=True)
     protocol_display = serializers.CharField(
         source="get_protocol_display", read_only=True
@@ -4761,6 +5046,7 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
     )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         import ipaddress as _ip
 
         start = attrs.get("start_address", getattr(self.instance, "start_address", None))
@@ -4886,6 +5172,7 @@ class ASNSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdM
         return value
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Tenant-scoped uniqueness (tenant isn't a serializer field, so DRF
         # can't auto-generate the validator) - return a clean 400, not a 500.
         from api.views import _get_active_tenant
@@ -4943,6 +5230,7 @@ class VLANGroupSerializer(NumIdModelSerializer):
         return v if v is not None else obj.vlans.count()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         lo = attrs.get("min_vid", getattr(self.instance, "min_vid", 1))
         hi = attrs.get("max_vid", getattr(self.instance, "max_vid", 4094))
         if not (1 <= lo <= 4094) or not (1 <= hi <= 4094):
@@ -4986,6 +5274,7 @@ class FHRPGroupAssignmentSerializer(NumIdModelSerializer):
                 "vm": {"id": str(vi.vm_id), "name": vi.vm.name}}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
         vmi = attrs.get("vm_interface", getattr(self.instance, "vm_interface", None))
         if bool(iface) == bool(vmi):
@@ -5123,7 +5412,81 @@ class ContactMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "title", "email", "phone"]
 
 
-class ContactSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class BusinessHoursSerializerMixin(serializers.Serializer):
+    """Weekly opening hours on a record, plus the two derived reads that make
+    the field useful in the moment: a one-line summary and whether they are
+    open right now (#66, #67).
+
+    ``open_now`` is deliberately nullable - null means "no hours recorded", and
+    during an incident that is a different answer from "closed".
+    """
+
+    business_hours_display = serializers.SerializerMethodField()
+    open_now = serializers.SerializerMethodField()
+
+    BUSINESS_HOURS_FIELDS = [
+        "business_hours", "business_hours_tz", "business_hours_display",
+        "open_now",
+    ]
+
+    def get_business_hours_display(self, obj) -> str:
+        from .business_hours import describe
+
+        return describe(obj.business_hours, obj.business_hours_tz)
+
+    @extend_schema_field(serializers.BooleanField(allow_null=True))
+    def get_open_now(self, obj):
+        from django.utils import timezone
+
+        from .business_hours import is_open_at
+
+        return is_open_at(
+            obj.business_hours, obj.business_hours_tz, timezone.now()
+        )
+
+    def validate_business_hours(self, value):
+        from .business_hours import ScheduleError, validate_schedule
+
+        try:
+            return validate_schedule(value)
+        except ScheduleError as err:
+            raise serializers.ValidationError(str(err)) from err
+
+    def validate_business_hours_tz(self, value):
+        if not value:
+            return value
+        from zoneinfo import ZoneInfo
+
+        try:
+            ZoneInfo(value)
+        except Exception as err:
+            raise serializers.ValidationError(
+                "Unknown time zone - use an IANA name like 'Europe/Copenhagen'."
+            ) from err
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Hours without a zone can never answer "are they open now" - the one
+        # question the field exists for. Refuse the half-set state instead of
+        # storing a schedule that reads as unknown forever.
+        hours = attrs.get(
+            "business_hours", getattr(self.instance, "business_hours", None)
+        )
+        tz = attrs.get(
+            "business_hours_tz", getattr(self.instance, "business_hours_tz", "")
+        )
+        if hours and not tz:
+            raise serializers.ValidationError(
+                {"business_hours_tz": "Set the time zone these hours are in."}
+            )
+        return attrs
+
+
+class ContactSerializer(
+    BusinessHoursSerializerMixin, CustomFieldsSerializerMixin,
+    TaggableSerializerMixin, NumIdModelSerializer,
+):
     cf_model = "contact"
 
     group = ContactGroupMiniSerializer(read_only=True)
@@ -5146,8 +5509,10 @@ class ContactSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, Nu
         model = Contact
         fields = ["id", "name", "title", "phone", "email", "address", "link",
                   "comments", "group", "group_id", "assignment_count",
+                  *BusinessHoursSerializerMixin.BUSINESS_HOURS_FIELDS,
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "assignment_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "assignment_count", "business_hours_display",
+                            "open_now", "created_at", "updated_at"]
 
 
 class ContactAssignmentSerializer(NumIdModelSerializer):
@@ -5194,7 +5559,8 @@ class ProviderMiniSerializer(NumIdModelSerializer):
 
 
 class ProviderSerializer(
-    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+    BusinessHoursSerializerMixin, CustomFieldsSerializerMixin,
+    TaggableSerializerMixin, NumIdModelSerializer,
 ):
     cf_model = "provider"
     slug = serializers.SlugField(required=False, allow_blank=True)
@@ -5204,6 +5570,11 @@ class ProviderSerializer(
         write_only=True, required=False, many=True,
     )
     circuit_count = serializers.SerializerMethodField()
+    account_manager = ContactMiniSerializer(read_only=True)
+    account_manager_id = TenantScopedPrimaryKeyRelatedField(
+        source="account_manager", queryset=Contact.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     def get_circuit_count(self, obj) -> int:
         v = getattr(obj, "circuit_count_annotated", None)
@@ -5212,9 +5583,14 @@ class ProviderSerializer(
     class Meta:
         model = Provider
         fields = ["id", "name", "slug", "account", "portal_url", "noc_email",
-                  "noc_phone", "comments", "circuit_count", "tags", "tag_ids",
+                  "noc_phone", "support_contract", "support_phone",
+                  "account_manager", "account_manager_id",
+                  "account_manager_name",
+                  *BusinessHoursSerializerMixin.BUSINESS_HOURS_FIELDS,
+                  "comments", "circuit_count", "tags", "tag_ids",
                   "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "circuit_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "circuit_count", "business_hours_display",
+                            "open_now", "created_at", "updated_at"]
 
 
 class CircuitTypeMiniSerializer(NumIdModelSerializer):
@@ -5272,11 +5648,37 @@ class ProviderNetworkSerializer(
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+class CircuitMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = Circuit
+        fields = ["id", "cid"]
+
+
 class CircuitTerminationSerializer(serializers.ModelSerializer):
     """One end (A/Z) of a circuit - exactly one of site / provider_network."""
 
     site = SiteMiniSerializer(read_only=True)
     provider_network = ProviderNetworkMiniSerializer(read_only=True)
+    # A circuit end is a cable endpoint (#118), so it reads like a port does:
+    # who owns it, and what (if anything) is already plugged into it.
+    circuit = CircuitMiniSerializer(read_only=True)
+    cable = serializers.SerializerMethodField()
+    connected_to = serializers.SerializerMethodField()
+
+    @extend_schema_field(CableMiniSerializer(allow_null=True))
+    def get_cable(self, obj):
+        return _point_cable(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_connected_to(self, obj):
+        """The far end of the cable plugged into this circuit end (#118) -
+        the switch port the provider handoff actually lands on. Null while
+        uncabled."""
+        t = obj.terminations.all().first()
+        if t is None:
+            return None
+        far = t.cable.terminations.exclude(id=t.id).first()
+        return _termination_repr(far) if far is not None else None
 
     circuit_id = serializers.PrimaryKeyRelatedField(
         source="circuit", queryset=Circuit.objects.all(), write_only=True,
@@ -5291,6 +5693,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
     )
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         site = attrs.get("site", getattr(self.instance, "site", None))
         pn = attrs.get(
             "provider_network", getattr(self.instance, "provider_network", None)
@@ -5303,7 +5706,9 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CircuitTermination
-        fields = ["id", "circuit_id", "term_side", "site", "site_id",
+        fields = ["id", "circuit", "circuit_id", "term_side", "cable",
+                  "connected_to",
+                  "site", "site_id",
                   "provider_network", "provider_network_id",
                   "port_speed_kbps", "upstream_speed_kbps", "xconnect_id",
                   "pp_info", "description", "created_at", "updated_at"]
@@ -5456,14 +5861,38 @@ class WirelessLANSerializer(StatusSerializerMixin,
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    # Write-only, and never echoed back (#68). Blank on edit keeps the stored
+    # key; null clears it. The read side says only whether one exists - the
+    # value itself comes from the store via the `reveal-psk` action.
+    psk = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, allow_null=True,
+        style={"input_type": "password"},
+        help_text="Stored in the deployment's secret store, never in this row.",
+    )
+    psk_set = serializers.BooleanField(read_only=True)
+
+    def validate_psk(self, value):
+        if value in (None, ""):
+            return value
+        from monitoring.secret_store import secret_store_enabled
+
+        # Fail closed: no store means no safe home for the key, and Danbyte
+        # will not fall back to plaintext for a credential.
+        if not secret_store_enabled():
+            raise serializers.ValidationError(
+                "No secret store is enabled, so a PSK cannot be stored safely. "
+                "An administrator must enable one under Settings → Security → "
+                "Secret store first."
+            )
+        return value
 
     class Meta:
         model = WirelessLAN
         fields = ["id", "ssid", "group", "group_id", "status", "status_id", 
                   "vlan", "vlan_id", "auth_type", "auth_type_display",
-                  "auth_cipher", "description", "comments",
+                  "auth_cipher", "psk", "psk_set", "description", "comments",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id",  "auth_type_display",
+        read_only_fields = ["id",  "auth_type_display", "psk_set",
                             "created_at", "updated_at"]
 
 
@@ -5570,6 +5999,7 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
         vmi = attrs.get(
             "vm_interface", getattr(self.instance, "vm_interface", None)
@@ -5718,6 +6148,7 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         return v if v is not None else obj.racks.count()
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         parent = attrs.get("parent", getattr(self.instance, "parent", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
         if parent is not None:
@@ -6035,6 +6466,7 @@ class L2VPNTerminationSerializer(serializers.ModelSerializer):
                 "vm": {"id": str(i.vm_id), "name": i.vm.name}}
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         vlan = attrs.get("vlan", getattr(self.instance, "vlan", None))
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
         vmi = attrs.get(
@@ -6156,6 +6588,7 @@ class SiteMarkerSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         tile = attrs.get("tile_type", getattr(self.instance, "tile_type", None))
         role = attrs.get("role_type", getattr(self.instance, "role_type", None))
         if bool(tile) == bool(role):
@@ -6233,6 +6666,7 @@ class FloorPlanSerializer(
         return v
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Friendly duplicate check ahead of the DB unique constraint.
         location = attrs.get("location", getattr(self.instance, "location", None))
         name = attrs.get("name", getattr(self.instance, "name", None))
@@ -6317,6 +6751,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         }
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         from api.views import _get_active_tenant
 
         # Exactly one of tile_type / role_type (matches the DB constraint,

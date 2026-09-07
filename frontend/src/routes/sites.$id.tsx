@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -25,7 +26,7 @@ import { EmptyState } from "@/components/empty-state"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table"
+import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { SiteDeleteDialog } from "@/components/site-delete-dialog"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -177,10 +178,21 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         <SiteLocationsTable siteId={s.id} />
       </DetailTab>
       <DetailTab value="devices">
-        <EmbeddedDeviceTable
-          filter={{ site: s.id }}
-          emptyText="No devices at this site yet."
-        />
+        <div className="grid gap-3">
+          {canDo("device", "add") && (
+            <div className="flex justify-end">
+              <Button size="sm" asChild>
+                <Link to="/devices/new" search={{ site: s.id }}>
+                  Add device
+                </Link>
+              </Button>
+            </div>
+          )}
+          <EmbeddedDeviceTable
+            filter={{ site: s.id }}
+            emptyText="No devices at this site yet."
+          />
+        </div>
       </DetailTab>
       <DetailTab value="prefixes">
         <SitePrefixesTable siteId={s.id} siteName={s.name} />
@@ -393,7 +405,8 @@ function SiteLocationsTable({ siteId }: { siteId: string }) {
       },
       {
         id: "status",
-        header: "Status",
+        accessorFn: (r) => r.status?.name ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
         cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
     ],
@@ -721,6 +734,11 @@ function SiteOverview({
           </div>
         </section>
         <KvCard title="Scope" rows={scope} />
+        <CustomFieldValues
+          model="site"
+          values={s.custom_fields}
+          layout="cards"
+        />
       </div>
       <ObjectImages apiBase={`/api/sites/${s.id}`} objectType="site" />
     </div>

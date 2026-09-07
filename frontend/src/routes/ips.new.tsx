@@ -57,10 +57,11 @@ function NewIpPage() {
       : vm
         ? nav({ to: "/virtual-machines/$id", params: { id: vm } })
         : prefix
-        ? nav({ to: "/prefixes/$id", params: { id: prefix } })
+          ? nav({ to: "/prefixes/$id", params: { id: prefix } })
           : nav({ to: "/prefixes" })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Prefixes", to: "/prefixes" },
         { label: cloning ? "Clone IP" : "Add IP" },

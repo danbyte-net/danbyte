@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { ChevronRight, CopyPlus, Layers, Pencil, Plus, Search } from "lucide-react"
+import { ChevronRight, CopyPlus, Layers, Pencil, Plus } from "lucide-react"
 
 import {
   api,
@@ -43,8 +43,8 @@ import {
   hasCustomValue,
   useCustomFieldDefs,
 } from "@/components/custom-field-display"
-import { useTableFilters } from "@/components/table-filters"
-import { IpFilterRail } from "@/components/ip-filter-rail"
+import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
+import { IpRailToggles } from "@/components/ip-rail-toggles"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import {
   AutoDiscoverButton,
@@ -57,7 +57,6 @@ import { IpBulkBar } from "@/components/ip-bulk-bar"
 import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import {
   DetailHero,
@@ -130,12 +129,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const [showPool, setShowPool] = useState(false)
   const [selectedIps, setSelectedIps] = useState<IPAddress[]>([])
 
-  // IP filter state.
-  const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
-  const [roleFilter, setRoleFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  // IP table toggles (the facets live inside the table's own rail).
   const [showAvailable, setShowAvailable] = useState(false)
+  const [compact, setCompact] = useState(false)
   const [showDhcpPool, setShowDhcpPool] = useState(false)
 
   // Children filters/selection.
@@ -150,8 +146,16 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
 
   // Enumerable = small enough to list every host (any family; the backend caps
   // it). A /64 isn't, so it shows the subnet map instead.
+  // A prefix allocating only from its ranges enumerates those instead, so
+  // the size of the prefix itself stops mattering.
+  const allocationSpans = p.allocation?.ranges.map((r) => ({
+    start: r.start_address,
+    end: r.end_address,
+  }))
   const canShowAvailable =
-    p.is_enumerable && p.status?.name !== "container" && !p.has_descendants
+    (p.is_enumerable || (allocationSpans?.length ?? 0) > 0) &&
+    p.status?.name !== "container" &&
+    !p.has_descendants
 
   // Open the IP create page pre-seeded with `address` from the
   // "next available" picker. We pass `prefix=` so the create page can
@@ -186,19 +190,6 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const handleDeleteChild = useCallback(
     (cp: Prefix) => setDeletingChild(cp),
     []
-  )
-
-  const toggleStatus = useCallback(
-    (v: string) => toggle(statusFilter, v, setStatusFilter),
-    [statusFilter]
-  )
-  const toggleRole = useCallback(
-    (v: string) => toggle(roleFilter, v, setRoleFilter),
-    [roleFilter]
-  )
-  const toggleTag = useCallback(
-    (v: string) => toggle(tagFilter, v, setTagFilter),
-    [tagFilter]
   )
 
   const closeDeletePrefix = useCallback((o: boolean) => {
@@ -278,7 +269,11 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
             </Button>
           )}
           {canAddIp && canShowAvailable && (
-            <Button size="sm" variant="outline" onClick={() => setShowPool(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowPool(true)}
+            >
               <Layers className="h-3.5 w-3.5" /> Add pool
             </Button>
           )}
@@ -357,60 +352,34 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="ips" bare>
-        <IpFilterRail
-          rows={ipRows}
-          statusFilter={statusFilter}
-          roleFilter={roleFilter}
-          tagFilter={tagFilter}
-          onToggleStatus={toggleStatus}
-          onToggleRole={toggleRole}
-          onToggleTag={toggleTag}
-          showAvailable={showAvailable}
-          onToggleShowAvailable={setShowAvailable}
-          canShowAvailable={canShowAvailable}
-          hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
-          showDhcpPool={showDhcpPool}
-          onToggleShowDhcpPool={setShowDhcpPool}
-        />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-            <span className="num text-[11px] text-muted-foreground">
-              {ipRows.length} row{ipRows.length === 1 ? "" : "s"}
-            </span>
-            <div className="ml-auto flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Filter IPs…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 w-64 pl-8 text-xs"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto p-3">
-            <PrefixIpsTable
-              prefixId={p.id}
-              statusFilter={statusFilter}
-              roleFilter={roleFilter}
-              tagFilter={tagFilter}
-              onToggleTag={toggleTag}
-              search={search}
+        <PrefixIpsTable
+          prefixId={p.id}
+          railExtras={
+            <IpRailToggles
               showAvailable={showAvailable}
+              onToggleShowAvailable={setShowAvailable}
+              canShowAvailable={canShowAvailable}
+              compact={compact}
+              onToggleCompact={setCompact}
+              hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
               showDhcpPool={showDhcpPool}
-              cidr={p.cidr}
-              hasDescendants={p.has_descendants}
-              onEdit={handleEditIp}
-              onDelete={handleDeleteIp}
-              onCreateAt={openAddIpAt}
-              onSelectedRowsChange={setSelectedIps}
-              canEdit={canDo("ipaddress", "change")}
-              canDelete={canDo("ipaddress", "delete")}
-              canAdd={canAddIp}
+              onToggleShowDhcpPool={setShowDhcpPool}
             />
-          </div>
-        </div>
+          }
+          showAvailable={showAvailable}
+          compact={compact}
+          showDhcpPool={showDhcpPool}
+          cidr={p.cidr}
+          spans={allocationSpans}
+          hasDescendants={p.has_descendants}
+          onEdit={handleEditIp}
+          onDelete={handleDeleteIp}
+          onCreateAt={openAddIpAt}
+          onSelectedRowsChange={setSelectedIps}
+          canEdit={canDo("ipaddress", "change")}
+          canDelete={canDo("ipaddress", "delete")}
+          canAdd={canAddIp}
+        />
       </DetailTab>
 
       <DetailTab value="children" bare>
@@ -478,6 +447,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           prefixId={p.id}
           cidr={p.cidr}
           dhcpRanges={ipsQuery.data?.dhcp_ranges}
+          allocationRanges={p.allocation?.ranges}
           existingAddresses={ipRows.map((ip) => ip.ip_address)}
           onOpenChange={setShowPool}
         />
@@ -533,13 +503,39 @@ function PrefixOverview({
     { label: "Site", value: p.site?.name ?? dash },
   ]
 
+  const alloc = p.allocation
   const addressing: KvRow[] = [
-    { label: "Used", value: <span className="num">{p.ip_count}</span> },
+    ...(alloc
+      ? [
+          {
+            label: "Allocation",
+            value: alloc.ranges.length ? (
+              <span className="font-mono text-[13px]">
+                {alloc.ranges
+                  .map((r) => `${r.start_address} – ${r.end_address}`)
+                  .join(", ")}
+              </span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400">
+                Ranges only - none defined yet
+              </span>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
+    {
+      label: "Used",
+      value: (
+        <span className="num">
+          {alloc ? `${alloc.used} of ${alloc.size}` : p.ip_count}
+        </span>
+      ),
+    },
     {
       label: "Free",
       value: (
         <span className="num">
-          {p.utilisation_pct !== null ? freeCount(p) : "-"}
+          {alloc ? alloc.free : p.utilisation_pct !== null ? freeCount(p) : "-"}
         </span>
       ),
     },
@@ -865,22 +861,26 @@ function ChildPrefixesPane({
   // including the depth chevrons and the always-visible row actions.
   const columns = useMemo<ColumnDef<NestedPrefix>[]>(
     () =>
-      buildPrefixColumns<NestedPrefix>({
-        selection: true,
-        nested: true,
-        include: [...includeCols],
-        cfDefs,
-        tagFilter: {
-          activeSlugs: tagSelection,
-          onToggle: (slug) => toggleValue("tags", slug),
-        },
-        actions: {
-          onEdit,
-          onDelete,
-          canEdit: (p) => objCan(p, "change", canEdit),
-          canDelete: (p) => objCan(p, "delete", canDelete),
-        },
-      }),
+      wireFacetColumns(
+        buildPrefixColumns<NestedPrefix>({
+          selection: true,
+          nested: true,
+          include: [...includeCols],
+          cfDefs,
+          tagFilter: {
+            activeSlugs: tagSelection,
+            onToggle: (slug) => toggleValue("tags", slug),
+          },
+          actions: {
+            onEdit,
+            onDelete,
+            canEdit: (p) => objCan(p, "change", canEdit),
+            canDelete: (p) => objCan(p, "delete", canDelete),
+          },
+        }),
+        selectedValues,
+        toggleValue
+      ),
     [
       onEdit,
       onDelete,
@@ -889,6 +889,7 @@ function ChildPrefixesPane({
       includeCols,
       cfDefs,
       tagSelection,
+      selectedValues,
       toggleValue,
     ]
   )
@@ -927,11 +928,4 @@ function ChildPrefixesPane({
       </div>
     </>
   )
-}
-
-function toggle<T>(current: Set<T>, value: T, setter: (s: Set<T>) => void) {
-  const next = new Set(current)
-  if (next.has(value)) next.delete(value)
-  else next.add(value)
-  setter(next)
 }

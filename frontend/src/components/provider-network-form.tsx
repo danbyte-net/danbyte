@@ -8,17 +8,16 @@ import {
   type ProviderNetwork,
   type ProviderNetworkWritePayload,
   type ProviderOption,
-  type TagOption,
 } from "@/lib/api"
 import {
-  Field,
   FormCombobox,
   FormFooter,
+  FormSection,
+  FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -71,12 +70,6 @@ export function ProviderNetworkForm({
     queryFn: () => api<Paginated<ProviderOption>>("/api/providers/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
-
   const mutation = useMutation({
     mutationFn: async () => {
       if (!providerId) throw new Error("Provider is required.")
@@ -119,61 +112,68 @@ export function ProviderNetworkForm({
         }
         mutation.mutate()
       }}
-      className="grid gap-4"
+      className="@container grid gap-4"
     >
-      <div className="grid grid-cols-2 gap-3">
+      <FormSection title="Provider network" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            error={fieldErrors.name}
+          />
+          <FormCombobox
+            label="Provider"
+            required
+            value={providerId}
+            onChange={(v) => {
+              setProviderId(v)
+              if (v) setProviderError(null)
+            }}
+            options={(providers.data?.results ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+            }))}
+            placeholder="Select provider"
+            searchPlaceholder="Search providers…"
+            emptyText="No providers."
+            error={fieldErrors.provider_id ?? providerError ?? undefined}
+          />
+        </div>
         <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          error={fieldErrors.name}
+          label="Service ID"
+          hint="optional"
+          mono
+          value={serviceId}
+          onChange={setServiceId}
+          error={fieldErrors.service_id}
         />
-        <FormCombobox
-          label="Provider"
-          value={providerId}
-          onChange={(v) => {
-            setProviderId(v)
-            if (v) setProviderError(null)
-          }}
-          options={(providers.data?.results ?? []).map((p) => ({
-            value: p.id,
-            label: p.name,
-          }))}
-          placeholder="Select provider"
-          searchPlaceholder="Search providers…"
-          emptyText="No providers."
-          error={fieldErrors.provider_id ?? providerError ?? undefined}
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormText
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
         />
-      </div>
-      <FormText
-        label="Service ID"
-        hint="optional"
-        mono
-        value={serviceId}
-        onChange={setServiceId}
-        error={fieldErrors.service_id}
-      />
-      <FormText
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
-      <FormTextarea
-        label="Comments"
-        value={comments}
-        onChange={setComments}
-        error={fieldErrors.comments}
-      />
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
+        <FormTextarea
+          label="Comments"
+          value={comments}
+          onChange={setComments}
+          error={fieldErrors.comments}
         />
-      </Field>
+      </FormSection>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
+
       <CustomFieldInputs
         model="providernetwork"
         value={customFields}

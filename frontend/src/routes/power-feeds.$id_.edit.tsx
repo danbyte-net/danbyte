@@ -18,6 +18,7 @@ function EditPowerFeedPage() {
   })
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Power feeds", to: "/power-feeds" },
         { label: q.data?.name ?? "…" },

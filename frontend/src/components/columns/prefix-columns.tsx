@@ -10,6 +10,10 @@ import type {
 } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import {
+  monitoringBucket,
+  monitoringFacet,
+} from "@/components/columns/monitoring-facet"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
@@ -222,8 +226,8 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
     }),
     monitoring: () => ({
       id: "monitoring",
-      header: "Monitoring",
-      enableSorting: false,
+      accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),
+      header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
       cell: ({ row }) => {
         const e = opts.monitoring?.[row.original.id]
         if (!e || !e.status) return dash
@@ -233,12 +237,20 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
           </span>
         )
       },
+      // The rollup is a facet like any status: the rail lists the observed
+      // states and the badge in the row toggles its bucket. A split badge
+      // (checks in more than one state) is its own "Mixed" bucket rather than
+      // hiding under its worst state, and rows with no rollup read as "Not
+      // monitored" like the "No status" bucket next door.
+      meta: {
+        facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]),
+      },
     }),
     vrf: () => vrfColumn<T>({ get: (p) => p.vrf }),
     vlan: () => ({
       id: "vlan",
       accessorFn: (r) => (r.vlan ? `${r.vlan.vlan_id} · ${r.vlan.name}` : ""),
-      header: "VLAN",
+      header: ({ column }) => <SortHeader column={column} label="VLAN" />,
       cell: ({ row }) => {
         const v = row.original.vlan
         return v ? <VlanBadge vlan={v} /> : dash

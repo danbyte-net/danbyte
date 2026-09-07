@@ -152,6 +152,22 @@ def _perm_q(perm, site_path, action="view") -> Q:
     return q
 
 
+def _q_fits(model, q) -> bool:
+    """Does this row filter compile for ``model``? One ObjectPermission may
+    span several object types, so a constraint written for a sibling type
+    (``site_id`` on a device+site grant) can reach a model it doesn't fit.
+    That must neither 500 the check nor open rows - the caller skips the
+    grant (fail closed). ``filter()`` resolves field names synchronously, so
+    this never touches the database."""
+    if model is None:
+        return True
+    try:
+        model._default_manager.filter(q)
+        return True
+    except FieldError:
+        return False
+
+
 def restrict_queryset(qs, user, tenant, slug: str, action: str):
     """Filter ``qs`` to the rows the user may act on. Tenant scoping is applied
     separately (by the viewset); this adds, per granting permission, its row
@@ -166,11 +182,24 @@ def restrict_queryset(qs, user, tenant, slug: str, action: str):
 
     site_path = site_path_for(slug, tenant)
     big_q = Q()
+    matched = False
     for perm in perms:
         pq = _perm_q(perm, site_path, action)
         if not pq:
             return qs  # an unconstrained, unscoped grant opens everything
+        # Skip (only) the grants whose constraints don't fit this model - a
+        # device-shaped constraint on a device+site grant must not take the
+        # user's good site grant down with it (#125).
+        if not _q_fits(qs.model, pq):
+            log.warning(
+                "RBAC: constraint does not fit %s - permission %s skipped",
+                slug, perm.pk,
+            )
+            continue
         big_q |= pq
+        matched = True
+    if not matched:
+        return qs.none()
     try:
         return qs.filter(big_q)
     except FieldError:
@@ -195,12 +224,25 @@ def row_filter(user, tenant, slug: str, action: str):
     from .site_paths import site_path_for
 
     site_path = site_path_for(slug, tenant)
+    from .object_types import model_for
+
+    model = model_for(slug)
     big_q = Q()
+    matched = False
     for perm in perms:
         pq = _perm_q(perm, site_path, action)
         if not pq:
             return True  # an unconstrained, unscoped grant → all rows
+        if not _q_fits(model, pq):
+            log.warning(
+                "RBAC: constraint does not fit %s - permission %s skipped",
+                slug, perm.pk,
+            )
+            continue
         big_q |= pq
+        matched = True
+    if not matched:
+        return None
     return big_q
 
 
@@ -299,4 +341,9 @@ def can_act_on(user, tenant, slug: str, action: str, obj) -> bool:
         return False  # not granted
     if q is True:
         return True  # granted, no row/site scope
-    return type(obj)._default_manager.filter(q, pk=obj.pk).exists()
+    try:
+        return type(obj)._default_manager.filter(q, pk=obj.pk).exists()
+    except FieldError:
+        # Belt over row_filter's per-grant fit check: never 500, never open.
+        log.warning("RBAC: bad constraint evaluating %s access", slug)
+        return False

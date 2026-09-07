@@ -149,8 +149,14 @@ function DevicesPage() {
     if (manufacturerFilter) seed.manufacturer = [manufacturerFilter]
     return Object.keys(seed).length ? seed : undefined
   }, [typeFilter, statusFilter, siteFilter, manufacturerFilter])
-  const { rail, filteredRows, snapshot, restore, activeCount } =
-    useTableFilters(columns, allRows, initialEnums)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, allRows, initialEnums)
 
   return (
     <ListPageShell
@@ -180,7 +186,7 @@ function DevicesPage() {
     >
       <DataTable
         data={filteredRows}
-        columns={columns}
+        columns={wiredColumns}
         flexColumn="description"
         tableId="devices"
         initialColumnVisibility={{

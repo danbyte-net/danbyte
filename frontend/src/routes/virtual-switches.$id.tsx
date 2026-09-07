@@ -13,6 +13,7 @@ import {
   type VirtualSwitch,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { isUserInitiated } from "@/lib/user-activation"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -335,7 +336,12 @@ function SwitchVrf({ sw }: { sw: VirtualSwitch }) {
         <FormSelect
           label="VRF"
           value={sw.vrf?.id ?? null}
-          onChange={(v) => save.mutate(v ?? null)}
+          onChange={(v) => {
+            const next = v ?? null
+            // Ignore autofill-driven changes - only a real gesture saves (#125).
+            if (!isUserInitiated() || next === (sw.vrf?.id ?? null)) return
+            save.mutate(next)
+          }}
           noneLabel="Follow the sync source"
           disabled={!canEdit || save.isPending}
           options={(vrfs.data?.results ?? []).map((v) => ({

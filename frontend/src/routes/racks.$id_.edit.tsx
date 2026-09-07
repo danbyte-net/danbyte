@@ -21,6 +21,7 @@ function EditRackPage() {
 
   return (
     <EditPageShell
+      wide
       crumbs={[
         { label: "Racks", to: "/racks" },
         q.data

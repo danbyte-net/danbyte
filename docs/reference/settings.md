@@ -162,6 +162,9 @@ uniformly and survives an app restart:
 - `Referrer-Policy: same-origin`, a restrictive `Permissions-Policy`, and
   `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy: same-origin`.
 - An **enforced Content-Security-Policy** with `report-uri /api/csp-report/`.
+  `connect-src` allows `raw.githubusercontent.com` and `api.github.com` so the
+  device-type import's *Fetch with my browser* option works; everything else
+  stays same-origin.
   The SPA loads only same-origin bundled assets (no external scripts/styles/
   fonts, no `eval`, no web workers; the presence WebSocket is same-origin), so
   the policy doesn't block anything it serves. `'unsafe-inline'` is still

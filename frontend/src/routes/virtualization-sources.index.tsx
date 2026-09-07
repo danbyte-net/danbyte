@@ -382,6 +382,9 @@ export function SourceDialog({
   const [syncNetworks, setSyncNetworks] = useState(
     source?.sync_networks ?? false
   )
+  const [matchVlans, setMatchVlans] = useState(
+    source?.match_existing_vlans ?? false
+  )
   const [syncHosts, setSyncHosts] = useState(source?.sync_hosts ?? false)
   const [syncHostHw, setSyncHostHw] = useState(
     source?.sync_host_hardware ?? false
@@ -416,6 +419,7 @@ export function SourceDialog({
         poll_interval_minutes: Number(interval) || 10,
         sync_disks: syncDisks,
         sync_networks: syncNetworks,
+        match_existing_vlans: matchVlans,
         sync_hosts: syncHosts,
         sync_host_hardware: syncHostHw,
         sync_platforms: syncPlatforms,
@@ -576,6 +580,14 @@ export function SourceDialog({
               checked={syncNetworks}
               onChange={setSyncNetworks}
             />
+            {syncNetworks && (
+              <FormCheckbox
+                label="Match existing VLANs by ID"
+                hint="Link a tagged network to a VLAN you already have with that VLAN ID - and the prefixes on it - instead of creating one in the source's own group."
+                checked={matchVlans}
+                onChange={setMatchVlans}
+              />
+            )}
             <FormCheckbox
               label="Create hosts as devices"
               hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs."

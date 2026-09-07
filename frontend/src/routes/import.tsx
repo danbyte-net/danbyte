@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router"
 
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { usePageTitle } from "@/lib/page-title"
 
 // Layout for the /import branch: a header with a Files | NetBox tab strip and
 // an Outlet. The CSV/JSON importer lives in import.index.tsx; the NetBox
@@ -18,6 +19,7 @@ const TABS = [
 ] as const
 
 function ImportLayout() {
+  usePageTitle("Import")
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const active = pathname.startsWith("/import/netbox")

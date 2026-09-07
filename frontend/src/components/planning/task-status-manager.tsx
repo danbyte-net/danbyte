@@ -421,7 +421,7 @@ function StatusDialog({
   const done = semGroup === "completed" || semGroup === "cancelled"
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit status" : "Add status"}</DialogTitle>
         </DialogHeader>

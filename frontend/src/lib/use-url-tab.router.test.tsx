@@ -37,6 +37,7 @@ function Detail() {
       <p data-testid="sub">{sub}</p>
       <button onClick={() => setSub("hardware")}>go-sub-hardware</button>
       <button onClick={() => setTab("overview")}>go-tab-overview</button>
+      <button onClick={() => setTab("components")}>go-tab-components</button>
     </div>
   )
 }
@@ -82,7 +83,10 @@ const click = (name: string) =>
 const settled = (want: { tab: string; sub: string }) =>
   waitFor(() => expect(shown()).toEqual(want))
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  window.localStorage.clear()
+})
 
 describe("?tab= and ?sub= on one page", () => {
   it("deep-links both levels at once", async () => {
@@ -123,5 +127,27 @@ describe("?tab= and ?sub= on one page", () => {
     await settled({ tab: "components", sub: "hardware" })
     router.history.back()
     await settled({ tab: "components", sub: "power" })
+  })
+})
+
+describe("with a pinned default tab", () => {
+  const pin = (tab: string) =>
+    window.localStorage.setItem("danbyte.defaultTab:/devices/$id:tab", tab)
+
+  it("opens on the pin, and Overview stays reachable by keeping its param", async () => {
+    pin("components")
+    const router = await mount("/devices/1")
+    await settled({ tab: "components", sub: "interfaces" })
+
+    // Overview is the hard-coded default, but with another tab pinned a bare
+    // URL means the pin - so the param has to stay on the URL.
+    click("go-tab-overview")
+    await settled({ tab: "overview", sub: "interfaces" })
+    expect(router.state.location.searchStr).toContain("tab=overview")
+
+    // The pinned tab is what a bare URL resolves to, so it drops the param.
+    click("go-tab-components")
+    await settled({ tab: "components", sub: "interfaces" })
+    expect(router.state.location.searchStr).not.toContain("tab=")
   })
 })

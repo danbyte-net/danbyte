@@ -77,6 +77,19 @@ becomes a VLAN in a VLAN group named after the source, and a VM interface's
 access VLAN is **blank-filled** from it - never overwriting a VLAN you set
 yourself.
 
+Prefer your own VLANs instead: tick **Match existing VLANs by ID** on the
+source and a tagged network first looks for a VLAN you already have with that
+VLAN ID - ungrouped first, then by group name - and links to it, bringing the
+prefixes on it along through the prefix's own VLAN field. Only when nothing
+matches does the sync mint a VLAN in the source's group, and only those minted
+rows are ever pruned. Toggling it on later migrates on the next sync: a network
+still linked to its own minted VLAN is re-pointed at the matching real one
+(the network keeps its hypervisor name; only the VLAN link moves), and NICs
+the sync parked on the minted copy follow it. A VLAN you assigned to a network
+by hand is never re-pointed. The now-unused minted VLAN stays in the source's
+group for you to delete - the sync never removes a VLAN something might still
+reference.
+
 ## Network topology
 
 **Virtualization → Network topology** draws the whole picture in one diagram:

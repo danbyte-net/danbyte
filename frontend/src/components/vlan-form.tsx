@@ -7,26 +7,22 @@ import {
   api,
   ApiError,
   type Paginated,
-  type TagOption,
   type VLAN,
   type VLANGroupOption,
   type VLANWritePayload,
   type ZoneOption,
 } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
-import { FormColor, useFieldErrors } from "@/components/forms"
+import {
+  FormColor,
+  FormCombobox,
+  FormFooter,
+  FormSection,
+  FormTags,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
 export interface VlanFormInitial {
@@ -42,8 +38,6 @@ export interface VlanFormProps {
   onSaved: (saved: VLAN) => void
   onCancel: () => void
 }
-
-const NONE = "__none__"
 
 export function VlanForm({
   vlan,
@@ -108,11 +102,6 @@ export function VlanForm({
     queryFn: () => api<Paginated<ZoneOption>>("/api/zones/?picker=1"),
     staleTime: 10 * 60_000,
   })
-  const tags = useQuery({
-    queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
-    staleTime: 10 * 60_000,
-  })
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -167,116 +156,101 @@ export function VlanForm({
       }}
       className="grid gap-4"
     >
-      <div className="grid grid-cols-[120px_1fr] gap-3">
-        <Field label="VLAN ID" error={fieldErrors.vlan_id}>
-          <Input
-            autoFocus={!isEdit}
+      <FormSection title="VLAN" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="VLAN ID"
             required
+            autoFocus={!isEdit}
             type="number"
+            inputMode="numeric"
             min={1}
             max={4094}
-            inputMode="numeric"
-            placeholder="100"
+            mono
             value={vlanId}
-            onChange={(e) => setVlanId(e.target.value)}
-            className="font-mono"
+            onChange={setVlanId}
+            placeholder="100"
+            error={fieldErrors.vlan_id}
           />
-        </Field>
-        <Field label="Name" error={fieldErrors.name}>
-          <Input
+          <FormText
+            label="Name"
             required
-            placeholder="prod"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={setName}
+            placeholder="prod"
+            error={fieldErrors.name}
           />
-        </Field>
-      </div>
+        </div>
 
-      <Field label="Site" error={fieldErrors.site_id}>
-        <Select
-          value={siteId ?? NONE}
-          onValueChange={(v) => setSiteId(v === NONE ? null : v)}
-          disabled={siteLocked}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="No site" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No site</SelectItem>
-            {sites.options.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
+        <FormColor
+          label="Color"
+          hint="Colours the VLAN's badge and topology rail"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
+        />
 
-      <Field label="Group" error={fieldErrors.group_id}>
-        <Select
-          value={groupId ?? NONE}
-          onValueChange={(v) => setGroupId(v === NONE ? null : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="No group" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No group</SelectItem>
-            {groups.data?.results.map((g) => (
-              <SelectItem key={g.id} value={g.id}>
-                {g.name}{" "}
-                <span className="text-muted-foreground">
-                  · {g.min_vid}–{g.max_vid}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-
-      <Field label="Zone" error={fieldErrors.zone_id}>
-        <Select
-          value={zoneId ?? NONE}
-          onValueChange={(v) => setZoneId(v === NONE ? null : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="No zone" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>No zone</SelectItem>
-            {zones.data?.results.map((z) => (
-              <SelectItem key={z.id} value={z.id}>
-                {z.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-
-      <FormColor
-        label="Color"
-        hint="Optional - colours the VLAN's badge and topology rail"
-        value={color}
-        onChange={setColor}
-        error={fieldErrors.color}
-      />
-
-      <Field label="Description" error={fieldErrors.description}>
-        <Textarea
+        <FormTextarea
+          label="Description"
           rows={2}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder="e.g. Production application tier"
+          error={fieldErrors.description}
         />
-      </Field>
+      </FormSection>
 
-      <Field label="Tags" error={fieldErrors.tag_ids}>
-        <TagMultiSelect
-          options={tags.data?.results ?? []}
-          value={tagIds}
-          onChange={setTagIds}
+      <FormSection title="Placement" card>
+        <FormCombobox
+          label="Site"
+          value={siteId}
+          onChange={setSiteId}
+          disabled={siteLocked}
+          options={sites.options.map((s) => ({ value: s.id, label: s.name }))}
+          noneLabel="No site"
+          placeholder="No site"
+          searchPlaceholder="Search sites…"
+          emptyText="No sites."
+          error={fieldErrors.site_id}
         />
-      </Field>
+        <FormCombobox
+          label="Group"
+          value={groupId}
+          onChange={setGroupId}
+          options={(groups.data?.results ?? []).map((g) => ({
+            value: g.id,
+            label: g.name,
+            hint: `${g.min_vid}–${g.max_vid}`,
+          }))}
+          noneLabel="No group"
+          placeholder="No group"
+          searchPlaceholder="Search groups…"
+          emptyText="No VLAN groups."
+          error={fieldErrors.group_id}
+        />
+        <FormCombobox
+          label="Zone"
+          value={zoneId}
+          onChange={setZoneId}
+          options={(zones.data?.results ?? []).map((z) => ({
+            value: z.id,
+            label: z.name,
+            color: z.color || null,
+          }))}
+          noneLabel="No zone"
+          placeholder="No zone"
+          searchPlaceholder="Search zones…"
+          emptyText="No zones."
+          error={fieldErrors.zone_id}
+        />
+      </FormSection>
+
+      <FormTags
+        label="Tags"
+        value={tagIds}
+        onChange={setTagIds}
+        error={fieldErrors.tag_ids}
+      />
 
       <CustomFieldInputs
         model="vlan"
@@ -284,41 +258,11 @@ export function VlanForm({
         onChange={setCustomFields}
       />
 
-      <div className="mt-2 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCancel}
-          disabled={mutation.isPending}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? "Saving…"
-            : isEdit
-              ? "Save changes"
-              : "Create VLAN"}
-        </Button>
-      </div>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create VLAN"}
+      />
     </form>
-  )
-}
-
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string
-  error?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="grid gap-1.5">
-      <Label className="text-xs">{label}</Label>
-      {children}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   )
 }

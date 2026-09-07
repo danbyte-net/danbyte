@@ -18,12 +18,15 @@ import type { SectionKind } from "@/components/device-type-components-pane"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { ExportBundleButton } from "@/components/device-bundle"
+import { SyncDevicesButton } from "@/components/device-type-sync-dialog"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
 import {
   DetailHero,
   DetailShell,
   DetailTab,
 } from "@/components/detail-shell"
+import { ObjectDocuments } from "@/components/object-documents"
+import { SnmpVrfControl } from "@/components/snmp-vrf-control"
 import {
   LocalityBadge,
   PromoteToGlobalButton,
@@ -113,6 +116,15 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         <>
           {/* Everything that makes this model work, as one shareable file. */}
           <ExportBundleButton deviceTypeId={d.id} name={d.name} />
+          {/* Push this model's templates at the fleet built from it (#103),
+              instead of opening each device's own sync. */}
+          {canDo("device", "change") && (
+            <SyncDevicesButton
+              deviceTypeId={d.id}
+              name={d.name}
+              deviceCount={d.device_count}
+            />
+          )}
           {canDo("devicetype", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/device-types/$id/edit" params={{ id: d.id }}>
@@ -160,21 +172,6 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
             description={d.description}
           />
 
-          <section className="border-b border-border px-6 py-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-sm font-semibold">SNMP credentials</h2>
-              <SnmpBindingControl
-                scope="device_type"
-                objectId={d.id}
-                canEdit={canDo("devicetype", "change")}
-              />
-            </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Default SNMP profile for devices of this type - overridden by a
-              device's role or the device itself.
-            </p>
-          </section>
-
           <CustomFieldValues model="devicetype" values={d.custom_fields} />
         </>
       }
@@ -187,6 +184,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
           : []),
         { value: "sensors", label: "Sensors" },
         { value: "devices", label: "Devices", count: d.device_count },
+        { value: "documents", label: "Documents" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -243,6 +241,11 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
           />
         </div>
       </DetailTab>
+      <DetailTab value="documents">
+        {/* Manuals/datasheets attached to the MODEL carry to every device of
+            this type - each device's Documents tab lists them read-only. */}
+        <ObjectDocuments objectType="api.devicetype" objectId={d.id} />
+      </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.devicetype" objectId={d.id} />
       </DetailTab>
@@ -262,7 +265,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
 /** Device-type attributes that used to crowd the header, grouped into labelled
  * tables. Only the identifying manufacturer/model stay up top. */
 function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
-  const { humanIds } = useMe()
+  const { humanIds, canDo } = useMe()
 
   const hardware: KvRow[] = [
     ...(humanIds && d.numid != null
@@ -316,13 +319,77 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     },
   ]
 
+  // The Components tab's breakdown, surfaced where people first look.
+  // Every row deep-links to its section; kinds with nothing stay silent.
+  const componentRows: KvRow[] = Object.entries(d.component_counts ?? {}).map(
+    ([sub, n]) => ({
+      label: COMPONENT_KIND_LABELS[sub] ?? sub,
+      value: (
+        <Link
+          to="/device-types/$id"
+          params={{ id: d.id }}
+          search={{ tab: "components", sub: sub as SectionKind }}
+          className="num link"
+        >
+          {n}
+        </Link>
+      ),
+    })
+  )
+
+  const monitoring: KvRow[] = [
+    {
+      label: "SNMP profile",
+      value: (
+        <SnmpBindingControl
+          scope="device_type"
+          objectId={d.id}
+          canEdit={canDo("devicetype", "change")}
+          inline
+        />
+      ),
+    },
+    {
+      label: "Discovered-IP VRF",
+      value: (
+        <SnmpVrfControl
+          scope="device_type"
+          objectId={d.id}
+          canEdit={canDo("devicetype", "change")}
+        />
+      ),
+    },
+  ]
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <KvCard title="Hardware" rows={hardware} />
+      <div className="grid gap-6">
+        <KvCard title="Hardware" rows={hardware} />
+        {componentRows.length > 0 && (
+          <KvCard title="Components" rows={componentRows} />
+        )}
+      </div>
       <div className="grid gap-6">
         <KvCard title="Usage" rows={usage} />
+        <KvCard title="Monitoring" rows={monitoring} />
         <LifecycleCard item={d} />
       </div>
     </div>
   )
+}
+
+/** Sub-tab slug → human label, matching the Components tab's sections. */
+const COMPONENT_KIND_LABELS: Record<string, string> = {
+  interface: "Interfaces",
+  "console-port": "Console ports",
+  "console-server-port": "Console server ports",
+  "power-port": "Power ports",
+  "power-outlet": "Power outlets",
+  "rear-port": "Rear ports",
+  "front-port": "Front ports",
+  "device-bay": "Device bays",
+  "module-bay": "Module bays",
+  "inventory-item": "Hardware",
+  "aux-port": "Aux ports",
+  antenna: "Antennas",
 }

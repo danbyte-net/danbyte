@@ -113,7 +113,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
     status: () => ({
       id: "status",
       accessorFn: (r) => r.status?.name ?? "",
-      header: "Status",
+      header: ({ column }) => <SortHeader column={column} label="Status" />,
       cell: ({ row }) => <StatusBadge status={row.original.status} />,
       meta: {
         facet: {
@@ -130,7 +130,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
     vlan: () => ({
       id: "vlan",
       accessorFn: (w) => w.vlan?.vlan_id ?? "",
-      header: "VLAN",
+      header: ({ column }) => <SortHeader column={column} label="VLAN" />,
       cell: ({ row }) =>
         row.original.vlan ? (
           <span className="text-xs">

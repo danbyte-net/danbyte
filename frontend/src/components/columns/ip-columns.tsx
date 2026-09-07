@@ -77,7 +77,14 @@ export interface IpColumnOpts<T> {
   /** Copy-to-clipboard button next to the address (device pane). */
   copyButton?: boolean
   /** Rendering for rows where getIp() returns null (free addresses). */
-  freeRow?: { address: (row: T) => string; statusLabel?: string }
+  freeRow?: {
+    address: (row: T) => string
+    statusLabel?: string
+    /** Clicking the free address itself starts an Add IP at it. */
+    onPick?: (row: T) => void
+    /** Compact mode: how many further free addresses this row stands for. */
+    more?: (row: T) => number
+  }
   /**
    * DHCP badge state per row. Defaults to the registered IP's own `dhcp` field;
    * pass this to also shade *free* rows (which have no IPAddress) as pool space.
@@ -89,6 +96,16 @@ export interface IpColumnOpts<T> {
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
+}
+
+/** Facet bucket through `getIp`: a row that carries no IP (a free address
+ * in the prefix table) is not counted and its cell is not a click target; an
+ * IP without the value lands in the "none" bucket. */
+function ipBucket(
+  ip: IPAddress | null | undefined,
+  key: (ip: IPAddress) => string | null | undefined
+): string | null {
+  return ip ? (key(ip) ?? "__none__") : null
 }
 
 /** Stable facet bucket for a custom-field value (null = not counted). */
@@ -116,12 +133,31 @@ export function buildIpColumns<T = IPAddress>(
       cell: ({ row }) => {
         const ip = getIp(row.original)
         if (!ip) {
-          return opts.freeRow ? (
-            <span className="font-mono text-xs text-muted-foreground italic">
-              {opts.freeRow.address(row.original)}
+          if (!opts.freeRow) return dash
+          const free = opts.freeRow
+          const more = free.more?.(row.original) ?? 0
+          const addr = free.address(row.original)
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              {free.onPick ? (
+                <button
+                  type="button"
+                  onClick={() => free.onPick?.(row.original)}
+                  className="link font-mono text-xs italic"
+                >
+                  {addr}
+                </button>
+              ) : (
+                <span className="font-mono text-xs text-muted-foreground italic">
+                  {addr}
+                </span>
+              )}
+              {more > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  · {more} more available
+                </span>
+              )}
             </span>
-          ) : (
-            dash
           )
         }
         const link = (
@@ -218,7 +254,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Status",
-          get: (r: T) => getIp(r)?.status?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.status?.id),
           formatValue: (_v, sample) => {
             const s = getIp(sample)?.status
             return {
@@ -242,7 +278,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Role",
-          get: (r: T) => getIp(r)?.role?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.role?.id),
           formatValue: (_v, sample) => {
             const role = getIp(sample)?.role
             return {
@@ -269,7 +305,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "VLAN",
-          get: (r: T) => getIp(r)?.prefix?.vlan?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.prefix?.vlan?.id),
           formatValue: (_v, sample) => {
             const v = getIp(sample)?.prefix?.vlan
             return { label: v ? `${v.vlan_id} · ${v.name}` : "No VLAN" }
@@ -293,7 +329,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Zone",
-          get: (r: T) => getIp(r)?.prefix?.vlan?.zone?.id ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.prefix?.vlan?.zone?.id),
           formatValue: (_v, sample) => ({
             label: getIp(sample)?.prefix?.vlan?.zone?.name ?? "No zone",
           }),
@@ -312,7 +348,7 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: "Scope",
-          get: (r: T) => getIp(r)?.scope ?? "__none__",
+          get: (r: T) => ipBucket(getIp(r), (ip) => ip.scope),
           formatValue: (v) => ({
             label: v ? v[0].toUpperCase() + v.slice(1) : "-",
           }),
@@ -445,7 +481,10 @@ export function buildIpColumns<T = IPAddress>(
         facet: {
           kind: "enum",
           label: d.label,
-          get: (r: T) => cfFacetKey(getIp(r)?.custom_fields?.[d.key]),
+          get: (r: T) => {
+            const ip = getIp(r)
+            return ip ? cfFacetKey(ip.custom_fields?.[d.key]) : null
+          },
         },
       },
     })

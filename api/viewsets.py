@@ -26,7 +26,11 @@ from auth_api.drf import RBACViewSetMixin, restrict_for_view
 from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
 from .filters import apply_tag_filter
+from .cf_search import cf_text_q
 from .models import (
+    _TEMPLATE_MARKER_KIND,
+    Antenna,
+    AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     Cable, CableRoute, Circuit, CircuitTermination, CircuitType, Cluster,
     ClusterGroup, ClusterType,
@@ -35,6 +39,7 @@ from .models import (
     Contact, ContactAssignment, ContactGroup, ContactRole, Device, DeviceType,
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
+    rename_marker_refs,
     FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
     FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
@@ -59,6 +64,8 @@ from .models import (
     diff_device_components, sync_device_components,
 )
 from .serializers import (
+    AntennaSerializer,
+    AntennaTemplateSerializer,
     CableRouteSerializer,
     CableSerializer,
     FiberSettingsSerializer,
@@ -590,6 +597,11 @@ class ComponentBulkMixin(FieldWriteAllowList):
             raise ValidationError({"ids": "At most 1000 ids per call."})
         return ids
 
+    def normalize_bulk_updates(self, updates: dict) -> dict:
+        """Hook for model-level invariants that ``Model.save()`` would enforce
+        but a queryset ``update()`` skips. Default: unchanged."""
+        return updates
+
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         ids = self._bulk_ids(request)
@@ -651,6 +663,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
         qs = self.get_queryset().filter(pk__in=ids)
         with transaction.atomic():
             _rows = list(qs)
+            updates = self.normalize_bulk_updates(updates)
             updated = qs.update(**updates) if updates else qs.count()
             if updates:
                 log_bulk_update(_rows, updates)
@@ -744,6 +757,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
             if model.objects.filter(**filt).exclude(pk__in=plan_ids).exists():
                 raise ValidationError({"name": f"'{new}' already exists here."})
 
+        olds = {r.pk: r.name for r, _ in plan}
         with transaction.atomic():
             for r, _new in plan:
                 model.objects.filter(pk=r.pk).update(name=f"__rn_{r.pk}")
@@ -752,7 +766,12 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 r.name = new
             log_bulk_update([r for r, _ in plan], {"name": "renamed"})
             self._assert_bulk_write_in_site_scope(list(plan_ids), action="change")
+            self._after_bulk_rename([(r, olds[r.pk], new) for r, new in plan])
         return Response({"renamed": len(plan)}, status=drf_status.HTTP_200_OK)
+
+    def _after_bulk_rename(self, renames) -> None:
+        """Hook for side effects a plain ``update(name=...)`` skips.
+        ``renames`` is ``[(row, old_name, new_name)]``."""
 
     @action(detail=False, methods=["post"], url_path="bulk-clone")
     def bulk_clone(self, request):
@@ -888,6 +907,9 @@ class ImageAttachmentMixin:
             if upload is None:
                 return Response({"detail": "No image file provided."},
                                 status=drf_status.HTTP_400_BAD_REQUEST)
+            from .images import downscale_image
+
+            upload = downscale_image(upload)
             img = ImageAttachment.objects.create(
                 tenant=obj.tenant,
                 content_type=ct,
@@ -1046,7 +1068,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(cidr__icontains=search) | qs.filter(description__icontains=search)
+            qs = qs.filter(cidr__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         # Quick filters used by detail-page panes.
         for key, field in (
             ("vlan", "vlan_id"), ("vrf", "vrf_id"),
@@ -1055,6 +1077,26 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             v = self.request.query_params.get(key)
             if v:
                 qs = qs.filter(**{field: v})
+        # `contained_in=<cidr>`: only prefixes inside that network - the
+        # aggregate page's Prefixes tab (#133). Postgres `<<=` on the stored
+        # text cast to inet, same cast the ordering below relies on.
+        contained_in = self.request.query_params.get("contained_in")
+        if contained_in:
+            import ipaddress as _ip
+
+            from django.db.models import BooleanField
+            from django.db.models.expressions import RawSQL
+
+            try:
+                net = _ip.ip_network(contained_in, strict=False)
+            except (TypeError, ValueError):
+                return qs.none()
+            qs = qs.annotate(
+                _inside=RawSQL(
+                    "cidr::inet <<= %s::inet", (str(net),),
+                    output_field=BooleanField(),
+                )
+            ).filter(_inside=True)
         qs = _apply_custom_field_scope(self.request, qs, "prefix")
         # Numeric address order, not the lexicographic CharField sort (which
         # puts 10.0.0.10 before 10.0.0.2). Postgres `inet` sorts by address
@@ -1178,7 +1220,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 IPAddress.objects
                 .filter(prefix=prefix)
                 .select_related(
-                    "status", "role", "assigned_device", "prefix__vlan__zone"
+                    "status", "role", "assigned_device", "assigned_vm",
+                    "prefix__vlan__zone",
                 )
                 .prefetch_related("tags")
             ),
@@ -1271,6 +1314,20 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         description = (request.data.get("description") or "").strip()
 
         wanted = [str(ipmod.ip_address(n)) for n in range(int(start), int(end) + 1)]
+        if prefix.allocate_from_ranges:
+            # Only the prefix's ranges are allocatable - a pool outside them
+            # is refused outright, one straddling them is cut to the ranges.
+            spans = prefix.allocation_spans()
+            inside = [
+                a for a in wanted
+                if any(lo <= int(ipmod.ip_address(a)) <= hi for lo, hi in spans)
+            ]
+            if not inside:
+                raise ValidationError({
+                    "start": f"{prefix.cidr} allocates only from its ranges - "
+                             "pick a span inside one of them."
+                })
+            wanted = inside
         # Never mint the prefix's network/broadcast as host rows (v4, /30 and up).
         skip_addrs: set[str] = set()
         if isinstance(net, ipmod.IPv4Network) and net.prefixlen <= 30:
@@ -1383,7 +1440,9 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         # chip) - without the joins every IP row lazy-loads them.
         .select_related(
             "status", "role", "assigned_device", "prefix__vlan__zone",
-            "prefix__vrf", "prefix__site", "site",
+            # assigned_vm: is_primary_for_vm reads the VM's primary_ip_id, so
+            # without the join every VM-assigned row lazy-loads its VM (#122).
+            "assigned_vm", "prefix__vrf", "prefix__site", "site",
         )
         .prefetch_related("tags")
         .all()
@@ -1408,8 +1467,30 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         p = self.request.query_params
         search = p.get("search", "").strip()
         if search:
-            qs = qs.filter(
-                Q(ip_address__icontains=search) | Q(dns_name__icontains=search)
+            # Closest match first: exact, then prefix, then substring - typing
+            # "10.0.0.13" must put .13 above .130-.139 (the assign picker
+            # surfaced whatever join order fell out otherwise). Numeric inet
+            # order inside each band.
+            from django.db.models import Case, IntegerField, Value, When
+            from django.db.models.expressions import RawSQL
+
+            qs = (
+                qs.filter(
+                    Q(ip_address__icontains=search)
+                    | Q(dns_name__icontains=search)
+                )
+                .annotate(
+                    _match=Case(
+                        When(ip_address__iexact=search, then=Value(0)),
+                        When(dns_name__iexact=search, then=Value(0)),
+                        When(ip_address__istartswith=search, then=Value(1)),
+                        When(dns_name__istartswith=search, then=Value(1)),
+                        default=Value(2),
+                        output_field=IntegerField(),
+                    ),
+                    _addr=RawSQL("ip_address::inet", ()),
+                )
+                .order_by("_match", "_addr")
             )
         if dns_name := p.get("dns_name"):
             # Exact, unlike `search` above: the DNS name page asks "which
@@ -1539,7 +1620,7 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
                 qs.filter(name__icontains=search)
                 | qs.filter(rd__icontains=search)
                 | qs.filter(description__icontains=search)
-            )
+            ) | qs.filter(cf_text_q(qs.model, search))
         rt = self.request.query_params.get("rt")
         if rt:
             qs = qs.filter(import_targets__id=rt) | qs.filter(export_targets__id=rt)
@@ -1581,7 +1662,7 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
@@ -1618,7 +1699,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 qs.filter(name__icontains=search)
                 | qs.filter(location__icontains=search)
                 | qs.filter(description__icontains=search)
-            )
+            ) | qs.filter(cf_text_q(qs.model, search))
         # Sites within a region - powers the region detail page's Sites tab.
         region = self.request.query_params.get("region")
         if region:
@@ -1721,7 +1802,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
             if search.isdigit():
                 qs = qs | super().get_queryset().filter(vlan_id=int(search))
         site = self.request.query_params.get("site")
@@ -1817,7 +1898,7 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             search = self.request.query_params.get("search", "").strip()
             if search:
-                qs = qs.filter(name__icontains=search)
+                qs = qs.filter(name__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         qs = restrict_for_view(self, qs)
         return qs.annotate(usage_count_annotated=Count("tagged_items"))
 
@@ -1894,7 +1975,7 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             return qs
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(label__icontains=search) | qs.filter(key__icontains=search)
+            qs = qs.filter(label__icontains=search) | qs.filter(key__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         model = self.request.query_params.get("model")
         if model:
             qs = qs.filter(applies_to__contains=[model])
@@ -1969,7 +2050,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by("weight", "name")
 
     def _slug(self, serializer, tenant):
@@ -2026,7 +2107,7 @@ class TenantGroupViewSet(viewsets.ModelViewSet):
             )
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
     def perform_create(self, serializer):
@@ -2080,7 +2161,7 @@ class TenantViewSet(viewsets.ModelViewSet):
             qs = qs.filter(pk__in=user_tenants(user).values("pk"))
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search)
+            qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
     def perform_create(self, serializer):
@@ -2219,7 +2300,7 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             search = self.request.query_params.get("search", "").strip()
             if search:
-                qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search)
+                qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         if self.usage_relation:
             qs = qs.annotate(usage_count_annotated=Count(self.usage_relation))
         return qs
@@ -2318,7 +2399,7 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         # distinct=True on both: two Counts over different relations in one
         # annotate() join-multiply each other without it (Django fan-out).
         return qs.annotate(
@@ -2484,6 +2565,45 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             "finished_at": run.finished_at.isoformat()
             if run.finished_at else None,
         }
+
+    @action(detail=True, methods=["post"], url_path="sync-devices")
+    def sync_devices(self, request, pk=None):
+        """Push this type's component templates at every device built from it.
+
+        ``apply=false`` (default) → what would change, per device, without
+        touching anything. ``apply=true`` → queue a background run and return
+        it; poll the existing ``import-runs/<id>`` endpoint for progress.
+
+        ``remove_extra=true`` also deletes components the type no longer
+        defines - destructive (it cascades cabling and IP links), which is why
+        the preview counts the interfaces that carry addresses.
+        """
+        from auth_api import rbac
+
+        from .devicetype_sync_tasks import enqueue_component_sync, preview_sync
+
+        dt = self.get_object()
+        tenant = self._tenant_or_403()
+        # Changing a type's fleet is a device-level act, so it takes the device
+        # verb; per-device grants are re-checked again inside the job.
+        if not rbac.has_action(request.user, tenant, "device", "change"):
+            return Response(
+                {"detail": "device.change required."},
+                status=drf_status.HTTP_403_FORBIDDEN,
+            )
+        if not bool(request.data.get("apply")):
+            return Response(
+                {"applied": False, **preview_sync(dt, request.user, tenant)}
+            )
+        run = enqueue_component_sync(
+            dt,
+            remove_extra=bool(request.data.get("remove_extra")),
+            user=request.user,
+        )
+        return Response(
+            {"applied": True, "run": self._run_dict(run)},
+            status=drf_status.HTTP_202_ACCEPTED,
+        )
 
     @action(detail=False, methods=["post"], url_path="import-folder")
     def import_folder(self, request):
@@ -2745,7 +2865,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s) | qs.filter(model__icontains=s)
-                      | qs.filter(part_number__icontains=s))
+                      | qs.filter(part_number__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             mfr = self.request.query_params.get("manufacturer")
             if mfr:
                 qs = qs.filter(manufacturer_id=mfr)
@@ -2826,15 +2946,51 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         """Upload / clear the front & rear rack-face images (multipart). Send a
         `front_image` / `rear_image` file to set, or `clear_front=1` /
         `clear_rear=1` to remove. Rendered in rack elevations."""
+        from .images import downscale_image
+
         dt = self.get_object()
+        # Oversized photos are downscaled on the way in (aspect preserved,
+        # EXIF orientation applied) - the renders never need more than the
+        # cap, and a 4000px phone photo would ship to every viewer.
         if "front_image" in request.FILES:
-            dt.front_image = request.FILES["front_image"]
+            dt.front_image = downscale_image(request.FILES["front_image"])
         if "rear_image" in request.FILES:
-            dt.rear_image = request.FILES["rear_image"]
+            dt.rear_image = downscale_image(request.FILES["rear_image"])
         if request.data.get("clear_front"):
             dt.front_image = None
         if request.data.get("clear_rear"):
             dt.rear_image = None
+        # In-place shrink of a stored face: `resize_front=1200` re-encodes the
+        # existing file to at most that many pixels on the longest edge,
+        # aspect preserved - the visible knob behind the automatic upload cap.
+        import os as _os
+
+        from django.core.files import File
+
+        for face in ("front", "rear"):
+            raw = request.data.get(f"resize_{face}")
+            if not raw:
+                continue
+            try:
+                cap = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "Resize takes a pixel count."}, status=400
+                )
+            cap = max(200, min(4000, cap))
+            field = dt.front_image if face == "front" else dt.rear_image
+            if not field or not field.name:
+                return Response(
+                    {"detail": f"No {face} image to resize."}, status=400
+                )
+            name = _os.path.basename(field.name)
+            with field.open("rb") as fh:
+                wrapper = File(fh, name=name)
+                shrunk = downscale_image(wrapper, max_edge=cap)
+            # Identity, not type: the helper hands back the wrapper itself
+            # when the image is already within the cap (nothing to store).
+            if shrunk is not wrapper:
+                field.save(name, shrunk, save=False)
         dt.save()
         return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
 
@@ -2937,62 +3093,12 @@ class DeviceViewSet(
 
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):
-        """Connected / reserved / free counts per port kind (issue #64).
-
-        Connected = the port terminates a cable or carries mark_connected
-        (undocumented cable); reserved = its cable's status is "planned"
-        (earmarked but not yet patched) or the uncabled port holds a
-        PortReservation; free = no cable, no hold. ``marked`` is the
-        undocumented subset of connected.
-        """
-        from django.db.models import Exists
-
-        from .models import CableTermination, PortReservation
+        """Connected / reserved / free counts per port kind (issue #64) - see
+        ``port_utilization.utilization_payload`` for the rules."""
+        from .port_utilization import utilization_payload
 
         device = self.get_object()
-        kinds = {
-            "interfaces": ("interfaces", "interface"),
-            "front_ports": ("front_ports", "front_port"),
-            "rear_ports": ("rear_ports", "rear_port"),
-        }
-        out: dict = {}
-        combined = {
-            "total": 0, "connected": 0, "reserved": 0, "free": 0, "marked": 0,
-        }
-        for key, (relation, term_field) in kinds.items():
-            rel = getattr(device, relation)
-            cabled = CableTermination.objects.filter(
-                **{term_field: OuterRef("pk")}
-            )
-            planned = cabled.filter(cable__status__slug="planned")
-            resv = PortReservation.objects.filter(
-                **{term_field: OuterRef("pk")}
-            )
-            qs = rel.annotate(
-                _cabled=Exists(cabled), _planned=Exists(planned),
-                _resv=Exists(resv),
-            )
-            total = rel.count()
-            reserved = qs.filter(
-                Q(_planned=True)
-                | Q(_cabled=False, mark_connected=False, _resv=True)
-            ).count()
-            marked = qs.filter(_cabled=False, mark_connected=True).count()
-            connected = (
-                qs.filter(_cabled=True, _planned=False).count() + marked
-            )
-            row = {
-                "total": total,
-                "connected": connected,
-                "reserved": reserved,
-                "free": total - connected - reserved,
-                "marked": marked,
-            }
-            out[key] = row
-            for k in combined:
-                combined[k] += row[k]
-        out["combined"] = combined
-        return Response(out)
+        return Response(utilization_payload(Device.objects.filter(pk=device.pk)))
 
     @action(detail=False, methods=["get"], url_path="port-utilization")
     def port_utilization_rollup(self, request):
@@ -3044,6 +3150,7 @@ class DeviceViewSet(
         "front-port": ("front_ports", "front_port"),
         "rear-port": ("rear_ports", "rear_port"),
         "aux-port": ("aux_ports", "aux_port"),
+        "antenna": ("antennas", None),
         "inventory-item": ("inventory_items", None),
         "module-bay": ("module_bays", None),
     }
@@ -3098,7 +3205,13 @@ class DeviceViewSet(
 
         device = self.get_object()
         dt = device.device_type
-        image_ports = (dt.image_ports if dt else None) or {}
+        # A device-level override (special devices) replaces the type's
+        # layout wholesale; null inherits.
+        image_ports = (
+            device.image_ports
+            if device.image_ports is not None
+            else (dt.image_ports if dt else None)
+        ) or {}
         pos = device.vc_position
         drift = self._face_drift(device)
 
@@ -3122,10 +3235,24 @@ class DeviceViewSet(
                 else:
                     comps = comps.select_related("status")
                 comps = list(comps)
-                name_maps[relation] = {c.name: c for c in comps}
+                # marker_key first: the frozen marker identity survives a
+                # rename of the visible name (Interface/Front/RearPort carry
+                # one; other kinds fall through to name matching).
+                by_key = {}
+                for c in comps:
+                    mk = getattr(c, "marker_key", "") or ""
+                    if mk:
+                        by_key.setdefault(mk, c)
+                for c in comps:
+                    by_key.setdefault(c.name, c)
+                name_maps[relation] = by_key
                 # Case/whitespace-insensitive twin (first name wins) - the
                 # same normalization the frontend's normalizePortName applies.
                 norm = {}
+                for c in comps:
+                    mk = getattr(c, "marker_key", "") or ""
+                    if mk:
+                        norm.setdefault(mk.strip().lower(), c)
                 for c in comps:
                     norm.setdefault(c.name.strip().lower(), c)
                 norm_maps[relation] = norm
@@ -3191,6 +3318,7 @@ class DeviceViewSet(
                         # Inventory item - status-coloured, never cable-able.
                         s = comp.status
                         entry.update({
+                            "name": comp.name,
                             "id": str(comp.id),
                             "status": {"id": str(s.id), "name": s.name, "color": s.color}
                             if s else None,
@@ -3202,6 +3330,10 @@ class DeviceViewSet(
                         speed = getattr(comp, "speed", "")
                         ctype = getattr(comp, "type", "")
                         entry.update({
+                            # The component's REAL name - after a rename the
+                            # marker still resolves via marker_key, and the
+                            # hover must say what the port is called NOW.
+                            "name": comp.name,
                             "kind": term_kind,
                             "id": str(comp.id),
                             "connected": term is not None,
@@ -3210,6 +3342,9 @@ class DeviceViewSet(
                             "enabled": bool(getattr(comp, "enabled", True)),
                             "speed": speed if isinstance(speed, str) else "",
                             "type": ctype if isinstance(ctype, str) else "",
+                            # Real-world name, when it differs from the
+                            # template-matching name ("X1-P1" on "Port 1").
+                            "label": getattr(comp, "label", "") or "",
                         })
                 out.append(entry)
             return out
@@ -3388,7 +3523,7 @@ class DeviceViewSet(
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s) | qs.filter(serial_number__icontains=s)
-                      | qs.filter(asset_tag__icontains=s) | qs.filter(description__icontains=s))
+                      | qs.filter(asset_tag__icontains=s) | qs.filter(description__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             # The with_vc picker reads each device's chassis - pull it in one join.
             if self.request.query_params.get("with_vc") == "1":
                 qs = qs.select_related("virtual_chassis")
@@ -3529,7 +3664,9 @@ class DeviceViewSet(
 
         device = self.get_object()
         qs = (
-            device.interfaces.select_related("device", "vlan", "parent", "lag", "bridge")
+            device.interfaces.select_related(
+                "device", "vlan", "parent", "lag", "bridge", "status"
+            )
             .prefetch_related(
                 "tags", "ip_addresses", "children", "lag_members",
                 "tunnel_terminations__tunnel",
@@ -3569,19 +3706,86 @@ class DeviceViewSet(
         ))
 
 
-class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
+class NameRangeCreateMixin:
+    """Fan a ``[a-b]`` range in a created component's name out into one row
+    per name - server-side, so the API means the same as the dialogs.
+
+    Names the client already expanded contain no range, so a fanning client
+    stays a harmless N single creates. The response body is the FIRST row.
+    """
+
+    def perform_create(self, serializer):
+        from django.db import transaction
+
+        from .name_range import expand_name_range
+
+        name = serializer.validated_data.get("name") or ""
+        names = expand_name_range(name)
+        if len(names) == 1:
+            return self._create_one(serializer)
+        model = serializer.Meta.model
+        scope_field = getattr(self, "bulk_name_scope_field", None) or (
+            "device_type_id" if hasattr(model, "device_type") else "device_id"
+        )
+        scope_value = serializer.validated_data.get(
+            scope_field.removesuffix("_id")
+        )
+        clash = model.objects.filter(
+            **{scope_field.removesuffix("_id"): scope_value},
+            name__in=names,
+        ).values_list("name", flat=True)
+        if clash:
+            raise ValidationError(
+                {"name": f"Already exists: {', '.join(sorted(clash)[:5])}."}
+            )
+        first = None
+        with transaction.atomic():
+            for n in names:
+                # A fresh save per name through the same validated data - tags
+                # and custom fields ride along like any single create.
+                serializer.instance = None
+                serializer.validated_data["name"] = n
+                self._create_one(serializer)
+                first = first or serializer.instance
+        serializer.instance = first
+
+    def _create_one(self, serializer):
+        """One row. Subclasses with their own save logic override THIS, not
+        perform_create - the range fan-out has to wrap whatever they do."""
+        super().perform_create(serializer)
+
+
+class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
 
-    bulk_str_fields = ("type", "mode", "speed", "duplex", "description")
+    bulk_str_fields = (
+        "type", "mode", "speed", "duplex", "description",
+        "lag_protocol", "lacp_mode", "lacp_rate",
+    )
     bulk_bool_fields = ("enabled", "mgmt_only", "mark_connected")
-    bulk_int_fields = ("mtu",)
-    bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF}
+    bulk_int_fields = ("mtu", "lag_min_links")
+    bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
     bulk_name_scope_field = "device_id"
+
+    def normalize_bulk_updates(self, updates):
+        # Mirrors Interface.save(): aggregates are virtual, and LACP knobs
+        # only mean something under LACP.
+        if updates.get("type") == "lag":
+            updates["virtual"] = True
+        if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":
+            updates["lacp_mode"] = ""
+            updates["lacp_rate"] = ""
+        if "speed" in updates:
+            from .speed import normalize_speed
+
+            updates["speed"] = normalize_speed(updates["speed"] or "")
+        return updates
     bulk_tags = True
 
     queryset = (
         Interface.objects.select_related(
-            "device", "vlan", "vrf", "parent", "lag", "bridge"
+            "device", "vlan", "vrf", "status",
+            "parent__device", "lag__device", "bridge__device",
         )
         .prefetch_related(
             "tags", "terminations__cable", "reservations", "ip_addresses", "children",
@@ -3612,10 +3816,23 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = qs.filter(device_id=device_id)
+            # Every member's ports at once - the parent/LAG/bridge pickers
+            # offer the whole stack (#145).
+            vc_id = self.request.query_params.get("virtual_chassis")
+            if vc_id:
+                qs = qs.filter(device__virtual_chassis_id=vc_id)
+            # `type=lag` feeds the LAG picker (aggregates only); `lag=<id>`
+            # lists a bundle's members.
+            itype = self.request.query_params.get("type")
+            if itype:
+                qs = qs.filter(type=itype)
+            lag_id = self.request.query_params.get("lag")
+            if lag_id:
+                qs = qs.filter(lag_id=lag_id)
         return restrict_for_view(self, qs)
 
     def _check(self, serializer):
@@ -3634,7 +3851,7 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         if clash.exists():
             raise ValidationError({"name": "This device already has an interface with that name."})
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 
@@ -3665,6 +3882,68 @@ class InterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             "results": IPAddressSerializer(
                 qs, many=True, context={"request": request}
             ).data,
+        })
+
+    @action(detail=True, methods=["get"], url_path="lag")
+    def lag(self, request, pk=None):
+        """A bundle at a glance: the aggregate's members as full interface
+        rows, plus what only makes sense across them - capacity, the far-end
+        aggregate(s) the members land on, and the min-links verdict. A
+        non-aggregate answers the same shape with no members."""
+        from .speed import fmt_speed, speed_mbps
+
+        iface = self.get_object()
+        members = list(self.get_queryset().filter(lag=iface))
+        rows = InterfaceSerializer(
+            members, many=True, context=self.get_serializer_context()
+        ).data
+        parsed = [v for v in (speed_mbps(m.speed) for m in members) if v]
+        capacity = sum(parsed) if parsed else None
+
+        # Direct cables only: a member landing on a patch panel or left
+        # uncabled counts as unpaired - the trace answers the panel case.
+        own = {
+            t.interface_id: t
+            for t in CableTermination.objects.filter(
+                interface__in=members
+            ).select_related("cable")
+        }
+        far: dict = {}
+        if own:
+            for t in (
+                CableTermination.objects.filter(cable__in=[t.cable for t in own.values()])
+                .exclude(pk__in=[t.pk for t in own.values()])
+                .select_related("interface__lag__device")
+            ):
+                far[t.cable_id] = t.interface
+        peers: dict[str, dict] = {}
+        unpaired: list[str] = []
+        for m in members:
+            t = own.get(m.id)
+            end = far.get(t.cable_id) if t else None
+            if end is None or end.lag_id is None:
+                unpaired.append(m.name)
+                continue
+            p = peers.setdefault(str(end.lag_id), {
+                "id": str(end.lag_id),
+                "name": end.lag.name,
+                "device": {"id": str(end.lag.device_id), "name": end.lag.device.name},
+                "members": 0,
+            })
+            p["members"] += 1
+        return Response({
+            "count": len(members),
+            "results": rows,
+            "capacity_mbps": capacity,
+            "capacity": fmt_speed(capacity) if capacity else "",
+            "unparsed_speeds": len(members) - len(parsed),
+            "min_links": iface.lag_min_links,
+            "degraded": (
+                iface.lag_min_links is not None and len(members) < iface.lag_min_links
+            ),
+            "peers": sorted(peers.values(), key=lambda p: (p["device"]["name"], p["name"])),
+            "unpaired": unpaired,
+            "mixed_peers": len(peers) > 1,
         })
 
     @action(detail=False, methods=["post"], url_path="bulk-create")
@@ -3795,6 +4074,8 @@ class CableViewSet(TenantScopedViewSet):
             # A power feed hangs off a panel, not a device - the read shape
             # names the panel, so prefetch it like the device-side kinds.
             "terminations__power_feed__power_panel",
+            # Same for a circuit end: it names its circuit, not a device.
+            "terminations__circuit_termination__circuit",
             "tags",
         ).order_by("-created_at")
     )
@@ -3822,7 +4103,7 @@ class CableViewSet(TenantScopedViewSet):
                       | qs.filter(terminations__interface__name__icontains=s)
                       | qs.filter(terminations__interface__device__name__icontains=s)
                       | qs.filter(terminations__front_port__name__icontains=s)
-                      | qs.filter(terminations__rear_port__name__icontains=s))
+                      | qs.filter(terminations__rear_port__name__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = (qs.filter(terminations__interface__device_id=device_id)
@@ -4092,7 +4373,7 @@ class CableViewSet(TenantScopedViewSet):
         )
 
 
-class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
+class _DevicePortViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Shared base for FrontPort / RearPort - no direct tenant FK; scope via
     device.tenant, like interfaces."""
 
@@ -4110,7 +4391,7 @@ class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = qs.filter(device_id=device_id)
@@ -4133,7 +4414,7 @@ class _DevicePortViewSet(ComponentBulkMixin, TenantScopedViewSet):
         if clash.exists():
             raise ValidationError({"name": "This device already has a port with that name."})
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 
@@ -4215,6 +4496,20 @@ class AuxPortViewSet(_DevicePortViewSet):
     serializer_class = AuxPortSerializer
 
 
+class AntennaViewSet(_DevicePortViewSet):
+    """Radiating elements (#111). Rides the device-port base for its tenant
+    scoping and ?device= filter; there is nothing to cable here."""
+
+    queryset = (
+        Antenna.objects.select_related("device")
+        .prefetch_related("tags")
+        .order_by("device__name", NATURAL_NAME)
+    )
+    serializer_class = AntennaSerializer
+    bulk_str_fields = ("antenna_type", "polarization", "connector",
+                       "description")
+
+
 class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
@@ -4259,7 +4554,7 @@ class PowerOutletViewSet(_DevicePortViewSet):
 
 
 # ─── Device-type component templates ─────────────────────────────────────────
-class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
+class _ComponentTemplateViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Shared base for the per-device-type component templates - no direct
     tenant FK; scope via device_type.tenant. Filter with ?device_type=."""
 
@@ -4267,6 +4562,20 @@ class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
     tenant_field = None
     bulk_str_fields = ("description",)
     bulk_name_scope_field = "device_type_id"
+
+    def _after_bulk_rename(self, renames) -> None:
+        # The bulk path writes names straight to the table, so the rename
+        # never reaches the template's save() hook. Follow it into the type's
+        # photo markers / faceplate slots and the child components' marker
+        # keys the same way a single rename does, or the placed ports orphan
+        # and sync keeps expecting the old names.
+        kind = _TEMPLATE_MARKER_KIND.get(self.queryset.model.__name__)
+        if not kind:
+            return
+        types: dict = {}
+        for row, old, new in renames:
+            dt = types.setdefault(row.device_type_id, row.device_type)
+            rename_marker_refs(dt, kind, old, new)
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)
@@ -4300,7 +4609,7 @@ class _ComponentTemplateViewSet(ComponentBulkMixin, TenantScopedViewSet):
                 {"name": "This device type already has a template with that name."}
             )
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 
@@ -4332,6 +4641,11 @@ class ConsolePortTemplateViewSet(_ComponentTemplateViewSet):
 class AuxPortTemplateViewSet(_ComponentTemplateViewSet):
     queryset = AuxPortTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
     serializer_class = AuxPortTemplateSerializer
+
+
+class AntennaTemplateViewSet(_ComponentTemplateViewSet):
+    queryset = AntennaTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
+    serializer_class = AntennaTemplateSerializer
 
 
 class InventoryItemTemplateViewSet(_ComponentTemplateViewSet):
@@ -4415,7 +4729,7 @@ class ModuleTypeViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s)
-                      | qs.filter(part_number__icontains=s))
+                      | qs.filter(part_number__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             mfr = self.request.query_params.get("manufacturer")
             if mfr:
                 qs = qs.filter(manufacturer_id=mfr)
@@ -4571,7 +4885,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(
                     description__icontains=s
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
             cluster_count_annotated=Count(self.count_rel)
         ).order_by(NATURAL_NAME)
@@ -4676,7 +4990,7 @@ class ClusterViewSet(TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(
                     description__icontains=s
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
         if self.request:
             ctype = self.request.query_params.get("type")
             if ctype:
@@ -4708,7 +5022,7 @@ class VirtualSwitchViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
@@ -4794,7 +5108,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(
                     description__icontains=s
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
             power = self.request.query_params.get("power")
             if power:
                 qs = qs.filter(power_state=power)
@@ -4825,7 +5139,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
 
 
 class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
-    queryset = VMInterface.objects.all().order_by(NATURAL_NAME)
+    queryset = VMInterface.objects.select_related("parent").order_by(
+        NATURAL_NAME
+    )
     serializer_class = VMInterfaceSerializer
     pagination_class = StandardPagination
     # Tenant is reached through the VM (VMInterface has no direct tenant FK).
@@ -4866,7 +5182,7 @@ class RackRoleViewSet(_SlugCatalogViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         from django.db.models import Count as _C
         return qs.annotate(rack_count_annotated=_C("racks")).order_by(NATURAL_NAME)
 
@@ -4903,7 +5219,7 @@ class RackTypeViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) \
-                    | qs.filter(manufacturer__name__icontains=s)
+                    | qs.filter(manufacturer__name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             m = self.request.query_params.get("manufacturer")
             if m:
                 qs = qs.filter(manufacturer_id=m)
@@ -4989,7 +5305,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(facility_id__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(facility_id__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
@@ -5088,7 +5404,7 @@ class DeviceRoleViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs
 
     def _slug(self, serializer, tenant):
@@ -5140,7 +5456,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
             platform_count_annotated=Count("platforms")
         ).order_by(NATURAL_NAME)
@@ -5195,7 +5511,7 @@ class PlatformViewSet(DeviceRoleViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             g = self.request.query_params.get("group")
             if g:
                 qs = qs.filter(group_id=g)
@@ -5241,7 +5557,7 @@ class ServiceViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for key, field in (("device", "device_id"), ("vm", "virtual_machine_id")):
                 v = self.request.query_params.get(key)
                 if v:
@@ -5302,7 +5618,7 @@ class ServiceTemplateViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs
 
     def _slug(self, serializer, tenant):
@@ -5352,7 +5668,7 @@ class IPRangeViewSet(TenantScopedViewSet):
                     qs.filter(start_address__icontains=s)
                     | qs.filter(end_address__icontains=s)
                     | qs.filter(description__icontains=s)
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
             for key, field in (
                 ("vrf", "vrf_id"),
                 ("status", "status"),
@@ -5429,7 +5745,7 @@ class RIRViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -5479,7 +5795,7 @@ class AggregateViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(prefix__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(prefix__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             rir = self.request.query_params.get("rir")
             if rir:
                 qs = qs.filter(rir_id=rir)
@@ -5506,7 +5822,7 @@ class ASNViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(description__icontains=s)
+                qs = qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
                 if s.lstrip("asAS").isdigit():
                     qs = qs | super().get_queryset().filter(
                         asn=int(s.lstrip("asAS"))
@@ -5542,7 +5858,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
@@ -5606,7 +5922,7 @@ class FHRPGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
                 if s.isdigit():
                     qs = qs | super().get_queryset().filter(group_id=int(s))
             proto = self.request.query_params.get("protocol")
@@ -5660,7 +5976,7 @@ class _ContactCatalogViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -5758,7 +6074,7 @@ class ContactViewSet(TenantScopedViewSet):
                     qs.filter(name__icontains=s)
                     | qs.filter(title__icontains=s)
                     | qs.filter(email__icontains=s)
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
             group = self.request.query_params.get("group")
             if group:
                 qs = qs.filter(group_id=group)
@@ -5855,7 +6171,7 @@ class ProviderViewSet(TenantScopedViewSet):
                     qs.filter(name__icontains=s)
                     | qs.filter(account__icontains=s)
                     | qs.filter(noc_email__icontains=s)
-                )
+                ) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -5888,7 +6204,7 @@ class CircuitTypeViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -5914,13 +6230,15 @@ class CircuitViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("provider", "type")
             .prefetch_related(
-                "tags", "terminations__site", "terminations__provider_network"
+                "tags", "terminations__site", "terminations__provider_network",
+                # Each end reports the cable landing on it (#118).
+                "terminations__circuit", "terminations__terminations__cable__status",
             )
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(cid__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(cid__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("provider", "provider_id"),
                 ("type", "type_id"),
@@ -5955,7 +6273,7 @@ class ProviderNetworkViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(service_id__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(service_id__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             provider = self.request.query_params.get("provider")
             if provider:
                 qs = qs.filter(provider_id=provider)
@@ -5969,6 +6287,7 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
     queryset = (
         CircuitTermination.objects
         .select_related("circuit", "site", "provider_network")
+        .prefetch_related("terminations__cable__status")
         .order_by("term_side")
     )
     serializer_class = CircuitTerminationSerializer
@@ -6034,7 +6353,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
@@ -6073,7 +6392,7 @@ class PowerFeedViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("power_panel", "power_panel_id"),
                 ("rack", "rack_id"),
@@ -6104,7 +6423,7 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6120,9 +6439,93 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
 
 
 class WirelessLANViewSet(TenantScopedViewSet):
+    """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
+    store - this viewset moves it in and out, never through a read."""
+
     queryset = WirelessLAN.objects.all().order_by("ssid")
     serializer_class = WirelessLANSerializer
     pagination_class = StandardPagination
+    rbac_action_map = {"reveal_psk": "reveal"}
+
+    def _pop_psk(self, serializer):
+        """Take the PSK out of the validated data before the row is saved -
+        the model has no column for it, only a reference."""
+        return serializer.validated_data.pop("psk", "")
+
+    def _apply_psk(self, lan, value) -> None:
+        """None clears; a value stores; blank leaves the stored key alone."""
+        from monitoring.secret_store import SecretStoreError
+
+        if value == "":
+            return
+        try:
+            if value is None:
+                lan.clear_psk()
+            else:
+                lan.store_psk(value)
+        except SecretStoreError as exc:
+            raise ValidationError({"psk": str(exc)}) from exc
+        lan.save(update_fields=["psk_secret_path", "psk_secret_provider"])
+
+    def perform_create(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_create(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_update(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_update(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_destroy(self, instance):
+        # Take the key with the record: an SSID nobody documents any more has
+        # no business leaving its passphrase in the store.
+        instance.clear_psk()
+        super().perform_destroy(instance)
+
+    @action(detail=True, methods=["post"], url_path="reveal-psk")
+    def reveal_psk(self, request, pk=None):
+        """Return the PSK. Requires the ``reveal`` verb (type and row gates),
+        is audited, and fails closed when no secret store is enabled."""
+        from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
+
+        lan = self.get_object()
+        try:
+            psk = lan.resolve_psk()
+        except (SecretStoreDisabled, SecretStoreError) as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        self._audit_reveal(lan)
+        return Response({"psk": psk})
+
+    def _audit_reveal(self, lan):
+        """Revealing writes no model change, so nothing else would log it -
+        same trail the device-credential reveal leaves."""
+        from audit.context import current_request_id, current_via
+        from audit.models import ChangeAction, ChangeLogEntry
+        from audit.site_capture import entry_site_id
+
+        u = getattr(self.request, "user", None)
+        authed = bool(u and u.is_authenticated)
+        ChangeLogEntry.objects.create(
+            tenant_id=getattr(lan, "tenant_id", None),
+            user=u if authed else None,
+            user_name=(u.get_username() if authed else ""),
+            action=ChangeAction.REVEAL,
+            object_type=lan._meta.label_lower,
+            object_label="Wireless LAN",
+            object_id=str(lan.pk),
+            object_repr=str(lan),
+            object_site_id=entry_site_id(lan),
+            changes={"revealed": "psk"},
+            request_id=current_request_id(),
+            via=current_via() or "system",
+        )
 
     def get_queryset(self):
         qs = (
@@ -6134,7 +6537,7 @@ class WirelessLANViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(ssid__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(ssid__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("group", "group_id"),
                 ("status", "status"),
@@ -6165,7 +6568,7 @@ class TunnelGroupViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6198,7 +6601,7 @@ class IPSecProfileViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -6228,7 +6631,7 @@ class TunnelViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (
                 ("group", "group_id"),
                 # "What uses this profile" - the IPSec profile detail page's
@@ -6322,7 +6725,7 @@ class L2VPNViewSet(TenantScopedViewSet):
             if search:
                 qs = (qs.filter(name__icontains=search)
                       | qs.filter(slug__icontains=search)
-                      | qs.filter(description__icontains=search))
+                      | qs.filter(description__icontains=search)) | qs.filter(cf_text_q(qs.model, search))
             t = self.request.query_params.get("type")
             if t:
                 qs = qs.filter(type=t)
@@ -6395,8 +6798,17 @@ class VirtualChassisViewSet(TenantScopedViewSet):
             if search:
                 qs = (qs.filter(name__icontains=search)
                       | qs.filter(domain__icontains=search)
-                      | qs.filter(description__icontains=search))
+                      | qs.filter(description__icontains=search)) | qs.filter(cf_text_q(qs.model, search))
         return qs
+
+    @action(detail=True, methods=["get"], url_path="port-utilization")
+    def port_utilization(self, request, pk=None):
+        """The device card's numbers, summed across every member of the
+        stack - the same rules as ``/api/devices/<id>/port-utilization/``."""
+        from .port_utilization import utilization_payload
+
+        vc = self.get_object()
+        return Response(utilization_payload(Device.objects.filter(virtual_chassis=vc)))
 
     def perform_destroy(self, instance):
         # Deleting a stack releases its members (SET_NULL on the FK) - also
@@ -6450,6 +6862,40 @@ class RegionViewSet(TenantScopedViewSet):
             })
         return Response({"results": candidates})
 
+    @action(detail=False, methods=["post"], url_path="parse-boundary",
+            parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def parse_boundary(self, request):
+        """Turn a GeoJSON / QGIS export into a storable boundary (#80).
+
+        Send the file as ``file`` (multipart) or its text as ``geojson``. The
+        geometry is validated as WGS84 lon/lat and simplified until it fits the
+        stored payload budget; the response reports what that cost, so the UI
+        can say why the drawn shape is coarser than the file.
+
+        Parses only - the result goes back to the form and is saved with the
+        region, exactly like a boundary chosen from the OSM lookup. That is
+        what lets a brand-new region carry an imported boundary too.
+        """
+        from .geojson_import import GeoJSONError, boundary_from_geojson
+
+        self._tenant_or_403()
+        upload = request.FILES.get("file")
+        raw = upload.read() if upload is not None else request.data.get("geojson")
+        if not raw:
+            raise ValidationError(
+                {"file": "Attach a .geojson file, or send its text as geojson."}
+            )
+        try:
+            geom, report = boundary_from_geojson(raw)
+        except GeoJSONError as exc:
+            raise ValidationError({"file": str(exc)}) from exc
+        return Response({
+            "boundary": geom,
+            # Provenance, same slot the Nominatim path fills.
+            "boundary_label": (getattr(upload, "name", "") or "Imported GeoJSON")[:255],
+            "report": report,
+        })
+
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         """Bulk parent assignment (issue: build the tree without opening N
@@ -6496,7 +6942,7 @@ class RegionViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             parent = self.request.query_params.get("parent")
             if parent:
                 qs = qs.filter(parent_id=parent)
@@ -6536,7 +6982,7 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             for param, field in (("site", "site_id"), ("parent", "parent_id"),
                                  ("status", "status")):
                 val = self.request.query_params.get(param)
@@ -6567,7 +7013,7 @@ class ConfigContextViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.order_by("weight", "name")
 
 
@@ -6582,7 +7028,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             ot = self.request.query_params.get("object_type")
             if ot:
                 qs = qs.filter(object_type=ot)
@@ -7111,7 +7557,7 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs
 
     def _slug(self, serializer, tenant):
@@ -7208,7 +7654,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
             loc = self.request.query_params.get("location")
             if loc:
                 qs = qs.filter(location_id=loc)
@@ -7219,6 +7665,59 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())
+
+    @action(detail=True, methods=["post"], url_path="clone")
+    def clone(self, request, pk=None):
+        """Copy the plan with everything drawn on it: tiles (their object
+        links included), trays (geometry only - the cables routed through the
+        originals stay where they are), raised-floor areas and walls. The
+        copy lands in the same location as "<name> copy"."""
+        import os
+
+        from django.core.files.base import ContentFile
+        from django.db import transaction
+
+        from auth_api import rbac
+
+        tenant = self._tenant_or_403()
+        if not rbac.has_action(request.user, tenant, "floorplan", "add"):
+            return Response({"detail": "Not allowed."}, status=drf_status.HTTP_403_FORBIDDEN)
+        src = self.get_object()
+        maxlen = FloorPlan._meta.get_field("name").max_length or 128
+        base = f"{src.name} copy"[:maxlen]
+        name, n = base, 2
+        while FloorPlan.objects.filter(
+            tenant=tenant, location=src.location, name=name
+        ).exists():
+            suffix = f" {n}"
+            name = base[: maxlen - len(suffix)] + suffix
+            n += 1
+        skip = {"id", "numid", "name", "background_image", "created_at", "updated_at"}
+        with transaction.atomic():
+            dst = FloorPlan(tenant=tenant, location=src.location, name=name)
+            for f in FloorPlan._meta.concrete_fields:
+                if f.name in skip or f.name in ("tenant", "location"):
+                    continue
+                setattr(dst, f.attname, getattr(src, f.attname))
+            if src.background_image:
+                src.background_image.open("rb")
+                dst.background_image.save(
+                    os.path.basename(src.background_image.name),
+                    ContentFile(src.background_image.read()),
+                    save=False,
+                )
+            dst.save()
+            dst.tags.set(src.tags.all())
+            for rel in ("tiles", "trays", "raised_floor_areas", "walls"):
+                for obj in getattr(src, rel).all():
+                    obj.pk = None
+                    obj.id = None
+                    obj.floor_plan = dst
+                    obj.save()
+        return Response(
+            FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
+            status=drf_status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["get"], url_path="state")
     def state(self, request, pk=None):
@@ -7436,7 +7935,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "has_faceplate": bool(dt and dt.faceplate),
                 # Photo-anchored port markers (per device type; denormalized
                 # here like front_image so the 3D face can overlay them).
-                "image_ports": (dt.image_ports if dt else None) or None,
+                "image_ports": (
+                    d.image_ports
+                    if d.image_ports is not None
+                    else (dt.image_ports if dt else None)
+                ) or None,
                 # The device's REAL power component names - the room lays out
                 # deterministic clickable quads (and cable anchors) for any of
                 # these that no photo marker covers, incl. PDU strip outlets.
@@ -7491,6 +7994,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "label": t.label or "",
                 "kind": "rack" if t.rack_id else
                         "device" if t.device_id else "other",
+                # The linked device's name - the 2D canvas labels device tiles
+                # with it (tileName: label || linked.name) and the 3D room's
+                # ghost boxes want the same fallback.
+                "device_name": t.device.name if t.device_id else "",
                 # The type's name, so the 3D room can label unlinked tiles
                 # ("build in advance": planned massing before objects exist).
                 "type_name": (
@@ -7595,8 +8102,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         # device (so a device↔device run shows even with no tray).
         touches_placed = Q()
         for field in CableTermination.POINT_FIELDS:
-            if field == "power_feed":
-                continue  # feeds aren't devices
+            if field in ("power_feed", "circuit_termination"):
+                continue  # neither hangs off a device
             touches_placed |= Q(**{f"terminations__{field}__device_id__in": placed_device_ids})
         cables = (
             Cable.objects.filter(Q(trays__floor_plan=plan) | touches_placed)
@@ -7897,7 +8404,7 @@ class PortReservationViewSet(TenantScopedViewSet):
                 | Q(aux_port__device_id=device)
             )
         kind = self.request.query_params.get("kind")
-        if kind in CableTermination.POINT_FIELDS:
+        if kind in PortReservation.POINT_FIELDS:
             qs = qs.filter(**{f"{kind}__isnull": False})
         claimed_by = self.request.query_params.get("claimed_by")
         if claimed_by:

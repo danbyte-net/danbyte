@@ -12,8 +12,11 @@ import type {
 } from "@/lib/api"
 import {
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormCombobox,
   FormFooter,
+  FormSection,
   FormSelect,
   FormTags,
   FormText,
@@ -144,117 +147,129 @@ export function RackTypeForm({
       }}
       className="grid gap-4"
     >
-      <FormText
-        label="Name"
-        required
-        autoFocus={!isEdit}
-        value={name}
-        onChange={setName}
-        placeholder="NetShelter SX 42U 600mm"
-        error={fieldErrors.name}
-      />
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Rack type" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              placeholder="NetShelter SX 42U 600mm"
+              error={fieldErrors.name}
+            />
+            <FormCombobox
+              label="Manufacturer"
+              hint="optional"
+              value={manufacturerId}
+              onChange={setManufacturerId}
+              noneLabel="No manufacturer"
+              placeholder="Pick a manufacturer"
+              searchPlaceholder="Search…"
+              emptyText="No manufacturers."
+              options={(manufacturers.data?.results ?? []).map((m) => ({
+                value: m.id,
+                label: m.name,
+              }))}
+              error={fieldErrors.manufacturer_id}
+            />
+          </FormSection>
 
-      <FormCombobox
-        label="Manufacturer"
-        hint="optional"
-        value={manufacturerId}
-        onChange={setManufacturerId}
-        noneLabel="No manufacturer"
-        placeholder="Pick a manufacturer"
-        searchPlaceholder="Search…"
-        emptyText="No manufacturers."
-        options={(manufacturers.data?.results ?? []).map((m) => ({
-          value: m.id,
-          label: m.name,
-        }))}
-        error={fieldErrors.manufacturer_id}
-      />
+          <FormSection title="Notes" card>
+            <FormTextarea
+              label="Description"
+              value={description}
+              onChange={setDescription}
+              error={fieldErrors.description}
+            />
+          </FormSection>
+        </FormColumn>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Width"
-          value={String(width)}
-          onChange={(v) => v && setWidth(Number(v) as RackWidth)}
-          options={WIDTHS.map((w) => ({
-            value: String(w.value),
-            label: w.label,
-          }))}
-          error={fieldErrors.width}
-        />
-        <FormText
-          label="Height (U)"
-          type="number"
-          min={1}
-          value={uHeight}
-          onChange={setUHeight}
-          error={fieldErrors.u_height}
-        />
-        <FormText
-          label="Starting unit"
-          type="number"
-          value={startingUnit}
-          onChange={setStartingUnit}
-          error={fieldErrors.starting_unit}
-        />
-        <FormText
-          label="Outer width (mm)"
-          hint="optional - cabinet footprint, for 3D & drawings"
-          type="number"
-          min={100}
-          max={2000}
-          value={outerWidth}
-          onChange={setOuterWidth}
-          error={fieldErrors.outer_width_mm}
-        />
-        <FormText
-          label="Outer depth (mm)"
-          hint="optional - blank = 1000"
-          type="number"
-          min={100}
-          max={3000}
-          value={outerDepth}
-          onChange={setOuterDepth}
-          error={fieldErrors.outer_depth_mm}
-        />
-        <FormText
-          label="Weight budget"
-          hint="optional - the cabinet's load rating"
-          type="number"
-          min={0}
-          value={maxWeight}
-          onChange={setMaxWeight}
-          error={fieldErrors.max_weight}
-        />
-      </div>
+        <FormColumn>
+          <FormSection title="Dimensions" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Width"
+                value={String(width)}
+                onChange={(v) => v && setWidth(Number(v) as RackWidth)}
+                options={WIDTHS.map((w) => ({
+                  value: String(w.value),
+                  label: w.label,
+                }))}
+                error={fieldErrors.width}
+              />
+              <FormText
+                label="Height (U)"
+                type="number"
+                min={1}
+                value={uHeight}
+                onChange={setUHeight}
+                error={fieldErrors.u_height}
+              />
+              <FormText
+                label="Starting unit"
+                type="number"
+                value={startingUnit}
+                onChange={setStartingUnit}
+                error={fieldErrors.starting_unit}
+              />
+              <FormText
+                label="Outer width (mm)"
+                hint="optional - cabinet footprint, for 3D & drawings"
+                type="number"
+                min={100}
+                max={2000}
+                value={outerWidth}
+                onChange={setOuterWidth}
+                error={fieldErrors.outer_width_mm}
+              />
+              <FormText
+                label="Outer depth (mm)"
+                hint="optional - blank = 1000"
+                type="number"
+                min={100}
+                max={3000}
+                value={outerDepth}
+                onChange={setOuterDepth}
+                error={fieldErrors.outer_depth_mm}
+              />
+            </div>
+            <FormCheckbox
+              label="Descending units"
+              hint="Number units top-to-bottom (U1 at the top)"
+              checked={descUnits}
+              onChange={setDescUnits}
+            />
+          </FormSection>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FormSelect
-          label="Budget unit"
-          value={maxWeightUnit}
-          onChange={(v) => setMaxWeightUnit(v ?? "kg")}
-          options={[
-            { value: "kg", label: "kg" },
-            { value: "g", label: "g" },
-            { value: "lb", label: "lb" },
-            { value: "oz", label: "oz" },
-          ]}
-          error={fieldErrors.max_weight_unit}
-        />
-      </div>
-
-      <FormCheckbox
-        label="Descending units"
-        hint="Number units top-to-bottom (U1 at the top)"
-        checked={descUnits}
-        onChange={setDescUnits}
-      />
-
-      <FormTextarea
-        label="Description"
-        value={description}
-        onChange={setDescription}
-        error={fieldErrors.description}
-      />
+          <FormSection title="Load" card>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Weight budget"
+                hint="optional - the cabinet's load rating"
+                type="number"
+                min={0}
+                value={maxWeight}
+                onChange={setMaxWeight}
+                error={fieldErrors.max_weight}
+              />
+              <FormSelect
+                label="Budget unit"
+                value={maxWeightUnit}
+                onChange={(v) => setMaxWeightUnit(v ?? "kg")}
+                options={[
+                  { value: "kg", label: "kg" },
+                  { value: "g", label: "g" },
+                  { value: "lb", label: "lb" },
+                  { value: "oz", label: "oz" },
+                ]}
+                error={fieldErrors.max_weight_unit}
+              />
+            </div>
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormTags
         label="Tags"

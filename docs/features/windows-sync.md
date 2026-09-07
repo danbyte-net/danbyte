@@ -59,6 +59,11 @@ Rules:
 - **Nothing of yours is overwritten.** Existing prefixes and IPs are adopted -
   the sync fills blank fields (MAC, DNS name) and links objects, but never
   replaces operator data.
+- **Only a real MAC reaches the address.** A Windows *ClientId* is not always a
+  48-bit MAC: an RFC 4361 client identifier, a DUID, or an Infiniband GUID is
+  longer. The lease or reservation keeps whatever the server reported, but the
+  IP address's **MAC** field is left blank for those clients, because the value
+  isn't a MAC. One such client no longer stops its whole scope from syncing.
 - **Leases are opt-in per scope** (the *Lease sync* switch on the server's
   Overview tab) - they churn constantly and would flood the database
   otherwise. IPs the lease sync created disappear again with their lease;

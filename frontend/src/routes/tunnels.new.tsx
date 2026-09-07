@@ -8,6 +8,7 @@ function NewPage() {
   const nav = useNavigate()
   return (
     <EditPageShell
+      wide
       crumbs={[{ label: "Tunnels", to: "/tunnels" }, { label: "Add" }]}
       title="Add Tunnel"
       subtitle="A VPN tunnel."

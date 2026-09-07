@@ -471,22 +471,18 @@ function Frame({
       renderOrder={ghost ? TRANSPARENT_ORDER.ghost : 0}
     >
       <boxGeometry args={[w, h, d]} />
-      {ghost ? (
-        <meshStandardMaterial
-          color={color}
-          roughness={STEEL_ROUGHNESS}
-          metalness={STEEL_METALNESS}
-          transparent
-          opacity={ghostOpacity}
-          depthWrite={false}
-        />
-      ) : (
-        <meshStandardMaterial
-          color={color}
-          roughness={STEEL_ROUGHNESS}
-          metalness={STEEL_METALNESS}
-        />
-      )}
+      {/* Keyed single material with explicit mode props - a same-type
+          solid/ghost ternary is diffed in place and r3f resets removed props
+          to 0 (transparent=0 breaks three's strict checks; see WallMesh). */}
+      <meshStandardMaterial
+        key={ghost ? "ghost" : "solid"}
+        color={color}
+        roughness={STEEL_ROUGHNESS}
+        metalness={STEEL_METALNESS}
+        transparent={ghost}
+        opacity={ghost ? ghostOpacity : 1}
+        depthWrite={!ghost}
+      />
     </mesh>
   )
 }

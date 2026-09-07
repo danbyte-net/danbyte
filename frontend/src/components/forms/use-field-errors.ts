@@ -37,6 +37,21 @@ export function useFieldErrors() {
         else errs[k] = msg
       }
       setFieldErrors(errs)
+      // A 400 on a tall two-column form can highlight a field the operator
+      // isn't looking at - the save just seems to do nothing. Bring the
+      // first errored field into view once it has rendered.
+      if (Object.keys(errs).length > 0 && typeof document !== "undefined") {
+        requestAnimationFrame(() => {
+          const el = document.querySelector<HTMLElement>("[data-field-error]")
+          if (!el) return
+          el.scrollIntoView({ behavior: "smooth", block: "center" })
+          el.querySelector<HTMLElement>(
+            "input, textarea, button, select"
+          )?.focus({
+            preventScroll: true,
+          })
+        })
+      }
       if (Object.keys(errs).length > 0) {
         return general ?? "Couldn't save - check the highlighted fields."
       }

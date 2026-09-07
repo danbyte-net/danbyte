@@ -162,8 +162,16 @@ export function DeviceDriftCard({ deviceId }: { deviceId: string }) {
       align: "right",
       cell: (item) => {
         const noPrefix = item.kind === "ip_missing" && !item.has_prefix
+        // A membership can only be applied once the aggregate exists here.
+        const noAggregate =
+          item.kind === "lag_membership" &&
+          item.observed !== "-" &&
+          !item.lag_interface_id
         const canAccept =
-          canApply && item.kind !== "interface_stale" && !noPrefix
+          canApply &&
+          item.kind !== "interface_stale" &&
+          !noPrefix &&
+          !noAggregate
         return (
           <div className="flex items-center justify-end gap-1">
             {/* A discovered interface is often a port you already labelled by

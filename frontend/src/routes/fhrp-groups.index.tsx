@@ -97,8 +97,15 @@ function FhrpGroupsPage() {
   const handleDelete = useCallback((g: FHRPGroup) => setDeleting(g), [])
   const columns = useMemo<ColumnDef<FHRPGroup>[]>(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
-    [handleDelete, canEdit, canDelete, humanIds]
+      buildColumns({
+        onDelete: handleDelete,
+        canEdit,
+        canDelete,
+        humanIds,
+        tagFilter,
+        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+      }),
+    [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
 
   const rail = (
@@ -159,11 +166,15 @@ function buildColumns({
   canEdit,
   canDelete,
   humanIds,
+  tagFilter,
+  onToggleTag,
 }: {
   onDelete: (g: FHRPGroup) => void
   canEdit: boolean
   canDelete: boolean
   humanIds: boolean
+  tagFilter: Set<string>
+  onToggleTag: (slug: string) => void
 }): ColumnDef<FHRPGroup>[] {
   return [
     selectionColumn<FHRPGroup>(),
@@ -238,8 +249,8 @@ function buildColumns({
     },
     tagsColumn<FHRPGroup>({
       getTags: (r) => r.tags,
-      activeSlugs: new Set<string>(),
-      onToggle: () => {},
+      activeSlugs: tagFilter,
+      onToggle: onToggleTag,
     }),
     timeAgoColumn<FHRPGroup>({
       id: "updated",

@@ -92,6 +92,14 @@ to the [`{position}` token](virtual-chassis.md#position-aware-interface-names)
 (`1/…` → `{position}/…`, Juniper-style `0/…` → `{position:0}/…`) so one
 imported type serves every member of a stack.
 
+**Server without internet access?** Tick **Fetch with my browser**. The links
+you pasted - single files or a whole `/tree/` folder - are downloaded by your
+browser (GitHub allows that cross-origin) and the YAML text is sent to Danbyte,
+exactly as if you had pasted it; the server never contacts GitHub. The tick is
+remembered per browser. It needs the reverse proxy's Content-Security-Policy to
+allow `raw.githubusercontent.com` and `api.github.com` in `connect-src` - the
+shipped nginx template does; a hand-written config must add them.
+
 ### Filtering a long catalog {#filtering}
 
 Import a vendor folder or two and the catalog runs to hundreds of models, so the
@@ -156,6 +164,11 @@ a [rack elevation](racks.md), with the device name overlaid - so a rack diagram
 looks like the real thing. Use the **Front / Rear** toggle on the rack to switch
 faces. The same images also render read-only on each **device's** Overview tab,
 so you can see the hardware without opening the type.
+
+Uploads are downscaled server-side to at most 2000 px on the longest edge -
+aspect ratio preserved, EXIF rotation applied - so a raw phone photo doesn't
+ship megabytes to every rack view. Library-fetched images get the same
+treatment.
 
 ### Recovering lost images {#reimport-images}
 
@@ -270,8 +283,9 @@ kind, and reload or back/forward without losing your place.
 
 **Aux ports** are the catch-all for connectors the other kinds don't cover: USB
 (A/B/C/mini/micro), video outputs (HDMI, VGA, DVI, DisplayPort), SD/microSD
-slots, RJ11, audio jacks, and grounding lugs - so a device type can model
-*everything* on its panel. Template names support
+slots, RJ11, audio jacks, grounding lugs, and **RF connectors** (RP-SMA, SMA,
+N-type, MMCX, U.FL, QMA, 4.3-10) - so a device type can model *everything* on
+its panel, including the coax run from an AP to its external antenna. Template names support
 two shorthands: a **`[1-24]` range** creates one template per port in a single
 add, and a **`{position}` token** resolves to the device's stack member number
 when components are stamped (and renames ports when a device changes stack
@@ -282,7 +296,11 @@ Tick rows to reveal a bulk bar with **Edit**, **Rename**, **Clone**, and
 - **Rename** - find/replace across the selected templates' names (optional
   regex), with a live before→after preview. Ideal for renumbering a bank of
   ports (`Gi` → `GigabitEthernet`, `1/0/` → `2/0/`). It refuses names that would
-  collide.
+  collide. Photo-port markers, faceplate slots, and the placed ports on
+  existing devices follow the rename, exactly as a single rename does - a
+  marker left on an old name would otherwise read as a port the type still
+  has, and syncing a device would stamp it a second time as a bare
+  component.
 - **Clone** - duplicate the selected templates, applying a find/replace so the
   copies get new names (e.g. clone `1/0/*` to `2/0/*` for a second line card);
   with no find/replace the copies get a “ copy” suffix. The same bulk bar (and
@@ -330,6 +348,60 @@ as ghosts on the render.
 
 Sync is name-based (it never renames or retypes existing components) and needs
 `device.change`.
+
+### Antennas {#antennas}
+
+Antennas are pure L1 on a lot of APs, and this is where they document. Two
+situations, two shapes:
+
+- **Integrated antennas** (most indoor APs) are **components** on the device -
+  how many, what kind, what gain. Nothing to cable. Add **antenna templates**
+  to the device type and every AP built from it carries its elements; or add
+  them per device on the **Hardware** tab.
+- **External antennas** - a sector on a mast, a dish on a wall - are their own
+  small **device**: give it a device type whose antenna component describes the
+  radiating element and whose **aux port** carries an RF connector type. The
+  coax run AP → antenna is then an ordinary cable between two RF aux ports,
+  with placement, faceplates and tracing for free. Create an "Antenna" device
+  role for them with the quick-add on the device form if you want one - roles
+  stay yours to define.
+
+An antenna records its **type** (omni, directional, sector, patch, yagi,
+parabolic, internal), **gain** (numeric dBi), **bands** (a picked list -
+2.4/5/6/60 GHz, sub-1 GHz, cellular; multi-band is simply several), **polarization**,
+**connector**, and a **direct mount** flag for elements screwed straight onto
+the device's connector with no cable run - so they don't fall between
+"integrated" and "external". Gain and bands are structured on purpose: a future
+coverage view can consume them without a re-model.
+
+Antennas are never cable endpoints themselves - the aux port is the cable end -
+but photo markers can place them on a device image like hardware parts.
+
+### Sync the whole fleet at once {#sync-all-devices}
+
+When a template change affects every device of a model, **Sync devices** on the
+*device type* page does the same job across the fleet instead of one device at
+a time. It appears once the type has devices and needs `device.change`.
+
+It previews first, like the per-device flow: how many devices would change, and
+a per-device count of what would be added or is extra. **Also remove components
+this type no longer defines** is the same destructive option, and the dialog
+names how many of those extras carry IP addresses before you tick it.
+
+Pressing **Sync** shows a confirmation naming how many devices are about to
+change - and, when removal is ticked, that components and their cabling are
+about to be deleted and cannot be recovered. Confirming queues a background
+run - a type with hundreds of devices is not
+something to hold a browser request open for - and the dialog follows its
+progress. When it finishes it reports how many devices changed, how many were
+**skipped** (your grants don't cover them), and any that failed.
+
+!!! note "Permissions are re-checked per device"
+    Being allowed to sync the type is not the same as being allowed to change
+    every device built from it - a site-scoped grant may cover some and not
+    others. The job re-checks each device as it goes and skips the ones you
+    can't change, rather than trusting the check made when you pressed the
+    button.
 - Per the zero-pre-filled-data rule, no templates ship - but the type/connector
   dropdowns follow the standard taxonomies, so imported
   device-type definitions carry over.
@@ -385,7 +457,17 @@ port markers **directly on the photo** - drag an interface (or console / power
 precisely: drag it, grab the corner handle to resize, nudge with the **arrow
 keys** (Shift = coarser), or type exact **X / Y / W / H** percentages. A
 **fine-grid snap** keeps rows aligned. Coordinates are stored normalized
-(0–1), so they scale to any render size.
+(0–1), so they scale to any render size. Markers reference their template by
+name, and renaming a template follows into them (and into custom faceplate
+slots) automatically - a placed port never orphans on rename. On the device
+side each port carries a frozen **marker identity** (stamped from the template
+at creation), so renaming a device's own port - `Port 1` → `X1-P1` - keeps its
+placed marker resolving too; hovers then show the real name.
+
+A **special device** can override the type's layout entirely: the device page
+grows a **Photo ports** tab (when the type has an image) whose palette lists
+that device's real components and whose Save writes a device-only layout -
+**Reset to type layout** returns to inheritance.
 
 **Bulk place** lays a whole run at once: pick the kind and a from/to port
 range, set rows, numbering direction and optional bank gaps, then anchor the
@@ -407,6 +489,16 @@ the **photo faceplate** in place of the schematic one - each marker matched to
 the device's real interface by name (so it carries the same state colour, live
 SNMP dot, hover card and link), and the markers also render **on the device's
 face in the [3D room view](../features/floor-plans.md#the-3d-room-view)**.
+**Hover.** A photo port's hover card shows the same rows as the drawn
+faceplate's - name and printed label, type, state, VLAN (native / trunk),
+live SNMP state, IPs - in the order set under **Settings → Components**.
+
+**Size.** By default the photo draws at its upload size (its own pixels,
+never wider than the pane). Tick **Use this size everywhere** in the editor
+and its **Fit** / **−** / **+** zoom is saved with the layout for that side:
+Fit keeps the photo inside the pane, a percentage draws it at that fraction of
+its natural pixels - and the device page's photo panel follows.
+
 Types without photo ports keep using the schematic faceplate builder above.
 
 The palette also offers the type's **[inventory-item](#inventory-items)
@@ -466,6 +558,12 @@ Each part also carries its **hardware identity and health**:
 
 - **Kind** - what the part is: Disk, CPU, RAM, PSU, Fan, GPU, Controller,
   Transceiver, or Other (the default for pre-existing parts).
+- **The form follows the kind.** A disk offers media, speed and capacity; RAM
+  offers speed (DDR grade / MT/s) and size; a CPU offers its clock and nothing
+  about capacity; a fan its RPM; a PSU none of the three. Every kind used to
+  wear the disk outfit - a CPU offering "7200 RPM" and a capacity in GB.
+  Fields a kind doesn't show keep their stored value, so editing a
+  BMC-synced part never wipes facts Redfish wrote.
 - **Media** (disks) - NVMe, SSD (SATA/SAS), HDD, or Tape.
 - **Capacity** with a unit picker (KB → PB; stored in bytes, so it's
   backwards- and future-proof).

@@ -16,6 +16,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { ColorBadge } from "@/components/cells/color-badge"
+import { TruncatedText } from "@/components/ui/truncated-text"
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -26,6 +28,10 @@ export interface ComboboxOption {
   /** Optional sub-category heading - options sharing a group render under it
    * (optgroup-style), in first-appearance order. Ungrouped options come first. */
   group?: string
+  /** Catalog color: the option renders as its ColorBadge pill (roles,
+   * statuses) instead of plain text - a status/role looks the same here as
+   * everywhere else. Never rendered as a dot. */
+  color?: string | null
   /** Not selectable (still listed, dimmed) - e.g. an occupied rack unit. */
   disabled?: boolean
   /** Muted right-aligned annotation - e.g. the device occupying a unit. */
@@ -95,22 +101,31 @@ export function Combobox({
           aria-expanded={open}
           disabled={disabled}
           className={cn(
-            "h-9 w-full justify-between font-normal",
+            "h-9 w-full min-w-0 justify-between overflow-hidden font-normal",
             !selected && "text-muted-foreground",
             className
           )}
         >
           {/* min-w-0: a flex child's min-width defaults to its content, so
               truncate alone never engages and a long label spills out. */}
-          <span className="min-w-0 truncate">
-            {selected ? selected.label : placeholder}
-          </span>
+          {selected?.color ? (
+            <ColorBadge name={selected.label} color={selected.color} />
+          ) : selected ? (
+            // The field is narrow, so a long value still truncates here -
+            // hovering (or focusing) shows it in full.
+            <TruncatedText>{selected.label}</TruncatedText>
+          ) : (
+            <span className="min-w-0 truncate">{placeholder}</span>
+          )}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-(--radix-popover-trigger-width) p-0"
+        // min-w = trigger width, but the list may grow wider: an option's
+        // full name always has to be readable (a truncated "Cisco Nexus
+        // 931..." is useless when three types share that prefix).
+        className="w-auto max-w-[min(38rem,calc(100vw-2rem))] min-w-(--radix-popover-trigger-width) p-0"
       >
         <Command>
           <CommandInput placeholder={searchPlaceholder} className="h-9" />
@@ -161,7 +176,11 @@ export function Combobox({
                         value === o.value ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    <span className="truncate">{o.label}</span>
+                    {o.color ? (
+                      <ColorBadge name={o.label} color={o.color} />
+                    ) : (
+                      <span className="whitespace-normal">{o.label}</span>
+                    )}
                     {o.hint && (
                       <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
                         {o.hint}

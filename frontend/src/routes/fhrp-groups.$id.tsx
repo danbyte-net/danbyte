@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Trash2, X } from "lucide-react"
@@ -187,6 +188,11 @@ function FhrpGroupOverview({
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Attributes" rows={attributes} />
+      <CustomFieldValues
+        model="fhrpgroup"
+        values={g.custom_fields}
+        layout="cards"
+      />
     </div>
   )
 }

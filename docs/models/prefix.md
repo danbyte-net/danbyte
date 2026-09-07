@@ -19,6 +19,7 @@ An IP prefix (CIDR), scoped to a `(tenant, VRF)` pair.
 | `vlan` | FK → `VLAN` | NULL | Optional |
 | `site` | FK → `Site` | NULL | Optional |
 | `description` | text | `""` | |
+| `allocate_from_ranges` | bool | `false` | Only the IP ranges inside the prefix are allocatable: next available, free rows, pools and utilisation come from them; a new address outside every range is refused (see [IPAM objects](../features/ipam-objects.md#ip-ranges)) |
 | `custom_fields` | JSONB | `{}` | User-defined attributes |
 | `tags` | M2M Tag | empty | Via `TaggedItem` |
 
@@ -51,7 +52,9 @@ prefix and its contents can never disagree about which VRF they are in.
 |---|---|---|
 | `.network` | `ipaddress.IPv4Network \| IPv6Network \| None` | Parsed CIDR |
 | `.family` | `4`, `6`, or `None` | Convenience |
-| `.utilisation_pct` | `int 0-100 \| None` | None for IPv6, containers, and malformed CIDRs |
+| `.utilisation_pct` | `int 0-100 \| None` | None for IPv6, containers, and malformed CIDRs. With `allocate_from_ranges` on: used-in-range over the ranges' total size (None until a range exists) |
+| `.allocation_summary()` | `{size, used, free, ranges} \| None` | The allocation ranges' accounting (serialised as `allocation`); None when the prefix allocates from its whole network |
+| `.allocation_spans()` / `.in_allocation(addr)` | `[(start, end)]` / `bool` | The ranges as integer spans, and whether an address falls inside one |
 
 ## Lifecycle
 

@@ -376,7 +376,7 @@ function RenameImageDialog({
   const [name, setName] = useState(image.name || image.filename)
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Rename image</DialogTitle>
         </DialogHeader>
