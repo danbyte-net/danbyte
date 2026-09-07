@@ -107,7 +107,11 @@ connected, the row shows an *Undocumented* badge with a green tint, the
 legend shows how many are *undocumented*, and the flag clears itself the
 moment a real cable is attached to the port. Faceplates and photo panels draw
 such a port dimmed by default; **Settings → Admin → Faceplates → Light up
-ports marked connected** makes them draw it lit, like a cabled one. Reserving works two ways: create
+ports marked connected** makes them draw it lit, like a cabled one. The same
+card's **Show interface prefixes on rendered faceplates** prints the derived
+prefix (`Ethernet1/`) in front of each port group; it is off by default
+because on a dense switch it pushes the panel past its card. Label slots you
+place yourself in the faceplate editor always show. Reserving works two ways: create
 the cable ahead of time as *Planned* and the port counts as held, or reserve
 the single port directly when the far end isn't known yet. Most useful on
 patch panels and access switches, where "how full is this thing" is the

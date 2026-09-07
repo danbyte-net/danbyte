@@ -59,6 +59,8 @@ export function useMe() {
     humanIds: me.human_ids_enabled !== false,
     /** Faceplates light up ports that are only marked connected. */
     faceplateMarkedLit: me.faceplate_mark_connected_lit === true,
+    /** Rendered faceplates print the interface prefix before each port group. */
+    faceplateGroupLabels: me.faceplate_group_labels === true,
     /** May the user invite viewers to this specific site (delegation)?
      * True for admins/global editors ("all") or when the site is in their
      * delegable set. Always false when the deployment toggle is off. */

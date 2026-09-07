@@ -438,10 +438,15 @@ function GroupBlock({
   group: g,
   scale,
   observed,
+  showLabel,
 }: {
   group: ResolvedGroup
   scale: number
   observed?: Map<string, ObservedPort> | null
+  /** Print the derived interface prefix ("Ethernet1/") before the cages -
+   * a deployment setting, off by default: on dense switches it pushes the
+   * panel past its card. Authored label slots always render. */
+  showLabel: boolean
 }) {
   const cells = g.resolved.filter((r) => r.slot.t !== "label")
   const labels = g.resolved.filter((r) => r.slot.t === "label")
@@ -456,7 +461,7 @@ function GroupBlock({
       className="flex items-center gap-2"
       style={g.gapMm ? { marginLeft: Math.round(g.gapMm * scale) } : undefined}
     >
-      {g.label && (
+      {showLabel && g.label && (
         // Auto-derived from the interface prefix, which can be arbitrarily
         // long - capped so it can't run into the next group's cages (#130);
         // hover reveals the full name only when actually clipped.
@@ -515,6 +520,7 @@ function FaceplateLanes({
   scale: number
   observed?: Map<string, ObservedPort> | null
 }) {
+  const { faceplateGroupLabels } = useMe()
   const byLane = new Map<number, ResolvedGroup[]>()
   for (const g of resolved.groups) {
     const lane = g.u ?? 1
@@ -554,7 +560,12 @@ function FaceplateLanes({
                   style={{ columnGap: Math.round(PANEL_MM.groupGap * scale) }}
                 >
                   {divider && <div className="h-8 w-px shrink-0 bg-border" />}
-                  <GroupBlock group={g} scale={scale} observed={observed} />
+                  <GroupBlock
+                    group={g}
+                    scale={scale}
+                    observed={observed}
+                    showLabel={faceplateGroupLabels}
+                  />
                 </div>
               )
             })}

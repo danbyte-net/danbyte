@@ -236,9 +236,13 @@ function HumanIdsCard() {
 function FaceplatesCard() {
   const { data, save, savingKey } = useDeploymentSettings()
   const [lit, setLit] = useState(false)
+  const [groupLabels, setGroupLabels] = useState(false)
 
   useEffect(() => {
-    if (data) setLit(data.faceplate_mark_connected_lit)
+    if (data) {
+      setLit(data.faceplate_mark_connected_lit)
+      setGroupLabels(data.faceplate_group_labels)
+    }
   }, [data])
 
   if (!data) return null
@@ -249,10 +253,16 @@ function FaceplatesCard() {
       onSave={() =>
         save.mutate({
           key: "faceplates",
-          patch: { faceplate_mark_connected_lit: lit },
+          patch: {
+            faceplate_mark_connected_lit: lit,
+            faceplate_group_labels: groupLabels,
+          },
         })
       }
-      dirty={lit !== data.faceplate_mark_connected_lit}
+      dirty={
+        lit !== data.faceplate_mark_connected_lit ||
+        groupLabels !== data.faceplate_group_labels
+      }
       saving={savingKey === "faceplates"}
       saveLabel="Save faceplates"
     >
@@ -261,6 +271,12 @@ function FaceplatesCard() {
         checked={lit}
         onChange={setLit}
         hint="A port with an undocumented cable draws like a cabled one."
+      />
+      <FormCheckbox
+        label="Show interface prefixes on rendered faceplates"
+        checked={groupLabels}
+        onChange={setGroupLabels}
+        hint="The Ethernet1/ label in front of each port group. Off keeps dense panels inside their card."
       />
     </SettingsCard>
   )

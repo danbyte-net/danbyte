@@ -306,6 +306,8 @@ export interface Me {
   human_ids_enabled?: boolean
   /** Faceplates / photo ports draw "marked connected" ports lit like cabled. */
   faceplate_mark_connected_lit?: boolean
+  /** Rendered faceplates print the interface prefix before each port group. */
+  faceplate_group_labels?: boolean
   /** Whether the in-browser SSH terminal is enabled deployment-wide. */
   ssh_terminal_enabled?: boolean
   /** First-run wizard: true once this tenant has completed or skipped it. */
@@ -5385,6 +5387,7 @@ export interface DeploymentSettings {
   cert_digest_recipients: string
   human_ids_enabled: boolean
   faceplate_mark_connected_lit: boolean
+  faceplate_group_labels: boolean
   date_format: DateFormat
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */

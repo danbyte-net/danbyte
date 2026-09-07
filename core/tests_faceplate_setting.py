@@ -23,3 +23,17 @@ class FaceplateMarkedLitTests(APITestCase):
         ds.faceplate_mark_connected_lit = True
         ds.save()
         self.assertIs(self.client.get("/api/me/").json()["faceplate_mark_connected_lit"], True)
+
+    def test_group_labels_default_off_and_reach_me(self):
+        self.assertIs(self.client.get("/api/me/").json()["faceplate_group_labels"], False)
+        ds, _ = DeploymentSettings.objects.get_or_create(pk=1)
+        ds.faceplate_group_labels = True
+        ds.save()
+        self.assertIs(self.client.get("/api/me/").json()["faceplate_group_labels"], True)
+
+    def test_group_labels_saved_through_deployment_settings(self):
+        r = self.client.put(
+            "/api/deployment/email/", {"faceplate_group_labels": True}, format="json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIs(r.json()["faceplate_group_labels"], True)

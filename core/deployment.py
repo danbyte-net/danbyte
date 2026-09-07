@@ -110,6 +110,7 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "cert_digest_recipients",
             "human_ids_enabled",
             "faceplate_mark_connected_lit",
+            "faceplate_group_labels",
             "date_format",
             "time_style",
             "display_timezone",

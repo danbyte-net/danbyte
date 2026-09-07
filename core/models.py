@@ -600,6 +600,14 @@ class DeploymentSettings(TimestampedModel):
         help_text="Faceplates and photo ports light up ports marked connected "
                   "like cabled ones.",
     )
+    # The derived interface prefix ("Ethernet1/") in front of each port group
+    # on a rendered faceplate. Off by default: on dense switches it pushes the
+    # panel past its card and every device spawns with a scrollbar.
+    faceplate_group_labels = models.BooleanField(
+        default=False,
+        help_text="Rendered faceplates print each port group's interface prefix "
+                  "(Ethernet1/) in front of its cages.",
+    )
 
     # ─── in-app updates ──────────────────────────────────────────────────
     # Release repo Danbyte checks for updates. Blank = the official repo. The
