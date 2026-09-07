@@ -296,7 +296,11 @@ Tick rows to reveal a bulk bar with **Edit**, **Rename**, **Clone**, and
 - **Rename** - find/replace across the selected templates' names (optional
   regex), with a live before→after preview. Ideal for renumbering a bank of
   ports (`Gi` → `GigabitEthernet`, `1/0/` → `2/0/`). It refuses names that would
-  collide.
+  collide. Photo-port markers, faceplate slots, and the placed ports on
+  existing devices follow the rename, exactly as a single rename does - a
+  marker left on an old name would otherwise read as a port the type still
+  has, and syncing a device would stamp it a second time as a bare
+  component.
 - **Clone** - duplicate the selected templates, applying a find/replace so the
   copies get new names (e.g. clone `1/0/*` to `2/0/*` for a second line card);
   with no find/replace the copies get a “ copy” suffix. The same bulk bar (and

@@ -28,6 +28,7 @@ from customization.models import CustomField, CustomFieldGroup
 from .filters import apply_tag_filter
 from .cf_search import cf_text_q
 from .models import (
+    _TEMPLATE_MARKER_KIND,
     Antenna,
     AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
@@ -38,6 +39,7 @@ from .models import (
     Contact, ContactAssignment, ContactGroup, ContactRole, Device, DeviceType,
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
+    rename_marker_refs,
     FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
     FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
@@ -755,6 +757,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
             if model.objects.filter(**filt).exclude(pk__in=plan_ids).exists():
                 raise ValidationError({"name": f"'{new}' already exists here."})
 
+        olds = {r.pk: r.name for r, _ in plan}
         with transaction.atomic():
             for r, _new in plan:
                 model.objects.filter(pk=r.pk).update(name=f"__rn_{r.pk}")
@@ -763,7 +766,12 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 r.name = new
             log_bulk_update([r for r, _ in plan], {"name": "renamed"})
             self._assert_bulk_write_in_site_scope(list(plan_ids), action="change")
+            self._after_bulk_rename([(r, olds[r.pk], new) for r, new in plan])
         return Response({"renamed": len(plan)}, status=drf_status.HTTP_200_OK)
+
+    def _after_bulk_rename(self, renames) -> None:
+        """Hook for side effects a plain ``update(name=...)`` skips.
+        ``renames`` is ``[(row, old_name, new_name)]``."""
 
     @action(detail=False, methods=["post"], url_path="bulk-clone")
     def bulk_clone(self, request):
@@ -4540,6 +4548,20 @@ class _ComponentTemplateViewSet(NameRangeCreateMixin, ComponentBulkMixin, Tenant
     tenant_field = None
     bulk_str_fields = ("description",)
     bulk_name_scope_field = "device_type_id"
+
+    def _after_bulk_rename(self, renames) -> None:
+        # The bulk path writes names straight to the table, so the rename
+        # never reaches the template's save() hook. Follow it into the type's
+        # photo markers / faceplate slots and the child components' marker
+        # keys the same way a single rename does, or the placed ports orphan
+        # and sync keeps expecting the old names.
+        kind = _TEMPLATE_MARKER_KIND.get(self.queryset.model.__name__)
+        if not kind:
+            return
+        types: dict = {}
+        for row, old, new in renames:
+            dt = types.setdefault(row.device_type_id, row.device_type)
+            rename_marker_refs(dt, kind, old, new)
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)
