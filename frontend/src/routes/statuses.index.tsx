@@ -8,6 +8,7 @@ import { api, STATUSABLE_MODELS, type Status, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { ColorValueCell } from "@/components/cells/color-value-cell"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import {
   FilterRail,
@@ -23,6 +24,7 @@ import { RowActions } from "@/components/row-actions"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TaskStatusManager } from "@/components/planning/task-status-manager"
 import { useMe, objCan } from "@/lib/use-me"
+import { cssColor } from "@/lib/utils"
 
 export const Route = createFileRoute("/statuses/")({
   validateSearch: (s: Record<string, unknown>): { tab?: "tasks" } => ({
@@ -278,6 +280,12 @@ function buildColumns({
           />
         </Link>
       ),
+    },
+    {
+      id: "color",
+      accessorFn: (r) => cssColor(r.color) ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Color" />,
+      cell: ({ row }) => <ColorValueCell color={row.original.color} />,
     },
     {
       id: "available_to",
