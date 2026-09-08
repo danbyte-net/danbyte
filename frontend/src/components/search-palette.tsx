@@ -51,7 +51,8 @@ function isTypingTarget(el: EventTarget | null): boolean {
 // Result rows read as a striped table, not a stack of rounded cards: square
 // corners, a hairline between rows, every other row tinted.
 // Result groups are full-bleed tables: no inner padding, a top rule, and the
-// heading aligned with the rows. Row corners are squared in styles.css.
+// heading aligned with the rows. Items marked data-row get no rounding
+// from the command primitive.
 const GROUP_CLS = "border-t border-border/60 p-0 **:[[cmdk-group-heading]]:px-3"
 
 function rowCls(i: number): string {
