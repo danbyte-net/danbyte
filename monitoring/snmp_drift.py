@@ -356,7 +356,9 @@ def compute_device_drift(
     """
     if state is None:
         state = stack_state(device, tenant)
-    if state is None or not state.polled_at:
+    # No poll, or a poll that never reached the device, is no observation -
+    # comparing intent against nothing would flag every port stale (#153).
+    if state is None or not state.polled_at or state.reachable is False:
         return []
 
     items: list[dict] = []
@@ -807,7 +809,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
                "ips_assigned": 0, "ips_skipped": 0, "vlans_assigned": 0,
                "switch_links": 0}
     state = stack_state(device, tenant)
-    if state is None or not state.polled_at:
+    if state is None or not state.polled_at or state.reachable is False:
         return summary
 
     # The same observed-name map drift uses, so SNMP links hold here too -

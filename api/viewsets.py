@@ -1075,7 +1075,15 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             ("site", "site_id"), ("location", "location_id"),
         ):
             v = self.request.query_params.get(key)
-            if v:
+            if not v:
+                continue
+            # `?site=X&include_shared=1`: the site's prefixes plus the
+            # site-less shared space - what an IP picker for a device at X
+            # should offer, since transit and tunnel networks between sites
+            # live there (#152).
+            if key == "site" and self.request.query_params.get("include_shared"):
+                qs = qs.filter(Q(site_id=v) | Q(site__isnull=True))
+            else:
                 qs = qs.filter(**{field: v})
         # `contained_in=<cidr>`: only prefixes inside that network - the
         # aggregate page's Prefixes tab (#133). Postgres `<<=` on the stored
@@ -1501,7 +1509,12 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if vrf := p.get("vrf"):
             qs = qs.filter(prefix__vrf_id=vrf)
         if site := p.get("site"):
-            qs = qs.filter(prefix__site_id=site)
+            # With include_shared the site-less shared space rides along -
+            # the transit networks an IP picker must still offer (#152).
+            if p.get("include_shared"):
+                qs = qs.filter(Q(prefix__site_id=site) | Q(prefix__site__isnull=True))
+            else:
+                qs = qs.filter(prefix__site_id=site)
         if iface := p.get("assigned_interface"):
             qs = qs.filter(assigned_interface_id=iface)
         if role := p.get("role"):

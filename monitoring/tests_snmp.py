@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from django.utils import timezone
+
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
@@ -98,6 +100,37 @@ class SnmpPhase1Tests(APITestCase):
         self.assertEqual(r.status_code, 200)
         self.assertFalse(r.json()["reachable"])
         self.assertIn("No response", r.json()["error"])
+
+    @patch("danbyte_checks.snmp_facts.fetch_system_facts_sync", side_effect=SnmpFactsError("No response"))
+    def test_unreachable_poll_is_not_drift(self, _mock):
+        """#153: a poll that never reached the device must not turn every
+        documented port into "not seen on device", nor wipe the last good
+        observation."""
+        from api.models import Interface
+        from monitoring.models import DeviceSnmp
+
+        self._default_profile()
+        Interface.objects.create(device=self.device, name="Gi1/0/1")
+        Interface.objects.create(device=self.device, name="Gi1/0/2")
+        DeviceSnmp.objects.update_or_create(
+            device=self.device,
+            defaults={"tenant": self.tenant, "reachable": True, "polled_at": timezone.now(),
+                      "data": {"sys_name": "sw1"},
+                      "interfaces": [{"if_index": "1", "name": "Gi1/0/1", "admin_status": "up"}]},
+        )
+        r = self.client.post(
+            f"/api/monitoring/devices/{self.device.id}/snmp-poll/", {}, format="json"
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()["reachable"])
+        # the last good facts survive the failed poll
+        self.assertEqual(r.json()["data"]["sys_name"], "sw1")
+        self.assertEqual(len(r.json()["interfaces"]), 1)
+        d = self.client.get(f"/api/monitoring/devices/{self.device.id}/snmp/drift/").json()
+        self.assertEqual(d["drift"], [])
+        fleet = self.client.get("/api/monitoring/snmp-drift/").json()["results"]
+        mine = [x for x in fleet if x["device"] == str(self.device.id)]
+        self.assertTrue(all(x["status"] == "unreachable" for x in mine))
 
     def test_poll_without_a_profile_is_rejected(self):
         r = self.client.post(

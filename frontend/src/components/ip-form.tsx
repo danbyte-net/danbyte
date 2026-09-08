@@ -137,7 +137,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const selectedRange = ranges.find((r) => r.id === rangeId) ?? null
   const availableQuery = useQuery({
     queryKey: ["ip-range-available", rangeId ?? ""],
-    queryFn: () => api<IPRangeAvailable>(`/api/ip-ranges/${rangeId}/available/`),
+    queryFn: () =>
+      api<IPRangeAvailable>(`/api/ip-ranges/${rangeId}/available/`),
     enabled: !!rangeId,
   })
 
@@ -194,9 +195,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const [isPrimary, setIsPrimary] = useState(ip?.is_primary_for_device ?? false)
   // Same idea for a VM: the address it answers on (#122). Separate state
   // because an address is assigned to a device or a VM, never both.
-  const [isVmPrimary, setIsVmPrimary] = useState(
-    ip?.is_primary_for_vm ?? false
-  )
+  const [isVmPrimary, setIsVmPrimary] = useState(ip?.is_primary_for_vm ?? false)
   const [tagIds, setTagIds] = useState<number[]>(
     seed?.tags?.map((t) => t.id) ?? []
   )
@@ -242,7 +241,12 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     queryKey: ["prefixes-pick", siteFilter, vrfFilter],
     queryFn: () => {
       const p = new URLSearchParams({ page_size: "500" })
-      if (siteFilter) p.set("site", siteFilter)
+      // A site filter keeps the shared (site-less) space in the list: the
+      // tunnel and transit networks between sites live there (#152).
+      if (siteFilter) {
+        p.set("site", siteFilter)
+        p.set("include_shared", "1")
+      }
       if (vrfFilter) p.set("vrf", vrfFilter)
       return api<Paginated<Prefix>>(`/api/prefixes/?${p}`)
     },
@@ -494,7 +498,11 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                 <div className="grid gap-3 @md:grid-cols-2">
                   <FormCombobox
                     label="Site"
-                    hint="filter"
+                    hint={
+                      siteFilter
+                        ? "this site + shared subnets · pick Any site for another site's"
+                        : "filter"
+                    }
                     value={siteFilter}
                     onChange={(v) => {
                       setSiteFilter(v)
@@ -502,7 +510,11 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                       // filter - clearing a prefix the user just picked
                       // because they then narrowed to its own site was
                       // maddening. Only a prefix the filter excludes clears.
-                      if (v && selectedPrefix?.site?.id !== v)
+                      if (
+                        v &&
+                        selectedPrefix?.site &&
+                        selectedPrefix.site.id !== v
+                      )
                         setPrefixId(null)
                     }}
                     options={siteOpts}
@@ -517,8 +529,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                     value={vrfFilter}
                     onChange={(v) => {
                       setVrfFilter(v)
-                      if (v && selectedPrefix?.vrf?.id !== v)
-                        setPrefixId(null)
+                      if (v && selectedPrefix?.vrf?.id !== v) setPrefixId(null)
                     }}
                     options={vrfOpts}
                     noneLabel="Any VRF"
@@ -971,4 +982,3 @@ function RangePool({
     </div>
   )
 }
-

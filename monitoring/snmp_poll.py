@@ -79,14 +79,18 @@ def persist_snmp_result(tenant, profile, result, *, device=None, vm=None) -> Dev
     )
     state.tenant = tenant
     state.profile = profile
-    state.data = result.get("data") or {}
-    state.interfaces = result.get("interfaces") or []
-    state.neighbors = result.get("neighbors") or []
-    state.arp = result.get("arp") or []
-    state.fdb = result.get("fdb") or []
     state.reachable = bool(result.get("reachable"))
     state.error = (result.get("error") or "")[:500]
     state.polled_at = timezone.now()
+    # A failed poll says nothing about the device: keep the last good
+    # observation (drift skips it while unreachable) instead of replacing it
+    # with an empty one that would read as "every port vanished" (#153).
+    if state.reachable:
+        state.data = result.get("data") or {}
+        state.interfaces = result.get("interfaces") or []
+        state.neighbors = result.get("neighbors") or []
+        state.arp = result.get("arp") or []
+        state.fdb = result.get("fdb") or []
     state.save()
     if state.reachable and state.interfaces:
         record_samples(tenant, state.interfaces, state.polled_at,

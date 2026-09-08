@@ -94,10 +94,7 @@ export function AssignIpDialog({
   // device in site X almost always wants an address from X. Seeded once per
   // open - clearing back to "Any site" sticks.
   const targetObj = useQuery({
-    queryKey: [
-      "assign-ip-target-site",
-      target?.deviceId ?? target?.vmId ?? "",
-    ],
+    queryKey: ["assign-ip-target-site", target?.deviceId ?? target?.vmId ?? ""],
     queryFn: () =>
       api<{ site: { id: string } | null }>(
         target?.deviceId
@@ -139,7 +136,12 @@ export function AssignIpDialog({
     queryFn: () => {
       const p = new URLSearchParams({ page_size: "500" })
       if (vrf) p.set("vrf", vrf)
-      if (site) p.set("site", site)
+      // The site's subnets plus the shared space, where tunnel and transit
+      // networks between sites live (#152).
+      if (site) {
+        p.set("site", site)
+        p.set("include_shared", "1")
+      }
       return api<Paginated<Prefix>>(`/api/prefixes/?${p}`)
     },
     enabled: open,
@@ -151,7 +153,10 @@ export function AssignIpDialog({
     queryKey: ["ips-assign", site, vrf, prefix, debounced],
     queryFn: () => {
       const p = new URLSearchParams({ page_size: String(RESULT_CAP) })
-      if (site) p.set("site", site)
+      if (site) {
+        p.set("site", site)
+        p.set("include_shared", "1")
+      }
       if (vrf) p.set("vrf", vrf)
       if (prefix) p.set("prefix", prefix)
       if (debounced) p.set("search", debounced)
@@ -254,7 +259,7 @@ export function AssignIpDialog({
               setSite(v)
               // Keep a subnet filter that survives the new site.
               const row = prefixes.data?.results.find((x) => x.id === prefix)
-              if (v && row?.site?.id !== v) setPrefix(null)
+              if (v && row?.site && row.site.id !== v) setPrefix(null)
             }}
             options={siteOpts}
             noneLabel="Any site"
@@ -324,8 +329,7 @@ export function AssignIpDialog({
                     >
                       <span
                         className={
-                          "font-mono" +
-                          (home ? " text-muted-foreground" : "")
+                          "font-mono" + (home ? " text-muted-foreground" : "")
                         }
                       >
                         {ip.ip_address}
