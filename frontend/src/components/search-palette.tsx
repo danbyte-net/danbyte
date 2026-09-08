@@ -158,7 +158,7 @@ export function SearchPalette() {
               }
             }}
           />
-          <CommandList className="max-h-[60vh]">
+          <CommandList className="mt-2 max-h-[60vh]">
             {debounced.length === 0 && (
               <>
                 {recents.length > 0 && (
