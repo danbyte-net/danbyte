@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "search.apps.SearchConfig",
     "monitoring.apps.MonitoringConfig",
     "planning.apps.PlanningConfig",
+    "backups.apps.BackupsConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -515,6 +516,9 @@ STATICFILES_DIRS: list = []
 # Uploaded media (device-type rack images, …).
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# Where the default backup target writes - the same sibling directory the
+# upgrade scripts used for their pre-upgrade dumps (#27).
+DANBYTE_BACKUP_DIR = Path(os.getenv("DANBYTE_BACKUP_DIR", str(BASE_DIR.parent / "danbyte-backups")))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

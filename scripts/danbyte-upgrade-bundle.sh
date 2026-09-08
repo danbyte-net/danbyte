@@ -65,42 +65,17 @@ SRC="$(find "$TMP" -maxdepth 1 -type d -name 'danbyte-*' | head -1)"
 
 status running backup 15
 mkdir -p "$BACKUP_DIR"
-if command -v pg_dump >/dev/null 2>&1; then
-  eval "$("$PY" - <<'PYEOF' 2>/dev/null || true
-import django, os
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "danbyte.settings"); django.setup()
-from django.conf import settings
-d = settings.DATABASES["default"]
-print(f"PGDB={d.get('NAME','')}; PGUSER={d.get('USER','')}; "
-      f"PGHOST={d.get('HOST') or 'localhost'}; PGPORT={d.get('PORT') or 5432}; "
-      f"export PGPASSWORD={d.get('PASSWORD','')}")
-PYEOF
-)"
-  BACKUP_FILE="$BACKUP_DIR/db-pre-$VERSION-$(date +%s).sql.gz"
-  # Don't rely on a pipe's exit status (gzip masks pg_dump's). Dump to a temp
-  # file, check pg_dump succeeded AND produced a non-trivial file, THEN gzip -
-  # a failed/empty backup must abort BEFORE any migration, not silently proceed.
-  DUMP_TMP="$BACKUP_DIR/.db-pre-$VERSION.sql.tmp"
-  DUMP_ERR="$BACKUP_DIR/.db-pre-$VERSION.err"
-  # -w: never prompt for a password. Detached (no tty), a prompt would block
-  # forever - the classic "stuck on Backup…". `timeout` bounds a wedged
-  # connection too. Capture stderr so the real reason reaches the UI.
-  [ -n "${PGPASSWORD:-}" ] || PG_NOPW="-w"
-  if command -v timeout >/dev/null 2>&1; then DUMP_TIMEOUT="timeout 900"; else DUMP_TIMEOUT=""; fi
-  if $DUMP_TIMEOUT pg_dump ${PG_NOPW:-} -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" \
-       -U "${PGUSER:-}" "${PGDB:-}" > "$DUMP_TMP" 2>"$DUMP_ERR" \
-     && [ -s "$DUMP_TMP" ]; then
-    gzip -c "$DUMP_TMP" > "$BACKUP_FILE"
-    rm -f "$DUMP_TMP" "$DUMP_ERR"
-  else
-    reason="$(tail -c 300 "$DUMP_ERR" 2>/dev/null | tr '\n' ' ')"
-    rm -f "$DUMP_TMP" "$DUMP_ERR"
-    [ -n "$reason" ] || reason="pg_dump errored or produced an empty dump (timed out after 900s, or auth/connection failed)"
-    fail backup "db backup failed - aborting before any migration: $reason"
-  fi
+# The engine makes the pre-upgrade backup (database, media, config) so it is
+# listed, restorable and pruned like every other backup. A missing pg_dump
+# is a hard stop unless DANBYTE_SKIP_BACKUP=1 says the operator has their own.
+if [ "${DANBYTE_SKIP_BACKUP:-0}" = "1" ]; then
+  echo "danbyte-upgrade: DANBYTE_SKIP_BACKUP=1 - skipping the pre-upgrade backup" >&2
 else
-  echo "upgrade: pg_dump not found - skipping db backup" >&2
+  BACKUP_OUT="$("$PY" manage.py backup_now --kind pre_upgrade 2>"$BACKUP_DIR/.pre-upgrade.err")" \
+    || fail backup "pre-upgrade backup failed - aborting before any migration: $(tail -c 300 "$BACKUP_DIR/.pre-upgrade.err" 2>/dev/null | tr '\n' ' ')"
+  echo "danbyte-upgrade: backup $BACKUP_OUT" >&2
 fi
+
 # Code backup for rollback (skip the heavy, regenerable trees).
 BACKUP="$BACKUP_DIR/code-pre-$VERSION-$(date +%s).tgz"
 tar -C "$CODE_DIR" --exclude=./.venv --exclude=./vendor --exclude=./frontend/node_modules \

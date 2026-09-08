@@ -56,6 +56,7 @@ class Command(BaseCommand):
         self._seed_statuses()
         self._seed_roles()
         self._seed_connect_protocols()
+        self._seed_backup_target()
         self._maybe_create_superuser()
 
     def _ensure_default_tenant(self, name):
@@ -112,6 +113,12 @@ class Command(BaseCommand):
                     f"Seeded Connect protocols for {tenant.name}: {created} new."
                 )
             )
+
+    def _seed_backup_target(self):
+        from backups.seeds import default_target
+
+        target = default_target()
+        self.stdout.write(f"backup target: {target.name} -> {target.location}")
 
     def _maybe_create_superuser(self):
         username = os.environ.get("DJANGO_SUPERUSER_USERNAME")

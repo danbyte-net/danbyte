@@ -137,6 +137,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Retention - drop old check results and changelog rows",
     ),
     ScheduledTask(
+        unit="danbyte-backups",
+        commands=("run_backups",),
+        every=5 * MINUTE,
+        label="Start backup schedules that are due",
+    ),
+    ScheduledTask(
         unit="danbyte-search-reindex",
         commands=("rebuild_search_index",),
         at=("03:40",),

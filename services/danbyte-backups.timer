@@ -1,0 +1,11 @@
+[Unit]
+Description=Start due Danbyte backup schedules
+
+[Timer]
+OnCalendar=*:0/5
+OnBootSec=120
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target
