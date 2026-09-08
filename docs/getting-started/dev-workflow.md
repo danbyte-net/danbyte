@@ -56,6 +56,15 @@ DB_HOST=127.0.0.1 DB_USER=danbyte DB_PASSWORD=danbyte DB_NAME=danbyte \
 make backend-restart
 ```
 
+## Releases that need an operator step
+
+When a change needs something on the host that no migration can do (a
+reverse-proxy location, a volume, a package), add an `UpgradeNote` to
+`core/upgrade_notes.py` in the same change: id, version, title, a short
+body, the snippet to paste, the docs anchor, and the platforms it applies
+to. Admins see it after upgrading until they mark it done - see
+[Upgrading → After an upgrade](upgrading.md#after-an-upgrade).
+
 ## Docs while you work
 
 ```bash

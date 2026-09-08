@@ -632,6 +632,9 @@ class DeploymentSettings(TimestampedModel):
     update_window_days = models.CharField(max_length=32, blank=True, default="")
     update_window_start = models.CharField(max_length=5, blank=True, default="")
     update_window_end = models.CharField(max_length=5, blank=True, default="")
+    # Ids of the post-upgrade steps (core/upgrade_notes.py) an admin marked
+    # done. A fresh install starts with everything up to its version.
+    upgrade_notes_done = models.JSONField(default=list, blank=True)
 
     class Meta:
         verbose_name = "deployment settings"
@@ -646,7 +649,16 @@ class DeploymentSettings(TimestampedModel):
 
     @classmethod
     def load(cls) -> "DeploymentSettings":
-        obj, _ = cls.objects.get_or_create(pk=1)
+        obj, created = cls.objects.get_or_create(pk=1)
+        if created:
+            # First run: nothing to do "after upgrading" to the version we
+            # were installed at. An upgraded install keeps [] from the
+            # migration, so its notes stay pending.
+            from .upgrade_notes import ids_up_to
+            from .version import system_version
+
+            obj.upgrade_notes_done = ids_up_to(system_version()["version"])
+            obj.save(update_fields=["upgrade_notes_done"])
         return obj
 
 

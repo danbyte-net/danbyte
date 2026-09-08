@@ -6,6 +6,7 @@ import { BookmarkButton } from "@/components/bookmark-button"
 import { NotificationBell } from "@/components/notification-bell"
 import { DocsButton } from "@/components/docs-button"
 import { UpdateBadge } from "@/components/update-badge"
+import { UpgradeNotesBadge } from "@/components/upgrade-notes-badge"
 import { PresenceBar } from "@/components/presence-bar"
 import { usePresentUsers } from "@/lib/presence-context"
 import { useMe } from "@/lib/use-me"
@@ -62,6 +63,7 @@ export function SiteHeader({ crumbs }: { crumbs?: Crumb[] }) {
           <h1 className="text-base font-medium">{brandName}</h1>
         )}
         <UpdateBadge />
+        <UpgradeNotesBadge />
         <div className="ml-auto flex items-center gap-2">
           <PresenceBar present={present} />
           {present.length > 0 && (

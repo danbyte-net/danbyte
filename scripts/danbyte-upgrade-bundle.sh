@@ -128,3 +128,4 @@ rm -f "$MAINT" "$TARBALL"
 rm -rf "$TMP"
 status done done 100
 echo "upgrade: now on $VERSION (from bundle)"
+"$PY" manage.py upgrade_notes 2>/dev/null || true   # steps an admin still has to do

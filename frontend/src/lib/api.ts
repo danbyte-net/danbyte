@@ -4481,6 +4481,24 @@ export interface SystemInfo {
 }
 
 /** GET /api/system/updates - current version + the release repo's versions. */
+/** One operator step the running version needs after upgrading. */
+export interface UpgradeNote {
+  id: string
+  version: string
+  title: string
+  body: string
+  snippet: string
+  docs: string
+  platforms: string[]
+}
+
+export interface UpgradeNotes {
+  version: string
+  deployment: string
+  pending: UpgradeNote[]
+  done: string[]
+}
+
 export interface SystemUpdates {
   current: { version: string; commit: string }
   repo_url: string

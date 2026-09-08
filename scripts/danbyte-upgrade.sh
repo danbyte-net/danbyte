@@ -140,3 +140,4 @@ done
 rm -f "$MAINT"   # healthy again - drop the "updating" page
 status done done 100
 echo "upgrade: now on $VERSION"
+"$PY" manage.py upgrade_notes 2>/dev/null || true   # steps an admin still has to do

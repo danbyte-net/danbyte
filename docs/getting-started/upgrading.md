@@ -232,6 +232,25 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
                           "$APP/.upgrade-status.json" "$APP/.upgrade-bundle.tar.gz"
     ```
 
+## After an upgrade
+
+Some releases need a step no migration can do - an nginx location, a new
+volume, a system package. Each release ships its list, and after any
+upgrade path (in-app, bundle, automatic, Docker) deployment admins see:
+
+- an amber **After upgrade: N steps** badge in the top bar,
+- a card at the top of **Settings → Updates** with each step, its snippet
+  and a docs link, and a **Done** button per step (or **Mark all done**),
+- the same list in the in-app upgrade dialog's success message.
+
+The steps stay until marked done; they are not re-checked automatically.
+A fresh install starts with nothing pending. From the shell:
+
+```bash
+manage.py upgrade_notes              # print the pending steps (the upgrade scripts do this at the end)
+manage.py upgrade_notes --ack all    # or --ack <id>
+```
+
 ## Search index
 
 Global search runs on an index table. The upgrade scripts and the container

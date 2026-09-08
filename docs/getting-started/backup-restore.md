@@ -168,6 +168,30 @@ email, webhook, Slack, Teams, Discord, PagerDuty. A failed run of any kind
 also mails the deployment **digest recipients** (Settings → Email). A
 manual run that succeeds notifies nobody.
 
+## Reverse proxy
+
+Archives stream through `/api/backups/` and can be several gigabytes. The
+nginx templates the installer writes carry a location for it; a hand-managed
+nginx config needs it added before the existing `/api/` location (with `^~`
+when that location is a regex):
+
+```nginx
+location ^~ /api/backups/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_request_buffering off;
+    proxy_read_timeout 600s;
+    client_max_body_size 8g;
+}
+```
+
+Then `sudo nginx -t && sudo systemctl reload nginx`. Without it, uploads over
+the server's default body limit and slow downloads fail; backups themselves
+still run.
+
 ## Docker
 
 The compose stack mounts a `backups` volume and the `media` volume into

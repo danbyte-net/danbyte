@@ -9,6 +9,8 @@ import type {
   SystemInfo,
   SystemUpdates,
   SystemUpgradeStatus,
+  UpgradeNote,
+  UpgradeNotes,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { docsUrl } from "@/lib/docs"
 
 export const Route = createFileRoute("/settings/updates")({
   component: UpdatesSettingsPage,
@@ -110,6 +113,30 @@ function UpdatesSettingsPage() {
     // Keep polling through the restart; failed fetches just retry.
     refetchInterval: 2000,
     retry: true,
+  })
+  // Steps the *new* version needs from an operator - shown on success, and
+  // the badge/card below carry them until an admin marks them done.
+  const notes = useQuery({
+    queryKey: ["upgrade-notes"],
+    queryFn: () => api<UpgradeNotes>("/api/system/upgrade-notes/"),
+    enabled: canManage,
+  })
+  const notesAfter = useQuery({
+    queryKey: ["upgrade-notes", "after-upgrade"],
+    queryFn: () => api<UpgradeNotes>("/api/system/upgrade-notes/"),
+    enabled: upgrading && status.data?.state === "done",
+    retry: true,
+  })
+  const ackNotes = useMutation({
+    mutationFn: (ids: string[] | "all") =>
+      api<UpgradeNotes>("/api/system/upgrade-notes/ack/", {
+        method: "POST",
+        body: JSON.stringify(ids === "all" ? { all: true } : { ids }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["upgrade-notes"] })
+    },
+    onError: (e) => apiErrorToast(e),
   })
   const upgrade = useMutation({
     mutationFn: (version: string) =>
@@ -291,6 +318,39 @@ docker compose -f docker-compose.prod.yml up -d`}
           ))}
         </dl>
       </section>
+
+      {/* Steps this version still needs from an operator. Hidden once done. */}
+      {(notes.data?.pending.length ?? 0) > 0 && (
+        <section className="space-y-3 rounded-lg border border-amber-500/40 bg-card p-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">After this upgrade</h3>
+            <Badge variant="warning">
+              {notes.data!.pending.length === 1
+                ? "1 step"
+                : `${notes.data!.pending.length} steps`}
+            </Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              onClick={() => ackNotes.mutate("all")}
+              disabled={ackNotes.isPending}
+            >
+              Mark all done
+            </Button>
+          </div>
+          <div className="divide-y divide-border">
+            {notes.data!.pending.map((n) => (
+              <UpgradeNoteRow
+                key={n.id}
+                note={n}
+                onDone={() => ackNotes.mutate([n.id])}
+                busy={ackNotes.isPending}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Release repo config */}
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">
@@ -624,6 +684,24 @@ docker compose -f docker-compose.prod.yml up -d`}
                 </span>
               )}
             </div>
+            {st?.state === "done" &&
+              (notesAfter.data?.pending.length ?? 0) > 0 && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-[13px]">
+                  <div className="font-medium">
+                    {notesAfter.data!.pending.length === 1
+                      ? "1 step to do after this upgrade"
+                      : `${notesAfter.data!.pending.length} steps to do after this upgrade`}
+                  </div>
+                  <ul className="mt-1 list-disc pl-5">
+                    {notesAfter.data!.pending.map((n) => (
+                      <li key={n.id}>{n.title}</li>
+                    ))}
+                  </ul>
+                  <div className="mt-1 text-muted-foreground">
+                    Listed on this page after you reload.
+                  </div>
+                </div>
+              )}
             {st?.state === "done" && (
               <Button size="sm" onClick={() => window.location.reload()}>
                 Reload
@@ -641,6 +719,52 @@ docker compose -f docker-compose.prod.yml up -d`}
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function UpgradeNoteRow({
+  note,
+  onDone,
+  busy,
+}: {
+  note: UpgradeNote
+  onDone: () => void
+  busy: boolean
+}) {
+  return (
+    <div className="space-y-2 py-3 first:pt-0 last:pb-0">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-medium">{note.title}</span>
+            <Badge variant="secondary" className="font-mono text-[11px]">
+              v{note.version}
+            </Badge>
+          </div>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
+            {note.body}
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={onDone} disabled={busy}>
+          Done
+        </Button>
+      </div>
+      {note.snippet && (
+        <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
+          {note.snippet}
+        </pre>
+      )}
+      {note.docs && (
+        <a
+          className="link text-xs"
+          href={docsUrl(note.docs)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Docs
+        </a>
+      )}
     </div>
   )
 }

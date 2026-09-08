@@ -124,10 +124,11 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "update_window_days",
             "update_window_start",
             "update_window_end",
+            "upgrade_notes_done",
             "updated_at",
         ]
         read_only_fields = ["updated_at", "config_drift_last_run", "favicon_url",
-                        "login_logo_url"]
+                        "login_logo_url", "upgrade_notes_done"]
 
     def get_favicon_url(self, obj) -> str | None:
         if not obj.favicon:
@@ -872,6 +873,37 @@ def system_info(request):
         description="Current version, release-repo versions with changelog, and update-available flag.",
     ),
 )
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def upgrade_notes(request):
+    """Operator steps the running version still needs (core/upgrade_notes.py).
+    Network-free; deployment admins only."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from .upgrade_notes import payload
+
+    return Response(payload(DeploymentSettings.load()))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upgrade_notes_ack(request):
+    """Mark steps done: ``{"ids": [...]}`` or ``{"all": true}``."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from .upgrade_notes import acknowledge, payload
+
+    dep = DeploymentSettings.load()
+    if request.data.get("all"):
+        acknowledge(dep, None)
+    else:
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            return Response({"ids": ["Expected a list of step ids."]}, status=400)
+        acknowledge(dep, ids)
+    return Response(payload(dep))
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def system_updates(request):
