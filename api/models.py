@@ -7122,6 +7122,9 @@ class SearchEntry(models.Model):
     subtitle = models.CharField(max_length=255, blank=True, default="")
     body = models.TextField(blank=True, default="")
     facets = models.JSONField(default=dict, blank=True)
+    # Display values for the result row (site, status with colour, role,
+    # device, VRF, rack, …) - facets hold the folded forms for matching.
+    context = models.JSONField(default=dict, blank=True)
     url = models.CharField(max_length=255)
     weight = models.PositiveSmallIntegerField(default=5)
     updated_at = models.DateTimeField(auto_now=True)

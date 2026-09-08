@@ -4065,6 +4065,15 @@ export interface SearchHit {
   url: string
   score: number
   numid: number | null
+  /** Display context: site, location, rack, role, device, VRF, … and a
+   * status pill. Keys vary per type. */
+  context: Record<string, string | SearchStatus>
+}
+
+export interface SearchStatus {
+  name: string
+  color: string
+  text_color: string
 }
 
 export interface SearchResponse {

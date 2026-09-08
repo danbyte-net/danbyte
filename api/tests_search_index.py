@@ -80,6 +80,10 @@ class IndexTests(_Base):
         self.assertEqual(entry.title, "aarhus-fw1")
         self.assertEqual(entry.facets["site"], ["arhus dc"])
         self.assertEqual(entry.facets["role"], ["firewall"])
+        self.assertEqual(entry.context["site"], "Århus DC")
+        self.assertEqual(entry.context["role"], "Firewall")
+        hit = next(h for h in self._hits("aarhus-fw1")["hits"] if h["id"] == str(self.fw.id))
+        self.assertEqual(hit["context"]["site"], "Århus DC")
         self.fw.name = "aarhus-fw9"
         self.fw.save()
         self.assertEqual(SearchEntry.objects.get(object_id=self.fw.id).title, "aarhus-fw9")

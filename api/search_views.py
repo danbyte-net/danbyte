@@ -16,6 +16,7 @@ caller's RBAC row scope for its type before it is returned.
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 import shlex
 
@@ -90,7 +91,7 @@ def parse_query(raw: str) -> tuple[str, dict[str, list[str]]]:
 
 
 _RANK_SQL = """
-SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid,
+SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid, e.context,
        (CASE
           WHEN danbyte_fold(e.title) = %(q)s THEN 4.0
           WHEN danbyte_fold(e.title) LIKE %(prefix)s THEN 3.0
@@ -116,7 +117,7 @@ LIMIT %(limit)s
 """
 
 _BROWSE_SQL = """
-SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid,
+SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid, e.context,
        e.weight / 10.0 AS score
 FROM api_searchentry e
 WHERE (e.tenant_id = %(tenant)s OR (e.tenant_id IS NULL AND e.object_type = 'tag'))
@@ -177,7 +178,16 @@ def ranked_candidates(q: str, tokens: dict, tenant) -> list[dict]:
     with connection.cursor() as cur:
         cur.execute(sql, params)
         cols = [c[0] for c in cur.description]
-        return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+        rows = [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+    # A raw cursor returns jsonb as text; the ORM would have decoded it.
+    for r in rows:
+        for key in ("facets", "context"):
+            if isinstance(r.get(key), str):
+                try:
+                    r[key] = json.loads(r[key])
+                except ValueError:
+                    r[key] = {}
+    return rows
 
 
 def _network_hits(q: str, tenant) -> list[dict]:
@@ -205,6 +215,7 @@ def _network_hits(q: str, tenant) -> list[dict]:
             "object_type": "prefix", "object_id": p.id, "title": str(p.cidr),
             "subtitle": f"contains {net}" if str(net) != str(p.cidr) else (p.description or ""),
             "url": f"/prefixes/{p.id}", "facets": {}, "numid": getattr(p, "numid", None),
+            "context": {"vrf": p.vrf.name} if p.vrf_id else {},
             # An exact CIDR outranks everything; among containing prefixes the
             # most specific comes first.
             "score": 4.6 if str(net) == str(p.cidr) else 3.6 + p_len / 1000.0,
@@ -312,6 +323,7 @@ def search(request):
             "url": r["url"],
             "score": round(float(r["score"]), 3),
             "numid": r.get("numid"),
+            "context": r.get("context") or {},
         }
         for r in page
     ]

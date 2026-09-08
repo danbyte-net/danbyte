@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
+import { SearchHitContext } from "@/components/search-hit-context"
 import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/search")({
@@ -144,7 +145,7 @@ function SearchResultsPage() {
                     size="sm"
                     variant="outline"
                     disabled={query.data.next_cursor === null}
-                    onClick={() => setCursor(query.data!.next_cursor ?? cursor)}
+                    onClick={() => setCursor(query.data?.next_cursor ?? cursor)}
                   >
                     Next
                   </Button>
@@ -199,7 +200,13 @@ function HitRow({ hit, q }: { hit: SearchHit; q: string }) {
         </Link>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {hit.subtitle ? <Highlight text={hit.subtitle} q={q} /> : "-"}
+        {hit.subtitle && (
+          <div className="mb-0.5">
+            <Highlight text={hit.subtitle} q={q} />
+          </div>
+        )}
+        <SearchHitContext hit={{ ...hit, subtitle: "" }} />
+        {!hit.subtitle && Object.keys(hit.context).length === 0 && "-"}
       </TableCell>
     </TableRow>
   )

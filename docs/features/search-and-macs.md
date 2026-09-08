@@ -16,7 +16,8 @@ and ranges, sites, racks, VLANs, VRFs, VMs, interfaces, MAC addresses,
 circuits, tunnels, wireless LANs, ASNs, aggregates, contacts, the catalog
 objects, tags and more. Arrow keys move, **Enter** opens the highlighted hit,
 and **See all results** opens the full `/search` page with type tabs and
-paging. The palette's empty state lists what you opened and searched
+paging. Every hit carries what tells similar objects apart: its status pill
+and its site, location, rack, role, type, device, VRF, VLAN or cluster. The palette's empty state lists what you opened and searched
 recently in this browser.
 
 ### How matching works

@@ -284,6 +284,77 @@ def _facets(obj, spec: IndexSpec) -> dict:
     return out
 
 
+# Relations shown on a result row, in this order. Value is the related
+# object's display name; status carries its colour so it renders as a pill.
+_CONTEXT_RELATIONS = (
+    ("status", "status"), ("site", "site"), ("location", "location"),
+    ("region", "region"), ("rack", "rack"), ("role", "role"), ("device", "device"),
+    ("vm", "vm"), ("device_type", "type"), ("platform", "platform"),
+    ("cluster", "cluster"), ("vrf", "vrf"), ("vlan", "vlan"), ("provider", "provider"),
+    ("manufacturer", "manufacturer"), ("group", "group"), ("rir", "rir"),
+    ("prefix", "prefix"), ("assigned_device", "device"), ("assigned_interface", "interface"),
+    ("primary_ip", "ip"), ("master", "master"), ("zone", "zone"),
+)
+
+
+def _display(rel) -> str:
+    for attr in ("name", "model", "cid", "ssid", "cidr", "ip_address", "prefix", "label"):
+        v = getattr(rel, attr, None)
+        if v:
+            if attr == "cidr" or attr == "ip_address" or attr == "prefix":
+                return str(v)
+            return str(v)
+    return str(rel)
+
+
+def _context(obj, spec: IndexSpec) -> dict:
+    out: dict = {}
+    for attr, key in _CONTEXT_RELATIONS:
+        if key in out or not _has_field(obj, attr):
+            continue
+        try:
+            rel = getattr(obj, attr, None)
+        except Exception:  # noqa: BLE001
+            continue
+        if rel is None or isinstance(rel, (str, int)):
+            continue
+        if key == "status":
+            out["status"] = {
+                "name": rel.name,
+                "color": getattr(rel, "color", "") or "",
+                "text_color": getattr(rel, "text_color", "") or "",
+            }
+            continue
+        if key == "vlan" and getattr(rel, "vlan_id", None) is not None:
+            out["vlan"] = f"{rel.vlan_id} · {rel.name}"
+            continue
+        if key == "rack":
+            pos = getattr(obj, "position", None)
+            out["rack"] = f"{rel.name} · U{pos}" if pos else rel.name
+            continue
+        out[key] = _display(rel)
+    # Things worth reading off the row that aren't relations.
+    for attr, key in (("dns_name", "dns"), ("serial_number", "serial"),
+                      ("asset_tag", "asset"), ("part_number", "part")):
+        if _has_field(obj, attr):
+            v = getattr(obj, attr, None)
+            if v:
+                out[key] = str(v)
+    if obj._meta.model_name == "interface" and getattr(obj, "device_id", None):
+        site = getattr(obj.device, "site", None)
+        if site is not None:
+            out.setdefault("site", site.name)
+    if obj._meta.model_name == "virtualmachine":
+        vc = getattr(obj, "vcpus", None)
+        mem = getattr(obj, "memory_mb", None)
+        if vc or mem:
+            out["size"] = " · ".join(
+                b for b in (f"{vc} vCPU" if vc else "", f"{mem // 1024} GB" if mem and mem % 1024 == 0
+                            else f"{mem} MB" if mem else "") if b
+            )
+    return out
+
+
 def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
     """The SearchEntry field values for ``obj``, or None when it must not be
     indexed (no tenant to scope it to)."""
@@ -310,6 +381,7 @@ def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
         "subtitle": (str(subtitle) if subtitle not in (None, "") else "")[:255],
         "body": _body(obj, spec),
         "facets": _facets(obj, spec),
+        "context": _context(obj, spec),
         "url": spec.url.format(id=obj.pk, mac_address=getattr(obj, "mac_address", "")),
         "weight": spec.weight,
     }

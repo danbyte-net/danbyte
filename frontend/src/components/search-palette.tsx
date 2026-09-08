@@ -12,6 +12,7 @@ import {
   rememberQuery,
 } from "@/lib/search-recents"
 import { Badge } from "@/components/ui/badge"
+import { SearchHitContext } from "@/components/search-hit-context"
 import { Button } from "@/components/ui/button"
 import {
   Command,
@@ -221,7 +222,9 @@ export function SearchPalette() {
 function HitRow({
   hit,
 }: {
-  hit: Pick<SearchHit, "type_label" | "title" | "subtitle">
+  hit: Pick<SearchHit, "type_label" | "title" | "subtitle"> & {
+    context?: SearchHit["context"]
+  }
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -229,11 +232,11 @@ function HitRow({
         {hit.type_label}
       </Badge>
       <span className="truncate font-mono text-xs">{hit.title}</span>
-      {hit.subtitle && (
-        <span className="truncate text-[11px] text-muted-foreground">
-          {hit.subtitle}
-        </span>
-      )}
+      <SearchHitContext
+        hit={{ context: hit.context ?? {}, subtitle: hit.subtitle }}
+        max={3}
+        className="ml-auto justify-end"
+      />
     </div>
   )
 }

@@ -1,3 +1,5 @@
+import type { SearchHit } from "@/lib/api"
+
 /** Recent searches and opened hits, per browser - the palette's empty state. */
 export interface RecentSearch {
   q: string
@@ -10,6 +12,7 @@ export interface RecentHit {
   title: string
   subtitle: string
   url: string
+  context?: SearchHit["context"]
   at: number
 }
 
