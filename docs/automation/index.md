@@ -14,6 +14,7 @@ devices, render configs, and notify other systems when things change.
 
 | Page | What it's for |
 |---|---|
+| [Scripts](../features/scripts.md) | Write Python that reads and writes Danbyte as you - bulk edits and CSV reports, on a button or a schedule. |
 | [Config contexts](../features/config-contexts.md) | Attach configuration data to devices/VMs by matching site, role, platform, and more. |
 | [Export templates](../features/export-templates.md) | Render objects to text (configs, reports) with templates. |
 | [Config drift (Ansible/Terraform)](../features/iac-runner.md) | Run an external Ansible/Terraform runner against Danbyte as source of truth; report config drift and sync. |

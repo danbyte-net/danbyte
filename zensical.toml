@@ -111,6 +111,7 @@ nav = [
   ] },
   { "Integrations & automation" = [
     "automation/index.md",
+    { "Scripts"           = "features/scripts.md" },
     { "Config drift (Ansible/Terraform)" = "features/iac-runner.md" },
     { "Advanced: custom-field-driven playbook" = "features/cf-driven-playbook.md" },
     { "Webhooks"          = "features/webhooks.md" },
@@ -152,6 +153,7 @@ nav = [
   ] },
   { "Reference" = [
     { "REST API & OpenAPI" = "reference/api.md" },
+    { "Script SDK"        = "reference/scripts-sdk.md" },
     { "URL routes"        = "reference/url-routes.md" },
     { "Settings"          = "reference/settings.md" },
     { "Makefile"          = "reference/makefile.md" },

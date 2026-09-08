@@ -24,6 +24,7 @@ import {
   useFieldErrors,
   type SelectOption,
 } from "@/components/forms"
+import { CodeEditor } from "@/components/code-editor"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { useSaveObject } from "@/lib/save-object"
@@ -239,15 +240,13 @@ export function ExportTemplateForm({
           hint={contextHint}
           error={clientErrors.template_code || fieldErrors.template_code}
         >
-          <textarea
+          <CodeEditor
             value={code}
-            onChange={(e) => {
-              setCode(e.target.value)
+            onChange={(v) => {
+              setCode(v)
               setClientErrors((err) => ({ ...err, template_code: "" }))
             }}
-            rows={12}
-            spellCheck={false}
-            className="w-full rounded-md border border-input bg-transparent p-3 font-mono text-[12px] leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            height="20rem"
             placeholder={"{% for o in objects %}\n{{ o.name }}\n{% endfor %}"}
           />
         </Field>
