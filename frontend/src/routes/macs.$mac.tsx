@@ -177,6 +177,9 @@ function Body({ data }: { data: MacDetail }) {
         mono
         badges={
           <>
+            {data.vendor && (
+              <Badge variant="secondary">{data.vendor.name}</Badge>
+            )}
             {data.objects.length > 0 && (
               <Badge variant="secondary">
                 {data.objects.length} object

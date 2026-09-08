@@ -2839,6 +2839,13 @@ class MACAddressSerializer(
     cf_model = "macaddress"
     assigned_interface = InterfaceMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
+    # Resolved from the OUI table, or the override when one is set (#141).
+    vendor = serializers.SerializerMethodField()
+
+    def get_vendor(self, obj) -> dict | None:
+        from .oui import vendor_of_object
+
+        return vendor_of_object(obj)
 
     assigned_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="assigned_interface", queryset=Interface.objects.all(),
@@ -2852,23 +2859,31 @@ class MACAddressSerializer(
     class Meta:
         model = MACAddress
         fields = ["id", "numid", "mac_address", "assigned_interface",
-                  "assigned_interface_id", "description",
-                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+                  "assigned_interface_id", "description", "vendor_override",
+                  "vendor", "tags", "tag_ids", "custom_fields", "created_at",
+                  "updated_at"]
+        read_only_fields = ["id", "numid", "vendor", "created_at", "updated_at"]
 
 
 class MACAddressMiniSerializer(serializers.ModelSerializer):
     """The MAC objects an interface bears, with which one is its primary."""
 
     is_primary = serializers.SerializerMethodField()
+    vendor = serializers.SerializerMethodField()
 
     def get_is_primary(self, obj) -> bool:
         iface = obj.assigned_interface
         return bool(iface and obj.mac_address == (iface.mac_address or "").lower())
 
+    def get_vendor(self, obj) -> str | None:
+        from .oui import vendor_of_object
+
+        hit = vendor_of_object(obj)
+        return hit["name"] if hit else None
+
     class Meta:
         model = MACAddress
-        fields = ["id", "mac_address", "is_primary"]
+        fields = ["id", "mac_address", "is_primary", "vendor"]
 
 
 class RearPortMiniSerializer(NumIdModelSerializer):

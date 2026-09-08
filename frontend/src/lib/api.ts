@@ -2067,7 +2067,13 @@ export interface Interface {
   wwn: string
   mac_address: string
   /** First-class MAC objects this interface bears (primary flagged). */
-  mac_addresses: { id: string; mac_address: string; is_primary: boolean }[]
+  mac_addresses: {
+    id: string
+    mac_address: string
+    is_primary: boolean
+    /** Resolved vendor name (OUI table or override); null when unknown. */
+    vendor: string | null
+  }[]
   description: string
   /** 802.1Q mode: "" | "access" | "tagged" | "tagged-all". */
   mode: string
@@ -2875,12 +2881,20 @@ export interface MacVmIfaceRef {
   vm: { id: string; name: string }
 }
 
+/** Where a MAC's vendor came from: the IEEE registry, a tenant's custom
+ * range, the locally-administered bit, or a hand-set override. */
+export interface MacVendor {
+  name: string
+  source: "ieee" | "custom" | "local" | "override"
+}
+
 /** A first-class MAC object (row-level view on the aggregation pages). */
 export interface MacObject {
   id: string
   numid: number | null
   mac_address: string
   description: string
+  vendor_override: string
   assigned_interface: MacIfaceRef | null
   tags: Tag[]
 }
@@ -2892,6 +2906,7 @@ export interface MacObjectDetail extends MacObject {
 
 export interface MacEntry {
   mac: string
+  vendor: MacVendor | null
   interfaces: MacIfaceRef[]
   vm_interfaces: MacVmIfaceRef[]
   ips: {
@@ -2905,6 +2920,7 @@ export interface MacEntry {
 /** MAC detail - richer than the list row (interface enabled, IP status). */
 export interface MacDetail {
   mac: string
+  vendor: MacVendor | null
   objects: MacObjectDetail[]
   interfaces: {
     id: string
@@ -2935,8 +2951,44 @@ export interface MacDetail {
 /** Full first-class MAC object - the `/api/mac-addresses/` CRUD serializer.
  * Same shape as the detail-page object, plus timestamps. */
 export interface MACAddress extends MacObjectDetail {
+  vendor: MacVendor | null
   created_at: string
   updated_at: string
+}
+
+/** A tenant's custom OUI range (`/api/oui-ranges/`). */
+export interface OuiRange {
+  id: string
+  /** Colon-separated display form, e.g. "02:00:aa" or "06:00:cc:0". */
+  prefix: string
+  bits: number
+  vendor: string
+  description: string
+  created_at: string
+  updated_at: string
+}
+
+export interface OuiImportRun {
+  id: string
+  source: "upload" | "url"
+  source_url: string
+  status: "queued" | "running" | "success" | "failed"
+  progress: {
+    done?: number
+    total?: number
+    created?: number
+    updated?: number
+    removed?: number
+  }
+  error: string
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface OuiStatus {
+  prefixes: number
+  last_import: OuiImportRun | null
 }
 
 export interface MACAddressWritePayload {
@@ -2945,6 +2997,7 @@ export interface MACAddressWritePayload {
   description: string
   tag_ids: number[]
   custom_fields: Record<string, unknown>
+  vendor_override?: string
 }
 
 export interface IPBulkUpdateFields {

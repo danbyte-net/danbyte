@@ -14,6 +14,7 @@ AUDITED_MODELS = [
     "api.Prefix",
     "api.IPAddress",
     "api.MACAddress",
+    "api.OuiPrefix",
     "api.IPRange",
     "api.RIR",
     "api.Aggregate",

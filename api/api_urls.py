@@ -124,6 +124,7 @@ from .io_views import (
     io_types_view,
 )
 from .mac_views import mac_detail_view, mac_list_view
+from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
 from .presence_views import (
     presence_heartbeat,
     presence_leave,
@@ -269,6 +270,7 @@ router.register(r"documents",     DocumentViewSet,    basename="document")
 router.register(r"document-categories", DocumentCategoryViewSet, basename="document-category")
 router.register(r"vlans",         VLANViewSet,        basename="vlan")
 router.register(r"mac-addresses",  MACAddressViewSet,  basename="mac-address")
+router.register(r"oui-ranges",     OuiRangeViewSet,    basename="oui-range")
 router.register(r"vlan-groups",   VLANGroupViewSet,   basename="vlan-group")
 router.register(r"fhrp-groups",   FHRPGroupViewSet,   basename="fhrp-group")
 router.register(r"fhrp-assignments", FHRPGroupAssignmentViewSet, basename="fhrp-assignment")
@@ -450,6 +452,9 @@ urlpatterns = [
     path("topology/summary/", topology_summary_view, name="topology-summary"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
+    path("oui/status/", oui_status, name="oui-status"),
+    path("oui/import/", oui_import, name="oui-import"),
+    path("oui/import/<uuid:run_id>/", oui_import_run, name="oui-import-run"),
     path("macs/", mac_list_view, name="macs"),
     path("macs/<str:mac>/", mac_detail_view, name="mac-detail"),
     path("dcim/choices/", dcim_choices_view, name="dcim-choices"),

@@ -59,6 +59,34 @@ MAC clicked on a device's monitoring cards therefore always resolves, even
 when nothing in Danbyte carries it yet: the page says where it was seen
 instead of returning "not found".
 
+### Vendors
+
+Every MAC shows its **vendor**, resolved from the address prefix:
+
+- The **IEEE OUI registry** - loaded under **Settings → Deployment → General →
+  MAC vendors** from a CSV: the
+  [maclookup.app database](https://maclookup.app/downloads/csv-database) or the
+  IEEE `oui.csv` / `mam.csv` / `oui36.csv`. Fetch it by URL or upload the
+  file. **Fetch through the browser** (on by default for an airgapped
+  install) makes your browser download the CSV and post it, so the server
+  never needs internet; when the source refuses cross-origin downloads,
+  save the file and use Upload CSV. The import runs in the background and
+  can be repeated whenever the registry moves; it is deployment-wide and
+  not bundled, so a fresh install shows no vendors until it is loaded.
+- **Vendor ranges** (button on the MAC list) - prefixes your organisation
+  assigns itself, such as a VM cluster's locally-administered block, with the
+  label you choose. A range is tenant-scoped and beats the registry at the
+  same prefix length; the longest match always wins.
+- A MAC with the **locally-administered bit** set that matches no range
+  reads *Locally administered* rather than blank.
+- A MAC object can carry a **vendor override** for hardware the registry
+  gets wrong.
+
+The vendor is a column and a click-to-filter facet on the MAC list, a badge
+on the MAC page, and follows the MAC on an interface page. **Next free in
+range** in the Add MAC dialog hands out the lowest address in one of your
+ranges that no interface, VM interface, IP pairing, or MAC object already uses.
+
 ### First-class MAC objects
 
 Beyond the derived view, a MAC can be a **real object** you manage - with its own

@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from auth_api import rbac
 
 from .models import Interface, IPAddress, MACAddress, VMInterface
+from .oui import hexkey, vendor_for, vendors_for
 from .serializers import TagSerializer
 from .views import _get_active_tenant
 
@@ -102,6 +103,7 @@ def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
         "numid": m.numid,
         "mac_address": m.mac_address,
         "description": m.description,
+        "vendor_override": m.vendor_override,
         "assigned_interface": (
             _iface_ref(m.assigned_interface) if m.assigned_interface_id else None
         ),
@@ -192,6 +194,12 @@ def mac_list_view(request):
     for m in objects:
         bucket(m.mac_address)["objects"].append(_mac_object(m))
 
+    vendors = vendors_for(entries.keys(), tenant)
+    for key, entry in entries.items():
+        override = next((o["vendor_override"] for o in entry["objects"] if o["vendor_override"]), "")
+        entry["vendor"] = (
+            {"name": override, "source": "override"} if override else vendors.get(hexkey(key))
+        )
     results = sorted(entries.values(), key=lambda e: _norm(e["mac"]))
     return Response({"count": len(results), "results": results})
 
@@ -262,9 +270,14 @@ def mac_detail_view(request, mac):
     else:
         display = key
 
+    override = next((m.vendor_override for m in objects if m.vendor_override), "")
+    vendor = (
+        {"name": override, "source": "override"} if override else vendor_for(key, tenant)
+    )
     return Response(
         {
             "mac": display,
+            "vendor": vendor,
             "seen": seen,
             "objects": [_mac_object(m, with_custom_fields=True) for m in objects],
             "interfaces": [

@@ -468,6 +468,11 @@ function InterfaceOverview({
                 >
                   {m.mac_address}
                 </Link>
+                {m.vendor && (
+                  <span className="text-xs text-muted-foreground">
+                    {m.vendor}
+                  </span>
+                )}
                 {m.is_primary && i.mac_addresses.length > 1 && (
                   <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                     primary
@@ -607,16 +612,17 @@ function InterfaceOverview({
             : []),
           {
             label: "Min links",
-            value: i.lag_min_links != null ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="num">{i.lag_min_links}</span>
-                {lag?.degraded && (
-                  <Badge variant="warning">below min links</Badge>
-                )}
-              </span>
-            ) : (
-              dash
-            ),
+            value:
+              i.lag_min_links != null ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="num">{i.lag_min_links}</span>
+                  {lag?.degraded && (
+                    <Badge variant="warning">below min links</Badge>
+                  )}
+                </span>
+              ) : (
+                dash
+              ),
           },
           {
             label: "Members",
@@ -646,41 +652,45 @@ function InterfaceOverview({
             ),
           },
           {
-            label: lag && lag.peers.length > 1 ? "Peer aggregates" : "Peer aggregate",
-            value: lag && lag.peers.length > 0 ? (
-              <span className="flex flex-col gap-0.5">
-                {lag.peers.map((p) => (
-                  <Link
-                    key={p.id}
-                    to="/interfaces/$id"
-                    params={{ id: p.id }}
-                    className="link font-mono text-[13px]"
-                  >
-                    {p.device.name}: {p.name}
-                    <span className="pl-1 text-muted-foreground">
-                      · {p.members} {p.members === 1 ? "link" : "links"}
+            label:
+              lag && lag.peers.length > 1
+                ? "Peer aggregates"
+                : "Peer aggregate",
+            value:
+              lag && lag.peers.length > 0 ? (
+                <span className="flex flex-col gap-0.5">
+                  {lag.peers.map((p) => (
+                    <Link
+                      key={p.id}
+                      to="/interfaces/$id"
+                      params={{ id: p.id }}
+                      className="link font-mono text-[13px]"
+                    >
+                      {p.device.name}: {p.name}
+                      <span className="pl-1 text-muted-foreground">
+                        · {p.members} {p.members === 1 ? "link" : "links"}
+                      </span>
+                    </Link>
+                  ))}
+                  {lag.mixed_peers && (
+                    <span className="text-[11px] text-muted-foreground">
+                      Ends on {lag.peers.length} devices - only valid for an
+                      MLAG / vPC pair
                     </span>
-                  </Link>
-                ))}
-                {lag.mixed_peers && (
-                  <span className="text-[11px] text-muted-foreground">
-                    Ends on {lag.peers.length} devices - only valid for an
-                    MLAG / vPC pair
-                  </span>
-                )}
-                {lag.unpaired.length > 0 && (
-                  <span className="text-[11px] text-muted-foreground">
-                    No peer aggregate: {lag.unpaired.join(", ")}
-                  </span>
-                )}
-              </span>
-            ) : lag && lag.unpaired.length > 0 ? (
-              <span className="text-[11px] text-muted-foreground">
-                No peer aggregate: {lag.unpaired.join(", ")}
-              </span>
-            ) : (
-              dash
-            ),
+                  )}
+                  {lag.unpaired.length > 0 && (
+                    <span className="text-[11px] text-muted-foreground">
+                      No peer aggregate: {lag.unpaired.join(", ")}
+                    </span>
+                  )}
+                </span>
+              ) : lag && lag.unpaired.length > 0 ? (
+                <span className="text-[11px] text-muted-foreground">
+                  No peer aggregate: {lag.unpaired.join(", ")}
+                </span>
+              ) : (
+                dash
+              ),
           },
         ]
       : null
@@ -829,8 +839,7 @@ function LagMembers({
       }),
     [spansDevices]
   )
-  if (loading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
   if (rows.length === 0)
     return (
       <EmptyState title="No members yet">
@@ -890,4 +899,3 @@ function LagRuns({
     </>
   )
 }
-

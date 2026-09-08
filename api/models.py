@@ -3024,6 +3024,9 @@ class MACAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
         help_text="The interface that bears this MAC, if known.",
     )
     description = models.CharField(max_length=255, blank=True)
+    # Blank = resolve the vendor from the OUI table; set for hardware whose
+    # prefix is missing, wrong, or locally administered.
+    vendor_override = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["mac_address"]
@@ -3043,6 +3046,86 @@ class MACAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
     def __str__(self) -> str:
         return self.mac_address
 
+
+
+class OuiPrefix(TimestampedModel):
+    """A MAC prefix → vendor row (#141).
+
+    ``tenant`` NULL is the deployment-wide IEEE registry, filled only by the
+    OUI import (never edited by hand). A tenant row is a **custom range** an
+    organisation owns - e.g. a locally-administered block a VM cluster hands
+    out - and it beats the registry at the same prefix length. ``prefix`` is
+    lowercase hex with no separators; ``bits`` is its length in bits.
+    """
+
+    SOURCE_CHOICES = [("ieee", "IEEE registry"), ("custom", "Custom range")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="oui_prefixes",
+        null=True, blank=True,
+    )
+    prefix = models.CharField(max_length=11, db_index=True)
+    bits = models.PositiveSmallIntegerField()
+    vendor = models.CharField(max_length=255)
+    source = models.CharField(max_length=8, choices=SOURCE_CHOICES, default="custom")
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["prefix"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "prefix"],
+                name="uniq_ouiprefix_tenant_prefix",
+                nulls_distinct=False,
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.display_prefix} {self.vendor}"
+
+    @property
+    def display_prefix(self) -> str:
+        p = self.prefix
+        return ":".join(p[i : i + 2] for i in range(0, len(p), 2))
+
+    def save(self, *args, **kwargs):
+        self.prefix = self.prefix.strip().lower()
+        self.bits = len(self.prefix) * 4
+        super().save(*args, **kwargs)
+
+
+class OuiImport(TimestampedModel):
+    """One run of the IEEE registry import - deployment-wide, pulled off the
+    RQ ``low`` queue so the settings card can poll it."""
+
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("success", "Success"),
+        ("failed", "Failed"),
+    ]
+    SOURCE_CHOICES = [("upload", "Uploaded CSV"), ("url", "Fetched from URL")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.CharField(max_length=8, choices=SOURCE_CHOICES, default="upload")
+    source_url = models.CharField(max_length=512, blank=True, default="")
+    file = models.FileField(upload_to="oui-imports/", blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    #: {"done": n, "total": n, "created": n, "updated": n, "removed": n}
+    progress = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"OUI import {self.status} ({self.created_at:%Y-%m-%d})"
 
 class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """The trunk side of a patch panel - ``positions`` strands, each one a
