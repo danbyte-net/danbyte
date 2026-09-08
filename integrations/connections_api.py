@@ -50,7 +50,10 @@ class AddressPlacementSerializerMixin(serializers.Serializer):
 class IntegrationSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = IntegrationSettings
-        fields = ["dhcp_sync_enabled", "dns_sync_enabled", "virtualization_enabled"]
+        fields = [
+            "dhcp_sync_enabled", "dns_sync_enabled", "virtualization_enabled",
+            "ai_access_enabled", "ai_writes_enabled",
+        ]
 
 
 @api_view(["GET"])

@@ -130,6 +130,8 @@ from .presence_views import (
     presence_leave,
     presence_list,
 )
+from agents.views import mcp as agent_mcp
+
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
 from .terraform_views import vm_render_view
@@ -466,6 +468,8 @@ urlpatterns = [
     path("jobs/", include("jobs.api_urls")),
     path("backups/", include("backups.api_urls")),
     path("scripts/", include("scripting.api_urls")),
+    path("agent/", include("agents.api_urls")),
+    path("mcp/", agent_mcp, name="mcp"),
     # Plugin framework: installed-plugin inventory + each plugin's own API.
     path("plugins/", include("plugins.api_urls")),
     # Host service control (restart units, apply plugins) - superuser only.

@@ -9,6 +9,8 @@ import contextlib
 import contextvars
 
 _user: contextvars.ContextVar = contextvars.ContextVar("audit_user", default=None)
+# The live request, when there is one. Read at signal time, not at set time.
+_request: contextvars.ContextVar = contextvars.ContextVar("audit_request", default=None)
 _request_id: contextvars.ContextVar = contextvars.ContextVar(
     "audit_request_id", default=""
 )
@@ -44,14 +46,24 @@ def is_suspended() -> bool:
     return _suspended.get()
 
 
-def set_context(user, request_id: str, via: str = "") -> None:
+def set_context(user, request_id: str, via: str = "", request=None) -> None:
+    """``request`` is optional and preferred when given.
+
+    The middleware runs before DRF authenticates, so at that point a
+    token-authenticated request still carries the anonymous session user.
+    Holding the request and reading ``request.user`` when a signal actually
+    fires picks up whoever DRF resolved - which is why a write made with an
+    API token used to land in the change log with no name at all.
+    """
     _user.set(user)
+    _request.set(request)
     _request_id.set(request_id)
     _via.set(via)
 
 
 def clear_context() -> None:
     _user.set(None)
+    _request.set(None)
     _request_id.set("")
     _via.set("")
 
@@ -61,6 +73,11 @@ def current_via() -> str:
 
 
 def current_user():
+    request = _request.get()
+    if request is not None:
+        u = getattr(request, "user", None)
+        if u is not None and getattr(u, "is_authenticated", False):
+            return u
     u = _user.get()
     if u is not None and getattr(u, "is_authenticated", False):
         return u

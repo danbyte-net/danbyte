@@ -16,6 +16,8 @@ KEYS = {
     "dhcp": "dhcp_sync_enabled",
     "dns": "dns_sync_enabled",
     "virtualization": "virtualization_enabled",
+    "ai": "ai_access_enabled",
+    "ai_writes": "ai_writes_enabled",
 }
 
 
