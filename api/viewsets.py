@@ -3085,6 +3085,22 @@ class DeviceViewSet(
         "cluster", "airflow", "description", "comments",
     )
 
+    @action(detail=True, methods=["get"], url_path="spec-sheet")
+    def spec_sheet(self, request, pk=None):
+        """A printable PDF datasheet of this object (#150): header, stat boxes,
+        details, components, interfaces, comments and images. Inline by
+        default; ``?download=1`` forces a download."""
+        from django.http import HttpResponse
+
+        from .spec_sheets import render_spec_pdf, spec_filename
+
+        obj = self.get_object()
+        pdf = render_spec_pdf("device", obj, request)
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        return resp
+
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
         from .config_context import render_config_context
@@ -5053,6 +5069,22 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         "cluster", "role", "platform", "device", "site", "status",
         "vcpus", "memory_mb", "disk_gb", "description",
     )
+
+    @action(detail=True, methods=["get"], url_path="spec-sheet")
+    def spec_sheet(self, request, pk=None):
+        """A printable PDF datasheet of this object (#150): header, stat boxes,
+        details, components, interfaces, comments and images. Inline by
+        default; ``?download=1`` forces a download."""
+        from django.http import HttpResponse
+
+        from .spec_sheets import render_spec_pdf, spec_filename
+
+        obj = self.get_object()
+        pdf = render_spec_pdf("vm", obj, request)
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        return resp
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):

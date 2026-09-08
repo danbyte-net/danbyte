@@ -369,3 +369,9 @@ device type - supports bulk editing. Tick rows and a floating bar appears:
 Changes go through `POST /api/<component>/bulk-update/` (`{ids, fields}`) and
 `bulk-delete/` (`{ids}`) - allow-listed fields per type, tenant-scoped,
 audited in the change log like any other edit.
+
+## Spec sheet
+
+**Spec sheet** in the page actions opens a printable PDF datasheet of the
+device - stat boxes, details, modules, interfaces with cable peers, comments
+and images. See [Spec sheets](../features/spec-sheets.md).

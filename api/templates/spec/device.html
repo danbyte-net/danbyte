@@ -1,0 +1,46 @@
+{% extends "spec/base.html" %}
+{% block body %}
+{% if modules %}
+<section>
+  <h2>Modules</h2>
+  <table>
+    <thead><tr><th>Bay</th><th>Module type</th><th>Serial</th></tr></thead>
+    <tbody>
+    {% for m in modules %}<tr><td>{{ m.bay }}</td><td>{{ m.type }}</td><td class="mono">{{ m.serial }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% if inventory %}
+<section>
+  <h2>Inventory</h2>
+  <table>
+    <thead><tr><th>Item</th><th>Manufacturer</th><th>Part</th><th>Serial</th></tr></thead>
+    <tbody>
+    {% for it in inventory %}<tr><td>{{ it.name }}</td><td>{{ it.manufacturer }}</td><td class="mono">{{ it.part }}</td><td class="mono">{{ it.serial }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+<section>
+  <h2>Interfaces</h2>
+  {% if interfaces %}
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Speed</th><th>MAC</th><th>VLAN</th><th>IPs</th><th>Connected to</th></tr></thead>
+    <tbody>
+    {% for i in interfaces %}
+    <tr>
+      <td class="mono{% if i.depth %} sub1{% endif %}"><span class="dot {% if i.enabled %}on{% else %}off{% endif %}"></span>{{ i.name }}</td>
+      <td>{{ i.type }}</td>
+      <td>{{ i.speed }}</td>
+      <td class="mono">{{ i.mac }}{% if i.vendor %}<div class="muted" style="font-family:inherit;font-size:7.5pt">{{ i.vendor }}</div>{% endif %}</td>
+      <td>{{ i.vlan }}</td>
+      <td class="mono">{{ i.ips|join:", " }}</td>
+      <td class="mono">{{ i.peer }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No interfaces.</p>{% endif %}
+</section>
+{% endblock %}

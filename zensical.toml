@@ -95,6 +95,7 @@ nav = [
     { "Exporting tables"  = "features/exporting-tables.md" },
     { "Import & export"   = "features/import-export.md" },
     { "Printing labels"   = "features/label-templates.md" },
+    { "Spec sheets"       = "features/spec-sheets.md" },
     { "Documents"         = "features/documents.md" },
     { "Journals"          = "features/journals.md" },
     { "Change log"        = "features/change-log.md" },

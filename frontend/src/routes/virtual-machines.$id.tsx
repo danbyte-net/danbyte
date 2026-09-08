@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { PlatformCell } from "@/components/cells/platform-cell"
 import { CatalogCell } from "@/components/cells/catalog-cell"
+import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
@@ -101,6 +102,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       presence={{ type: "virtualmachine", id: vm.id }}
       actions={
         <>
+          <SpecSheetButton kind="vm" id={vm.id} />
           {canEdit && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/virtual-machines/$id/edit" params={{ id: vm.id }}>

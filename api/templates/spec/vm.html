@@ -1,0 +1,33 @@
+{% extends "spec/base.html" %}
+{% block body %}
+<section>
+  <h2>Storage</h2>
+  {% if disks %}
+  <table>
+    <thead><tr><th>Disk</th><th class="num">Size</th><th>Storage</th><th>Controller</th></tr></thead>
+    <tbody>
+    {% for d in disks %}<tr><td>{{ d.name }}</td><td class="num">{{ d.size }}</td><td>{{ d.storage }}</td><td>{{ d.controller }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No disks recorded.</p>{% endif %}
+</section>
+<section>
+  <h2>Network adapters</h2>
+  {% if interfaces %}
+  <table>
+    <thead><tr><th>Name</th><th>Kind</th><th>MAC</th><th class="num">MTU</th><th>IPs</th></tr></thead>
+    <tbody>
+    {% for i in interfaces %}
+    <tr>
+      <td class="mono{% if i.depth %} sub1{% endif %}"><span class="dot {% if i.enabled %}on{% else %}off{% endif %}"></span>{{ i.name }}</td>
+      <td>{{ i.type }}</td>
+      <td class="mono">{{ i.mac }}{% if i.vendor %}<div class="muted" style="font-family:inherit;font-size:7.5pt">{{ i.vendor }}</div>{% endif %}</td>
+      <td class="num">{{ i.mtu|default_if_none:"" }}</td>
+      <td class="mono">{{ i.ips|join:", " }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No network adapters.</p>{% endif %}
+</section>
+{% endblock %}
