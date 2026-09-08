@@ -286,6 +286,11 @@ class LDAPGroupMapping(TimestampedModel):
         "core.Tenant", on_delete=models.CASCADE,
         null=True, blank=True, related_name="ldap_group_mappings",
     )
+    # Members of the directory group become superusers at login - the same
+    # switch an SSO mapping has. Deployment-directory mappings only: superuser
+    # is global, so a tenant directory must never mint one. Grant-only: the
+    # flag is never cleared by a login.
+    grants_superuser = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["ldap_group_cn", "ldap_group_dn"]

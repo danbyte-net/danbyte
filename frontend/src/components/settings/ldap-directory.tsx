@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { Badge } from "@/components/ui/badge"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
@@ -18,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FormSelect } from "@/components/forms"
+import { Field, FormSelect, FormCheckbox } from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -441,6 +442,7 @@ function GroupMappings({
   const [dn, setDn] = useState("")
   const [cn, setCn] = useState("")
   const [groupId, setGroupId] = useState<string | null>(null)
+  const [grantsSuperuser, setGrantsSuperuser] = useState(false)
   const [browsed, setBrowsed] = useState<LdapDirGroup[] | null>(null)
 
   const mappingsKey = [endpoints.cacheKey, "mappings"]
@@ -471,6 +473,7 @@ function GroupMappings({
           ldap_group_dn: dn.trim(),
           ldap_group_cn: cn.trim(),
           group_id: Number(groupId),
+          ...(tenantMode ? {} : { grants_superuser: grantsSuperuser }),
         }),
       }),
     onSuccess: () => {
@@ -478,6 +481,7 @@ function GroupMappings({
       setDn("")
       setCn("")
       setGroupId(null)
+      setGrantsSuperuser(false)
       toast.success("Mapping added")
     },
     onError: (err) => apiErrorToast(err),
@@ -525,7 +529,16 @@ function GroupMappings({
         header: ({ column }) => (
           <SortHeader column={column} label="Danbyte group" />
         ),
-        cell: ({ row }) => row.original.group_name,
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-1.5">
+            {row.original.group_name}
+            {row.original.grants_superuser && (
+              <Badge variant="warning" className="text-[10px]">
+                superuser
+              </Badge>
+            )}
+          </span>
+        ),
       },
       {
         id: "actions",
@@ -625,6 +638,14 @@ function GroupMappings({
             placeholder="Pick a group"
           />
         </div>
+        {!tenantMode && (
+          <FormCheckbox
+            label="Grants superuser"
+            checked={grantsSuperuser}
+            onChange={setGrantsSuperuser}
+            hint="Members of this directory group become superusers at login. Never revoked by a login."
+          />
+        )}
         <div>
           <Button
             onClick={() => add.mutate()}

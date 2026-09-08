@@ -250,6 +250,25 @@ groups every time they sign in, so the directory decides *who's in what* and
 Danbyte groups decide *what that means*. Only directory groups you've explicitly
 mapped grant anything.
 
+### What a directory login receives
+
+On every LDAP login the account's Danbyte groups are re-synced from the
+mapped directory groups, and then:
+
+- **Tenants.** A group's tenant-scoped grant is tenant access. Those tenants
+  are added to the account's profile at login and the first one becomes the
+  home tenant, so the account lands in the right place and appears in that
+  tenant's user list without an admin editing the record.
+- **Superuser.** Tick **Grants superuser** on a deployment-directory mapping
+  and members of that directory group become superusers when they sign in -
+  the same switch an SSO mapping has. Arming it needs the grant-superuser
+  permission, it is not offered on a tenant directory, and a login never
+  clears it: revocation stays a manual act on the user.
+
+A permission whose actions include `grant_superuser` does **not** make its
+holders superusers - it lets them promote others. Use the mapping switch
+for the accounts that should be superusers themselves.
+
 ## Single sign-on (SSO)
 
 Optional and off by default. An administrator adds an identity provider under

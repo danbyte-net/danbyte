@@ -29,6 +29,8 @@ A4, built to print in black and white as well as colour:
   platform, primary and OOB IP, tenant, site, location, rack, cluster,
   virtual chassis, description, tags, and every custom field that has a value
   and is not hidden in its definition.
+- **Port utilization** (device and virtual chassis) - the same bar as the
+  page: connected, reserved and free ports out of the total.
 - **Modules and inventory** (device), **Storage** (VM), or the **member
   table** (virtual chassis: position, device, master or member, priority,
   type, serial, status) followed by every member's front elevation in

@@ -5582,6 +5582,8 @@ export interface LdapGroupMapping {
   ldap_group_cn: string
   group_id: number
   group_name: string
+  /** Members become superusers at login (deployment directory only). */
+  grants_superuser: boolean
   created_at: string
   updated_at: string
 }

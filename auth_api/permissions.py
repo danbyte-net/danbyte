@@ -164,6 +164,41 @@ def user_tenants(user):
     return (profile.tenants.filter(is_active=True) | granted).distinct()
 
 
+def adopt_granted_tenants(user) -> None:
+    """Materialise the tenants a user reaches through grants (directly or via
+    a group) onto the profile: add them to ``profile.tenants`` and pick the
+    first as the home tenant when none is set.
+
+    Directory and SSO logins hand out groups, and a group's tenant-scoped
+    grant already *is* tenant access (see :func:`user_tenants`). But the
+    profile is what the user list, the tenant's member views and the "home
+    tenant" read - left empty, an LDAP user appeared to belong nowhere until
+    an admin edited the record by hand. Grant-only: nothing is removed.
+    """
+    from django.db.models import Q
+
+    from core.models import Tenant
+
+    from .models import UserProfile
+
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    granted = list(
+        Tenant.objects.filter(is_active=True, object_permissions__enabled=True)
+        .filter(
+            Q(object_permissions__users=user)
+            | Q(object_permissions__groups__in=user.groups.all())
+        )
+        .distinct()
+    )
+    if granted:
+        profile.tenants.add(*granted)
+    if profile.current_tenant_id is None:
+        home = profile.tenants.filter(is_active=True).first()
+        if home is not None:
+            profile.current_tenant = home
+            profile.save(update_fields=["current_tenant"])
+
+
 def user_can_access_tenant(user, tenant) -> bool:
     if tenant is None:
         return False

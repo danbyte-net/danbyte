@@ -67,7 +67,11 @@ def danbyte_groups_for_dns(group_dns, tenant=None):
         tenant__isnull=True if tenant is None else False,
         **({} if tenant is None else {"tenant": tenant}),
     ).select_related("group")
-    ids = []
+    return Group.objects.filter(id__in=[m.group_id for m in _matched(mappings, wanted, tenant)])
+
+
+def _matched(mappings, wanted: set[str], tenant) -> list:
+    out = []
     for m in mappings:
         if m.ldap_group_dn.strip().lower() not in wanted:
             continue
@@ -78,13 +82,39 @@ def danbyte_groups_for_dns(group_dns, tenant=None):
                 m.ldap_group_dn, tenant.slug, m.group.name,
             )
             continue
-        ids.append(m.group_id)
-    return Group.objects.filter(id__in=ids)
+        out.append(m)
+    return out
+
+
+def mappings_grant_superuser(group_dns, tenant=None) -> bool:
+    """Whether any matched DEPLOYMENT mapping carries ``grants_superuser``.
+    Superuser is global, so a tenant directory's mappings never count."""
+    from .models import LDAPGroupMapping
+
+    if tenant is not None:
+        return False
+    wanted = {(d or "").strip().lower() for d in (group_dns or ()) if d}
+    if not wanted:
+        return False
+    mappings = LDAPGroupMapping.objects.filter(tenant__isnull=True, grants_superuser=True)
+    return bool(_matched(mappings, wanted, None))
 
 
 def sync_user_groups(user, group_dns, tenant=None) -> None:
-    """Replace the user's Danbyte group membership with the mapped set."""
+    """Replace the user's Danbyte group membership with the mapped set, mint
+    superuser when a deployment mapping says so, and record the tenants the
+    new groups grant on the profile so the account lands somewhere.
+
+    Grant-only, like the SSO path: a directory momentarily omitting a group
+    must never silently de-admin anyone - revocation stays a manual act."""
+    from .permissions import adopt_granted_tenants
+
     user.groups.set(list(danbyte_groups_for_dns(group_dns, tenant=tenant)))
+    if not user.is_superuser and mappings_grant_superuser(group_dns, tenant=tenant):
+        user.is_superuser = True
+        user.save(update_fields=["is_superuser"])
+        logger.info("LDAP: %s granted superuser via mapped group", user.get_username())
+    adopt_granted_tenants(user)
 
 
 def mark_ldap_user(user, source_tenant=None) -> None:

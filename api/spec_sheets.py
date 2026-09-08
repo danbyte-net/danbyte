@@ -140,6 +140,31 @@ def _tags(obj) -> str:
     return ", ".join(t.name for t in obj.tags.all())
 
 
+def _ports_used(devices) -> dict | None:
+    """The port-utilisation card's numbers for ``devices`` (a queryset):
+    ``{used, total, pct, connected, reserved, free}`` or ``None`` when there
+    are no ports."""
+    from .port_utilization import utilization_payload
+
+    comb = (utilization_payload(devices) or {}).get("combined") or {}
+    total = comb.get("total") or 0
+    if not total:
+        return None
+    connected = comb.get("connected") or 0
+    reserved = comb.get("reserved") or 0
+    used = connected + reserved
+    return {
+        "used": used,
+        "total": total,
+        "pct": round(100 * used / total),
+        "connected": connected,
+        "reserved": reserved,
+        "free": comb.get("free") or 0,
+        "connected_pct": 100 * connected / total,
+        "reserved_pct": 100 * reserved / total,
+    }
+
+
 # ─── device ────────────────────────────────────────────────────────────────
 
 def _fmt_speed(value) -> str:
@@ -280,6 +305,7 @@ def device_context(device, request=None) -> dict:
         "images": images,
         "elevation": elevation,
         "ip_count": IPAddress.objects.filter(assigned_device=device).count(),
+        "ports": _ports_used(type(device).objects.filter(pk=device.pk)),
     }
 
 
@@ -367,8 +393,6 @@ def vm_context(vm, request=None) -> dict:
 # ─── virtual chassis ───────────────────────────────────────────────────────
 
 def vc_context(vc, request=None) -> dict:
-    from .port_utilization import utilization_payload
-
     members = list(
         vc.members.select_related("device_type__manufacturer", "status", "site", "primary_ip", "oob_ip")
         .order_by("vc_position", "name")
@@ -399,9 +423,7 @@ def vc_context(vc, request=None) -> dict:
             "serial": m.serial_number,
             "status": m.status.name if m.status_id else "",
         })
-    util = (utilization_payload(vc.members.all()) if members else {}).get("combined") or {}
-    used = (util.get("connected") or 0) + (util.get("reserved") or 0)
-    total = util.get("total") or 0
+    ports = _ports_used(vc.members.all()) if members else None
     details = [
         ("Domain", vc.domain),
         ("Master", master.name if master else ""),
@@ -427,10 +449,11 @@ def vc_context(vc, request=None) -> dict:
             {"label": "Members", "value": str(len(members))},
             {"label": "Interfaces", "value": str(total_ifaces)},
             {"label": "Ports used",
-             "value": f"{used} / {total}" if total else "—",
-             "hint": f"{round(100 * used / total)} %" if total else ""},
+             "value": f"{ports['used']} / {ports['total']}" if ports else "—",
+             "hint": f"{ports['pct']} %" if ports else ""},
         ],
         "details": details,
+        "ports": ports,
         "members": member_rows,
         "member_ifaces": member_ifaces,
         "comments": vc.comments or "",

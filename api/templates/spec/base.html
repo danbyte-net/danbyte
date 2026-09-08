@@ -61,6 +61,13 @@
   .figure img { max-width: 100%; max-height: 60mm; border: 1px solid #e5e7eb; border-radius: 3px; }
   .figure .cap { font-size: 8pt; color: #6b7280; margin-top: 1mm; }
   .empty { color: #9ca3af; font-size: 8.5pt; }
+  .ports { border: 1px solid #d1d5db; border-radius: 4px; padding: 3.5mm 4mm; page-break-inside: avoid; }
+  .ports .head { display: flex; justify-content: space-between; font-size: 10pt; }
+  .ports .head b { font-size: 12pt; }
+  .ports .bar { display: flex; height: 3mm; background: #e5e7eb; border-radius: 2mm; overflow: hidden; margin: 2.5mm 0 2mm; }
+  .ports .bar .c { background: #16a34a; } .ports .bar .r { background: #f59e0b; }
+  .ports .legend { font-size: 8pt; color: #6b7280; }
+  .ports .legend .sw { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; margin: 0 1mm 0 3mm; vertical-align: middle; }
 </style>
 </head>
 <body>
@@ -97,6 +104,17 @@
     {% for k, v in details %}<div class="row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>{% endfor %}
   </div>
 </section>
+
+{% if ports %}
+<section>
+  <h2>Port utilization</h2>
+  <div class="ports">
+    <div class="head"><span><b>{{ ports.used }}</b> of <b>{{ ports.total }}</b> ports used</span><span>{{ ports.pct }} %</span></div>
+    <div class="bar"><div class="c" style="width:{{ ports.connected_pct|floatformat:2 }}%"></div><div class="r" style="width:{{ ports.reserved_pct|floatformat:2 }}%"></div></div>
+    <div class="legend"><span class="sw" style="background:#16a34a;margin-left:0"></span>{{ ports.connected }} connected<span class="sw" style="background:#f59e0b"></span>{{ ports.reserved }} reserved<span class="sw" style="background:#d1d5db"></span>{{ ports.free }} free</div>
+  </div>
+</section>
+{% endif %}
 
 {% block body %}{% endblock %}
 
