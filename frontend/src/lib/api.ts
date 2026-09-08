@@ -7942,15 +7942,6 @@ export interface ScriptParam {
   object_type: string
 }
 
-export interface ScriptRunMini {
-  id: string
-  status: ScriptRunStatus
-  started_at: string | null
-  finished_at: string | null
-  created_at: string
-  scheduled: boolean
-}
-
 export interface Script {
   id: string
   name: string
@@ -7974,8 +7965,11 @@ export interface Script {
   next_run_at: string | null
   retention: BackupRetention
   schedule_params: Record<string, unknown>
+  /** When the schedule last fired. */
   last_run_at: string | null
-  last_run: ScriptRunMini | null
+  /** The newest run of any kind. */
+  last_run_time: string | null
+  last_run_status: ScriptRunStatus | null
   run_count: number
   enabled: boolean
   permissions?: ObjectPerms

@@ -86,13 +86,6 @@ def coerce_params(schema, values: dict) -> dict:
     return out
 
 
-class ScriptRunMiniSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ScriptRun
-        fields = ["id", "status", "started_at", "finished_at", "created_at", "scheduled"]
-        read_only_fields = fields
-
-
 class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
     rbac_extra_actions = ("run", "trust")
 
@@ -105,7 +98,11 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
     )
     cadence_label = serializers.SerializerMethodField()
     next_run_at = serializers.SerializerMethodField()
-    last_run = ScriptRunMiniSerializer(read_only=True)
+    # Annotated by the viewset (one subquery, not one query per row). The
+    # model's own last_run_at belongs to the schedule, so the newest run is
+    # reported separately.
+    last_run_status = serializers.CharField(source="last_run_state", read_only=True, default=None)
+    last_run_time = serializers.DateTimeField(read_only=True, default=None)
     run_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
@@ -114,8 +111,10 @@ class ScriptSerializer(ObjectPermsSerializerMixin, serializers.ModelSerializer):
             "id", "name", "slug", "description", "language", "source", "params_schema",
             "token_scope", "timeout_seconds", "trusted", "run_as", "owner", "owner_name",
             "visibility", "shared_users", "shared_groups", "schedule_enabled", "cadence",
-            "cadence_label", "next_run_at", "retention", "schedule_params", "last_run_at",
-            "last_run", "run_count", "enabled", "permissions", "created_at", "updated_at",
+            "cadence_label", "next_run_at", "retention", "schedule_params",
+            "last_run_at", "last_run_time", "last_run_status", "run_count", "enabled",
+            "permissions",
+            "created_at", "updated_at",
         ]
         read_only_fields = ["owner", "last_run_at", "created_at", "updated_at", "trusted"]
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from django.db.models import Count, Prefetch
+from django.db.models import Count, OuterRef, Prefetch, Subquery
 from django.http import FileResponse
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -44,7 +44,15 @@ class ScriptViewSet(TenantScopedViewSet):
             qs = qs.filter(name__icontains=self.request.query_params["search"])
         if self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
-        return qs.annotate(run_count=Count("runs", distinct=True))
+        # The newest run's outcome, in one subquery rather than a query per
+        # row. Named apart from the model's own last_run_at, which is the
+        # schedule's bookkeeping and moves only when a schedule fires.
+        newest = ScriptRun.objects.filter(script=OuterRef("pk")).order_by("-created_at")
+        return qs.annotate(
+            run_count=Count("runs", distinct=True),
+            last_run_state=Subquery(newest.values("status")[:1]),
+            last_run_time=Subquery(newest.values("created_at")[:1]),
+        )
 
     def perform_create(self, serializer):
         # The base stamps the tenant; the author is always the creator.

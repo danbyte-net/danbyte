@@ -98,16 +98,16 @@ export function buildScriptColumns(
     }),
     last_run: () => ({
       id: "last_run",
-      accessorKey: "last_run_at",
+      accessorKey: "last_run_time",
       header: ({ column }) => <SortHeader column={column} label="Last run" />,
       cell: ({ row }) => {
-        const run = row.original.last_run
-        if (!run)
+        const { last_run_status: status, last_run_time: at } = row.original
+        if (!status || !at)
           return <span className="text-xs text-muted-foreground">Never</span>
         return (
           <span className="flex items-center gap-2">
-            <RunStatusBadge status={run.status} />
-            <TimeCell iso={run.created_at} />
+            <RunStatusBadge status={status} />
+            <TimeCell iso={at} />
           </span>
         )
       },
