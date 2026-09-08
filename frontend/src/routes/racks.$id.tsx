@@ -286,7 +286,9 @@ function RackOverview({ rack: r }: { rack: Rack }) {
     {
       label: "Role",
       value: r.role ? (
-        <ColorBadge name={r.role.name} color={r.role.color || undefined} />
+        <Link to="/rack-roles/$id" params={{ id: r.role.id }} className="link">
+          <ColorBadge name={r.role.name} color={r.role.color || undefined} />
+        </Link>
       ) : (
         dash
       ),

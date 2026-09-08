@@ -1,4 +1,5 @@
 import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
+import { PlatformCell } from "@/components/cells/platform-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
@@ -729,7 +730,7 @@ function DeviceOverview({
       label: "Platform",
       value: d.platform ? (
         <span className="inline-flex items-center gap-2">
-          {d.platform.name}
+          <PlatformCell platform={d.platform} />
           <LifecycleFlag state={d.platform.lifecycle_state} />
         </span>
       ) : d.effective_platform ? (

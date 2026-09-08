@@ -182,7 +182,9 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     synced_from: () => ({
       id: "synced_from",
       accessorFn: (r) => r.synced_from ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Synced from" />,
+      header: ({ column }) => (
+        <SortHeader column={column} label="Synced from" />
+      ),
       cell: ({ row }) =>
         row.original.synced_from ? (
           <Link
@@ -266,10 +268,16 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
       accessorFn: (r) => r.role?.name ?? "",
       cell: ({ row }) =>
         row.original.role ? (
-          <ColorBadge
-            name={row.original.role.name}
-            color={row.original.role.color || undefined}
-          />
+          <Link
+            to="/device-roles/$id"
+            params={{ id: row.original.role.id }}
+            className="link"
+          >
+            <ColorBadge
+              name={row.original.role.name}
+              color={row.original.role.color || undefined}
+            />
+          </Link>
         ) : (
           dash
         ),

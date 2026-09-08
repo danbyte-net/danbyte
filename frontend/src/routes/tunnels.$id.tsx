@@ -223,7 +223,20 @@ function TunnelOverview({ tunnel: t }: { tunnel: Tunnel }) {
         dash
       ),
     },
-    { label: "IPSec profile", value: t.ipsec_profile?.name ?? dash },
+    {
+      label: "IPSec profile",
+      value: t.ipsec_profile ? (
+        <Link
+          to="/ipsec-profiles/$id"
+          params={{ id: t.ipsec_profile.id }}
+          className="link"
+        >
+          {t.ipsec_profile.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
   ]
 
   const notes: KvRow[] = [

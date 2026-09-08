@@ -99,7 +99,13 @@ export function buildAggregateColumns<T extends Aggregate = Aggregate>(
       header: "RIR",
       cell: ({ row }) =>
         row.original.rir ? (
-          <span className="text-xs">{row.original.rir.name}</span>
+          <Link
+            to="/rirs/$id"
+            params={{ id: row.original.rir.id }}
+            className="link text-xs"
+          >
+            {row.original.rir.name}
+          </Link>
         ) : (
           dash
         ),

@@ -227,10 +227,16 @@ export function buildDeviceColumns<T extends Device = Device>(
       header: ({ column }) => <SortHeader column={column} label="Role" />,
       cell: ({ row }) =>
         row.original.role ? (
-          <ColorBadge
-            name={row.original.role.name}
-            color={row.original.role.color || undefined}
-          />
+          <Link
+            to="/device-roles/$id"
+            params={{ id: row.original.role.id }}
+            className="link"
+          >
+            <ColorBadge
+              name={row.original.role.name}
+              color={row.original.role.color || undefined}
+            />
+          </Link>
         ) : (
           dash
         ),

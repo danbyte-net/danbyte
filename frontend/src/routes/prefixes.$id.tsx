@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
+import { SiteCell } from "@/components/cells/site-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
@@ -500,7 +501,7 @@ function PrefixOverview({
         ]
       : []),
     { label: "Family", value: `IPv${p.family ?? "-"}` },
-    { label: "Site", value: p.site?.name ?? dash },
+    { label: "Site", value: <SiteCell site={p.site} /> },
   ]
 
   const alloc = p.allocation

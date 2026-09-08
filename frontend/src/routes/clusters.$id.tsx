@@ -60,9 +60,9 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
   const { canDo } = useMe()
   const canEdit = canDo("cluster", "change")
   const canDelete = canDo("cluster", "delete")
-  const [tab, setTab] = useUrlTab<"overview" | "vms" | "devices" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "vms" | "devices" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const devices = useQuery({
     queryKey: ["cluster-devices", c.id],
@@ -233,7 +233,20 @@ function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
         </Link>
       ),
     },
-    { label: "Group", value: c.group ? c.group.name : dash },
+    {
+      label: "Group",
+      value: c.group ? (
+        <Link
+          to="/cluster-groups/$id"
+          params={{ id: c.group.id }}
+          className="link"
+        >
+          {c.group.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
     {
       label: "Site",
       value: c.site ? (
@@ -266,7 +279,6 @@ function ClusterOverview({ cluster: c }: { cluster: Cluster }) {
   )
 }
 
-
 /** The physical hosts in this cluster.
  *
  * A cluster page answered "what runs here?" but never "what is it made of?" -
@@ -277,14 +289,23 @@ function ClusterDevicesPane({ clusterId }: { clusterId: string }) {
   const query = useQuery({
     queryKey: ["cluster-devices-list", clusterId],
     queryFn: () =>
-      api<Paginated<Device>>(`/api/devices/?cluster=${clusterId}&page_size=200`),
+      api<Paginated<Device>>(
+        `/api/devices/?cluster=${clusterId}&page_size=200`
+      ),
   })
   const columns = useMemo(
     () =>
       buildDeviceColumns<Device>({
         humanIds,
-        include: ["numid", "name", "status", "role", "type", "site",
-                  "primary_ip"],
+        include: [
+          "numid",
+          "name",
+          "status",
+          "role",
+          "type",
+          "site",
+          "primary_ip",
+        ],
       }),
     [humanIds]
   )

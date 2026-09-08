@@ -1,4 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { PlatformCell } from "@/components/cells/platform-cell"
+import { CatalogCell } from "@/components/cells/catalog-cell"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
@@ -313,8 +315,17 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         dash
       ),
     },
-    { label: "Role", value: vm.role?.name ?? dash },
-    { label: "Platform", value: vm.platform?.name ?? dash },
+    {
+      label: "Role",
+      value: (
+        <CatalogCell
+          value={vm.role}
+          to="/device-roles/$id"
+          params={vm.role ? { id: vm.role.id } : undefined}
+        />
+      ),
+    },
+    { label: "Platform", value: <PlatformCell platform={vm.platform} /> },
     { label: "Description", value: vm.description || dash },
   ]
   const resourceRows: KvRow[] = [
