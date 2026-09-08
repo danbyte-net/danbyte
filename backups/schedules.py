@@ -42,6 +42,7 @@ def fire_schedule(schedule: BackupSchedule, now=None, *, user=None, kind: str = 
     now = now or timezone.now()
     backup = create_backup(kind=kind, components=schedule.components, target=schedule.target,
                            schedule=schedule, user=user)
-    BackupSchedule.objects.filter(pk=schedule.pk).update(last_run_at=now)
+    if kind == "scheduled":  # a run started by hand must not eat the next occurrence
+        BackupSchedule.objects.filter(pk=schedule.pk).update(last_run_at=now)
     enqueue_backup(backup)
     return backup

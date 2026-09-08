@@ -117,7 +117,10 @@ def preview(backup: Backup, *, holding_lock: bool = False) -> dict:
     check("database", ok, why)
 
     need = sum(int(f.get("size") or 0) for f in (manifest.get("files") or {}).values()) * 2 + (backup.size or 0)
-    free = shutil.disk_usage(str(settings.DANBYTE_BACKUP_DIR)).free if os.path.isdir(str(settings.DANBYTE_BACKUP_DIR)) else 0
+    probe = str(settings.DANBYTE_BACKUP_DIR)
+    while probe and not os.path.isdir(probe):  # the dir is made on first backup; measure its parent
+        probe = os.path.dirname(probe.rstrip(os.sep))
+    free = shutil.disk_usage(probe or os.sep).free
     check("disk", free >= need, f"{free // 2**20} MB free, about {need // 2**20} MB needed")
 
     check("upgrade", holding_lock or not _upgrade_running(), "no upgrade is running")

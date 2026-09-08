@@ -330,11 +330,11 @@ def prune_schedule(schedule: BackupSchedule, now=None) -> int:
 
 
 def delete_backup(backup: Backup) -> None:
+    if backup.status in ("queued", "running"):
+        raise EngineError("A backup that is still running cannot be deleted.")
     if backup.filename:
         try:
             backup.target.backend().delete(backup.filename)
         except Exception:  # noqa: BLE001 - the row goes even if the file is already gone
             logger.warning("could not delete archive %s on %s", backup.filename, backup.target)
-    if backup.status in ("queued", "running"):
-        raise EngineError("A backup that is still running cannot be deleted.")
     backup.delete()

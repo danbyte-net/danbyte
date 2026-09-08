@@ -7742,3 +7742,148 @@ export interface DnsRecordWritePayload {
   data: string
   ttl?: string
 }
+
+// ─── Backups (/api/backups/, deployment admins) ───────────────────────────────
+
+export type BackupComponent = "db" | "media" | "config"
+export type BackupRunStatus = "queued" | "running" | "success" | "failed"
+
+export interface StorageKindField {
+  name: string
+  label: string
+  type: "text" | "password" | "checkbox"
+  placeholder?: string
+  secret?: boolean
+  default?: boolean
+}
+
+export interface StorageKind {
+  kind: string
+  label: string
+  fields: StorageKindField[]
+}
+
+export interface BackupsStatus {
+  deployment_name: string
+  backup_dir: string
+  storage_kinds: StorageKind[]
+  maintenance: { reason: string; run_id: string; since: string } | null
+  restore_in_progress: boolean
+  backup_in_progress: boolean
+}
+
+export interface BackupTarget {
+  id: string
+  name: string
+  kind: string
+  config: Record<string, unknown>
+  has_credentials: boolean
+  location: string
+  is_default: boolean
+  enabled: boolean
+  last_error: string
+  backups_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BackupCadence {
+  frequency: "hourly" | "daily" | "weekly" | "monthly"
+  at: string
+  weekday: number
+  day: number
+}
+
+export interface BackupRetention {
+  max_count: number | null
+  max_age_days: number | null
+}
+
+export interface BackupSchedule {
+  id: string
+  name: string
+  components: BackupComponent[]
+  target: string
+  target_name: string
+  cadence: BackupCadence
+  cadence_label: string
+  retention: BackupRetention
+  notify_channels: string[]
+  enabled: boolean
+  last_run_at: string | null
+  next_run_at: string | null
+  last_backup: string | null
+  last_backup_status: BackupRunStatus | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BackupStep {
+  name: string
+  status: "running" | "success" | "failed"
+  started_at: string
+  finished_at: string | null
+  detail: string
+}
+
+export interface Backup {
+  id: string
+  kind: "manual" | "scheduled" | "pre_upgrade" | "pre_restore" | "uploaded"
+  schedule: string | null
+  schedule_name: string | null
+  target: string
+  target_name: string
+  target_kind: string
+  components: BackupComponent[]
+  status: BackupRunStatus
+  steps: BackupStep[]
+  filename: string
+  location: string
+  size: number | null
+  checksum: string
+  summary: {
+    version: string | null
+    created_at: string | null
+    deployment_name: string | null
+    hostname: string | null
+    media_files: number | null
+    counts: Record<string, number>
+  }
+  error: string
+  protected: boolean
+  created_by_name: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
+
+export interface RestorePreviewCheck {
+  name: string
+  ok: boolean
+  detail: string
+}
+
+export interface RestorePreview {
+  backup: string
+  manifest: Record<string, unknown>
+  components: BackupComponent[]
+  checks: RestorePreviewCheck[]
+  can_restore: boolean
+  counts: Record<string, number>
+  media_files: number | null
+}
+
+export interface RestoreRun {
+  id: string
+  backup: string
+  backup_filename: string
+  components: BackupComponent[]
+  status: BackupRunStatus
+  steps: BackupStep[]
+  safety_backup: string | null
+  error: string
+  created_by_name: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
