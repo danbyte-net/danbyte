@@ -109,6 +109,7 @@ import { Route as SitesIndexRouteImport } from './routes/sites.index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as ServicesIndexRouteImport } from './routes/services.index'
 import { Route as ServiceTemplatesIndexRouteImport } from './routes/service-templates.index'
+import { Route as ScriptsIndexRouteImport } from './routes/scripts.index'
 import { Route as RouteTargetsIndexRouteImport } from './routes/route-targets.index'
 import { Route as RirsIndexRouteImport } from './routes/rirs.index'
 import { Route as RegionsIndexRouteImport } from './routes/regions.index'
@@ -234,6 +235,7 @@ import { Route as SettingsAdminRouteImport } from './routes/settings.admin'
 import { Route as ServicesIdRouteImport } from './routes/services.$id'
 import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
 import { Route as ServiceTemplatesIdRouteImport } from './routes/service-templates.$id'
+import { Route as ScriptsIdRouteImport } from './routes/scripts.$id'
 import { Route as RouteTargetsNewRouteImport } from './routes/route-targets.new'
 import { Route as RouteTargetsIdRouteImport } from './routes/route-targets.$id'
 import { Route as RirsNewRouteImport } from './routes/rirs.new'
@@ -364,6 +366,7 @@ import { Route as StatusesIdEditRouteImport } from './routes/statuses.$id_.edit'
 import { Route as SitesIdEditRouteImport } from './routes/sites.$id_.edit'
 import { Route as SilencesIdEditRouteImport } from './routes/silences.$id_.edit'
 import { Route as ServiceTemplatesIdEditRouteImport } from './routes/service-templates.$id_.edit'
+import { Route as ScriptsRunsRunIdRouteImport } from './routes/scripts.runs.$runId'
 import { Route as RouteTargetsIdEditRouteImport } from './routes/route-targets.$id_.edit'
 import { Route as RirsIdEditRouteImport } from './routes/rirs.$id_.edit'
 import { Route as RegionsIdEditRouteImport } from './routes/regions.$id_.edit'
@@ -917,6 +920,11 @@ const ServicesIndexRoute = ServicesIndexRouteImport.update({
 const ServiceTemplatesIndexRoute = ServiceTemplatesIndexRouteImport.update({
   id: '/service-templates/',
   path: '/service-templates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScriptsIndexRoute = ScriptsIndexRouteImport.update({
+  id: '/scripts/',
+  path: '/scripts/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RouteTargetsIndexRoute = RouteTargetsIndexRouteImport.update({
@@ -1544,6 +1552,11 @@ const ServiceTemplatesNewRoute = ServiceTemplatesNewRouteImport.update({
 const ServiceTemplatesIdRoute = ServiceTemplatesIdRouteImport.update({
   id: '/service-templates/$id',
   path: '/service-templates/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScriptsIdRoute = ScriptsIdRouteImport.update({
+  id: '/scripts/$id',
+  path: '/scripts/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RouteTargetsNewRoute = RouteTargetsNewRouteImport.update({
@@ -2196,6 +2209,11 @@ const ServiceTemplatesIdEditRoute = ServiceTemplatesIdEditRouteImport.update({
   path: '/service-templates/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScriptsRunsRunIdRoute = ScriptsRunsRunIdRouteImport.update({
+  id: '/scripts/runs/$runId',
+  path: '/scripts/runs/$runId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RouteTargetsIdEditRoute = RouteTargetsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2651,6 +2669,7 @@ export interface FileRoutesByFullPath {
   '/rirs/new': typeof RirsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
+  '/scripts/$id': typeof ScriptsIdRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
@@ -2776,6 +2795,7 @@ export interface FileRoutesByFullPath {
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
+  '/scripts/': typeof ScriptsIndexRoute
   '/service-templates/': typeof ServiceTemplatesIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -2852,6 +2872,7 @@ export interface FileRoutesByFullPath {
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
+  '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
   '/service-templates/$id/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id/edit': typeof SilencesIdEditRoute
   '/sites/$id/edit': typeof SitesIdEditRoute
@@ -3005,6 +3026,7 @@ export interface FileRoutesByTo {
   '/rirs/new': typeof RirsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
+  '/scripts/$id': typeof ScriptsIdRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
@@ -3130,6 +3152,7 @@ export interface FileRoutesByTo {
   '/regions': typeof RegionsIndexRoute
   '/rirs': typeof RirsIndexRoute
   '/route-targets': typeof RouteTargetsIndexRoute
+  '/scripts': typeof ScriptsIndexRoute
   '/service-templates': typeof ServiceTemplatesIndexRoute
   '/services': typeof ServicesIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -3206,6 +3229,7 @@ export interface FileRoutesByTo {
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
+  '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
   '/service-templates/$id/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id/edit': typeof SilencesIdEditRoute
   '/sites/$id/edit': typeof SitesIdEditRoute
@@ -3416,6 +3440,7 @@ export interface FileRoutesById {
   '/rirs/new': typeof RirsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
+  '/scripts/$id': typeof ScriptsIdRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
   '/services/$id': typeof ServicesIdRoute
@@ -3541,6 +3566,7 @@ export interface FileRoutesById {
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
+  '/scripts/': typeof ScriptsIndexRoute
   '/service-templates/': typeof ServiceTemplatesIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -3617,6 +3643,7 @@ export interface FileRoutesById {
   '/regions/$id_/edit': typeof RegionsIdEditRoute
   '/rirs/$id_/edit': typeof RirsIdEditRoute
   '/route-targets/$id_/edit': typeof RouteTargetsIdEditRoute
+  '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
   '/service-templates/$id_/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id_/edit': typeof SilencesIdEditRoute
   '/sites/$id_/edit': typeof SitesIdEditRoute
@@ -3828,6 +3855,7 @@ export interface FileRouteTypes {
     | '/rirs/new'
     | '/route-targets/$id'
     | '/route-targets/new'
+    | '/scripts/$id'
     | '/service-templates/$id'
     | '/service-templates/new'
     | '/services/$id'
@@ -3953,6 +3981,7 @@ export interface FileRouteTypes {
     | '/regions/'
     | '/rirs/'
     | '/route-targets/'
+    | '/scripts/'
     | '/service-templates/'
     | '/services/'
     | '/settings/'
@@ -4029,6 +4058,7 @@ export interface FileRouteTypes {
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
     | '/route-targets/$id/edit'
+    | '/scripts/runs/$runId'
     | '/service-templates/$id/edit'
     | '/silences/$id/edit'
     | '/sites/$id/edit'
@@ -4182,6 +4212,7 @@ export interface FileRouteTypes {
     | '/rirs/new'
     | '/route-targets/$id'
     | '/route-targets/new'
+    | '/scripts/$id'
     | '/service-templates/$id'
     | '/service-templates/new'
     | '/services/$id'
@@ -4307,6 +4338,7 @@ export interface FileRouteTypes {
     | '/regions'
     | '/rirs'
     | '/route-targets'
+    | '/scripts'
     | '/service-templates'
     | '/services'
     | '/settings'
@@ -4383,6 +4415,7 @@ export interface FileRouteTypes {
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
     | '/route-targets/$id/edit'
+    | '/scripts/runs/$runId'
     | '/service-templates/$id/edit'
     | '/silences/$id/edit'
     | '/sites/$id/edit'
@@ -4592,6 +4625,7 @@ export interface FileRouteTypes {
     | '/rirs/new'
     | '/route-targets/$id'
     | '/route-targets/new'
+    | '/scripts/$id'
     | '/service-templates/$id'
     | '/service-templates/new'
     | '/services/$id'
@@ -4717,6 +4751,7 @@ export interface FileRouteTypes {
     | '/regions/'
     | '/rirs/'
     | '/route-targets/'
+    | '/scripts/'
     | '/service-templates/'
     | '/services/'
     | '/settings/'
@@ -4793,6 +4828,7 @@ export interface FileRouteTypes {
     | '/regions/$id_/edit'
     | '/rirs/$id_/edit'
     | '/route-targets/$id_/edit'
+    | '/scripts/runs/$runId'
     | '/service-templates/$id_/edit'
     | '/silences/$id_/edit'
     | '/sites/$id_/edit'
@@ -4926,6 +4962,7 @@ export interface RootRouteChildren {
   RacksIdRoute: typeof RacksIdRoute
   RacksElevationsRoute: typeof RacksElevationsRoute
   RacksNewRoute: typeof RacksNewRoute
+  ScriptsIdRoute: typeof ScriptsIdRoute
   ServiceTemplatesIdRoute: typeof ServiceTemplatesIdRoute
   ServiceTemplatesNewRoute: typeof ServiceTemplatesNewRoute
   ServicesIdRoute: typeof ServicesIdRoute
@@ -4957,6 +4994,7 @@ export interface RootRouteChildren {
   PortReservationsIndexRoute: typeof PortReservationsIndexRoute
   RackRolesIndexRoute: typeof RackRolesIndexRoute
   RacksIndexRoute: typeof RacksIndexRoute
+  ScriptsIndexRoute: typeof ScriptsIndexRoute
   ServiceTemplatesIndexRoute: typeof ServiceTemplatesIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
   VirtualMachinesIndexRoute: typeof VirtualMachinesIndexRoute
@@ -4979,6 +5017,7 @@ export interface RootRouteChildren {
   PlatformsIdEditRoute: typeof PlatformsIdEditRoute
   RackRolesIdEditRoute: typeof RackRolesIdEditRoute
   RacksIdEditRoute: typeof RacksIdEditRoute
+  ScriptsRunsRunIdRoute: typeof ScriptsRunsRunIdRoute
   ServiceTemplatesIdEditRoute: typeof ServiceTemplatesIdEditRoute
   SilencesIdEditRoute: typeof SilencesIdEditRoute
   VirtualMachinesIdEditRoute: typeof VirtualMachinesIdEditRoute
@@ -5686,6 +5725,13 @@ declare module '@tanstack/react-router' {
       path: '/service-templates'
       fullPath: '/service-templates/'
       preLoaderRoute: typeof ServiceTemplatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scripts/': {
+      id: '/scripts/'
+      path: '/scripts'
+      fullPath: '/scripts/'
+      preLoaderRoute: typeof ScriptsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/route-targets/': {
@@ -6561,6 +6607,13 @@ declare module '@tanstack/react-router' {
       path: '/service-templates/$id'
       fullPath: '/service-templates/$id'
       preLoaderRoute: typeof ServiceTemplatesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scripts/$id': {
+      id: '/scripts/$id'
+      path: '/scripts/$id'
+      fullPath: '/scripts/$id'
+      preLoaderRoute: typeof ScriptsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/route-targets/new': {
@@ -7471,6 +7524,13 @@ declare module '@tanstack/react-router' {
       path: '/service-templates/$id/edit'
       fullPath: '/service-templates/$id/edit'
       preLoaderRoute: typeof ServiceTemplatesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scripts/runs/$runId': {
+      id: '/scripts/runs/$runId'
+      path: '/scripts/runs/$runId'
+      fullPath: '/scripts/runs/$runId'
+      preLoaderRoute: typeof ScriptsRunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/route-targets/$id_/edit': {
@@ -8967,6 +9027,7 @@ const rootRouteChildren: RootRouteChildren = {
   RacksIdRoute: RacksIdRoute,
   RacksElevationsRoute: RacksElevationsRoute,
   RacksNewRoute: RacksNewRoute,
+  ScriptsIdRoute: ScriptsIdRoute,
   ServiceTemplatesIdRoute: ServiceTemplatesIdRoute,
   ServiceTemplatesNewRoute: ServiceTemplatesNewRoute,
   ServicesIdRoute: ServicesIdRoute,
@@ -8998,6 +9059,7 @@ const rootRouteChildren: RootRouteChildren = {
   PortReservationsIndexRoute: PortReservationsIndexRoute,
   RackRolesIndexRoute: RackRolesIndexRoute,
   RacksIndexRoute: RacksIndexRoute,
+  ScriptsIndexRoute: ScriptsIndexRoute,
   ServiceTemplatesIndexRoute: ServiceTemplatesIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
   VirtualMachinesIndexRoute: VirtualMachinesIndexRoute,
@@ -9020,6 +9082,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlatformsIdEditRoute: PlatformsIdEditRoute,
   RackRolesIdEditRoute: RackRolesIdEditRoute,
   RacksIdEditRoute: RacksIdEditRoute,
+  ScriptsRunsRunIdRoute: ScriptsRunsRunIdRoute,
   ServiceTemplatesIdEditRoute: ServiceTemplatesIdEditRoute,
   SilencesIdEditRoute: SilencesIdEditRoute,
   VirtualMachinesIdEditRoute: VirtualMachinesIdEditRoute,

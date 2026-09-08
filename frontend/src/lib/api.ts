@@ -163,6 +163,9 @@ export interface TagUsage {
 export interface ObjectPerms {
   change: boolean
   delete: boolean
+  /** Only present on types that report extra verbs (scripts). */
+  run?: boolean
+  trust?: boolean
 }
 
 /** The embedded VLAN mini-shape (VLANMiniSerializer) - zone rides along so
@@ -392,6 +395,8 @@ export type RBACAction =
   | "reveal"
   | "subscribe"
   | "grant_superuser"
+  | "run"
+  | "trust"
 
 export interface RBACUser {
   id: number
@@ -7904,4 +7909,110 @@ export interface RestoreRun {
   started_at: string | null
   finished_at: string | null
   created_at: string
+}
+
+// ─── Scripts (/api/scripts/) ─────────────────────────────────────────────────
+
+export type ScriptLanguage = "python"
+export type ScriptVisibility = "owner" | "users" | "groups" | "global"
+export type ScriptRunStatus =
+  | "queued"
+  | "running"
+  | "success"
+  | "failed"
+  | "timeout"
+  | "canceled"
+export type ScriptParamType =
+  | "string"
+  | "text"
+  | "integer"
+  | "decimal"
+  | "boolean"
+  | "choice"
+  | "object"
+
+export interface ScriptParam {
+  name: string
+  label: string
+  type: ScriptParamType
+  required: boolean
+  default: unknown
+  choices: string[]
+  help: string
+  object_type: string
+}
+
+export interface ScriptRunMini {
+  id: string
+  status: ScriptRunStatus
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  scheduled: boolean
+}
+
+export interface Script {
+  id: string
+  name: string
+  slug: string
+  description: string
+  language: ScriptLanguage
+  source: string
+  params_schema: ScriptParam[]
+  token_scope: "full" | "read"
+  timeout_seconds: number
+  trusted: boolean
+  run_as: "caller" | "owner"
+  owner: string | null
+  owner_name: string | null
+  visibility: ScriptVisibility
+  shared_users: string[]
+  shared_groups: string[]
+  schedule_enabled: boolean
+  cadence: BackupCadence
+  cadence_label: string
+  next_run_at: string | null
+  retention: BackupRetention
+  schedule_params: Record<string, unknown>
+  last_run_at: string | null
+  last_run: ScriptRunMini | null
+  run_count: number
+  enabled: boolean
+  permissions?: ObjectPerms
+  created_at: string
+  updated_at: string
+}
+
+export interface ScriptOutput {
+  id: string
+  name: string
+  content_type: string
+  size: number
+  created_at: string
+}
+
+export interface ScriptRun {
+  id: string
+  script: string
+  script_name: string
+  status: ScriptRunStatus
+  params: Record<string, unknown>
+  exit_code: number | null
+  error: string
+  scheduled: boolean
+  trusted: boolean
+  started_by_name: string | null
+  run_as_name: string | null
+  rq_job_id: string
+  started_at: string | null
+  finished_at: string | null
+  duration_seconds: number | null
+  truncated: boolean
+  outputs: ScriptOutput[]
+  created_at: string
+}
+
+export interface ScriptRunDetail extends ScriptRun {
+  log: string
+  source: string
 }

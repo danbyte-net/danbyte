@@ -66,6 +66,7 @@ import {
   Users,
   UsersRound,
   Waypoints,
+  FileCode,
   Webhook,
   Workflow,
   Wrench,
@@ -849,6 +850,12 @@ const sections: NavSection[] = [
     clusters: [
       {
         items: [
+          {
+            title: "Scripts",
+            url: "/scripts",
+            icon: FileCode,
+            objectType: "script",
+          },
           {
             title: "Webhooks",
             url: "/webhooks",

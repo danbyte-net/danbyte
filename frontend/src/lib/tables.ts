@@ -17,6 +17,8 @@ export interface TableMeta {
 }
 
 export const TABLES: TableMeta[] = [
+  { id: "scripts", label: "Scripts", area: "Integrations" },
+  { id: "script-runs", label: "Script runs", area: "Integrations" },
   { id: "backups", label: "Backups", area: "Deployment" },
   { id: "prefixes", label: "Prefixes", area: "IPAM", ioType: "prefix" },
   { id: "prefix-ips", label: "Prefix · IPs", area: "IPAM" },

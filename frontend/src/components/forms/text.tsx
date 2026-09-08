@@ -14,6 +14,7 @@ export interface FormTextProps extends Base {
   autoFocus?: boolean
   autoComplete?: string
   mono?: boolean
+  disabled?: boolean
   inputClassName?: string
   inputMode?:
     | "text"
@@ -38,6 +39,7 @@ export function FormText({
   autoFocus,
   autoComplete,
   mono,
+  disabled,
   inputClassName,
   inputMode,
   min,

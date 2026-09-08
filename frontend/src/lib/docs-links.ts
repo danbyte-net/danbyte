@@ -129,6 +129,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/settings/snmp-sensors": "features/snmp-discovery/",
   "/settings/connect": "features/device-access/",
   "/settings/updates": "getting-started/upgrading/",
+  "/scripts": "features/scripts/",
   "/settings/plugins": "architecture/plugins/",
   "/settings/maps": "features/site-map/",
   "/settings/table-defaults": "features/table-preferences/",
