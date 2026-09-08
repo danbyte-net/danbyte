@@ -15,3 +15,7 @@ class ApiConfig(AppConfig):
 
         io.register_builtins()
         autodiscover_modules("io")
+        # The global search index follows every indexed model's saves/deletes.
+        from .search_index import connect_signals
+
+        connect_signals()

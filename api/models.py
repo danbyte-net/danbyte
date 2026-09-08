@@ -4,6 +4,7 @@ import uuid
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -7089,3 +7090,56 @@ class CableRoute(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class SearchEntry(models.Model):
+    """One row per searchable object - the global search index (#89).
+
+    Denormalised on purpose: one table answers every search with one ranked
+    query instead of a fan-out per type. Kept current by save/delete signals
+    for every indexed model, a nightly rebuild for bulk paths that bypass
+    signals, and ``manage.py rebuild_search_index`` after upgrades. Text is
+    matched through ``danbyte_fold()`` (lowercase, accents stripped) with
+    trigram indexes, so ``aarhus`` finds ``Århus DC`` and a typo still lands.
+
+    ``facets`` holds lowercase name and slug lists per key (``site``, ``role``,
+    ``status``, ``tag``, …) so ``site:esbjerg`` is a JSON containment test.
+    ``tenant`` NULL is only used by deployment-global tags.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    object_type = models.CharField(max_length=64)
+    object_id = models.UUIDField()
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="search_entries",
+        null=True, blank=True,
+    )
+    site = models.ForeignKey(
+        "Site", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    numid = models.IntegerField(null=True, blank=True)
+    title = models.CharField(max_length=255)
+    subtitle = models.CharField(max_length=255, blank=True, default="")
+    body = models.TextField(blank=True, default="")
+    facets = models.JSONField(default=dict, blank=True)
+    url = models.CharField(max_length=255)
+    weight = models.PositiveSmallIntegerField(default=5)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["object_type", "object_id"], name="uniq_searchentry_object"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "object_type"], name="searchentry_tenant_type"),
+            models.Index(fields=["tenant", "numid"], name="searchentry_tenant_numid"),
+            # The trigram indexes on danbyte_fold(title) / danbyte_fold(body)
+            # are created by migration 0159 in SQL: Django renders an OpClass
+            # over a function call with doubled parentheses Postgres rejects.
+            GinIndex(fields=["facets"], name="searchentry_facets_gin"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.object_type}:{self.title}"

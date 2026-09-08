@@ -21,7 +21,9 @@ class NumidSearchTests(APITestCase):
     def _hit_ids(self, group, q):
         r = self.client.get(f"/api/search/?q={q}")
         self.assertEqual(r.status_code, 200, r.content)
-        return [h["id"] for h in r.json()["groups"][group]]
+        slug = {"devices": "device", "cables": "cable", "prefixes": "prefix",
+                "ips": "ipaddress", "vlans": "vlan"}.get(group, group)
+        return [h["id"] for h in r.json()["hits"] if h["type"] == slug]
 
     def test_device_found_by_short_id(self):
         dev = Device.objects.create(tenant=self.tenant, name="edge-fw")

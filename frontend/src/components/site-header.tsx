@@ -1,7 +1,7 @@
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ModeToggle } from "@/components/mode-toggle"
-import { GlobalSearch } from "@/components/global-search"
+import { SearchPalette } from "@/components/search-palette"
 import { BookmarkButton } from "@/components/bookmark-button"
 import { NotificationBell } from "@/components/notification-bell"
 import { DocsButton } from "@/components/docs-button"
@@ -70,7 +70,7 @@ export function SiteHeader({ crumbs }: { crumbs?: Crumb[] }) {
               className="data-[orientation=vertical]:h-4"
             />
           )}
-          <GlobalSearch />
+          <SearchPalette />
           <DocsButton />
           <NotificationBell />
           <BookmarkButton />

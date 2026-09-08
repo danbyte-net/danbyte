@@ -131,6 +131,7 @@ fi
 
 status running migrate 60
 "$PY" manage.py migrate --noinput || fail migrate "database migration failed"
+"$PY" manage.py rebuild_search_index >/dev/null 2>&1 || true
 
 status running frontend 75
 ( cd frontend && npm ci --no-audit --no-fund --silent && npm run build --silent ) \

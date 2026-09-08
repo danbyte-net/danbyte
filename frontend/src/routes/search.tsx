@@ -1,15 +1,13 @@
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Search } from "lucide-react"
 
-import {
-  api,
-  SEARCH_GROUPS,
-  type SearchHit,
-  type SearchResponse,
-} from "@/lib/api"
+import { api } from "@/lib/api"
+import type { SearchHit, SearchResponse } from "@/lib/api"
+import { rememberHit, rememberQuery } from "@/lib/search-recents"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -23,154 +21,186 @@ import { QueryError } from "@/components/query-error"
 import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/search")({
-  validateSearch: (s: Record<string, unknown>) => ({
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { q: string; type?: string } => ({
     q: typeof s.q === "string" ? s.q : "",
+    ...(typeof s.type === "string" && s.type ? { type: s.type } : {}),
   }),
   component: SearchResultsPage,
 })
 
-const RESULTS_LIMIT = 50
+const PAGE = 50
 
 function SearchResultsPage() {
   usePageTitle("Search")
-  const { q } = Route.useSearch()
-  const [activeGroup, setActiveGroup] = useState<string>("all")
+  const { q, type: typeParam } = Route.useSearch()
+  const type = typeParam ?? ""
+  const navigate = Route.useNavigate()
+  const [cursor, setCursor] = useState(0)
+
+  useEffect(() => {
+    setCursor(0)
+    if (q) rememberQuery(q)
+  }, [q, type])
 
   const query = useQuery({
-    queryKey: ["search-results", q],
+    queryKey: ["search-results", q, type, cursor],
     queryFn: () =>
       api<SearchResponse>(
-        `/api/search/?q=${encodeURIComponent(q)}&limit=${RESULTS_LIMIT}`
+        `/api/search/?q=${encodeURIComponent(q)}&limit=${PAGE}&cursor=${cursor}` +
+          (type ? `&type=${encodeURIComponent(type)}` : "")
       ),
     enabled: q.length >= 1,
-    staleTime: 10 * 1000,
+    staleTime: 10_000,
+    placeholderData: (prev) => prev,
   })
 
-  // Build the visible group list - only groups with >0 hits get a tab.
-  const visibleGroups = useMemo(() => {
-    if (!query.data) return []
-    return SEARCH_GROUPS.filter(
-      ({ key }) => query.data!.groups[key]?.length > 0
-    )
-  }, [query.data])
+  const facets = query.data?.facets.types ?? []
+  const total = query.data?.total ?? 0
 
   return (
     <div className="flex h-full flex-1 flex-col">
       <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
         <Search className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-base font-semibold">Search</h1>
-        {q && (
-          <span className="font-mono text-xs text-muted-foreground">"{q}"</span>
-        )}
+        <span className="text-sm font-medium">Search</span>
+        <span className="font-mono text-sm text-muted-foreground">{q}</span>
         {query.data && (
-          <Badge variant="secondary" className="rounded-md">
-            {query.data.total} hit{query.data.total === 1 ? "" : "s"}
+          <Badge variant="secondary">
+            {total}
+            {total >= 300 ? "+" : ""} result{total === 1 ? "" : "s"}
           </Badge>
         )}
       </header>
 
-      {!q && (
-        <p className="p-6 text-sm text-muted-foreground">
-          Type a query in the top bar and press Enter.
-        </p>
-      )}
-
-      {q && query.isLoading && (
-        <p className="p-6 text-sm text-muted-foreground">Searching…</p>
-      )}
-      {q && query.isError && (
-        <div className="p-6">
-          <QueryError error={query.error} />
-        </div>
-      )}
-
-      {query.data && (
-        <>
-          {/* Group filter bar - "All" + one tab per non-empty group. */}
-          <nav className="flex h-10 shrink-0 items-center overflow-x-auto border-b border-border px-3">
-            <SegmentedTabs
-              value={activeGroup}
-              onValueChange={setActiveGroup}
-              items={[
-                { value: "all", label: "All", count: query.data.total },
-                ...visibleGroups.map(({ key, label }) => ({
-                  value: key,
-                  label,
-                  count: query.data!.groups[key].length,
-                })),
-              ]}
-            />
-          </nav>
-
-          <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
-            {query.data.total === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No matches for "{q}".
-              </p>
+      <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 lg:p-6">
+        {!q && (
+          <p className="text-sm text-muted-foreground">
+            Type in the search box, or press ⌘K / Ctrl+K anywhere. Narrow a
+            query with tokens: <span className="font-mono">type:device</span>,{" "}
+            <span className="font-mono">site:aarhus</span>,{" "}
+            <span className="font-mono">role:core</span>,{" "}
+            <span className="font-mono">status:active</span>,{" "}
+            <span className="font-mono">tag:dc</span>.
+          </p>
+        )}
+        {query.isError && <QueryError error={query.error} />}
+        {q && query.data && (
+          <>
+            {facets.length > 1 && (
+              <SegmentedTabs
+                value={type || "all"}
+                onValueChange={(v) =>
+                  navigate({
+                    search: v === "all" ? { q } : { q, type: v },
+                  })
+                }
+                items={[
+                  { value: "all", label: "All", count: total },
+                  ...facets.map((f) => ({
+                    value: f.type,
+                    label: f.label,
+                    count: f.count,
+                  })),
+                ]}
+              />
+            )}
+            {query.data.hits.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No matches.</p>
             ) : (
-              <div className="flex flex-col gap-8">
-                {SEARCH_GROUPS.map(({ key, label }) => {
-                  const hits = query.data!.groups[key]
-                  if (hits.length === 0) return null
-                  if (activeGroup !== "all" && activeGroup !== key) return null
-                  return <GroupTable key={key} label={label} hits={hits} />
-                })}
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-32">Type</TableHead>
+                      <TableHead>Match</TableHead>
+                      <TableHead>Details</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {query.data.hits.map((h) => (
+                      <HitRow key={`${h.type}-${h.id}`} hit={h} q={q} />
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             )}
-          </div>
-        </>
-      )}
+            {(cursor > 0 || query.data.next_cursor !== null) && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {cursor + 1}–{cursor + query.data.hits.length} of {total}
+                  {total >= 300 ? "+" : ""}
+                </span>
+                <span className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={cursor === 0}
+                    onClick={() => setCursor(Math.max(0, cursor - PAGE))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={query.data.next_cursor === null}
+                    onClick={() => setCursor(query.data!.next_cursor ?? cursor)}
+                  >
+                    Next
+                  </Button>
+                </span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
 
-function GroupTable({ label, hits }: { label: string; hits: SearchHit[] }) {
-  return (
-    <section>
-      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-        {label}{" "}
-        <span className="ml-1 text-muted-foreground/70">({hits.length})</span>
-      </h2>
-      <div className="overflow-hidden rounded-lg border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-64 text-xs">Match</TableHead>
-              <TableHead className="text-xs">Description</TableHead>
-              <TableHead className="text-xs">Details</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {hits.map((hit) => (
-              <TableRow key={String(hit.id)}>
-                <TableCell className="py-2">
-                  <Link
-                    to={hit.url as never}
-                    className="link font-mono text-[13px] text-foreground"
-                  >
-                    {hit.label}
-                  </Link>
-                </TableCell>
-                <TableCell className="py-2 text-xs text-muted-foreground">
-                  {hit.sublabel || "-"}
-                </TableCell>
-                <TableCell className="py-2 text-[11px] text-muted-foreground">
-                  {summarizeExtras(hit)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </section>
-  )
+/** Wraps the folded query's first occurrence in <mark>, else plain text. */
+function Highlight({ text, q }: { text: string; q: string }) {
+  const words = q
+    .split(/\s+/)
+    .filter((w) => w && !w.includes(":"))
+    .map((w) => w.toLowerCase())
+  const lower = text.toLowerCase()
+  for (const w of words) {
+    const i = lower.indexOf(w)
+    if (i >= 0)
+      return (
+        <>
+          {text.slice(0, i)}
+          <mark className="rounded-sm bg-primary/20 px-0.5 text-inherit">
+            {text.slice(i, i + w.length)}
+          </mark>
+          {text.slice(i + w.length)}
+        </>
+      )
+  }
+  return <>{text}</>
 }
 
-function summarizeExtras(hit: SearchHit): string {
-  const parts: string[] = []
-  for (const [k, v] of Object.entries(hit.extras)) {
-    if (v == null || v === "" || v === false) continue
-    parts.push(`${k}: ${String(v)}`)
-  }
-  return parts.join(" · ") || "-"
+function HitRow({ hit, q }: { hit: SearchHit; q: string }) {
+  return (
+    <TableRow>
+      <TableCell>
+        <Badge variant="secondary" className="text-[10px]">
+          {hit.type_label}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <Link
+          to={hit.url as never}
+          className="link font-mono text-[13px] font-medium"
+          onClick={() => rememberHit(hit)}
+        >
+          <Highlight text={hit.title} q={q} />
+        </Link>
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {hit.subtitle ? <Highlight text={hit.subtitle} q={q} /> : "-"}
+      </TableCell>
+    </TableRow>
+  )
 }

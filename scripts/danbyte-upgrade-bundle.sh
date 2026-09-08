@@ -120,6 +120,7 @@ status running deps 60
 
 status running migrate 75
 "$PY" manage.py migrate --noinput || fail migrate "database migration failed"
+"$PY" manage.py rebuild_search_index >/dev/null 2>&1 || true
 
 status running static 85
 "$PY" manage.py collectstatic --noinput >/dev/null 2>&1 || true

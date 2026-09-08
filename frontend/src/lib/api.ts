@@ -4056,66 +4056,26 @@ export interface CustomFieldGroupWritePayload {
 // ─── Global search ───────────────────────────────────────────────────────
 
 export interface SearchHit {
-  id: string | number
-  label: string
-  sublabel: string
-  extras: Record<string, unknown>
-  /** Frontend route (no /api prefix). Navigate via TanStack Router. */
+  /** Object-type slug, e.g. "device". */
+  type: string
+  type_label: string
+  id: string
+  title: string
+  subtitle: string
   url: string
+  score: number
+  numid: number | null
 }
 
 export interface SearchResponse {
   q: string
+  /** Ranked candidates the caller may view (capped server-side). */
   total: number
-  groups: {
-    prefixes: SearchHit[]
-    ips: SearchHit[]
-    vlans: SearchHit[]
-    vrfs: SearchHit[]
-    route_targets: SearchHit[]
-    sites: SearchHit[]
-    tenants: SearchHit[]
-    devices: SearchHit[]
-    vms: SearchHit[]
-    tags: SearchHit[]
-    locations: SearchHit[]
-    racks: SearchHit[]
-    clusters: SearchHit[]
-    device_types: SearchHit[]
-    manufacturers: SearchHit[]
-    circuits: SearchHit[]
-    cables: SearchHit[]
-    providers: SearchHit[]
-    contacts: SearchHit[]
-    interfaces: SearchHit[]
-  }
+  hits: SearchHit[]
+  facets: { types: { type: string; label: string; count: number }[] }
+  /** Offset for the next page, or null on the last one. */
+  next_cursor: number | null
 }
-
-export const SEARCH_GROUPS: Array<{
-  key: keyof SearchResponse["groups"]
-  label: string
-}> = [
-  { key: "prefixes", label: "Prefixes" },
-  { key: "ips", label: "IP addresses" },
-  { key: "vlans", label: "VLANs" },
-  { key: "vrfs", label: "VRFs" },
-  { key: "route_targets", label: "Route Targets" },
-  { key: "sites", label: "Sites" },
-  { key: "devices", label: "Devices" },
-  { key: "vms", label: "Virtual machines" },
-  { key: "interfaces", label: "Interfaces" },
-  { key: "racks", label: "Racks" },
-  { key: "locations", label: "Locations" },
-  { key: "clusters", label: "Clusters" },
-  { key: "device_types", label: "Device types" },
-  { key: "manufacturers", label: "Manufacturers" },
-  { key: "circuits", label: "Circuits" },
-  { key: "cables", label: "Cables" },
-  { key: "providers", label: "Providers" },
-  { key: "contacts", label: "Contacts" },
-  { key: "tags", label: "Tags" },
-  { key: "tenants", label: "Tenants" },
-]
 
 // ─── Monitoring / check engine ─────────────────────────────────────────────
 

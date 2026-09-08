@@ -1,456 +1,327 @@
-"""Global search endpoint - one query, results grouped by entity.
+"""Global search endpoint (#89) - one ranked query over the search index.
 
-Tenant-scoped: each row is filtered by the user's active tenant (tags are
-global since the Tag model itself is global). Returns up to `limit` rows
-per entity so the topbar suggester stays snappy and the /search results
-page can render a grouped table.
+``GET /api/search/?q=<query>&type=<slug>&limit=<n>&cursor=<offset>``
 
-Matching is currently substring (``__icontains``) across every plausible
-field per entity. Postgres trigram (``pg_trgm``) is the obvious upgrade
-once the schema migrations are unblocked - drop in
-``TrigramSimilarity`` + a similarity threshold and reorder by score.
+Matching runs through ``danbyte_fold()`` (lowercase, accents stripped) with
+trigram similarity plus substring tests, so ``aarhus`` finds ``Århus DC`` and
+a near-miss still ranks. Ranking: exact folded title > title prefix > word
+start > substring > trigram similarity, plus the row's type weight.
+Special forms rank first: an IP or CIDR also lists the prefixes containing
+it, an all-digit query matches the short id exactly.
+
+``key:value`` tokens narrow the query: ``type:device site:esbjerg
+role:firewall status:active tag:core``. Every hit is re-checked against the
+caller's RBAC row scope for its type before it is returned.
 """
 from __future__ import annotations
 
-from django.db.models import Q
+import ipaddress
+import re
+import shlex
+
+from django.db import connection
+from django.db.models.expressions import RawSQL
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import (
-    OpenApiParameter,
-    OpenApiResponse,
-    extend_schema,
-    inline_serializer,
-)
-from rest_framework import permissions, serializers
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from rest_framework import permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from core.models import Tag, Tenant
 from auth_api import rbac
-from .models import (
-    Cable,
-    Circuit, Cluster, Contact, Device, DeviceType, IPAddress, Interface,
-    Location, Manufacturer, Prefix, Provider, Rack, RouteTarget, Site, VLAN,
-    VirtualMachine, VRF,
-)
-from .cf_search import cf_text_q
-from .serializers import TagSerializer
+from auth_api.object_types import model_for, registry_payload
+
+from .search_index import SPECS, fold
 from .views import _get_active_tenant
 
-
-DEFAULT_LIMIT = 25
+DEFAULT_LIMIT = 20
 MAX_LIMIT = 100
+#: Ranked candidates fetched before RBAC and paging.
+CANDIDATES = 300
+
+_TOKEN_KEYS = ("type", "site", "role", "status", "tag", "platform", "vrf", "cluster",
+               "provider", "manufacturer", "group", "rir", "region", "rack", "vlan")
+
+_TYPE_ALIASES = {
+    "ip": "ipaddress", "ips": "ipaddress", "address": "ipaddress",
+    "vm": "virtualmachine", "vms": "virtualmachine",
+    "mac": "macaddress", "macs": "macaddress",
+    "range": "iprange", "ranges": "iprange",
+    "stack": "virtualchassis", "stacks": "virtualchassis",
+    "wlan": "wirelesslan", "ssid": "wirelesslan",
+    "type": "devicetype", "types": "devicetype",
+}
+
+
+def _type_labels() -> dict[str, str]:
+    return {e["slug"]: e["label"] for e in registry_payload()}
+
+
+def _resolve_type(value: str) -> str | None:
+    v = fold(value).replace(" ", "").replace("-", "").replace("_", "")
+    if v in SPECS:
+        return v
+    if v in _TYPE_ALIASES:
+        return _TYPE_ALIASES[v]
+    for slug, label in _type_labels().items():
+        lab = fold(label).replace(" ", "")
+        if slug in SPECS and v in (lab, lab.rstrip("s"), slug + "s"):
+            return slug
+    if v.endswith("s") and v[:-1] in SPECS:
+        return v[:-1]
+    return None
+
+
+def parse_query(raw: str) -> tuple[str, dict[str, list[str]]]:
+    """``"core site:esbjerg type:device"`` → ``("core", {"site": ["esbjerg"],
+    "type": ["device"]})``. Quoted values keep their spaces."""
+    try:
+        parts = shlex.split(raw)
+    except ValueError:
+        parts = raw.split()
+    words, tokens = [], {}
+    for part in parts:
+        key, sep, value = part.partition(":")
+        if sep and key.lower() in _TOKEN_KEYS and value:
+            tokens.setdefault(key.lower(), []).append(fold(value))
+        else:
+            words.append(part)
+    return " ".join(words).strip(), tokens
+
+
+_RANK_SQL = """
+SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid,
+       (CASE
+          WHEN danbyte_fold(e.title) = %(q)s THEN 4.0
+          WHEN danbyte_fold(e.title) LIKE %(prefix)s THEN 3.0
+          WHEN danbyte_fold(e.title) LIKE %(word)s THEN 2.5
+          WHEN danbyte_fold(e.title) LIKE %(sub)s THEN 2.0
+          WHEN danbyte_fold(e.body) LIKE %(sub)s THEN 1.0
+          ELSE 0 END)
+       + similarity(danbyte_fold(e.title), %(q)s)
+       + 0.5 * similarity(danbyte_fold(e.body), %(q)s)
+       + e.weight / 10.0
+       + (CASE WHEN e.numid IS NOT NULL AND e.numid = %(numid)s THEN 5.0 ELSE 0 END)
+       AS score
+FROM api_searchentry e
+WHERE (e.tenant_id = %(tenant)s OR (e.tenant_id IS NULL AND e.object_type = 'tag'))
+  {type_clause}
+  {facet_clause}
+  AND (danbyte_fold(e.title) LIKE %(sub)s
+       OR danbyte_fold(e.body) LIKE %(sub)s
+       OR danbyte_fold(e.title) %% %(q)s
+       OR (e.numid IS NOT NULL AND e.numid = %(numid)s))
+ORDER BY score DESC, e.title ASC
+LIMIT %(limit)s
+"""
+
+_BROWSE_SQL = """
+SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid,
+       e.weight / 10.0 AS score
+FROM api_searchentry e
+WHERE (e.tenant_id = %(tenant)s OR (e.tenant_id IS NULL AND e.object_type = 'tag'))
+  {type_clause}
+  {facet_clause}
+ORDER BY e.title ASC
+LIMIT %(limit)s
+"""
+
+
+def _like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def ranked_candidates(q: str, tokens: dict, tenant) -> list[dict]:
+    """Top candidates from the index, before RBAC."""
+    types = []
+    for t in tokens.get("type", []):
+        slug = _resolve_type(t)
+        if slug:
+            types.append(slug)
+    params: dict = {"tenant": str(tenant.id), "limit": CANDIDATES}
+    type_clause = ""
+    if types:
+        type_clause = "AND e.object_type = ANY(%(types)s)"
+        params["types"] = types
+    # A token value is a prefix of the facet's folded name or slug, so
+    # ``site:aarhus`` finds "Århus DC" the way typing it into the box would.
+    facet_bits = []
+    for i, (key, values) in enumerate(tokens.items()):
+        if key == "type":
+            continue
+        for j, v in enumerate(values):
+            name = f"f{i}_{j}"
+            facet_bits.append(
+                "AND EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+                f"COALESCE(e.facets->%({name}_key)s, '[]'::jsonb)) fv "
+                f"WHERE fv LIKE %({name})s)"
+            )
+            params[f"{name}_key"] = key
+            params[name] = f"{_like(v)}%"
+    facet_clause = " ".join(facet_bits)
+    fq = fold(q)
+    if not fq:
+        if not tokens:
+            return []
+        sql = _BROWSE_SQL.format(type_clause=type_clause, facet_clause=facet_clause)
+    else:
+        like = _like(fq)
+        params.update({
+            "q": fq,
+            "prefix": f"{like}%",
+            "word": f"% {like}%",
+            "sub": f"%{like}%",
+            "numid": int(fq) if fq.isdigit() and len(fq) < 10 else -1,
+        })
+        sql = _RANK_SQL.format(type_clause=type_clause, facet_clause=facet_clause)
+    with connection.cursor() as cur:
+        cur.execute(sql, params)
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+def _network_hits(q: str, tenant) -> list[dict]:
+    """An IP or CIDR query also lists the prefixes that contain it."""
+    from .models import Prefix
+
+    try:
+        net = ipaddress.ip_network(q.strip(), strict=False)
+    except ValueError:
+        return []
+    qs = (
+        Prefix.objects.filter(tenant=tenant)
+        .annotate(_hit=RawSQL("cidr::inet >>= %s::inet", (str(net),)))
+        .filter(_hit=True)
+        .select_related("vrf")
+        .order_by("-cidr")[:20]
+    )
+    out = []
+    for p in qs:
+        try:
+            p_len = ipaddress.ip_network(str(p.cidr), strict=False).prefixlen
+        except ValueError:
+            p_len = 0
+        out.append({
+            "object_type": "prefix", "object_id": p.id, "title": str(p.cidr),
+            "subtitle": f"contains {net}" if str(net) != str(p.cidr) else (p.description or ""),
+            "url": f"/prefixes/{p.id}", "facets": {}, "numid": getattr(p, "numid", None),
+            # An exact CIDR outranks everything; among containing prefixes the
+            # most specific comes first.
+            "score": 4.6 if str(net) == str(p.cidr) else 3.6 + p_len / 1000.0,
+        })
+    return out
+
+
+def _allowed(rows: list[dict], user, tenant) -> list[dict]:
+    """Keep the candidates the caller may view, per type, in one query each."""
+    by_type: dict[str, list] = {}
+    for r in rows:
+        by_type.setdefault(r["object_type"], []).append(r["object_id"])
+    ok: dict[str, set] = {}
+    for slug, ids in by_type.items():
+        if slug == "tag":
+            ok[slug] = set(ids)
+            continue
+        model = model_for(slug)
+        if model is None:
+            continue
+        if slug == "tenant":
+            ok[slug] = {tenant.id} & set(ids)
+            continue
+        qs = rbac.restrict_queryset(model.objects.filter(pk__in=ids), user, tenant, slug, "view")
+        ok[slug] = set(qs.values_list("pk", flat=True))
+    return [r for r in rows if r["object_id"] in ok.get(r["object_type"], set())]
 
 
 @extend_schema(
-    summary="Global tenant-scoped search across entities, grouped by type",
+    summary="Global tenant-scoped search: one ranked list across every object type",
     tags=["search"],
     request=None,
     parameters=[
-        OpenApiParameter(
-            name="q",
-            type=OpenApiTypes.STR,
-            location=OpenApiParameter.QUERY,
-            description="Search query (substring match across each entity's fields).",
-        ),
-        OpenApiParameter(
-            name="limit",
-            type=OpenApiTypes.INT,
-            location=OpenApiParameter.QUERY,
-            description=(
-                f"Max rows per entity group (default {DEFAULT_LIMIT}, "
-                f"capped at {MAX_LIMIT})."
-            ),
-        ),
+        OpenApiParameter(name="q", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY,
+                         description="Query text; key:value tokens (type:, site:, role:, "
+                                     "status:, tag:, …) narrow it."),
+        OpenApiParameter(name="type", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY,
+                         description="Object-type slug to restrict to (same as a type: token)."),
+        OpenApiParameter(name="limit", type=OpenApiTypes.INT, location=OpenApiParameter.QUERY,
+                         description=f"Page size (default {DEFAULT_LIMIT}, max {MAX_LIMIT})."),
+        OpenApiParameter(name="cursor", type=OpenApiTypes.INT, location=OpenApiParameter.QUERY,
+                         description="Offset from a previous response's next_cursor."),
     ],
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description=(
-            "Results as `{q, total, groups}` where `groups` holds pre-shaped "
-            "rows (id, label, sublabel, extras, url) for prefixes, ips, vlans, "
-            "vrfs, route_targets, sites, tenants, devices, and tags."
-        ),
+        description="{q, total, hits:[{type, type_label, id, title, subtitle, url, score}], "
+                    "facets:{types:[{type, label, count}]}, next_cursor}",
     ),
 )
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def search(request):
-    """GET /api/search/?q=<query>&limit=<n>
-
-    Returns ``{ q, total, groups: { prefixes, ips, vlans, vrfs,
-    route_targets, sites, tenants, devices, vms, tags } }``. Each group is
-    pre-shaped for the React results table - id, label, sublabel, url -
-    so the page can render every section the same way without per-entity
-    branches.
-    """
-    q = (request.query_params.get("q") or "").strip()
+    raw = (request.query_params.get("q") or "").strip()
     try:
-        limit = min(int(request.query_params.get("limit") or DEFAULT_LIMIT), MAX_LIMIT)
+        limit = max(1, min(int(request.query_params.get("limit") or DEFAULT_LIMIT), MAX_LIMIT))
     except (TypeError, ValueError):
         limit = DEFAULT_LIMIT
+    try:
+        offset = max(0, int(request.query_params.get("cursor") or 0))
+    except (TypeError, ValueError):
+        offset = 0
 
-    if not q:
-        return Response({"q": q, "total": 0, "groups": _empty_groups()})
+    q, tokens = parse_query(raw)
+    type_param = (request.query_params.get("type") or "").strip()
+    if type_param:
+        tokens.setdefault("type", []).append(type_param)
+    if not q and not tokens:
+        return Response({"q": raw, "total": 0, "hits": [], "facets": {"types": []},
+                         "next_cursor": None})
 
     tenant = _get_active_tenant(request)
     if tenant is None:
         raise PermissionDenied("No active tenant selected.")
 
-    u = request.user
-    groups = {
-        "prefixes":      _search_prefixes(q, u, tenant, limit),
-        "ips":           _search_ips(q, u, tenant, limit),
-        "vlans":         _search_vlans(q, u, tenant, limit),
-        "vrfs":          _search_vrfs(q, u, tenant, limit),
-        "route_targets": _search_rts(q, u, tenant, limit),
-        "sites":         _search_sites(q, u, tenant, limit),
-        "tenants":       _search_tenants(q, u, limit),
-        "devices":       _search_devices(q, u, tenant, limit),
-        "vms":           _search_vms(q, u, tenant, limit),
-        "tags":          _search_tags(q, tenant, limit),
+    rows = ranked_candidates(q, tokens, tenant)
+    if q and (not tokens.get("type") or "prefix" in tokens.get("type", [])):
+        by_key = {(r["object_type"], r["object_id"]): r for r in rows}
+        for h in _network_hits(q, tenant):
+            cur = by_key.get((h["object_type"], h["object_id"]))
+            if cur is None:
+                rows.append(h)
+            elif float(cur["score"]) < h["score"]:
+                cur["score"], cur["subtitle"] = h["score"], h["subtitle"]
+        rows.sort(key=lambda r: (-float(r["score"]), r["title"]))
+    rows = _allowed(rows, request.user, tenant)
+
+    labels = _type_labels()
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["object_type"]] = counts.get(r["object_type"], 0) + 1
+    facets = {
+        "types": [
+            {"type": t, "label": labels.get(t, t), "count": n}
+            for t, n in sorted(counts.items(), key=lambda kv: -kv[1])
+        ]
     }
-    # Everything else people navigate to by name. Declarative because these
-    # differ only in model/fields/URL - the bespoke functions above stay as
-    # they are (their results carry entity-specific shaping).
-    for key, spec in _SIMPLE_GROUPS.items():
-        groups[key] = _search_simple(q, u, tenant, limit, **spec)
-    total = sum(len(g) for g in groups.values())
-    return Response({"q": q, "total": total, "groups": groups})
-
-
-# ─── Per-entity searches ───────────────────────────────────────────────
-
-def _search_prefixes(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    qs = (
-        rbac.restrict_queryset(Prefix.objects.filter(tenant=tenant), user, tenant, "prefix", "view")
-        .filter(
-            Q(cidr__icontains=q) | Q(description__icontains=q)
-            | (_numid_q(Prefix, q) or Q(pk__in=[]))
-            | cf_text_q(Prefix, q)
-        )
-        .select_related("vrf", "site")
-        .order_by("cidr")[:limit]
-    )
-    return [
+    page = rows[offset : offset + limit]
+    hits = [
         {
-            "id": str(p.id),
-            "label": str(p.cidr),
-            "sublabel": p.description or "",
-            "extras": {
-                "status": p.status.slug if p.status_id else None,
-                "vrf": p.vrf.name if p.vrf else None,
-                "site": p.site.name if p.site else None,
-            },
-            "url": f"/prefixes/{p.id}",
+            "type": r["object_type"],
+            "type_label": labels.get(r["object_type"], r["object_type"]),
+            "id": str(r["object_id"]),
+            "title": r["title"],
+            "subtitle": r["subtitle"] or "",
+            "url": r["url"],
+            "score": round(float(r["score"]), 3),
+            "numid": r.get("numid"),
         }
-        for p in qs
+        for r in page
     ]
+    return Response({
+        "q": raw,
+        "total": len(rows),
+        "hits": hits,
+        "facets": facets,
+        "next_cursor": offset + limit if offset + limit < len(rows) else None,
+    })
 
 
-def _search_ips(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    qs = (
-        rbac.restrict_queryset(IPAddress.objects.filter(tenant=tenant), user, tenant, "ipaddress", "view")
-        .filter(
-            Q(ip_address__icontains=q)
-            | Q(description__icontains=q)
-            | Q(reservation_note__icontains=q)
-            | (_numid_q(IPAddress, q) or Q(pk__in=[]))
-            | cf_text_q(IPAddress, q)
-        )
-        .select_related("status", "role", "assigned_device", "prefix")
-        .order_by("ip_address")[:limit]
-    )
-    return [
-        {
-            "id": str(ip.id),
-            "label": str(ip.ip_address),
-            "sublabel": ip.description or ip.reservation_note or "",
-            "extras": {
-                "status": ip.status.name if ip.status else None,
-                "role": ip.role.name if ip.role else None,
-                "device": ip.assigned_device.name if ip.assigned_device else None,
-                "prefix": str(ip.prefix.cidr) if ip.prefix else None,
-            },
-            "url": f"/ips/{ip.id}",
-        }
-        for ip in qs
-    ]
-
-
-def _search_vlans(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    cond = Q(name__icontains=q) | Q(description__icontains=q) | cf_text_q(VLAN, q)
-    nq = _numid_q(VLAN, q)
-    if nq:
-        cond |= nq
-    if q.isdigit():
-        # Exact match on VLAN ID - IntegerField doesn't support icontains
-        # cleanly across all backends.
-        cond |= Q(vlan_id=int(q))
-    qs = (
-        rbac.restrict_queryset(VLAN.objects.filter(tenant=tenant), user, tenant, "vlan", "view")
-        .filter(cond)
-        .select_related("site")
-        .order_by("vlan_id")[:limit]
-    )
-    return [
-        {
-            "id": str(v.id),
-            "label": f"{v.vlan_id} · {v.name}",
-            "sublabel": v.description or "",
-            "extras": {"site": v.site.name if v.site else None},
-            "url": f"/vlans/{v.id}",
-        }
-        for v in qs
-    ]
-
-
-def _search_vrfs(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    qs = (
-        rbac.restrict_queryset(VRF.objects.filter(tenant=tenant), user, tenant, "vrf", "view")
-        .filter(
-            Q(name__icontains=q) | Q(rd__icontains=q) | Q(description__icontains=q)
-            | cf_text_q(VRF, q)
-        )
-        .order_by("name")[:limit]
-    )
-    return [
-        {
-            "id": str(v.id),
-            "label": v.name,
-            "sublabel": v.description or "",
-            "extras": {"rd": v.rd or None},
-            "url": f"/vrfs/{v.id}",
-        }
-        for v in qs
-    ]
-
-
-def _search_rts(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    qs = (
-        rbac.restrict_queryset(RouteTarget.objects.filter(tenant=tenant), user, tenant, "routetarget", "view")
-        .filter(Q(name__icontains=q) | Q(description__icontains=q) | cf_text_q(RouteTarget, q))
-        .order_by("name")[:limit]
-    )
-    return [
-        {
-            "id": str(rt.id),
-            "label": rt.name,
-            "sublabel": rt.description or "",
-            "extras": {},
-            "url": f"/route-targets/{rt.id}",
-        }
-        for rt in qs
-    ]
-
-
-def _search_sites(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    qs = (
-        rbac.restrict_queryset(Site.objects.filter(tenant=tenant), user, tenant, "site", "view")
-        .filter(
-            Q(name__icontains=q)
-            | Q(location__icontains=q)
-            | Q(description__icontains=q)
-            | cf_text_q(Site, q)
-        )
-        .order_by("name")[:limit]
-    )
-    return [
-        {
-            "id": str(s.id),
-            "label": s.name,
-            "sublabel": s.location or s.description or "",
-            "extras": {},
-            "url": f"/sites/{s.id}",
-        }
-        for s in qs
-    ]
-
-
-def _search_tenants(q: str, user, limit: int) -> list[dict]:
-    # Tenants aren't tenant-scoped (they ARE the scope). Limit to ones
-    # the user has membership on - but for the moment the user model
-    # doesn't surface that cleanly, so superusers see all and others see
-    # only their currently active tenant. Refine if/when membership is
-    # exposed via the API.
-    if not getattr(user, "is_authenticated", False):
-        return []
-    base = Tenant.objects.filter(
-        Q(name__icontains=q) | Q(slug__icontains=q) | Q(description__icontains=q)
-    )
-    if getattr(user, "is_superuser", False):
-        qs = base
-    else:
-        active_id = getattr(user, "active_tenant_id", None)
-        qs = base.filter(pk=active_id) if active_id else Tenant.objects.none()
-    return [
-        {
-            "id": str(t.id),
-            "label": t.name,
-            "sublabel": t.slug,
-            "extras": {"is_active": t.is_active},
-            "url": f"/tenants/{t.id}",
-        }
-        for t in qs.order_by("name")[:limit]
-    ]
-
-
-def _search_devices(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    cond = Q(name__icontains=q) | cf_text_q(Device, q)
-    nq = _numid_q(Device, q)
-    if nq:
-        cond |= nq
-    qs = (
-        rbac.restrict_queryset(Device.objects.filter(tenant=tenant), user, tenant, "device", "view")
-        .filter(cond)
-        .order_by("name")[:limit]
-    )
-    return [
-        {
-            "id": str(d.id),
-            "label": d.name,
-            "sublabel": "",
-            "extras": {},
-            "url": f"/devices/{d.id}",
-        }
-        for d in qs
-    ]
-
-
-def _search_vms(q: str, user, tenant: Tenant, limit: int) -> list[dict]:
-    """Virtual machines are first-class objects with their own pages, so
-    global search must find them too (#82 - they were missing while the VM
-    list page's own search worked)."""
-    qs = (
-        rbac.restrict_queryset(
-            VirtualMachine.objects.filter(tenant=tenant).select_related(
-                "cluster", "site"
-            ),
-            user,
-            tenant,
-            "virtualmachine",
-            "view",
-        )
-        .filter(Q(name__icontains=q) | cf_text_q(VirtualMachine, q))
-        .order_by("name")[:limit]
-    )
-    return [
-        {
-            "id": str(v.id),
-            "label": v.name,
-            "sublabel": v.cluster.name if v.cluster_id else (
-                v.site.name if v.site_id else ""
-            ),
-            "extras": {},
-            "url": f"/virtual-machines/{v.id}",
-        }
-        for v in qs
-    ]
-
-
-# key → how to find it. `fields` are icontains-matched; `sub` names the
-# attribute shown under the label; `scope` is the tenant path for models that
-# reach their tenant through a parent (interfaces have no tenant column).
-_SIMPLE_GROUPS: dict[str, dict] = {
-    "locations":    {"model": Location,     "slug": "location",     "fields": ("name", "slug"),          "url": "/locations/{id}",     "sub": "site"},
-    "racks":        {"model": Rack,         "slug": "rack",         "fields": ("name",),                 "url": "/racks/{id}",         "sub": "site"},
-    "clusters":     {"model": Cluster,      "slug": "cluster",      "fields": ("name",),                 "url": "/clusters/{id}",      "sub": "type"},
-    "device_types": {"model": DeviceType,   "slug": "devicetype",   "fields": ("name", "model", "part_number"), "url": "/device-types/{id}", "sub": "manufacturer"},
-    "manufacturers":{"model": Manufacturer, "slug": "manufacturer", "fields": ("name", "slug"),          "url": "/manufacturers/{id}", "sub": None},
-    "circuits":     {"model": Circuit,      "slug": "circuit",      "fields": ("cid",),                  "url": "/circuits/{id}",      "sub": "provider"},
-    "providers":    {"model": Provider,     "slug": "provider",     "fields": ("name", "slug"),          "url": "/providers/{id}",     "sub": None},
-    "contacts":     {"model": Contact,      "slug": "contact",      "fields": ("name", "title"),         "url": "/contacts/{id}",      "sub": "title"},
-    "interfaces":   {"model": Interface,    "slug": "interface",    "fields": ("name",),                 "url": "/interfaces/{id}",    "sub": "device", "scope": "device__tenant"},
-    # Cables have no name to type, but their printed label carries the short
-    # id - an all-digit query finds them by numid (label field matched too).
-    "cables":       {"model": Cable,        "slug": "cable",        "fields": ("label",),                "url": "/cables/{id}",        "sub": None},
-}
-
-
-def _search_simple(
-    q: str,
-    user,
-    tenant: Tenant,
-    limit: int,
-    *,
-    model,
-    slug: str,
-    fields: tuple[str, ...],
-    url: str,
-    sub: str | None,
-    scope: str = "tenant",
-) -> list[dict]:
-    """One name-ish search over any tenant-scoped model, RBAC-restricted the
-    same way the bespoke searches are."""
-    match = cf_text_q(model, q)
-    for f in fields:
-        match |= Q(**{f"{f}__icontains": q})
-    nq = _numid_q(model, q)
-    if nq:
-        match |= nq
-    qs = (
-        rbac.restrict_queryset(
-            model.objects.filter(**{scope: tenant}), user, tenant, slug, "view"
-        )
-        .filter(match)
-        .order_by(fields[0])[:limit]
-    )
-    out = []
-    for obj in qs:
-        related = getattr(obj, sub, None) if sub else None
-        out.append({
-            "id": str(obj.id),
-            "label": str(getattr(obj, fields[0], "") or obj),
-            "sublabel": (
-                related if isinstance(related, str) else getattr(related, "name", "")
-            ) or "",
-            "extras": {},
-            "url": url.format(id=obj.id),
-        })
-    return out
-
-
-def _search_tags(q: str, tenant: Tenant, limit: int) -> list[dict]:
-    # Tags are tenant-scoped (NULL tenant = deployment-global). Without this
-    # filter the search leaked every tenant's tag names/slugs/colors.
-    qs = (
-        Tag.objects.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
-        .filter(Q(name__icontains=q) | Q(slug__icontains=q))
-        .order_by("name")[:limit]
-    )
-    serialized = TagSerializer(qs, many=True).data
-    return [
-        {
-            "id": t["id"],
-            "label": t["name"],
-            "sublabel": t["slug"],
-            "extras": {"color": t["color"], "text_color": t["text_color"]},
-            # Tag has no detail page yet; deep-link the tenant prefix list
-            # filtered by the tag slug instead.
-            "url": f"/prefixes?tag={t['slug']}",
-        }
-        for t in serialized
-    ]
-
-
-def _numid_q(model, q: str):
-    """Exact per-tenant number match for an all-digit query, on models that
-    carry a numid - so the short id printed on a label finds its object."""
-    if not q.isdigit():
-        return None
-    try:
-        model._meta.get_field("numid")
-    except Exception:  # noqa: BLE001 - model without a numid
-        return None
-    try:
-        return Q(numid=int(q))
-    except (TypeError, ValueError):
-        return None
-
-
-def _empty_groups() -> dict[str, list]:
-    return {
-        "prefixes": [], "ips": [], "vlans": [], "vrfs": [],
-        "route_targets": [], "sites": [], "tenants": [],
-        "devices": [], "vms": [], "tags": [],
-        **{k: [] for k in _SIMPLE_GROUPS},
-    }
+_ALL_DIGITS = re.compile(r"^\d+$")

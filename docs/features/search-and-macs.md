@@ -9,33 +9,64 @@ plus a dedicated view for tracking MAC addresses across your devices and IPs.
 
 ## Global search
 
-The **search box in the topbar** (and the full `/search` results page) looks
-across all your major objects at once - **prefixes, IP addresses, devices, sites,
-VLANs, VRFs, route targets, and tags** - within your current tenant.
+Press **⌘K / Ctrl+K** anywhere (or **/** outside a text field, or click the
+search box in the topbar) and start typing. One ranked list comes back across
+every object type in your current tenant - devices, prefixes, IP addresses
+and ranges, sites, racks, VLANs, VRFs, VMs, interfaces, MAC addresses,
+circuits, tunnels, wireless LANs, ASNs, aggregates, contacts, the catalog
+objects, tags and more. Arrow keys move, **Enter** opens the highlighted hit,
+and **See all results** opens the full `/search` page with type tabs and
+paging. The palette's empty state lists what you opened and searched
+recently in this browser.
 
-It's a plain substring match, so partial values work: type part of an address, a
-device name, a VLAN ID, or a tag and you'll get hits. An **all-digit query also
-matches the short id** (the per-tenant number printed on labels and short
-links) - type the number off a cable or device label and search jumps to it;
-cables are findable this way too. To use it:
+### How matching works
 
-1. Click the search box (or focus it) and start typing.
-2. Results appear **grouped by type**, with the most relevant few per group.
-3. Click a result - or press **Enter** on it - to jump straight to that object's
-   detail page.
+- **Accents and case don't matter**: `aarhus`, `arhus` and `Århus` are the
+  same word to search (the Danish `aa` folds to `å`), as are `Næstved` and
+  `naestved`.
+- **Typos still land**: matching is trigram similarity, so a near miss ranks
+  below the exact hits instead of vanishing.
+- **Ranking**: an exact name first, then a name that starts with the query,
+  then one containing it, then matches in descriptions, comments, serials
+  and custom-field values, with the object type weighing in (a device
+  outranks a catalog row with the same match).
+- **IP or CIDR**: an address query also lists the prefixes that contain it,
+  most specific first; an exact prefix comes top.
+- **Short id**: an all-digit query matches the number printed on labels and
+  short links. Every type numbers from 1, so add a type token to pin it.
+- **VLAN id** matches the VLAN.
 
-The topbar suggester shows a capped preview per group to stay fast. For the
-complete list, open the **`/search`** results page, which shows every match with
-a jump link on each row.
+### Narrowing with tokens
 
-!!! tip "What to type"
-    Anything technical works as a query - a CIDR, an IP, a hostname, a VLAN
-    number, a tag. You don't need to choose a category first; search figures out
-    what each match is.
+Add `key:value` pairs to the query; the value is matched as a prefix of the
+name or slug, so `site:aar` is enough:
 
-Custom-field **values** are matched too, on every search bar - the global one
-and each list's filter box - so an imported NetBox id, an asset number or any
-other value you keep in a custom field finds its object, hidden or not.
+| Token | Narrows to |
+|---|---|
+| `type:device` | one object type (`type:vm`, `type:ip`, `type:prefix`, `type:mac`, …) |
+| `site:aarhus` | objects at that site |
+| `role:core` | device, rack, IP or VLAN role |
+| `status:active` | status |
+| `tag:dc` | tagged with it |
+| `platform:`, `vrf:`, `cluster:`, `provider:`, `manufacturer:`, `group:`, `rack:`, `vlan:` | the matching relation |
+
+A query of tokens alone (`type:device site:aarhus`) browses everything that
+matches, sorted by name.
+
+### Access
+
+Every hit is checked against your permissions for its type, including site
+scope, before it is returned - search never shows an object its page would
+refuse.
+
+### The index
+
+Search runs on one index table that every save and delete keeps current. A
+nightly job rebuilds it to catch bulk edits, and an upgrade rebuilds it
+after migrating. `manage.py rebuild_search_index` does it by hand (add
+`--type device` to limit it). Custom-field **values** are indexed too, so an
+imported NetBox id or an asset number finds its object, hidden or not; each
+list's own filter box keeps matching them as well.
 
 ## MAC address tracking
 

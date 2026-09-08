@@ -1,0 +1,11 @@
+[Unit]
+Description=Rebuild the Danbyte search index nightly
+
+[Timer]
+OnCalendar=*-*-* 03:40:00
+OnBootSec=180
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

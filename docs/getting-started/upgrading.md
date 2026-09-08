@@ -229,6 +229,12 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
                           "$APP/.upgrade-status.json" "$APP/.upgrade-bundle.tar.gz"
     ```
 
+## Search index
+
+Global search runs on an index table. The upgrade scripts and the container
+entrypoint rebuild it after migrating; if you migrate by hand, run
+`manage.py rebuild_search_index` once afterwards (it also runs nightly).
+
 ## Database extensions
 
 Global search relies on the PostgreSQL `pg_trgm` and `unaccent` extensions.

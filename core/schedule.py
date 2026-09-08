@@ -137,6 +137,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Retention - drop old check results and changelog rows",
     ),
     ScheduledTask(
+        unit="danbyte-search-reindex",
+        commands=("rebuild_search_index",),
+        at=("03:40",),
+        label="Rebuild the global search index",
+    ),
+    ScheduledTask(
         unit="danbyte-cleanup",
         commands=("cleanup_stale_ips",),
         at=("04:42",),
