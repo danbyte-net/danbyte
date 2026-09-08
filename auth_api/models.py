@@ -478,12 +478,30 @@ class ApiToken(TimestampedModel):
     prefix = models.CharField(max_length=16, help_text="First chars, for display.")
     last_used_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    # ``read`` refuses every unsafe method at the authentication layer, so it
+    # holds for every view regardless of its own permission classes.
+    scope = models.CharField(
+        max_length=8,
+        choices=[("full", "Full"), ("read", "Read only")],
+        default="full",
+    )
+    # ``run`` tokens are minted by the platform for one script run: hidden from
+    # the owner's token list, short-lived, purged once expired.
+    kind = models.CharField(
+        max_length=8,
+        choices=[("user", "User"), ("run", "Run")],
+        default="user",
+    )
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.prefix}…)"
+
+    @property
+    def read_only(self) -> bool:
+        return self.scope == "read"
 
     @property
     def is_expired(self) -> bool:

@@ -44,6 +44,13 @@ class CompatibilityTests(SimpleTestCase):
 
 
 class DiscoverTests(SimpleTestCase):
+    def test_builtin_flag_follows_the_builtin_list(self):
+        self.assertFalse(discover([GOOD], "0.8.7").report[0].builtin)
+        result = discover([GOOD], "0.8.7", builtin=[GOOD])
+        self.assertTrue(result.report[0].builtin)
+        # still loaded normally - built-in changes the UI, not the gate
+        self.assertEqual(len(result.enabled), 1)
+
     def test_compatible_plugin_is_enabled(self):
         result = discover([GOOD], "0.8.7")
         self.assertEqual(

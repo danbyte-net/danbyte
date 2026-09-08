@@ -111,11 +111,18 @@ except Exception:  # a corrupt manifest must never block boot
 if TESTING and "danbyte_example_plugin" not in PLUGINS:
     PLUGINS.append("danbyte_example_plugin")
 
-if PLUGINS:
+# Plugins that ship inside Danbyte itself. They pass through the same loader
+# as operator-installed ones, so /api/plugins/ lists them for the per-tenant
+# toggle - with nothing to upload, apply, or uninstall. Empty until one lands.
+BUILTIN_PLUGINS: list[str] = []
+
+if PLUGINS or BUILTIN_PLUGINS:
     from danbyte import __version__ as _danbyte_version
     from danbyte.plugin_loader import discover as _discover_plugins
 
-    _plugin_load = _discover_plugins(PLUGINS, _danbyte_version)
+    _plugin_load = _discover_plugins(
+        BUILTIN_PLUGINS + PLUGINS, _danbyte_version, builtin=BUILTIN_PLUGINS
+    )
     INSTALLED_APPS += _plugin_load.enabled
     # Read back by plugins.registry / the /api/plugins/ endpoint.
     _PLUGIN_LOAD_REPORT = _plugin_load.report

@@ -229,6 +229,19 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
                           "$APP/.upgrade-status.json" "$APP/.upgrade-bundle.tar.gz"
     ```
 
+## Database extensions
+
+Global search relies on the PostgreSQL `pg_trgm` and `unaccent` extensions.
+The migration creates them itself: both are *trusted* extensions in PostgreSQL
+13 and later, so the `danbyte` role needs no superuser rights. On an older
+server, or one where trusted extensions are disabled, create them once as a
+superuser before migrating:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+```
+
 ## Which install do I have?
 
 ```bash

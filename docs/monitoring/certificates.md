@@ -306,6 +306,10 @@ enables under **Settings → Security → Secret store**:
   and deployment-tier, so it may be an internal/loopback Vault - Danbyte reaches
   it directly (TLS-verified, redirects off), not through the tenant SSRF guard.
   A provider selected but not fully configured counts as disabled (fail closed).
+- **Other stores** - providers are pluggable: a plugin registers one with
+  `monitoring.secret_store.register_secret_store`, and it appears in the same
+  card with the fields it declares. A store whose plugin is later removed
+  counts as disabled (fail closed), never as local.
 
 It is a **deployment-tier** choice on purpose - where the organisation's private
 keys live is not a per-tenant decision. Nothing reads a stored secret over the

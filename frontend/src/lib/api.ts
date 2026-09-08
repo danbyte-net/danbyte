@@ -5362,8 +5362,8 @@ export interface DeploymentSettings {
   /** Absolute URL of the custom login-page logo; null = the Danbyte logo. */
   login_logo_url: string | null
   ssrf_allowlist: string[]
-  /** "" = disabled, "local" = encrypted DB, "vault" = external Vault/OpenBao. */
-  secrets_provider: "" | "local" | "vault"
+  /** "" = disabled; otherwise a kind from /api/deployment/secret-stores/. */
+  secrets_provider: string
   vault_addr: string
   vault_mount: string
   vault_verify_tls: boolean
@@ -6577,6 +6577,10 @@ export interface ApiToken {
   name: string
   tenant: { id: string; name: string }
   prefix: string
+  /** `read` tokens are refused for every unsafe method. */
+  scope: "full" | "read"
+  /** `run` tokens are platform-minted and never listed here. */
+  kind: "user" | "run"
   last_used_at: string | null
   expires_at: string | null
   is_expired: boolean
@@ -6586,6 +6590,25 @@ export interface ApiToken {
 /** Create response - `key` is present only here, once. */
 export interface ApiTokenCreated extends ApiToken {
   key: string
+}
+
+// ─── Secret-store providers (Settings → Security) ──────────────────────
+export interface SecretStoreField {
+  name: string
+  label: string
+  type: "text" | "password" | "checkbox"
+  placeholder?: string
+  hint?: string
+  default?: string | boolean
+  /** Password fields: the deployment-settings boolean saying one is stored. */
+  set_flag?: string
+}
+
+export interface SecretStoreProvider {
+  kind: string
+  label: string
+  description: string
+  fields: SecretStoreField[]
 }
 
 // ─── Automation targets + deploy (Phase 2) ─────────────────────────────

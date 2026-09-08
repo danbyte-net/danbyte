@@ -413,11 +413,12 @@ class DeploymentSettings(TimestampedModel):
     # keeps them in an external HashiCorp Vault / OpenBao. Vault connection
     # config (address, mount, auth) is added with the Vault backend; the token
     # lives in ``secrets`` (encrypted), never a plain column.
+    # Validated against monitoring.secret_store's registry (plugins can add
+    # kinds), so no fixed choices here.
     secrets_provider = models.CharField(
-        max_length=16,
+        max_length=32,
         blank=True,
         default="",
-        choices=[("", "Disabled"), ("local", "Local (encrypted)"), ("vault", "Vault / OpenBao")],
         help_text="Where issuance private keys (CSR, ACME) are stored. Blank "
         "leaves those features disabled.",
     )

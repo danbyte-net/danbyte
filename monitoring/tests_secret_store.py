@@ -182,3 +182,71 @@ class VaultSecretStoreTests(TestCase):
         self.assertIsInstance(s, VaultSecretStore)
         self.assertEqual(s.addr, "https://vault.example:8200")
         self.assertEqual(s.token, "tok")
+
+
+class RegistryTests(TestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = ""
+        dep.save(update_fields=["secrets_provider"])
+
+    def test_builtins_registered_in_order(self):
+        from .secret_store import secret_store_providers
+
+        kinds = [p.kind for p in secret_store_providers()]
+        self.assertEqual(kinds[:2], ["local", "vault"])
+        vault = next(p for p in secret_store_providers() if p.kind == "vault")
+        names = [f["name"] for f in vault.payload()["fields"]]
+        self.assertIn("vault_token", names)
+
+    def test_unregistered_kind_fails_closed(self):
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "gone-plugin"
+        dep.save(update_fields=["secrets_provider"])
+        self.assertIsNone(active_secret_store())
+        self.assertFalse(secret_store_enabled())
+
+    def test_registered_kind_becomes_active(self):
+        from .secret_store import _REGISTRY, register_secret_store
+
+        class Dummy:
+            def put(self, t, r, v): ...
+            def get(self, t, r): return {"k": 1}
+            def delete(self, t, r): ...
+            def get_at_path(self, t, p): return None
+
+        register_secret_store("dummy", "Dummy", Dummy, fields=[{"name": "x", "type": "text"}])
+        try:
+            dep = DeploymentSettings.load()
+            dep.secrets_provider = "dummy"
+            dep.save(update_fields=["secrets_provider"])
+            self.assertEqual(active_secret_store().get(self.tenant.id, "r"), {"k": 1})
+        finally:
+            _REGISTRY.pop("dummy", None)
+
+    def test_settings_api_lists_and_validates(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+
+        user = User.objects.create_user("root", password="x", is_superuser=True)
+        c = Client()
+        c.force_login(user)
+        r = c.get("/api/deployment/secret-stores/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([p["kind"] for p in r.json()["providers"]][:2], ["local", "vault"])
+        bad = c.put(
+            "/api/deployment/email/",
+            data='{"secrets_provider": "nope"}',
+            content_type="application/json",
+        )
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("Unknown secret store", str(bad.json()))
+        ok = c.put(
+            "/api/deployment/email/",
+            data='{"secrets_provider": "local"}',
+            content_type="application/json",
+        )
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.json()["secrets_provider"], "local")

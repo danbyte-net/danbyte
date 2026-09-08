@@ -9,6 +9,7 @@ backend an operator chooses:
   reusing the same Fernet-at-rest machinery as every other credential. Works out
   of the box, airgap-friendly, no external dependency.
 * ``vault`` - an external HashiCorp Vault / OpenBao (added by the Vault backend).
+* anything a plugin registers with :func:`register_secret_store`.
 
 It is **opt-in and deployment-tier**: choosing where the org's private keys live
 is a deployment-admin decision (like the SSRF allowlist), never a tenant one.
@@ -18,9 +19,9 @@ key-bearing feature (CSR, ACME) must stay **fail-closed** - call
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Protocol
-
-PROVIDERS = {"local", "vault"}
 
 
 class SecretStoreError(RuntimeError):
@@ -89,6 +90,116 @@ class LocalFernetSecretStore:
         return row.value if row is not None else None
 
 
+# ─── provider registry ──────────────────────────────────────────────────────
+# Providers register a kind, a factory (returns a ready store, or ``None`` when
+# the deployment hasn't configured it fully - fail closed), and the settings
+# fields the Security card renders for it. Plugins add stores the same way from
+# ``danbyte_plugin.py``. Field ``type`` is text | password | checkbox; a
+# password field is write-only and ``set_flag`` names the boolean that says
+# whether one is stored.
+
+
+@dataclass(frozen=True)
+class SecretStoreProvider:
+    kind: str
+    label: str
+    factory: Callable[[], SecretStore | None]
+    description: str = ""
+    fields: tuple[dict, ...] = field(default_factory=tuple)
+
+    def payload(self) -> dict:
+        return {
+            "kind": self.kind,
+            "label": self.label,
+            "description": self.description,
+            "fields": [dict(f) for f in self.fields],
+        }
+
+
+_REGISTRY: dict[str, SecretStoreProvider] = {}
+
+
+def register_secret_store(
+    kind: str,
+    label: str,
+    factory: Callable[[], SecretStore | None],
+    *,
+    description: str = "",
+    fields: tuple[dict, ...] | list[dict] = (),
+) -> SecretStoreProvider:
+    """Make ``kind`` selectable under Settings → Security → Secret store."""
+    kind = (kind or "").strip()
+    if not kind:
+        raise ValueError("secret store kind must be non-empty")
+    prov = SecretStoreProvider(
+        kind=kind, label=label, factory=factory, description=description,
+        fields=tuple(dict(f) for f in fields),
+    )
+    _REGISTRY[kind] = prov
+    return prov
+
+
+def secret_store_providers() -> list[SecretStoreProvider]:
+    """Registered providers, in registration order (built-ins first)."""
+    return list(_REGISTRY.values())
+
+
+def secret_store_kinds() -> set[str]:
+    return set(_REGISTRY)
+
+
+def _vault_factory() -> SecretStore | None:
+    # Imported lazily so the local path stays dependency-free.
+    try:
+        from .secret_store_vault import VaultSecretStore
+    except ImportError:  # pragma: no cover - backend not present
+        return None
+    return VaultSecretStore.from_deployment()
+
+
+register_secret_store(
+    "local",
+    "Local",
+    LocalFernetSecretStore,
+    description="Encrypted at rest in Danbyte's own database under MONITORING_SECRET_KEY.",
+)
+register_secret_store(
+    "vault",
+    "HashiCorp Vault / OpenBao",
+    _vault_factory,
+    description="An external Vault / OpenBao KV v2 mount; Danbyte holds only a reference.",
+    fields=(
+        {
+            "name": "vault_addr",
+            "label": "Vault address",
+            "type": "text",
+            "placeholder": "https://vault.danbyte.lan:8200",
+        },
+        {
+            "name": "vault_mount",
+            "label": "KV v2 mount",
+            "type": "text",
+            "placeholder": "danbyte",
+            "default": "danbyte",
+        },
+        {
+            "name": "vault_token",
+            "label": "Vault token",
+            "type": "password",
+            "placeholder": "hvs.…",
+            "set_flag": "vault_token_set",
+        },
+        {
+            "name": "vault_verify_tls",
+            "label": "Verify TLS certificate",
+            "type": "checkbox",
+            "default": True,
+            "hint": "Turn off only for a Vault with a self-signed cert on a trusted network.",
+        },
+    ),
+)
+
+
 def _provider() -> str:
     from core.models import DeploymentSettings
 
@@ -103,19 +214,10 @@ def secret_store_enabled() -> bool:
 
 
 def active_secret_store() -> SecretStore | None:
-    """The configured store, or ``None`` when disabled/unconfigured."""
-    provider = _provider()
-    if provider == "local":
-        return LocalFernetSecretStore()
-    if provider == "vault":
-        # The Vault backend is wired in separately; importing lazily keeps the
-        # local path dependency-free.
-        try:
-            from .secret_store_vault import VaultSecretStore
-        except ImportError:  # pragma: no cover - backend not present
-            return None
-        return VaultSecretStore.from_deployment()
-    return None
+    """The configured store, or ``None`` when disabled, unconfigured, or the
+    selected kind is no longer registered (a removed plugin fails closed)."""
+    prov = _REGISTRY.get(_provider())
+    return prov.factory() if prov is not None else None
 
 
 def require_secret_store() -> SecretStore:

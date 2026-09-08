@@ -187,6 +187,19 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
     def validate_display_timezone(self, value):
         return clean_display_timezone(value)
 
+    def validate_secrets_provider(self, value):
+        value = (value or "").strip()
+        if not value:
+            return ""
+        from monitoring.secret_store import secret_store_kinds
+
+        if value not in secret_store_kinds():
+            raise serializers.ValidationError(
+                f"Unknown secret store '{value}'. Registered: "
+                + ", ".join(sorted(secret_store_kinds()))
+            )
+        return value
+
     def get_smtp_password_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("password"))
 
@@ -219,6 +232,26 @@ def _require_manage(request):
     # only superusers / global users.manage / unscoped user-change grants.
     # Tenant admins get /api/tenant-settings/ instead.
     return can_manage_deployment(request.user)
+
+
+@extend_schema(
+    summary="List the secret-store providers the Security card can offer",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Registered providers: kind, label, description, and the "
+        "settings fields each one needs (text | password | checkbox).",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def secret_store_providers_view(request):
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from monitoring.secret_store import secret_store_providers
+
+    return Response({"providers": [p.payload() for p in secret_store_providers()]})
 
 
 @extend_schema(

@@ -60,6 +60,7 @@ def plugin_report() -> list[dict]:
                 "error": st.error,
                 "min_version": st.min_version,
                 "max_version": st.max_version,
+                "builtin": st.builtin,
             }
         )
     return out

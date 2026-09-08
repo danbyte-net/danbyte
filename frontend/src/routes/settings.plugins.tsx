@@ -105,8 +105,8 @@ function PluginsSection() {
       description={
         <>
           Plugins install as Python packages (pip, or upload an archive below
-          for offline installs) and apply on restart. Enable or disable each one
-          for this tenant. Blank list = none installed.
+          for offline installs) and apply on restart. Built-in ones ship with
+          Danbyte. Enable or disable each one for this tenant.
         </>
       }
     >
@@ -223,6 +223,11 @@ function PluginRow({
               uploaded
             </Badge>
           )}
+          {plugin.builtin && (
+            <Badge variant="outline" className="text-[10px]">
+              built-in
+            </Badge>
+          )}
           {plugin.version && (
             <span className="text-[11px] text-muted-foreground">
               v{plugin.version}
@@ -252,7 +257,7 @@ function PluginRow({
       )}
       {loaded && (
         <Switch
-          defaultChecked
+          checked={plugin.enabled}
           disabled={busy}
           onCheckedChange={(v) => onToggle(v)}
           aria-label={`Enable ${plugin.name}`}

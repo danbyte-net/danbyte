@@ -67,6 +67,14 @@ exactly like a `PLUGINS` entry. Uploaded plugins show an **uploaded** tag and an
     `POST /api/plugins/upload/` (multipart `archive`) /
     `DELETE /api/plugins/<module>/uploaded/` back the UI.
 
+### Built-in plugins
+
+Some optional features ship inside Danbyte as plugins (listed in
+`settings.BUILTIN_PLUGINS`). They pass through the same loader and appear in
+the same list with a **built-in** badge, and the per-tenant toggle works the
+same way - but there is nothing to install, apply, or uninstall. A built-in
+plugin that defaults to off stays off until an admin turns it on.
+
 ## Anatomy of a plugin
 
 !!! tip "Start from the template"
@@ -133,6 +141,7 @@ safe. Do **all** your registrations here (or in modules it imports).
 | Import source | `integrations.providers.register_import_source(kind, handler)` | new importer |
 | Notification channel | `integrations.providers.register_notification_channel(kind, sender)` | new alert transport |
 | Monitoring check kind | `@danbyte_checks.base.register` on a `Checker` | validates + runs via core & Outposts |
+| Secret store | `monitoring.secret_store.register_secret_store(kind, label, factory, fields=…)` | selectable under Settings → Security with its own fields |
 | Nav item | `plugins.ui_registry.register_nav_item(NavItemSpec(...))` | sidebar entry (RBAC-gated) |
 | Page (list/detail) | `plugins.ui_registry.register_page(PageSpec(...))` | server-driven page at `/p/<slug>/…` |
 | Dashboard panel | `plugins.ui_registry.register_dashboard_panel(PanelSpec(...))` | dashboard tile |

@@ -80,3 +80,53 @@ class ApiTokenTests(TestCase):
         names = {s["name"] for s in sites["results"]}
         self.assertIn("in-t", names)
         self.assertNotIn("in-t2", names)
+
+    def test_read_only_token_refuses_writes(self):
+        r = self.c.post(
+            "/api/api-tokens/",
+            data=json.dumps(
+                {"name": "ro", "tenant_id": str(self.tenant.id), "scope": "read"}
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()["scope"], "read")
+        key = r.json()["key"]
+        anon = Client()
+        auth = {"HTTP_AUTHORIZATION": f"Token {key}"}
+        self.assertEqual(anon.get("/api/inventory/ansible/", **auth).status_code, 200)
+        w = anon.post(
+            "/api/tags/",
+            data=json.dumps({"name": "nope", "slug": "nope"}),
+            content_type="application/json",
+            **auth,
+        )
+        self.assertEqual(w.status_code, 403)
+        self.assertIn("read-only", w.json()["detail"])
+        from core.models import Tag
+
+        self.assertFalse(Tag.objects.filter(slug="nope").exists())
+
+    def test_run_tokens_hidden_from_self_service(self):
+        from auth_api.models import ApiToken, generate_api_key, hash_api_key
+
+        key = generate_api_key()
+        ApiToken.objects.create(
+            user=self.user, tenant=self.tenant, name="run", kind="run",
+            key_hash=hash_api_key(key), prefix=key[:11],
+        )
+        names = [t["name"] for t in self.c.get("/api/api-tokens/").json()["results"]]
+        self.assertNotIn("run", names)
+        # ...but it still authenticates
+        anon = Client()
+        r = anon.get("/api/inventory/ansible/", HTTP_AUTHORIZATION=f"Token {key}")
+        self.assertEqual(r.status_code, 200)
+        # and kind can't be set through the API
+        r = self.c.post(
+            "/api/api-tokens/",
+            data=json.dumps(
+                {"name": "x", "tenant_id": str(self.tenant.id), "kind": "run"}
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(r.json()["kind"], "user")

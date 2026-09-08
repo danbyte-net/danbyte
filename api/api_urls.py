@@ -517,6 +517,8 @@ urlpatterns = [
     path("deployment/logo/", deployment.deployment_logo,
          name="deployment-logo"),
     # Optional built-in device fields - admin-controlled visibility.
+    path("deployment/secret-stores/", deployment.secret_store_providers_view,
+         name="deployment-secret-stores"),
     path("deployment/device-fields/", deployment.device_field_visibility,
          name="deployment-device-fields"),
     # Floor-plan tile popover - deployment default (the tenant override rides
