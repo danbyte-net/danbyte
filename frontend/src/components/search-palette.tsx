@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -110,7 +111,7 @@ export function SearchPalette() {
       <Button
         variant="outline"
         size="sm"
-        className="h-8 w-full max-w-sm justify-start gap-2 text-xs text-muted-foreground"
+        className="h-8 w-40 min-w-0 shrink justify-start gap-2 text-xs text-muted-foreground sm:w-56"
         onClick={() => setOpen(true)}
         aria-label="Search"
       >
@@ -125,91 +126,93 @@ export function SearchPalette() {
         description="Search every object in the tenant"
         className="sm:max-w-xl"
       >
-        <CommandInput
-          value={raw}
-          onValueChange={setRaw}
-          placeholder="Search - or narrow with type:device site:aarhus role:core tag:dc"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && hits.length === 0 && raw.trim()) {
-              e.preventDefault()
-              seeAll()
-            }
-          }}
-        />
-        {/* Server-ranked: cmdk must not re-filter or re-sort. */}
-        <CommandList className="max-h-[60vh]">
-          {debounced.length === 0 && (
-            <>
-              {recents.length > 0 && (
-                <CommandGroup heading="Recently opened">
-                  {recents.map((h) => (
-                    <CommandItem
-                      key={h.url}
-                      value={`recent-${h.url}`}
-                      onSelect={() => openHit(h)}
-                    >
-                      <HitRow hit={h} />
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-              {queries.length > 0 && (
-                <CommandGroup heading="Recent searches">
-                  {queries.map((r) => (
-                    <CommandItem
-                      key={r.q}
-                      value={`query-${r.q}`}
-                      onSelect={() => setRaw(r.q)}
-                    >
-                      <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="font-mono text-xs">{r.q}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-              {recents.length === 0 && queries.length === 0 && (
-                <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                  Type a name, an address, a VLAN id or a short id.
-                </p>
-              )}
-            </>
-          )}
-          {debounced.length > 0 && q.isLoading && (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-              Searching…
-            </p>
-          )}
-          {debounced.length > 0 && !q.isLoading && hits.length === 0 && (
-            <CommandEmpty>No matches.</CommandEmpty>
-          )}
-          {hits.length > 0 && (
-            <CommandGroup heading="Results">
-              {hits.map((h) => (
-                <CommandItem
-                  key={`${h.type}-${h.id}`}
-                  value={`${h.type}-${h.id}`}
-                  onSelect={() => openHit(h)}
-                >
-                  <HitRow hit={h} />
+        {/* Server-ranked: cmdk must not re-filter or re-sort the items. */}
+        <Command shouldFilter={false} loop>
+          <CommandInput
+            value={raw}
+            onValueChange={setRaw}
+            placeholder="Search - or narrow with type:device site:aarhus role:core tag:dc"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && hits.length === 0 && raw.trim()) {
+                e.preventDefault()
+                seeAll()
+              }
+            }}
+          />
+          <CommandList className="max-h-[60vh]">
+            {debounced.length === 0 && (
+              <>
+                {recents.length > 0 && (
+                  <CommandGroup heading="Recently opened">
+                    {recents.map((h) => (
+                      <CommandItem
+                        key={h.url}
+                        value={`recent-${h.url}`}
+                        onSelect={() => openHit(h)}
+                      >
+                        <HitRow hit={h} />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+                {queries.length > 0 && (
+                  <CommandGroup heading="Recent searches">
+                    {queries.map((r) => (
+                      <CommandItem
+                        key={r.q}
+                        value={`query-${r.q}`}
+                        onSelect={() => setRaw(r.q)}
+                      >
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="font-mono text-xs">{r.q}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+                {recents.length === 0 && queries.length === 0 && (
+                  <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    Type a name, an address, a VLAN id or a short id.
+                  </p>
+                )}
+              </>
+            )}
+            {debounced.length > 0 && q.isLoading && (
+              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                Searching…
+              </p>
+            )}
+            {debounced.length > 0 && !q.isLoading && hits.length === 0 && (
+              <CommandEmpty>No matches.</CommandEmpty>
+            )}
+            {hits.length > 0 && (
+              <CommandGroup heading="Results">
+                {hits.map((h) => (
+                  <CommandItem
+                    key={`${h.type}-${h.id}`}
+                    value={`${h.type}-${h.id}`}
+                    onSelect={() => openHit(h)}
+                  >
+                    <HitRow hit={h} />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {debounced.length > 0 && (
+              <CommandGroup>
+                <CommandItem value="see-all" onSelect={seeAll}>
+                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs">
+                    See all results
+                    {q.data
+                      ? ` (${q.data.total}${q.data.total >= 300 ? "+" : ""})`
+                      : ""}
+                  </span>
+                  <CommandShortcut>Enter</CommandShortcut>
                 </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {debounced.length > 0 && (
-            <CommandGroup>
-              <CommandItem value="see-all" onSelect={seeAll}>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs">
-                  See all results
-                  {q.data
-                    ? ` (${q.data.total}${q.data.total >= 300 ? "+" : ""})`
-                    : ""}
-                </span>
-                <CommandShortcut>Enter</CommandShortcut>
-              </CommandItem>
-            </CommandGroup>
-          )}
-        </CommandList>
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
       </CommandDialog>
     </>
   )

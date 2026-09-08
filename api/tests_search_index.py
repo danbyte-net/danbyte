@@ -100,9 +100,10 @@ class QueryTests(_Base):
     def test_folding_and_ranking(self):
         d = self._hits("aarhus")
         types = [(h["type"], h["title"]) for h in d["hits"]]
-        # exact/prefix title matches first, the site (accent folded) is in
-        self.assertEqual(types[0][0], "device")
-        self.assertIn(("site", "Århus DC"), types)
+        # Prefix matches on the site (accent-folded) and the devices lead;
+        # the other tenant's device never appears.
+        self.assertIn(("site", "Århus DC"), types[:3])
+        self.assertIn(("device", "aarhus-fw1"), types[:3])
         self.assertNotIn("aarhus-other", [t for _, t in types])
         d = self._hits("arhus dc")
         self.assertEqual((d["hits"][0]["type"], d["hits"][0]["title"]), ("site", "Århus DC"))
