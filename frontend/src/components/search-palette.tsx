@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowRight, Search } from "lucide-react"
 
+import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import type { SearchHit, SearchResponse } from "@/lib/api"
 import {
@@ -47,6 +48,15 @@ function isTypingTarget(el: EventTarget | null): boolean {
  * across every object type, key:value tokens, recents when empty. Enter
  * opens the highlighted hit; "See all results" goes to /search.
  */
+// Result rows read as a striped table, not a stack of rounded cards: square
+// corners, a hairline between rows, every other row tinted.
+function rowCls(i: number): string {
+  return cn(
+    "rounded-none! border-b border-border/60 px-3 py-2 last:border-b-0",
+    i % 2 ? "bg-muted/30" : undefined
+  )
+}
+
 export function SearchPalette() {
   const nav = useNavigate()
   const [open, setOpen] = useState(false)
@@ -153,7 +163,7 @@ export function SearchPalette() {
                         key={h.url}
                         value={`recent-${h.url}`}
                         onSelect={() => openHit(h)}
-                        className={i % 2 ? "bg-muted/30" : undefined}
+                        className={rowCls(i)}
                       >
                         <HitRow hit={h} />
                       </CommandItem>
@@ -196,7 +206,7 @@ export function SearchPalette() {
                     key={`${h.type}-${h.id}`}
                     value={`${h.type}-${h.id}`}
                     onSelect={() => openHit(h)}
-                    className={i % 2 ? "bg-muted/30" : undefined}
+                    className={rowCls(i)}
                   >
                     <HitRow hit={h} />
                   </CommandItem>
