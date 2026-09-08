@@ -66,6 +66,7 @@ import {
   Users,
   UsersRound,
   Waypoints,
+  Bot,
   FileCode,
   Webhook,
   Workflow,
@@ -156,7 +157,7 @@ type NavItem = {
   anyOf?: string[]
   perm?: string
   /** Also require one of these Settings → Integrations toggles to be on. */
-  integration?: Array<"dhcp" | "dns" | "virtualization">
+  integration?: Array<"dhcp" | "dns" | "virtualization" | "ai">
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
 // sub-heading). `label` is optional - a single unlabelled cluster renders as a
@@ -855,6 +856,12 @@ const sections: NavSection[] = [
             url: "/scripts",
             icon: FileCode,
             objectType: "script",
+          },
+          {
+            title: "Agent access",
+            url: "/agent-access",
+            icon: Bot,
+            integration: ["ai"],
           },
           {
             title: "Webhooks",

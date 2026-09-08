@@ -83,6 +83,7 @@ import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as AsnsRouteImport } from './routes/asns'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AggregatesRouteImport } from './routes/aggregates'
+import { Route as AgentAccessRouteImport } from './routes/agent-access'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ZonesIndexRouteImport } from './routes/zones.index'
 import { Route as WirelessLansIndexRouteImport } from './routes/wireless-lans.index'
@@ -789,6 +790,11 @@ const AlertsRoute = AlertsRouteImport.update({
 const AggregatesRoute = AggregatesRouteImport.update({
   id: '/aggregates',
   path: '/aggregates',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentAccessRoute = AgentAccessRouteImport.update({
+  id: '/agent-access',
+  path: '/agent-access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -2483,6 +2489,7 @@ const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agent-access': typeof AgentAccessRoute
   '/aggregates': typeof AggregatesRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/asns': typeof AsnsRouteWithChildren
@@ -2896,6 +2903,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agent-access': typeof AgentAccessRoute
   '/alerts': typeof AlertsRoute
   '/audit-log': typeof AuditLogRoute
   '/change-log': typeof ChangeLogRoute
@@ -3254,6 +3262,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/agent-access': typeof AgentAccessRoute
   '/aggregates': typeof AggregatesRouteWithChildren
   '/alerts': typeof AlertsRoute
   '/asns': typeof AsnsRouteWithChildren
@@ -3669,6 +3678,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/agent-access'
     | '/aggregates'
     | '/alerts'
     | '/asns'
@@ -4082,6 +4092,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agent-access'
     | '/alerts'
     | '/audit-log'
     | '/change-log'
@@ -4439,6 +4450,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/agent-access'
     | '/aggregates'
     | '/alerts'
     | '/asns'
@@ -4853,6 +4865,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AgentAccessRoute: typeof AgentAccessRoute
   AggregatesRoute: typeof AggregatesRouteWithChildren
   AlertsRoute: typeof AlertsRoute
   AsnsRoute: typeof AsnsRouteWithChildren
@@ -5543,6 +5556,13 @@ declare module '@tanstack/react-router' {
       path: '/aggregates'
       fullPath: '/aggregates'
       preLoaderRoute: typeof AggregatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agent-access': {
+      id: '/agent-access'
+      path: '/agent-access'
+      fullPath: '/agent-access'
+      preLoaderRoute: typeof AgentAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -8918,6 +8938,7 @@ const ZonesRouteWithChildren = ZonesRoute._addFileChildren(ZonesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AgentAccessRoute: AgentAccessRoute,
   AggregatesRoute: AggregatesRouteWithChildren,
   AlertsRoute: AlertsRoute,
   AsnsRoute: AsnsRouteWithChildren,

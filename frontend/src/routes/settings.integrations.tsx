@@ -16,6 +16,8 @@ type IntegrationSettings = {
   dhcp_sync_enabled: boolean
   dns_sync_enabled: boolean
   virtualization_enabled: boolean
+  ai_access_enabled: boolean
+  ai_writes_enabled: boolean
 }
 
 const CARDS: {
@@ -37,6 +39,20 @@ const CARDS: {
     info: "Reads zones via the DnsServer PowerShell module over the same WinRM connection a DHCP server uses. Record management stays limited to A/AAAA/PTR.",
     description:
       "Reconcile A/AAAA/PTR records from Windows DNS zones against your IP addresses' DNS names, with drift review and optional push.",
+  },
+  {
+    key: "ai_access_enabled",
+    label: "Agent access (MCP)",
+    info: "Speaks the Model Context Protocol over HTTP at /api/mcp/. An assistant authenticates with an API token and sees exactly what that account sees - the same tenant, sites and objects, through the same permissions.",
+    description:
+      "Let AI assistants and agents read this tenant's data from Claude, Cursor, VS Code or your own tooling. Reading only, until you also allow writes below.",
+  },
+  {
+    key: "ai_writes_enabled",
+    label: "Agent access: allow writes",
+    info: "A write still needs the token's own create/change/delete permission, and a delete has to name the object it removes. Every change is recorded in the change log under that account.",
+    description:
+      "Also let an assistant create, edit and delete objects. Leave this off if you want questions answered but nothing changed.",
   },
   {
     key: "virtualization_enabled",

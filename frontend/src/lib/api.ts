@@ -8010,3 +8010,44 @@ export interface ScriptRunDetail extends ScriptRun {
   log: string
   source: string
 }
+
+// ─── Agent access (MCP) (/api/agent/) ────────────────────────────────────────
+
+export interface AgentSettings {
+  allowed_types: string[]
+  max_rows: number
+  log_retention_days: number
+  enabled: boolean
+  writes_enabled: boolean
+  known_types: string[]
+}
+
+export interface AgentCall {
+  id: string
+  tool: string
+  object_type: string
+  arguments: Record<string, unknown>
+  rows: number
+  wrote: boolean
+  ms: number
+  error: string
+  client: string
+  token_name: string
+  user_name: string | null
+  created_at: string
+}
+
+export interface AgentClientSnippet {
+  id: string
+  label: string
+  kind: "shell" | "json"
+  path?: string
+  snippet: string
+}
+
+export interface AgentConnect {
+  url: string
+  enabled: boolean
+  writes_enabled: boolean
+  clients: AgentClientSnippet[]
+}
