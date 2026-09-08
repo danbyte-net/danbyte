@@ -465,6 +465,7 @@ urlpatterns = [
     # Background job queue admin (RQ introspection) - gated on jobs.manage.
     path("jobs/", include("jobs.api_urls")),
     path("backups/", include("backups.api_urls")),
+    path("scripts/", include("scripting.api_urls")),
     # Plugin framework: installed-plugin inventory + each plugin's own API.
     path("plugins/", include("plugins.api_urls")),
     # Host service control (restart units, apply plugins) - superuser only.

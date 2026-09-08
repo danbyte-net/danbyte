@@ -334,6 +334,8 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
     """
 
     rbac_object_type: str | None = None
+    # Extra verbs a type wants reported per row (scripts: run, trust).
+    rbac_extra_actions: tuple[str, ...] = ()
 
     permissions = serializers.SerializerMethodField()
 
@@ -343,14 +345,15 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
     def get_permissions(self, obj) -> dict[str, bool]:
         from auth_api import rbac
 
+        actions = ("change", "delete", *self.rbac_extra_actions)
         request = self.context.get("request")
         if request is None:
-            return {"change": False, "delete": False}
+            return dict.fromkeys(actions, False)
         user = getattr(request, "user", None)
         if not getattr(user, "is_authenticated", False):
-            return {"change": False, "delete": False}
+            return dict.fromkeys(actions, False)
         if getattr(user, "is_superuser", False):
-            return {"change": True, "delete": True}
+            return dict.fromkeys(actions, True)
 
         from api.views import _get_active_tenant
 
@@ -363,7 +366,7 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
             cache = request._rbac_rowfilter_cache = {}
 
         out: dict[str, bool] = {}
-        for action in ("change", "delete"):
+        for action in actions:
             key = (slug, action)
             if key not in cache:
                 cache[key] = rbac.row_filter(user, tenant, slug, action)

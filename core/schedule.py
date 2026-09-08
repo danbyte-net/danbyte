@@ -143,6 +143,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Start backup schedules that are due",
     ),
     ScheduledTask(
+        unit="danbyte-scripts",
+        commands=("run_scripts",),
+        every=MINUTE,
+        label="Run scheduled scripts that are due",
+    ),
+    ScheduledTask(
         unit="danbyte-search-reindex",
         commands=("rebuild_search_index",),
         at=("03:40",),
