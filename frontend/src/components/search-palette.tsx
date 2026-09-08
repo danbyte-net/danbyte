@@ -12,7 +12,10 @@ import {
   rememberQuery,
 } from "@/lib/search-recents"
 import { Badge } from "@/components/ui/badge"
-import { SearchHitContext } from "@/components/search-hit-context"
+import {
+  SearchHitContext,
+  SearchHitStatus,
+} from "@/components/search-hit-context"
 import { Button } from "@/components/ui/button"
 import {
   Command,
@@ -145,11 +148,12 @@ export function SearchPalette() {
               <>
                 {recents.length > 0 && (
                   <CommandGroup heading="Recently opened">
-                    {recents.map((h) => (
+                    {recents.map((h, i) => (
                       <CommandItem
                         key={h.url}
                         value={`recent-${h.url}`}
                         onSelect={() => openHit(h)}
+                        className={i % 2 ? "bg-muted/30" : undefined}
                       >
                         <HitRow hit={h} />
                       </CommandItem>
@@ -187,11 +191,12 @@ export function SearchPalette() {
             )}
             {hits.length > 0 && (
               <CommandGroup heading="Results">
-                {hits.map((h) => (
+                {hits.map((h, i) => (
                   <CommandItem
                     key={`${h.type}-${h.id}`}
                     value={`${h.type}-${h.id}`}
                     onSelect={() => openHit(h)}
+                    className={i % 2 ? "bg-muted/30" : undefined}
                   >
                     <HitRow hit={h} />
                   </CommandItem>
@@ -226,17 +231,21 @@ function HitRow({
     context?: SearchHit["context"]
   }
 }) {
+  const ctx = { context: hit.context ?? {}, subtitle: hit.subtitle }
+  // Fixed columns so the eye scans down: type · name · status · details.
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
-      <Badge variant="secondary" className="shrink-0 text-[10px]">
+    <div className="grid min-w-0 flex-1 grid-cols-[6.5rem_minmax(7rem,13rem)_4.5rem_1fr] items-center gap-3">
+      <Badge
+        variant="secondary"
+        className="justify-center truncate text-[10px]"
+      >
         {hit.type_label}
       </Badge>
       <span className="truncate font-mono text-xs">{hit.title}</span>
-      <SearchHitContext
-        hit={{ context: hit.context ?? {}, subtitle: hit.subtitle }}
-        max={3}
-        className="ml-auto justify-end"
-      />
+      <span className="min-w-0">
+        <SearchHitStatus hit={ctx} />
+      </span>
+      <SearchHitContext hit={ctx} max={3} oneLine withStatus={false} />
     </div>
   )
 }

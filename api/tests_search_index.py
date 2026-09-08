@@ -123,6 +123,20 @@ class QueryTests(_Base):
         d = self._hits("aarhus", type="site")
         self.assertEqual([h["type"] for h in d["hits"]], ["site"])
 
+    def test_address_queries_are_not_fuzzy(self):
+        from .models import IPAddress
+
+        st = status_for(self.tenant)
+        p10 = Prefix.objects.create(tenant=self.tenant, cidr="10.10.0.0/24", status=st)
+        IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.201", prefix=self.prefix, status=st)
+        IPAddress.objects.create(tenant=self.tenant, ip_address="10.10.0.20", prefix=p10, status=st)
+        Prefix.objects.create(tenant=self.tenant, cidr="10.150.20.0/24", status=st)
+        d = self._hits("10.0.0.201")
+        titles = [h["title"] for h in d["hits"]]
+        self.assertEqual(titles[:3], ["10.0.0.201", "10.0.0.0/24", "10.0.0.0/16"])
+        self.assertNotIn("10.10.0.20", titles)
+        self.assertNotIn("10.150.20.0/24", titles)
+
     def test_ip_query_lists_containing_prefixes(self):
         d = self._hits("10.0.0.5")
         top = [(h["type"], h["title"]) for h in d["hits"][:2]]

@@ -108,13 +108,22 @@ FROM api_searchentry e
 WHERE (e.tenant_id = %(tenant)s OR (e.tenant_id IS NULL AND e.object_type = 'tag'))
   {type_clause}
   {facet_clause}
-  AND (danbyte_fold(e.title) LIKE %(sub)s
-       OR danbyte_fold(e.body) LIKE %(sub)s
-       OR danbyte_fold(e.title) %% %(q)s
-       OR (e.numid IS NOT NULL AND e.numid = %(numid)s))
+  AND ({match_clause})
 ORDER BY score DESC, e.title ASC
 LIMIT %(limit)s
 """
+
+# Words: substring anywhere, or a trigram near-miss on the name.
+_TEXT_MATCH = """danbyte_fold(e.title) LIKE %(sub)s
+       OR danbyte_fold(e.body) LIKE %(sub)s
+       OR danbyte_fold(e.title) %% %(q)s
+       OR (e.numid IS NOT NULL AND e.numid = %(numid)s)"""
+# Addresses and numbers: the name must start with the query. Trigrams on
+# "10.0.0.201" would drag in every 10.x address; containment adds the
+# prefixes separately.
+_ADDR_MATCH = """danbyte_fold(e.title) LIKE %(prefix)s
+       OR (e.numid IS NOT NULL AND e.numid = %(numid)s)"""
+_ADDR_RE = re.compile(r"^[0-9a-f.:/\-]+$")
 
 _BROWSE_SQL = """
 SELECT e.object_type, e.object_id, e.title, e.subtitle, e.url, e.facets, e.numid, e.context,
@@ -174,7 +183,11 @@ def ranked_candidates(q: str, tokens: dict, tenant) -> list[dict]:
             "sub": f"%{like}%",
             "numid": int(fq) if fq.isdigit() and len(fq) < 10 else -1,
         })
-        sql = _RANK_SQL.format(type_clause=type_clause, facet_clause=facet_clause)
+        sql = _RANK_SQL.format(
+            type_clause=type_clause, facet_clause=facet_clause,
+            match_clause=_ADDR_MATCH if _ADDR_RE.match(fq) and re.search(r"[.:/]", fq)
+            else _TEXT_MATCH,
+        )
     with connection.cursor() as cur:
         cur.execute(sql, params)
         cols = [c[0] for c in cur.description]
@@ -335,5 +348,3 @@ def search(request):
         "next_cursor": offset + limit if offset + limit < len(rows) else None,
     })
 
-
-_ALL_DIGITS = re.compile(r"^\d+$")

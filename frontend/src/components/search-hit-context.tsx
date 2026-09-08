@@ -64,37 +64,71 @@ function isStatus(v: unknown): v is SearchStatus {
 
 /** Status pill plus the labelled details of a hit. `max` caps the pairs for
  * the compact palette row; the results page shows them all. */
+export function hitStatus(
+  hit: Pick<SearchHit, "context">
+): SearchStatus | null {
+  return isStatus(hit.context.status) ? hit.context.status : null
+}
+
+export function hitPairs(
+  hit: Pick<SearchHit, "context">,
+  max?: number
+): (readonly [string, string])[] {
+  const ctx = hit.context
+  return ORDER.filter((k) => typeof ctx[k] === "string" && ctx[k])
+    .slice(0, max)
+    .map((k) => [LABELS[k] ?? k, ctx[k] as string] as const)
+}
+
+/** The status pill for a hit, sized for a table or palette row. */
+export function SearchHitStatus({ hit }: { hit: Pick<SearchHit, "context"> }) {
+  const status = hitStatus(hit)
+  if (!status) return null
+  return (
+    <ColorBadge
+      name={status.name}
+      color={status.color || undefined}
+      className="h-4 px-1.5 text-[10px]"
+    />
+  )
+}
+
+/** Status pill plus the labelled details of a hit. `max` caps the pairs for
+ * the compact palette row; the results page shows them all. `oneLine` keeps
+ * everything on a single truncating line. */
 export function SearchHitContext({
   hit,
   max,
   className,
+  oneLine = false,
+  withStatus = true,
 }: {
   hit: Pick<SearchHit, "context" | "subtitle">
   max?: number
   className?: string
+  oneLine?: boolean
+  withStatus?: boolean
 }) {
-  const ctx = hit.context
-  const status = isStatus(ctx.status) ? ctx.status : null
-  const pairs = ORDER.filter((k) => typeof ctx[k] === "string" && ctx[k])
-    .slice(0, max)
-    .map((k) => [LABELS[k] ?? k, ctx[k] as string] as const)
+  const status = withStatus ? hitStatus(hit) : null
+  const pairs = hitPairs(hit, max)
   if (!status && pairs.length === 0 && !hit.subtitle) return null
   return (
     <span
       className={
-        "inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 " +
+        (oneLine
+          ? "inline-flex min-w-0 items-center gap-x-3 overflow-hidden whitespace-nowrap "
+          : "inline-flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 ") +
         (className ?? "")
       }
     >
-      {status && (
-        <ColorBadge
-          name={status.name}
-          color={status.color || undefined}
-          className="h-4 px-1.5 text-[10px]"
-        />
-      )}
+      {status && <SearchHitStatus hit={hit} />}
       {pairs.map(([label, value]) => (
-        <span key={label} className="text-[11px] whitespace-nowrap">
+        <span
+          key={label}
+          className={
+            "text-[11px] " + (oneLine ? "truncate" : "whitespace-nowrap")
+          }
+        >
           <span className="text-muted-foreground">{label} </span>
           <span className="text-foreground/80">{value}</span>
         </span>

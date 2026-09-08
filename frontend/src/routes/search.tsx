@@ -18,7 +18,10 @@ import {
 } from "@/components/ui/table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
-import { SearchHitContext } from "@/components/search-hit-context"
+import {
+  SearchHitContext,
+  SearchHitStatus,
+} from "@/components/search-hit-context"
 import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/search")({
@@ -114,7 +117,8 @@ function SearchResultsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-32">Type</TableHead>
-                      <TableHead>Match</TableHead>
+                      <TableHead className="w-72">Match</TableHead>
+                      <TableHead className="w-28">Status</TableHead>
                       <TableHead>Details</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -199,13 +203,16 @@ function HitRow({ hit, q }: { hit: SearchHit; q: string }) {
           <Highlight text={hit.title} q={q} />
         </Link>
       </TableCell>
+      <TableCell>
+        <SearchHitStatus hit={hit} />
+      </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {hit.subtitle && (
           <div className="mb-0.5">
             <Highlight text={hit.subtitle} q={q} />
           </div>
         )}
-        <SearchHitContext hit={{ ...hit, subtitle: "" }} />
+        <SearchHitContext hit={{ ...hit, subtitle: "" }} withStatus={false} />
         {!hit.subtitle && Object.keys(hit.context).length === 0 && "-"}
       </TableCell>
     </TableRow>
