@@ -234,6 +234,19 @@ class RestoreTests(_Base):
         # and the run is readable
         self.assertEqual(self.client.get(f"/api/backups/restore-runs/{run.id}/").json()["backup_filename"], "made.dbk")
 
+    def test_a_stalled_backup_row_does_not_block_a_restore(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        stuck = Backup.objects.create(kind="manual", target=self.target, components=["db"], status="running")
+        Backup.objects.filter(pk=stuck.pk).update(updated_at=timezone.now() - timedelta(hours=2))
+        b = self._archive()
+        with mock.patch("backups.api_views.enqueue_restore"):
+            r = self.client.post(f"/api/backups/{b.id}/restore/", {"confirm": "Danbyte"}, content_type="application/json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertFalse(self.client.get("/api/backups/status/").json()["backup_in_progress"])
+
     def test_restore_refused_when_the_preview_fails(self):
         b = self._archive({"applied_migrations": ["api.9999_future"]})
         r = self.client.post(f"/api/backups/{b.id}/restore/", {"confirm": "Danbyte"}, content_type="application/json")

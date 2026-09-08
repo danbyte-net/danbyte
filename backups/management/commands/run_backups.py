@@ -8,6 +8,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from backups.engine import reap_stale
 from backups.schedules import due_schedules, fire_schedule
 from core.scheduled_runs import record_run
 
@@ -18,9 +19,12 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         with record_run("backups", "Scheduled backups") as run:
             now = timezone.localtime()
+            reaped = reap_stale(now)
             fired = [fire_schedule(s, now) for s in due_schedules(now)]
+            if reaped:
+                self.stdout.write(f"marked {reaped} stalled backup(s) failed")
             if fired:
-                run.note(f"started {len(fired)} backup(s)", backups=[str(b.id) for b in fired])
+                run.note(f"started {len(fired)} backup(s)", backups=[str(b.id) for b in fired], reaped=reaped)
                 self.stdout.write(self.style.SUCCESS(f"started {len(fired)} backup(s)"))
             else:
                 run.skip("nothing due")

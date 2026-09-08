@@ -26,6 +26,7 @@ from .engine import (
     create_backup,
     delete_backup,
     enqueue_backup,
+    in_progress,
     work_dir,
 )
 from .models import Backup, BackupSchedule, BackupTarget, RestoreRun
@@ -64,7 +65,7 @@ def backups_status(request):
         "storage_kinds": storage_kinds(),
         "maintenance": maintenance.active(),
         "restore_in_progress": _restore_in_progress(),
-        "backup_in_progress": Backup.objects.filter(status__in=("queued", "running")).exists(),
+        "backup_in_progress": in_progress().exists(),
     })
 
 
@@ -221,7 +222,7 @@ class BackupViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"confirm": [f"Type the deployment name, {expected}, to confirm."]}, status=400)
         if maintenance.active() or _restore_in_progress():
             return Response({"detail": "A restore is already in progress."}, status=409)
-        if Backup.objects.filter(status__in=("queued", "running")).exists():
+        if in_progress().exists():
             return Response({"detail": "Wait for the running backup to finish."}, status=409)
         pv = preview(backup)
         if not pv["can_restore"]:

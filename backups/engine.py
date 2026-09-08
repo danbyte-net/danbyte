@@ -14,7 +14,7 @@ import socket
 import subprocess
 import tarfile
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from django.conf import settings
 from django.db import connection
@@ -329,6 +329,31 @@ def prune_schedule(schedule: BackupSchedule, now=None) -> int:
     return len(gone)
 
 
+STALE_AFTER = timedelta(hours=1)
+
+
+def in_progress(now=None):
+    """Backups still moving: queued or running and touched within the last
+    hour. A row that stopped moving belongs to a worker that died (or to a
+    database a restore took back to mid-run) and must not block anything."""
+    now = now or timezone.now()
+    return Backup.objects.filter(status__in=("queued", "running"), updated_at__gte=now - STALE_AFTER)
+
+
+def reap_stale(now=None) -> int:
+    now = now or timezone.now()
+    stale = Backup.objects.filter(status__in=("queued", "running"), updated_at__lt=now - STALE_AFTER)
+    count = 0
+    for backup in stale:
+        backup.step_end("failed", "no progress for an hour")
+        backup.status = "failed"
+        backup.error = "No progress for an hour - the worker stopped or the database was restored mid-run."
+        backup.finished_at = now
+        backup.save(update_fields=["status", "error", "finished_at", "updated_at"])
+        count += 1
+    return count
+
+
 def adopt_orphans(target: BackupTarget) -> int:
     """Create rows for ``.dbk`` files on the target that no row names -
     archives copied in by hand, and everything made after the archive a
@@ -366,7 +391,7 @@ def adopt_orphans(target: BackupTarget) -> int:
 
 
 def delete_backup(backup: Backup) -> None:
-    if backup.status in ("queued", "running"):
+    if in_progress().filter(pk=backup.pk).exists():
         raise EngineError("A backup that is still running cannot be deleted.")
     if backup.filename:
         try:

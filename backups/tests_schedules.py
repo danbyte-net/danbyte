@@ -62,3 +62,25 @@ class ScheduleTests(TestCase):
         with mock.patch("backups.schedules.enqueue_backup"):
             call_command("run_backups", stdout=out)
         self.assertIn("nothing due", out.getvalue())
+
+
+class ReapTests(TestCase):
+    def test_stalled_rows_are_marked_failed(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from backups.engine import in_progress, reap_stale
+
+        target = BackupTarget.objects.create(name="L", kind="local", config={"path": "/tmp/x"})
+        fresh = Backup.objects.create(kind="manual", target=target, components=["db"], status="running")
+        stuck = Backup.objects.create(kind="manual", target=target, components=["db"], status="running",
+                                      steps=[{"name": "database", "status": "running"}])
+        Backup.objects.filter(pk=stuck.pk).update(updated_at=timezone.now() - timedelta(hours=2))
+        self.assertEqual(list(in_progress()), [fresh])
+        self.assertEqual(reap_stale(), 1)
+        stuck.refresh_from_db()
+        self.assertEqual(stuck.status, "failed")
+        self.assertEqual(stuck.steps[-1]["status"], "failed")
+        fresh.refresh_from_db()
+        self.assertEqual(fresh.status, "running")
