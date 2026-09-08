@@ -45,6 +45,14 @@ function MacsPage() {
         )
       )
         return true
+      if (
+        m.vm_interfaces.some(
+          (i) =>
+            i.name.toLowerCase().includes(needle) ||
+            i.vm.name.toLowerCase().includes(needle)
+        )
+      )
+        return true
       if (m.objects.some((o) => o.description.toLowerCase().includes(needle)))
         return true
       return m.ips.some((ip) => ip.ip_address.toLowerCase().includes(needle))
@@ -139,7 +147,8 @@ function buildColumns(): ColumnDef<MacEntry>[] {
       header: "Interfaces",
       cell: ({ row }) => {
         const ifs = row.original.interfaces
-        if (ifs.length === 0)
+        const vifs = row.original.vm_interfaces
+        if (ifs.length === 0 && vifs.length === 0)
           return <span className="text-muted-foreground">-</span>
         return (
           <div className="flex flex-wrap items-center gap-1">
@@ -153,6 +162,17 @@ function buildColumns(): ColumnDef<MacEntry>[] {
                 {i.device.name}:{i.name}
               </Link>
             ))}
+            {vifs.map((i) => (
+              <Link
+                key={i.id}
+                to="/virtual-machines/$id"
+                params={{ id: i.vm.id }}
+                search={{ tab: "components" }}
+                className="link rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+              >
+                {i.vm.name}:{i.name}
+              </Link>
+            ))}
           </div>
         )
       },
@@ -160,7 +180,10 @@ function buildColumns(): ColumnDef<MacEntry>[] {
         facet: {
           kind: "enum",
           label: "Interface",
-          get: (r: MacEntry) => (r.interfaces.length > 0 ? "yes" : "no"),
+          get: (r: MacEntry) =>
+            r.interfaces.length > 0 || r.vm_interfaces.length > 0
+              ? "yes"
+              : "no",
           formatValue: (v) => ({
             label: v === "yes" ? "Has interface" : "No interface",
           }),

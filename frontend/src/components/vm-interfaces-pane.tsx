@@ -250,9 +250,13 @@ export function VMInterfacesPane({
         header: "MAC",
         cell: ({ row }) =>
           row.original.mac_address ? (
-            <span className="font-mono text-xs">
+            <Link
+              to="/macs/$mac"
+              params={{ mac: row.original.mac_address }}
+              className="link font-mono text-xs"
+            >
               {row.original.mac_address}
-            </span>
+            </Link>
           ) : (
             <span className="text-muted-foreground">-</span>
           ),

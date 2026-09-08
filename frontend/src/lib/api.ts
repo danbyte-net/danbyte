@@ -2867,6 +2867,14 @@ export interface MacIfaceRef {
   device: { id: string; name: string }
 }
 
+/** A VM interface bearing the MAC - links to the VM, since VM interfaces
+ * have no page of their own. */
+export interface MacVmIfaceRef {
+  id: string
+  name: string
+  vm: { id: string; name: string }
+}
+
 /** A first-class MAC object (row-level view on the aggregation pages). */
 export interface MacObject {
   id: string
@@ -2885,6 +2893,7 @@ export interface MacObjectDetail extends MacObject {
 export interface MacEntry {
   mac: string
   interfaces: MacIfaceRef[]
+  vm_interfaces: MacVmIfaceRef[]
   ips: {
     id: string
     ip_address: string
@@ -2903,6 +2912,7 @@ export interface MacDetail {
     enabled: boolean
     device: { id: string; name: string }
   }[]
+  vm_interfaces: (MacVmIfaceRef & { enabled: boolean })[]
   ips: {
     id: string
     ip_address: string

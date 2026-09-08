@@ -38,6 +38,10 @@ import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
+  // Typed so other pages can deep-link a tab (the MAC pages point at
+  // Components); useUrlTab validates the value itself.
+  validateSearch: (s: Record<string, unknown>): { tab?: string } =>
+    typeof s.tab === "string" ? { tab: s.tab } : {},
 })
 
 /** Memory in MB → "x GB" when an even multiple of 1024, else "x MB". */
@@ -82,7 +86,10 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
-  const goBack = useCallback(() => nav({ to: "/virtual-machines", search: { device: undefined } }), [nav])
+  const goBack = useCallback(
+    () => nav({ to: "/virtual-machines", search: { device: undefined } }),
+    [nav]
+  )
 
   return (
     <DetailShell
@@ -399,7 +406,11 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <KvCard title="Management" rows={managementRows} />
       </div>
       {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
-      <VmTopologyCard vmId={vm.id} vmName={vm.name} syncedFromId={vm.synced_from_id} />
+      <VmTopologyCard
+        vmId={vm.id}
+        vmName={vm.name}
+        syncedFromId={vm.synced_from_id}
+      />
       <CustomFieldValues model="virtualmachine" values={vm.custom_fields} />
     </div>
   )

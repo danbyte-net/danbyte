@@ -40,9 +40,11 @@ other value you keep in a custom field finds its object, hidden or not.
 ## MAC address tracking
 
 The **MAC list** (`/macs`) answers the question "where have I seen this MAC?" It
-gathers every MAC address known in your tenant from three places:
+gathers every MAC address known in your tenant from four places:
 
 - **Device interface ports** that recorded a MAC.
+- **Virtual machine interfaces** that recorded a MAC (linked to the VM's
+  Components tab, since VM interfaces have no page of their own).
 - **IP addresses** that recorded a MAC.
 - **First-class MAC objects** you've created (see below).
 
@@ -80,8 +82,9 @@ reports or that you deliberately record.
 Click a MAC to open its detail page. At the top, the **MAC objects** section
 lists each object recorded for that address - its assigned interface, description,
 tags, and custom-field values - with **Edit** and **Delete** actions (permissions
-permitting). Below that, it lists every interface (with its device) and every IP
-that references the MAC, each linking back to the object. This is the
+permitting). Below that, it lists every interface (with its device), every VM
+interface (with its VM), and every IP that references the MAC, each linking
+back to the object. A MAC shown on a VM's Components tab is the same link. This is the
 cross-reference you reach for when chasing:
 
 - a device that moved between ports, or

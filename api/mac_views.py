@@ -1,10 +1,11 @@
 """MAC address registry for the IPAM MAC page.
 
 ``GET /api/macs/`` → every MAC address known in the active tenant, aggregated
-from three places: interface hardware addresses, IP↔MAC pairings, and
-first-class :class:`~api.models.MACAddress` objects. Each MAC is one row
-carrying the interfaces that bear it, the IPs paired with it, and any MAC
-objects (with their description / tags) recorded for it.
+from four places: device interface hardware addresses, virtual-machine
+interface addresses, IP↔MAC pairings, and first-class
+:class:`~api.models.MACAddress` objects. Each MAC is one row carrying the
+interfaces that bear it, the IPs paired with it, and any MAC objects (with
+their description / tags) recorded for it.
 
 Full CRUD on the MAC *objects* themselves lives at ``/api/mac-addresses/``
 (see :class:`~api.viewsets.MACAddressViewSet`); this module only aggregates.
@@ -21,7 +22,7 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 
-from .models import Interface, IPAddress, MACAddress
+from .models import Interface, IPAddress, MACAddress, VMInterface
 from .serializers import TagSerializer
 from .views import _get_active_tenant
 
@@ -86,6 +87,14 @@ def _iface_ref(iface) -> dict:
     }
 
 
+def _vm_iface_ref(vi) -> dict:
+    return {
+        "id": str(vi.id),
+        "name": vi.name,
+        "vm": {"id": str(vi.vm_id), "name": vi.vm.name},
+    }
+
+
 def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
     """Serialize a MAC object for the aggregation views (list / detail)."""
     obj = {
@@ -111,7 +120,7 @@ def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
         description="Aggregated MAC rows: {count, results:[{mac, interfaces[], "
-        "ips[], objects[]}]}.",
+        "vm_interfaces[], ips[], objects[]}]}.",
     ),
 )
 @api_view(["GET"])
@@ -128,7 +137,13 @@ def mac_list_view(request):
     def bucket(mac: str) -> dict:
         key = _norm(mac)
         if key not in entries:
-            entries[key] = {"mac": mac, "interfaces": [], "ips": [], "objects": []}
+            entries[key] = {
+                "mac": mac,
+                "interfaces": [],
+                "vm_interfaces": [],
+                "ips": [],
+                "objects": [],
+            }
         return entries[key]
 
     ifaces = (
@@ -138,6 +153,15 @@ def mac_list_view(request):
     )
     for i in ifaces:
         bucket(i.mac_address)["interfaces"].append(_iface_ref(i))
+
+    # VM interfaces carry the same kind of address as a device port (#142).
+    vm_ifaces = (
+        VMInterface.objects.filter(vm__tenant=tenant)
+        .exclude(mac_address="")
+        .select_related("vm")
+    )
+    for vi in vm_ifaces:
+        bucket(vi.mac_address)["vm_interfaces"].append(_vm_iface_ref(vi))
 
     ips = (
         IPAddress.objects.filter(tenant=tenant)
@@ -179,8 +203,8 @@ def mac_list_view(request):
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="{mac, objects[], interfaces[], ips[]} for the given MAC "
-        "address, or 404 when nothing carries it.",
+        description="{mac, objects[], interfaces[], vm_interfaces[], ips[]} for "
+        "the given MAC address, or 404 when nothing carries it.",
     ),
 )
 @api_view(["GET"])
@@ -201,6 +225,11 @@ def mac_detail_view(request, mac):
         .select_related("device")
         .order_by("device__name", "name")
     )
+    vm_ifaces = (
+        VMInterface.objects.filter(vm__tenant=tenant, mac_address__iexact=key)
+        .select_related("vm")
+        .order_by("vm__name", "name")
+    )
     ips = (
         IPAddress.objects.filter(tenant=tenant, mac_address__iexact=key)
         .select_related("assigned_device", "assigned_interface", "status")
@@ -213,11 +242,19 @@ def mac_detail_view(request, mac):
         .order_by("assigned_interface__device__name", "assigned_interface__name")
     )
     seen = _snmp_sightings(tenant, key)
-    if not ifaces.exists() and not ips.exists() and not objects.exists() and not seen:
+    if (
+        not ifaces.exists()
+        and not vm_ifaces.exists()
+        and not ips.exists()
+        and not objects.exists()
+        and not seen
+    ):
         return Response({"detail": "Not found."}, status=404)
 
     if ifaces.exists():
         display = ifaces.first().mac_address
+    elif vm_ifaces.exists():
+        display = vm_ifaces.first().mac_address
     elif ips.exists():
         display = ips.first().mac_address
     elif objects.exists():
@@ -232,6 +269,9 @@ def mac_detail_view(request, mac):
             "objects": [_mac_object(m, with_custom_fields=True) for m in objects],
             "interfaces": [
                 {**_iface_ref(i), "enabled": i.enabled} for i in ifaces
+            ],
+            "vm_interfaces": [
+                {**_vm_iface_ref(vi), "enabled": vi.enabled} for vi in vm_ifaces
             ],
             "ips": [
                 {

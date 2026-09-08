@@ -35,6 +35,7 @@ import { useMe } from "@/lib/use-me"
 export const Route = createFileRoute("/macs/$mac")({ component: MacDetailPage })
 
 type MacInterface = MacDetail["interfaces"][number]
+type MacVmInterface = MacDetail["vm_interfaces"][number]
 type MacIp = MacDetail["ips"][number]
 type MacSighting = MacDetail["seen"][number]
 
@@ -137,7 +138,13 @@ function Body({ data }: { data: MacDetail }) {
     () => buildInterfaceColumns(),
     []
   )
+  const vmInterfaceColumns = useMemo<ColumnDef<MacVmInterface>[]>(
+    () => buildVmInterfaceColumns(),
+    []
+  )
   const ipColumns = useMemo<ColumnDef<MacIp>[]>(() => buildIpColumns(), [])
+  const vmIfaces = data.vm_interfaces ?? []
+  const ifaceCount = data.interfaces.length + vmIfaces.length
 
   return (
     <div className="flex h-full flex-1 flex-col">
@@ -177,8 +184,8 @@ function Body({ data }: { data: MacDetail }) {
               </Badge>
             )}
             <Badge variant="secondary">
-              {data.interfaces.length} interface
-              {data.interfaces.length === 1 ? "" : "s"}
+              {ifaceCount} interface
+              {ifaceCount === 1 ? "" : "s"}
             </Badge>
             <Badge variant="secondary">
               {data.ips.length} IP{data.ips.length === 1 ? "" : "s"}
@@ -251,6 +258,20 @@ function Body({ data }: { data: MacDetail }) {
             />
           )}
         </section>
+
+        {vmIfaces.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+              VM interfaces
+            </h2>
+            <DataTable
+              data={vmIfaces}
+              columns={vmInterfaceColumns}
+              tableId="mac-vm-interfaces"
+              flexColumn="name"
+            />
+          </section>
+        )}
 
         <section className="space-y-3">
           <h2 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
@@ -453,6 +474,53 @@ function buildInterfaceColumns(): ColumnDef<MacInterface>[] {
         <Link
           to="/interfaces/$id"
           params={{ id: row.original.id }}
+          className="link font-mono font-medium"
+        >
+          {row.original.name}
+        </Link>
+      ),
+    },
+    {
+      id: "enabled",
+      accessorKey: "enabled",
+      header: "Enabled",
+      cell: ({ row }) =>
+        row.original.enabled ? (
+          <Badge variant="success">Enabled</Badge>
+        ) : (
+          <Badge variant="secondary">Disabled</Badge>
+        ),
+    },
+  ]
+}
+
+function buildVmInterfaceColumns(): ColumnDef<MacVmInterface>[] {
+  return [
+    {
+      id: "vm",
+      accessorFn: (r) => r.vm.name,
+      header: ({ column }) => (
+        <SortHeader column={column} label="Virtual machine" />
+      ),
+      cell: ({ row }) => (
+        <Link
+          to="/virtual-machines/$id"
+          params={{ id: row.original.vm.id }}
+          className="link font-mono text-xs"
+        >
+          {row.original.vm.name}
+        </Link>
+      ),
+    },
+    {
+      id: "name",
+      accessorKey: "name",
+      header: ({ column }) => <SortHeader column={column} label="Interface" />,
+      cell: ({ row }) => (
+        <Link
+          to="/virtual-machines/$id"
+          params={{ id: row.original.vm.id }}
+          search={{ tab: "components" }}
           className="link font-mono font-medium"
         >
           {row.original.name}
