@@ -5,3 +5,7 @@ from __future__ import annotations
 
 def notify_backup(backup) -> None:
     return None
+
+
+def notify_restore(run) -> None:
+    return None
