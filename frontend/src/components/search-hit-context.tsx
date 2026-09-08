@@ -134,7 +134,7 @@ export function SearchHitContext({
         </span>
       ))}
       {hit.subtitle && pairs.length === 0 && (
-        <span className="truncate text-[11px] text-muted-foreground">
+        <span className="min-w-0 text-[11px] break-words text-muted-foreground">
           {hit.subtitle}
         </span>
       )}

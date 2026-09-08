@@ -50,6 +50,10 @@ function isTypingTarget(el: EventTarget | null): boolean {
  */
 // Result rows read as a striped table, not a stack of rounded cards: square
 // corners, a hairline between rows, every other row tinted.
+// The dialog forces rounded-lg on items with !important; an inline style
+// is the one thing that beats it.
+const ROW_STYLE = { borderRadius: 0 } as const
+
 function rowCls(i: number): string {
   return cn(
     "rounded-none! border-b border-border/60 px-3 py-2 last:border-b-0",
@@ -164,6 +168,7 @@ export function SearchPalette() {
                         value={`recent-${h.url}`}
                         onSelect={() => openHit(h)}
                         className={rowCls(i)}
+                        style={ROW_STYLE}
                       >
                         <HitRow hit={h} />
                       </CommandItem>
@@ -207,6 +212,7 @@ export function SearchPalette() {
                     value={`${h.type}-${h.id}`}
                     onSelect={() => openHit(h)}
                     className={rowCls(i)}
+                    style={ROW_STYLE}
                   >
                     <HitRow hit={h} />
                   </CommandItem>
@@ -244,18 +250,21 @@ function HitRow({
   const ctx = { context: hit.context ?? {}, subtitle: hit.subtitle }
   // Fixed columns so the eye scans down: type · name · status · details.
   return (
-    <div className="grid min-w-0 flex-1 grid-cols-[6.5rem_minmax(7rem,13rem)_4.5rem_1fr] items-center gap-3">
-      <Badge
-        variant="secondary"
-        className="justify-center truncate text-[10px]"
-      >
+    <div className="grid min-w-0 flex-1 grid-cols-[6.5rem_1fr_auto] items-center gap-x-3 gap-y-0.5">
+      <Badge variant="secondary" className="justify-center text-[10px]">
         {hit.type_label}
       </Badge>
-      <span className="truncate font-mono text-xs">{hit.title}</span>
+      <span className="min-w-0 font-mono text-xs break-all">{hit.title}</span>
       <span className="min-w-0">
         <SearchHitStatus hit={ctx} />
       </span>
-      <SearchHitContext hit={ctx} max={3} oneLine withStatus={false} />
+      {/* Details wrap on their own line under the name - nothing is cut. */}
+      <SearchHitContext
+        hit={ctx}
+        max={4}
+        withStatus={false}
+        className="col-span-2 col-start-2"
+      />
     </div>
   )
 }
