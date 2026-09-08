@@ -50,13 +50,13 @@ function isTypingTarget(el: EventTarget | null): boolean {
  */
 // Result rows read as a striped table, not a stack of rounded cards: square
 // corners, a hairline between rows, every other row tinted.
-// The dialog forces rounded-lg on items with !important; an inline style
-// is the one thing that beats it.
-const ROW_STYLE = { borderRadius: 0 } as const
+// Result groups are full-bleed tables: no inner padding, a top rule, and the
+// heading aligned with the rows. Row corners are squared in styles.css.
+const GROUP_CLS = "border-t border-border/60 p-0 **:[[cmdk-group-heading]]:px-3"
 
 function rowCls(i: number): string {
   return cn(
-    "rounded-none! border-b border-border/60 px-3 py-2 last:border-b-0",
+    "border-b border-border/60 px-3 py-2 last:border-b-0",
     i % 2 ? "bg-muted/30" : undefined
   )
 }
@@ -161,14 +161,14 @@ export function SearchPalette() {
             {debounced.length === 0 && (
               <>
                 {recents.length > 0 && (
-                  <CommandGroup heading="Recently opened">
+                  <CommandGroup heading="Recently opened" className={GROUP_CLS}>
                     {recents.map((h, i) => (
                       <CommandItem
                         key={h.url}
                         value={`recent-${h.url}`}
                         onSelect={() => openHit(h)}
                         className={rowCls(i)}
-                        style={ROW_STYLE}
+                        data-row=""
                       >
                         <HitRow hit={h} />
                       </CommandItem>
@@ -205,14 +205,14 @@ export function SearchPalette() {
               <CommandEmpty>No matches.</CommandEmpty>
             )}
             {hits.length > 0 && (
-              <CommandGroup heading="Results">
+              <CommandGroup heading="Results" className={GROUP_CLS}>
                 {hits.map((h, i) => (
                   <CommandItem
                     key={`${h.type}-${h.id}`}
                     value={`${h.type}-${h.id}`}
                     onSelect={() => openHit(h)}
                     className={rowCls(i)}
-                    style={ROW_STYLE}
+                    data-row=""
                   >
                     <HitRow hit={h} />
                   </CommandItem>

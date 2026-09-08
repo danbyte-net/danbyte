@@ -391,7 +391,6 @@
   display: inline;
 }
 
-
 .sm-vertex {
   display: block;
   width: 12px;
@@ -712,4 +711,10 @@
    focus keeps its ring; mouse clicks don't. */
 path.leaflet-interactive:focus:not(:focus-visible) {
   outline: none;
+}
+
+/* Search palette result rows read as a striped table. The command dialog
+   rounds every item with !important, so the override has to live here. */
+[data-slot="dialog-content"] [data-slot="command-item"][data-row] {
+  border-radius: 0 !important;
 }
