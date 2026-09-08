@@ -1,34 +1,22 @@
 {% extends "spec/base.html" %}
 {% block body %}
-{% if modules %}
 <section>
-  <h2>Modules</h2>
+  <h2>Members</h2>
   <table>
-    <thead><tr><th>Bay</th><th>Module type</th><th>Serial</th></tr></thead>
+    <thead><tr><th class="num">Pos</th><th>Device</th><th>Role</th><th class="num">Priority</th><th>Type</th><th>Serial</th><th>Status</th></tr></thead>
     <tbody>
-    {% for m in modules %}<tr><td>{{ m.bay }}</td><td>{{ m.type }}</td><td class="mono">{{ m.serial }}</td></tr>{% endfor %}
+    {% for m in members %}<tr><td class="num">{{ m.position }}</td><td class="mono">{{ m.name }}</td><td>{{ m.role }}</td><td class="num">{{ m.priority }}</td><td>{{ m.type }}</td><td class="mono">{{ m.serial }}</td><td>{{ m.status }}</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>
-{% endif %}
-{% if inventory %}
+{% for mi in member_ifaces %}
 <section>
-  <h2>Inventory</h2>
-  <table>
-    <thead><tr><th>Item</th><th>Manufacturer</th><th>Part</th><th>Serial</th></tr></thead>
-    <tbody>
-    {% for it in inventory %}<tr><td>{{ it.name }}</td><td>{{ it.manufacturer }}</td><td class="mono">{{ it.part }}</td><td class="mono">{{ it.serial }}</td></tr>{% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-<section>
-  <h2>Interfaces</h2>
-  {% if interfaces %}
+  <h2>Interfaces · {{ mi.label }}</h2>
+  {% if mi.rows %}
   <table>
     <thead><tr><th>Name</th><th>Type</th><th>Speed</th><th>MAC</th><th>VLAN</th><th>IPs</th><th>Connected to</th></tr></thead>
     <tbody>
-    {% for i in interfaces %}
+    {% for i in mi.rows %}
     <tr>
       <td class="mono{% if i.depth %} sub1{% endif %}"><span class="dot {% if i.enabled %}on{% else %}off{% endif %}"></span>{{ i.name }}</td>
       <td>{{ i.type }}</td>
@@ -43,4 +31,5 @@
   </table>
   {% else %}<p class="empty">No interfaces.</p>{% endif %}
 </section>
+{% endfor %}
 {% endblock %}

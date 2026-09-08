@@ -6835,6 +6835,21 @@ class VirtualChassisViewSet(TenantScopedViewSet):
                       | qs.filter(description__icontains=search)) | qs.filter(cf_text_q(qs.model, search))
         return qs
 
+    @action(detail=True, methods=["get"], url_path="spec-sheet")
+    def spec_sheet(self, request, pk=None):
+        """A printable PDF datasheet of the stack (#150): every member's
+        elevation, the member table, and each member's interfaces."""
+        from django.http import HttpResponse
+
+        from .spec_sheets import render_spec_pdf, spec_filename
+
+        obj = self.get_object()
+        pdf = render_spec_pdf("vc", obj, request)
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        return resp
+
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):
         """The device card's numbers, summed across every member of the

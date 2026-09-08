@@ -17,6 +17,7 @@ from .models import (
     DeviceType,
     Interface,
     Manufacturer,
+    VirtualChassis,
     VirtualDisk,
     VirtualMachine,
     VMInterface,
@@ -125,5 +126,26 @@ class VmSheetTests(_Base):
         self.assertEqual(len(ctx["disks"]), 2)
         self.assertEqual(ctx["interfaces"][0]["mac"], "00:50:56:82:04:ea")
         r = self.client.get(f"/api/virtual-machines/{self.vm.id}/spec-sheet/")
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        self.assertTrue(r.content.startswith(b"%PDF"))
+
+
+class StackSheetTests(_Base):
+    def test_stack_context_and_pdf(self):
+        vc = VirtualChassis.objects.create(tenant=self.tenant, name="aarhus-stack1", domain="d1")
+        Device.objects.filter(pk__in=[self.device.pk, self.peer.pk]).update(virtual_chassis=vc)
+        Device.objects.filter(pk=self.device.pk).update(vc_position=1, vc_priority=15)
+        Device.objects.filter(pk=self.peer.pk).update(vc_position=2, vc_priority=10)
+        vc.master = Device.objects.get(pk=self.device.pk)
+        vc.save()
+        from .spec_sheets import vc_context
+
+        ctx = vc_context(vc)
+        self.assertEqual(ctx["stats"][0], {"label": "Members", "value": "2"})
+        self.assertEqual([m["role"] for m in ctx["members"]], ["Master", "Member"])
+        self.assertEqual(dict(ctx["details"])["Domain"], "d1")
+        self.assertEqual(ctx["member_ifaces"][0]["label"], "1 · aarhus-sw1 · master")
+        self.assertEqual(ctx["member_ifaces"][0]["rows"][0]["peer"], "aarhus-core1:Ethernet1/10")
+        r = self.client.get(f"/api/virtual-chassis/{vc.id}/spec-sheet/")
         self.assertEqual(r.status_code, 200, r.content[:200])
         self.assertTrue(r.content.startswith(b"%PDF"))

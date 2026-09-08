@@ -57,6 +57,7 @@ import {
 import { VcAddMemberDialog } from "@/components/vc-add-member-dialog"
 import { VcMembershipDialog } from "@/components/vc-membership-dialog"
 import { VcSnmpPane } from "@/components/vc-snmp-pane"
+import { SpecSheetButton } from "@/components/spec-sheet-button"
 import {
   DetailHero,
   DetailShell,
@@ -145,6 +146,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
       presence={{ type: "virtualchassis", id: vc.id }}
       actions={
         <>
+          <SpecSheetButton kind="vc" id={vc.id} />
           {canDo("virtualchassis", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/virtual-chassis/$id/edit" params={{ id: vc.id }}>

@@ -21,7 +21,7 @@
     <tr>
       <td class="mono{% if i.depth %} sub1{% endif %}"><span class="dot {% if i.enabled %}on{% else %}off{% endif %}"></span>{{ i.name }}</td>
       <td>{{ i.type }}</td>
-      <td class="mono">{{ i.mac }}{% if i.vendor %}<div class="muted" style="font-family:inherit;font-size:7.5pt">{{ i.vendor }}</div>{% endif %}</td>
+      <td class="mono">{{ i.mac }}{% if i.vendor %}<div class="vendor">{{ i.vendor }}</div>{% endif %}</td>
       <td class="num">{{ i.mtu|default_if_none:"" }}</td>
       <td class="mono">{{ i.ips|join:", " }}</td>
     </tr>

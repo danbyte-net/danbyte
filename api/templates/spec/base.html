@@ -16,11 +16,15 @@
     font: 9.5pt/1.4 "DejaVu Sans", "Helvetica Neue", Arial, sans-serif; }
   .mono { font-family: "DejaVu Sans Mono", Menlo, monospace; font-size: 9pt; }
   .muted { color: #6b7280; }
+  .vendor { font: 7.5pt "DejaVu Sans", sans-serif; color: #6b7280; }
   header.top { display: flex; justify-content: space-between; align-items: flex-start;
     border-bottom: 2px solid #111827; padding-bottom: 6mm; margin-bottom: 6mm; }
-  header.top h1 { font-size: 22pt; font-weight: 700; margin: 0 0 2mm 0; letter-spacing: -0.01em; }
+  header.top > div:first-child { flex: 1 1 auto; min-width: 0; }
+  header.top h1 { font-size: 22pt; font-weight: 700; margin: 0 0 2mm 0; letter-spacing: -0.01em;
+    overflow-wrap: anywhere; }
   header.top .sub { font-size: 10pt; color: #4b5563; }
-  header.top .brand { text-align: right; font-size: 8.5pt; color: #6b7280; }
+  header.top .brand { flex: 0 0 auto; margin-left: 8mm; text-align: right; font-size: 8.5pt;
+    color: #6b7280; white-space: nowrap; }
   header.top .brand img { max-height: 12mm; max-width: 45mm; display: block; margin: 0 0 2mm auto; }
   .pill { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 8.5pt;
     font-weight: 600; vertical-align: middle; margin-left: 3mm; }
@@ -47,9 +51,14 @@
     vertical-align: middle; }
   .on { background: #16a34a; } .off { background: #d1d5db; }
   .comments { white-space: pre-wrap; border-left: 2px solid #e5e7eb; padding: 1mm 0 1mm 4mm; color: #374151; }
-  .images { display: flex; flex-wrap: wrap; gap: 4mm; }
+  .elevation { margin: 0 0 5mm 0; }
+  .elevation .strip { page-break-inside: avoid; margin-bottom: 3mm; }
+  .elevation img { display: block; width: 100%; max-height: 40mm; object-fit: contain;
+    border: 1px solid #e5e7eb; border-radius: 3px; background: #fafafa; }
+  .elevation .cap { font-size: 8pt; color: #6b7280; margin-top: 1mm; }
+  .images { display: flex; flex-wrap: wrap; gap: 4mm; margin: 0 0 6mm 0; }
   .figure { width: calc(50% - 2mm); page-break-inside: avoid; }
-  .figure img { max-width: 100%; max-height: 90mm; border: 1px solid #e5e7eb; border-radius: 3px; }
+  .figure img { max-width: 100%; max-height: 60mm; border: 1px solid #e5e7eb; border-radius: 3px; }
   .figure .cap { font-size: 8pt; color: #6b7280; margin-top: 1mm; }
   .empty { color: #9ca3af; font-size: 8.5pt; }
 </style>
@@ -67,6 +76,11 @@
   </div>
 </header>
 
+{% if elevation %}
+<div class="elevation">
+  {% for im in elevation %}<div class="strip"><img src="{{ im.src }}" alt=""><div class="cap">{{ im.caption }}</div></div>{% endfor %}
+</div>
+{% endif %}
 <div class="stats">
   {% for s in stats %}
   <div class="stat">
@@ -93,14 +107,14 @@
 </section>
 {% endif %}
 
-{% if images or elevation %}
+{% if images %}
 <section>
   <h2>Images</h2>
   <div class="images">
-    {% for im in elevation %}<div class="figure"><img src="{{ im.src }}" alt=""><div class="cap">{{ im.caption }}</div></div>{% endfor %}
     {% for im in images %}<div class="figure"><img src="{{ im.src }}" alt=""><div class="cap">{{ im.caption }}</div></div>{% endfor %}
   </div>
 </section>
 {% endif %}
+
 </body>
 </html>

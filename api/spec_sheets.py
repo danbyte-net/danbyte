@@ -113,12 +113,15 @@ def _vendor_map(macs, tenant) -> dict:
     return {m: (got.get(hexkey(m)) or {}).get("name", "") for m in macs if m}
 
 
+_PATHS = {"device": "/devices/", "vm": "/virtual-machines/", "vc": "/virtual-chassis/"}
+
+
 def _meta(obj, request, kind: str) -> dict:
     from core.models import DeploymentSettings
 
     ds = DeploymentSettings.load()
     base = request.build_absolute_uri("/").rstrip("/") if request is not None else ""
-    path = f"/devices/{obj.id}" if kind == "device" else f"/virtual-machines/{obj.id}"
+    path = f"{_PATHS[kind]}{obj.id}"
     return {
         "deployment": ds.deployment_name or "Danbyte",
         "logo": _data_uri(ds.login_logo),
@@ -143,21 +146,11 @@ def _fmt_speed(value) -> str:
     return str(value or "")
 
 
-def device_context(device, request=None) -> dict:
-    from .models import Interface, IPAddress
+def interface_rows(device) -> tuple[list[dict], list]:
+    """The interface table rows for ``device`` (natural order) and the
+    interfaces themselves."""
+    from .models import Interface
 
-    dt = device.device_type
-    rack = device.rack
-    subtitle = [
-        device.role.name if device.role_id else "",
-        device.site.name if device.site_id else "",
-        (
-            f"{rack.name} · U{device.position}" if rack and device.position
-            else rack.name if rack
-            else device.location.name if device.location_id
-            else ""
-        ),
-    ]
     ifaces = list(
         Interface.objects.filter(device=device)
         .select_related("vlan", "parent")
@@ -185,6 +178,26 @@ def device_context(device, request=None) -> dict:
             "description": i.description,
         })
 
+    return rows, ifaces
+
+
+def device_context(device, request=None) -> dict:
+    from .models import IPAddress
+
+    dt = device.device_type
+    rack = device.rack
+    subtitle = [
+        device.role.name if device.role_id else "",
+        device.site.name if device.site_id else "",
+        (
+            f"{rack.name} · U{device.position}" if rack and device.position
+            else rack.name if rack
+            else device.location.name if device.location_id
+            else ""
+        ),
+    ]
+    rows, ifaces = interface_rows(device)
+
     power = list(device.power_ports.all())
     draw = sum((p.allocated_draw or p.maximum_draw or 0) for p in power)
 
@@ -206,8 +219,12 @@ def device_context(device, request=None) -> dict:
         ("Tenant", device.tenant.name),
         ("Site", device.site.name if device.site_id else ""),
         ("Location", device.location.name if device.location_id else ""),
-        ("Rack", f"{rack.name} · U{device.position} · {device.face}" if rack and device.position
-                 else rack.name if rack else ""),
+        ("Rack", " · ".join(
+            x for x in (rack.name if rack else "",
+                        f"U{device.position}" if rack and device.position else "",
+                        device.face if rack and device.position else "")
+            if x
+        )),
         ("Cluster", device.cluster.name if device.cluster_id else ""),
         ("Virtual chassis", (
             f"{device.virtual_chassis.name} · member {device.vc_position}"
@@ -299,7 +316,7 @@ def vm_context(vm, request=None) -> dict:
         ("Tenant", vm.tenant.name),
         ("Site", vm.site.name if vm.site_id else ""),
         ("Power state", (getattr(vm, "power_state", "") or "").capitalize()),
-        ("Synced from", vm.synced_from.name if getattr(vm, "synced_from_id", None) else ""),
+        ("Synced from", str(getattr(vm, "synced_from", "") or "")),
         ("Description", vm.description),
         ("Tags", _tags(vm)),
     ]
@@ -347,11 +364,88 @@ def vm_context(vm, request=None) -> dict:
     }
 
 
+# ─── virtual chassis ───────────────────────────────────────────────────────
+
+def vc_context(vc, request=None) -> dict:
+    from .port_utilization import utilization_payload
+
+    members = list(
+        vc.members.select_related("device_type__manufacturer", "status", "site", "primary_ip", "oob_ip")
+        .order_by("vc_position", "name")
+    )
+    master = vc.master if vc.master_id else (members[0] if members else None)
+    elevation = []
+    member_rows = []
+    member_ifaces = []
+    total_ifaces = 0
+    for m in members:
+        dt = m.device_type
+        label = f"{m.vc_position if m.vc_position is not None else '-'} · {m.name}"
+        if master and m.id == master.id:
+            label += " · master"
+        if dt:
+            src = _data_uri(dt.front_image)
+            if src:
+                elevation.append({"src": src, "caption": f"{label} · {dt.model or dt.name}"})
+        rows, ifaces = interface_rows(m)
+        total_ifaces += len(ifaces)
+        member_ifaces.append({"label": label, "rows": rows})
+        member_rows.append({
+            "position": m.vc_position if m.vc_position is not None else "-",
+            "name": m.name,
+            "role": "Master" if master and m.id == master.id else "Member",
+            "priority": m.vc_priority if m.vc_priority is not None else "",
+            "type": (dt.model or dt.name) if dt else "",
+            "serial": m.serial_number,
+            "status": m.status.name if m.status_id else "",
+        })
+    util = (utilization_payload(vc.members.all()) if members else {}).get("combined") or {}
+    used = (util.get("connected") or 0) + (util.get("reserved") or 0)
+    total = util.get("total") or 0
+    details = [
+        ("Domain", vc.domain),
+        ("Master", master.name if master else ""),
+        ("Members", str(len(members))),
+        ("Primary IP", master.primary_ip.ip_address if master and master.primary_ip_id else ""),
+        ("OOB IP", master.oob_ip.ip_address if master and master.oob_ip_id else ""),
+        ("Tenant", vc.tenant.name),
+        ("Site", master.site.name if master and master.site_id else ""),
+        ("Description", vc.description),
+        ("Tags", _tags(vc)),
+    ]
+    details = [(k, v) for k, v in details if v]
+    details += custom_field_rows(vc, "virtualchassis")
+    return {
+        "meta": _meta(vc, request, "vc"),
+        "name": vc.name,
+        "subtitle": " · ".join(
+            x for x in ("Virtual chassis", master.site.name if master and master.site_id else "")
+            if x
+        ),
+        "status": _status(master) if master else None,
+        "stats": [
+            {"label": "Members", "value": str(len(members))},
+            {"label": "Interfaces", "value": str(total_ifaces)},
+            {"label": "Ports used",
+             "value": f"{used} / {total}" if total else "—",
+             "hint": f"{round(100 * used / total)} %" if total else ""},
+        ],
+        "details": details,
+        "members": member_rows,
+        "member_ifaces": member_ifaces,
+        "comments": vc.comments or "",
+        "images": _images_for(vc),
+        "elevation": elevation,
+    }
+
+
 # ─── rendering ─────────────────────────────────────────────────────────────
 
+_CONTEXTS = {"device": device_context, "vm": vm_context, "vc": vc_context}
+
+
 def render_spec_html(kind: str, obj, request=None) -> str:
-    ctx = device_context(obj, request) if kind == "device" else vm_context(obj, request)
-    return render_to_string(f"spec/{kind}.html", ctx)
+    return render_to_string(f"spec/{kind}.html", _CONTEXTS[kind](obj, request))
 
 
 def render_spec_pdf(kind: str, obj, request=None) -> bytes:

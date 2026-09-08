@@ -10,10 +10,14 @@ export function SpecSheetButton({
   kind,
   id,
 }: {
-  kind: "device" | "vm"
+  kind: "device" | "vm" | "vc"
   id: string
 }) {
-  const base = kind === "device" ? "/api/devices" : "/api/virtual-machines"
+  const base = {
+    device: "/api/devices",
+    vm: "/api/virtual-machines",
+    vc: "/api/virtual-chassis",
+  }[kind]
   return (
     <Button
       variant="outline"
