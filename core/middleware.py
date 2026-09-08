@@ -64,6 +64,19 @@ class MaintenanceMiddleware:
 
     def __call__(self, request):
         path = request.path or ""
+        if path.startswith("/api/backups/restore-runs/"):
+            # The database may be mid-replacement: answer the active run from
+            # its cache mirror instead of letting the view hit the ORM.
+            from backups.maintenance import active, progress
+
+            state = active()
+            run_id = (state or {}).get("run_id")
+            if run_id and path == f"/api/backups/restore-runs/{run_id}/":
+                data = progress(run_id)
+                if data:
+                    from django.http import JsonResponse
+
+                    return JsonResponse(data)
         if not path.startswith(_MAINTENANCE_EXEMPT):
             from backups.maintenance import active
 

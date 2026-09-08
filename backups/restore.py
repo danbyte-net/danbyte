@@ -27,6 +27,7 @@ from . import maintenance
 from .archive import ArchiveError, KeyMismatch, Reader
 from .engine import (
     COMPONENTS,
+    adopt_orphans,
     create_backup,
     media_roots,
     pg_args,
@@ -34,7 +35,7 @@ from .engine import (
     run_backup,
     work_dir,
 )
-from .models import Backup, RestoreRun
+from .models import Backup, BackupSchedule, BackupTarget, RestoreRun
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +239,39 @@ def flush_queues() -> None:
         logger.warning("could not flush RQ queues after restore", exc_info=True)
 
 
+def _row(obj) -> dict:
+    return {f.attname: getattr(obj, f.attname) for f in obj._meta.concrete_fields}
+
+
+def _reinstate(snapshot: dict) -> None:
+    """The restored database predates this restore, so the rows that
+    describe it - the target, the archive, the safety backup and the run -
+    are written back. Users and schedules that no longer exist are unset."""
+    from django.contrib.auth import get_user_model
+
+    users = set(get_user_model().objects.values_list("pk", flat=True))
+    schedules = set(BackupSchedule.objects.values_list("pk", flat=True))
+
+    def put(model, row: dict | None) -> None:
+        if not row:
+            return
+        row = dict(row)
+        pk = row.pop("id")
+        if "created_by_id" in row and row["created_by_id"] not in users:
+            row["created_by_id"] = None
+        if "schedule_id" in row and row["schedule_id"] not in schedules:
+            row["schedule_id"] = None
+        created_at = row.get("created_at")
+        model.objects.update_or_create(pk=pk, defaults=row)
+        if created_at:
+            model.objects.filter(pk=pk).update(created_at=created_at)
+
+    put(BackupTarget, snapshot.get("target"))
+    put(Backup, snapshot.get("backup"))
+    put(Backup, snapshot.get("safety"))
+    put(RestoreRun, snapshot.get("run"))
+
+
 def run_restore(restore_id: str) -> RestoreRun | None:
     run = RestoreRun.objects.select_related("backup__target").filter(pk=restore_id).first()
     if run is None:
@@ -275,6 +309,7 @@ def run_restore(restore_id: str) -> RestoreRun | None:
         if safety is None or safety.status != "success":
             raise RestoreError(f"safety backup failed: {safety.error if safety else 'no row'}")
         Backup.objects.filter(pk=safety.pk).update(protected=True)
+        safety.protected = True
         run.safety_backup = safety
         run.save(update_fields=["safety_backup", "updated_at"])
         run.step_end(detail=safety.filename)
@@ -294,11 +329,16 @@ def run_restore(restore_id: str) -> RestoreRun | None:
 
         if "db" in run.components:
             run.step_start("database")
+            snapshot = {"target": _row(backup.target), "backup": _row(backup),
+                        "safety": _row(safety), "run": _row(run)}
             replace_database(paths["db"])
-            run.step_end()
-            run.step_start("migrate")
             call_command("migrate", interactive=False, verbosity=0)
-            run.step_end()
+            _reinstate(snapshot)
+            run.step_end(detail="restored and migrated")
+
+            run.step_start("reconcile")
+            adopted = adopt_orphans(backup.target)
+            run.step_end(detail=f"{adopted} archive(s) adopted")
 
         if "media" in run.components:
             run.step_start("media")
@@ -326,6 +366,7 @@ def run_restore(restore_id: str) -> RestoreRun | None:
         run.status = "success"
         run.finished_at = timezone.now()
         run.save()
+        run.mirror()
     except Exception as exc:  # noqa: BLE001 - land it on the row
         logger.exception("restore %s failed", restore_id)
         try:
@@ -339,6 +380,7 @@ def run_restore(restore_id: str) -> RestoreRun | None:
             run.save()
         except Exception:  # noqa: BLE001
             logger.exception("could not record restore failure")
+        run.mirror()
     finally:
         if in_maintenance:
             maintenance.leave()

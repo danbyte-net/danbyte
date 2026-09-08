@@ -20,7 +20,14 @@ from core.models import DeploymentSettings
 
 from . import maintenance
 from .archive import ArchiveError, KeyMismatch, Reader
-from .engine import EngineError, create_backup, delete_backup, enqueue_backup, work_dir
+from .engine import (
+    EngineError,
+    adopt_orphans,
+    create_backup,
+    delete_backup,
+    enqueue_backup,
+    work_dir,
+)
 from .models import Backup, BackupSchedule, BackupTarget, RestoreRun
 from .restore import RestoreError, create_restore, enqueue_restore, preview
 from .schedules import fire_schedule
@@ -89,6 +96,17 @@ class BackupTargetViewSet(viewsets.ModelViewSet):
         target.last_error = ""
         target.save(update_fields=["last_error", "updated_at"])
         return Response({"ok": True, "detail": f"Wrote and removed a marker on {target.location}."})
+
+    @action(detail=True, methods=["post"])
+    def scan(self, request, pk=None):
+        """Adopt archives on the target that have no row - copied in by hand,
+        or made after the point a restore took the database back to."""
+        target = self.get_object()
+        try:
+            adopted = adopt_orphans(target)
+        except (StorageError, OSError) as exc:
+            return Response({"ok": False, "detail": str(exc)}, status=400)
+        return Response({"ok": True, "adopted": adopted})
 
 
 # ─── schedules ──────────────────────────────────────────────────────────────

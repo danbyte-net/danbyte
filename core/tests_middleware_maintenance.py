@@ -28,3 +28,12 @@ class MaintenanceMiddlewareTests(TestCase):
         self.assertNotEqual(self.client.get("/api/backups/restore-runs/").status_code, 503)
         maintenance.leave()
         self.assertEqual(self.client.get("/api/me/").status_code, 200)
+
+    def test_active_run_is_served_from_the_mirror(self):
+        maintenance.enter("restore in progress", "abc")
+        maintenance.set_progress("abc", {"id": "abc", "status": "running", "steps": [{"name": "database"}]})
+        r = self.client.get("/api/backups/restore-runs/abc/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["steps"][0]["name"], "database")
+        # another id still goes to the view (and is not blocked by the flag)
+        self.assertNotEqual(self.client.get("/api/backups/restore-runs/other/").status_code, 503)

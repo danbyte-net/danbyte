@@ -58,6 +58,11 @@ A target is where archives are stored.
 last error on the Backups page. One target is the **default**; *Back up now*
 and uploads use it.
 
+**Scan for archives** adopts `.dbk` files on the target that have no row:
+archives copied into the directory by hand, or a whole directory carried
+over from another host. Each is opened for its manifest; one made under
+another key is skipped.
+
 ## Schedules
 
 A schedule is a cadence (hourly, daily, weekly, monthly, with a wall-clock
@@ -112,14 +117,20 @@ Then, in the worker, in order:
 2. Make a **Before restore** backup of the current state and protect it.
 3. Raise the **maintenance flag**. Every request answers `503` with
    `Retry-After`, which nginx turns into the "Danbyte is updating" page;
-   only the health probe and the restore-status endpoint stay open, so the
-   dialog keeps showing progress.
+   only the health probe and the restore-status endpoint stay open. The
+   running restore's status is answered from Redis, so the dialog keeps
+   showing progress even while the database has no tables.
 4. Terminate the other database sessions, drop and recreate the `public`
-   schema, `pg_restore` the dump, run `migrate` forward and rebuild the
-   search index.
-5. Extract the media tree next to the live one and swap them; the old tree
+   schema, `pg_restore` the dump and run `migrate` forward.
+5. **Reconcile**: the restored database predates the restore, so the rows
+   describing it - the target, the archive, the *Before restore* backup and
+   the run itself - are written back, and every other archive on the target
+   without a row (backups made after the archive's point in time) is
+   adopted. Nothing on disk is lost by restoring.
+6. Extract the media tree next to the live one and swap them; the old tree
    is kept until the run succeeds.
-6. Flush the RQ queues and the cache, clear the flag, release the lock.
+7. Rebuild the search index, flush the RQ queues, clear the flag, release
+   the lock.
 
 Nothing restarts. Django holds no schema state between requests, so the
 site is live again the moment the flag drops; the dialog offers **Reload**.

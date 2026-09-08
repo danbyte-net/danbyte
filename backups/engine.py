@@ -329,6 +329,42 @@ def prune_schedule(schedule: BackupSchedule, now=None) -> int:
     return len(gone)
 
 
+def adopt_orphans(target: BackupTarget) -> int:
+    """Create rows for ``.dbk`` files on the target that no row names -
+    archives copied in by hand, and everything made after the archive a
+    restore just brought back. Unreadable files (another key) are skipped."""
+    from django.utils.dateparse import parse_datetime
+
+    from .archive import Reader
+
+    backend = target.backend()
+    known = set(Backup.objects.filter(target=target).exclude(filename="").values_list("filename", flat=True))
+    kinds = {k for k, _ in Backup.KIND_CHOICES}
+    adopted = 0
+    for entry in backend.list():
+        name = entry["name"]
+        if name in known:
+            continue
+        try:
+            manifest = Reader(lambda n=name: backend.open(n)).read_manifest()
+        except Exception:  # noqa: BLE001 - not ours, or another host's key
+            logger.warning("not adopting %s on %s: unreadable", name, target)
+            continue
+        kind = manifest.get("kind") if manifest.get("kind") in kinds else "uploaded"
+        when = parse_datetime(str(manifest.get("created_at") or "")) or entry.get("modified") or timezone.now()
+        row = Backup.objects.create(
+            kind=kind, target=target, components=list(manifest.get("components") or []),
+            status="success", filename=name, location=f"{target.location.rstrip('/')}/{name}",
+            size=entry.get("size"), manifest=manifest, protected=kind == "pre_restore",
+            started_at=when, finished_at=when,
+            steps=[{"name": "adopt", "status": "success", "started_at": when.isoformat(),
+                    "finished_at": when.isoformat(), "detail": "found on the target"}],
+        )
+        Backup.objects.filter(pk=row.pk).update(created_at=when)
+        adopted += 1
+    return adopted
+
+
 def delete_backup(backup: Backup) -> None:
     if backup.status in ("queued", "running"):
         raise EngineError("A backup that is still running cannot be deleted.")

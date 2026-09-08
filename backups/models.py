@@ -166,5 +166,21 @@ class RestoreRun(TimestampedModel):
     def __str__(self) -> str:
         return f"restore of {self.backup_id}"
 
-    step_start = Backup.step_start
-    step_end = Backup.step_end
+    def mirror(self) -> None:
+        from . import maintenance
+
+        maintenance.set_progress(str(self.id), {
+            "id": str(self.id), "backup": str(self.backup_id), "components": list(self.components),
+            "status": self.status, "steps": list(self.steps), "error": self.error,
+            "safety_backup": str(self.safety_backup_id) if self.safety_backup_id else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        })
+
+    def step_start(self, name: str) -> None:
+        Backup.step_start(self, name)
+        self.mirror()
+
+    def step_end(self, status: str = "success", detail: str = "") -> None:
+        Backup.step_end(self, status, detail)
+        self.mirror()

@@ -226,6 +226,20 @@ function TargetsCard({ kinds }: { kinds: StorageKind[] }) {
       invalidate()
     },
   })
+  const scan = useMutation({
+    mutationFn: (t: BackupTarget) =>
+      api<{ adopted: number }>(`/api/backups/targets/${t.id}/scan/`, {
+        method: "POST",
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        r.adopted === 1 ? "1 archive adopted" : `${r.adopted} archives adopted`
+      )
+      void qc.invalidateQueries({ queryKey: ["backups"] })
+      invalidate()
+    },
+    onError: (e) => apiErrorToast(e),
+  })
   const remove = useMutation({
     mutationFn: (t: BackupTarget) =>
       api(`/api/backups/targets/${t.id}/`, { method: "DELETE" }),
@@ -291,6 +305,9 @@ function TargetsCard({ kinds }: { kinds: StorageKind[] }) {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => test.mutate(t)}>
                       Test
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => scan.mutate(t)}>
+                      Scan for archives
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setEditing(t)}>
                       Edit

@@ -109,7 +109,7 @@ class RunTests(_Base):
         self.replace.start()
         self.assertEqual(run.status, "success", run.error)
         self.assertEqual([s["name"] for s in run.steps],
-                         ["preview", "safety-backup", "download", "database", "migrate", "media", "config", "finish"])
+                         ["preview", "safety-backup", "download", "database", "reconcile", "media", "config", "finish"])
         self.assertGreater(seen["dump"], 0)
         self.assertIsNotNone(seen["maintenance"])  # the flag was up during the replacement
         self.assertIsNone(maintenance.active())     # and is down now
@@ -124,6 +124,36 @@ class RunTests(_Base):
         names = [c.args[0] for c in self.cmd.call_args_list]
         self.assertEqual(names, ["migrate", "rebuild_search_index"])
         self.flush.assert_called_once()
+
+    def test_rows_lost_with_the_database_come_back_and_orphans_are_adopted(self):
+        """A restored database predates the run: the target, the archive, the
+        safety backup and the run itself are reinstated, and an archive with
+        no row (made after the archive's point in time) is adopted."""
+        b = self._backup(("db",))
+        later = self._backup(("db",))  # exists on disk; its row will be "lost"
+        self.replace.stop()
+
+        def wipe(dump):
+            RestoreRun.objects.all().delete()
+            Backup.objects.all().delete()
+            b.target.__class__.objects.all().delete()
+
+        with mock.patch("backups.restore.replace_database", side_effect=wipe):
+            run = run_restore(str(create_restore(b, ["db"]).id))
+        self.replace.start()
+        self.assertEqual(run.status, "success", run.error)
+        again = RestoreRun.objects.get(pk=run.pk)
+        self.assertEqual(again.status, "success")
+        self.assertEqual(again.safety_backup.kind, "pre_restore")
+        self.assertTrue(again.safety_backup.protected)
+        self.assertEqual(Backup.objects.get(pk=b.pk).status, "success")
+        adopted = Backup.objects.get(filename=later.filename)
+        self.assertNotEqual(adopted.pk, later.pk)
+        self.assertEqual(adopted.kind, "manual")
+        self.assertEqual(adopted.status, "success")
+        self.assertEqual(next(s["detail"] for s in again.steps if s["name"] == "reconcile"), "1 archive(s) adopted")
+        # progress mirror carries the final state for the dialog
+        self.assertEqual(maintenance.progress(str(run.pk))["status"], "success")
 
     def test_failure_after_safety_backup_clears_the_flag(self):
         b = self._backup(("db",))

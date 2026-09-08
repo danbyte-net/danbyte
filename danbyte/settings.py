@@ -149,6 +149,8 @@ MIDDLEWARE = [
     # Rolling idle-session timeout (admin-configurable; no-op when unset). After
     # auth so request.user is resolved.
     "core.middleware.SessionIdleTimeoutMiddleware",
+    # A restore holds the whole site behind 503 while it replaces the database.
+    "core.middleware.MaintenanceMiddleware",
     # Captures the request user for the change-log signals.
     "audit.middleware.AuditContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
