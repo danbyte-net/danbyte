@@ -15,6 +15,7 @@ AUDITED_MODELS = [
     "api.IPAddress",
     "api.MACAddress",
     "api.OuiPrefix",
+    "scripting.Script",
     "backups.BackupTarget",
     "backups.BackupSchedule",
     "backups.Backup",

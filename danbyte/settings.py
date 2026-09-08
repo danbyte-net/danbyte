@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     "monitoring.apps.MonitoringConfig",
     "planning.apps.PlanningConfig",
     "backups.apps.BackupsConfig",
+    "scripting.apps.ScriptingConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -93,6 +94,10 @@ PLUGINS_CONFIG: dict = {}
 # `<dir>/installed.json`. Keep it OUTSIDE the app tree in production so an
 # upgrade never wipes it (DANBYTE_PLUGIN_DIR). Read the manifest at import time
 # and treat those names exactly like PLUGINS entries.
+# Where a script's SDK client points at this install. Loopback by default;
+# set it when the backend is not reachable on 127.0.0.1:8000 from a worker.
+DANBYTE_INTERNAL_URL = os.getenv("DANBYTE_INTERNAL_URL", "http://127.0.0.1:8000")
+
 PLUGIN_UPLOAD_DIR = Path(os.getenv("DANBYTE_PLUGIN_DIR", BASE_DIR / "plugins_local"))
 if PLUGIN_UPLOAD_DIR.is_dir() and str(PLUGIN_UPLOAD_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGIN_UPLOAD_DIR))

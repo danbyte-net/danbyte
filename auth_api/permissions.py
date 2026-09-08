@@ -36,6 +36,7 @@ PERMISSIONS: list[tuple[str, str, str]] = [
     ("tenants.edit",    "Create / edit tenants",                          "Tenants"),
     ("users.manage",    "Manage users + assign permissions",              "Admin"),
     ("jobs.manage",     "View + manage background jobs (queues, workers)", "Admin"),
+    ("scripts.publish", "Publish a script to everyone in the tenant",     "Admin"),
 ]
 PERM_SLUGS = [p[0] for p in PERMISSIONS]
 

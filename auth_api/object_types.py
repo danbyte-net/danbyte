@@ -23,7 +23,7 @@ from django.apps import apps
 # universe (used to validate a grant's actions); it is intentionally permissive
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
-ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser"]
+ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust"]
 
 # Which capability verbs a *specific* type actually honours - only these are
 # advertised for that type in the permission form, so the UI never offers e.g.
@@ -32,6 +32,9 @@ ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser"]
 # only governs what the picker surfaces.
 CAPABILITY_VERBS: dict[str, list[str]] = {
     "devicecredential": ["reveal"],
+    # Execute a script, and mark one trusted (trusted scripts reach the
+    # database directly, so that verb is its own grant).
+    "script": ["run", "trust"],
     # An SSID's PSK is a credential, so revealing it is its own grant (#68).
     "wirelesslan": ["reveal"],
     "device": ["connect"],
@@ -208,6 +211,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FloorTileType", "Floor tile types", "Customize"),
     ("core.Tag", "Tags", "Customize"),
     # ─── Integrations ───────────────────────────────────────────────
+    ("scripting.Script", "Scripts", "Integrations"),
+    ("scripting.ScriptRun", "Script runs", "Integrations"),
     ("integrations.Webhook", "Webhooks", "Integrations"),
     ("integrations.AutomationTarget", "Automation targets", "Integrations"),
     ("integrations.DeployRun", "Config deploy runs", "Integrations"),
