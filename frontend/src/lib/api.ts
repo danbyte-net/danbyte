@@ -5394,6 +5394,8 @@ export interface DeviceSnmp {
   device: string | null
   /** Set instead of `device` when the SNMP target is a VM (virtual router). */
   vm?: string | null
+  /** A stack member reads the stack owner's observation (#148). */
+  polled_via?: { id: string; name: string } | null
   profile: string | null
   profile_name: string | null
   data: Record<string, string>
@@ -6957,6 +6959,25 @@ export interface SystemJobStatus {
 }
 
 // ─── Virtual chassis (switch stacks) ─────────────────────────────────────
+
+/** `/api/monitoring/virtual-chassis/<id>/snmp/drift/` - one observation on
+ * the stack owner, split per member. */
+export interface VcSnmpDrift {
+  owner: VcMemberRef | null
+  state: {
+    polled_at: string | null
+    reachable: boolean | null
+    error: string
+  } | null
+  members: { device: VcMemberRef; drift: SnmpDriftItem[] }[]
+}
+
+export interface VcMemberRef {
+  id: string
+  name: string
+  vc_position: number | null
+  is_master: boolean
+}
 
 export interface VirtualChassisMember {
   id: string

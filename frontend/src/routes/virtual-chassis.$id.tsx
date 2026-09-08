@@ -56,6 +56,7 @@ import {
 } from "@/components/interface-trace-dialog"
 import { VcAddMemberDialog } from "@/components/vc-add-member-dialog"
 import { VcMembershipDialog } from "@/components/vc-membership-dialog"
+import { VcSnmpPane } from "@/components/vc-snmp-pane"
 import {
   DetailHero,
   DetailShell,
@@ -100,7 +101,7 @@ function sortMembers(members: VirtualChassisMember[]): VirtualChassisMember[] {
 
 function Body({ vc }: { vc: VirtualChassis }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "interfaces" | "journal" | "history"
+    "overview" | "interfaces" | "snmp" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo } = useMe()
@@ -201,6 +202,7 @@ function Body({ vc }: { vc: VirtualChassis }) {
           label: "Interfaces",
           count: stackIfaces.count,
         },
+        { value: "snmp", label: "SNMP" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -217,6 +219,9 @@ function Body({ vc }: { vc: VirtualChassis }) {
           error={stackIfaces.error}
           actions={ifaceActions}
         />
+      </DetailTab>
+      <DetailTab value="snmp">
+        <VcSnmpPane vcId={vc.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.virtualchassis" objectId={vc.id} />

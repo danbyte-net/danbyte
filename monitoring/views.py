@@ -22,6 +22,7 @@ import ipaddress as _ip
 import re
 
 from api.models import (
+    VirtualChassis,
     Device,
     DeviceRole,
     DeviceType,
@@ -74,6 +75,7 @@ from .snmp_drift import (
     compute_device_drift,
     sync_device_from_snmp,
 )
+from .vc_stack import stack_members, stack_owner, stack_state
 
 # How many recent results feed the per-check sparkline.
 SPARK_POINTS = 30
@@ -1851,14 +1853,14 @@ def device_snmp_view(request, device_id):
     if err is not None:
         return err
     device, tenant = resolved
-    state = (
-        DeviceSnmp.objects.filter(device=device, tenant=tenant)
-        .select_related("profile")
-        .first()
-    )
+    state = stack_state(device, tenant)
     if state is None:
         return Response(_empty_snmp(device))
-    return Response(DeviceSnmpSerializer(state).data)
+    data = DeviceSnmpSerializer(state).data
+    # A stack member reads the stack owner's observation (#148).
+    if state.device_id and state.device_id != device.id:
+        data["polled_via"] = {"id": str(state.device_id), "name": state.device.name}
+    return Response(data)
 
 
 @extend_schema(
@@ -2166,11 +2168,25 @@ def snmp_drift_list_view(request):
 
     states = [s for s in states if _is_configured(s.device)]
 
-    # Pre-fetch every polled device's intended interfaces in one query (grouped
+    # A stack owner's observation covers every member: one row per member,
+    # each compared against its own slice (#148). A member polled in its own
+    # right keeps its own row instead.
+    polled_ids = {s.device_id for s in states}
+    targets_by_state: dict = {}
+    for state in states:
+        targets = [state.device]
+        if state.device.virtual_chassis_id:
+            targets = [
+                m for m in (stack_members(state.device) or [state.device])
+                if m.id == state.device_id or m.id not in polled_ids
+            ]
+        targets_by_state[state.id] = targets
+
+    # Pre-fetch every listed device's intended interfaces in one query (grouped
     # by device) so the per-device drift compare below doesn't issue an N+1.
     ifaces_by_device: dict = {}
     for iface in Interface.objects.filter(
-        device_id__in=[s.device_id for s in states]
+        device_id__in=[t.id for ts in targets_by_state.values() for t in ts]
     ).select_related("vlan"):
         ifaces_by_device.setdefault(iface.device_id, []).append(iface)
 
@@ -2184,7 +2200,9 @@ def snmp_drift_list_view(request):
     rows = []
     # One policy read for the whole fleet, not one per device.
     skip_absent = _skip_not_present(tenant)
-    for state in states:
+    for state, target in (
+        (st, t) for st in states for t in targets_by_state[st.id]
+    ):
         # Only a confirmed-reachable poll has observed state worth comparing;
         # reachable False *or* None gets its own bucket, never a misleading
         # "in sync". (A reachable device can't match ?status=unreachable, so skip
@@ -2197,8 +2215,8 @@ def snmp_drift_list_view(request):
             if want == "unreachable":
                 continue
             items = compute_device_drift(
-                state.device, tenant, state=state,
-                intended_interfaces=ifaces_by_device.get(state.device_id, []),
+                target, tenant, state=state,
+                intended_interfaces=ifaces_by_device.get(target.id, []),
                 skip_absent=skip_absent,
             )
             status_ = "drift" if items else "in_sync"
@@ -2221,14 +2239,14 @@ def snmp_drift_list_view(request):
             if want_ifaces and k in _INTERFACE_DRIFT_KINDS and it.get("interface_id"):
                 entry = iface_drift.setdefault(
                     str(it["interface_id"]),
-                    {"device": str(state.device_id), "count": 0, "kinds": []},
+                    {"device": str(target.id), "count": 0, "kinds": []},
                 )
                 entry["count"] += 1
                 if k not in entry["kinds"]:
                     entry["kinds"].append(k)
         rows.append({
-            "device": str(state.device_id),
-            "device_name": state.device.name,
+            "device": str(target.id),
+            "device_name": target.name,
             "status": status_,
             "reachable": state.reachable,
             "drift_count": len(items),
@@ -2488,6 +2506,120 @@ def device_snmp_sync_view(request, device_id):
         )
     summary = sync_device_from_snmp(device, tenant)
     return Response({**summary, "drift": compute_device_drift(device, tenant)})
+
+
+# ─── Virtual chassis: poll, drift and sync for a whole stack (#148) ────────────
+
+def _resolve_vc(request, vc_id, action="view"):
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return None, Response({"detail": "No active tenant."}, status=403)
+    vc, _ = _scoped_get(request, VirtualChassis, "virtualchassis", action, vc_id)
+    if vc is None:
+        return None, Response({"detail": "Virtual chassis not found."}, status=404)
+    return (vc, tenant), None
+
+
+def _vc_member_ref(vc, member) -> dict:
+    return {
+        "id": str(member.id),
+        "name": member.name,
+        "vc_position": member.vc_position,
+        "is_master": vc.master_id == member.id,
+    }
+
+
+@extend_schema(
+    summary="Poll a virtual chassis over SNMP (through its owning member)",
+    tags=["monitoring"],
+    request=None,
+    responses=DeviceSnmpSerializer,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def vc_snmp_poll_view(request, vc_id):
+    """One poll for the whole stack: the designated master (else the lowest
+    member) answers for every member, and the observation is stored on it."""
+    resolved, err = _resolve_vc(request, vc_id, "change")
+    if err is not None:
+        return err
+    vc, _tenant = resolved
+    members = list(vc.members.order_by("vc_position", "name"))
+    if not members:
+        return Response({"detail": "The stack has no members."}, status=400)
+    owner = stack_owner(members[0])
+    return device_snmp_poll_view(request._request, device_id=owner.id)
+
+
+@extend_schema(
+    summary="SNMP drift for every member of a virtual chassis, from the stack's one observation",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def vc_snmp_drift_view(request, vc_id):
+    resolved, err = _resolve_vc(request, vc_id)
+    if err is not None:
+        return err
+    vc, tenant = resolved
+    members = list(vc.members.order_by("vc_position", "name"))
+    if not members:
+        return Response({"owner": None, "state": None, "members": []})
+    owner = stack_owner(members[0])
+    state = stack_state(owner, tenant)
+    return Response({
+        "owner": _vc_member_ref(vc, owner),
+        "state": (
+            {
+                "polled_at": state.polled_at,
+                "reachable": state.reachable,
+                "error": state.error,
+            }
+            if state is not None and state.polled_at
+            else None
+        ),
+        "members": [
+            {
+                "device": _vc_member_ref(vc, m),
+                "drift": compute_device_drift(m, tenant, state=state) if state else [],
+            }
+            for m in members
+        ],
+    })
+
+
+@extend_schema(
+    summary="Sync every member of a virtual chassis from the stack's SNMP observation",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def vc_snmp_sync_view(request, vc_id):
+    """Runs the per-device sync for each member in position order, so each one
+    receives only the ports that are its own. Source-of-truth write →
+    ``device.change``."""
+    resolved, err = _resolve_vc(request, vc_id, "change")
+    if err is not None:
+        return err
+    vc, tenant = resolved
+    if not rbac.has_action(request.user, tenant, "device", "change"):
+        return Response(
+            {"detail": "You do not have permission to change devices."}, status=403
+        )
+    members = list(vc.members.order_by("vc_position", "name"))
+    out = []
+    for m in members:
+        summary = sync_device_from_snmp(m, tenant)
+        out.append({
+            "device": _vc_member_ref(vc, m),
+            "summary": summary,
+            "drift": compute_device_drift(m, tenant),
+        })
+    return Response({"members": out})
 
 
 def _binding_payload(tenant, scope, object_id):

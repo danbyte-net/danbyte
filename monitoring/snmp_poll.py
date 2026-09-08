@@ -50,13 +50,22 @@ def _device_target(device):
     if device.primary_ip_id and device.primary_ip.ip_address:
         return device.primary_ip.ip_address
     name = (device.name or "").strip()
-    if not name:
-        return None
-    try:
-        socket.getaddrinfo(name, None)
-    except OSError:
-        return None
-    return name
+    if name:
+        try:
+            socket.getaddrinfo(name, None)
+        except OSError:
+            pass
+        else:
+            return name
+    # A stack member without an address of its own is reached through the
+    # member that owns the stack's management address (#148).
+    if device.virtual_chassis_id:
+        from .vc_stack import stack_owner
+
+        owner = stack_owner(device)
+        if owner.id != device.id:
+            return _device_target(owner)
+    return None
 
 
 def persist_snmp_result(tenant, profile, result, *, device=None, vm=None) -> DeviceSnmp:
@@ -93,6 +102,15 @@ def poll_device(device, tenant, profile=None):
     saved ``DeviceSnmp`` (whose ``reachable`` reflects whether the device
     answered).
     """
+    # A stack is one SNMP agent: polling any member polls the owner and the
+    # observed state lives on the owner's row, so every member reads the same
+    # facts and no port is counted twice (#148).
+    if device.virtual_chassis_id:
+        from .vc_stack import stack_owner
+
+        owner = stack_owner(device)
+        if owner.id != device.id:
+            return poll_device(owner, tenant, profile)
     if profile is None:
         profile, _source = resolve_device_profile(device, tenant)
     if profile is None:

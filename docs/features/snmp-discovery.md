@@ -106,6 +106,39 @@ cards below them - [LLDP neighbours and the ARP table](#topology),
 [custom SNMP sensors](#sensors) and the [BMC](#redfish) - pair up two-across on
 a wide window and stack on a narrow one.
 
+## Polling a stack {#polling-a-stack}
+
+A [virtual chassis](../dcim/virtual-chassis.md) answers SNMP as one box:
+whichever member you poll, the agent reports every member's ports plus the
+stack's logical interfaces (port-channels, VLAN and loopback interfaces, the
+management port). Danbyte therefore polls a stack **once, through its owner** -
+the designated master, else the lowest-positioned member - and stores the
+observation on that member. Polling any member, on the device page or on the
+schedule, polls the owner; a member without an address of its own is reached
+through the owner's. The member's **Observed** card says *Polled via
+stack member …*.
+
+The observation is then split back onto the members it describes, so each
+member's drift and **Sync from SNMP** only ever see its own slice:
+
+1. a name that matches an interface the member already has, or that its
+   device-type or module templates render for its position
+   (`{position}`), belongs to that member;
+2. otherwise the first number after the leading letters names the member
+   slot - `Gi2/0/1`, `Ten-GigabitEthernet2/0/1`, `ge-1/0/0`, `1/1/1`;
+3. everything else - `Port-channel1`, `Bridge-Aggregation1`, `Vlan1`,
+   `Loopback0`, the management port - belongs to the owner.
+
+A port is never proposed as *new* on one member while another member already
+has it, and a logical interface that lives on the master is never *stale* on
+a member. Where a vendor's naming defeats rule 2, the port lands on the owner:
+open it, and the **Stack member** field on the interface form moves it - the
+cable, IPs and MAC objects follow.
+
+The stack page has its own **SNMP** tab with **Poll stack**, **Sync stack from
+SNMP** (each member in position order) and every member's drift inbox; the
+fleet [drift view](#fleet-wide-drift-view) lists one row per member.
+
 ## Scheduled polling & utilisation {#scheduled-polling}
 
 The on-demand button is a snapshot. To build a **utilisation series** for the

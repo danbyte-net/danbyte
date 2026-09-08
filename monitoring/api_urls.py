@@ -41,6 +41,9 @@ from .viewsets import (
     WatchedEndpointViewSet,
 )
 from .views import (
+    vc_snmp_drift_view,
+    vc_snmp_poll_view,
+    vc_snmp_sync_view,
     alert_ack_view,
     alerts_view,
     bulk_check_now_view,
@@ -164,6 +167,9 @@ urlpatterns = [
     path("devices/<uuid:device_id>/snmp/reconcile/", device_snmp_reconcile_view, name="monitoring-device-snmp-reconcile"),
     path("devices/<uuid:device_id>/snmp/sync/", device_snmp_sync_view, name="monitoring-device-snmp-sync"),
     path("devices/<uuid:device_id>/snmp-poll/", device_snmp_poll_view, name="monitoring-device-snmp-poll"),
+    path("virtual-chassis/<uuid:vc_id>/snmp-poll/", vc_snmp_poll_view, name="monitoring-vc-snmp-poll"),
+    path("virtual-chassis/<uuid:vc_id>/snmp/drift/", vc_snmp_drift_view, name="monitoring-vc-snmp-drift"),
+    path("virtual-chassis/<uuid:vc_id>/snmp/sync/", vc_snmp_sync_view, name="monitoring-vc-snmp-sync"),
     path("virtual-machines/<uuid:vm_id>/snmp/", vm_snmp_view, name="monitoring-vm-snmp"),
     path("virtual-machines/<uuid:vm_id>/snmp/utilization/", vm_snmp_utilization_view, name="monitoring-vm-snmp-util"),
     path("virtual-machines/<uuid:vm_id>/snmp-poll/", vm_snmp_poll_view, name="monitoring-vm-snmp-poll"),

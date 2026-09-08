@@ -2720,6 +2720,21 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         device = attrs.get("device", getattr(self.instance, "device", None))
         self_pk = getattr(self.instance, "pk", None)
 
+        # Re-homing an interface is only a "move to member" inside one stack
+        # (#148): cables, IPs and MAC objects follow the row, so anything wider
+        # would silently rewire another chassis.
+        if (
+            self.instance is not None
+            and "device" in attrs
+            and attrs["device"].id != self.instance.device_id
+        ):
+            old_vc = self.instance.device.virtual_chassis_id
+            if not old_vc or attrs["device"].virtual_chassis_id != old_vc:
+                raise serializers.ValidationError(
+                    {"device_id": "An interface can only move between members of "
+                                  "the same virtual chassis."}
+                )
+
         # All three self-relations must point at an interface on the same device
         # - or on another member of the same virtual chassis, where the
         # aggregate lives on the master and member ports across the stack join

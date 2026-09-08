@@ -20,6 +20,7 @@ from api.speed import fmt_speed, speed_mbps
 from api.vrf_placement import ANY_VRF, containing_prefix
 
 from .models import DeviceSnmp, MonitoringSettings
+from .vc_stack import observed_for, stack_state
 
 
 def _real_ip(ip: str) -> bool:
@@ -151,14 +152,17 @@ def _norm(value) -> str:
 _OBSERVED_TYPE = {"lag": "lag"}
 
 
-def _lag_membership_items(device, observed: list[dict], int_by_name: dict) -> list[dict]:
+def _lag_membership_items(
+    device, observed: list[dict], int_by_name: dict, all_observed: list[dict] | None = None
+) -> list[dict]:
     """Bundle membership drift: the aggregate each port reports itself under
     versus the `lag` it has in Danbyte. Compared by aggregate NAME - on a
     stack the aggregate lives on the master while the member port sits on
     another member device, so ids can't be compared. Rows without the
     ``lag_if_index`` key come from an agent that never looked and say
-    nothing."""
-    by_ifindex = {str(o.get("if_index") or ""): o for o in observed}
+    nothing. ``all_observed`` is the whole stack's rows (the aggregate a
+    member port names usually sits on the master's slice)."""
+    by_ifindex = {str(o.get("if_index") or ""): o for o in (all_observed or observed)}
     items: list[dict] = []
     for o in observed:
         if "lag_if_index" not in o:
@@ -351,7 +355,7 @@ def compute_device_drift(
     this to avoid an N+1. Omit them on the per-device path and they're queried.
     """
     if state is None:
-        state = DeviceSnmp.objects.filter(device=device, tenant=tenant).first()
+        state = stack_state(device, tenant)
     if state is None or not state.polled_at:
         return []
 
@@ -376,6 +380,10 @@ def compute_device_drift(
     if policy["snmp_skip_unrouted_vlans"]:
         observed = [o for o in observed if not _is_unrouted_vlan(o)]
     fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
+    # A stack reports every member's ports; keep the ones that are this
+    # member's (#148). The full list stays around for aggregate lookups.
+    stack_observed = observed
+    observed = observed_for(device, observed)
     obs_by_name = {_norm(o["name"]): o for o in observed}
     intended = (
         list(intended_interfaces) if intended_interfaces is not None
@@ -489,7 +497,7 @@ def compute_device_drift(
             })
 
     # 2c. Bundle membership: which aggregate each port belongs to.
-    items.extend(_lag_membership_items(device, observed, int_by_name))
+    items.extend(_lag_membership_items(device, observed, int_by_name, stack_observed))
 
     # 3. Stale: Danbyte has it, the device doesn't report it. Report only -
     #    discovery never deletes from the SoT.
@@ -798,7 +806,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
     summary = {"interfaces_created": 0, "interfaces_updated": 0, "lag_memberships": 0,
                "ips_assigned": 0, "ips_skipped": 0, "vlans_assigned": 0,
                "switch_links": 0}
-    state = DeviceSnmp.objects.filter(device=device, tenant=tenant).first()
+    state = stack_state(device, tenant)
     if state is None or not state.polled_at:
         return summary
 
@@ -811,7 +819,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
     skip_absent = _skip_not_present(tenant)
     policy = _snmp_policy(tenant)
     fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
-    for o in (state.interfaces or []):
+    for o in observed_for(device, list(state.interfaces or [])):
         name = o.get("name")
         # Pre-allocated stack ports: not real hardware, not intent.
         if skip_absent and _is_not_present(o):
