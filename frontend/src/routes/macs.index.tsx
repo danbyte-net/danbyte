@@ -111,6 +111,7 @@ function MacsPage() {
           data={filteredRows}
           columns={wiredColumns}
           flexColumn="description"
+          tableId="macs"
         />
       )}
       <MacObjectDialog open={adding} onOpenChange={setAdding} />
