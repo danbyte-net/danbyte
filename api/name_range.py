@@ -28,3 +28,16 @@ def expand_name_range(name: str) -> list[str]:
     if hi < lo or hi - lo + 1 > RANGE_CAP:
         return [name]
     return [NAME_RANGE_RE.sub(str(i), name, count=1) for i in range(lo, hi + 1)]
+
+
+def range_error(name: str) -> str | None:
+    """Why a name's range shorthand can't be honoured, or ``None`` when the
+    name is a plain name or a usable ``[a-b]`` range. Serializers surface this
+    so a typo is refused instead of stored literally."""
+    if re.search(r"\{\d+-\d+\}", name):
+        return "Ranges use square brackets: [1-24]."
+    if len(NAME_RANGE_RE.findall(name)) > 1:
+        return "Only one [a-b] range per name."
+    if NAME_RANGE_RE.search(name) and len(expand_name_range(name)) == 1:
+        return f"A range must count up and cover at most {RANGE_CAP} names."
+    return None

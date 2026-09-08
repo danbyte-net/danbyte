@@ -4739,14 +4739,16 @@ class ModuleTypeViewSet(TenantScopedViewSet):
         serializer.save(tenant=self._tenant_or_403())
 
 
-class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
+class ModuleInterfaceTemplateViewSet(NameRangeCreateMixin, TenantScopedViewSet):
     """Interface templates on a MODULE type - scope via module_type.tenant;
-    filter with ?module_type=."""
+    filter with ?module_type=. A ``[a-b]`` range in the name fans out like it
+    does for device-type templates, so ``{module}[1-24]`` is 24 rows (#147)."""
 
     queryset = ModuleInterfaceTemplate.objects.select_related("module_type").order_by(NATURAL_NAME)
     serializer_class = ModuleInterfaceTemplateSerializer
     pagination_class = StandardPagination
     tenant_field = None
+    bulk_name_scope_field = "module_type_id"
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)
@@ -4769,7 +4771,7 @@ class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
                 {"module_type_id": "Pick a module type in the current tenant."}
             )
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 

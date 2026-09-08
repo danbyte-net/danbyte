@@ -609,3 +609,45 @@ class DefaultModuleTests(_Base):
         self.assertEqual(resp.status_code, 400, resp.content)
         self.bay_tmpl.refresh_from_db()
         self.assertIsNone(self.bay_tmpl.default_module_type_id)
+
+
+class RangeTests(_Base):
+    """``[a-b]`` in a module-type interface template fans out server-side (#147)."""
+
+    def setUp(self):
+        super().setUp()
+        self.mt = ModuleType.objects.create(tenant=self.tenant, name="J9534A")
+
+    def _post(self, name):
+        return self.client.post(
+            "/api/module-interface-templates/",
+            {"module_type_id": str(self.mt.id), "name": name, "type": "1000base-t"},
+            format="json",
+        )
+
+    def test_range_creates_one_template_per_port(self):
+        r = self._post("A[1-3]")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["name"], "A1")
+        names = list(self.mt.interface_templates.order_by("name").values_list("name", flat=True))
+        self.assertEqual(names, ["A1", "A2", "A3"])
+
+    def test_module_token_and_range_install_together(self):
+        self.assertEqual(self._post("Te1/{module}/[1-2]").status_code, 201)
+        self.assertEqual(
+            sorted(render_module_name(t.name, "3") for t in self.mt.interface_templates.all()),
+            ["Te1/3/1", "Te1/3/2"],
+        )
+
+    def test_curly_range_is_refused_not_stored(self):
+        r = self._post("{module}{1-24}")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("square brackets", r.json()["name"][0])
+        self.assertEqual(self.mt.interface_templates.count(), 0)
+
+    def test_clash_refuses_cleanly(self):
+        self.assertEqual(self._post("A[1-2]").status_code, 201)
+        r = self._post("A[2-3]")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Already exists", r.json()["name"])
+        self.assertEqual(self.mt.interface_templates.count(), 2)

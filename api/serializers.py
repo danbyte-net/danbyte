@@ -3312,6 +3312,14 @@ class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):
         write_only=True,
     )
 
+    def validate_name(self, value):
+        from .name_range import range_error
+
+        err = range_error(value)
+        if err:
+            raise serializers.ValidationError(err)
+        return value
+
     class Meta:
         model = ModuleInterfaceTemplate
         fields = ["id", "module_type_id", "name", "type", "enabled",
