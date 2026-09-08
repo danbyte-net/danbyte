@@ -260,6 +260,11 @@ checked-out source, so the recreated containers actually run the new code. A
 plain `up -d` without `--build` would relaunch the *old* image. The backend
 re-runs migrations on start; the named volumes keep your data.
 
+Take a backup first: **Settings → Backups → Back up now** writes an encrypted
+archive to the `backups` volume (`/app/backups` in `backend` and `workers`).
+A restore later runs inside `workers` without restarting any container - see
+[Backup and restore](backup-restore.md).
+
 `up -d` also creates services added since your last pull - check that
 `scheduler` is among them, because a stack upgraded from before it existed has
 never run any periodic work:

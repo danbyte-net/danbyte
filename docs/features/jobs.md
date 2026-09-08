@@ -49,7 +49,7 @@ Not all background work goes through the queue. Much of Danbyte's routine
 activity runs on a **timer** as a self-contained oneshot - the check engine
 dispatch, config-drift dispatch, the Outpost driver, subnet discovery, interface
 utilisation, alert maintenance, certificate expiry, the daily **email
-digest**, and the various
+digest**, the backup schedule tick, the search-index rebuild, and the various
 cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled
 tasks** section surfaces them directly.
 

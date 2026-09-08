@@ -17,6 +17,7 @@ x-app-env: &app-env
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
   DANBYTE_HTTPS: ${DANBYTE_HTTPS:-False}
+  DANBYTE_BACKUP_DIR: /app/backups
   DB_NAME: ${DB_NAME:-danbyte}
   DB_USER: ${DB_USER:-danbyte}
   DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
@@ -80,6 +81,7 @@ services:
     volumes:
       - staticfiles:/app/staticfiles
       - media:/app/media
+      - backups:/app/backups
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health/"]
       interval: 15s
@@ -110,6 +112,11 @@ services:
     <<: *app-build
     environment: *app-env
     command: ["python", "manage.py", "rqworker-pool", "default", "high", "low", "--num-workers", "${RQ_WORKERS:-4}"]
+    # Backups and restores run here: the worker dumps and restores the
+    # database over the network and swaps the media tree in place.
+    volumes:
+      - media:/app/media
+      - backups:/app/backups
     sysctls:
       - net.ipv4.ping_group_range=0 2147483647
     depends_on:
@@ -174,3 +181,4 @@ volumes:
   redis_data:
   staticfiles:
   media:
+  backups:

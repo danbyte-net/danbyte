@@ -28,6 +28,7 @@ nav = [
     { "Installation"      = "getting-started/installation.md" },
     { "Deploy with Docker" = "getting-started/docker.md" },
     { "Upgrading"         = "getting-started/upgrading.md" },
+    { "Backup and restore" = "getting-started/backup-restore.md" },
     { "First-time setup"  = "features/onboarding.md" },
     { "Dev workflow"      = "getting-started/dev-workflow.md" },
   ] },

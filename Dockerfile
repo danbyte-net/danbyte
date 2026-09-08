@@ -30,6 +30,7 @@ RUN apk add --no-cache openssl \
         -keyout /etc/nginx/tls/key.pem -out /etc/nginx/tls/cert.pem \
         -subj "/CN=danbyte" >/dev/null 2>&1
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
 
 # ─── 3. Python application runtime ───────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS runtime

@@ -56,10 +56,13 @@ current `/opt` layout.
     restarts the services and health-checks - with the "Danbyte is updating"
     page shown to visitors in the meantime.
 
-    - The DB is **backed up** before migrating; on failure the code is rolled
-      back to the starting commit and the services restarted automatically.
-      (A migration that already ran is *not* auto-reverted - the backup is your
-      net there.)
+    - A **Before upgrade** backup (database, media, config) is taken before
+      migrating and listed under **Settings → Backups**; on failure the code is
+      rolled back to the starting commit and the services restarted
+      automatically. (A migration that already ran is *not* auto-reverted -
+      restore that backup, see [Backup and restore](backup-restore.md).) A
+      missing `pg_dump` stops the upgrade; `DANBYTE_SKIP_BACKUP=1` skips the
+      backup on purpose.
     - Turn on **automatic updates** on the same page to track new releases
       hands-off. (Automatic updates are also skipped on container deployments,
       for the same reason - they would only half-apply.)

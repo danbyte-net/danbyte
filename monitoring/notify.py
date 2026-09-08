@@ -357,6 +357,70 @@ def notify_event(
             log.exception("notify_event channel %s (%s) failed", ch.name, ch.kind)
 
 
+def notify_plain(channel, subject: str, text: str = "", payload: dict | None = None) -> None:
+    """One message to one channel of any kind, outside the alert pipeline -
+    backups and restores use it. ``payload`` rides along on webhooks and sets
+    ``severity`` / ``dedup_key`` for PagerDuty. Best-effort: never raises."""
+    dep = _deployment()
+    cfg = channel.config or {}
+    kind = channel.kind
+    timeout = _timeout(dep)
+    proxies = _proxies(dep)
+    payload = dict(payload or {})
+    body = f"{subject}\n{text}" if text else subject
+    try:
+        if kind == "email":
+            recipients = resolve_recipients(channel)
+            if recipients:
+                from core import email as ek
+
+                html = ek.render_layout(
+                    subject,
+                    ek.callout(text or subject, "warning" if payload.get("severity") == "critical" else "info"),
+                    deployment_name=_deployment_name(),
+                    kicker=str(payload.get("kicker") or "Danbyte"),
+                    preheader=(text or subject)[:120],
+                )
+                ek.send_html_email(
+                    subject, recipients, html_body=html, text_body=body + "\n", tenant=channel.tenant_id
+                )
+        elif kind in ("slack", "teams"):
+            if cfg.get("url"):
+                safe_post(cfg["url"], json={"text": body}, timeout=timeout, proxies=proxies)
+        elif kind == "discord":
+            if cfg.get("url"):
+                safe_post(cfg["url"], json={"content": body}, timeout=timeout, proxies=proxies)
+        elif kind == "pagerduty":
+            key = cfg.get("routing_key")
+            if key:
+                safe_post(
+                    "https://events.pagerduty.com/v2/enqueue",
+                    json={
+                        "routing_key": key,
+                        "event_action": "resolve" if payload.get("resolved") else "trigger",
+                        "dedup_key": str(payload.get("dedup_key") or subject)[:255],
+                        "payload": {
+                            "summary": subject,
+                            "severity": _PD_SEV.get(str(payload.get("severity")), "warning"),
+                            "source": _deployment_name(),
+                            "component": str(payload.get("kind") or "danbyte"),
+                        },
+                    },
+                    timeout=timeout,
+                    proxies=proxies,
+                )
+        elif kind == "webhook":
+            if cfg.get("url"):
+                safe_post(
+                    cfg["url"],
+                    json={"channel": channel.name, "event": {"subject": subject, "text": text, **payload}},
+                    timeout=timeout,
+                    proxies=proxies,
+                )
+    except Exception:  # noqa: BLE001 - one channel must not break the caller
+        log.exception("notify_plain channel %s (%s) failed", channel.name, kind)
+
+
 # ─── alert routing (A3) ────────────────────────────────────────────────────
 # Alerts (not raw transitions) are the notification source. Each firing/resolved
 # alert is routed to the tenant's channels that pass the severity + status gate,
