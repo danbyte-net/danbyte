@@ -5,7 +5,6 @@ import {
 } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 import { flexRender } from "@tanstack/react-table"
-import { cn } from "@/lib/utils"
 
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
@@ -553,18 +552,13 @@ export function wireFacetColumns<TRow>(
         },
       }
     if (def.kind !== "enum" || col.meta?.facetClickable === false) return col
-    const active = selectedValues(id)
     const inner = col.cell
     return {
       ...col,
       cell: (ctx: CellContext<TRow, unknown>) => {
         const value = def.get(ctx.row.original) ?? null
         return (
-          <FacetClickCell
-            value={value}
-            active={value !== null && active.has(value)}
-            toggle={(v) => toggleValue(id, v)}
-          >
+          <FacetClickCell value={value} toggle={(v) => toggleValue(id, v)}>
             {inner ? flexRender(inner, ctx) : String(ctx.getValue() ?? "")}
           </FacetClickCell>
         )
@@ -577,12 +571,10 @@ export function wireFacetColumns<TRow>(
  * link or button inside the cell fall through untouched. */
 export function FacetClickCell({
   value,
-  active,
   toggle,
   children,
 }: {
   value: string | null
-  active: boolean
   toggle: (value: string) => void
   children: React.ReactNode
 }) {
@@ -597,10 +589,10 @@ export function FacetClickCell({
         e.stopPropagation()
         toggle(value)
       }}
-      className={cn(
-        "inline-flex cursor-pointer rounded-md",
-        active && "ring-1 ring-foreground/30 ring-inset"
-      )}
+      // No active-state outline. A ring here drew a box round every cell in
+      // a filtered column, which read as the rows having been singled out -
+      // the filter rail already says what is filtered.
+      className="inline-flex cursor-pointer rounded-md"
     >
       {children}
     </span>
