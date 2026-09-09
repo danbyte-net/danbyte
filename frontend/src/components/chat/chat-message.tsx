@@ -19,6 +19,7 @@ export function ChatMessage({
   onAnswer?: (answer: string) => void
   busy?: boolean
 }) {
+  const [showTools, setShowTools] = useState(false)
   const isUser = turn.role === "user"
   return (
     <div
@@ -38,9 +39,38 @@ export function ChatMessage({
         {turn.pending && !turn.text && <span>thinking…</span>}
       </div>
 
-      {turn.tools.map((call, i) => (
-        <ToolLine key={`${call.name}-${i}`} call={call} />
-      ))}
+      {turn.tools.length > 0 && (
+        <div className="mb-1.5">
+          {/* Collapsed by default: the lookups are how an answer can be
+              checked, not part of reading it. */}
+          <button
+            type="button"
+            onClick={() => setShowTools((was) => !was)}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight
+              className={cn(
+                "h-3 w-3 transition-transform",
+                showTools && "rotate-90"
+              )}
+            />
+            {showTools ? "Hide" : "Show"} {turn.tools.length} lookup
+            {turn.tools.length === 1 ? "" : "s"}
+            {turn.tools.some((t) => t.error) && (
+              <Badge variant="destructive" className="ml-1">
+                {turn.tools.filter((t) => t.error).length} refused
+              </Badge>
+            )}
+          </button>
+          {showTools && (
+            <div className="mt-1.5">
+              {turn.tools.map((call, i) => (
+                <ToolLine key={`${call.name}-${i}`} call={call} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {turn.text && <Markdown text={turn.text} />}
 

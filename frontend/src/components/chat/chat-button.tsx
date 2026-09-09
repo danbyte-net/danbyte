@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { MessagesSquare } from "lucide-react"
 
@@ -10,7 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { ChatPanel } from "@/components/chat/chat-panel"
+import { useChatDock } from "@/components/chat/chat-dock"
 
 /** Typing somewhere? Then the hotkey belongs to that field, not to us. */
 function isTypingTarget(el: EventTarget | null): boolean {
@@ -28,7 +28,7 @@ function isTypingTarget(el: EventTarget | null): boolean {
 /** Top-bar entry to the in-app chat. Absent until an admin turns it on for
  * the tenant, so nobody sees a button that cannot work. */
 export function ChatButton() {
-  const [open, setOpen] = useState(false)
+  const { open, setOpen } = useChatDock()
   const status = useQuery({
     queryKey: ["chat-status"],
     queryFn: () => api<ChatStatus>("/api/assistant/status/"),
@@ -44,11 +44,11 @@ export function ChatButton() {
       if (e.key.toLowerCase() !== "j" || !(e.metaKey || e.ctrlKey)) return
       if (isTypingTarget(e.target)) return
       e.preventDefault()
-      setOpen((was) => !was)
+      setOpen(!open)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [available])
+  }, [available, open, setOpen])
 
   if (!available) return null
 
@@ -60,7 +60,9 @@ export function ChatButton() {
             variant="ghost"
             size="icon"
             aria-label="Ask Danbyte"
-            onClick={() => setOpen(true)}
+            aria-pressed={open}
+            className={open ? "bg-muted" : undefined}
+            onClick={() => setOpen(!open)}
           >
             <MessagesSquare className="h-4 w-4" />
           </Button>
@@ -70,13 +72,6 @@ export function ChatButton() {
           <span className="ml-2 text-muted-foreground">⌘J</span>
         </TooltipContent>
       </Tooltip>
-      {open && (
-        <ChatPanel
-          onClose={() => setOpen(false)}
-          configured={status.data?.configured ?? false}
-          model={status.data?.model ?? ""}
-        />
-      )}
     </>
   )
 }

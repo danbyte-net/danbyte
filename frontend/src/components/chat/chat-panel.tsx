@@ -11,12 +11,6 @@ import { usePageContext } from "@/lib/use-page-context"
 import type { ChatTurn } from "@/lib/use-chat-socket"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -77,149 +71,141 @@ export function ChatPanel({
   }
 
   return (
-    <Sheet open onOpenChange={(next) => !next && onClose()}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        // No backdrop blur: this sits open beside the page you are asking
-        // about, so that page has to stay readable.
-        overlayClassName="backdrop-blur-none supports-backdrop-filter:backdrop-blur-none bg-black/5"
-        className="flex w-full flex-col gap-0 p-0 data-[side=right]:sm:max-w-xl"
-      >
-        <SheetHeader className="p-0">
-          <SheetTitle className="sr-only">Ask Danbyte</SheetTitle>
-        </SheetHeader>
-
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pr-2 pl-4">
-          {showHistory ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Back"
-              onClick={() => setShowHistory(false)}
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-            </Button>
-          ) : (
-            <span className="text-sm font-medium">Ask Danbyte</span>
-          )}
-          {showHistory && (
-            <span className="text-sm font-medium">Conversations</span>
-          )}
-          <div className="ml-auto flex items-center gap-1">
-            {!showHistory && (chat.model || model) && (
-              <Badge variant="secondary" className="font-mono text-[10px]">
-                {chat.model || model}
-              </Badge>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="New conversation"
-              onClick={() => {
-                restored.current = true // do not pull the old one back
-                chat.reset()
-                setShowHistory(false)
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Past conversations"
-              onClick={() => setShowHistory((was) => !was)}
-            >
-              <History className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </div>
-
+    // A docked column, not a dialog: the app keeps working beside it, so
+    // you can navigate and click while the assistant is open.
+    <aside
+      aria-label="Ask Danbyte"
+      className="flex h-full w-full shrink-0 flex-col border-l border-border bg-popover text-sm text-popover-foreground md:w-[26rem] lg:w-[30rem]"
+    >
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pr-2 pl-4">
         {showHistory ? (
-          <HistoryList
-            onOpen={(id, turns) => {
-              restored.current = true
-              chat.load(id, turns)
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Back"
+            onClick={() => setShowHistory(false)}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </Button>
+        ) : (
+          <span className="text-sm font-medium">Ask Danbyte</span>
+        )}
+        {showHistory && (
+          <span className="text-sm font-medium">Conversations</span>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          {!showHistory && (chat.model || model) && (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {chat.model || model}
+            </Badge>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="New conversation"
+            onClick={() => {
+              restored.current = true // do not pull the old one back
+              chat.reset()
               setShowHistory(false)
             }}
-          />
-        ) : (
-          <>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-              {!configured ? (
-                <EmptyState title="No model is configured">
-                  A deployment admin connects one under{" "}
-                  <Link to="/settings/security" className="link">
-                    Settings → Security
-                  </Link>
-                  .
-                </EmptyState>
-              ) : resume.isPending ? (
-                <p className="py-6 text-center text-[13px] text-muted-foreground">
-                  Loading your last conversation...
-                </p>
-              ) : chat.turns.length === 0 ? (
-                <Opening
-                  onPick={(q) => chat.ask(q, pageContext)}
-                  disabled={!chat.connected}
-                  context={pageContext}
-                />
-              ) : (
-                chat.turns.map((turn) => (
-                  <ChatMessage
-                    key={turn.id}
-                    turn={turn}
-                    busy={chat.busy}
-                    onAnswer={(answer) => chat.ask(answer, pageContext)}
-                  />
-                ))
-              )}
-              <div ref={endRef} />
-            </div>
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Past conversations"
+            onClick={() => setShowHistory((was) => !was)}
+          >
+            <History className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
 
-            <div className="shrink-0 border-t border-border p-3">
-              <Textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault()
-                    send()
-                  }
-                }}
-                rows={2}
-                placeholder={
-                  chat.connected ? "Ask about your network…" : "Connecting…"
-                }
-                disabled={!chat.connected || !configured}
-                className="resize-none text-[13px]"
+      {showHistory ? (
+        <HistoryList
+          onOpen={(id, turns) => {
+            restored.current = true
+            chat.load(id, turns)
+            setShowHistory(false)
+          }}
+        />
+      ) : (
+        <>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+            {!configured ? (
+              <EmptyState title="No model is configured">
+                A deployment admin connects one under{" "}
+                <Link to="/settings/security" className="link">
+                  Settings → Security
+                </Link>
+                .
+              </EmptyState>
+            ) : resume.isPending ? (
+              <p className="py-6 text-center text-[13px] text-muted-foreground">
+                Loading your last conversation...
+              </p>
+            ) : chat.turns.length === 0 ? (
+              <Opening
+                onPick={(q) => chat.ask(q, pageContext)}
+                disabled={!chat.connected}
+                context={pageContext}
               />
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">
-                  {chat.busy
-                    ? "Working…"
-                    : chat.connected
-                      ? "It answers with your own access. Enter to send."
-                      : "Not connected."}
-                </span>
-                <Button
-                  size="sm"
-                  className="ml-auto"
-                  onClick={send}
-                  disabled={!text.trim() || chat.busy || !chat.connected}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {chat.busy ? "Asking…" : "Ask"}
-                </Button>
-              </div>
+            ) : (
+              chat.turns.map((turn) => (
+                <ChatMessage
+                  key={turn.id}
+                  turn={turn}
+                  busy={chat.busy}
+                  onAnswer={(answer) => chat.ask(answer, pageContext)}
+                />
+              ))
+            )}
+            <div ref={endRef} />
+          </div>
+
+          <div className="shrink-0 border-t border-border p-3">
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+              rows={2}
+              placeholder={
+                chat.connected ? "Ask about your network…" : "Connecting…"
+              }
+              disabled={!chat.connected || !configured}
+              className="resize-none text-[13px]"
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                {chat.busy
+                  ? "Working…"
+                  : chat.connected
+                    ? "It answers with your own access. Enter to send."
+                    : "Not connected."}
+              </span>
+              <Button
+                size="sm"
+                className="ml-auto"
+                onClick={send}
+                disabled={!text.trim() || chat.busy || !chat.connected}
+              >
+                <Send className="h-3.5 w-3.5" />
+                {chat.busy ? "Asking…" : "Ask"}
+              </Button>
             </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
+          </div>
+        </>
+      )}
+    </aside>
   )
 }
 
