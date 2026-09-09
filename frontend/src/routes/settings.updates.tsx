@@ -19,6 +19,10 @@ import { Input } from "@/components/ui/input"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -202,35 +206,31 @@ function UpdatesSettingsPage() {
   const sys = info.data
 
   return (
-    <div className="max-w-5xl space-y-8">
+    <div className="max-w-5xl space-y-4">
       {/* Current version - driven by the instant, network-free info endpoint. */}
-      <section>
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">Updates</h2>
-          {d?.update_available ? (
+      <SettingsHeader
+        title="Updates"
+        badge={
+          d?.update_available ? (
             <Badge className="bg-primary text-primary-foreground">
               Update available
             </Badge>
           ) : (
-            d &&
-            !d.error && (
-              <Badge variant="secondary" className="text-[11px]">
-                Up to date
-              </Badge>
-            )
-          )}
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Running <span className="font-mono">v{sys?.version ?? "…"}</span>
-          {sys?.commit && (
-            <span className="font-mono text-xs"> ({sys.commit})</span>
-          )}
-          . Releases are read from{" "}
-          <span className="font-mono text-xs">
-            {d?.repo_url ?? settings.data?.release_repo_url ?? "…"}
-          </span>
-          .
-        </p>
+            d && !d.error && <Badge variant="secondary">Up to date</Badge>
+          )
+        }
+      >
+        Running <span className="font-mono">v{sys?.version ?? "…"}</span>
+        {sys?.commit && (
+          <span className="font-mono text-xs"> ({sys.commit})</span>
+        )}
+        . Releases are read from{" "}
+        <span className="font-mono text-xs">
+          {d?.repo_url ?? settings.data?.release_repo_url ?? "…"}
+        </span>
+        .
+      </SettingsHeader>
+      <div className="grid gap-3">
         {info.data && info.data.migration_drift?.length > 0 && (
           <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-[13px]">
             <p className="font-medium">
@@ -297,9 +297,11 @@ docker compose -f docker-compose.prod.yml up -d`}
             </p>
           )
         )}
+      </div>
 
-        {/* System info - Postgres/Django/etc, loads instantly. */}
-        <dl className="mt-4 grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border bg-card p-4 text-[13px]">
+      {/* System info - Postgres/Django/etc, loads instantly. */}
+      <SettingsCard title="This install" layout="plain">
+        <dl className="grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
           {(
             [
               ["Danbyte", sys ? `v${sys.version}` : "…"],
@@ -317,28 +319,32 @@ docker compose -f docker-compose.prod.yml up -d`}
             </div>
           ))}
         </dl>
-      </section>
+      </SettingsCard>
 
       {/* Steps this version still needs from an operator. Hidden once done. */}
       {(notes.data?.pending.length ?? 0) > 0 && (
-        <section className="space-y-3 rounded-lg border border-amber-500/40 bg-card p-4">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold">After this upgrade</h3>
+        <SettingsCard
+          title="After this upgrade"
+          className="border-amber-500/40"
+          layout="plain"
+          badge={
             <Badge variant="warning">
               {notes.data!.pending.length === 1
                 ? "1 step"
                 : `${notes.data!.pending.length} steps`}
             </Badge>
+          }
+          footer={
             <Button
               size="sm"
               variant="outline"
-              className="ml-auto"
               onClick={() => ackNotes.mutate("all")}
               disabled={ackNotes.isPending}
             >
               Mark all done
             </Button>
-          </div>
+          }
+        >
           <div className="divide-y divide-border">
             {notes.data!.pending.map((n) => (
               <UpgradeNoteRow
@@ -349,16 +355,24 @@ docker compose -f docker-compose.prod.yml up -d`}
               />
             ))}
           </div>
-        </section>
+        </SettingsCard>
       )}
 
       {/* Release repo config */}
-      <section className="space-y-3 rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold">Release source</h3>
-        <p className="text-[13px] text-muted-foreground">
-          Blank uses the official Danbyte repo. Set a custom repo (fork /
-          private mirror) + a token for private repos.
-        </p>
+      <SettingsCard
+        title="Release source"
+        description="Blank uses the official Danbyte repo. Set a custom repo - a fork or private mirror - and a token for a private one."
+        footer={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? "Saving…" : "Save release source"}
+          </Button>
+        }
+      >
         <Field label="Repository URL">
           <Input
             value={repoUrl}
@@ -465,29 +479,22 @@ docker compose -f docker-compose.prod.yml up -d`}
             </div>
           )}
         </div>
-
-        <Button
-          size="sm"
-          disabled={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          Save
-        </Button>
-      </section>
+      </SettingsCard>
 
       {/* Offline / airgapped: upgrade by uploading a release bundle. */}
-      <section className="space-y-2 rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold">Upgrade from a bundle</h3>
-        <p className="max-w-5xl text-[13px] text-muted-foreground">
-          For offline or tarball installs that can&apos;t pull from the release
-          repo: upload a{" "}
+      <SettingsCard
+        title="Upgrade from a bundle"
+        description="For offline or tarball installs that cannot pull from the release repo."
+      >
+        <p className="text-[13px] text-muted-foreground">
+          Upload a{" "}
           <code className="font-mono">
             danbyte-&lt;version&gt;-linux-x86_64.tar.gz
           </code>{" "}
           and Danbyte checks its structure, backs up the DB, migrates, and
-          restarts onto it. (One-click and automatic updates additionally verify
+          restarts onto it. One-click and automatic updates additionally verify
           the download&apos;s published SHA-256 - an uploaded file is trusted as
-          you provided it, so only upload bundles you built or trust.)
+          you provided it, so only upload bundles you built or trust.
         </p>
         <input
           type="file"
@@ -505,11 +512,10 @@ docker compose -f docker-compose.prod.yml up -d`}
             Uploading bundle… the upgrade will start automatically.
           </p>
         )}
-      </section>
+      </SettingsCard>
 
       {/* Releases + changelog */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold">Releases</h3>
+      <SettingsCard title="Releases" layout="plain">
         {updates.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : !d?.releases.length ? (
@@ -590,7 +596,7 @@ docker compose -f docker-compose.prod.yml up -d`}
             genuinely in progress.
           </p>
         </div>
-      </section>
+      </SettingsCard>
 
       {/* Confirm before upgrading. */}
       <Dialog
