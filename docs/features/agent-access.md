@@ -166,6 +166,44 @@ On the Agent access page:
 | "This API token is read-only" | The token's scope is read; make a full-scope one, or leave it and read only. |
 | Empty results everywhere | The token's account has no permissions for that type. |
 | "More than 120 calls a minute" | The rate limit; it clears within a minute. |
+| `DEPTH_ZERO_SELF_SIGNED_CERT`, or the client says the certificate is not trusted | Your Danbyte serves a self-signed certificate and the client refuses it. See below. |
 
 Calls and their errors are on the Agent access page, which is the first
-place to look.
+place to look. A failure that never reaches Danbyte leaves nothing there -
+if the log is empty, the client never connected.
+
+### A self-signed certificate
+
+Most MCP clients run on Node, which refuses a certificate it cannot chain
+to a trusted root and reports `DEPTH_ZERO_SELF_SIGNED_CERT` before the
+request leaves the machine. Danbyte is answering fine; the client never
+asks. `curl -k https://your-danbyte/api/mcp/` returning **401** confirms
+that: alive, listening, wanting a token.
+
+Best fix: give Danbyte a certificate the client already trusts - one from
+your internal CA, or Let's Encrypt if the host is reachable. Then nothing
+needs configuring on the client at all.
+
+Otherwise, trust that one certificate rather than turning verification
+off. Export it:
+
+```bash
+openssl s_client -connect your-danbyte:443 -showcerts </dev/null 2>/dev/null \
+  | openssl x509 > ~/danbyte-ca.pem
+```
+
+and point Node at it with `NODE_EXTRA_CA_CERTS=/path/to/danbyte-ca.pem` in
+the environment your client starts in, then restart the client.
+
+Do not reach for `NODE_TLS_REJECT_UNAUTHORIZED=0`. It disables
+verification for every connection that process makes, not just the one to
+Danbyte.
+
+### Keep the token out of shared files
+
+Most clients store the token in plain text in their own config, which is
+readable by anything running as you. Two things make that survivable: give
+the assistant a **read-only** token, and give it a narrow account rather
+than your own. Then a leaked token reads a subset of your inventory
+instead of changing it. Revoke it under Settings → Preferences → API
+tokens the moment you suspect it.
