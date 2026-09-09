@@ -48,7 +48,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/floorplan", label: "Floor plans" },
       { to: "/settings/monitoring", label: "Monitoring" },
       { to: "/settings/tenant-email", label: "Email" },
-      { to: "/settings/tenant-ldap", label: "Directory (LDAP)" },
+      { to: "/settings/directory", label: "Directory" },
       { to: "/settings/snmp", label: "SNMP profiles" },
       { to: "/settings/snmp-sensors", label: "SNMP sensors" },
       { to: "/settings/connect", label: "Connect protocols" },
@@ -68,7 +68,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/components", label: "Component popover" },
       { to: "/settings/table-defaults", label: "Table defaults" },
       { to: "/settings/email", label: "Email & Delivery" },
-      { to: "/settings/ldap", label: "Directory (LDAP)" },
+      { to: "/settings/directory", label: "Directory" },
       { to: "/settings/sso", label: "Identity providers (SSO)" },
       { to: "/settings/updates", label: "Updates" },
       { to: "/settings/backups", label: "Backups" },
@@ -94,13 +94,29 @@ function SettingsLayout() {
     settingsSites === "all"
       ? canManage // admins use "This tenant"; "all" alone would be redundant
       : settingsSites.length > 0
-  const sections = SECTIONS.filter(
+  const gated = SECTIONS.filter(
     (s) =>
       s.gate === "none" ||
       (s.gate === "site" && hasSiteSettings) ||
       (s.gate === "tenant" && canManage) ||
       (s.gate === "deployment" && canManageDeployment)
   )
+  // A merged page carries both scopes, so it is listed under each tier it
+  // serves and would otherwise appear twice. First section wins - which puts
+  // it under "This tenant" for a tenant admin and under "Deployment" for
+  // someone who only has that. Merging by subject rather than by tier is what
+  // the settings rebuild is for; this keeps the sidebar honest until then.
+  const seen = new Set<string>()
+  const sections = gated
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (seen.has(item.to)) return false
+        seen.add(item.to)
+        return true
+      }),
+    }))
+    .filter((section) => section.items.length > 0)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">

@@ -118,9 +118,9 @@ export function LdapDirectory({
     <div className="max-w-2xl space-y-8">
       <section className="space-y-4">
         <div>
-          <h2 className="text-sm font-semibold">
-            Directory (LDAP / Active Directory)
-          </h2>
+          {/* The page title already says Directory, and it now carries the
+              scope switch - so this heading names the group, not the page. */}
+          <h2 className="text-sm font-semibold">Connection</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {tenantMode
               ? "This tenant's own directory. Logins routed here auto-provision accounts owned by this tenant and grant membership to it only."

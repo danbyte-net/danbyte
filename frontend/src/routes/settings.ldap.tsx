@@ -1,28 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 
-import { useMe } from "@/lib/use-me"
-import {
-  DEPLOYMENT_LDAP,
-  LdapDirectory,
-} from "@/components/settings/ldap-directory"
-
+/** The deployment and tenant directories are one page with a scope switch
+ * now (#51). This path stays valid so old links and bookmarks keep working. */
 export const Route = createFileRoute("/settings/ldap")({
-  component: LdapSettingsPage,
+  beforeLoad: () => {
+    throw redirect({
+      to: "/settings/directory",
+      search: { scope: "deployment" },
+    })
+  },
 })
-
-// The DEPLOYMENT directory - every tenant's logins may try it. Tenant-specific
-// directories live under Settings → This tenant → Directory.
-function LdapSettingsPage() {
-  const { canManageDeployment, isLoading } = useMe()
-  if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (!canManageDeployment)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Deployment admin required - this directory serves the whole install.
-        Tenant directory overrides live under{" "}
-        <span className="font-mono">Settings → This tenant → Directory</span>.
-      </p>
-    )
-  return <LdapDirectory endpoints={DEPLOYMENT_LDAP} />
-}

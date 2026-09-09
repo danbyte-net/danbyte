@@ -228,6 +228,7 @@ import { Route as SettingsLdapRouteImport } from './routes/settings.ldap'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorplan'
 import { Route as SettingsEmailRouteImport } from './routes/settings.email'
+import { Route as SettingsDirectoryRouteImport } from './routes/settings.directory'
 import { Route as SettingsDeviceFieldsRouteImport } from './routes/settings.device-fields'
 import { Route as SettingsConnectRouteImport } from './routes/settings.connect'
 import { Route as SettingsComponentsRouteImport } from './routes/settings.components'
@@ -1520,6 +1521,11 @@ const SettingsEmailRoute = SettingsEmailRouteImport.update({
   path: '/email',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsDirectoryRoute = SettingsDirectoryRouteImport.update({
+  id: '/directory',
+  path: '/directory',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsDeviceFieldsRoute = SettingsDeviceFieldsRouteImport.update({
   id: '/device-fields',
   path: '/device-fields',
@@ -2685,6 +2691,7 @@ export interface FileRoutesByFullPath {
   '/settings/components': typeof SettingsComponentsRoute
   '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
+  '/settings/directory': typeof SettingsDirectoryRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
@@ -3043,6 +3050,7 @@ export interface FileRoutesByTo {
   '/settings/components': typeof SettingsComponentsRoute
   '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
+  '/settings/directory': typeof SettingsDirectoryRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
@@ -3458,6 +3466,7 @@ export interface FileRoutesById {
   '/settings/components': typeof SettingsComponentsRoute
   '/settings/connect': typeof SettingsConnectRoute
   '/settings/device-fields': typeof SettingsDeviceFieldsRoute
+  '/settings/directory': typeof SettingsDirectoryRoute
   '/settings/email': typeof SettingsEmailRoute
   '/settings/floorplan': typeof SettingsFloorplanRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
@@ -3874,6 +3883,7 @@ export interface FileRouteTypes {
     | '/settings/components'
     | '/settings/connect'
     | '/settings/device-fields'
+    | '/settings/directory'
     | '/settings/email'
     | '/settings/floorplan'
     | '/settings/integrations'
@@ -4232,6 +4242,7 @@ export interface FileRouteTypes {
     | '/settings/components'
     | '/settings/connect'
     | '/settings/device-fields'
+    | '/settings/directory'
     | '/settings/email'
     | '/settings/floorplan'
     | '/settings/integrations'
@@ -4646,6 +4657,7 @@ export interface FileRouteTypes {
     | '/settings/components'
     | '/settings/connect'
     | '/settings/device-fields'
+    | '/settings/directory'
     | '/settings/email'
     | '/settings/floorplan'
     | '/settings/integrations'
@@ -6571,6 +6583,13 @@ declare module '@tanstack/react-router' {
       path: '/email'
       fullPath: '/settings/email'
       preLoaderRoute: typeof SettingsEmailRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/directory': {
+      id: '/settings/directory'
+      path: '/directory'
+      fullPath: '/settings/directory'
+      preLoaderRoute: typeof SettingsDirectoryRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/device-fields': {
@@ -8613,6 +8632,7 @@ interface SettingsRouteChildren {
   SettingsComponentsRoute: typeof SettingsComponentsRoute
   SettingsConnectRoute: typeof SettingsConnectRoute
   SettingsDeviceFieldsRoute: typeof SettingsDeviceFieldsRoute
+  SettingsDirectoryRoute: typeof SettingsDirectoryRoute
   SettingsEmailRoute: typeof SettingsEmailRoute
   SettingsFloorplanRoute: typeof SettingsFloorplanRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
@@ -8642,6 +8662,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsComponentsRoute: SettingsComponentsRoute,
   SettingsConnectRoute: SettingsConnectRoute,
   SettingsDeviceFieldsRoute: SettingsDeviceFieldsRoute,
+  SettingsDirectoryRoute: SettingsDirectoryRoute,
   SettingsEmailRoute: SettingsEmailRoute,
   SettingsFloorplanRoute: SettingsFloorplanRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,

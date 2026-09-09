@@ -244,7 +244,7 @@ You can require a second step at sign-in for any account.
 ## Company directory (LDAP / Active Directory)
 
 Optional and off by default. When an administrator connects your directory under
-**Settings → Directory (LDAP)**, people can sign in with their existing company
+**Settings → Directory**, people can sign in with their existing company
 credentials. Their Danbyte group membership is kept in sync from their directory
 groups every time they sign in, so the directory decides *who's in what* and
 Danbyte groups decide *what that means*. Only directory groups you've explicitly
