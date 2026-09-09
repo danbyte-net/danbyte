@@ -28,6 +28,10 @@ export interface Vendor {
    * `frontend/public/branding/vendors/`, which git ignores. Leave unset and
    * the card simply shows no logo. */
   logo?: string
+  /** The negative variant, for a dark background. Most guidelines ship a
+   * positive and a negative mark and ask that the right one is used; without
+   * this the positive one is shown on both. */
+  logoDark?: string
   /** Owner, for the attribution line. Empty when none is claimed. */
   owner?: string
 }
@@ -40,6 +44,7 @@ export const VENDORS: Record<string, Vendor | undefined> = {
     display: "Proxmox® Virtual Environment",
     short: "Proxmox VE",
     logo: "/branding/vendors/proxmox.svg",
+    logoDark: "/branding/vendors/proxmox-dark.svg",
     owner: "Proxmox Server Solutions GmbH",
   },
   vcenter: {

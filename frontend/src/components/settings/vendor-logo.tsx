@@ -8,16 +8,17 @@ import { cn } from "@/lib/utils"
  *
  * Danbyte ships no vendor artwork - naming a product to say what Danbyte
  * connects to is referential use, redistributing a mark to every install is
- * not - so nothing is committed here. An operator drops the file the vendor
- * publishes into `frontend/public/branding/vendors/`, which is ignored by
- * git, and the card picks it up.
+ * not - so nothing is committed here. An operator drops the files the vendor
+ * publishes into `frontend/public/branding/vendors/`, which git ignores, and
+ * the card picks them up.
  *
- * With no file there this renders **nothing**: an empty dashed box on every
- * card is worse than no box at all, and it reads as breakage rather than as
- * an invitation. The card lays out fine without it.
+ * With no file there this renders **nothing**: an empty box on every card is
+ * worse than no box, and reads as breakage rather than as an invitation.
  *
- * 36px with its own padding, so a brandmark sits above the 20px floor
- * Proxmox sets for theirs and keeps its clear space.
+ * Positive and negative variants swap with the theme, because that is what
+ * a guideline shipping both actually asks for - a positive mark on a dark
+ * card is the commonest way to get someone's logo wrong. The mark gets its
+ * own padding so the clear space it is drawn with survives.
  */
 export function VendorLogo({
   vendor,
@@ -28,22 +29,29 @@ export function VendorLogo({
 }) {
   const [failed, setFailed] = useState(false)
   const known = vendor ? VENDORS[vendor] : undefined
-  const src = known?.logo
+  const light = known?.logo
+  const dark = known?.logoDark ?? light
 
-  if (!src || failed) return null
+  if (!light || failed) return null
   return (
     <span
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background p-1",
+        "flex size-10 shrink-0 items-center justify-center p-0.5",
         className
       )}
     >
       <img
-        src={src}
+        src={light}
         alt=""
         aria-hidden="true"
-        className="max-h-full max-w-full object-contain"
+        className="max-h-full max-w-full object-contain dark:hidden"
         onError={() => setFailed(true)}
+      />
+      <img
+        src={dark}
+        alt=""
+        aria-hidden="true"
+        className="hidden max-h-full max-w-full object-contain dark:block"
       />
     </span>
   )
