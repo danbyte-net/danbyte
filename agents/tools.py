@@ -545,36 +545,61 @@ def _end(ctx, end: str, device: str, port: str, kind: str) -> dict:
             f"'{kind}' is not a cable end. One of: {', '.join(sorted(_CABLE_KINDS))}."
         )
     port = str(port or "").strip()
+    device = str(device or "").strip()
     if not port:
         raise ToolError(f"Say which port on the {end} end.")
-    filters: dict = {"name": port}
-    if kind not in _DEVICELESS_KINDS:
-        if not str(device or "").strip():
+
+    if kind == "circuit_termination":
+        # A circuit end has no name: it is one circuit's A or Z side. So the
+        # "device" is the circuit and the "port" is the side.
+        side = port.upper()
+        if side not in ("A", "Z"):
+            raise ToolError(
+                f'The {end} end is a circuit termination, so its port is the '
+                f'side: "A" or "Z", not {port!r}.'
+            )
+        if not device:
+            raise ToolError(f"Say which circuit the {end} end belongs to.")
+        circuit = dispatch.id_of(ctx.principal, "circuit", device, ctx.settings)
+        filters = {"circuit": circuit, "term_side": side}
+        what = f"{device} {side} side"
+    elif kind == "power_feed":
+        # A feed hangs off a power panel, not a device.
+        filters = {"name": port}
+        what = f"{device} {port}".strip()
+    else:
+        if not device:
             raise ToolError(f"Say which device the {end} end is on.")
-        filters["device"] = str(device).strip()
+        filters = {"device": device, "name": port}
+        what = f"{device} {port}"
+
     found = dispatch.list_objects(
         ctx.principal, slug, filters, limit=2, settings_row=ctx.settings
     )
     rows = found["rows"]
     if len(rows) == 1:
-        return {"kind": kind, "id": rows[0]["id"], "name": rows[0].get("name"), "on": device}
+        return {"kind": kind, "id": rows[0]["id"], "what": what}
     if len(rows) > 1:
-        raise ToolError(f"{device} has more than one {kind} called '{port}'.")
-    raise ToolError(_no_such_port(ctx, slug, kind, device, port))
+        raise ToolError(f"More than one {kind} matches {what}; pass its id.")
+    raise ToolError(_no_such_port(ctx, slug, kind, device, port, what))
 
 
-def _no_such_port(ctx, slug: str, kind: str, device: str, port: str) -> str:
+def _no_such_port(ctx, slug: str, kind: str, device: str, port: str, what: str) -> str:
     """Say what the device does have, so the next call can be right."""
-    where = f"{device} has no {kind} '{port}'." if device else f"No {kind} '{port}'."
-    if kind in _DEVICELESS_KINDS or not device:
-        return where
+    if kind == "circuit_termination":
+        return (
+            f"{device} has no {port.upper()} side yet. Give it one with "
+            f'`terminate(circuit="{device}", side="{port.upper()}", site=...)`.'
+        )
+    if kind == "power_feed" or not device:
+        return f"No {kind} called '{port}'."
     have = dispatch.list_objects(
         ctx.principal, slug, {"device": device}, limit=40, settings_row=ctx.settings
     )
     names = [str(r.get("name")) for r in have["rows"] if r.get("name")]
     if not names:
-        return f"{where} It has no {kind}s at all."
-    return f"{where} It has: {', '.join(names[:30])}."
+        return f"{what} does not exist - {device} has no {kind}s at all."
+    return f"{device} has no {kind} '{port}'. It has: {', '.join(names[:30])}."
 
 
 def _connect(ctx, a_device: str = "", a_port: str = "", b_device: str = "", b_port: str = "",
@@ -600,9 +625,7 @@ def _connect(ctx, a_device: str = "", a_port: str = "", b_device: str = "", b_po
     if status:
         payload["status"] = status
     result = dispatch.create_object(ctx.principal, "cable", payload, settings_row=ctx.settings)
-    result["connected"] = (
-        f"{a['on'] or a['name']} {a['name']} to {b['on'] or b['name']} {b['name']}"
-    )
+    result["connected"] = f"{a['what']} to {b['what']}"
     return result
 
 
@@ -759,8 +782,14 @@ TOOLS: tuple[Tool, ...] = (
         "cable - never build a cable payload by hand. `a_kind`/`b_kind` default "
         "to interface; the others are front_port, rear_port, console_port, "
         "console_server_port, power_port, power_outlet, power_feed, aux_port and "
-        "circuit_termination. If a port name is wrong the refusal lists the ones "
-        "the device has.",
+        "circuit_termination.\n"
+        "A circuit end has no port name - it is one circuit's A or Z side, so "
+        "name the circuit and the side: "
+        "`connect(a_device=\"kbh-fw1\", a_port=\"ethernet1/5\", "
+        "b_device=\"AAL-CPH-001\", b_port=\"Z\", "
+        "b_kind=\"circuit_termination\")`. That side must exist first; "
+        "`terminate` makes it.\n"
+        "If a port name is wrong the refusal lists the ones the device has.",
         {"a_device": STR, "a_port": STR, "b_device": STR, "b_port": STR,
          "a_kind": STR, "b_kind": STR, "type": STR, "label": STR, "status": STR},
         _connect, writes=True, required=("a_port", "b_port"),

@@ -358,7 +358,9 @@ function TerminationCard({
       ),
     },
     {
-      // The switch port the provider handoff is cabled to (#118).
+      // The switch port the provider handoff is cabled to (#118). A circuit
+      // end is joined to a port by a cable, so this row is where the cable
+      // is made when there is none and where it is reached when there is.
       label: "Cabled to",
       value: t.connected_to ? (
         <span>
@@ -376,7 +378,37 @@ function TerminationCard({
           <span className="text-[11px] text-muted-foreground">
             {t.connected_to.name}
           </span>
+          {t.cable && (
+            <>
+              {" · "}
+              <Link
+                to="/cables/$id"
+                params={{ id: t.cable.id }}
+                className="link text-[11px]"
+              >
+                cable
+              </Link>
+            </>
+          )}
         </span>
+      ) : canEdit ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-xs"
+          asChild
+        >
+          <Link
+            to="/cables/new"
+            search={{
+              a_kind: "circuit_termination",
+              a_id: t.id,
+              ret: hereUrl(),
+            }}
+          >
+            <CableIcon className="h-3 w-3" /> Connect cable
+          </Link>
+        </Button>
       ) : (
         dash
       ),
@@ -411,28 +443,6 @@ function TerminationCard({
         </h2>
         {canEdit && (
           <div className="flex items-center gap-1">
-            {!t.connected_to && (
-              // The handoff is joined to a port by a cable, the same way any
-              // two ports are. Without this the only route to it is Cables →
-              // Add, where you have to know to switch the picker to circuits.
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 text-xs"
-                asChild
-              >
-                <Link
-                  to="/cables/new"
-                  search={{
-                    a_kind: "circuit_termination",
-                    a_id: t.id,
-                    ret: hereUrl(),
-                  }}
-                >
-                  <CableIcon className="h-3 w-3" /> Connect cable
-                </Link>
-              </Button>
-            )}
             <Button
               size="sm"
               variant="ghost"

@@ -128,7 +128,9 @@ instruction cannot take the wrong row.
 lands a circuit's A or Z end at a site by name. Both exist because the
 payloads behind them take ids and nested shapes that an assistant gets
 wrong; naming the things a person would name removes the guesswork, and a
-wrong port name is answered with the ports the device actually has.
+wrong port name is answered with the ports the device actually has. A
+circuit end is named by its circuit and its side ("A" or "Z"), since it
+has no port name of its own.
 
 ## What keeps it safe
 

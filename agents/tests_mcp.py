@@ -419,6 +419,51 @@ class WriteTests(_Base):
         self.assertEqual(payload["object"]["term_side"], "Z")
         self.assertEqual(circuit.terminations.count(), 1)
 
+    def test_connect_names_a_circuit_end_by_its_side(self):
+        from api.models import Circuit, CircuitTermination, CircuitType, Interface, Provider
+
+        provider = Provider.objects.create(tenant=self.tenant, name="P2", slug="p2")
+        ctype = CircuitType.objects.create(tenant=self.tenant, name="Wave", slug="wave")
+        circuit = Circuit.objects.create(
+            tenant=self.tenant, cid="NX-2", provider=provider, type=ctype
+        )
+        CircuitTermination.objects.create(
+            circuit=circuit, term_side="A", site=self.site
+        )
+        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/9")
+
+        # A circuit end has no port name, so a port name is a dead end - and
+        # saying so beats "more than one matches".
+        wrong = self.tool("connect", {
+            "a_device": "aarhus-core-1", "a_port": "Gi1/0/9",
+            "b_device": "NX-2", "b_port": "ethernet1/4",
+            "b_kind": "circuit_termination",
+        })
+        self.assertIn('"A" or "Z"', wrong["error"])
+
+        payload = self.tool("connect", {
+            "a_device": "aarhus-core-1", "a_port": "Gi1/0/9",
+            "b_device": "NX-2", "b_port": "A", "b_kind": "circuit_termination",
+        })
+        self.assertTrue(payload["created"])
+        self.assertIn("NX-2 A side", payload["connected"])
+
+    def test_connect_says_when_a_circuit_side_is_missing(self):
+        from api.models import Circuit, CircuitType, Interface, Provider
+
+        provider = Provider.objects.create(tenant=self.tenant, name="P3", slug="p3")
+        ctype = CircuitType.objects.create(tenant=self.tenant, name="Eth", slug="eth2")
+        Circuit.objects.create(
+            tenant=self.tenant, cid="NX-3", provider=provider, type=ctype
+        )
+        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/8")
+        payload = self.tool("connect", {
+            "a_device": "aarhus-core-1", "a_port": "Gi1/0/8",
+            "b_device": "NX-3", "b_port": "Z", "b_kind": "circuit_termination",
+        })
+        self.assertIn("no Z side", payload["error"])
+        self.assertIn("terminate(", payload["error"])
+
     def test_terminate_needs_a_side_and_somewhere_to_land(self):
         self.assertIn('"A" or "Z"', self.tool("terminate", {
             "circuit": "NX-1", "side": "left", "site": "Aarhus",

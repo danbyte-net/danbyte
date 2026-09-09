@@ -94,8 +94,11 @@ missing:
 
 * A **circuit** carries traffic only once it has both ends. Land each with
   `terminate(circuit=..., side="A"|"Z", site=...)` - a termination lands at
-  a site or a provider network, never on a device. To join that end to a
-  port, `connect` it with `a_kind="circuit_termination"`.
+  a site or a provider network, never on a device. Then cable each side to
+  the port that carries it, naming the circuit and the side:
+  `connect(a_device="kbh-fw1", a_port="ethernet1/5", b_device="AAL-CPH-001",
+  b_port="Z", b_kind="circuit_termination")`. A circuit whose sides are not
+  cabled to a port draws nothing on the map.
 * A **cable** joins two ports. Always use `connect` with the four names -
   `connect(a_device="aalborg-sw1", a_port="Gi1/0/3", b_device="aalborg-fw1",
   b_port="ethernet1/3")`. Never build a cable payload with `create`. To see
