@@ -268,10 +268,11 @@ function MonitoringPage() {
               Deployment-wide scheduling for drift runs and the email digest
               lives in{" "}
               <Link
-                to="/settings/monitoring-defaults"
-                className="underline underline-offset-2"
+                to="/settings/monitoring"
+                search={{ scope: "deployment" }}
+                className="link"
               >
-                Settings → Monitoring defaults
+                Settings → Monitoring
               </Link>
               .
             </p>

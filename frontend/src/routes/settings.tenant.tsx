@@ -71,13 +71,8 @@ function TenantGeneralPage() {
         method: "PUT",
         body: JSON.stringify({
           override_ui: form!.override_ui,
-          override_sharing: form!.override_sharing,
-          override_separation: form!.override_separation,
           device_field_visibility: form!.device_field_visibility,
           human_ids_enabled: form!.human_ids_enabled,
-          enhanced_site_separation: form!.enhanced_site_separation,
-          allow_site_settings: form!.allow_site_settings,
-          allow_site_editor_delegation: form!.allow_site_editor_delegation,
           override_datetime: form!.override_datetime,
           date_format: form!.date_format,
           time_style: form!.time_style,
@@ -234,74 +229,6 @@ function TenantGeneralPage() {
             searchPlaceholder="Search timezones…"
             options={timezoneOptions}
           />
-        </div>
-      </OverrideCard>
-
-      <OverrideCard
-        title="Delegation"
-        description="Site-editor delegation for this tenant."
-        overridden={form.override_sharing}
-        onOverriddenChange={(v) => set("override_sharing", v)}
-        summary={
-          <span>
-            Site-editor delegation{" "}
-            {dep.allow_site_editor_delegation ? "on" : "off"}
-          </span>
-        }
-      >
-        <div className="space-y-4">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={form.allow_site_editor_delegation}
-              onCheckedChange={(v) => set("allow_site_editor_delegation", !!v)}
-            />
-            Allow site editors to invite viewers to their sites
-          </label>
-        </div>
-      </OverrideCard>
-
-      <OverrideCard
-        title="Site separation"
-        description="Make each site behave like a mini-tenant: site-scoped users create only in their own site, and catalog entries they make stay local to it."
-        overridden={form.override_separation}
-        onOverriddenChange={(v) => set("override_separation", v)}
-        summary={
-          <span>
-            Enhanced separation {dep.enhanced_site_separation ? "on" : "off"} ·
-            site-managed settings {dep.allow_site_settings ? "on" : "off"}
-          </span>
-        }
-      >
-        <div className="space-y-4">
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox
-              className="mt-0.5"
-              checked={form.enhanced_site_separation}
-              onCheckedChange={(v) => set("enhanced_site_separation", !!v)}
-            />
-            <span>
-              Enhanced site separation
-              <span className="block text-[11px] text-muted-foreground">
-                Site-scoped users only see their own sites in pickers, new
-                objects default there, and shared (site-less) objects stay
-                read-only for them. Admins and cross-site users are unaffected.
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox
-              className="mt-0.5"
-              checked={form.allow_site_settings}
-              onCheckedChange={(v) => set("allow_site_settings", !!v)}
-            />
-            <span>
-              Let site admins manage their site's settings
-              <span className="block text-[11px] text-muted-foreground">
-                Site editors (and holders of a sitesettings grant) get a
-                Settings → This site section for e.g. email delivery.
-              </span>
-            </span>
-          </label>
         </div>
       </OverrideCard>
 

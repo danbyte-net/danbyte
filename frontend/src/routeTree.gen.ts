@@ -218,6 +218,7 @@ import { Route as SettingsSnmpSensorsRouteImport } from './routes/settings.snmp-
 import { Route as SettingsSnmpRouteImport } from './routes/settings.snmp'
 import { Route as SettingsSitesRouteImport } from './routes/settings.sites'
 import { Route as SettingsSiteRouteImport } from './routes/settings.site'
+import { Route as SettingsSeparationRouteImport } from './routes/settings.separation'
 import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
 import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
@@ -1470,6 +1471,11 @@ const SettingsSiteRoute = SettingsSiteRouteImport.update({
   path: '/site',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSeparationRoute = SettingsSeparationRouteImport.update({
+  id: '/separation',
+  path: '/separation',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -2702,6 +2708,7 @@ export interface FileRoutesByFullPath {
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/security': typeof SettingsSecurityRoute
+  '/settings/separation': typeof SettingsSeparationRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
@@ -3061,6 +3068,7 @@ export interface FileRoutesByTo {
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/security': typeof SettingsSecurityRoute
+  '/settings/separation': typeof SettingsSeparationRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
@@ -3477,6 +3485,7 @@ export interface FileRoutesById {
   '/settings/plugins': typeof SettingsPluginsRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/security': typeof SettingsSecurityRoute
+  '/settings/separation': typeof SettingsSeparationRoute
   '/settings/site': typeof SettingsSiteRoute
   '/settings/sites': typeof SettingsSitesRoute
   '/settings/snmp': typeof SettingsSnmpRoute
@@ -3894,6 +3903,7 @@ export interface FileRouteTypes {
     | '/settings/plugins'
     | '/settings/preferences'
     | '/settings/security'
+    | '/settings/separation'
     | '/settings/site'
     | '/settings/sites'
     | '/settings/snmp'
@@ -4253,6 +4263,7 @@ export interface FileRouteTypes {
     | '/settings/plugins'
     | '/settings/preferences'
     | '/settings/security'
+    | '/settings/separation'
     | '/settings/site'
     | '/settings/sites'
     | '/settings/snmp'
@@ -4668,6 +4679,7 @@ export interface FileRouteTypes {
     | '/settings/plugins'
     | '/settings/preferences'
     | '/settings/security'
+    | '/settings/separation'
     | '/settings/site'
     | '/settings/sites'
     | '/settings/snmp'
@@ -6513,6 +6525,13 @@ declare module '@tanstack/react-router' {
       path: '/site'
       fullPath: '/settings/site'
       preLoaderRoute: typeof SettingsSiteRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/separation': {
+      id: '/settings/separation'
+      path: '/separation'
+      fullPath: '/settings/separation'
+      preLoaderRoute: typeof SettingsSeparationRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/security': {
@@ -8643,6 +8662,7 @@ interface SettingsRouteChildren {
   SettingsPluginsRoute: typeof SettingsPluginsRoute
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
   SettingsSecurityRoute: typeof SettingsSecurityRoute
+  SettingsSeparationRoute: typeof SettingsSeparationRoute
   SettingsSiteRoute: typeof SettingsSiteRoute
   SettingsSitesRoute: typeof SettingsSitesRoute
   SettingsSnmpRoute: typeof SettingsSnmpRoute
@@ -8673,6 +8693,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPluginsRoute: SettingsPluginsRoute,
   SettingsPreferencesRoute: SettingsPreferencesRoute,
   SettingsSecurityRoute: SettingsSecurityRoute,
+  SettingsSeparationRoute: SettingsSeparationRoute,
   SettingsSiteRoute: SettingsSiteRoute,
   SettingsSitesRoute: SettingsSitesRoute,
   SettingsSnmpRoute: SettingsSnmpRoute,

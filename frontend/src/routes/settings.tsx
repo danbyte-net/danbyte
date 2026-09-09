@@ -45,6 +45,7 @@ const SECTIONS: NavSection[] = [
     gate: "tenant",
     items: [
       { to: "/settings/tenant", label: "General" },
+      { to: "/settings/separation", label: "Separation" },
       { to: "/settings/floorplan", label: "Floor plans" },
       { to: "/settings/monitoring", label: "Monitoring" },
       { to: "/settings/email", label: "Email" },
@@ -61,8 +62,8 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/settings/admin", label: "General" },
       { to: "/settings/security", label: "Security" },
-      { to: "/settings/sites", label: "Sites & separation" },
-      { to: "/settings/monitoring-defaults", label: "Monitoring defaults" },
+      { to: "/settings/separation", label: "Separation" },
+      { to: "/settings/monitoring", label: "Monitoring" },
       { to: "/settings/maps", label: "Maps" },
       { to: "/settings/device-fields", label: "Device fields" },
       { to: "/settings/components", label: "Component popover" },
