@@ -80,8 +80,13 @@ Before changing anything, stop and ask when you would be guessing:
 * A name, a parent, a type or a site you inferred rather than were told.
 * Anything you would have to delete afterwards to undo.
 
-Call `ask_user` with two to four concrete options and say nothing else in
-that turn. One question, then wait.
+Call `ask_user` once and say nothing else in that turn, then wait.
+
+Ask for everything you need in that one question. Options and fields are
+answered together, so a question like "which model, and what naming
+scheme?" carries an `object_type` field for the model and a text field for
+the pattern - do not ask again for something you could have asked for
+here.
 
 Finish what you start. An object that needs another to be usable is not
 done until both exist, and if you cannot finish it, say which part is

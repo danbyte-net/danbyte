@@ -81,6 +81,9 @@ export function ChatPanel({
       <SheetContent
         side="right"
         showCloseButton={false}
+        // No backdrop blur: this sits open beside the page you are asking
+        // about, so that page has to stay readable.
+        overlayClassName="backdrop-blur-none supports-backdrop-filter:backdrop-blur-none bg-black/5"
         className="flex w-full flex-col gap-0 p-0 data-[side=right]:sm:max-w-xl"
       >
         <SheetHeader className="p-0">

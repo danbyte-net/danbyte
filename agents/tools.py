@@ -281,50 +281,69 @@ def _lifecycle(ctx, before: str = "", limit: int | None = None, **_kw) -> dict:
     return {"before": str(horizon), "types": out[:cap], "returned": len(out[:cap])}
 
 
-def _ask_user(ctx, question: str = "", options=None, fields=None, **_kw) -> dict:
+def _ask_user(ctx, question: str = "", options=None, fields=None, questions=None,
+              **_kw) -> dict:
     """Put a question back to the person and stop.
 
-    The loop turns this into a small form in the chat and ends the turn; the
-    answer arrives as their next message. This is how a bulk change gets a
-    naming scheme agreed before anything is written, instead of after.
+    Takes either one question (``question`` plus ``options``/``fields``) or
+    several (``questions``). More than one becomes a short step-by-step
+    form, so a person answers one thing at a time instead of facing a wall.
+    The turn ends here; the answers arrive as their next message.
     """
-    clean_options = []
-    for option in list(options or [])[:6]:
-        if isinstance(option, dict):
-            label = str(option.get("label") or option.get("value") or "").strip()
-            hint = str(option.get("hint") or option.get("description") or "").strip()
-        else:
-            label, hint = str(option).strip(), ""
-        if label:
-            clean_options.append({"label": label[:120], "hint": hint[:160]})
-    clean_fields = []
-    for entry in list(fields or [])[:4]:
-        if isinstance(entry, dict) and entry.get("name"):
-            spec = {
-                "name": str(entry["name"])[:40],
-                "label": str(entry.get("label") or entry["name"])[:80],
-                "placeholder": str(entry.get("placeholder") or "")[:80],
-                "endpoint": "",
-                "object_type": "",
-            }
-            # Naming an object type turns the box into a searchable picker of
-            # what actually exists, so nobody has to spell a model number.
-            wanted = str(entry.get("object_type") or "").strip()
+    steps: list[dict] = []
+
+    def add(title: str, name: str, options_in=None, field=None) -> None:
+        step: dict = {
+            "name": (name or f"q{len(steps) + 1}")[:40],
+            "title": str(title or "").strip()[:300],
+            "choices": [],
+            "endpoint": "",
+            "object_type": "",
+            "placeholder": "",
+            "free_text": False,
+        }
+        for option in list(options_in or [])[:6]:
+            if isinstance(option, dict):
+                label = str(option.get("label") or option.get("value") or "").strip()
+                hint = str(option.get("hint") or option.get("description") or "").strip()
+            else:
+                label, hint = str(option).strip(), ""
+            if label:
+                step["choices"].append({"label": label[:120], "hint": hint[:160]})
+        if field is not None:
+            step["free_text"] = True
+            step["placeholder"] = str(field.get("placeholder") or "")[:80]
+            wanted = str(field.get("object_type") or "").strip()
             if wanted:
                 try:
                     slug, prefix, _viewset = dispatch.resolve(wanted, ctx.settings)
-                    spec["object_type"] = slug
-                    spec["endpoint"] = f"/api/{prefix}/"
+                    step["object_type"] = slug
+                    step["endpoint"] = f"/api/{prefix}/"
                 except ToolError:
                     pass
-            clean_fields.append(spec)
-        elif isinstance(entry, str):
-            clean_fields.append({"name": entry[:40], "label": entry[:80],
-                                 "placeholder": "", "endpoint": "", "object_type": ""})
+        if step["title"] and (step["choices"] or step["free_text"]):
+            steps.append(step)
+
+    for entry in list(questions or [])[:6]:
+        if not isinstance(entry, dict):
+            continue
+        has_field = bool(entry.get("object_type") or entry.get("free_text")
+                         or entry.get("placeholder"))
+        add(entry.get("title") or entry.get("question"), entry.get("name"),
+            entry.get("options") or entry.get("choices"),
+            entry if has_field and not entry.get("options") else None)
+
+    if not steps:
+        add(question, "choice", options, None)
+        for entry in list(fields or [])[:4]:
+            if isinstance(entry, dict) and entry.get("name"):
+                add(entry.get("label") or entry["name"], entry["name"], None, entry)
+            elif isinstance(entry, str):
+                add(entry, entry, None, {})
+
     return {
-        "asked": str(question or "").strip()[:500],
-        "options": clean_options,
-        "fields": clean_fields,
+        "asked": str(question or (steps[0]["title"] if steps else "")).strip()[:500],
+        "steps": steps,
     }
 
 
@@ -415,17 +434,18 @@ TOOLS: tuple[Tool, ...] = (
     Tool(
         "ask_user", "Ask the person a question",
         "Stop and ask before doing work whose shape you are guessing at - a "
-        "naming scheme, which site, whether to go ahead with many changes. "
-        "Give 2-4 concrete `options` they can pick. Use `fields` for anything "
-        "they must supply: each is "
-        "`{name, label, placeholder, object_type}`, and setting `object_type` "
-        "(say \"devicetype\") turns it into a searchable list of what exists, "
-        "so they pick rather than spell. Keep the question one short line; put "
-        "the detail in the option and field labels. Say nothing else in that "
-        "turn: their answer comes back as the next message.",
+        "naming scheme, which site, whether to go ahead with many changes.\n"
+        "Ask everything you need in this one call. `questions` takes a list, "
+        "each `{name, title, options}` for a choice or "
+        "`{name, title, object_type|placeholder}` for something they supply; "
+        "an `object_type` (say \"devicetype\") becomes a searchable list of "
+        "what exists, so they pick rather than spell. Two or more become a "
+        "short step-by-step form. Keep each title to one line. Say nothing "
+        "else in that turn: the answers come back as their next message.",
         {"question": STR,
          "options": {"type": "array", "items": {"type": "string"}},
-         "fields": {"type": "array", "items": {"type": "object"}}},
+         "fields": {"type": "array", "items": {"type": "object"}},
+         "questions": {"type": "array", "items": {"type": "object"}}},
         _ask_user, required=("question",),
     ),
     Tool(

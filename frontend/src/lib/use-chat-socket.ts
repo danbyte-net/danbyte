@@ -13,16 +13,24 @@ export interface ChatTurn {
   ask?: ChatAsk | null
 }
 
+export interface ChatAskChoice {
+  label: string
+  hint: string
+}
+
+export interface ChatAskStep {
+  name: string
+  title: string
+  choices: ChatAskChoice[]
+  endpoint?: string
+  object_type?: string
+  placeholder?: string
+  free_text?: boolean
+}
+
 export interface ChatAsk {
   asked: string
-  options: { label: string; hint: string }[]
-  fields: {
-    name: string
-    label: string
-    placeholder: string
-    endpoint?: string
-    object_type?: string
-  }[]
+  steps: ChatAskStep[]
 }
 
 export interface ChatToolCall {
@@ -31,6 +39,13 @@ export interface ChatToolCall {
   rows: number
   error: string
   card?: ChatCardData | null
+}
+
+/** Which object the person has open, so "this device" resolves. */
+export interface PageContext {
+  type: string
+  id: string
+  label: string
 }
 
 type Frame =
@@ -49,13 +64,6 @@ type Frame =
   | { t: "done"; message: string }
   | { t: "error"; m: string }
   | { t: "pong" }
-
-/** Which object the person has open, so "this device" resolves. */
-export interface PageContext {
-  type: string
-  id: string
-  label: string
-}
 
 const PING_MS = 25_000
 
