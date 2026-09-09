@@ -61,21 +61,12 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _prepare(self) -> dict:
         """Tenant, toggle and model connection, resolved once per socket."""
-        from core.models import DeploymentSettings, Tenant
+        from core.models import DeploymentSettings
         from integrations.toggles import integration_enabled
 
         from . import providers
 
-        session = self.scope.get("session") or {}
-        tenant_id = session.get("current_tenant_id")
-        tenant = None
-        if tenant_id:
-            tenant = Tenant.objects.filter(pk=tenant_id).first()
-        if tenant is None:
-            profile = getattr(self.user, "profile", None)
-            tenant = getattr(profile, "current_tenant", None) or (
-                profile.tenants.first() if profile else None
-            )
+        tenant = self._active_tenant()
         if tenant is None:
             return {"error": "No active tenant."}
         if not integration_enabled(tenant, "ai_chat"):
@@ -89,6 +80,23 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             "model": conn.describe(),
             "writes": integration_enabled(tenant, "ai_writes"),
         }
+
+    def _active_tenant(self):
+        """The same tenant the pages resolve.
+
+        A socket has no HTTP request, so hand the product's own resolver a
+        stand-in carrying what it actually reads: the user, the session and
+        (never, here) a token. Rolling a second lookup is how the chat ended
+        up on a different tenant from the rest of the app.
+        """
+        from api.views import _get_active_tenant
+
+        class _Stub:
+            user = self.user
+            session = self.scope.get("session") or {}
+            auth = None
+
+        return _get_active_tenant(_Stub())
 
     async def receive_json(self, content, **kwargs):
         tag = content.get("t")
@@ -105,14 +113,15 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             return
         self._busy = True
         try:
-            await self._answer(question, content.get("conversation"))
+            await self._answer(question, content.get("conversation"),
+                               content.get("context"))
         except Exception as exc:  # noqa: BLE001 - never drop the socket on one bad turn
             logger.exception("assistant turn failed")
             await self.send_json({"t": "error", "m": _readable(exc)})
         finally:
             self._busy = False
 
-    async def _answer(self, question: str, conversation_id) -> None:
+    async def _answer(self, question: str, conversation_id, context=None) -> None:
         setup = await self._begin(question, conversation_id)
         if setup.get("error"):
             await self.send_json({"t": "error", "m": setup["error"]})
@@ -120,7 +129,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({"t": "start", "conversation": setup["conversation"],
                               "title": setup["title"]})
 
-        frames = await self._run(setup["conversation"], question)
+        frames = await self._run(setup["conversation"], question, context)
         final = None
         for frame in frames:
             if frame["t"] == "final":
@@ -152,7 +161,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         return {"conversation": str(conversation.id), "title": conversation.title}
 
     @database_sync_to_async
-    def _run(self, conversation_id: str, question: str) -> list[dict]:
+    def _run(self, conversation_id: str, question: str, context=None) -> list[dict]:
         """The whole turn, in one worker thread.
 
         The model call and the tool calls are both blocking, and every tool
@@ -171,13 +180,14 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         history = _history(conversation, conn.provider)
         out: list[dict] = []
         try:
-            for frame in loop.answer(conn, ctx, history, question):
+            for frame in loop.answer(conn, ctx, history, question, _clean_context(context)):
                 out.append(frame)
                 if frame["t"] == "tool":
                     Message.objects.create(
                         conversation=conversation, role="tool",
                         tool={"name": frame["name"], "arguments": frame["args"],
-                              "rows": frame["rows"], "error": frame["error"]},
+                              "rows": frame["rows"], "error": frame["error"],
+                              "card": frame.get("card")},
                     )
         except providers.ProviderError as exc:
             out.append({"t": "error", "m": str(exc)})
@@ -192,6 +202,15 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         )
         conversation.touch(timezone.now())
         return str(message.id)
+
+
+def _clean_context(raw) -> dict | None:
+    """What the browser says the person is looking at. Untrusted: it only
+    ever becomes a sentence in the prompt, never a lookup."""
+    if not isinstance(raw, dict):
+        return None
+    out = {k: str(raw.get(k) or "")[:80] for k in ("type", "id", "label")}
+    return out if out["type"] and out["id"] else None
 
 
 def _history(conversation: Conversation, provider: str) -> list[dict]:

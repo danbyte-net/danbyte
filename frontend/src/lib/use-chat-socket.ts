@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import type { ChatCardData } from "@/components/chat/chat-card"
+
 /** One turn of the conversation as the panel sees it. */
 export interface ChatTurn {
   id: string
@@ -14,6 +16,7 @@ export interface ChatToolCall {
   args: Record<string, unknown>
   rows: number
   error: string
+  card?: ChatCardData | null
 }
 
 type Frame =
@@ -26,10 +29,18 @@ type Frame =
       args: Record<string, unknown>
       rows: number
       error: string
+      card?: ChatCardData | null
     }
   | { t: "done"; message: string }
   | { t: "error"; m: string }
   | { t: "pong" }
+
+/** Which object the person has open, so "this device" resolves. */
+export interface PageContext {
+  type: string
+  id: string
+  label: string
+}
 
 const PING_MS = 25_000
 
@@ -104,7 +115,7 @@ export function useChatSocket() {
     }
   }, [])
 
-  const ask = useCallback((text: string) => {
+  const ask = useCallback((text: string, context?: PageContext | null) => {
     const ws = socket.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     setError("")
@@ -125,6 +136,7 @@ export function useChatSocket() {
         t: "ask",
         text,
         conversation: conversation.current ?? undefined,
+        context: context ?? undefined,
       })
     )
   }, [])
@@ -174,6 +186,7 @@ function appendTool(turns: ChatTurn[], call: ChatToolCall): ChatTurn[] {
           args: call.args,
           rows: call.rows,
           error: call.error,
+          card: call.card ?? null,
         },
       ],
     },

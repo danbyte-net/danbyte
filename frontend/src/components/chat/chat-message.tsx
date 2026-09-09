@@ -3,6 +3,8 @@ import { ChevronRight, Wrench } from "lucide-react"
 
 import type { ChatToolCall, ChatTurn } from "@/lib/use-chat-socket"
 import { Badge } from "@/components/ui/badge"
+import { ChatCard } from "@/components/chat/chat-card"
+import { Markdown } from "@/components/chat/markdown"
 import { cn } from "@/lib/utils"
 
 /** One turn. Bordered card, author line, wrapped body - the shape the
@@ -31,7 +33,13 @@ export function ChatMessage({ turn }: { turn: ChatTurn }) {
         <ToolLine key={`${call.name}-${i}`} call={call} />
       ))}
 
-      {turn.text && <Body text={turn.text} />}
+      {turn.text && <Markdown text={turn.text} />}
+
+      {cardsIn(turn).map((card) => (
+        <div key={card.id} className="mt-2">
+          <ChatCard card={card} />
+        </div>
+      ))}
     </div>
   )
 }
@@ -70,30 +78,12 @@ function ToolLine({ call }: { call: ChatToolCall }) {
   )
 }
 
-/** Fenced code blocks get the product's `pre` treatment; everything else is
- * wrapped text. Enough for what a model returns here, and it keeps a
- * markdown renderer plus a sanitizer out of the bundle. */
-function Body({ text }: { text: string }) {
-  const parts = text.split(/```/)
-  return (
-    <div className="space-y-2">
-      {parts.map((part, i) =>
-        i % 2 === 1 ? (
-          <pre
-            key={i}
-            className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[12px] leading-relaxed"
-          >
-            {part.replace(/^[a-zA-Z]*\n/, "")}
-          </pre>
-        ) : part.trim() ? (
-          <p
-            key={i}
-            className="text-[13px] leading-relaxed whitespace-pre-wrap"
-          >
-            {part.trim()}
-          </p>
-        ) : null
-      )}
-    </div>
-  )
+/** One card per object the answer touched, newest wins if a tool ran twice
+ * against the same row. */
+function cardsIn(turn: ChatTurn) {
+  const seen = new Map<string, NonNullable<ChatToolCall["card"]>>()
+  for (const call of turn.tools) {
+    if (call.card) seen.set(call.card.id, call.card)
+  }
+  return [...seen.values()]
 }

@@ -191,27 +191,128 @@ def _refuse(status: int, payload, *, slug: str, what: str) -> None:
     raise ToolError(detail or f"The request failed ({status}).")
 
 
+# Filters an assistant reaches for by name, and the type each names. The API
+# wants an id, so a name is looked up first - otherwise every question about
+# "devices at Aalborg" costs a round trip to find a UUID, and often fails.
+_NAME_FILTERS = {
+    "site": "site", "location": "location", "rack": "rack", "role": "devicerole",
+    "device_role": "devicerole", "tenant": "tenant", "manufacturer": "manufacturer",
+    "platform": "platform", "cluster": "cluster", "device": "device",
+    "device_type": "devicetype", "vrf": "vrf", "provider": "provider",
+    "region": "region", "type": None,  # `type` is the object type, never a filter
+}
+
+
+def _resolve_names(principal, filters: dict, settings_row) -> dict:
+    """Turn ``{"site": "Aalborg"}`` into ``{"site_id": "<uuid>"}``."""
+    out: dict = {}
+    for key, value in (filters or {}).items():
+        target = _NAME_FILTERS.get(key)
+        if not target or not isinstance(value, str) or _looks_like_id(value):
+            out[key] = value
+            continue
+        try:
+            _slug, prefix, viewset = resolve(target, settings_row)
+            request = _factory.get(f"/api/{prefix}/", {"name": value, "limit": 2})
+            status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
+        except Exception:  # noqa: BLE001 - fall back to passing it through
+            out[key] = value
+            continue
+        rows = [r for r in rows_of(payload)
+                if str(r.get("name", "")).lower() == value.lower()] if status < 400 else []
+        if len(rows) == 1:
+            out[f"{key}_id"] = str(rows[0]["id"])
+        else:
+            out[key] = value
+    return out
+
+
+# How many rows to pull before filtering in Python. Most list endpoints do
+# not filter server-side at all - the web app filters in the browser - so a
+# filter that is quietly ignored would hand the model the whole table and
+# invite it to invent the grouping. Fetch, match here, then cap.
+FETCH_CAP = 2000
+
+
+def _matches(row: dict, key: str, wanted) -> bool:
+    """Does this row satisfy ``key == wanted``, by id or by name?
+
+    A row where the field exists but is empty does *not* match: asking for
+    devices at Aalborg must not return the ones with no site at all.
+    """
+    text = str(wanted).strip().lower()
+    probes = (key, f"{key}_name", f"{key}_id", key.removesuffix("_id"))
+    present = False
+    candidates: list = []
+    for probe in probes:
+        if probe not in row:
+            continue
+        present = True
+        value = row[probe]
+        if isinstance(value, dict):
+            candidates += [value.get(k) for k in ("id", "name", "display", "address", "slug")]
+        elif isinstance(value, list):
+            for item in value:
+                candidates += (
+                    [item.get(k) for k in ("id", "name", "slug")]
+                    if isinstance(item, dict) else [item]
+                )
+        elif value is not None:
+            candidates.append(value)
+    if not present:
+        # The serializer does not carry this field, so there is nothing to
+        # judge - leave the row and let the caller see it.
+        return True
+    return any(str(c).strip().lower() == text for c in candidates if c is not None)
+
+
 def list_objects(principal, slug: str, filters: dict, *, limit: int, cursor: int = 0,
                  settings_row=None) -> dict:
     resolved, prefix, viewset = resolve(slug, settings_row)
-    params = {k: v for k, v in (filters or {}).items() if v is not None}
-    # One row more than asked, so "there is more" is a fact rather than a guess.
-    params.update({"limit": limit + 1, "offset": cursor} if cursor else {"limit": limit + 1})
+    filters = _resolve_names(principal, filters or {}, settings_row)
+    params = {k: v for k, v in filters.items() if v is not None}
+    wanted = dict(params)
+    fetch = min(max(limit + 1, 200), FETCH_CAP) if wanted else limit + 1
+    params.update({"limit": fetch, "offset": cursor} if cursor else {"limit": fetch})
     request = _factory.get(f"/api/{prefix}/", params)
     status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
     _refuse(status, payload, slug=resolved, what="those filters")
     rows = rows_of(payload)
+    if wanted:
+        rows = [r for r in rows if all(_matches(r, k, v) for k, v in wanted.items())]
+    matched = len(rows)
     truncated = len(rows) > limit
     rows = rows[:limit]
     model = viewset.queryset.model
     return {
         "type": resolved,
-        "rows": [clean(r, model) for r in rows],
+        "rows": [_with_url(clean(r, model), resolved) for r in rows],
         "returned": len(rows),
-        "total": count_of(payload, rows),
+        "total": matched if wanted else count_of(payload, rows),
         "truncated": truncated,
         "next_cursor": (cursor + limit) if truncated else None,
     }
+
+
+# Where an object lives in the web app, so an answer can link to it. Only
+# the types with a detail page; anything else simply gets no link.
+_ROUTES_UI = {
+    "device": "devices", "virtualmachine": "virtual-machines", "site": "sites",
+    "location": "locations", "rack": "racks", "prefix": "prefixes",
+    "ipaddress": "ips", "iprange": "ip-ranges", "vlan": "vlans", "vrf": "vrfs",
+    "circuit": "circuits", "provider": "providers", "cluster": "clusters",
+    "devicetype": "device-types", "manufacturer": "manufacturers",
+    "tenant": "tenants", "interface": "interfaces", "cable": "cables",
+    "tunnel": "tunnels", "aggregate": "aggregates", "region": "regions",
+    "contact": "contacts", "platform": "platforms", "script": "scripts",
+}
+
+
+def _with_url(row: dict, slug: str) -> dict:
+    route = _ROUTES_UI.get(slug)
+    if route and isinstance(row, dict) and row.get("id"):
+        row = {**row, "url": f"/{route}/{row['id']}"}
+    return row
 
 
 def get_object(principal, slug: str, ident: str, *, settings_row=None) -> dict:
@@ -221,7 +322,7 @@ def get_object(principal, slug: str, ident: str, *, settings_row=None) -> dict:
     request = _factory.get(f"/api/{prefix}/{pk}/")
     status, payload = _dispatch(principal, viewset, {"get": "retrieve"}, request, pk=pk)
     _refuse(status, payload, slug=resolved, what=ident)
-    return {"type": resolved, "object": clean(payload, model)}
+    return {"type": resolved, "object": _with_url(clean(payload, model), resolved)}
 
 
 def _identify(principal, slug: str, prefix: str, viewset, ident: str, settings_row) -> str:
@@ -246,7 +347,43 @@ def _identify(principal, slug: str, prefix: str, viewset, ident: str, settings_r
             return str(exact[0]["id"])
         if len(exact) > 1:
             raise ToolError(f"More than one {slug} is called {text!r}; pass its id.")
-    raise ToolError(f"No {slug} with id or name {text!r} is visible to this token.")
+    near = _did_you_mean(principal, slug, prefix, viewset, text, settings_row)
+    if near:
+        raise ToolError(
+            f"There is no {slug} called {text!r}. Did you mean {near}? "
+            f"Use the exact name or the id."
+        )
+    raise ToolError(
+        f"No {slug} called {text!r}. Check the spelling, or call "
+        f"`list(type=\"{slug}\")` to see what exists."
+    )
+
+
+def _did_you_mean(principal, slug, prefix, viewset, text, settings_row) -> str:
+    """The closest names this caller can actually see.
+
+    A typo used to come back as "not visible to this token", which reads as
+    a permissions problem and sends the reader off to find an admin.
+    """
+    import difflib
+
+    try:
+        request = _factory.get(f"/api/{prefix}/", {"limit": 500})
+        status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
+        if status >= 400:
+            return ""
+        names = [
+            str(r.get("name") or r.get("address") or r.get("prefix") or "")
+            for r in rows_of(payload)
+        ]
+    except Exception:  # noqa: BLE001 - a suggestion is a nicety
+        return ""
+    names = [n for n in names if n]
+    close = difflib.get_close_matches(text, names, n=3, cutoff=0.6)
+    if not close:
+        lowered = text.lower()
+        close = [n for n in names if lowered in n.lower()][:3]
+    return ", ".join(f"{n!r}" for n in close)
 
 
 def _looks_like_id(text: str) -> bool:
@@ -266,7 +403,9 @@ def create_object(principal, slug: str, payload: dict, *, settings_row=None) -> 
     request = _factory.post(f"/api/{prefix}/", payload or {}, format="json")
     status, body = _dispatch(principal, viewset, {"post": "create"}, request)
     _refuse(status, body, slug=resolved, what="that payload")
-    return {"type": resolved, "object": clean(body, viewset.queryset.model), "created": True}
+    return {"type": resolved,
+            "object": _with_url(clean(body, viewset.queryset.model), resolved),
+            "created": True}
 
 
 def update_object(principal, slug: str, ident: str, payload: dict, *, settings_row=None) -> dict:
@@ -277,7 +416,9 @@ def update_object(principal, slug: str, ident: str, payload: dict, *, settings_r
         principal, viewset, {"patch": "partial_update"}, request, pk=pk
     )
     _refuse(status, body, slug=resolved, what=ident)
-    return {"type": resolved, "object": clean(body, viewset.queryset.model), "updated": True}
+    return {"type": resolved,
+            "object": _with_url(clean(body, viewset.queryset.model), resolved),
+            "updated": True}
 
 
 def delete_object(principal, slug: str, ident: str, confirm: str, *, settings_row=None) -> dict:

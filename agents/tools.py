@@ -106,23 +106,53 @@ def _list(ctx, type: str = "", filters: dict | None = None, limit: int | None = 
 
 
 def _explain(ctx, type: str = "", **_kw) -> dict:
-    """A type's writable fields and what this token may do with them."""
-    from api.editable_fields import fields_for
+    """A type's fields and what this token may do with it.
 
-    slug, _prefix, viewset = dispatch.resolve(type, ctx.settings)
+    Read off the serializer, so every type is described - the bulk-edit
+    allow list only covers a handful, and reporting "no fields" made the
+    assistant conclude it could not write at all.
+    """
+    slug, prefix, viewset = dispatch.resolve(type, ctx.settings)
     model = viewset.queryset.model
-    fields = [f.payload() for f in fields_for(model)]
+    fields = []
+    try:
+        serializer = viewset.serializer_class()
+        for name, field in serializer.fields.items():
+            if name in ("permissions", "custom_fields", "tags", "tag_ids"):
+                continue
+            fields.append({
+                "name": name,
+                # `type` is this tool's own argument name, so the builtin is
+                # shadowed here - read the class off the object instead.
+                "kind": field.__class__.__name__.replace("Field", "").lower() or "text",
+                "writable": not field.read_only,
+                "required": bool(field.required and not field.read_only),
+                **({"options": list(field.choices)[:20]}
+                   if getattr(field, "choices", None) else {}),
+            })
+    except Exception:  # noqa: BLE001 - fall back to the model's own fields
+        fields = [
+            {"name": f.name, "kind": f.get_internal_type().replace("Field", "").lower(),
+             "writable": f.editable, "required": not f.blank}
+            for f in model._meta.concrete_fields
+        ]
     actions = [
         a for a in ("view", "add", "change", "delete")
         if dispatch.can(ctx.user, ctx.tenant, slug, a)
     ]
+    writable = [f["name"] for f in fields if f["writable"]]
     return {
         "type": slug,
         "label": model._meta.verbose_name.title(),
-        "endpoint": f"/api/{_prefix}/",
+        "endpoint": f"/api/{prefix}/",
         "you_may": actions,
         "fields": fields,
-        "note": "Fields not listed are read-only or set by Danbyte itself.",
+        "writable_fields": writable,
+        "note": (
+            "Send only the fields you want to change. A field ending in _id "
+            "takes an object's id; `list` and `search` return ids. Fields not "
+            "marked writable are set by Danbyte."
+        ),
     }
 
 

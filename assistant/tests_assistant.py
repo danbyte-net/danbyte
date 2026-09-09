@@ -10,6 +10,7 @@ import json
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.test import TransactionTestCase
 from rest_framework.test import APITestCase
 
 from agents.models import AgentCall
@@ -300,6 +301,79 @@ class LoopTests(_Base):
         history = _history(conversation, "openai")
         self.assertEqual([m["role"] for m in history], ["user", "assistant"])
         self.assertEqual(history[-1]["content"], "nine.")
+
+
+class SocketTenantTests(TransactionTestCase):
+    """The socket must land on the same tenant as the pages.
+
+    It first rolled its own lookup and fell through to the profile's tenant
+    list, which a superuser's profile is empty of - so the chat opened with
+    "No active tenant" for exactly the people most likely to try it.
+    """
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.user = get_user_model().objects.create_user("asker", "a@e.com", "x")
+        UserProfile.objects.create(user=self.user, role="custom").tenants.add(self.tenant)
+        IntegrationSettings.objects.create(tenant=self.tenant, ai_chat_enabled=True)
+        dep = DeploymentSettings.load()
+        dep.ai_provider = "local"
+        dep.ai_model = "stub"
+        dep.save()
+
+    def _connect(self, session):
+        from asgiref.sync import async_to_sync
+        from channels.testing import WebsocketCommunicator
+
+        from .consumers import ChatConsumer
+
+        async def run():
+            comm = WebsocketCommunicator(ChatConsumer.as_asgi(), "/ws/chat/")
+            comm.scope["user"] = self.user
+            comm.scope["session"] = session
+            connected, _ = await comm.connect(timeout=5)
+            frame = await comm.receive_json_from(timeout=5) if connected else None
+            await comm.disconnect()
+            return frame
+
+        return async_to_sync(run)()
+
+    def test_a_superuser_with_no_profile_tenants_still_gets_one(self):
+        admin = get_user_model().objects.create_superuser("root", "r@e.com", "x")
+        UserProfile.objects.create(user=admin, role="admin")  # no tenants at all
+        self.user = admin
+        frame = self._connect({})
+        self.assertEqual(frame["t"], "ready", frame)
+
+    def test_the_session_choice_wins(self):
+        other = Tenant.objects.create(org=self.tenant.org, name="Second", slug="second")
+        IntegrationSettings.objects.create(tenant=other, ai_chat_enabled=False)
+        self.user.profile.tenants.add(other)
+        # the chat is off for that tenant, so picking it must be refused
+        frame = self._connect({"current_tenant_id": str(other.id)})
+        self.assertEqual(frame["t"], "error")
+        self.assertIn("switched off", frame["m"])
+        frame = self._connect({"current_tenant_id": str(self.tenant.id)})
+        self.assertEqual(frame["t"], "ready")
+
+    def test_an_anonymous_socket_is_closed(self):
+        from asgiref.sync import async_to_sync
+        from channels.testing import WebsocketCommunicator
+        from django.contrib.auth.models import AnonymousUser
+
+        from .consumers import ChatConsumer
+
+        async def run():
+            comm = WebsocketCommunicator(ChatConsumer.as_asgi(), "/ws/chat/")
+            comm.scope["user"] = AnonymousUser()
+            comm.scope["session"] = {}
+            connected, code = await comm.connect(timeout=5)
+            return connected, code
+
+        connected, code = async_to_sync(run)()
+        self.assertFalse(connected)
+        self.assertEqual(code, 4401)
 
 
 class ApiTests(_Base):

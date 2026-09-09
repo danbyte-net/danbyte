@@ -49,7 +49,19 @@ implying you saw everything.
 
 Be brief and concrete. Prefer a short list of names over prose. Give
 numbers where they matter. This is an operations tool: no preamble, no
-restating the question."""
+restating the question, and never narrate what you are about to do.
+
+Write in Markdown, which is rendered:
+
+* **bold** for a name that matters, `code` for identifiers and addresses.
+* A list for a handful of things; a table when each thing has the same two
+  or three attributes worth comparing.
+* Link every object you name, using the `url` each row carries:
+  `[aarhus-core-1](/devices/<id>)`. A reader should be able to click
+  straight through to it.
+
+Filters take names, not ids: `list(type="device", filters={"site": "Aarhus"})`
+works. Only fall back to searching for an id if a name is refused."""
 
 
 @dataclass
@@ -141,31 +153,131 @@ def _shorten(payload) -> str:
     return text[:MAX_TOOL_CHARS] + "\n… result truncated to fit."
 
 
-def run_tool(ctx, name: str, arguments: dict) -> tuple[str, int, str]:
+def preview_of(payload) -> dict | None:
+    """The one object a tool call was about, shaped for a card.
+
+    Answers read far better with the object attached than described, and
+    everything here is already in the serializer - a picture of the model,
+    where it sits, and coordinates for a map.
+    """
+    if not isinstance(payload, dict):
+        return None
+    obj = payload.get("object")
+    if not isinstance(obj, dict) or not obj.get("id"):
+        return None
+    kind = str(payload.get("type") or "")
+
+    def name_of(value):
+        if isinstance(value, dict):
+            return value.get("name") or value.get("display") or value.get("address")
+        return value
+
+    facts: list[dict] = []
+
+    def fact(label, value, url=None):
+        text = name_of(value)
+        if text not in (None, "", [], {}):
+            facts.append({"label": label, "value": str(text), "url": url})
+
+    dtype = obj.get("device_type") if isinstance(obj.get("device_type"), dict) else {}
+    if kind == "device":
+        fact("Site", obj.get("site"), _url_for("site", obj.get("site")))
+        fact("Location", obj.get("location"))
+        rack = name_of(obj.get("rack"))
+        if rack:
+            unit = obj.get("position")
+            fact("Rack", f"{rack}{f' · U{unit}' if unit else ''}",
+                 _url_for("rack", obj.get("rack")))
+        fact("Type", dtype.get("name"), _url_for("devicetype", dtype))
+        fact("Platform", obj.get("platform"))
+        fact("Primary IP", obj.get("primary_ip"), _url_for("ipaddress", obj.get("primary_ip")))
+        fact("Serial", obj.get("serial_number"))
+        fact("Interfaces", obj.get("interface_count"))
+    elif kind == "virtualmachine":
+        fact("Cluster", obj.get("cluster"), _url_for("cluster", obj.get("cluster")))
+        fact("Host", obj.get("device"), _url_for("device", obj.get("device")))
+        fact("Site", obj.get("site"), _url_for("site", obj.get("site")))
+        fact("vCPU", obj.get("vcpus"))
+        if obj.get("memory_mb"):
+            fact("Memory", f"{round(int(obj['memory_mb']) / 1024, 1)} GB")
+        if obj.get("disk_gb"):
+            fact("Disk", f"{obj['disk_gb']} GB")
+        fact("Primary IP", obj.get("primary_ip"), _url_for("ipaddress", obj.get("primary_ip")))
+    elif kind == "site":
+        fact("Region", obj.get("region"), _url_for("region", obj.get("region")))
+        fact("Address", obj.get("address"))
+        fact("Devices", obj.get("device_count"))
+        fact("Racks", obj.get("rack_count"))
+        fact("Prefixes", obj.get("prefix_count"))
+    else:
+        for label, key in (("Site", "site"), ("Tenant", "tenant"), ("Status", "status"),
+                           ("Role", "role"), ("Device", "device"), ("VRF", "vrf")):
+            fact(label, obj.get(key))
+
+    status = obj.get("status") if isinstance(obj.get("status"), dict) else None
+    lat, lon = obj.get("latitude"), obj.get("longitude")
+    if lat in (None, "") and isinstance(obj.get("site"), dict):
+        lat, lon = obj["site"].get("latitude"), obj["site"].get("longitude")
+
+    return {
+        "type": kind,
+        "id": str(obj["id"]),
+        "title": str(name_of(obj) or obj.get("address") or obj.get("prefix") or obj["id"]),
+        "url": obj.get("url"),
+        "description": str(obj.get("description") or "")[:200],
+        "status": {"name": status.get("name"), "color": status.get("color")}
+        if status and status.get("name") else None,
+        "image": dtype.get("front_image") or dtype.get("rear_image") or None,
+        "latitude": float(lat) if _is_number(lat) else None,
+        "longitude": float(lon) if _is_number(lon) else None,
+        "facts": facts[:8],
+        "created": bool(payload.get("created")),
+        "updated": bool(payload.get("updated")),
+    }
+
+
+def _url_for(slug: str, value) -> str | None:
+    from agents.dispatch import _ROUTES_UI
+
+    if not isinstance(value, dict) or not value.get("id"):
+        return None
+    route = _ROUTES_UI.get(slug)
+    return f"/{route}/{value['id']}" if route else None
+
+
+def _is_number(value) -> bool:
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def run_tool(ctx, name: str, arguments: dict) -> tuple[str, int, str, dict | None]:
     """Execute one tool. Returns (result for the model, rows, error)."""
     tool = tool_registry.BY_NAME.get(name)
     if tool is None:
-        return f"There is no tool called {name}.", 0, "unknown tool"
+        return f"There is no tool called {name}.", 0, "unknown tool", None
     if tool.writes and not ctx.writes_enabled:
         message = ("Writing is switched off for this Danbyte, so that cannot be done "
                    "from the chat.")
         # Recorded: an attempt to write is exactly what an admin wants to see.
         _record(ctx, name, arguments, rows=0, ms=0, wrote=False, error=message)
-        return message, 0, message
+        return message, 0, message, None
     started = time.monotonic()
     try:
         with acting_as(ctx.user):
             payload = tool.run(ctx, **arguments)
     except ToolError as exc:
         _record(ctx, name, arguments, rows=0, ms=_ms(started), wrote=False, error=str(exc))
-        return str(exc), 0, str(exc)
+        return str(exc), 0, str(exc), None
     except Exception as exc:  # noqa: BLE001 - the model must not see a traceback
         logger.exception("assistant tool %s failed", name)
         _record(ctx, name, arguments, rows=0, ms=_ms(started), wrote=False, error=repr(exc))
-        return f"{name} could not complete.", 0, str(exc)
+        return f"{name} could not complete.", 0, str(exc), None
     rows = _rows_in(payload)
     _record(ctx, name, arguments, rows=rows, ms=_ms(started), wrote=tool.writes)
-    return _shorten(payload), rows, ""
+    return _shorten(payload), rows, "", preview_of(payload)
 
 
 def _ms(started: float) -> int:
@@ -194,7 +306,22 @@ def _record(ctx, name, arguments, *, rows, ms, wrote, error="") -> None:
         logger.warning("could not record chat tool call %s", name, exc_info=True)
 
 
-def answer(conn, ctx, history: list[dict], question: str):
+def looking_at(context: dict | None) -> str:
+    """One line telling the model which page the person has open."""
+    if not context:
+        return ""
+    kind = str(context.get("type") or "").strip()
+    label = str(context.get("label") or "").strip()
+    ident = str(context.get("id") or "").strip()
+    if not kind or not ident:
+        return ""
+    named = f" called {label}" if label else ""
+    return (f"\n\nRight now the person is looking at the {kind}{named} "
+            f"(id {ident}). When they say \"this\" or \"the {kind} I am on\", "
+            f"they mean that one.")
+
+
+def answer(conn, ctx, history: list[dict], question: str, context: dict | None = None):
     """Run one exchange, yielding frames for the socket to forward.
 
     Frames: ``{"t": "delta", "d": str}`` as text arrives, ``{"t": "tool",
@@ -202,17 +329,21 @@ def answer(conn, ctx, history: list[dict], question: str):
     """
     transcript = Transcript(provider=conn.provider, messages=list(history))
     transcript.user(question)
+    system = SYSTEM + looking_at(context)
     tool_specs = [t.spec() for t in tool_registry.available(writes=ctx.writes_enabled)]
     full_text: list[str] = []
     tokens_in = tokens_out = 0
 
     for turn in range(MAX_TURNS):
         text_this_turn: list[str] = []
+        pending_text: list[str] = []
         calls: list[dict] = []
-        for event in providers.stream(conn, SYSTEM, transcript.messages, tool_specs):
+        for event in providers.stream(conn, system, transcript.messages, tool_specs):
             if event.kind == "text" and event.text:
                 text_this_turn.append(event.text)
-                yield {"t": "delta", "d": event.text}
+                # Held back until the turn ends: if it turns out to be
+                # narration before a tool call, it is never shown.
+                pending_text.append(event.text)
             elif event.kind == "tool":
                 calls.append({"id": event.tool_id or f"call_{turn}_{len(calls)}",
                               "name": event.tool_name,
@@ -222,19 +353,26 @@ def answer(conn, ctx, history: list[dict], question: str):
                 tokens_out += event.tokens_out
 
         joined = "".join(text_this_turn)
-        if joined:
-            full_text.append(joined)
 
         if not calls:
+            for piece in pending_text:
+                yield {"t": "delta", "d": piece}
+            if joined:
+                full_text.append(joined)
             transcript.assistant_text(joined)
             break
+        # A turn that ends in a tool call only narrates what it is about to
+        # look up; the tool lines show that already. Keep it for the model's
+        # own context, drop it from the answer.
+        if joined:
+            transcript.assistant_text(joined)
 
         for call in calls:
-            result, rows, error = run_tool(ctx, call["name"], call["arguments"])
+            result, rows, error, card = run_tool(ctx, call["name"], call["arguments"])
             call["result"] = result
             call["error"] = error
             yield {"t": "tool", "name": call["name"], "args": call["arguments"],
-                   "rows": rows, "error": error}
+                   "rows": rows, "error": error, "card": card}
         transcript.tool_round(calls)
     else:
         note = "I stopped after several rounds of looking things up."
@@ -243,7 +381,7 @@ def answer(conn, ctx, history: list[dict], question: str):
 
     yield {
         "t": "final",
-        "text": "".join(full_text),
+        "text": "\n\n".join(t for t in full_text if t.strip()),
         "messages": transcript.messages,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,

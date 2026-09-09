@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import type { ChatConversation, ChatConversationDetail } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useChatSocket } from "@/lib/use-chat-socket"
+import { usePageContext } from "@/lib/use-page-context"
 import type { ChatTurn } from "@/lib/use-chat-socket"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -37,6 +38,7 @@ export function ChatPanel({
   model: string
 }) {
   const chat = useChatSocket()
+  const pageContext = usePageContext()
   const [text, setText] = useState("")
   const [showHistory, setShowHistory] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
@@ -48,7 +50,7 @@ export function ChatPanel({
   const send = () => {
     const question = text.trim()
     if (!question || chat.busy || !chat.connected) return
-    chat.ask(question)
+    chat.ask(question, pageContext)
     setText("")
   }
 
@@ -130,8 +132,9 @@ export function ChatPanel({
                 </EmptyState>
               ) : chat.turns.length === 0 ? (
                 <Opening
-                  onPick={(q) => chat.ask(q)}
+                  onPick={(q) => chat.ask(q, pageContext)}
                   disabled={!chat.connected}
+                  context={pageContext}
                 />
               ) : (
                 chat.turns.map((turn) => (
@@ -187,18 +190,34 @@ export function ChatPanel({
 function Opening({
   onPick,
   disabled,
+  context,
 }: {
   onPick: (q: string) => void
   disabled: boolean
+  context: { type: string; label: string } | null
 }) {
+  // On a detail page, offer something about the thing you are looking at.
+  const suggestions = context
+    ? [
+        `What is on this ${context.type}?`,
+        `What changed on this ${context.type} in the last 7 days?`,
+        ...SUGGESTIONS.slice(0, 2),
+      ]
+    : SUGGESTIONS
   return (
     <div className="space-y-3 py-6">
       <p className="text-[13px] text-muted-foreground">
         Ask about your own inventory. It reads what you can read, nothing more,
         and every lookup it makes is shown.
       </p>
+      {context?.label && (
+        <p className="text-[12px] text-muted-foreground">
+          You are on <span className="font-medium">{context.label}</span>, so
+          "this {context.type}" means that one.
+        </p>
+      )}
       <div className="space-y-1.5">
-        {SUGGESTIONS.map((s) => (
+        {suggestions.map((s) => (
           <button
             key={s}
             type="button"
