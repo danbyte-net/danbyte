@@ -56,31 +56,34 @@ function AgentAccessPage() {
   if (!data) return <p className="text-sm text-muted-foreground">Loading...</p>
 
   return (
-    // A top-level route, so it owns its own padding - settings pages get
-    // theirs from the settings layout.
-    <div className="max-w-5xl space-y-4 p-4 lg:p-6">
-      <SettingsHeader title="Agent access">
-        An assistant reaches this tenant through the Model Context Protocol with
-        an API token, and sees exactly what that account sees.
-      </SettingsHeader>
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={data.enabled ? "success" : "secondary"}>
-          {data.enabled ? "On" : "Off"}
-        </Badge>
-        <Badge variant={data.writes_enabled ? "warning" : "secondary"}>
-          {data.writes_enabled ? "Reading and writing" : "Reading only"}
-        </Badge>
-        <Link to="/settings/integrations" className="link text-xs">
-          Change in Settings → Integrations
-        </Link>
-      </div>
+    // A top-level route, so it owns its own padding AND its own scroll -
+    // settings pages get both from the settings layout, and the root shell
+    // clips anything past the viewport.
+    <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
+      <div className="max-w-5xl space-y-4">
+        <SettingsHeader title="Agent access">
+          An assistant reaches this tenant through the Model Context Protocol
+          with an API token, and sees exactly what that account sees.
+        </SettingsHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={data.enabled ? "success" : "secondary"}>
+            {data.enabled ? "On" : "Off"}
+          </Badge>
+          <Badge variant={data.writes_enabled ? "warning" : "secondary"}>
+            {data.writes_enabled ? "Reading and writing" : "Reading only"}
+          </Badge>
+          <Link to="/settings/integrations" className="link text-xs">
+            Change in Settings → Integrations
+          </Link>
+        </div>
 
-      <ConnectCard connect={connect.data} />
-      <SettingsGrid>
-        <LimitsCard settings={data} canManage={canManage} />
-        <TokenCard />
-      </SettingsGrid>
-      <CallsCard canManage={canManage} />
+        <ConnectCard connect={connect.data} />
+        <SettingsGrid>
+          <LimitsCard settings={data} canManage={canManage} />
+          <TokenCard />
+        </SettingsGrid>
+        <CallsCard canManage={canManage} />
+      </div>
     </div>
   )
 }

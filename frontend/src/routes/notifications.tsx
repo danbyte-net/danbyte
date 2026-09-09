@@ -123,20 +123,26 @@ function NotificationsPage() {
   ]
 
   return (
-    <div className="space-y-6 p-4 lg:p-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Notifications</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          What you're subscribed to, and - for admins - every channel and who it
-          reaches.
-        </p>
+    // Own scroll as well as own padding: the root shell clips a top-level
+    // route that grows past the viewport.
+    <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">
+            Notifications
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            What you're subscribed to, and - for admins - every channel and who
+            it reaches.
+          </p>
+        </div>
+        <SegmentedTabs
+          items={items}
+          value={canAdmin ? tab : "you"}
+          onValueChange={(v) => nav({ search: { tab: v }, replace: true })}
+        />
+        {tab === "admin" && canAdmin ? <AdminTab /> : <ForYouTab />}
       </div>
-      <SegmentedTabs
-        items={items}
-        value={canAdmin ? tab : "you"}
-        onValueChange={(v) => nav({ search: { tab: v }, replace: true })}
-      />
-      {tab === "admin" && canAdmin ? <AdminTab /> : <ForYouTab />}
     </div>
   )
 }
