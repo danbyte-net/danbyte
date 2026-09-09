@@ -4,10 +4,11 @@ icon: lucide/boxes
 
 # Proxmox VE sync
 
-Danbyte imports a Proxmox cluster's inventory into the existing cluster/VM
-model - agentless, over the Proxmox REST API. Enable the **Virtualization
-sync** toggle and add a source under **Integrations → Virtualization
-sources**; see [External sync](external-sync.md) for the shared ground rules.
+Danbyte imports a Proxmox® Virtual Environment cluster's inventory into the
+existing cluster/VM model - agentless, over the Proxmox VE REST API. Enable
+the **Proxmox VE sync** toggle under **Settings → Integrations** and add a
+source under **Integrations → Virtualization sources**; see
+[External sync](external-sync.md) for the shared ground rules.
 
 ## The connection
 
@@ -132,3 +133,8 @@ Rules:
 - [VMware vCenter sync](virt-vcenter.md) - the sibling connector.
 - [External sync](external-sync.md) - toggles, allowlist, where things live.
 - [Virtual machines](virtual-machines.md) · [Clusters](clusters.md) · [Virtual switches](virtual-switches.md) - the objects a sync fills in.
+
+---
+
+Proxmox® is a registered trademark of Proxmox Server Solutions GmbH. Danbyte
+is not affiliated with or endorsed by them.

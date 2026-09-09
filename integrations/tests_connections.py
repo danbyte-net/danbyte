@@ -66,7 +66,8 @@ class ConnectionApiTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json(), {
             "dhcp_sync_enabled": False, "dns_sync_enabled": False,
-            "virtualization_enabled": False, "ai_access_enabled": False,
+            "virt_proxmox_enabled": False,
+            "virt_vcenter_enabled": False, "ai_access_enabled": False,
             "ai_writes_enabled": False, "ai_chat_enabled": False,
         })
         res = self.client.put(
@@ -87,7 +88,7 @@ class ConnectionApiTests(APITestCase):
         self.assertEqual(
             self.client.get("/api/virtualization-sources/").status_code, 404
         )
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         self.assertEqual(
             self.client.get("/api/virtualization-sources/").status_code, 200
         )
@@ -140,7 +141,7 @@ class ConnectionApiTests(APITestCase):
 
     def test_vcenter_kind_accepted_with_credentials(self):
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         res = self.client.post("/api/virtualization-sources/", {
             "name": "vc", "kind": "vcenter", "host": "192.0.2.20", "port": 443,
             "username": "administrator@vsphere.local", "password": "s",
@@ -150,7 +151,7 @@ class ConnectionApiTests(APITestCase):
 
     def test_vcenter_kind_requires_password(self):
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         res = self.client.post("/api/virtualization-sources/", {
             "name": "vc", "kind": "vcenter", "host": "192.0.2.20",
             "username": "administrator@vsphere.local",
@@ -172,7 +173,7 @@ class ConnectionApiTests(APITestCase):
     def test_vcenter_probe_says_vcenter(self):
         """It used to say "Proxmox VE" - the client named the product itself."""
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         src = self._source("vcenter", "192.0.2.20")
         client = mock.MagicMock()
         client.get.side_effect = lambda p: (
@@ -190,7 +191,7 @@ class ConnectionApiTests(APITestCase):
 
     def test_proxmox_probe_says_proxmox(self):
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         src = self._source("proxmox", "192.0.2.30")
         with mock.patch(
             "integrations.virt_client.proxmox_get",

@@ -343,7 +343,12 @@ class IntegrationSettings(TimestampedModel):
     )
     dhcp_sync_enabled = models.BooleanField(default=False)
     dns_sync_enabled = models.BooleanField(default=False)
-    virtualization_enabled = models.BooleanField(default=False)
+    # One switch per hypervisor, not one for "virtualization": a site that
+    # runs both should be able to stop syncing one of them without touching
+    # the other's sources. Upgrades turn both on for anyone who had the old
+    # combined switch on, so nothing changes for them.
+    virt_proxmox_enabled = models.BooleanField(default=False)
+    virt_vcenter_enabled = models.BooleanField(default=False)
     # Agent access (MCP): an assistant reaching this tenant's data with the
     # permissions of the API token it authenticates with. Writes need the
     # second switch as well, so reading can be on with nothing changeable.

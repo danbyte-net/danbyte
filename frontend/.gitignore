@@ -13,3 +13,7 @@ todos.json
 
 # typescript
 *.tsbuildinfo
+
+# Operator-supplied vendor marks - Danbyte ships none (see the README there).
+public/branding/vendors/*
+!public/branding/vendors/README.md

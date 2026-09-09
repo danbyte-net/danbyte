@@ -682,7 +682,7 @@ class ProxmoxModeTests(TestCase):
         from integrations.sync_tasks import enqueue_due_virt_syncs
 
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         self.source.sync_mode = "manual"
         self.source.save(update_fields=["sync_mode"])
@@ -939,7 +939,7 @@ class VCenterSyncTests(TestCase):
         from integrations.sync_tasks import run_virt_sync
 
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
             counts = run_virt_sync(str(self.source.id))
@@ -959,7 +959,7 @@ class VirtChangeApiTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         self.source = VirtualizationSource.objects.create(
             tenant=self.tenant, name="pve", host="192.0.2.30",
@@ -1045,7 +1045,7 @@ class VirtChangeApiTests(TestCase):
         from integrations.models import IntegrationSettings
 
         IntegrationSettings.objects.filter(tenant=self.tenant).update(
-            virtualization_enabled=False
+            virt_proxmox_enabled=False, virt_vcenter_enabled=False
         )
         self.assertEqual(self.client.get("/api/virt-changes/").status_code, 404)
 
@@ -1316,7 +1316,7 @@ class VirtNetworkVrfApiTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         self.source = VirtualizationSource.objects.create(
             tenant=self.tenant, name="pve", host="192.0.2.30",
@@ -1845,7 +1845,7 @@ class VmNetworkLinkTests(SwitchKindTests):
 
         self.sync()
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         admin = get_user_model().objects.create_superuser("a", "a@x.dk", "pw")
         self.client.force_login(admin)
@@ -2277,7 +2277,7 @@ class SyncLogCaptureTests(SwitchKindTests):
         from integrations.models import IntegrationSettings
 
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
 
     def _run(self):

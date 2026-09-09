@@ -18,9 +18,13 @@ Everything is agentless. This page covers the ground rules they all share.
 
 ## Turning it on
 
-All three integrations ship **off**. A tenant admin enables them under
-**Settings → Integrations** - one toggle each for DHCP sync, DNS sync, and
-virtualization sync. A toggle governs the **sync machinery only**: while it's
+Every integration ships **off**. A tenant admin enables them under
+**Settings → Integrations** - one card each for DHCP sync, DNS sync, and one
+per hypervisor: **Proxmox VE sync** and **vCenter sync** are separate
+switches, so an install running both can stop one without touching the
+other's sources. (Upgrading from the single combined switch turns both on if
+it was on, so nothing changes.) A toggle governs the **sync machinery
+only**: while it's
 off, the connection pages, drift views and scheduled syncs are hidden and
 idle. DNS zones/records and DHCP scopes/reservations are first-class IPAM
 features and stay fully usable regardless - author a **local** zone (no

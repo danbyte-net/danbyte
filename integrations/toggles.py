@@ -15,17 +15,28 @@ from rest_framework.exceptions import NotFound
 KEYS = {
     "dhcp": "dhcp_sync_enabled",
     "dns": "dns_sync_enabled",
-    "virtualization": "virtualization_enabled",
+    "virt_proxmox": "virt_proxmox_enabled",
+    "virt_vcenter": "virt_vcenter_enabled",
     "ai": "ai_access_enabled",
     "ai_writes": "ai_writes_enabled",
     "ai_chat": "ai_chat_enabled",
 }
 
+#: Umbrella keys, true when any of their members is. A page that serves both
+#: hypervisors stays reachable while either one is on, so splitting the
+#: switch did not have to touch every viewset that guards it.
+ANY_OF = {"virtualization": ("virt_proxmox", "virt_vcenter")}
+
 
 def integration_enabled(tenant, key: str) -> bool:
     """True when the integration ``key`` is switched on for ``tenant``."""
+    if tenant is None:
+        return False
+    members = ANY_OF.get(key)
+    if members is not None:
+        return any(integration_enabled(tenant, member) for member in members)
     field = KEYS.get(key)
-    if field is None or tenant is None:
+    if field is None:
         return False
     from .models import IntegrationSettings
 

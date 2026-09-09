@@ -20,7 +20,8 @@ export const Route = createFileRoute("/settings/integrations")({
 type IntegrationSettings = {
   dhcp_sync_enabled: boolean
   dns_sync_enabled: boolean
-  virtualization_enabled: boolean
+  virt_proxmox_enabled: boolean
+  virt_vcenter_enabled: boolean
   ai_access_enabled: boolean
   ai_writes_enabled: boolean
   ai_chat_enabled: boolean
@@ -41,13 +42,23 @@ interface IntegrationCard {
 
 const CARDS: IntegrationCard[] = [
   {
-    key: "virtualization_enabled",
-    label: "Virtualization sync",
+    key: "virt_proxmox_enabled",
+    label: "Proxmox VE sync",
     vendor: "proxmox",
-    names: ["proxmox", "vcenter"],
-    info: "Reads over each product's own API with a scoped token. Danbyte never writes to the hypervisor.",
+    names: ["proxmox"],
+    info: "Reads over the Proxmox VE REST API with a scoped API token. Danbyte never writes to the hypervisor.",
     description:
-      "Import clusters, virtual machines, their interfaces and guest IPs from your hypervisors into the existing cluster and VM inventory.",
+      "Import clusters, nodes, virtual machines, their interfaces and guest IPs into the existing cluster and VM inventory.",
+    configure: { to: "/virtualization-sources", label: "Sources" },
+  },
+  {
+    key: "virt_vcenter_enabled",
+    label: "vCenter sync",
+    vendor: "vcenter",
+    names: ["vcenter"],
+    info: "Reads over the vSphere API with a read-only account. Danbyte never writes to the hypervisor.",
+    description:
+      "Import clusters, hosts, virtual machines, their interfaces and guest IPs into the existing cluster and VM inventory.",
     configure: { to: "/virtualization-sources", label: "Sources" },
   },
   {

@@ -1,18 +1,24 @@
+import { useState } from "react"
+
 import { VENDORS } from "@/lib/vendors"
 import { cn } from "@/lib/utils"
 
 /**
- * The logo slot on an integration card.
+ * A vendor's own mark on an integration card, when this install has one.
  *
- * Danbyte ships no vendor artwork - a name in text is referential use, a
- * redistributed mark is not - so this draws the space a logo will occupy and
- * fills it with the vendor's initials until an operator uploads one for
- * their own install. The dashed edge says "nothing here yet" without
- * pretending to be a broken image.
+ * Danbyte ships no vendor artwork - naming a product to say what Danbyte
+ * connects to is referential use, redistributing a mark to every install is
+ * not - so nothing is committed here. An operator drops the file the vendor
+ * publishes into `frontend/public/branding/vendors/`, which is ignored by
+ * git, and the card picks it up.
  *
- * Sized at 36px: above the 20px floor Proxmox sets for its brandmark, and
- * with its own clear space, so an uploaded mark sits inside a guideline
- * rather than against one. */
+ * With no file there this renders **nothing**: an empty dashed box on every
+ * card is worse than no box at all, and it reads as breakage rather than as
+ * an invitation. The card lays out fine without it.
+ *
+ * 36px with its own padding, so a brandmark sits above the 20px floor
+ * Proxmox sets for theirs and keeps its clear space.
+ */
 export function VendorLogo({
   vendor,
   className,
@@ -20,16 +26,25 @@ export function VendorLogo({
   vendor?: string
   className?: string
 }) {
+  const [failed, setFailed] = useState(false)
   const known = vendor ? VENDORS[vendor] : undefined
+  const src = known?.logo
+
+  if (!src || failed) return null
   return (
     <span
-      aria-hidden="true"
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 p-1 font-mono text-[11px] text-muted-foreground",
+        "flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background p-1",
         className
       )}
     >
-      {known?.initials ?? "·"}
+      <img
+        src={src}
+        alt=""
+        aria-hidden="true"
+        className="max-h-full max-w-full object-contain"
+        onError={() => setFailed(true)}
+      />
     </span>
   )
 }

@@ -75,7 +75,9 @@ def run_virt_sync(source_id: str) -> dict:
     source = VirtualizationSource.objects.filter(id=source_id).first()
     if source is None or not source.enabled:
         return {"skipped": "gone-or-disabled"}
-    if not integration_enabled(source.tenant, "virtualization"):
+    # Each hypervisor has its own switch, so turning one off leaves the
+    # other's schedule alone.
+    if not integration_enabled(source.tenant, f"virt_{source.kind}"):
         return {"skipped": "toggle-off"}
     engine = sync_vcenter if source.kind == "vcenter" else sync_proxmox
     from .synclog import capture_sync_log, text_of
@@ -110,7 +112,9 @@ def enqueue_due_virt_syncs() -> int:
         # manual sources only sync on demand - the beat leaves them alone.
         if source.sync_mode == "manual":
             continue
-        if integration_enabled(source.tenant, "virtualization") and _due(source, now):
+        if integration_enabled(source.tenant, f"virt_{source.kind}") and _due(
+            source, now
+        ):
             q.enqueue(run_virt_sync, str(source.id), job_timeout=600)
             queued += 1
     return queued

@@ -188,7 +188,7 @@ class PlacementRuleApiTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         self.source = VirtualizationSource.objects.create(
             tenant=self.tenant, name="vc", host="192.0.2.20", kind="vcenter",

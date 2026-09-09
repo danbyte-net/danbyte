@@ -51,7 +51,8 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = IntegrationSettings
         fields = [
-            "dhcp_sync_enabled", "dns_sync_enabled", "virtualization_enabled",
+            "dhcp_sync_enabled", "dns_sync_enabled",
+            "virt_proxmox_enabled", "virt_vcenter_enabled",
             "ai_access_enabled", "ai_writes_enabled", "ai_chat_enabled",
         ]
 
@@ -63,10 +64,14 @@ def integrations_enabled(request):
     member. The sidebar uses this to hide integration nav while it's off."""
     from api.views import _get_active_tenant
 
-    from .toggles import KEYS, integration_enabled
+    from .toggles import ANY_OF, KEYS, integration_enabled
 
     tenant = _get_active_tenant(request)
-    return Response({k: integration_enabled(tenant, k) for k in KEYS})
+    # Umbrella keys ride along, so a caller that only cares whether *any*
+    # hypervisor sync is on - the sidebar - did not have to learn about the
+    # split.
+    keys = [*KEYS, *ANY_OF]
+    return Response({k: integration_enabled(tenant, k) for k in keys})
 
 
 @api_view(["GET", "PUT"])

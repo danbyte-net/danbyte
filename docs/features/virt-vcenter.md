@@ -6,7 +6,7 @@ icon: lucide/layers-3
 
 Danbyte imports a vCenter's inventory into the existing cluster/VM model -
 agentless, over the vSphere Automation REST API (`/api/`), one login session
-per sync pass. Enable the **Virtualization sync** toggle and add a source
+per sync pass. Enable the **vCenter sync** toggle and add a source
 under **Integrations → Virtualization sources**; see
 [External sync](external-sync.md) for the shared ground rules.
 
