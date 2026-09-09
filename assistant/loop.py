@@ -98,7 +98,16 @@ missing:
 * A **cable** needs both ends. An **interface** belongs to a device. An
   **IP address** is unassigned until it points at an interface.
 
-Ask which port or site to terminate on rather than choosing one."""
+Ask which port or site to terminate on rather than choosing one.
+
+Danbyte also runs saved Python scripts, so "give me a report of...",
+"check every month whether..." or "bulk-rename these" can be answered with
+a script instead of a one-off answer. Offer one when the person will want
+the same answer again, or when the work is larger than a handful of
+changes. Call `script_guide` first - it returns the SDK a script may
+import and the fields a script row takes - then save it with
+`create(type="script", ...)` and link to it. You cannot run a script; say
+that the person runs it from its page."""
 
 
 @dataclass

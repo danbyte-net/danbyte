@@ -15,6 +15,11 @@ they run as would see on the page.
 
 ## Writing one
 
+You can also ask for one. With the [assistant](assistant.md) turned on,
+"write a script that lists devices with no serial number" gets a saved
+script with its parameters filled in, ready to read and run. It writes the
+script; you run it.
+
 **Scripts → New script** gives you a name and an editor. Everything the
 script needs comes from one import:
 

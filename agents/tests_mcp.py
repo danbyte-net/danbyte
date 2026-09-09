@@ -237,6 +237,47 @@ class ReadToolTests(_Base):
         self.assertIn("change", payload["you_may"])
         self.assertTrue(payload["fields"])
 
+    def test_explain_carries_a_fields_help_text(self):
+        # Cable ends are a list of dicts; without the serializer's help text
+        # an assistant has nothing to tell it what goes in one.
+        payload = self.tool("explain", {"type": "cable"})
+        ends = [f for f in payload["fields"] if f["name"] in ("a", "b")]
+        self.assertEqual(len(ends), 2)
+        for field in ends:
+            self.assertIn("kind", field["help"])
+            self.assertIn("interface", field["help"])
+
+    def test_script_resolves_to_scripts_not_their_runs(self):
+        # ScriptRunViewSet carries rbac_object_type "script" so it shares the
+        # permission; that label must not claim the slug.
+        payload = self.tool("explain", {"type": "script"})
+        self.assertEqual(payload["endpoint"], "/api/scripts/")
+        self.assertIn("source", payload["writable_fields"])
+        self.assertEqual(
+            self.tool("explain", {"type": "scriptrun"})["endpoint"],
+            "/api/scripts/runs/",
+        )
+
+    def test_script_guide_describes_the_sdk_and_the_row(self):
+        payload = self.tool("script_guide")
+        calls = [entry["call"] for entry in payload["sdk"]["db"]]
+        self.assertTrue(any(call.startswith("list(") for call in calls))
+        self.assertTrue(
+            any(e["call"].startswith("output_csv(") for e in payload["sdk"]["run"])
+        )
+        self.assertIn("string", payload["params_schema"]["types"])
+        self.assertEqual(payload["create_with"]["type"], "script")
+        self.assertIn("danbyte_sdk", payload["example"])
+
+    def test_script_guide_says_whether_it_may_save_one(self):
+        # Writes are off by default, so it should offer the code to paste
+        # rather than claim it can save the script.
+        self.assertIn("paste", self.tool("script_guide")["you_may"])
+        IntegrationSettings.objects.filter(tenant=self.tenant).update(
+            ai_writes_enabled=True
+        )
+        self.assertIn("create", self.tool("script_guide")["you_may"])
+
     def test_unknown_type_says_what_to_do(self):
         payload = self.tool("get", {"type": "widget", "id": "x"})
         self.assertIn("Unknown object type", payload["error"])

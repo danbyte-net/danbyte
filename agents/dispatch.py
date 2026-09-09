@@ -66,6 +66,7 @@ def _routes() -> dict[str, tuple[str, Any]]:
     from importlib import import_module
 
     out: dict[str, tuple[str, Any]] = {}
+    aliases: dict[str, tuple[str, Any]] = {}
     for mount, module_path in _ROUTER_MODULES:
         try:
             router = import_module(module_path).router
@@ -76,8 +77,19 @@ def _routes() -> dict[str, tuple[str, Any]]:
             qs = getattr(viewset, "queryset", None)
             if qs is None:
                 continue
-            slug = getattr(viewset, "rbac_object_type", None) or qs.model._meta.model_name
-            out.setdefault(slug, (f"{mount}{prefix}", viewset))
+            # A router registered at "" (scripts) makes mount+prefix end in
+            # a slash; every caller appends one, so trim it here.
+            entry = (f"{mount}{prefix}".rstrip("/"), viewset)
+            # The model's own name is authoritative. `rbac_object_type` is a
+            # permission label, not an identity: script runs carry "script"
+            # so they share the script's permission, and letting that win
+            # pointed the slug at a read-only run list.
+            out.setdefault(qs.model._meta.model_name, entry)
+            label = getattr(viewset, "rbac_object_type", None)
+            if label:
+                aliases.setdefault(label, entry)
+    for slug, entry in aliases.items():
+        out.setdefault(slug, entry)
     return out
 
 

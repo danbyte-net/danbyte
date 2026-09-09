@@ -67,6 +67,19 @@ send, Shift+Enter for a new line.
   members and not an administrator. Delete one from the list, or all of
   them at once.
 
+## Asking it for a script
+
+Some questions want the same answer next month, not once. Ask for a
+[script](scripts.md) - "write a script that lists devices with no serial
+number", "check every month which circuits have no terminations" - and it
+writes one against the same SDK you would use by hand, saves it and links
+to it.
+
+It **cannot run a script**. You open the script, read the code, fill in
+its parameters and run it yourself; the run log and any files it wrote are
+on the script's page. Saving a script needs writes on and the script
+permission; without either, it shows you the code to paste in.
+
 ## What it can and cannot do
 
 - It runs with **your** permissions. A site-scoped account's chat only sees

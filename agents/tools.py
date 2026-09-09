@@ -286,6 +286,131 @@ def _lifecycle(ctx, before: str = "", limit: int | None = None, **_kw) -> dict:
     return {"before": str(horizon), "types": out[:cap], "returned": len(out[:cap])}
 
 
+def _sdk_surface() -> dict:
+    """The SDK read off the package, so this cannot drift from the code."""
+    import inspect
+
+    from danbyte_sdk import Client, Run
+
+    def members(cls) -> list[dict]:
+        out = []
+        for name, member in vars(cls).items():
+            if name.startswith("_"):
+                continue
+            if isinstance(member, property):
+                out.append(_entry(name, member.fget))
+                continue
+            if not callable(member):
+                continue
+            signature = str(inspect.signature(member)).replace("self, ", "", 1)
+            out.append(_entry(f"{name}{signature}", member))
+        return out
+
+    return {"db": members(Client), "run": members(Run)}
+
+
+def _entry(call: str, func) -> dict:
+    """A call and its first docstring sentence, when it has one."""
+    doc = " ".join((func.__doc__ or "").split())
+    what = doc.split(". ")[0].rstrip(".") if doc else ""
+    return {"call": call, "what": what} if what else {"call": call}
+
+
+def _script_guide(ctx, **_kw) -> dict:
+    """How to write a Danbyte script, so the assistant does not invent an API."""
+    from scripting.models import (
+        DEFAULT_TIMEOUT,
+        LANGUAGES,
+        MAX_TIMEOUT,
+        RUN_AS,
+        TOKEN_SCOPES,
+        VISIBILITY,
+    )
+    from scripting.serializers import PARAM_TYPES
+
+    may_write = dispatch.can(ctx.user, ctx.tenant, "script", "add") and ctx.writes_enabled
+    return {
+        "what": (
+            "Danbyte stores and runs Python scripts. A person opens one at "
+            "/scripts, fills in its parameters and runs it; runs keep their log, "
+            "exit code and any files the script wrote."
+        ),
+        "you_may": (
+            "Write the script and save it with `create`. You cannot run it - the "
+            "person runs it from its page, and sees the log there."
+            if may_write else
+            "You can read scripts but not save one. Show the person the code and "
+            "tell them to paste it into a new script at /scripts."
+        ),
+        "runtimes": {
+            "sandboxed": (
+                "The default. The script gets `db`, an HTTP client on a "
+                "short-lived token with exactly the caller's access. No ORM, no "
+                "network beyond Danbyte."
+            ),
+            "trusted": (
+                "Adds `orm` for direct database access. Only a person holding the "
+                "script `trust` permission can turn this on, so write for `db` - "
+                "the same code keeps working if it is later trusted."
+            ),
+        },
+        "sdk": {
+            "import": "from danbyte_sdk import db, run",
+            "note": (
+                "Standard library plus danbyte_sdk. `db` types are plural API "
+                "paths: 'devices', 'interfaces', 'prefixes'."
+            ),
+            **_sdk_surface(),
+        },
+        "params_schema": {
+            "what": "Renders the Run dialog; the answers arrive as run.params.",
+            "shape": [{
+                "name": "site", "label": "Site", "type": "string",
+                "required": True, "default": "", "choices": [], "help": "",
+            }],
+            "types": list(PARAM_TYPES),
+            "note": ("A `choice` needs its `choices`; an `object_type` (say "
+                     "\"device\") makes the field a picker of what exists."),
+        },
+        "fields": {
+            "language": [c[0] for c in LANGUAGES],
+            "visibility": [c[0] for c in VISIBILITY],
+            "run_as": [c[0] for c in RUN_AS],
+            "token_scope": [c[0] for c in TOKEN_SCOPES],
+            "timeout_seconds": {"default": DEFAULT_TIMEOUT, "max": MAX_TIMEOUT},
+        },
+        "create_with": {
+            "tool": "create",
+            "type": "script",
+            "payload": {
+                "name": "Devices without a serial",
+                "description": "One line saying what it reports.",
+                "source": "<the code>",
+                "params_schema": [],
+                "timeout_seconds": DEFAULT_TIMEOUT,
+                "visibility": "owner",
+            },
+        },
+        "example": (
+            "from danbyte_sdk import db, run\n"
+            "\n"
+            "site = run.param('site', '')\n"
+            "devices = db.list('devices', **({'site': site} if site else {}))\n"
+            "missing = [d for d in devices if not d.get('serial')]\n"
+            "run.log(f'{len(missing)} of {len(devices)} device(s) have no serial')\n"
+            "run.output_csv('missing-serials.csv', missing,\n"
+            "               fields=['name', 'site_name', 'device_type_model'])\n"
+        ),
+        "rules": [
+            "Call `explain` with type 'script' for the exact fields a script row takes.",
+            "Print progress with run.log, not print, so the run log is timestamped.",
+            "End a bad run with run.fail('why'), not sys.exit.",
+            "Write files with run.output/output_csv/output_json - they attach to the run.",
+            "Ask what the script should do before writing it if the request is vague.",
+        ],
+    }
+
+
 def _ask_user(ctx, question: str = "", options=None, fields=None, questions=None,
               **_kw) -> dict:
     """Put a question back to the person and stop.
@@ -435,6 +560,14 @@ TOOLS: tuple[Tool, ...] = (
         "Device types whose end of sale or end of support falls before a date "
         "(default: within a year).",
         {"before": STR, "limit": INT}, _lifecycle,
+    ),
+    Tool(
+        "script_guide", "How to write a Danbyte script",
+        "Danbyte runs saved Python scripts (/scripts). This returns the SDK a "
+        "script may import, the fields a script row takes and a worked example. "
+        "Call it before writing or changing a script, so the code uses the real "
+        "API rather than an invented one.",
+        {}, _script_guide,
     ),
     Tool(
         "ask_user", "Ask the person a question",

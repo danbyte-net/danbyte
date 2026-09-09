@@ -16,7 +16,10 @@ import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ChatMessage } from "@/components/chat/chat-message"
 
+// The script opener leads: most people do not know the assistant can write
+// one for them, and it survives the slice on a detail page.
 const SUGGESTIONS = [
+  "Write a script that lists devices with no serial number",
   "Which devices are at my largest site?",
   "What changed on my core switches in the last 48 hours?",
   "Which hardware goes end of support within a year?",

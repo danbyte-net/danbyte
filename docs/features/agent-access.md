@@ -112,11 +112,13 @@ off at once.
 | `search` | The same ranked search as the palette, including narrowing tokens such as `type:device site:aarhus`. |
 | `get` | One object in full, by id or exact name. |
 | `list` | Rows of one type with the usual filters, paged. |
+| `count` | How many of a type, optionally grouped by a field. |
 | `explain` | A type's fields and what this token may do with it. |
 | `where_is` | Site, location, rack and unit, cluster and host, primary address. |
 | `monitoring_status` | Check state, last seen and open alerts. |
 | `changes` | Change-log entries for one object: who, what, when. |
 | `lifecycle` | Device types past or approaching end of sale or support. |
+| `script_guide` | The script SDK and the fields a script row takes, so an assistant can write a [script](scripts.md) that runs against the same API. |
 
 With writes on, three more: `create`, `update` and `delete`. A delete has
 to name the object it removes, so a mistaken instruction cannot take the
