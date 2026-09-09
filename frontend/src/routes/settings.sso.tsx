@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   Field,
+  FieldRows,
   FormCheckbox,
   FormFooter,
   FormSelect,
@@ -415,271 +416,276 @@ function ProviderDialog({
             {isEdit ? `Edit ${provider.name}` : "Add identity provider"}
           </DialogTitle>
         </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            mutation.mutate()
-          }}
-          className="grid gap-4"
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormText
-              label="Name"
-              required
-              autoFocus={!isEdit}
-              value={name}
-              onChange={setName}
-              placeholder="Entra ID"
-              error={fieldErrors.name}
-            />
-            <FormText
-              label="Slug"
-              required
-              mono
-              value={slug}
-              onChange={setSlug}
-              placeholder="entra"
-              hint="URL-safe; keep it stable once set"
-              error={fieldErrors.slug}
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormSelect
-              label="Protocol"
-              value={protocol}
-              onChange={(v) => setProtocol((v ?? "oidc") as SsoProtocol)}
-              options={PROTOCOL_OPTIONS}
-              error={fieldErrors.protocol}
-            />
-            <FormSelect
-              label="Tenant"
-              value={tenant}
-              onChange={setTenant}
-              options={tenantOptions}
-              noneLabel="Deployment-wide"
-              hint="Blank = every tenant may use it"
-              error={fieldErrors.tenant}
-            />
-          </div>
-
-          {protocol === "oidc" ? (
-            <div className="grid gap-4 rounded-lg border border-border bg-card p-3">
-              <span className="text-xs font-medium">OpenID Connect</span>
+        {/* Label-left rows, so the dialog reads like the settings pages
+            behind it (#51). Paired fields go single-column: a 11rem label
+            column beside a half-width control leaves neither room. */}
+        <FieldRows>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              mutation.mutate()
+            }}
+            className="grid divide-y divide-border"
+          >
+            <div className="grid">
               <FormText
-                label="Issuer URL"
-                mono
-                value={oidcIssuer}
-                onChange={setOidcIssuer}
-                placeholder="https://login.microsoftonline.com/<tenant>/v2.0"
-                hint="Base URL for discovery (.well-known/openid-configuration)"
-                error={fieldErrors.oidc_issuer}
+                label="Name"
+                required
+                autoFocus={!isEdit}
+                value={name}
+                onChange={setName}
+                placeholder="Entra ID"
+                error={fieldErrors.name}
               />
-              <div className="grid gap-4 sm:grid-cols-2">
+              <FormText
+                label="Slug"
+                required
+                mono
+                value={slug}
+                onChange={setSlug}
+                placeholder="entra"
+                hint="URL-safe; keep it stable once set"
+                error={fieldErrors.slug}
+              />
+            </div>
+
+            <div className="grid">
+              <FormSelect
+                label="Protocol"
+                value={protocol}
+                onChange={(v) => setProtocol((v ?? "oidc") as SsoProtocol)}
+                options={PROTOCOL_OPTIONS}
+                error={fieldErrors.protocol}
+              />
+              <FormSelect
+                label="Tenant"
+                value={tenant}
+                onChange={setTenant}
+                options={tenantOptions}
+                noneLabel="Deployment-wide"
+                hint="Blank = every tenant may use it"
+                error={fieldErrors.tenant}
+              />
+            </div>
+
+            {protocol === "oidc" ? (
+              <div className="grid gap-4 rounded-lg border border-border bg-card p-3">
+                <span className="text-xs font-medium">OpenID Connect</span>
                 <FormText
-                  label="Client ID"
+                  label="Issuer URL"
                   mono
-                  value={oidcClientId}
-                  onChange={setOidcClientId}
-                  error={fieldErrors.oidc_client_id}
+                  value={oidcIssuer}
+                  onChange={setOidcIssuer}
+                  placeholder="https://login.microsoftonline.com/<tenant>/v2.0"
+                  hint="Base URL for discovery (.well-known/openid-configuration)"
+                  error={fieldErrors.oidc_issuer}
+                />
+                <div className="grid">
+                  <FormText
+                    label="Client ID"
+                    mono
+                    value={oidcClientId}
+                    onChange={setOidcClientId}
+                    error={fieldErrors.oidc_client_id}
+                  />
+                  <FormText
+                    label="Scopes"
+                    mono
+                    value={oidcScopes}
+                    onChange={setOidcScopes}
+                    placeholder="openid email profile"
+                    error={fieldErrors.oidc_scopes}
+                  />
+                </div>
+                <Field
+                  label="Client secret"
+                  hint={
+                    isEdit && provider.client_secret_set
+                      ? "Leave blank to keep the current secret"
+                      : "Stored encrypted; shown only once"
+                  }
+                  error={fieldErrors.client_secret}
+                >
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder={
+                      provider?.client_secret_set ? "••••••••" : "Client secret"
+                    }
+                    value={clientSecret}
+                    onChange={(e) => setClientSecret(e.target.value)}
+                  />
+                  {provider?.client_secret_set && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                      <Check className="h-3 w-3" /> Secret set
+                    </span>
+                  )}
+                </Field>
+              </div>
+            ) : (
+              <div className="grid gap-4 rounded-lg border border-border bg-card p-3">
+                <span className="text-xs font-medium">SAML 2.0</span>
+                <FormText
+                  label="IdP metadata URL"
+                  mono
+                  value={samlMetadataUrl}
+                  onChange={setSamlMetadataUrl}
+                  placeholder="https://login.microsoftonline.com/<tenant>/federationmetadata/2007-06/federationmetadata.xml?appid=<app-id>"
+                  error={fieldErrors.saml_idp_metadata_url}
+                  hint="Recommended. On save, Danbyte fills the entity ID, SSO URL, and signing cert(s) below from this - and re-reads them so cert rotation just works. Leave blank on fully offline installs and fill the three fields by hand."
                 />
                 <FormText
-                  label="Scopes"
+                  label="IdP entity ID"
                   mono
-                  value={oidcScopes}
-                  onChange={setOidcScopes}
-                  placeholder="openid email profile"
-                  error={fieldErrors.oidc_scopes}
+                  value={samlEntityId}
+                  onChange={setSamlEntityId}
+                  error={fieldErrors.saml_idp_entity_id}
+                />
+                <FormText
+                  label="IdP SSO URL"
+                  mono
+                  value={samlSsoUrl}
+                  onChange={setSamlSsoUrl}
+                  error={fieldErrors.saml_idp_sso_url}
+                />
+                <FormTextarea
+                  label="IdP X.509 certificate"
+                  rows={4}
+                  value={samlX509}
+                  onChange={setSamlX509}
+                  placeholder="-----BEGIN CERTIFICATE-----"
+                  error={fieldErrors.saml_idp_x509}
                 />
               </div>
-              <Field
-                label="Client secret"
-                hint={
-                  isEdit && provider.client_secret_set
-                    ? "Leave blank to keep the current secret"
-                    : "Stored encrypted; shown only once"
-                }
-                error={fieldErrors.client_secret}
-              >
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder={
-                    provider?.client_secret_set ? "••••••••" : "Client secret"
-                  }
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
+            )}
+
+            {/* Read-only URLs to register at the IdP - differ by protocol. */}
+            {isEdit && protocol === "oidc" && provider.callback_url && (
+              <ReadonlyUrl
+                label="Callback URL"
+                hint="Register this as the redirect URI at your IdP"
+                value={provider.callback_url}
+              />
+            )}
+            {isEdit && protocol === "saml" && (
+              <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-3">
+                <span className="text-xs font-medium">
+                  Register these at your IdP
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  In Entra these are the three fields under{" "}
+                  <span className="font-medium">Basic SAML Configuration</span>.
+                </p>
+                <ReadonlyUrl
+                  label="Identifier (Entity ID)"
+                  hint="Entra: Basic SAML Configuration → Identifier (Entity ID)"
+                  value={provider.sp_entity_id}
                 />
-                {provider?.client_secret_set && (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-                    <Check className="h-3 w-3" /> Secret set
-                  </span>
-                )}
-              </Field>
-            </div>
-          ) : (
+                <ReadonlyUrl
+                  label="Reply URL (ACS)"
+                  hint="Entra: Basic SAML Configuration → Reply URL (Assertion Consumer Service)"
+                  value={provider.acs_url}
+                />
+                <ReadonlyUrl
+                  label="Sign on URL"
+                  hint="Entra: Basic SAML Configuration → Sign on URL (enables the sign-in button)"
+                  value={provider.login_url}
+                />
+                <ReadonlyUrl
+                  label="SP metadata URL"
+                  hint="Optional - some IdPs import SP config from this URL"
+                  value={provider.metadata_url}
+                />
+              </div>
+            )}
+
             <div className="grid gap-4 rounded-lg border border-border bg-card p-3">
-              <span className="text-xs font-medium">SAML 2.0</span>
+              <span className="text-xs font-medium">Claim mapping</span>
+              <div className="grid">
+                <FormText
+                  label="Email claim"
+                  mono
+                  value={claimEmail}
+                  onChange={setClaimEmail}
+                  placeholder="email"
+                  error={fieldErrors.claim_email}
+                />
+                <FormText
+                  label="Username claim"
+                  mono
+                  value={claimUsername}
+                  onChange={setClaimUsername}
+                  placeholder="preferred_username"
+                  error={fieldErrors.claim_username}
+                />
+                <FormText
+                  label="First name claim"
+                  mono
+                  value={claimFirstName}
+                  onChange={setClaimFirstName}
+                  placeholder="given_name"
+                  error={fieldErrors.claim_first_name}
+                />
+                <FormText
+                  label="Last name claim"
+                  mono
+                  value={claimLastName}
+                  onChange={setClaimLastName}
+                  placeholder="family_name"
+                  error={fieldErrors.claim_last_name}
+                />
+              </div>
               <FormText
-                label="IdP metadata URL"
+                label="Groups claim"
                 mono
-                value={samlMetadataUrl}
-                onChange={setSamlMetadataUrl}
-                placeholder="https://login.microsoftonline.com/<tenant>/federationmetadata/2007-06/federationmetadata.xml?appid=<app-id>"
-                error={fieldErrors.saml_idp_metadata_url}
-                hint="Recommended. On save, Danbyte fills the entity ID, SSO URL, and signing cert(s) below from this - and re-reads them so cert rotation just works. Leave blank on fully offline installs and fill the three fields by hand."
-              />
-              <FormText
-                label="IdP entity ID"
-                mono
-                value={samlEntityId}
-                onChange={setSamlEntityId}
-                error={fieldErrors.saml_idp_entity_id}
-              />
-              <FormText
-                label="IdP SSO URL"
-                mono
-                value={samlSsoUrl}
-                onChange={setSamlSsoUrl}
-                error={fieldErrors.saml_idp_sso_url}
-              />
-              <FormTextarea
-                label="IdP X.509 certificate"
-                rows={4}
-                value={samlX509}
-                onChange={setSamlX509}
-                placeholder="-----BEGIN CERTIFICATE-----"
-                error={fieldErrors.saml_idp_x509}
+                value={claimGroups}
+                onChange={setClaimGroups}
+                placeholder="groups"
+                hint="Map its values to groups below (after saving)"
+                error={fieldErrors.claim_groups}
               />
             </div>
-          )}
 
-          {/* Read-only URLs to register at the IdP - differ by protocol. */}
-          {isEdit && protocol === "oidc" && provider.callback_url && (
-            <ReadonlyUrl
-              label="Callback URL"
-              hint="Register this as the redirect URI at your IdP"
-              value={provider.callback_url}
+            <FormSelect
+              label="Default tenant"
+              value={defaultTenant}
+              onChange={setDefaultTenant}
+              options={tenantOptions}
+              noneLabel="None"
+              hint="For JIT users with no other tenant"
+              error={fieldErrors.default_tenant}
             />
-          )}
-          {isEdit && protocol === "saml" && (
-            <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-3">
-              <span className="text-xs font-medium">
-                Register these at your IdP
-              </span>
-              <p className="text-xs text-muted-foreground">
-                In Entra these are the three fields under{" "}
-                <span className="font-medium">Basic SAML Configuration</span>.
-              </p>
-              <ReadonlyUrl
-                label="Identifier (Entity ID)"
-                hint="Entra: Basic SAML Configuration → Identifier (Entity ID)"
-                value={provider.sp_entity_id}
-              />
-              <ReadonlyUrl
-                label="Reply URL (ACS)"
-                hint="Entra: Basic SAML Configuration → Reply URL (Assertion Consumer Service)"
-                value={provider.acs_url}
-              />
-              <ReadonlyUrl
-                label="Sign on URL"
-                hint="Entra: Basic SAML Configuration → Sign on URL (enables the sign-in button)"
-                value={provider.login_url}
-              />
-              <ReadonlyUrl
-                label="SP metadata URL"
-                hint="Optional - some IdPs import SP config from this URL"
-                value={provider.metadata_url}
-              />
-            </div>
-          )}
 
-          <div className="grid gap-4 rounded-lg border border-border bg-card p-3">
-            <span className="text-xs font-medium">Claim mapping</span>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormText
-                label="Email claim"
-                mono
-                value={claimEmail}
-                onChange={setClaimEmail}
-                placeholder="email"
-                error={fieldErrors.claim_email}
-              />
-              <FormText
-                label="Username claim"
-                mono
-                value={claimUsername}
-                onChange={setClaimUsername}
-                placeholder="preferred_username"
-                error={fieldErrors.claim_username}
-              />
-              <FormText
-                label="First name claim"
-                mono
-                value={claimFirstName}
-                onChange={setClaimFirstName}
-                placeholder="given_name"
-                error={fieldErrors.claim_first_name}
-              />
-              <FormText
-                label="Last name claim"
-                mono
-                value={claimLastName}
-                onChange={setClaimLastName}
-                placeholder="family_name"
-                error={fieldErrors.claim_last_name}
-              />
-            </div>
-            <FormText
-              label="Groups claim"
-              mono
-              value={claimGroups}
-              onChange={setClaimGroups}
-              placeholder="groups"
-              hint="Map its values to groups below (after saving)"
-              error={fieldErrors.claim_groups}
+            <FormSelect
+              label="Default group"
+              value={defaultGroup != null ? String(defaultGroup) : null}
+              onChange={(v) => setDefaultGroup(v ? Number(v) : null)}
+              options={groupOptions}
+              noneLabel="None"
+              hint="Baseline group every user of this provider gets, so new SSO users aren't left with no access"
+              error={fieldErrors.default_group}
             />
-          </div>
 
-          <FormSelect
-            label="Default tenant"
-            value={defaultTenant}
-            onChange={setDefaultTenant}
-            options={tenantOptions}
-            noneLabel="None"
-            hint="For JIT users with no other tenant"
-            error={fieldErrors.default_tenant}
-          />
+            <FormCheckbox
+              label="Just-in-time provisioning"
+              hint="Off = only pre-created users may sign in."
+              checked={jit}
+              onChange={setJit}
+            />
+            <FormCheckbox
+              label="Enabled"
+              hint="Shown as a Sign in with… button on the login page"
+              checked={enabled}
+              onChange={setEnabled}
+            />
 
-          <FormSelect
-            label="Default group"
-            value={defaultGroup != null ? String(defaultGroup) : null}
-            onChange={(v) => setDefaultGroup(v ? Number(v) : null)}
-            options={groupOptions}
-            noneLabel="None"
-            hint="Baseline group every user of this provider gets, so new SSO users aren't left with no access"
-            error={fieldErrors.default_group}
-          />
-
-          <FormCheckbox
-            label="Just-in-time provisioning"
-            hint="Off = only pre-created users may sign in."
-            checked={jit}
-            onChange={setJit}
-          />
-          <FormCheckbox
-            label="Enabled"
-            hint="Shown as a Sign in with… button on the login page"
-            checked={enabled}
-            onChange={setEnabled}
-          />
-
-          <FormFooter
-            onCancel={() => onOpenChange(false)}
-            submitting={mutation.isPending}
-            submitLabel={isEdit ? "Save changes" : "Create provider"}
-          />
-        </form>
+            <FormFooter
+              onCancel={() => onOpenChange(false)}
+              submitting={mutation.isPending}
+              submitLabel={isEdit ? "Save changes" : "Create provider"}
+            />
+          </form>
+        </FieldRows>
 
         {isEdit && <GroupMappings provider={provider} />}
       </DialogContent>

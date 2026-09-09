@@ -6,7 +6,7 @@
 //     FormCheckbox, FormRow, FormFooter, useFieldErrors,
 //   } from "@/components/forms"
 
-export { Field } from "./field"
+export { Field, FieldRows } from "./field"
 export type { FieldProps } from "./field"
 export { FormColumn, FormColumns, FormSection } from "./section"
 export { FormText } from "./text"
