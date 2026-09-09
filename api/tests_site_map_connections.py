@@ -113,6 +113,44 @@ class TunnelEdgeTests(ConnectionsBase):
         self.assertEqual(len(e), 2)
         self.assertTrue(all(x["site_a"]["name"] == "A" for x in e))
 
+    def _vm_term(self, tunnel, name, *, site=None, cluster_site=None, role="peer"):
+        from api.models import Cluster, VirtualMachine, VMInterface
+
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name=f"cl-{name}", site=cluster_site
+        )
+        vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name=name, cluster=cluster, site=site
+        )
+        vmi = VMInterface.objects.create(vm=vm, name="eth0")
+        return TunnelTermination.objects.create(
+            tunnel=tunnel, vm_interface=vmi, role=role
+        )
+
+    def test_a_tunnel_to_a_virtual_machine_draws(self):
+        # #144: only the device side was resolved, so a device-to-VM tunnel
+        # never appeared and looked like a configuration mistake.
+        t = Tunnel.objects.create(tenant=self.tenant, name="to-vm")
+        self._term(t, self._device("d1", self.s1))
+        self._vm_term(t, "vm1", site=self.s2)
+        e = [x for x in self.edges() if x["kind"] == "tunnel"]
+        self.assertEqual(len(e), 1)
+        self.assertEqual(
+            {e[0]["site_a"]["name"], e[0]["site_z"]["name"]}, {"A", "B"}
+        )
+
+    def test_a_virtual_machine_inherits_its_clusters_site(self):
+        t = Tunnel.objects.create(tenant=self.tenant, name="to-vm-cluster")
+        self._term(t, self._device("d2", self.s1))
+        self._vm_term(t, "vm2", cluster_site=self.s2)
+        self.assertEqual(len([x for x in self.edges() if x["kind"] == "tunnel"]), 1)
+
+    def test_a_placeless_virtual_machine_draws_nothing(self):
+        t = Tunnel.objects.create(tenant=self.tenant, name="nowhere")
+        self._term(t, self._device("d3", self.s1))
+        self._vm_term(t, "vm3")
+        self.assertEqual([x for x in self.edges() if x["kind"] == "tunnel"], [])
+
     def test_multipoint_peer_mesh_skipped(self):
         s3 = Site.objects.create(
             tenant=self.tenant, name="D", latitude="57.0", longitude="9.0"
@@ -143,6 +181,34 @@ class CableEdgeTests(ConnectionsBase):
         e = [x for x in self.edges() if x["kind"] == "cable"]
         self.assertEqual(len(e), 1)
         self.assertEqual(e[0]["meta"]["count"], 2)
+
+    def test_a_cable_to_a_circuit_end_does_not_break_the_map(self):
+        # A circuit end is shimmed into the (device, port) shape and has no
+        # site of its own; reading one crashed the whole endpoint, so every
+        # line vanished the moment a handoff was cabled to a port.
+        circuit = Circuit.objects.create(
+            tenant=self.tenant, provider=self.provider, cid="C-CABLE",
+            status=status_for(self.tenant, "active"),
+        )
+        CircuitTermination.objects.create(
+            circuit=circuit, term_side="A", site=self.s1
+        )
+        term = CircuitTermination.objects.create(
+            circuit=circuit, term_side="Z", site=self.s2
+        )
+        device = self._device("edge1", self.s1)
+        iface = Interface.objects.create(device=device, name="Gi0/1")
+        cab = Cable.objects.create(
+            tenant=self.tenant, status=status_for(self.tenant, "connected")
+        )
+        CableTermination.objects.create(
+            cable=cab, end="A", interface=iface
+        )
+        CableTermination.objects.create(
+            cable=cab, end="B", circuit_termination=term
+        )
+        kinds = {e["kind"] for e in self.edges()}
+        self.assertIn("circuit", kinds)
 
     def test_same_site_cable_excluded(self):
         d1, d2 = self._device("d1", self.s1), self._device("d2", self.s1)

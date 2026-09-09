@@ -302,6 +302,30 @@ def site_map(request):
     })
 
 
+def _termination_site_id(term):
+    """Which site a tunnel end sits at, whichever kind of thing it lands on.
+
+    A tunnel terminates on a device interface or a VM interface (#144). A VM
+    need not carry a site of its own - it usually inherits one from its
+    cluster, or from the host it runs on - so all three are tried before the
+    end is treated as unplaceable.
+    """
+    iface = term.interface
+    if iface is not None and iface.device is not None:
+        return iface.device.site_id
+    vmi = term.vm_interface
+    if vmi is None or vmi.vm is None:
+        return None
+    vm = vmi.vm
+    if vm.site_id:
+        return vm.site_id
+    if vm.cluster_id and vm.cluster.site_id:
+        return vm.cluster.site_id
+    if vm.device_id and vm.device.site_id:
+        return vm.device.site_id
+    return None
+
+
 @extend_schema(
     summary="Derived site-to-site connection edges (circuits, tunnels, cables)",
     tags=["site-map"],
@@ -322,9 +346,11 @@ def site_map_connections(request):
     """Site-to-site connection edges for the map - derived, never modeled:
 
     - **circuits**: both A/Z terminations at placed sites;
-    - **tunnels**: terminations resolved interface → device → site (two
-      distinct placed sites → one edge; a hub termination → a star, one edge
-      per spoke; wider peer meshes are skipped in v1);
+    - **tunnels**: terminations resolved to a site through their device
+      interface, or through a VM interface's VM (its own site, else its
+      cluster's, else its host's). Two distinct placed sites → one edge; a
+      hub termination → a star, one edge per spoke; wider peer meshes are
+      skipped in v1;
     - **cables**: physical links whose endpoint devices sit at different
       placed sites, aggregated per site pair (a bundle is one edge).
 
@@ -401,16 +427,17 @@ def site_map_connections(request):
             request.user, tenant, "tunnel", "view",
         )
         .select_related("status", "group")
-        .prefetch_related("terminations__interface__device")
+        .prefetch_related(
+            "terminations__interface__device",
+            "terminations__vm_interface__vm__cluster",
+            "terminations__vm_interface__vm__device",
+        )
     )
     for t in tunnels:
         by_site: dict = {}
         hub_site = None
         for term in t.terminations.all():
-            iface = term.interface
-            if iface is None or iface.device is None:
-                continue
-            sid = iface.device.site_id
+            sid = _termination_site_id(term)
             if sid is None or sid not in visible_sites:
                 continue
             by_site.setdefault(sid, term.role)

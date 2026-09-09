@@ -56,7 +56,7 @@ function NewCablePage() {
       wide
       crumbs={[{ label: "Cables", to: "/cables" }, { label: "Add" }]}
       title="Add cable"
-      subtitle="A physical connection between two interfaces."
+      subtitle="A physical connection between two ports. One end can be a circuit's handoff instead of a device port."
     >
       <CableForm
         initialA={a_kind && a_id ? [{ kind: a_kind, id: a_id }] : undefined}

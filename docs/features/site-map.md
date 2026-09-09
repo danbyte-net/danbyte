@@ -192,6 +192,22 @@ marker always shows its name at any zoom. The **Labels** toggle in the View
 menu (remembered per browser) switches to hover/selection-only if you prefer
 a bare map.
 
+## What draws a line between two sites
+
+Site-to-site links are **derived**, never modelled - there is no "connection"
+object to create. A line appears when one of these resolves to two different
+sites that are both placed on the map:
+
+| Line | What has to be true |
+|---|---|
+| **Circuit** | Both the A and Z [termination](circuits.md#terminate-a-circuit) land on a site (not a provider network), and the two sites differ. Cabling a side to a port is not required for the line - it ties the circuit to the port. |
+| **Tunnel** | Each [tunnel](vpn.md) termination resolves to a site: a device interface through its device, a VM interface through its VM (its own site, else its cluster's, else its host's). Two sites draw one line; a `hub` termination draws one line per spoke. A peer mesh of more than two sites is not drawn. |
+| **Cable** | Its two ends sit on devices at different sites. Cables between sites are aggregated per site pair, so a bundle is one line. |
+
+A site is **placed** once it has a latitude and longitude - an unplaced site
+drops every line that would touch it. If a link you expect is missing, check
+that end's site first.
+
 ## Cabling on the map
 
 Every cable whose two ends land on the map draws as a line - you don't need
