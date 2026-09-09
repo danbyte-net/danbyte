@@ -1,6 +1,10 @@
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 
+import { ColorBadge } from "@/components/cells/color-badge"
+import { useChatCatalog } from "@/lib/use-chat-catalog"
+import type { CatalogEntry } from "@/lib/use-chat-catalog"
+
 /** Just enough Markdown for an answer, with no dependency and no HTML.
  *
  * Nothing here ever renders raw HTML, so there is no sanitiser to get
@@ -8,10 +12,13 @@ import { Link } from "@tanstack/react-router"
  * elements. A link into Danbyte becomes a router Link, so clicking it does
  * not reload the app. */
 export function Markdown({ text }: { text: string }) {
-  return <div className="space-y-2">{blocks(text)}</div>
+  const catalog = useChatCatalog()
+  return <div className="space-y-2">{blocks(text, catalog)}</div>
 }
 
-function blocks(text: string): ReactNode[] {
+type Catalog = Map<string, CatalogEntry>
+
+function blocks(text: string, catalog: Catalog): ReactNode[] {
   const out: ReactNode[] = []
   const lines = text.replace(/\r\n/g, "\n").split("\n")
   let i = 0
@@ -73,7 +80,7 @@ function blocks(text: string): ReactNode[] {
                 >
                   {row.map((cell, m) => (
                     <td key={m} className="px-2 py-1 align-top">
-                      {inline(cell)}
+                      {badgeOr(cell, catalog)}
                     </td>
                   ))}
                 </tr>
@@ -151,6 +158,16 @@ function blocks(text: string): ReactNode[] {
     }
   }
   return out
+}
+
+/** A cell whose text is a catalog object renders as that object's pill, the
+ * same one every table in Danbyte shows. */
+function badgeOr(cell: string, catalog: Catalog): ReactNode {
+  const entry = catalog.get(cell.trim().toLowerCase())
+  if (entry && !cell.includes("[") && !cell.includes("`")) {
+    return <ColorBadge name={cell.trim()} color={entry.color} />
+  }
+  return inline(cell)
 }
 
 function cells(line: string): string[] {

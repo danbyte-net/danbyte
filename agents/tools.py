@@ -300,13 +300,27 @@ def _ask_user(ctx, question: str = "", options=None, fields=None, **_kw) -> dict
     clean_fields = []
     for entry in list(fields or [])[:4]:
         if isinstance(entry, dict) and entry.get("name"):
-            clean_fields.append({
+            spec = {
                 "name": str(entry["name"])[:40],
                 "label": str(entry.get("label") or entry["name"])[:80],
                 "placeholder": str(entry.get("placeholder") or "")[:80],
-            })
+                "endpoint": "",
+                "object_type": "",
+            }
+            # Naming an object type turns the box into a searchable picker of
+            # what actually exists, so nobody has to spell a model number.
+            wanted = str(entry.get("object_type") or "").strip()
+            if wanted:
+                try:
+                    slug, prefix, _viewset = dispatch.resolve(wanted, ctx.settings)
+                    spec["object_type"] = slug
+                    spec["endpoint"] = f"/api/{prefix}/"
+                except ToolError:
+                    pass
+            clean_fields.append(spec)
         elif isinstance(entry, str):
-            clean_fields.append({"name": entry[:40], "label": entry[:80], "placeholder": ""})
+            clean_fields.append({"name": entry[:40], "label": entry[:80],
+                                 "placeholder": "", "endpoint": "", "object_type": ""})
     return {
         "asked": str(question or "").strip()[:500],
         "options": clean_options,
@@ -402,12 +416,16 @@ TOOLS: tuple[Tool, ...] = (
         "ask_user", "Ask the person a question",
         "Stop and ask before doing work whose shape you are guessing at - a "
         "naming scheme, which site, whether to go ahead with many changes. "
-        "Give 2-4 concrete `options` they can pick, and `fields` for anything "
-        "they must type. Say nothing else in that turn: their answer comes "
-        "back as the next message.",
+        "Give 2-4 concrete `options` they can pick. Use `fields` for anything "
+        "they must supply: each is "
+        "`{name, label, placeholder, object_type}`, and setting `object_type` "
+        "(say \"devicetype\") turns it into a searchable list of what exists, "
+        "so they pick rather than spell. Keep the question one short line; put "
+        "the detail in the option and field labels. Say nothing else in that "
+        "turn: their answer comes back as the next message.",
         {"question": STR,
          "options": {"type": "array", "items": {"type": "string"}},
-         "fields": {"type": "array", "items": {"type": "string"}}},
+         "fields": {"type": "array", "items": {"type": "object"}}},
         _ask_user, required=("question",),
     ),
     Tool(

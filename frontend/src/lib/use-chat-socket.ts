@@ -16,7 +16,13 @@ export interface ChatTurn {
 export interface ChatAsk {
   asked: string
   options: { label: string; hint: string }[]
-  fields: { name: string; label: string; placeholder: string }[]
+  fields: {
+    name: string
+    label: string
+    placeholder: string
+    endpoint?: string
+    object_type?: string
+  }[]
 }
 
 export interface ChatToolCall {
