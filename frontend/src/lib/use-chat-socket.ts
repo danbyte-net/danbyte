@@ -9,6 +9,14 @@ export interface ChatTurn {
   text: string
   tools: ChatToolCall[]
   pending?: boolean
+  /** A question the assistant put back, rendered as a small form. */
+  ask?: ChatAsk | null
+}
+
+export interface ChatAsk {
+  asked: string
+  options: { label: string; hint: string }[]
+  fields: { name: string; label: string; placeholder: string }[]
 }
 
 export interface ChatToolCall {
@@ -31,6 +39,7 @@ type Frame =
       error: string
       card?: ChatCardData | null
     }
+  | ({ t: "ask" } & ChatAsk)
   | { t: "done"; message: string }
   | { t: "error"; m: string }
   | { t: "pong" }
@@ -83,6 +92,14 @@ export function useChatSocket() {
       }
       if (frame.t === "tool") {
         setTurns((was) => appendTool(was, frame))
+        return
+      }
+      if (frame.t === "ask") {
+        setTurns((was) => {
+          const last = was.at(-1)
+          if (!last || last.role !== "assistant") return was
+          return [...was.slice(0, -1), { ...last, ask: frame }]
+        })
         return
       }
       if (frame.t === "done") {

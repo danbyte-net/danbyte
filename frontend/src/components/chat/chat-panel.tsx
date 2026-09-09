@@ -42,6 +42,28 @@ export function ChatPanel({
   const [text, setText] = useState("")
   const [showHistory, setShowHistory] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  // Opening the panel should land you back where you were, not on a blank
+  // page. Restored once per open; "New conversation" opts out.
+  const restored = useRef(false)
+
+  const recent = useQuery({
+    queryKey: ["chat-conversations"],
+    queryFn: () =>
+      api<{ results: ChatConversation[] }>("/api/assistant/conversations/"),
+  })
+  const latestId = recent.data?.results[0]?.id
+
+  const resume = useMutation({
+    mutationFn: (id: string) =>
+      api<ChatConversationDetail>(`/api/assistant/conversations/${id}/`),
+    onSuccess: (detail) => chat.load(detail.id, toTurns(detail)),
+  })
+
+  useEffect(() => {
+    if (restored.current || !latestId || chat.turns.length > 0) return
+    restored.current = true
+    resume.mutate(latestId)
+  }, [latestId, chat.turns.length, resume])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" })
@@ -92,6 +114,7 @@ export function ChatPanel({
               size="icon-sm"
               aria-label="New conversation"
               onClick={() => {
+                restored.current = true // do not pull the old one back
                 chat.reset()
                 setShowHistory(false)
               }}
@@ -115,6 +138,7 @@ export function ChatPanel({
         {showHistory ? (
           <HistoryList
             onOpen={(id, turns) => {
+              restored.current = true
               chat.load(id, turns)
               setShowHistory(false)
             }}
@@ -130,6 +154,10 @@ export function ChatPanel({
                   </Link>
                   .
                 </EmptyState>
+              ) : resume.isPending ? (
+                <p className="py-6 text-center text-[13px] text-muted-foreground">
+                  Loading your last conversation...
+                </p>
               ) : chat.turns.length === 0 ? (
                 <Opening
                   onPick={(q) => chat.ask(q, pageContext)}
@@ -138,7 +166,12 @@ export function ChatPanel({
                 />
               ) : (
                 chat.turns.map((turn) => (
-                  <ChatMessage key={turn.id} turn={turn} />
+                  <ChatMessage
+                    key={turn.id}
+                    turn={turn}
+                    busy={chat.busy}
+                    onAnswer={(answer) => chat.ask(answer, pageContext)}
+                  />
                 ))
               )}
               <div ref={endRef} />

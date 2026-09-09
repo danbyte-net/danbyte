@@ -105,6 +105,39 @@ def _list(ctx, type: str = "", filters: dict | None = None, limit: int | None = 
     )
 
 
+def _count(ctx, type: str = "", group_by: str = "", filters=None, **_kw) -> dict:
+    """How many, optionally broken down by a field.
+
+    One call answers "which site has the most devices", which otherwise
+    costs a list per site and burns the whole conversation.
+    """
+    result = dispatch.list_objects(
+        ctx.principal, type, filters or {}, limit=dispatch.FETCH_CAP,
+        settings_row=ctx.settings,
+    )
+    rows = result["rows"]
+    if not group_by:
+        return {"type": result["type"], "count": result["total"]}
+
+    buckets: dict[str, int] = {}
+    for row in rows:
+        value = row.get(group_by)
+        if value is None:
+            value = row.get(f"{group_by}_name")
+        if isinstance(value, dict):
+            value = value.get("name") or value.get("display") or value.get("id")
+        buckets[str(value) if value not in (None, "") else "(none)"] = (
+            buckets.get(str(value) if value not in (None, "") else "(none)", 0) + 1
+        )
+    ordered = sorted(buckets.items(), key=lambda kv: (-kv[1], kv[0]))
+    return {
+        "type": result["type"],
+        "count": len(rows),
+        "group_by": group_by,
+        "groups": [{"value": k, "count": v} for k, v in ordered[:60]],
+    }
+
+
 def _explain(ctx, type: str = "", **_kw) -> dict:
     """A type's fields and what this token may do with it.
 
@@ -248,6 +281,39 @@ def _lifecycle(ctx, before: str = "", limit: int | None = None, **_kw) -> dict:
     return {"before": str(horizon), "types": out[:cap], "returned": len(out[:cap])}
 
 
+def _ask_user(ctx, question: str = "", options=None, fields=None, **_kw) -> dict:
+    """Put a question back to the person and stop.
+
+    The loop turns this into a small form in the chat and ends the turn; the
+    answer arrives as their next message. This is how a bulk change gets a
+    naming scheme agreed before anything is written, instead of after.
+    """
+    clean_options = []
+    for option in list(options or [])[:6]:
+        if isinstance(option, dict):
+            label = str(option.get("label") or option.get("value") or "").strip()
+            hint = str(option.get("hint") or option.get("description") or "").strip()
+        else:
+            label, hint = str(option).strip(), ""
+        if label:
+            clean_options.append({"label": label[:120], "hint": hint[:160]})
+    clean_fields = []
+    for entry in list(fields or [])[:4]:
+        if isinstance(entry, dict) and entry.get("name"):
+            clean_fields.append({
+                "name": str(entry["name"])[:40],
+                "label": str(entry.get("label") or entry["name"])[:80],
+                "placeholder": str(entry.get("placeholder") or "")[:80],
+            })
+        elif isinstance(entry, str):
+            clean_fields.append({"name": entry[:40], "label": entry[:80], "placeholder": ""})
+    return {
+        "asked": str(question or "").strip()[:500],
+        "options": clean_options,
+        "fields": clean_fields,
+    }
+
+
 # ─── write tools ────────────────────────────────────────────────────────────
 
 def _create(ctx, type: str = "", payload: dict | None = None, **_kw) -> dict:
@@ -293,6 +359,14 @@ TOOLS: tuple[Tool, ...] = (
         _list, required=("type",),
     ),
     Tool(
+        "count", "Count objects",
+        "How many objects of a type, optionally grouped by a field: "
+        "`count(type=\"device\", group_by=\"site\")` answers which site has the "
+        "most in one call. Use this instead of listing a type once per site.",
+        {"type": STR, "group_by": STR, "filters": {"type": "object"}},
+        _count, required=("type",),
+    ),
+    Tool(
         "explain", "Describe a type",
         "A type's fields, their kinds and the actions this token may take on it. "
         "Call this before writing, so the payload matches what Danbyte expects.",
@@ -323,6 +397,18 @@ TOOLS: tuple[Tool, ...] = (
         "Device types whose end of sale or end of support falls before a date "
         "(default: within a year).",
         {"before": STR, "limit": INT}, _lifecycle,
+    ),
+    Tool(
+        "ask_user", "Ask the person a question",
+        "Stop and ask before doing work whose shape you are guessing at - a "
+        "naming scheme, which site, whether to go ahead with many changes. "
+        "Give 2-4 concrete `options` they can pick, and `fields` for anything "
+        "they must type. Say nothing else in that turn: their answer comes "
+        "back as the next message.",
+        {"question": STR,
+         "options": {"type": "array", "items": {"type": "string"}},
+         "fields": {"type": "array", "items": {"type": "string"}}},
+        _ask_user, required=("question",),
     ),
     Tool(
         "create", "Create an object",

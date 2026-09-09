@@ -3,13 +3,22 @@ import { ChevronRight, Wrench } from "lucide-react"
 
 import type { ChatToolCall, ChatTurn } from "@/lib/use-chat-socket"
 import { Badge } from "@/components/ui/badge"
+import { ChatAskForm } from "@/components/chat/chat-ask"
 import { ChatCard } from "@/components/chat/chat-card"
 import { Markdown } from "@/components/chat/markdown"
 import { cn } from "@/lib/utils"
 
 /** One turn. Bordered card, author line, wrapped body - the shape the
  * journal panel already uses, so a transcript looks like the product. */
-export function ChatMessage({ turn }: { turn: ChatTurn }) {
+export function ChatMessage({
+  turn,
+  onAnswer,
+  busy,
+}: {
+  turn: ChatTurn
+  onAnswer?: (answer: string) => void
+  busy?: boolean
+}) {
   const isUser = turn.role === "user"
   return (
     <div
@@ -40,6 +49,10 @@ export function ChatMessage({ turn }: { turn: ChatTurn }) {
           <ChatCard card={card} />
         </div>
       ))}
+
+      {turn.ask && onAnswer && (
+        <ChatAskForm ask={turn.ask} onAnswer={onAnswer} disabled={!!busy} />
+      )}
     </div>
   )
 }

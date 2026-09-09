@@ -205,6 +205,14 @@ function inline(text: string): ReactNode[] {
 }
 
 function link(label: string, href: string, key: number): ReactNode {
+  // A model often writes the full URL of this very deployment; treat that
+  // as an in-app link rather than sending the reader out and back.
+  if (
+    typeof window !== "undefined" &&
+    href.startsWith(window.location.origin)
+  ) {
+    href = href.slice(window.location.origin.length) || "/"
+  }
   // Inside Danbyte: a router link, so the app does not reload.
   if (href.startsWith("/")) {
     return (

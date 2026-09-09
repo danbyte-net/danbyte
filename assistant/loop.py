@@ -27,7 +27,7 @@ from . import providers
 
 logger = logging.getLogger(__name__)
 
-MAX_TURNS = 6          # model → tools → model round trips before we stop
+MAX_TURNS = 14         # model → tools → model round trips before we stop
 MAX_TOOL_CHARS = 24000  # one tool result handed back to the model
 
 SYSTEM = """\
@@ -39,6 +39,11 @@ Answer questions about this data by calling the tools. Never invent a
 device, address or status - if a tool did not return it, say so. Start with
 `search` or `list` when you do not know an object's id; `types` shows what
 this person can see.
+
+Reach for the tool that answers the whole question at once. `count` with
+`group_by` tells you the spread across sites or roles in one call; listing
+a type once per site instead will run out of room before you have an
+answer.
 
 You act as the person asking, with their permissions. If a tool says
 something is not visible, tell them plainly rather than trying another way
@@ -61,7 +66,34 @@ Write in Markdown, which is rendered:
   straight through to it.
 
 Filters take names, not ids: `list(type="device", filters={"site": "Aarhus"})`
-works. Only fall back to searching for an id if a name is refused."""
+works. Only fall back to searching for an id if a name is refused.
+
+When a request is broad ("every site", "all of them"), ask before you go
+looking: agreeing the shape first is quicker than exploring and then
+finding out you guessed wrong.
+
+Before changing anything, stop and ask when you would be guessing:
+
+* More than two objects at once. Say what you intend to create, and ask
+  with `ask_user` before you start - a naming scheme is the usual thing to
+  agree first.
+* A name, a parent, a type or a site you inferred rather than were told.
+* Anything you would have to delete afterwards to undo.
+
+Call `ask_user` with two to four concrete options and say nothing else in
+that turn. One question, then wait.
+
+Finish what you start. An object that needs another to be usable is not
+done until both exist, and if you cannot finish it, say which part is
+missing:
+
+* A **circuit** carries traffic only once it has an A and a Z
+  `circuittermination`, each pointing at a site or an interface. A circuit
+  with no terminations is connected to nothing.
+* A **cable** needs both ends. An **interface** belongs to a device. An
+  **IP address** is unassigned until it points at an interface.
+
+Ask which port or site to terminate on rather than choosing one."""
 
 
 @dataclass
@@ -203,6 +235,17 @@ def preview_of(payload) -> dict | None:
         if obj.get("disk_gb"):
             fact("Disk", f"{obj['disk_gb']} GB")
         fact("Primary IP", obj.get("primary_ip"), _url_for("ipaddress", obj.get("primary_ip")))
+    elif kind == "circuit":
+        fact("Provider", obj.get("provider"), _url_for("provider", obj.get("provider")))
+        fact("Type", obj.get("type"))
+        for term in (obj.get("terminations") or [])[:2]:
+            if isinstance(term, dict):
+                side = str(term.get("term_side") or "").upper() or "End"
+                fact(f"{side} side", term.get("site") or term.get("interface"))
+        if not obj.get("terminations"):
+            fact("Terminations", "none yet")
+        if obj.get("commit_rate_kbps"):
+            fact("Commit rate", f"{int(obj['commit_rate_kbps']) // 1000} Mbps")
     elif kind == "site":
         fact("Region", obj.get("region"), _url_for("region", obj.get("region")))
         fact("Address", obj.get("address"))
@@ -222,7 +265,10 @@ def preview_of(payload) -> dict | None:
     return {
         "type": kind,
         "id": str(obj["id"]),
-        "title": str(name_of(obj) or obj.get("address") or obj.get("prefix") or obj["id"]),
+        "title": str(
+            name_of(obj) or obj.get("cid") or obj.get("address")
+            or obj.get("prefix") or obj.get("display") or obj["id"]
+        ),
         "url": obj.get("url"),
         "description": str(obj.get("description") or "")[:200],
         "status": {"name": status.get("name"), "color": status.get("color")}
@@ -367,12 +413,25 @@ def answer(conn, ctx, history: list[dict], question: str, context: dict | None =
         if joined:
             transcript.assistant_text(joined)
 
+        asked = None
         for call in calls:
             result, rows, error, card = run_tool(ctx, call["name"], call["arguments"])
             call["result"] = result
             call["error"] = error
+            if call["name"] == "ask_user" and not error:
+                asked = json.loads(result)
+                continue  # a question is not a lookup; it gets its own frame
             yield {"t": "tool", "name": call["name"], "args": call["arguments"],
                    "rows": rows, "error": error, "card": card}
+        if asked is not None:
+            # The turn ends here: the answer arrives as their next message.
+            for piece in pending_text:
+                yield {"t": "delta", "d": piece}
+            if joined:
+                full_text.append(joined)
+            transcript.assistant_text(joined)
+            yield {"t": "ask", **asked}
+            break
         transcript.tool_round(calls)
     else:
         note = "I stopped after several rounds of looking things up."

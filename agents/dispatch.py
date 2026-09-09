@@ -163,11 +163,19 @@ def count_of(payload, rows: list) -> int:
 # ─── the calls ──────────────────────────────────────────────────────────────
 
 def _dispatch(principal, viewset, actions: dict, request, **kwargs):
+    from django.core.exceptions import ValidationError
+    from django.db.utils import DataError
+
     user, token = principal
     force_authenticate(request, user=user, token=token)
-    response = viewset.as_view(actions)(request, **kwargs)
-    if hasattr(response, "render") and not getattr(response, "is_rendered", True):
-        response.render()
+    try:
+        response = viewset.as_view(actions)(request, **kwargs)
+        if hasattr(response, "render") and not getattr(response, "is_rendered", True):
+            response.render()
+    except (ValidationError, DataError, ValueError) as exc:
+        # A bad value reaching the ORM: report it, never a traceback.
+        detail = getattr(exc, "messages", None) or [str(exc)]
+        raise ToolError("; ".join(str(m) for m in detail)[:300]) from exc
     return response.status_code, getattr(response, "data", None)
 
 
@@ -269,11 +277,14 @@ def _matches(row: dict, key: str, wanted) -> bool:
 def list_objects(principal, slug: str, filters: dict, *, limit: int, cursor: int = 0,
                  settings_row=None) -> dict:
     resolved, prefix, viewset = resolve(slug, settings_row)
-    filters = _resolve_names(principal, filters or {}, settings_row)
-    params = {k: v for k, v in filters.items() if v is not None}
-    wanted = dict(params)
+    wanted = {k: v for k, v in
+              _resolve_names(principal, filters or {}, settings_row).items()
+              if v is not None}
+    # Filters are matched here, not passed on. Most list endpoints ignore an
+    # unknown parameter, and the ones that do read it raise on a value that
+    # is not a UUID - so a filter by name used to surface as a crash.
     fetch = min(max(limit + 1, 200), FETCH_CAP) if wanted else limit + 1
-    params.update({"limit": fetch, "offset": cursor} if cursor else {"limit": fetch})
+    params = {"limit": fetch, **({"offset": cursor} if cursor else {})}
     request = _factory.get(f"/api/{prefix}/", params)
     status, payload = _dispatch(principal, viewset, {"get": "list"}, request)
     _refuse(status, payload, slug=resolved, what="those filters")
