@@ -51,7 +51,9 @@ function AgentAccessPage() {
   if (!data) return <p className="text-sm text-muted-foreground">Loading...</p>
 
   return (
-    <div className="max-w-5xl space-y-4">
+    // A top-level route, so it owns its own padding - settings pages get
+    // theirs from the settings layout.
+    <div className="max-w-5xl space-y-4 p-4 lg:p-6">
       <SettingsHeader title="Agent access">
         An assistant reaches this tenant through the Model Context Protocol with
         an API token, and sees exactly what that account sees.
