@@ -148,30 +148,35 @@ function IdentityProviders() {
   )
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="max-w-5xl space-y-4">
       <SettingsHeader title="Single sign-on">
         Let users sign in through an external identity provider (OIDC or SAML).
         Enabled providers appear as "Sign in with…" buttons on the login page.
         Local and directory logins keep working alongside SSO.
       </SettingsHeader>
 
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setAdding(true)}>
-          <Plus className="h-3.5 w-3.5" /> Add provider
-        </Button>
-      </div>
-
-      {list.isError ? (
-        <QueryError error={list.error} />
-      ) : list.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : rows.length === 0 ? (
-        <EmptyState title="No identity providers yet.">
-          Add one to offer single sign-on on the login page.
-        </EmptyState>
-      ) : (
-        <DataTable data={rows} columns={columns} flexColumn="name" />
-      )}
+      <SettingsCard
+        title="Providers"
+        description="Each enabled provider becomes a button on the login page."
+        layout="plain"
+        footer={
+          <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add provider
+          </Button>
+        }
+      >
+        {list.isError ? (
+          <QueryError error={list.error} />
+        ) : list.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : rows.length === 0 ? (
+          <EmptyState title="No identity providers yet.">
+            Add one to offer single sign-on on the login page.
+          </EmptyState>
+        ) : (
+          <DataTable data={rows} columns={columns} flexColumn="name" />
+        )}
+      </SettingsCard>
 
       <HideLocalLoginCard hasEnabledProvider={rows.some((r) => r.enabled)} />
 
@@ -741,15 +746,11 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
   const rows = mappings.data?.results ?? []
 
   return (
-    <section className="space-y-3 border-t border-border pt-4">
-      <div>
-        <h3 className="text-sm font-semibold">Group mappings</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Place users into a Danbyte group when the IdP asserts a matching
-          group. Only mapped groups grant access.
-        </p>
-      </div>
-
+    <SettingsCard
+      title="Group mappings"
+      description="Place users into a Danbyte group when the provider asserts a matching group. Only mapped groups grant access."
+      layout="plain"
+    >
       {mappings.isError ? (
         <QueryError error={mappings.error} />
       ) : rows.length === 0 ? (
@@ -825,7 +826,7 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
           </Button>
         </div>
       </div>
-    </section>
+    </SettingsCard>
   )
 }
 
