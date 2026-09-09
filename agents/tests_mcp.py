@@ -381,8 +381,8 @@ class WriteTests(_Base):
             tenant=self.tenant, name="aarhus-fw-1", site=self.site,
             device_type=self.dtype, role=self.role,
         )
-        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/3")
-        Interface.objects.create(tenant=self.tenant, device=other, name="ethernet1/3")
+        Interface.objects.create(device=self.device, name="Gi1/0/3")
+        Interface.objects.create(device=other, name="ethernet1/3")
         payload = self.tool("connect", {
             "a_device": "aarhus-core-1", "a_port": "Gi1/0/3",
             "b_device": "aarhus-fw-1", "b_port": "ethernet1/3",
@@ -397,7 +397,7 @@ class WriteTests(_Base):
     def test_connect_names_the_ports_a_device_has(self):
         from api.models import Interface
 
-        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/1")
+        Interface.objects.create(device=self.device, name="Gi1/0/1")
         payload = self.tool("connect", {
             "a_device": "aarhus-core-1", "a_port": "nope",
             "b_device": "hq-core-1", "b_port": "also-nope",
@@ -430,7 +430,7 @@ class WriteTests(_Base):
         CircuitTermination.objects.create(
             circuit=circuit, term_side="A", site=self.site
         )
-        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/9")
+        Interface.objects.create(device=self.device, name="Gi1/0/9")
 
         # A circuit end has no port name, so a port name is a dead end - and
         # saying so beats "more than one matches".
@@ -456,7 +456,7 @@ class WriteTests(_Base):
         Circuit.objects.create(
             tenant=self.tenant, cid="NX-3", provider=provider, type=ctype
         )
-        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/8")
+        Interface.objects.create(device=self.device, name="Gi1/0/8")
         payload = self.tool("connect", {
             "a_device": "aarhus-core-1", "a_port": "Gi1/0/8",
             "b_device": "NX-3", "b_port": "Z", "b_kind": "circuit_termination",

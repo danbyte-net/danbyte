@@ -114,10 +114,13 @@ class TunnelEdgeTests(ConnectionsBase):
         self.assertTrue(all(x["site_a"]["name"] == "A" for x in e))
 
     def _vm_term(self, tunnel, name, *, site=None, cluster_site=None, role="peer"):
-        from api.models import Cluster, VirtualMachine, VMInterface
+        from api.models import Cluster, ClusterType, VirtualMachine, VMInterface
 
+        ctype, _ = ClusterType.objects.get_or_create(
+            tenant=self.tenant, name="vm", defaults={"slug": "vm"}
+        )
         cluster = Cluster.objects.create(
-            tenant=self.tenant, name=f"cl-{name}", site=cluster_site
+            tenant=self.tenant, name=f"cl-{name}", type=ctype, site=cluster_site
         )
         vm = VirtualMachine.objects.create(
             tenant=self.tenant, name=name, cluster=cluster, site=site

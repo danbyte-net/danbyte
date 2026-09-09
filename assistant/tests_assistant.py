@@ -231,14 +231,14 @@ class LoopTests(_Base):
         perm.users.add(self.user)
         perm.sites.add(self.site)
 
-        result, rows, error = loop.run_tool(self.ctx(), "list", {"type": "device"})
+        result, rows, error, _card = loop.run_tool(self.ctx(), "list", {"type": "device"})
         self.assertEqual(error, "")
         self.assertIn("aarhus-core-1", result)
         self.assertNotIn("hq-core-1", result)
         self.assertEqual(rows, 1)
 
     def test_writes_are_refused_when_the_switch_is_off(self):
-        result, rows, error = loop.run_tool(
+        result, rows, error, _card = loop.run_tool(
             self.ctx(writes=False), "create", {"type": "site", "payload": {"name": "X"}}
         )
         self.assertIn("switched off", error)
@@ -251,7 +251,7 @@ class LoopTests(_Base):
     def test_writes_work_and_are_audited_when_on(self):
         from audit.models import ChangeLogEntry
 
-        result, rows, error = loop.run_tool(
+        result, rows, error, _card = loop.run_tool(
             self.ctx(writes=True), "create", {"type": "site", "payload": {"name": "Odense"}}
         )
         self.assertEqual(error, "")
@@ -270,7 +270,7 @@ class LoopTests(_Base):
         self.assertEqual(call.user, self.user)
 
     def test_a_broken_tool_call_is_reported_not_raised(self):
-        result, rows, error = loop.run_tool(self.ctx(), "get",
+        result, rows, error, _card = loop.run_tool(self.ctx(), "get",
                                             {"type": "device", "id": "nope"})
         self.assertIn("nope", error)
         self.assertEqual(rows, 0)
