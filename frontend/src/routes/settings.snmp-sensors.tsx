@@ -21,7 +21,10 @@ import { FormCheckbox } from "@/components/forms"
 import { SensorDialog } from "@/components/device-sensors-card"
 import { ComponentDeleteDialog } from "@/components/component-delete-dialog"
 import { QueryError } from "@/components/query-error"
-import { SettingsHeader } from "@/components/settings/settings-card"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/settings/snmp-sensors")({
@@ -173,7 +176,7 @@ function SnmpSensorCatalogPage() {
         </div>
       </div>
 
-      <section className="rounded-lg border border-border bg-card">
+      <SettingsCard title="Sensors" layout="flush">
         {list.isError && (
           <div className="p-4">
             <QueryError error={list.error} />
@@ -268,7 +271,7 @@ function SnmpSensorCatalogPage() {
             ))}
           </ul>
         )}
-      </section>
+      </SettingsCard>
 
       {/* Passing the sensor's own binding as `deviceTypeId` means the dialog's
           "this device type only" tick keeps it, and clearing it widens the

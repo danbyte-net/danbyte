@@ -8,7 +8,10 @@ import { api } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
-import { SettingsHeader } from "@/components/settings/settings-card"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/settings/components")({
@@ -115,7 +118,7 @@ function ComponentPopoverSettings() {
         nothing on sparse interfaces. Deployment-wide.
       </SettingsHeader>
 
-      <div className="overflow-hidden rounded-lg border border-border">
+      <SettingsCard title="Fields" layout="flush">
         {fields.map((key, i) => (
           <div
             key={key}
@@ -169,7 +172,7 @@ function ComponentPopoverSettings() {
             No fields - the popover falls back to the defaults.
           </p>
         )}
-      </div>
+      </SettingsCard>
 
       {canManageDeployment && (
         <div className="space-y-2">

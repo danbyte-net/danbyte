@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { QueryError } from "@/components/query-error"
+import { SettingsHeader } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
 
@@ -301,13 +302,10 @@ function FloorplanSettingsPage() {
 
   return (
     <div className="max-w-4xl space-y-6">
-      <div className="mb-4">
-        <h1 className="text-base font-medium">Floor plans</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          What the tile popover shows when you hover or click a tile on a floor
-          plan.
-        </p>
-      </div>
+      <SettingsHeader title="Floor plans">
+        What the tile popover shows when you hover or click a tile on a floor
+        plan.
+      </SettingsHeader>
 
       {/* Tenants genuinely differ here, so THIS TENANT is the default layer; the
           deployment default is what a tenant inherits when it doesn't override. */}

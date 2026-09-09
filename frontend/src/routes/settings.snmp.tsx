@@ -18,7 +18,10 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { QueryError } from "@/components/query-error"
-import { SettingsHeader } from "@/components/settings/settings-card"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/settings/snmp")({
@@ -151,7 +154,7 @@ function SnmpProfilesPage() {
         leave a key blank to keep the existing one.
       </SettingsHeader>
 
-      <section className="rounded-lg border border-border bg-card">
+      <SettingsCard title="Profiles" layout="flush">
         {list.isError && (
           <div className="p-4">
             <QueryError error={list.error} />
@@ -202,7 +205,7 @@ function SnmpProfilesPage() {
             ))}
           </ul>
         )}
-      </section>
+      </SettingsCard>
 
       <section className="space-y-4 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center justify-between">

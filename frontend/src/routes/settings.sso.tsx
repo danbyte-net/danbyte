@@ -17,7 +17,10 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
-import { SettingsCard } from "@/components/settings/settings-card"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -146,14 +149,11 @@ function IdentityProviders() {
 
   return (
     <div className="max-w-5xl space-y-6">
-      <div>
-        <h2 className="text-sm font-semibold">Identity providers (SSO)</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Let users sign in through an external identity provider (OIDC or
-          SAML). Enabled providers appear as "Sign in with…" buttons on the
-          login page. Local and directory logins keep working alongside SSO.
-        </p>
-      </div>
+      <SettingsHeader title="Single sign-on">
+        Let users sign in through an external identity provider (OIDC or SAML).
+        Enabled providers appear as "Sign in with…" buttons on the login page.
+        Local and directory logins keep working alongside SSO.
+      </SettingsHeader>
 
       <div className="flex justify-end">
         <Button size="sm" onClick={() => setAdding(true)}>
@@ -877,7 +877,6 @@ function DeleteDialog({
     </AlertDialog>
   )
 }
-
 
 /** Hide the username/password form on the login page (#119).
 

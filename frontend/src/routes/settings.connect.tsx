@@ -52,7 +52,10 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
-import { SettingsHeader } from "@/components/settings/settings-card"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 
 export const Route = createFileRoute("/settings/connect")({
   component: ConnectProtocolsSettingsPage,
@@ -148,35 +151,40 @@ function ConnectProtocolsSettingsPage() {
     )
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="max-w-5xl space-y-4">
       <SettingsHeader title="Connect protocols" badge={<PlaceholderTip />}>
         Launch actions offered from a device's Connect menu. Each is a URL
         template handed to the operator's OS (ssh://, rdp://, https://, …).
       </SettingsHeader>
 
-      {canAdd && (
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => setAdding(true)}>
-            <Plug className="h-3.5 w-3.5" /> Add protocol
-          </Button>
-        </div>
-      )}
-
-      {list.isError ? (
-        <QueryError error={list.error} />
-      ) : list.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : rows.length === 0 ? (
-        <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-          No connect protocols yet. Add one - for example{" "}
-          <code className="font-mono">
-            ssh://{"{username}"}@{"{host}"}
-          </code>{" "}
-          - so it appears on every device's Connect menu.
-        </p>
-      ) : (
-        <DataTable data={rows} columns={columns} flexColumn="url_template" />
-      )}
+      <SettingsCard
+        title="Protocols"
+        description="Offered in weight order, lowest first."
+        layout="plain"
+        footer={
+          canAdd ? (
+            <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+              <Plug className="h-3.5 w-3.5" /> Add protocol
+            </Button>
+          ) : undefined
+        }
+      >
+        {list.isError ? (
+          <QueryError error={list.error} />
+        ) : list.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            None yet. Add one - for example{" "}
+            <code className="font-mono">
+              ssh://{"{username}"}@{"{host}"}
+            </code>{" "}
+            - so it appears on every device's Connect menu.
+          </p>
+        ) : (
+          <DataTable data={rows} columns={columns} flexColumn="url_template" />
+        )}
+      </SettingsCard>
 
       <ProtocolDialog
         protocol={editing}

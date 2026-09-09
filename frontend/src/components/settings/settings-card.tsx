@@ -91,9 +91,11 @@ export interface SettingsInherit {
  *   setting. Labels line up into a scannable column and each row has room for
  *   its own one-line explanation, which is where the "why" goes instead of a
  *   parenthetical in the label.
- * - `plain` - no spacing of its own; the child owns its layout.
+ * - `plain` - padded, but no gap: one child that owns its own spacing.
+ * - `flush` - no padding at all, for a list or table that draws its own
+ *   edges and should meet the card's border.
  */
-export type SettingsLayout = "stack" | "rows" | "plain"
+export type SettingsLayout = "stack" | "rows" | "plain" | "flush"
 
 export function SettingsCard({
   title,
@@ -172,6 +174,8 @@ export function SettingsCard({
         </div>
       ) : layout === "rows" ? (
         <div className="divide-y divide-border">{children}</div>
+      ) : layout === "flush" ? (
+        <>{children}</>
       ) : layout === "plain" ? (
         <div className="p-4">{children}</div>
       ) : (
