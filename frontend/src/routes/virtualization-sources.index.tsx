@@ -341,6 +341,12 @@ function VirtualizationSourcesPage() {
   )
 }
 
+/** The hypervisors Danbyte can sync, in the order they are offered. */
+const KINDS = [
+  { value: "proxmox", label: "Proxmox VE" },
+  { value: "vcenter", label: "VMware vCenter" },
+]
+
 export function SourceDialog({
   source,
   onOpenChange,
@@ -351,7 +357,19 @@ export function SourceDialog({
 }) {
   const qc = useQueryClient()
   const isEdit = !!source
-  const [kind, setKind] = useState<string>(source?.kind ?? "proxmox")
+  // Only offer a hypervisor whose sync is switched on for this tenant - the
+  // server refuses the others anyway, and a disabled kind in the picker is a
+  // dead end you only discover on save.
+  const toggles = useQuery({
+    queryKey: ["integrations-enabled"],
+    queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
+    staleTime: 5 * 60_000,
+  })
+  const kinds = KINDS.filter((k) => toggles.data?.[`virt_${k.value}`] !== false)
+  // The page itself 404s while both syncs are off, so there is always at
+  // least one kind here; the fallback is belt to those braces.
+  const firstKind = kinds.length > 0 ? kinds[0].value : "proxmox"
+  const [kind, setKind] = useState<string>(source?.kind ?? firstKind)
   const isVcenter = kind === "vcenter"
   const defaultPort = isVcenter ? 443 : 8006
   const [name, setName] = useState(source?.name ?? "")
@@ -479,15 +497,12 @@ export function SourceDialog({
             required
             placeholder={isVcenter ? "vcenter.example.com" : "DB-CLUSTER01"}
           />
-          {!isEdit && (
+          {!isEdit && kinds.length > 1 && (
             <FormSelect
               label="Type"
               value={kind}
               onChange={changeKind}
-              options={[
-                { value: "proxmox", label: "Proxmox VE" },
-                { value: "vcenter", label: "VMware vCenter" },
-              ]}
+              options={kinds}
             />
           )}
           <FormText

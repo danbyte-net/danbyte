@@ -214,6 +214,22 @@ class VirtualizationSourceSerializer(
         password = attrs.pop("password", None)
         # Kind may be omitted on update - fall back to the stored one.
         kind = attrs.get("kind") or (self.instance.kind if self.instance else "proxmox")
+
+        # Each hypervisor has its own switch, and the picker hides a kind
+        # whose switch is off. Hidden is a convenience; this is the rule.
+        from api.views import _get_active_tenant
+
+        from .toggles import integration_enabled
+
+        request = self.context.get("request")
+        tenant = _get_active_tenant(request) if request is not None else None
+        if not integration_enabled(tenant, f"virt_{kind}"):
+            label = dict(VirtualizationSource.KIND_CHOICES).get(kind, kind)
+            raise serializers.ValidationError(
+                {"kind": f"{label} sync is off for this tenant. Turn it on under "
+                         f"Settings \u2192 Integrations first."}
+            )
+
         existing = (self.instance.credentials or {}) if self.instance else {}
 
         if kind == "vcenter":

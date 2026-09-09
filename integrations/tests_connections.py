@@ -158,6 +158,25 @@ class ConnectionApiTests(APITestCase):
         }, format="json")
         self.assertEqual(res.status_code, 400)
 
+    def test_a_source_of_a_disabled_kind_is_refused(self):
+        """The picker hides a kind whose switch is off; the server is the
+        rule. Splitting the toggle would be cosmetic otherwise."""
+        self._login(self.admin)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=False)
+        res = self.client.post("/api/virtualization-sources/", {
+            "name": "vc", "kind": "vcenter", "host": "192.0.2.20", "port": 443,
+            "username": "administrator@vsphere.local", "password": "s",
+        }, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("off for this tenant", str(res.json()["kind"]))
+
+        # ...and the kind that IS on still works.
+        ok = self.client.post("/api/virtualization-sources/", {
+            "name": "px", "kind": "proxmox", "host": "192.0.2.21",
+            "token_id": "a@pam!t", "secret": "s",
+        }, format="json")
+        self.assertEqual(ok.status_code, 201, ok.content)
+
     # ─── Test-connection names the product it actually probed (#33) ──────
 
     def _source(self, kind, host):
