@@ -15,7 +15,9 @@ It speaks the **Model Context Protocol**, which Claude Desktop, Claude
 Code, Cursor and VS Code all support, and it runs entirely on your box.
 No cloud service, no model shipped by us, nothing sent anywhere.
 
-**It is off until you turn it on**, like the other integrations.
+**It is off until you turn it on**, like the other integrations. For a chat
+inside Danbyte instead of your own client, see
+[Ask Danbyte](assistant.md).
 
 ## Turning it on
 

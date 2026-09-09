@@ -18,6 +18,7 @@ type IntegrationSettings = {
   virtualization_enabled: boolean
   ai_access_enabled: boolean
   ai_writes_enabled: boolean
+  ai_chat_enabled: boolean
 }
 
 const CARDS: {
@@ -46,6 +47,13 @@ const CARDS: {
     info: "Speaks the Model Context Protocol over HTTP at /api/mcp/. An assistant authenticates with an API token and sees exactly what that account sees - the same tenant, sites and objects, through the same permissions.",
     description:
       "Let AI assistants and agents read this tenant's data from Claude, Cursor, VS Code or your own tooling. Reading only, until you also allow writes below.",
+  },
+  {
+    key: "ai_chat_enabled",
+    label: "Assistant chat",
+    info: "Adds a chat to the top bar. Unlike agent access, Danbyte itself calls a model, so the conversation and the data it reads go to whichever provider a deployment admin configured under Settings → Security. Pick the local provider to keep everything on your own network.",
+    description:
+      "Ask questions about this tenant's data from inside Danbyte, in a panel next to the docs button.",
   },
   {
     key: "ai_writes_enabled",

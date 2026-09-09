@@ -149,6 +149,8 @@ def run_tool(ctx, name: str, arguments: dict) -> tuple[str, int, str]:
     if tool.writes and not ctx.writes_enabled:
         message = ("Writing is switched off for this Danbyte, so that cannot be done "
                    "from the chat.")
+        # Recorded: an attempt to write is exactly what an admin wants to see.
+        _record(ctx, name, arguments, rows=0, ms=0, wrote=False, error=message)
         return message, 0, message
     started = time.monotonic()
     try:

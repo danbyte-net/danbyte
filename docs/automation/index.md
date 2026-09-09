@@ -14,6 +14,7 @@ devices, render configs, and notify other systems when things change.
 
 | Page | What it's for |
 |---|---|
+| [Ask Danbyte (chat)](../features/assistant.md) | A chat in the top bar that answers questions about your own data, with your permissions. Off by default; runs against a local model if you want nothing to leave the network. |
 | [Agent access (MCP)](../features/agent-access.md) | Let an AI assistant read (and optionally change) this tenant's data with the permissions of an API token. Off until you turn it on. |
 | [Scripts](../features/scripts.md) | Write Python that reads and writes Danbyte as you - bulk edits and CSV reports, on a button or a schedule. |
 | [Config contexts](../features/config-contexts.md) | Attach configuration data to devices/VMs by matching site, role, platform, and more. |

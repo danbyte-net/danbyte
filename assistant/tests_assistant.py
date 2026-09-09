@@ -242,6 +242,10 @@ class LoopTests(_Base):
         )
         self.assertIn("switched off", error)
         self.assertFalse(Site.objects.filter(name="X").exists())
+        # and the attempt is on the record
+        call = AgentCall.objects.get(tool="create")
+        self.assertIn("switched off", call.error)
+        self.assertFalse(call.wrote)
 
     def test_writes_work_and_are_audited_when_on(self):
         from audit.models import ChangeLogEntry

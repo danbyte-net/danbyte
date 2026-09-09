@@ -8051,3 +8051,54 @@ export interface AgentConnect {
   writes_enabled: boolean
   clients: AgentClientSnippet[]
 }
+
+// ─── In-app chat (/api/assistant/, /ws/chat/) ────────────────────────────────
+
+export interface ChatStatus {
+  enabled: boolean
+  configured: boolean
+  model: string
+  writes_enabled: boolean
+  conversations: number
+}
+
+export interface ChatConversation {
+  id: string
+  title: string
+  model: string
+  message_count: number
+  last_message_at: string | null
+  created_at: string
+}
+
+export interface ChatMessageRow {
+  id: string
+  role: "user" | "assistant" | "tool" | "error"
+  text: string
+  tool: Record<string, unknown>
+  tokens_in: number
+  tokens_out: number
+  created_at: string
+}
+
+export interface ChatConversationDetail extends ChatConversation {
+  messages: ChatMessageRow[]
+}
+
+export interface ChatProviderOption {
+  kind: string
+  label: string
+  default_model: string
+  default_base_url: string
+  needs_key: boolean
+  hint: string
+}
+
+export interface ChatConnection {
+  ai_provider: string
+  ai_model: string
+  ai_base_url: string
+  ai_verify_tls: boolean
+  ai_api_key_set: boolean
+  providers: ChatProviderOption[]
+}

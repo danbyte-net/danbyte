@@ -5,6 +5,7 @@ import { SearchPalette } from "@/components/search-palette"
 import { BookmarkButton } from "@/components/bookmark-button"
 import { NotificationBell } from "@/components/notification-bell"
 import { DocsButton } from "@/components/docs-button"
+import { ChatButton } from "@/components/chat/chat-button"
 import { UpdateBadge } from "@/components/update-badge"
 import { UpgradeNotesBadge } from "@/components/upgrade-notes-badge"
 import { PresenceBar } from "@/components/presence-bar"
@@ -74,6 +75,7 @@ export function SiteHeader({ crumbs }: { crumbs?: Crumb[] }) {
           )}
           <SearchPalette />
           <DocsButton />
+          <ChatButton />
           <NotificationBell />
           <BookmarkButton />
           <ModeToggle />

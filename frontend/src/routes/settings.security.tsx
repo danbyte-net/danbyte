@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { ChatModelCard } from "@/components/settings/chat-model-card"
 import {
   SettingsCard,
   SettingsGrid,
@@ -52,6 +53,7 @@ function SecurityPage() {
         <SecretStoreCard />
         <OutboundCard />
         <SshTerminalCard />
+        <ChatModelCard />
       </SettingsGrid>
     </div>
   )
