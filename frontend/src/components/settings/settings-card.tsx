@@ -1,10 +1,11 @@
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 
 /**
  * The settings surface primitives.
  *
- * Two problems these fix:
+ * Three problems these fix:
  *
  * 1. **Wasted width.** Settings pages were pinned to `max-w-2xl` inside a
  *    full-width shell, so ~70% of a wide screen was empty. `SettingsGrid` flows
@@ -14,6 +15,10 @@ import { cn } from "@/lib/utils"
  *    which of the six things above it were about to be written. A `SettingsCard`
  *    owns its own footer save, scoped to that card and labelled with it, and
  *    only lights up when that card is dirty.
+ * 3. **Two cards drawing one box.** `OverrideCard` was a second component with
+ *    the same border, radius and header, differing only by an inherit switch.
+ *    That switch is the more useful card, so it lives here as `inherit` and
+ *    `OverrideCard` is a thin alias (#51).
  */
 export function SettingsGrid({
   children,
@@ -61,6 +66,29 @@ export function SettingsHeader({
   )
 }
 
+/** What a card inherits, and whether it currently does. */
+export interface SettingsInherit {
+  overridden: boolean
+  onChange: (v: boolean) => void
+  /** What "inherit" currently means - the value it falls back to, read-only. */
+  summary: React.ReactNode
+  /** Defaults read "Overriding" / "Using deployment default"; a site-level
+   * card inherits from the tenant, so it says so. */
+  labels?: { on: string; off: string }
+}
+
+/**
+ * How the body lays its children out.
+ *
+ * - `stack` (default) - the existing `grid gap-3` of full-width fields.
+ * - `rows` - label on the left, control on the right, one `SettingsRow` per
+ *   setting. Labels line up into a scannable column and each row has room for
+ *   its own one-line explanation, which is where the "why" goes instead of a
+ *   parenthetical in the label.
+ * - `plain` - no spacing of its own; the child owns its layout.
+ */
+export type SettingsLayout = "stack" | "rows" | "plain"
+
 export function SettingsCard({
   title,
   /** Rendered beside the title (a status pill, a count). Kept separate from
@@ -77,6 +105,9 @@ export function SettingsCard({
   /** Overrides the footer verb - default "Save <title>". */
   saveLabel,
   footer,
+  /** Turns the card into an inherit/override group. */
+  inherit,
+  layout = "stack",
   className,
 }: {
   title: string
@@ -88,8 +119,14 @@ export function SettingsCard({
   saving?: boolean
   saveLabel?: string
   footer?: React.ReactNode
+  inherit?: SettingsInherit
+  layout?: SettingsLayout
   className?: string
 }) {
+  // Inheriting hides the controls: what a card falls back to is a fact to
+  // read, not a form to fill in.
+  const inheriting = !!inherit && !inherit.overridden
+
   return (
     // Full-width cards (long tables) are NOT a variant here - put them after the
     // SettingsGrid instead. `column-span: all` inside a multicol container
@@ -98,16 +135,43 @@ export function SettingsCard({
     <section
       className={cn("rounded-lg border border-border bg-card", className)}
     >
-      <header className="border-b border-border px-4 py-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          {title}
-          {badge}
-        </h2>
-        {description && (
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+      <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            {title}
+            {badge}
+          </h2>
+          {description && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {description}
+            </p>
+          )}
+        </div>
+        {inherit && (
+          <label className="flex shrink-0 items-center gap-2 pt-0.5 text-xs text-muted-foreground">
+            {inherit.overridden
+              ? (inherit.labels?.on ?? "Overriding")
+              : (inherit.labels?.off ?? "Using deployment default")}
+            <Switch
+              checked={inherit.overridden}
+              onCheckedChange={inherit.onChange}
+            />
+          </label>
         )}
       </header>
-      <div className="grid gap-3 p-4">{children}</div>
+
+      {inheriting ? (
+        <div className="p-4 text-sm text-muted-foreground">
+          {inherit.summary}
+        </div>
+      ) : layout === "rows" ? (
+        <div className="divide-y divide-border">{children}</div>
+      ) : layout === "plain" ? (
+        <div className="p-4">{children}</div>
+      ) : (
+        <div className="grid gap-3 p-4">{children}</div>
+      )}
+
       {(onSave || footer) && (
         <footer className="flex items-center gap-2 border-t border-border px-4 py-2.5">
           {footer}
@@ -133,5 +197,50 @@ export function SettingsCard({
         </footer>
       )}
     </section>
+  )
+}
+
+/**
+ * One setting inside a `layout="rows"` card: its name on the left, its
+ * control on the right.
+ *
+ * `hint` is where the explanation goes. Settings labels stay short and the
+ * "why" gets a line of its own, rather than a parenthetical bolted onto the
+ * label.
+ */
+export function SettingsRow({
+  label,
+  hint,
+  /** Set when the row labels exactly one control, so clicking the label
+   * focuses it. */
+  htmlFor,
+  children,
+  className,
+}: {
+  label: React.ReactNode
+  hint?: React.ReactNode
+  htmlFor?: string
+  children: React.ReactNode
+  className?: string
+}) {
+  const Label = htmlFor ? "label" : "div"
+  return (
+    <div
+      className={cn(
+        "grid gap-1 px-4 py-3 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)] sm:gap-4",
+        className
+      )}
+    >
+      <div className="min-w-0 sm:pt-1">
+        <Label
+          htmlFor={htmlFor}
+          className="block text-[13px] font-medium text-foreground"
+        >
+          {label}
+        </Label>
+        {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      <div className="grid min-w-0 gap-1.5">{children}</div>
+    </div>
   )
 }

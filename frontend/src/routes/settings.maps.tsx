@@ -2,12 +2,12 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 
 import { useMe } from "@/lib/use-me"
-import { Field } from "@/components/forms"
 import { Input } from "@/components/ui/input"
 import {
   SettingsCard,
   SettingsGrid,
   SettingsHeader,
+  SettingsRow,
 } from "@/components/settings/settings-card"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 
@@ -79,56 +79,65 @@ function MapTilesCard() {
       }
       saving={savingKey === "tiles"}
       saveLabel="Save map tiles"
+      layout="rows"
     >
-      <Field
-        label="Tile URL template"
+      <SettingsRow
+        label="Tile URL"
         hint="https, with {z}/{x}/{y} placeholders"
+        htmlFor="map-tile-url"
       >
         <Input
+          id="map-tile-url"
           value={tileUrl}
           onChange={(e) => setTileUrl(e.target.value)}
           placeholder="https://tiles.example.com/{z}/{x}/{y}.png"
           className="font-mono text-[12px]"
           spellCheck={false}
         />
-      </Field>
-      <Field
+      </SettingsRow>
+      <SettingsRow
         label="Attribution"
-        hint="shown on the map - required by most tile providers"
+        hint="Shown on the map. Most tile providers require it."
+        htmlFor="map-tile-attribution"
       >
         <Input
+          id="map-tile-attribution"
           value={tileAttrib}
           onChange={(e) => setTileAttrib(e.target.value)}
           placeholder='&copy; <a href="…">My tiles</a>'
           className="font-mono text-[12px]"
           spellCheck={false}
         />
-      </Field>
-      <Field
-        label="Satellite tile URL template"
-        hint="blank = Esri World Imagery"
+      </SettingsRow>
+      <SettingsRow
+        label="Satellite URL"
+        hint="Blank uses Esri World Imagery."
+        htmlFor="map-satellite-url"
       >
         <Input
+          id="map-satellite-url"
           value={satUrl}
           onChange={(e) => setSatUrl(e.target.value)}
           placeholder="https://tiles.example.com/sat/{z}/{y}/{x}"
           className="font-mono text-[12px]"
           spellCheck={false}
         />
-      </Field>
-      <Field
+      </SettingsRow>
+      <SettingsRow
         label="Satellite attribution"
-        hint="shown when the satellite basemap is active"
+        hint="Shown when the satellite basemap is active."
+        htmlFor="map-satellite-attribution"
       >
         <Input
+          id="map-satellite-attribution"
           value={satAttrib}
           onChange={(e) => setSatAttrib(e.target.value)}
           placeholder="Tiles &copy; Esri …"
           className="font-mono text-[12px]"
           spellCheck={false}
         />
-      </Field>
-      <p className="text-[11px] text-muted-foreground">
+      </SettingsRow>
+      <p className="px-4 py-3 text-[11px] text-muted-foreground">
         A custom tile host also needs to be allowed in the nginx CSP (img-src) -
         see the Site map docs. OpenStreetMap's servers are donation-funded: keep
         the default only for light internal use, per their tile usage policy.
