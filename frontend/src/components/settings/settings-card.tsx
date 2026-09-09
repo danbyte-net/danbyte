@@ -49,14 +49,20 @@ export function SettingsGrid({
 /** Page title + description above the grid. */
 export function SettingsHeader({
   title,
+  /** Rendered beside the title - an info tip, a count, a status pill. */
+  badge,
   children,
 }: {
   title: string
+  badge?: React.ReactNode
   children?: React.ReactNode
 }) {
   return (
     <div className="mb-4">
-      <h1 className="text-base font-medium">{title}</h1>
+      <h1 className="flex items-center gap-1.5 text-base font-medium">
+        {title}
+        {badge}
+      </h1>
       {children && (
         <p className="mt-1 max-w-prose text-xs text-muted-foreground">
           {children}

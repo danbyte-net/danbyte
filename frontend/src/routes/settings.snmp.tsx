@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { QueryError } from "@/components/query-error"
+import { SettingsHeader } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/settings/snmp")({
@@ -144,14 +145,11 @@ function SnmpProfilesPage() {
 
   return (
     <div className="max-w-5xl space-y-6">
-      <div>
-        <h2 className="text-sm font-semibold">SNMP profiles</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Reusable SNMP credentials for polling device facts. Credentials are
-          encrypted at rest and never shown again after saving - when editing,
-          leave a key blank to keep the existing one.
-        </p>
-      </div>
+      <SettingsHeader title="SNMP profiles">
+        Reusable SNMP credentials for polling device facts. Credentials are
+        encrypted at rest and never shown again after saving - when editing,
+        leave a key blank to keep the existing one.
+      </SettingsHeader>
 
       <section className="rounded-lg border border-border bg-card">
         {list.isError && (

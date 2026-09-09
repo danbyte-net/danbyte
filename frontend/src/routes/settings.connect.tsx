@@ -52,6 +52,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
+import { SettingsHeader } from "@/components/settings/settings-card"
 
 export const Route = createFileRoute("/settings/connect")({
   component: ConnectProtocolsSettingsPage,
@@ -94,7 +95,10 @@ function PlaceholderTip() {
           </li>
         </ul>
         <p className="mt-2">
-          e.g. <code className="font-mono">ssh://{"{username}"}@{"{host}"}</code>
+          e.g.{" "}
+          <code className="font-mono">
+            ssh://{"{username}"}@{"{host}"}
+          </code>
           , <code className="font-mono">rdp://{"{host}"}</code>,{" "}
           <code className="font-mono">https://{"{host}"}</code>
         </p>
@@ -145,15 +149,10 @@ function ConnectProtocolsSettingsPage() {
 
   return (
     <div className="max-w-5xl space-y-6">
-      <div>
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-          Connect protocols <PlaceholderTip />
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Launch actions offered from a device's Connect menu. Each is a URL
-          template handed to the operator's OS (ssh://, rdp://, https://, …).
-        </p>
-      </div>
+      <SettingsHeader title="Connect protocols" badge={<PlaceholderTip />}>
+        Launch actions offered from a device's Connect menu. Each is a URL
+        template handed to the operator's OS (ssh://, rdp://, https://, …).
+      </SettingsHeader>
 
       {canAdd && (
         <div className="flex justify-end">
@@ -170,8 +169,10 @@ function ConnectProtocolsSettingsPage() {
       ) : rows.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
           No connect protocols yet. Add one - for example{" "}
-          <code className="font-mono">ssh://{"{username}"}@{"{host}"}</code> - so
-          it appears on every device's Connect menu.
+          <code className="font-mono">
+            ssh://{"{username}"}@{"{host}"}
+          </code>{" "}
+          - so it appears on every device's Connect menu.
         </p>
       ) : (
         <DataTable data={rows} columns={columns} flexColumn="url_template" />

@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
+import { SettingsHeader } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/settings/components")({
@@ -107,15 +108,12 @@ function ComponentPopoverSettings() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6 p-6">
-      <div>
-        <h1 className="text-base font-semibold">Component popover</h1>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          What hovering a port on a device faceplate shows, top to bottom. A
-          field with no value on that port simply doesn't render, so a rich list
-          costs nothing on sparse interfaces. Deployment-wide.
-        </p>
-      </div>
+    <div className="max-w-2xl space-y-4">
+      <SettingsHeader title="Component details">
+        What hovering a port on a device faceplate shows, top to bottom. A field
+        with no value on that port simply doesn't render, so a rich list costs
+        nothing on sparse interfaces. Deployment-wide.
+      </SettingsHeader>
 
       <div className="overflow-hidden rounded-lg border border-border">
         {fields.map((key, i) => (
