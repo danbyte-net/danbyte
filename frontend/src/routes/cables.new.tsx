@@ -6,6 +6,9 @@ import { CableForm } from "@/components/cable-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 
 const KINDS: TerminationKind[] = [
+  // A circuit termination is a cable end like any port: the provider
+  // handoff is cabled to the switch port that carries it.
+  "circuit_termination",
   "interface",
   "front_port",
   "rear_port",

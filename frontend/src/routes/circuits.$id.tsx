@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Cable as CableIcon, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import {
@@ -28,6 +28,7 @@ import {
   DetailStat,
   DetailTab,
 } from "@/components/detail-shell"
+import { hereUrl } from "@/lib/return-url"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -410,6 +411,28 @@ function TerminationCard({
         </h2>
         {canEdit && (
           <div className="flex items-center gap-1">
+            {!t.connected_to && (
+              // The handoff is joined to a port by a cable, the same way any
+              // two ports are. Without this the only route to it is Cables →
+              // Add, where you have to know to switch the picker to circuits.
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                asChild
+              >
+                <Link
+                  to="/cables/new"
+                  search={{
+                    a_kind: "circuit_termination",
+                    a_id: t.id,
+                    ret: hereUrl(),
+                  }}
+                >
+                  <CableIcon className="h-3 w-3" /> Connect cable
+                </Link>
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
