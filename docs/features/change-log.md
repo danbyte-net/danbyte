@@ -28,7 +28,7 @@ the UUID.
 
 | Place | What it shows |
 |---|---|
-| **Governance → Change log** | The global feed across the whole tenant. Filter by action, object type, user, or **source** - UI (a browser session), API (a token request), or System (workers and shell) - and search. Click any entry to expand its diff. Filters and the page number live in the URL, so the back button returns to the view you left and a filtered view can be shared as a link. |
+| **Governance → Change log** | The global feed across the whole tenant. Filter by action, object type, user, or **source** - UI (a browser session), API (a token request), Assistant (a write the in-app assistant made), or System (workers and shell) - and search. An Assistant entry still names the person who asked for it: it acts with their access, not its own. Click any entry to expand its diff. Filters and the page number live in the URL, so the back button returns to the view you left and a filtered view can be shared as a link. |
 | **Change log tab** on a detail page | Just that one object's history. |
 
 One name everywhere: the global page and the per-object tab are both called

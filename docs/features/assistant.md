@@ -75,8 +75,8 @@ send, Shift+Enter for a new line.
   is told when a result was cut short.
 - It **cannot change anything** unless *Agent access: allow writes* is on.
   With writes off it says so plainly. With writes on, a change follows your
-  own permissions and lands in the change log marked as coming from the
-  assistant.
+  own permissions and lands in the change log with **Via: Assistant** and
+  your own name in the User column.
 - Every lookup is recorded on **Integrations → Agent access → Recent
   calls**, with the client shown as `chat`.
 - It stops after several rounds of looking things up, so a confused model

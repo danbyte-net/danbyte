@@ -3696,8 +3696,19 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
     type = serializers.CharField(required=False, allow_blank=True)
     type_display = serializers.CharField(source="get_type_display", read_only=True)
 
-    a = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
-    b = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+    _POINT_HELP = (
+        'end of the cable, as [{"kind": "interface", "id": "<uuid>"}]. kind is one of '
+        "interface, front_port, rear_port, console_port, console_server_port, "
+        "power_port, power_outlet, power_feed, aux_port, circuit_termination."
+    )
+    a = serializers.ListField(
+        child=serializers.DictField(), write_only=True, required=False,
+        help_text=f"The A {_POINT_HELP}",
+    )
+    b = serializers.ListField(
+        child=serializers.DictField(), write_only=True, required=False,
+        help_text=f"The B {_POINT_HELP}",
+    )
     is_fiber = serializers.SerializerMethodField()
 
     def get_is_fiber(self, obj) -> bool:
@@ -3737,7 +3748,11 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
             pid = it.get("id")
             model = self._POINT_MODELS.get(kind)
             if model is None or not pid:
-                raise serializers.ValidationError({field: "Each termination needs a kind + id."})
+                raise serializers.ValidationError({field: (
+                    "Each termination needs a kind and an id, e.g. "
+                    '{"kind": "interface", "id": "<uuid>"}. kind is one of '
+                    + ", ".join(sorted(self._POINT_MODELS)) + "."
+                )})
             obj = model.objects.filter(pk=pid).first()
             if obj is None:
                 raise serializers.ValidationError({field: f"Unknown {kind} {pid}."})

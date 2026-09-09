@@ -162,6 +162,11 @@ def _explain(ctx, type: str = "", **_kw) -> dict:
                 "required": bool(field.required and not field.read_only),
                 **({"options": list(field.choices)[:20]}
                    if getattr(field, "choices", None) else {}),
+                # The serializer's own help text. A nested shape - a list of
+                # termination dicts, say - is otherwise just "list", and the
+                # assistant has to guess what goes in it.
+                **({"help": str(field.help_text)}
+                   if getattr(field, "help_text", None) else {}),
             })
     except Exception:  # noqa: BLE001 - fall back to the model's own fields
         fields = [
