@@ -11,6 +11,11 @@ import {
   SETTINGS_PAGES,
   visiblePages,
 } from "@/lib/settings-catalog"
+import {
+  SettingsFilterProvider,
+  SettingsSearch,
+  useFilteredPages,
+} from "@/components/settings/settings-filter"
 import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 
 // Layout for the /settings branch: a left subnav grouped by subject, and an
@@ -18,7 +23,13 @@ import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 // same catalog (#51), so a page cannot appear in one and be missing from the
 // other, and neither has an opinion about which admin tier owns a setting -
 // that is a scope switch on the page.
-export const Route = createFileRoute("/settings")({ component: SettingsLayout })
+export const Route = createFileRoute("/settings")({
+  component: () => (
+    <SettingsFilterProvider>
+      <SettingsLayout />
+    </SettingsFilterProvider>
+  ),
+})
 
 const linkCls =
   "block rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -34,7 +45,8 @@ function SettingsLayout() {
     SETTINGS_PAGES.find((p) => pathname === p.to)?.label ?? "Settings"
   )
 
-  const groups = groupedPages(visiblePages(held))
+  // Filtering narrows the rail as you type; the hub reads the same query.
+  const groups = groupedPages(useFilteredPages(visiblePages(held)))
   const cls = (href: string) => (pathname === href ? activeLinkCls : linkCls)
 
   return (
@@ -64,8 +76,14 @@ function SettingsLayout() {
         </nav>
       </header>
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden h-full w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-background p-4 lg:flex">
+        <aside className="hidden h-full w-56 shrink-0 flex-col gap-3 overflow-y-auto border-r border-border bg-background p-4 lg:flex">
+          <SettingsSearch />
           <nav className="space-y-4">
+            {groups.length === 0 && (
+              <p className="px-2 text-xs text-muted-foreground">
+                Nothing matches.
+              </p>
+            )}
             {groups.map((group) => (
               <div key={group.key}>
                 <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">

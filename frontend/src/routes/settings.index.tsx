@@ -1,6 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 
 import { groupedPages, visiblePages } from "@/lib/settings-catalog"
+import {
+  SETTINGS_PAGE_COUNT,
+  useFilteredPages,
+} from "@/components/settings/settings-filter"
 import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 
 // The hub at exactly /settings.
@@ -14,10 +18,21 @@ export const Route = createFileRoute("/settings/")({ component: SettingsIndex })
  * scope switch. */
 function SettingsIndex() {
   const held = useSettingsScopes()
-  const groups = groupedPages(visiblePages(held))
+  const pages = useFilteredPages(visiblePages(held))
+  const groups = groupedPages(pages)
 
   return (
     <div className="max-w-5xl space-y-7">
+      {pages.length !== SETTINGS_PAGE_COUNT && (
+        <p className="text-xs text-muted-foreground">
+          {pages.length} of {SETTINGS_PAGE_COUNT} pages match.
+        </p>
+      )}
+      {groups.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Nothing matches that search.
+        </p>
+      )}
       {groups.map((group) => (
         <section key={group.key} className="space-y-2">
           <h2 className="border-b border-border pb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">

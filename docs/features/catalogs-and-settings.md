@@ -62,6 +62,22 @@ Roles carry their own flags:
 | **Gateway role** | Marks this as *the* gateway role, which [gateway autospawn](gateway-autospawn.md) uses to create gateway addresses. At most one per tenant. |
 | **Virtual** | Marks the role as virtual (e.g. a VIP rather than a physical interface address). |
 
+## Finding a setting
+
+**Settings** opens on a grid of every page you can reach, grouped by what a
+setting is *about* - Identity & access, Integrations, Notifications, Your
+data, Devices & polling, This install - rather than by which admin tier owns
+it. Which tier a setting belongs to is a control on the page itself: a page
+that exists at more than one scope, like Email or Directory, carries a
+**Deployment / This tenant / This site** switch, and a card that is
+inheriting shows the value it would fall back to.
+
+The **search box** above the sidebar filters both the grid and the rail as
+you type. It matches a page's name, its description and its keywords, so
+"relay", "587" or "starttls" all find Email. Every page is declared once in
+`frontend/src/lib/settings-catalog.ts`, which is what both navigations and
+the search read - a page cannot appear in one and be missing from another.
+
 ## Managing the catalogs
 
 Both catalogs work the same way: a list page (filterable by their flags), plus
