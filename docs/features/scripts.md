@@ -100,7 +100,12 @@ run, by count or by age.
 Every run has its own page: the live log (which follows the tail while it
 runs), the parameters it got, how long it took, the code as it was when it
 started, and the files it produced. Files come from `run.output_csv(...)`
-and friends and download from that page.
+and friends.
+
+The **Files** tab shows what is in them, not just their names: a CSV
+renders as a table, JSON and text render as themselves, and the download
+is still there for the copy you keep. A single file opens expanded. Very
+large files are download-only.
 
 A run that is still going can be stopped from the same page.
 

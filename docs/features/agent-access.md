@@ -148,8 +148,8 @@ wrong port name is answered with the ports the device actually has.
   always told when a result was cut short, so it does not conclude it saw
   everything.
 - **Everything is logged.** Recent calls shows the tool, the object type,
-  the account and token, the row count and any error. That is how you
-  answer "what has it actually read".
+  the account and token, the row count and any error, 25 at a time and
+  newest first. That is how you answer "what has it actually read".
 - **Rate limited** to 120 calls a minute per token.
 - Writes land in the **change log** under the token's account, with the
   same before-and-after detail as any other change.

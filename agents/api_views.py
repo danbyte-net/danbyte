@@ -90,8 +90,9 @@ def agent_calls(request):
     if request.query_params.get("errors") == "1":
         qs = qs.exclude(error="")
     limit = min(int(request.query_params.get("limit") or 100), 500)
-    rows = AgentCallSerializer(qs[:limit], many=True).data
-    return Response({"results": rows, "count": qs.count()})
+    offset = max(int(request.query_params.get("offset") or 0), 0)
+    rows = AgentCallSerializer(qs[offset:offset + limit], many=True).data
+    return Response({"results": rows, "count": qs.count(), "offset": offset})
 
 
 @api_view(["GET"])

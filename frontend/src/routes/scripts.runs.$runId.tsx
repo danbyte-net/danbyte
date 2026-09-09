@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Download } from "lucide-react"
 
-import { api, formatBytes } from "@/lib/api"
+import { api } from "@/lib/api"
 import type { ScriptRunDetail } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
 import { QueryError } from "@/components/query-error"
-import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { CodeEditor } from "@/components/code-editor"
 import { FormCheckbox } from "@/components/forms/checkbox"
+import { EmptyState } from "@/components/empty-state"
+import { ScriptOutputCard } from "@/components/script-output"
 import { isRunActive, RunStatusBadge } from "@/components/script-run-status"
 import { useUrlTab } from "@/lib/use-url-tab"
 
@@ -158,36 +158,23 @@ function ScriptRunPage() {
       </DetailTab>
 
       <DetailTab value="outputs">
-        <SimpleTable
-          columns={[
-            { id: "name", header: "File", flex: true, cell: (o) => o.name },
-            { id: "type", header: "Type", cell: (o) => o.content_type },
-            {
-              id: "size",
-              header: "Size",
-              align: "right",
-              cell: (o) => formatBytes(o.size),
-            },
-            {
-              id: "get",
-              header: "",
-              align: "right",
-              cell: (o) => (
-                <Button size="sm" variant="ghost" asChild>
-                  <a
-                    href={`/api/scripts/runs/${run.id}/outputs/${o.id}/download/`}
-                    download
-                  >
-                    <Download className="size-3.5" /> Download
-                  </a>
-                </Button>
-              ),
-            },
-          ]}
-          data={run.outputs}
-          getRowKey={(o) => o.id}
-          empty="This run produced no files."
-        />
+        {run.outputs.length === 0 ? (
+          <EmptyState title="No files">
+            This run produced no files.
+          </EmptyState>
+        ) : (
+          <div className="space-y-3">
+            {run.outputs.map((o) => (
+              <ScriptOutputCard
+                key={o.id}
+                runId={run.id}
+                output={o}
+                // One file is the common case, and it is what you came for.
+                defaultOpen={run.outputs.length === 1}
+              />
+            ))}
+          </div>
+        )}
       </DetailTab>
 
       <DetailTab value="code">

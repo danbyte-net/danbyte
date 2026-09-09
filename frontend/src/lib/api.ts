@@ -92,6 +92,19 @@ export async function apiStatus<T>(
   return { data: (await res.json()) as T, status: res.status }
 }
 
+/** A file's own bytes as text, for previewing what an endpoint serves as a
+ * download (a script run's CSV, say). `api()` always parses JSON. */
+export async function apiText(path: string): Promise<string> {
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: { Accept: "text/plain, */*" },
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, null, `${path} → ${res.status}`)
+  }
+  return res.text()
+}
+
 // Human-readable message for a failed api() call. Prefers the DRF `detail`
 // string, then the first field error ("field: message", unprefixed for
 // non_field_errors), then the ApiError message with its "path → status "

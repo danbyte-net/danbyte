@@ -1,6 +1,11 @@
 import { useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { Check, Copy } from "lucide-react"
 import { toast } from "sonner"
 
@@ -228,16 +233,23 @@ function LimitsCard({
   )
 }
 
+const CALLS_PER_PAGE = 25
+
 function CallsCard({ canManage }: { canManage: boolean }) {
+  const [page, setPage] = useState(1)
+  const offset = (page - 1) * CALLS_PER_PAGE
   const calls = useQuery({
-    queryKey: ["agent-calls"],
+    queryKey: ["agent-calls", page],
     queryFn: () =>
       api<{ results: AgentCall[]; count: number }>(
-        "/api/agent/calls/?limit=100"
+        `/api/agent/calls/?limit=${CALLS_PER_PAGE}&offset=${offset}`
       ),
     enabled: canManage,
     refetchInterval: 30_000,
+    placeholderData: keepPreviousData,
   })
+  const total = calls.data?.count ?? 0
+  const pages = Math.max(1, Math.ceil(total / CALLS_PER_PAGE))
 
   if (!canManage) return null
   return (
@@ -323,6 +335,34 @@ function CallsCard({ canManage }: { canManage: boolean }) {
           data={calls.data?.results ?? []}
           getRowKey={(c) => c.id}
         />
+      )}
+      {pages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span className="num">
+            {offset + 1}-{Math.min(offset + CALLS_PER_PAGE, total)} of {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <span className="num">
+              Page {page} of {pages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= pages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       )}
     </SettingsCard>
   )
