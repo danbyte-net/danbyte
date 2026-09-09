@@ -596,7 +596,7 @@ from the check batch, batched from the minute beat, so neither needs a new timer
 ### Email and outbound delivery (deployment-wide)
 
 Mail server and outbound options are a **single deployment-wide setting**, edited
-under **Settings → Email & Delivery** by an administrator (users with the manage
+under **Settings → Email** by an administrator (users with the manage
 permission). Email channels all deliver through this one server.
 
 | Setting | What it controls |

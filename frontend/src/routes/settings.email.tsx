@@ -3,46 +3,182 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type DeploymentSettings } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  Paginated,
+  SiteOption,
+  SiteSettingsPayload,
+  TenantSettings,
+} from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { useUrlEnum } from "@/lib/use-url-state"
+import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormSelect } from "@/components/forms"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { QueryError } from "@/components/query-error"
 import {
   SettingsCard,
   SettingsGrid,
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { SmtpFields } from "@/components/settings/smtp-fields"
-import { QueryError } from "@/components/query-error"
-import { apiErrorToast } from "@/lib/api-toast"
+import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
 
 export const Route = createFileRoute("/settings/email")({
-  component: EmailSettingsPage,
+  component: EmailPage,
 })
 
-function EmailSettingsPage() {
-  const { canManageDeployment, isLoading } = useMe()
-  const qc = useQueryClient()
-  const q = useQuery({
-    queryKey: ["deployment-email"],
-    queryFn: () => api<DeploymentSettings>("/api/deployment/email/"),
-    enabled: canManageDeployment,
-  })
+const SCOPES = ["deployment", "tenant", "site"] as const
+type Scope = (typeof SCOPES)[number]
 
-  const [form, setForm] = useState<DeploymentSettings | null>(null)
+/** Mail, at every scope that can have its own relay (#51).
+ *
+ * Three pages before this - deployment, tenant and site - all rendering the
+ * same `SmtpFields` and the same test box, differing only in which parent
+ * they inherit from. The scope belongs on the page: from here you can see
+ * what the tenant would fall back to without navigating away from it. */
+function EmailPage() {
+  const { me, canManage, canManageDeployment, isLoading } = useMe()
+  const settingsSites = me.settings_sites ?? []
+  const hasSiteSettings =
+    settingsSites === "all" ? canManage : settingsSites.length > 0
+
+  const allowed = SCOPES.filter((s) =>
+    s === "deployment"
+      ? canManageDeployment
+      : s === "tenant"
+        ? canManage
+        : hasSiteSettings
+  )
+  const [scope, setScope] = useUrlEnum<Scope>(
+    "scope",
+    allowed[0] ?? "tenant",
+    SCOPES
+  )
+
+  if (isLoading)
+    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (allowed.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Tenant admin required to manage email.
+      </p>
+    )
+
+  const active = allowed.includes(scope) ? scope : allowed[0]
+
+  return (
+    <div className="space-y-4">
+      <SettingsHeader title="Email">
+        The mail server messages are sent through, and who they reach. A tenant
+        or a site can override the relay above it.
+      </SettingsHeader>
+
+      {allowed.length > 1 && (
+        <SegmentedTabs
+          items={[
+            { value: "deployment", label: "Deployment" },
+            { value: "tenant", label: "This tenant" },
+            { value: "site", label: "This site" },
+          ].filter((i) => allowed.includes(i.value as Scope))}
+          value={active}
+          onValueChange={(v) => setScope(v as Scope)}
+          className="mb-4"
+        />
+      )}
+
+      {active === "deployment" ? (
+        <DeploymentEmail />
+      ) : active === "tenant" ? (
+        <TenantEmail />
+      ) : (
+        <SiteEmail />
+      )}
+    </div>
+  )
+}
+
+/* ── deployment ──────────────────────────────────────────────────────── */
+
+function DeploymentEmail() {
+  const { data, save, savingKey } = useDeploymentSettings()
   const [password, setPassword] = useState("")
-  const [testTo, setTestTo] = useState("")
-  const [previewTo, setPreviewTo] = useState("")
-  const [previewTemplate, setPreviewTemplate] = useState("all")
+  const [form, setForm] = useState<typeof data>(undefined)
 
-  const templatesQ = useQuery({
+  useEffect(() => {
+    if (data) setForm(data)
+  }, [data])
+
+  if (!data || !form) return null
+
+  const smtpKeys = [
+    "email_enabled",
+    "smtp_host",
+    "smtp_port",
+    "smtp_security",
+    "smtp_username",
+    "email_from",
+  ] as const
+
+  return (
+    <>
+      <SettingsGrid>
+        <SettingsCard
+          title="Mail server"
+          description="The default relay for the whole deployment. A tenant or site may point at its own instead."
+          onSave={() =>
+            save.mutate({
+              key: "smtp",
+              patch: {
+                email_enabled: form.email_enabled,
+                smtp_host: form.smtp_host,
+                smtp_port: form.smtp_port,
+                smtp_security: form.smtp_security,
+                smtp_username: form.smtp_username,
+                email_from: form.email_from,
+                ...(password ? { smtp_password: password } : {}),
+              },
+            })
+          }
+          dirty={
+            smtpKeys.some((k) => form[k] !== data[k]) || password.length > 0
+          }
+          saving={savingKey === "smtp"}
+          saveLabel="Save mail server"
+        >
+          <SmtpFields
+            value={form}
+            onChange={(k, v) => setForm((f) => (f ? { ...f, [k]: v } : f))}
+            password={password}
+            onPasswordChange={setPassword}
+          />
+        </SettingsCard>
+
+        <TestCard
+          endpoint="/api/deployment/email/test/"
+          description="Verifies the relay above. Save first if you just changed it."
+          disabled={!data.email_enabled}
+          disabledNote="Enable email delivery and save to send a test."
+        />
+
+        <PreviewCard enabled={data.email_enabled} />
+      </SettingsGrid>
+    </>
+  )
+}
+
+function PreviewCard({ enabled }: { enabled: boolean }) {
+  const [to, setTo] = useState("")
+  const [template, setTemplate] = useState("all")
+
+  const templates = useQuery({
     queryKey: ["email-templates"],
     queryFn: () =>
       api<{ templates: { key: string; label: string }[] }>(
         "/api/deployment/email/templates/"
       ),
-    enabled: canManageDeployment,
   })
 
   const preview = useMutation({
@@ -51,10 +187,7 @@ function EmailSettingsPage() {
         "/api/deployment/email/preview/",
         {
           method: "POST",
-          body: JSON.stringify({
-            to: previewTo || undefined,
-            template: previewTemplate,
-          }),
+          body: JSON.stringify({ to: to || undefined, template }),
         }
       ),
     onSuccess: (r) =>
@@ -65,202 +198,339 @@ function EmailSettingsPage() {
       ),
     onError: (err) => apiErrorToast(err),
   })
+
+  return (
+    <SettingsCard
+      title="Preview templates"
+      description="Send a sample of any email - digest, alerts, sign-in code, invite - filled with example data, so you can see it before it goes out for real."
+    >
+      <FormSelect
+        label="Template"
+        value={template}
+        onChange={(v) => v && setTemplate(v)}
+        options={[
+          { value: "all", label: "All templates" },
+          ...(templates.data?.templates ?? []).map((t) => ({
+            value: t.key,
+            label: t.label,
+          })),
+        ]}
+      />
+      <div className="flex items-end gap-2">
+        <Field label="Recipient" className="flex-1">
+          <Input
+            type="email"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="you@acme.com (defaults to your account email)"
+            className="font-mono text-[13px]"
+          />
+        </Field>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => preview.mutate()}
+          disabled={preview.isPending || !enabled}
+        >
+          {preview.isPending ? "Sending…" : "Send preview"}
+        </Button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Subjects are prefixed with <span className="font-mono">[Preview]</span>.
+        Uses the relay for the scope you are in.
+      </p>
+    </SettingsCard>
+  )
+}
+
+/* ── tenant ──────────────────────────────────────────────────────────── */
+
+function TenantEmail() {
+  const qc = useQueryClient()
+  const q = useQuery({
+    queryKey: ["tenant-settings"],
+    queryFn: () => api<TenantSettings>("/api/tenant-settings/"),
+  })
+  const [form, setForm] = useState<TenantSettings | null>(null)
+  const [password, setPassword] = useState("")
+
   useEffect(() => {
     if (q.data) setForm(q.data)
   }, [q.data])
 
   const save = useMutation({
     mutationFn: () =>
-      api<DeploymentSettings>("/api/deployment/email/", {
+      api<TenantSettings>("/api/tenant-settings/", {
         method: "PUT",
         body: JSON.stringify({
-          ...form,
+          override_email: form!.override_email,
+          email_enabled: form!.email_enabled,
+          smtp_host: form!.smtp_host,
+          smtp_port: form!.smtp_port,
+          smtp_security: form!.smtp_security,
+          smtp_username: form!.smtp_username,
+          email_from: form!.email_from,
           ...(password ? { smtp_password: password } : {}),
         }),
       }),
     onSuccess: (data) => {
       setForm(data)
       setPassword("")
-      qc.setQueryData(["deployment-email"], data)
-      toast.success("Email & delivery settings saved")
+      qc.setQueryData(["tenant-settings"], data)
+      toast.success("Tenant email saved")
     },
     onError: (err) => apiErrorToast(err),
   })
 
-  const test = useMutation({
-    mutationFn: () =>
-      api<{ ok: boolean; to?: string }>("/api/deployment/email/test/", {
-        method: "POST",
-        body: JSON.stringify({ to: testTo || undefined }),
-      }),
-    onSuccess: (r) => toast.success(`Test email sent to ${r.to}`),
-    onError: (err) => apiErrorToast(err),
-  })
-
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>
-  }
-  if (!canManageDeployment) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Deployment admin required - these settings apply to every tenant. Tenant
-        email overrides live under{" "}
-        <span className="font-mono">Settings → This tenant → Email</span>.
-      </p>
-    )
-  }
   if (q.isError) return <QueryError error={q.error} />
   if (!form) return <p className="text-sm text-muted-foreground">Loading…</p>
 
-  const set = <K extends keyof DeploymentSettings>(
-    key: K,
-    value: DeploymentSettings[K]
-  ) => setForm((f) => (f ? { ...f, [key]: value } : f))
+  const dep = form.deployment_defaults
+  return (
+    <SettingsGrid>
+      <SettingsCard
+        title="Mail server"
+        description="This tenant's alert and invite email. Override to use a tenant-specific relay and From address."
+        inherit={{
+          overridden: form.override_email,
+          onChange: (v) => setForm({ ...form, override_email: v }),
+          summary: (
+            <RelaySummary
+              enabled={dep.email_enabled}
+              host={dep.smtp_host}
+              from={dep.email_from}
+              what="Deployment"
+            />
+          ),
+        }}
+        onSave={() => save.mutate()}
+        dirty={JSON.stringify(form) !== JSON.stringify(q.data) || !!password}
+        saving={save.isPending}
+        saveLabel="Save mail server"
+      >
+        <SmtpFields
+          value={form}
+          onChange={(k, v) => setForm((f) => (f ? { ...f, [k]: v } : f))}
+          password={password}
+          onPasswordChange={setPassword}
+        />
+      </SettingsCard>
+
+      <TestCard
+        endpoint="/api/tenant-settings/email/test/"
+        description="Uses this tenant's effective relay - the override when on, else the deployment one."
+      />
+    </SettingsGrid>
+  )
+}
+
+/* ── site ────────────────────────────────────────────────────────────── */
+
+function SiteEmail() {
+  const { me } = useMe()
+  const qc = useQueryClient()
+  const allowed = me.settings_sites ?? []
+
+  const sitesQ = useQuery({
+    queryKey: ["sites-picker"],
+    queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    staleTime: 10 * 60_000,
+  })
+  const sites = (sitesQ.data?.results ?? []).filter(
+    (s) =>
+      allowed === "all" || (Array.isArray(allowed) && allowed.includes(s.id))
+  )
+
+  const [siteId, setSiteId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!siteId && sites.length > 0) setSiteId(sites[0].id)
+  }, [siteId, sites])
+
+  const q = useQuery({
+    queryKey: ["site-settings", siteId],
+    queryFn: () => api<SiteSettingsPayload>(`/api/sites/${siteId}/settings/`),
+    enabled: !!siteId,
+  })
+  const [form, setForm] = useState<SiteSettingsPayload | null>(null)
+  const [password, setPassword] = useState("")
+
+  useEffect(() => {
+    setForm(q.data ?? null)
+    setPassword("")
+  }, [q.data])
+
+  const save = useMutation({
+    mutationFn: () =>
+      api<SiteSettingsPayload>(`/api/sites/${siteId}/settings/`, {
+        method: "PUT",
+        body: JSON.stringify({
+          override_email: form!.override_email,
+          email_enabled: form!.email_enabled,
+          smtp_host: form!.smtp_host,
+          smtp_port: form!.smtp_port,
+          smtp_security: form!.smtp_security,
+          smtp_username: form!.smtp_username,
+          email_from: form!.email_from,
+          ...(password ? { smtp_password: password } : {}),
+        }),
+      }),
+    onSuccess: (data) => {
+      setForm(data)
+      setPassword("")
+      qc.setQueryData(["site-settings", siteId], data)
+      toast.success(`Saved email for ${data.site.name}`)
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+
+  if (sites.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No site here has its own settings.
+      </p>
+    )
+  if (q.isError) return <QueryError error={q.error} />
+
+  const parent = form?.parent_defaults
+  return (
+    <div className="space-y-4">
+      <div className="max-w-xs">
+        <FormSelect
+          label="Site"
+          value={siteId ?? ""}
+          onChange={(v) => setSiteId(v)}
+          options={sites.map((s) => ({ value: s.id, label: s.name }))}
+        />
+      </div>
+
+      {!form ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : (
+        <SettingsGrid>
+          <SettingsCard
+            title="Mail server"
+            description="Only alerts scoped to this site use this relay. Everything else keeps using the tenant's."
+            inherit={{
+              overridden: form.override_email,
+              onChange: (v) => setForm({ ...form, override_email: v }),
+              summary: (
+                <RelaySummary
+                  enabled={!!parent?.email_enabled}
+                  host={parent?.smtp_host}
+                  from={parent?.email_from}
+                  what="Tenant"
+                />
+              ),
+              labels: { on: "Overriding", off: "Using the tenant relay" },
+            }}
+            onSave={() => save.mutate()}
+            dirty={
+              JSON.stringify(form) !== JSON.stringify(q.data) || !!password
+            }
+            saving={save.isPending}
+            saveLabel="Save mail server"
+          >
+            <SmtpFields
+              value={form}
+              onChange={(k, v) => setForm((f) => (f ? { ...f, [k]: v } : f))}
+              password={password}
+              onPasswordChange={setPassword}
+            />
+          </SettingsCard>
+
+          {siteId && (
+            <TestCard
+              endpoint={`/api/sites/${siteId}/settings/email/test/`}
+              description="Uses this site's effective relay."
+            />
+          )}
+        </SettingsGrid>
+      )}
+    </div>
+  )
+}
+
+/* ── shared bits ─────────────────────────────────────────────────────── */
+
+/** What a scope falls back to when it is not overriding. */
+function RelaySummary({
+  enabled,
+  host,
+  from,
+  what,
+}: {
+  enabled: boolean
+  host?: string
+  from?: string
+  what: string
+}) {
+  if (!enabled) return <span>{what} email delivery is currently off.</span>
+  return (
+    <span>
+      {what} relay{" "}
+      <span className="font-mono text-[13px]">{host || "(env backend)"}</span>
+      {from && (
+        <>
+          {" "}
+          · from <span className="font-mono text-[13px]">{from}</span>
+        </>
+      )}
+    </span>
+  )
+}
+
+/** Send a test through whichever relay this scope resolves to. */
+function TestCard({
+  endpoint,
+  description,
+  disabled,
+  disabledNote,
+}: {
+  endpoint: string
+  description: string
+  disabled?: boolean
+  disabledNote?: string
+}) {
+  const [to, setTo] = useState("")
+  const test = useMutation({
+    mutationFn: () =>
+      api<{ ok: boolean; to?: string; via?: string }>(endpoint, {
+        method: "POST",
+        body: JSON.stringify({ to: to || undefined }),
+      }),
+    onSuccess: (r) =>
+      toast.success(
+        r.via
+          ? `Test sent to ${r.to} via the ${r.via} relay`
+          : `Test email sent to ${r.to}`
+      ),
+    onError: (err) => apiErrorToast(err),
+  })
 
   return (
-    <div className="space-y-6">
-      <SettingsHeader title="Email & Delivery">
-        The deployment-wide mail server and outbound-delivery options. Each card
-        saves on its own.
-      </SettingsHeader>
-      <SettingsGrid>
-        <SettingsCard
-          title="Email (SMTP)"
-          description="The default mail server for the whole deployment. Tenants may override it with their own relay (Settings → This tenant → Email)."
-        >
-          <SmtpFields
-            value={form}
-            onChange={(k, v) => setForm((f) => (f ? { ...f, [k]: v } : f))}
-            password={password}
-            onPasswordChange={setPassword}
+    <SettingsCard title="Send a test" description={description}>
+      <div className="flex items-end gap-2">
+        <Field label="Recipient" className="flex-1">
+          <Input
+            type="email"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="you@acme.com (defaults to your account email)"
+            className="font-mono text-[13px]"
           />
-        </SettingsCard>
-
-        <SettingsCard
-          title="Outbound delivery"
-          description="Applies to all transports (Slack, Teams, Discord, PagerDuty, webhook, email). Deployment-wide - never per-tenant."
-        >
-          <Field
-            label="Public base URL"
-            hint="Used to deep-link alerts inside notification messages."
-          >
-            <Input
-              value={form.public_base_url}
-              onChange={(e) => set("public_base_url", e.target.value)}
-              placeholder="https://danbyte.acme.com"
-              className="font-mono text-[13px]"
-            />
-          </Field>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Webhook timeout (s)">
-              <Input
-                type="number"
-                value={form.webhook_timeout}
-                onChange={(e) =>
-                  set("webhook_timeout", Number(e.target.value) || 0)
-                }
-                className="font-mono text-[13px]"
-              />
-            </Field>
-            <Field label="Outbound proxy" hint="optional">
-              <Input
-                value={form.outbound_proxy}
-                onChange={(e) => set("outbound_proxy", e.target.value)}
-                placeholder="http://proxy:3128"
-                className="font-mono text-[13px]"
-              />
-            </Field>
-          </div>
-        </SettingsCard>
-
-        <SettingsCard
-          title="Send a test email"
-          description="Verifies the SMTP config above. Save first if you just changed it."
-        >
-          <div className="flex items-end gap-2">
-            <Field label="Recipient" className="flex-1">
-              <Input
-                type="email"
-                value={testTo}
-                onChange={(e) => setTestTo(e.target.value)}
-                placeholder="you@acme.com (defaults to your account email)"
-                className="font-mono text-[13px]"
-              />
-            </Field>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => test.mutate()}
-              disabled={test.isPending || !form.email_enabled}
-            >
-              {test.isPending ? "Sending…" : "Send test"}
-            </Button>
-          </div>
-          {!form.email_enabled && (
-            <p className="text-[11px] text-muted-foreground">
-              Enable email delivery and save to send a test.
-            </p>
-          )}
-        </SettingsCard>
-
-        <SettingsCard
-          title="Preview email templates"
-          description="Send a sample of any email - digest, certificate digest, alerts, sign-in code, invite - filled with example data, so you can see how they look before they go out for real."
-        >
-          <FormSelect
-            label="Template"
-            value={previewTemplate}
-            onChange={(v) => v && setPreviewTemplate(v)}
-            options={[
-              { value: "all", label: "All templates" },
-              ...(templatesQ.data?.templates ?? []).map((t) => ({
-                value: t.key,
-                label: t.label,
-              })),
-            ]}
-          />
-          <div className="flex items-end gap-2">
-            <Field label="Recipient" className="flex-1">
-              <Input
-                type="email"
-                value={previewTo}
-                onChange={(e) => setPreviewTo(e.target.value)}
-                placeholder="you@acme.com (defaults to your account email)"
-                className="font-mono text-[13px]"
-              />
-            </Field>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => preview.mutate()}
-              disabled={preview.isPending || !form.email_enabled}
-            >
-              {preview.isPending ? "Sending…" : "Send preview"}
-            </Button>
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            Subjects are prefixed with{" "}
-            <span className="font-mono">[Preview]</span>. Uses the SMTP config
-            above (or a tenant relay if you're scoped to one).
-          </p>
-        </SettingsCard>
-      </SettingsGrid>
-
-      {/* SMTP and delivery are ONE settings object, so one save is honest -
-          per-card buttons that each quietly wrote both would be worse than the
-          single button they replaced. It just has to say what it covers. */}
-      <div className="sticky bottom-0 -mx-4 mt-4 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">
-        <span className="text-[11px] text-muted-foreground">
-          Saves SMTP + outbound delivery.
-        </span>
+        </Field>
         <Button
-          className="ml-auto"
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
+          type="button"
+          variant="secondary"
+          onClick={() => test.mutate()}
+          disabled={test.isPending || disabled}
         >
-          {save.isPending ? "Saving…" : "Save email settings"}
+          {test.isPending ? "Sending…" : "Send test"}
         </Button>
       </div>
-    </div>
+      {disabled && disabledNote && (
+        <p className="text-[11px] text-muted-foreground">{disabledNote}</p>
+      )}
+    </SettingsCard>
   )
 }

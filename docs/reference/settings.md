@@ -201,11 +201,11 @@ Suitable for `journalctl --user -fu danbyte-backend`.
 |---|---|---|---|
 | `DJANGO_SECRET_KEY` | env | `dev-key-change-in-prod` | env var, rotated |
 | `DB_PASSWORD` | env | `danbyte` | env var, rotated |
-| Email creds | **DB (UI)** or env | console backend | Settings → Email & Delivery (encrypted) |
+| Email creds | **DB (UI)** or env | console backend | Settings → Email (encrypted) |
 
 The `EMAIL_*` env vars remain the fallback, but the SMTP server, credentials,
 and outbound-delivery options are normally configured at runtime under
-**Settings → Email & Delivery** (`users.manage`). They live in the
+**Settings → Email** (`users.manage`). They live in the
 deployment-wide singleton `core.DeploymentSettings`; the SMTP password is
 Fernet-encrypted at rest. See
 [Notifications](../features/monitoring.md#notifications).

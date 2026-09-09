@@ -5421,6 +5421,9 @@ export interface DeploymentSettings {
   smtp_security: SmtpSecurity
   smtp_username: string
   smtp_password_set: boolean
+  /** Write-only: send it to set the password, blank to keep the stored one.
+   * Never returned - `smtp_password_set` is the read side. */
+  smtp_password?: string
   email_from: string
   public_base_url: string
   webhook_timeout: number

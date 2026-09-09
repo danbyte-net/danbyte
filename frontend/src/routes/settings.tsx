@@ -38,7 +38,7 @@ const SECTIONS: NavSection[] = [
     // tenant's allow switch + site-admin qualification, me.settings_sites).
     title: "This site",
     gate: "site",
-    items: [{ to: "/settings/site", label: "Email" }],
+    items: [{ to: "/settings/email", label: "Email" }],
   },
   {
     title: "This tenant",
@@ -47,7 +47,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/tenant", label: "General" },
       { to: "/settings/floorplan", label: "Floor plans" },
       { to: "/settings/monitoring", label: "Monitoring" },
-      { to: "/settings/tenant-email", label: "Email" },
+      { to: "/settings/email", label: "Email" },
       { to: "/settings/directory", label: "Directory" },
       { to: "/settings/snmp", label: "SNMP profiles" },
       { to: "/settings/snmp-sensors", label: "SNMP sensors" },
@@ -67,7 +67,7 @@ const SECTIONS: NavSection[] = [
       { to: "/settings/device-fields", label: "Device fields" },
       { to: "/settings/components", label: "Component popover" },
       { to: "/settings/table-defaults", label: "Table defaults" },
-      { to: "/settings/email", label: "Email & Delivery" },
+      { to: "/settings/email", label: "Email" },
       { to: "/settings/directory", label: "Directory" },
       { to: "/settings/sso", label: "Identity providers (SSO)" },
       { to: "/settings/updates", label: "Updates" },
@@ -81,7 +81,7 @@ function SettingsLayout() {
   const { me, canManage, canManageDeployment } = useMe()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The layout owns the nav catalog, so it titles the tab for every child
-  // page in one place - "Security", "Email & Delivery", … - instead of each
+  // page in one place - "Security", "Email", … - instead of each
   // settings page carrying its own call.
   usePageTitle(
     SECTIONS.flatMap((s) => s.items).find((i) => pathname === i.to)?.label ??
@@ -101,20 +101,21 @@ function SettingsLayout() {
       (s.gate === "tenant" && canManage) ||
       (s.gate === "deployment" && canManageDeployment)
   )
-  // A merged page carries both scopes, so it is listed under each tier it
-  // serves and would otherwise appear twice. First section wins - which puts
-  // it under "This tenant" for a tenant admin and under "Deployment" for
-  // someone who only has that. Merging by subject rather than by tier is what
-  // the settings rebuild is for; this keeps the sidebar honest until then.
-  const seen = new Set<string>()
+  // A merged page (Email, Directory) serves several tiers, so it is listed
+  // under each and would otherwise appear two or three times. The LAST
+  // visible section wins, because the sections run narrow to broad and a
+  // merged page opens on the broadest scope you can manage - so the entry
+  // sits where the page actually lands you. Grouping by subject instead of
+  // by tier is what the settings rebuild is for; this keeps the sidebar
+  // honest until then.
+  const home = new Map<string, string>()
+  for (const section of gated) {
+    for (const item of section.items) home.set(item.to, section.title)
+  }
   const sections = gated
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => {
-        if (seen.has(item.to)) return false
-        seen.add(item.to)
-        return true
-      }),
+      items: section.items.filter((i) => home.get(i.to) === section.title),
     }))
     .filter((section) => section.items.length > 0)
   return (

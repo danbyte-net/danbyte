@@ -8,6 +8,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Field, FormCheckbox, FormSelect, FormText } from "@/components/forms"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +24,7 @@ import { ChatModelCard } from "@/components/settings/chat-model-card"
 import {
   SettingsCard,
   SettingsGrid,
+  SettingsRow,
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
@@ -52,6 +54,7 @@ function SecurityPage() {
         <SessionsCard />
         <SecretStoreCard />
         <OutboundCard />
+        <DeliveryCard />
         <SshTerminalCard />
         <ChatModelCard />
       </SettingsGrid>
@@ -241,6 +244,91 @@ function OutboundCard() {
         relays) from reaching loopback, cloud-metadata, and private ranges.
         Entries here punch specific holes - keep it as narrow as possible.
       </p>
+    </SettingsCard>
+  )
+}
+
+/** Moved here from the Email page (#51): these apply to every transport -
+ * Slack, Teams, Discord, PagerDuty, webhooks and mail alike - so filing them
+ * under email was misleading, and it was the reason that page could not save
+ * per card. */
+function DeliveryCard() {
+  const { data, save, savingKey } = useDeploymentSettings()
+  const [baseUrl, setBaseUrl] = useState("")
+  const [timeout, setWebhookTimeout] = useState("0")
+  const [proxy, setProxy] = useState("")
+
+  useEffect(() => {
+    if (data) {
+      setBaseUrl(data.public_base_url)
+      setWebhookTimeout(String(data.webhook_timeout))
+      setProxy(data.outbound_proxy)
+    }
+  }, [data])
+
+  if (!data) return null
+  return (
+    <SettingsCard
+      title="Outbound delivery"
+      description="How notifications leave the server, whatever the transport."
+      layout="rows"
+      onSave={() =>
+        save.mutate({
+          key: "delivery",
+          patch: {
+            public_base_url: baseUrl.trim(),
+            webhook_timeout: Number(timeout) || 0,
+            outbound_proxy: proxy.trim(),
+          },
+        })
+      }
+      dirty={
+        baseUrl !== data.public_base_url ||
+        timeout !== String(data.webhook_timeout) ||
+        proxy !== data.outbound_proxy
+      }
+      saving={savingKey === "delivery"}
+      saveLabel="Save delivery"
+    >
+      <SettingsRow
+        label="Public base URL"
+        hint="Deep-links back to Danbyte inside a notification."
+        htmlFor="delivery-base-url"
+      >
+        <Input
+          id="delivery-base-url"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder="https://danbyte.acme.com"
+          className="font-mono text-[13px]"
+        />
+      </SettingsRow>
+      <SettingsRow
+        label="Webhook timeout"
+        hint="Seconds to wait for an outbound call."
+        htmlFor="delivery-timeout"
+      >
+        <Input
+          id="delivery-timeout"
+          type="number"
+          value={timeout}
+          onChange={(e) => setWebhookTimeout(e.target.value)}
+          className="max-w-28 font-mono text-[13px]"
+        />
+      </SettingsRow>
+      <SettingsRow
+        label="Outbound proxy"
+        hint="Optional. Used for every outbound notification."
+        htmlFor="delivery-proxy"
+      >
+        <Input
+          id="delivery-proxy"
+          value={proxy}
+          onChange={(e) => setProxy(e.target.value)}
+          placeholder="http://proxy:3128"
+          className="font-mono text-[13px]"
+        />
+      </SettingsRow>
     </SettingsCard>
   )
 }

@@ -112,8 +112,8 @@ catalogs behave tenant-wide exactly as before.
 - Flipping the switch off restores the default behaviour exactly; nothing is
   migrated either way.
 - The companion switch **"Let site admins manage their site's settings"**
-  unlocks **Settings → This site**: local IT overrides their site's email
-  relay (more groups later). A *site admin* is a site editor of that site, or
+  unlocks the **This site** scope on **Settings → Email**: local IT overrides
+  their site's mail relay (more groups later). A *site admin* is a site editor of that site, or
   anyone holding a `sitesettings` permission scoped to it - grantable to
   users or groups, so you can build a "Site X admins" group. Tenant admins
   can always edit any site's settings. Site alerts about that site's objects
