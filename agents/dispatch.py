@@ -348,6 +348,13 @@ def get_object(principal, slug: str, ident: str, *, settings_row=None) -> dict:
     return {"type": resolved, "object": _with_url(clean(payload, model), resolved)}
 
 
+def id_of(principal, slug: str, ident: str, settings_row=None) -> str:
+    """The id of an object named by name or id - what a payload needs when
+    the assistant only has what a person would say."""
+    resolved, prefix, viewset = resolve(slug, settings_row)
+    return _identify(principal, resolved, prefix, viewset, ident, settings_row)
+
+
 def _identify(principal, slug: str, prefix: str, viewset, ident: str, settings_row) -> str:
     """Accept a UUID, a numeric id, or an exact name - an assistant that just
     read a name should not have to look up the id first."""
@@ -356,7 +363,8 @@ def _identify(principal, slug: str, prefix: str, viewset, ident: str, settings_r
         raise ToolError("Pass an id or a name.")
     if _looks_like_id(text):
         return text
-    for field in ("name", "numid", "address", "prefix", "slug"):
+    # `cid` is a circuit's identity the way `name` is a device's.
+    for field in ("name", "numid", "cid", "address", "prefix", "slug"):
         request = _factory.get(f"/api/{prefix}/", {field: text, "limit": 2})
         try:
             status, payload = _dispatch(principal, viewset, {"get": "list"}, request)

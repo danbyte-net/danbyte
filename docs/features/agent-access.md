@@ -120,9 +120,15 @@ off at once.
 | `lifecycle` | Device types past or approaching end of sale or support. |
 | `script_guide` | The script SDK and the fields a script row takes, so an assistant can write a [script](scripts.md) that runs against the same API. |
 
-With writes on, three more: `create`, `update` and `delete`. A delete has
-to name the object it removes, so a mistaken instruction cannot take the
-wrong row.
+With writes on, five more: `create`, `update`, `delete`, `connect` and
+`terminate`. A delete has to name the object it removes, so a mistaken
+instruction cannot take the wrong row.
+
+`connect` cables two ports by their device and port names, and `terminate`
+lands a circuit's A or Z end at a site by name. Both exist because the
+payloads behind them take ids and nested shapes that an assistant gets
+wrong; naming the things a person would name removes the guesswork, and a
+wrong port name is answered with the ports the device actually has.
 
 ## What keeps it safe
 

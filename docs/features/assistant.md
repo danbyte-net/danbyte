@@ -86,6 +86,9 @@ permission; without either, it shows you the code to paste in.
   that site.
 - Results are **capped** at the row limit on the Agent access page, and it
   is told when a result was cut short.
+- **Cabling and circuits** have their own tools: it cables two ports by
+  name, and lands a circuit's A and Z ends at their sites, rather than
+  assembling the payload by hand.
 - It **cannot change anything** unless *Agent access: allow writes* is on.
   With writes off it says so plainly. With writes on, a change follows your
   own permissions and lands in the change log with **Via: Assistant** and

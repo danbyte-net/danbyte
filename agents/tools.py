@@ -96,11 +96,36 @@ def _get(ctx, type: str = "", id: str = "", **_kw) -> dict:
     return dispatch.get_object(ctx.principal, type, id, settings_row=ctx.settings)
 
 
+def _as_filters(value) -> dict:
+    """Filters, whether they arrived as an object or as JSON in a string.
+
+    A model that hands back `'{"device_id": "..."}'` meant the object; a
+    crash on `.items()` teaches it nothing and costs a turn.
+    """
+    if value in (None, ""):
+        return {}
+    if isinstance(value, str):
+        import json
+
+        text = value.strip()
+        # A stray closing brace is the common mangling; try the text as sent
+        # first, then once more without it.
+        for candidate in (text, text.rstrip("}") + "}"):
+            try:
+                value = json.loads(candidate)
+                break
+            except ValueError:
+                continue
+    if not isinstance(value, dict):
+        raise ToolError('`filters` must be an object, e.g. {"site": "Aarhus"}.')
+    return value
+
+
 def _list(ctx, type: str = "", filters: dict | None = None, limit: int | None = None,
           cursor: int = 0, **_kw) -> dict:
     cap = min(int(limit or ctx.max_rows), ctx.max_rows)
     return dispatch.list_objects(
-        ctx.principal, type, filters or {}, limit=cap, cursor=int(cursor or 0),
+        ctx.principal, type, _as_filters(filters), limit=cap, cursor=int(cursor or 0),
         settings_row=ctx.settings,
     )
 
@@ -112,7 +137,7 @@ def _count(ctx, type: str = "", group_by: str = "", filters=None, **_kw) -> dict
     costs a list per site and burns the whole conversation.
     """
     result = dispatch.list_objects(
-        ctx.principal, type, filters or {}, limit=dispatch.FETCH_CAP,
+        ctx.principal, type, _as_filters(filters), limit=dispatch.FETCH_CAP,
         settings_row=ctx.settings,
     )
     rows = result["rows"]
@@ -136,6 +161,15 @@ def _count(ctx, type: str = "", group_by: str = "", filters=None, **_kw) -> dict
         "group_by": group_by,
         "groups": [{"value": k, "count": v} for k, v in ordered[:60]],
     }
+
+
+# Types with a tool that beats writing the payload by hand. Cable ends are
+# a list of {kind, id}, and every attempt to build one from the field list
+# has gone wrong; `connect` takes the names instead.
+_TYPE_TOOLS = {
+    "cable": "Use the `connect` tool to cable two ports; do not build a cable "
+             "payload from these fields.",
+}
 
 
 def _explain(ctx, type: str = "", **_kw) -> dict:
@@ -191,6 +225,7 @@ def _explain(ctx, type: str = "", **_kw) -> dict:
             "takes an object's id; `list` and `search` return ids. Fields not "
             "marked writable are set by Danbyte."
         ),
+        **({"instead": _TYPE_TOOLS[slug]} if slug in _TYPE_TOOLS else {}),
     }
 
 
@@ -483,6 +518,128 @@ def _create(ctx, type: str = "", payload: dict | None = None, **_kw) -> dict:
     return dispatch.create_object(ctx.principal, type, payload or {}, settings_row=ctx.settings)
 
 
+# A cable end is {kind, id}, and the kinds are the serializer's own. Each
+# maps to the type this module already knows how to look a port up in.
+_CABLE_KINDS = {
+    "interface": "interface",
+    "front_port": "frontport",
+    "rear_port": "rearport",
+    "console_port": "consoleport",
+    "console_server_port": "consoleserverport",
+    "power_port": "powerport",
+    "power_outlet": "poweroutlet",
+    "power_feed": "powerfeed",
+    "aux_port": "auxport",
+    "circuit_termination": "circuittermination",
+}
+# These do not hang off a device, so a device name is not asked for.
+_DEVICELESS_KINDS = ("power_feed", "circuit_termination")
+
+
+def _end(ctx, end: str, device: str, port: str, kind: str) -> dict:
+    """One cable end, resolved from the names a person would use."""
+    kind = (kind or "interface").strip().lower().replace("-", "_")
+    slug = _CABLE_KINDS.get(kind)
+    if slug is None:
+        raise ToolError(
+            f"'{kind}' is not a cable end. One of: {', '.join(sorted(_CABLE_KINDS))}."
+        )
+    port = str(port or "").strip()
+    if not port:
+        raise ToolError(f"Say which port on the {end} end.")
+    filters: dict = {"name": port}
+    if kind not in _DEVICELESS_KINDS:
+        if not str(device or "").strip():
+            raise ToolError(f"Say which device the {end} end is on.")
+        filters["device"] = str(device).strip()
+    found = dispatch.list_objects(
+        ctx.principal, slug, filters, limit=2, settings_row=ctx.settings
+    )
+    rows = found["rows"]
+    if len(rows) == 1:
+        return {"kind": kind, "id": rows[0]["id"], "name": rows[0].get("name"), "on": device}
+    if len(rows) > 1:
+        raise ToolError(f"{device} has more than one {kind} called '{port}'.")
+    raise ToolError(_no_such_port(ctx, slug, kind, device, port))
+
+
+def _no_such_port(ctx, slug: str, kind: str, device: str, port: str) -> str:
+    """Say what the device does have, so the next call can be right."""
+    where = f"{device} has no {kind} '{port}'." if device else f"No {kind} '{port}'."
+    if kind in _DEVICELESS_KINDS or not device:
+        return where
+    have = dispatch.list_objects(
+        ctx.principal, slug, {"device": device}, limit=40, settings_row=ctx.settings
+    )
+    names = [str(r.get("name")) for r in have["rows"] if r.get("name")]
+    if not names:
+        return f"{where} It has no {kind}s at all."
+    return f"{where} It has: {', '.join(names[:30])}."
+
+
+def _connect(ctx, a_device: str = "", a_port: str = "", b_device: str = "", b_port: str = "",
+             a_kind: str = "interface", b_kind: str = "interface", type: str = "",
+             label: str = "", status: str = "", **_kw) -> dict:
+    """Cable two ports together, named the way a person names them.
+
+    A cable's ends are a list of ``{kind, id}``, which an assistant has to
+    get exactly right after four lookups. This asks for the two device and
+    port names instead and does the resolving here, so the whole class of
+    malformed-termination failures cannot happen.
+    """
+    a = _end(ctx, "A", a_device, a_port, a_kind)
+    b = _end(ctx, "B", b_device, b_port, b_kind)
+    payload = {
+        "a": [{"kind": a["kind"], "id": a["id"]}],
+        "b": [{"kind": b["kind"], "id": b["id"]}],
+    }
+    if type:
+        payload["type"] = type
+    if label:
+        payload["label"] = label
+    if status:
+        payload["status"] = status
+    result = dispatch.create_object(ctx.principal, "cable", payload, settings_row=ctx.settings)
+    result["connected"] = (
+        f"{a['on'] or a['name']} {a['name']} to {b['on'] or b['name']} {b['name']}"
+    )
+    return result
+
+
+def _terminate(ctx, circuit: str = "", side: str = "", site: str = "",
+               provider_network: str = "", **fields) -> dict:
+    """Land one end of a circuit at a site, by name.
+
+    A circuit is connected to nothing until both ends exist, and the
+    payload needs two ids the assistant has just read as names. Cable the
+    termination to a port afterwards with `connect`, kind
+    `circuit_termination`.
+    """
+    end = str(side or "").strip().upper()
+    if end not in ("A", "Z"):
+        raise ToolError("`side` is \"A\" or \"Z\".")
+    if not (site or provider_network):
+        raise ToolError("Say where it lands: a `site` or a `provider_network`.")
+
+    payload = {
+        "circuit_id": dispatch.id_of(ctx.principal, "circuit", circuit, ctx.settings),
+        "term_side": end,
+    }
+    if site:
+        payload["site_id"] = dispatch.id_of(ctx.principal, "site", site, ctx.settings)
+    if provider_network:
+        payload["provider_network_id"] = dispatch.id_of(
+            ctx.principal, "providernetwork", provider_network, ctx.settings
+        )
+    for key in ("port_speed_kbps", "upstream_speed_kbps", "xconnect_id", "pp_info",
+                "description"):
+        if fields.get(key) not in (None, ""):
+            payload[key] = fields[key]
+    return dispatch.create_object(
+        ctx.principal, "circuittermination", payload, settings_row=ctx.settings
+    )
+
+
 def _update(ctx, type: str = "", id: str = "", payload: dict | None = None, **_kw) -> dict:
     return dispatch.update_object(
         ctx.principal, type, id, payload or {}, settings_row=ctx.settings
@@ -593,6 +750,31 @@ TOOLS: tuple[Tool, ...] = (
         "account.",
         {"type": STR, "payload": {"type": "object"}}, _create,
         writes=True, required=("type", "payload"),
+    ),
+    Tool(
+        "connect", "Cable two ports",
+        "Cable one port to another by name: "
+        "`connect(a_device=\"aalborg-sw1\", a_port=\"Gi1/0/3\", "
+        "b_device=\"aalborg-fw1\", b_port=\"ethernet1/3\")`. Use this for every "
+        "cable - never build a cable payload by hand. `a_kind`/`b_kind` default "
+        "to interface; the others are front_port, rear_port, console_port, "
+        "console_server_port, power_port, power_outlet, power_feed, aux_port and "
+        "circuit_termination. If a port name is wrong the refusal lists the ones "
+        "the device has.",
+        {"a_device": STR, "a_port": STR, "b_device": STR, "b_port": STR,
+         "a_kind": STR, "b_kind": STR, "type": STR, "label": STR, "status": STR},
+        _connect, writes=True, required=("a_port", "b_port"),
+    ),
+    Tool(
+        "terminate", "Land a circuit end",
+        "Give a circuit its A or Z end at a site, by name: "
+        "`terminate(circuit=\"NX-4471\", side=\"Z\", site=\"K\u00f8benhavn HQ\")`. "
+        "A circuit reaches nowhere until both ends exist. To join that end to a "
+        "port, call `connect` with `a_kind=\"circuit_termination\"`.",
+        {"circuit": STR, "side": STR, "site": STR, "provider_network": STR,
+         "port_speed_kbps": INT, "upstream_speed_kbps": INT, "xconnect_id": STR,
+         "pp_info": STR, "description": STR},
+        _terminate, writes=True, required=("circuit", "side"),
     ),
     Tool(
         "update", "Update an object",

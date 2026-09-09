@@ -215,6 +215,10 @@ class ReadToolTests(_Base):
         by_id = self.tool("get", {"type": "device", "id": str(self.device.id)})
         self.assertEqual(by_id["object"]["id"], str(self.device.id))
 
+    def test_list_accepts_filters_sent_as_json_text(self):
+        payload = self.tool("list", {"type": "device", "filters": '{"site": "Aarhus"}'})
+        self.assertEqual([r["name"] for r in payload["rows"]], ["aarhus-core-1"])
+
     def test_row_cap_is_honest_about_more(self):
         AgentSettings.objects.update_or_create(tenant=self.tenant, defaults={"max_rows": 1})
         rows = self.tool("list", {"type": "device"})
@@ -369,6 +373,56 @@ class WriteTests(_Base):
         entries = ChangeLogEntry.objects.filter(object_id=str(site_id))
         self.assertEqual({e.action for e in entries}, {"create", "update", "delete"})
         self.assertEqual({e.user_name for e in entries}, {"agent"})
+
+    def test_connect_cables_two_ports_by_name(self):
+        from api.models import Cable, Interface
+
+        other = Device.objects.create(
+            tenant=self.tenant, name="aarhus-fw-1", site=self.site,
+            device_type=self.dtype, role=self.role,
+        )
+        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/3")
+        Interface.objects.create(tenant=self.tenant, device=other, name="ethernet1/3")
+        payload = self.tool("connect", {
+            "a_device": "aarhus-core-1", "a_port": "Gi1/0/3",
+            "b_device": "aarhus-fw-1", "b_port": "ethernet1/3",
+        })
+        self.assertTrue(payload["created"])
+        self.assertIn("Gi1/0/3", payload["connected"])
+        cable = Cable.objects.get(pk=payload["object"]["id"])
+        self.assertEqual(
+            {t.end for t in cable.terminations.all()}, {"A", "B"}
+        )
+
+    def test_connect_names_the_ports_a_device_has(self):
+        from api.models import Interface
+
+        Interface.objects.create(tenant=self.tenant, device=self.device, name="Gi1/0/1")
+        payload = self.tool("connect", {
+            "a_device": "aarhus-core-1", "a_port": "nope",
+            "b_device": "hq-core-1", "b_port": "also-nope",
+        })
+        self.assertIn("has no interface 'nope'", payload["error"])
+        self.assertIn("Gi1/0/1", payload["error"])
+
+    def test_terminate_lands_a_circuit_end_by_name(self):
+        from api.models import Circuit, CircuitType, Provider
+
+        provider = Provider.objects.create(tenant=self.tenant, name="P", slug="p")
+        ctype = CircuitType.objects.create(tenant=self.tenant, name="Ethernet", slug="eth")
+        circuit = Circuit.objects.create(
+            tenant=self.tenant, cid="NX-1", provider=provider, type=ctype
+        )
+        payload = self.tool("terminate", {
+            "circuit": "NX-1", "side": "Z", "site": "Aarhus",
+        })
+        self.assertEqual(payload["object"]["term_side"], "Z")
+        self.assertEqual(circuit.terminations.count(), 1)
+
+    def test_terminate_needs_a_side_and_somewhere_to_land(self):
+        self.assertIn('"A" or "Z"', self.tool("terminate", {
+            "circuit": "NX-1", "side": "left", "site": "Aarhus",
+        })["error"])
 
     def test_writes_refused_when_the_switch_is_off(self):
         IntegrationSettings.objects.filter(tenant=self.tenant).update(ai_writes_enabled=False)

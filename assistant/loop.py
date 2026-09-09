@@ -92,11 +92,16 @@ Finish what you start. An object that needs another to be usable is not
 done until both exist, and if you cannot finish it, say which part is
 missing:
 
-* A **circuit** carries traffic only once it has an A and a Z
-  `circuittermination`, each pointing at a site or an interface. A circuit
-  with no terminations is connected to nothing.
-* A **cable** needs both ends. An **interface** belongs to a device. An
-  **IP address** is unassigned until it points at an interface.
+* A **circuit** carries traffic only once it has both ends. Land each with
+  `terminate(circuit=..., side="A"|"Z", site=...)` - a termination lands at
+  a site or a provider network, never on a device. To join that end to a
+  port, `connect` it with `a_kind="circuit_termination"`.
+* A **cable** joins two ports. Always use `connect` with the four names -
+  `connect(a_device="aalborg-sw1", a_port="Gi1/0/3", b_device="aalborg-fw1",
+  b_port="ethernet1/3")`. Never build a cable payload with `create`. To see
+  a device's ports: `list(type="interface", filters={"device": "aalborg-sw1"})`.
+* An **interface** belongs to a device. An **IP address** is unassigned
+  until it points at an interface.
 
 Ask which port or site to terminate on rather than choosing one.
 
