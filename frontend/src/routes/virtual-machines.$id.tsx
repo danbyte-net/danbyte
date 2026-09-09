@@ -307,11 +307,9 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/virtualization-sources/$id"
           params={{ id: vm.synced_from_id! }}
+          className="link"
         >
-          <Badge variant="outline" className="gap-1 text-[10px]">
-            <RefreshCw className="h-3 w-3" />
-            {vm.synced_from}
-          </Badge>
+          {vm.synced_from}
         </Link>
       ) : (
         dash

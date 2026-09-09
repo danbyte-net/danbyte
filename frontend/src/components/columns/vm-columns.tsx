@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router"
 
 import type { VirtualMachine } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
-import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerBadge } from "@/components/cells/power-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
@@ -187,13 +186,15 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
       ),
       cell: ({ row }) =>
         row.original.synced_from ? (
+          // A foreign key, so it reads as a link like every other one. It
+          // was an outline chip, which drew a pill round a value in a column
+          // of plain text and looked like the row had been singled out.
           <Link
             to="/virtualization-sources/$id"
             params={{ id: row.original.synced_from_id! }}
+            className="link text-xs"
           >
-            <Badge variant="outline" className="text-[10px]">
-              {row.original.synced_from}
-            </Badge>
+            {row.original.synced_from}
           </Link>
         ) : (
           dash

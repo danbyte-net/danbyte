@@ -42,6 +42,10 @@ export type SettingsScope = "user" | "site" | "tenant" | "deployment"
 
 export const SETTINGS_GROUPS = [
   { key: "access", label: "Identity & access" },
+  // Integrations is its own subject, not a kind of notification: it governs
+  // what Danbyte talks to, and only one of the six cards has anything to do
+  // with sending messages.
+  { key: "integrations", label: "Integrations" },
   { key: "notifications", label: "Notifications" },
   { key: "data", label: "Your data" },
   { key: "devices", label: "Devices & polling" },
@@ -139,17 +143,18 @@ export const SETTINGS_PAGES: SettingsPage[] = [
     keywords: ["checks", "alerts", "drift", "digest", "flapping", "interval"],
     icon: Gauge,
   },
+
+  // ── integrations ───────────────────────────────────────────────────
   {
     key: "integrations",
     label: "Integrations",
     description: "What Danbyte talks to, and what it may change",
     to: "/settings/integrations",
-    group: "notifications",
+    group: "integrations",
     scopes: ["tenant"],
     keywords: ["vcenter", "proxmox", "dhcp", "dns", "assistant", "webhook"],
     icon: Plug,
   },
-
   // ── your data ──────────────────────────────────────────────────────
   {
     key: "device-fields",
