@@ -349,6 +349,9 @@ class IntegrationSettings(TimestampedModel):
     # second switch as well, so reading can be on with nothing changeable.
     ai_access_enabled = models.BooleanField(default=False)
     ai_writes_enabled = models.BooleanField(default=False)
+    # The in-app chat. Separate from agent access because it sends the
+    # conversation to whichever model the deployment configured.
+    ai_chat_enabled = models.BooleanField(default=False)
 
     class Meta:
         verbose_name_plural = "integration settings"

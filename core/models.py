@@ -436,6 +436,24 @@ class DeploymentSettings(TimestampedModel):
     )
     vault_verify_tls = models.BooleanField(default=True)
 
+    # ─── the in-app assistant's model connection ─────────────────────────
+    # Deployment tier on purpose: a tenant admin must not choose where the
+    # conversation is sent or where the key lives. The key itself is in
+    # ``secrets["ai_api_key"]``. The "local" provider is reached directly
+    # (it is RFC1918 by definition), same rationale as vault_addr above.
+    ai_provider = models.CharField(
+        max_length=16, blank=True, default="",
+        help_text="anthropic, openai (any OpenAI-compatible API) or local. "
+        "Blank leaves the in-app assistant unconfigured.",
+    )
+    ai_model = models.CharField(max_length=120, blank=True, default="")
+    ai_base_url = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Blank uses the provider's own endpoint; set it for a "
+        "gateway or a local model server.",
+    )
+    ai_verify_tls = models.BooleanField(default=True)
+
     # ─── site map tiles ──────────────────────────────────────────────────
     # Blank = OpenStreetMap's donated tile servers (light use only, per
     # https://operations.osmfoundation.org/policies/tiles/ - which also asks

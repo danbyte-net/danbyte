@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "backups.apps.BackupsConfig",
     "scripting.apps.ScriptingConfig",
     "agents.apps.AgentsConfig",
+    "assistant.apps.AssistantConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────

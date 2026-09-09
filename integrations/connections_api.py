@@ -52,7 +52,7 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
         model = IntegrationSettings
         fields = [
             "dhcp_sync_enabled", "dns_sync_enabled", "virtualization_enabled",
-            "ai_access_enabled", "ai_writes_enabled",
+            "ai_access_enabled", "ai_writes_enabled", "ai_chat_enabled",
         ]
 
 

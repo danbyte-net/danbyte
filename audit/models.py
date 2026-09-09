@@ -77,7 +77,7 @@ class ChangeLogEntry(models.Model):
         max_length=8,
         blank=True,
         default="",
-        choices=[("ui", "UI"), ("api", "API"), ("system", "System")],
+        choices=[("ui", "UI"), ("api", "API"), ("chat", "Assistant"), ("system", "System")],
     )
 
     class Meta:

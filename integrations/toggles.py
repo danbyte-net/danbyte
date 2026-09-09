@@ -18,6 +18,7 @@ KEYS = {
     "virtualization": "virtualization_enabled",
     "ai": "ai_access_enabled",
     "ai_writes": "ai_writes_enabled",
+    "ai_chat": "ai_chat_enabled",
 }
 
 

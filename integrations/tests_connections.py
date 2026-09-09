@@ -67,7 +67,7 @@ class ConnectionApiTests(APITestCase):
         self.assertEqual(res.json(), {
             "dhcp_sync_enabled": False, "dns_sync_enabled": False,
             "virtualization_enabled": False, "ai_access_enabled": False,
-            "ai_writes_enabled": False,
+            "ai_writes_enabled": False, "ai_chat_enabled": False,
         })
         res = self.client.put(
             "/api/integrations/settings/", {"dhcp_sync_enabled": True},

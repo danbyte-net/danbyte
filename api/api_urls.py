@@ -469,6 +469,7 @@ urlpatterns = [
     path("backups/", include("backups.api_urls")),
     path("scripts/", include("scripting.api_urls")),
     path("agent/", include("agents.api_urls")),
+    path("assistant/", include("assistant.api_urls")),
     path("mcp/", agent_mcp, name="mcp"),
     # Plugin framework: installed-plugin inventory + each plugin's own API.
     path("plugins/", include("plugins.api_urls")),
