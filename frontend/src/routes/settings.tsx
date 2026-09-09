@@ -5,11 +5,19 @@ import {
   useRouterState,
 } from "@tanstack/react-router"
 
-import { useMe } from "@/lib/use-me"
 import { usePageTitle } from "@/lib/page-title"
+import {
+  groupedPages,
+  SETTINGS_PAGES,
+  visiblePages,
+} from "@/lib/settings-catalog"
+import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 
-// Layout for the /settings branch: a left subnav (User / Admin sections) and
-// an Outlet for the active page.
+// Layout for the /settings branch: a left subnav grouped by subject, and an
+// Outlet for the active page. This rail and the hub at /settings render the
+// same catalog (#51), so a page cannot appear in one and be missing from the
+// other, and neither has an opinion about which admin tier owns a setting -
+// that is a scope switch on the page.
 export const Route = createFileRoute("/settings")({ component: SettingsLayout })
 
 const linkCls =
@@ -17,128 +25,40 @@ const linkCls =
 const activeLinkCls =
   "block rounded px-2 py-1 text-sm font-medium bg-muted text-foreground"
 
-type NavItem = { to: string; label: string }
-type NavSection = {
-  title: string
-  gate: "none" | "site" | "tenant" | "deployment"
-  items: NavItem[]
-}
-
-// Two admin tiers: "This tenant" (can_manage_admin in the active tenant -
-// overrides inherit from the deployment defaults until enabled) and
-// "Deployment" (superuser / global users.manage - affects every tenant).
-const SECTIONS: NavSection[] = [
-  {
-    title: "User",
-    gate: "none",
-    items: [{ to: "/settings/preferences", label: "Preferences" }],
-  },
-  {
-    // Per-site settings - local IT manages its own site (gated by the
-    // tenant's allow switch + site-admin qualification, me.settings_sites).
-    title: "This site",
-    gate: "site",
-    items: [{ to: "/settings/email", label: "Email" }],
-  },
-  {
-    title: "This tenant",
-    gate: "tenant",
-    items: [
-      { to: "/settings/tenant", label: "General" },
-      { to: "/settings/separation", label: "Separation" },
-      { to: "/settings/floorplan", label: "Floor plans" },
-      { to: "/settings/monitoring", label: "Monitoring" },
-      { to: "/settings/email", label: "Email" },
-      { to: "/settings/directory", label: "Directory" },
-      { to: "/settings/snmp", label: "SNMP profiles" },
-      { to: "/settings/snmp-sensors", label: "SNMP sensors" },
-      { to: "/settings/connect", label: "Connect protocols" },
-      { to: "/settings/integrations", label: "Integrations" },
-    ],
-  },
-  {
-    title: "Deployment",
-    gate: "deployment",
-    items: [
-      { to: "/settings/admin", label: "General" },
-      { to: "/settings/security", label: "Security" },
-      { to: "/settings/separation", label: "Separation" },
-      { to: "/settings/monitoring", label: "Monitoring" },
-      { to: "/settings/maps", label: "Maps" },
-      { to: "/settings/device-fields", label: "Device fields" },
-      { to: "/settings/components", label: "Component popover" },
-      { to: "/settings/table-defaults", label: "Table defaults" },
-      { to: "/settings/email", label: "Email" },
-      { to: "/settings/directory", label: "Directory" },
-      { to: "/settings/sso", label: "Identity providers (SSO)" },
-      { to: "/settings/updates", label: "Updates" },
-      { to: "/settings/backups", label: "Backups" },
-      { to: "/settings/plugins", label: "Plugins & services" },
-    ],
-  },
-]
-
 function SettingsLayout() {
-  const { me, canManage, canManageDeployment } = useMe()
+  const held = useSettingsScopes()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  // The layout owns the nav catalog, so it titles the tab for every child
-  // page in one place - "Security", "Email", … - instead of each
-  // settings page carrying its own call.
+  // One place titles the tab for every child page, so no settings page
+  // carries its own usePageTitle call.
   usePageTitle(
-    SECTIONS.flatMap((s) => s.items).find((i) => pathname === i.to)?.label ??
-      "Settings"
+    SETTINGS_PAGES.find((p) => pathname === p.to)?.label ?? "Settings"
   )
-  // Highlight the settings page you're on.
+
+  const groups = groupedPages(visiblePages(held))
   const cls = (href: string) => (pathname === href ? activeLinkCls : linkCls)
-  const settingsSites = me.settings_sites ?? []
-  const hasSiteSettings =
-    settingsSites === "all"
-      ? canManage // admins use "This tenant"; "all" alone would be redundant
-      : settingsSites.length > 0
-  const gated = SECTIONS.filter(
-    (s) =>
-      s.gate === "none" ||
-      (s.gate === "site" && hasSiteSettings) ||
-      (s.gate === "tenant" && canManage) ||
-      (s.gate === "deployment" && canManageDeployment)
-  )
-  // A merged page (Email, Directory) serves several tiers, so it is listed
-  // under each and would otherwise appear two or three times. The LAST
-  // visible section wins, because the sections run narrow to broad and a
-  // merged page opens on the broadest scope you can manage - so the entry
-  // sits where the page actually lands you. Grouping by subject instead of
-  // by tier is what the settings rebuild is for; this keeps the sidebar
-  // honest until then.
-  const home = new Map<string, string>()
-  for (const section of gated) {
-    for (const item of section.items) home.set(item.to, section.title)
-  }
-  const sections = gated
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((i) => home.get(i.to) === section.title),
-    }))
-    .filter((section) => section.items.length > 0)
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 [scrollbar-width:none] items-center gap-3 overflow-x-auto border-b border-border px-4 lg:px-6 [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
-        <h1 className="text-base font-semibold">Settings</h1>
-        {/* Mobile: horizontal scrollable tab strip (the sidebar is lg-only). */}
+        <Link to="/settings" className="text-base font-semibold">
+          Settings
+        </Link>
+        {/* Mobile: horizontal scrollable strip (the sidebar is lg-only). */}
         <nav className="flex items-center gap-1 lg:hidden">
-          {sections
-            .flatMap((s) => s.items)
-            .map((item) => (
+          {groups
+            .flatMap((g) => g.pages)
+            .map((page) => (
               <Link
-                key={item.to}
-                to={item.to}
+                key={page.key}
+                to={page.to}
                 className={
                   "shrink-0 rounded px-2.5 py-1 text-sm whitespace-nowrap " +
-                  (pathname === item.to
+                  (pathname === page.to
                     ? "bg-muted font-medium text-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground")
                 }
               >
-                {item.label}
+                {page.label}
               </Link>
             ))}
         </nav>
@@ -146,16 +66,16 @@ function SettingsLayout() {
       <div className="flex min-h-0 flex-1">
         <aside className="hidden h-full w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-background p-4 lg:flex">
           <nav className="space-y-4">
-            {sections.map((section) => (
-              <div key={section.title}>
+            {groups.map((group) => (
+              <div key={group.key}>
                 <h3 className="mb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  {section.title}
+                  {group.label}
                 </h3>
                 <ul className="space-y-0.5">
-                  {section.items.map((item) => (
-                    <li key={item.to}>
-                      <Link to={item.to} className={cls(item.to)}>
-                        {item.label}
+                  {group.pages.map((page) => (
+                    <li key={page.key}>
+                      <Link to={page.to} className={cls(page.to)}>
+                        {page.label}
                       </Link>
                     </li>
                   ))}
@@ -164,7 +84,7 @@ function SettingsLayout() {
             ))}
           </nav>
         </aside>
-        <div className="flex-1 overflow-auto p-4 lg:p-6">
+        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
           <Outlet />
         </div>
       </div>

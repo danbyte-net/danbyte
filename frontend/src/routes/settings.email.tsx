@@ -11,7 +11,9 @@ import type {
   TenantSettings,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 import { useUrlEnum } from "@/lib/use-url-state"
+import { openingScope } from "@/lib/settings-catalog"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,21 +42,12 @@ type Scope = (typeof SCOPES)[number]
  * they inherit from. The scope belongs on the page: from here you can see
  * what the tenant would fall back to without navigating away from it. */
 function EmailPage() {
-  const { me, canManage, canManageDeployment, isLoading } = useMe()
-  const settingsSites = me.settings_sites ?? []
-  const hasSiteSettings =
-    settingsSites === "all" ? canManage : settingsSites.length > 0
-
-  const allowed = SCOPES.filter((s) =>
-    s === "deployment"
-      ? canManageDeployment
-      : s === "tenant"
-        ? canManage
-        : hasSiteSettings
-  )
+  const { isLoading } = useMe()
+  const held = useSettingsScopes()
+  const allowed = SCOPES.filter((s) => held[s])
   const [scope, setScope] = useUrlEnum<Scope>(
     "scope",
-    allowed[0] ?? "tenant",
+    openingScope("email", allowed) ?? "tenant",
     SCOPES
   )
 

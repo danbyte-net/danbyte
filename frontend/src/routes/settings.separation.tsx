@@ -8,6 +8,7 @@ import type { TenantSettings } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { useUrlEnum } from "@/lib/use-url-state"
+import { openingScope } from "@/lib/settings-catalog"
 import { FormCheckbox } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -37,7 +38,7 @@ function SeparationPage() {
   )
   const [scope, setScope] = useUrlEnum<Scope>(
     "scope",
-    allowed[0] ?? "tenant",
+    openingScope("separation", allowed) ?? "tenant",
     SCOPES
   )
 

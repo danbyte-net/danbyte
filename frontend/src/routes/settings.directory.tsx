@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 
 import { useMe } from "@/lib/use-me"
 import { useUrlEnum } from "@/lib/use-url-state"
+import { openingScope } from "@/lib/settings-catalog"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   DEPLOYMENT_LDAP,
@@ -29,11 +30,9 @@ function DirectoryPage() {
   const allowed = SCOPES.filter((s) =>
     s === "deployment" ? canManageDeployment : canManage
   )
-  // Deployment first when it is available: it is the directory logins fall
-  // back to, so it is the one being set up.
   const [scope, setScope] = useUrlEnum<Scope>(
     "scope",
-    allowed[0] ?? "tenant",
+    openingScope("directory", allowed) ?? "tenant",
     SCOPES
   )
 

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 
 import { useMe } from "@/lib/use-me"
 import { useUrlEnum } from "@/lib/use-url-state"
+import { openingScope } from "@/lib/settings-catalog"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { MonitoringDeploymentCards } from "@/components/settings/monitoring-deployment"
@@ -27,7 +28,7 @@ function MonitoringSettingsPage() {
   )
   const [scope, setScope] = useUrlEnum<Scope>(
     "scope",
-    allowed[0] ?? "tenant",
+    openingScope("monitoring", allowed) ?? "tenant",
     SCOPES
   )
 
