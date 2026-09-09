@@ -7,7 +7,6 @@ writes are even possible.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import time
@@ -15,13 +14,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.core.cache import cache
-from rest_framework.decorators import (
-    api_view,
-    authentication_classes,
-    permission_classes,
-)
+from django.http import Http404
+from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from auth_api.token_auth import ApiTokenAuthentication
 from integrations.toggles import integration_enabled
@@ -35,6 +33,23 @@ logger = logging.getLogger(__name__)
 RATE_LIMIT = 120           # calls
 RATE_WINDOW = 60           # seconds
 MAX_BODY = 256 * 1024
+
+
+class AlwaysJSON(BaseContentNegotiation):
+    """Answer JSON whatever the client asked for.
+
+    A Streamable HTTP client sends ``Accept: application/json,
+    text/event-stream`` because it is prepared for either; some send only
+    the stream type. This server is stateless and always answers a single
+    JSON body, so negotiating would just turn a workable request into a
+    406.
+    """
+
+    def select_parser(self, request, parsers):
+        return parsers[0]
+
+    def select_renderer(self, request, renderers, format_suffix=None):
+        return (renderers[0], renderers[0].media_type)
 
 
 @dataclass
@@ -173,53 +188,67 @@ def _call_tool(request_id, params: dict, ctx: Context) -> dict:
 
 
 def _rows_in(payload) -> int:
+    """How much came back, for the log. One object counts as one row."""
     if isinstance(payload, dict):
         for key in ("rows", "hits", "entries", "types"):
             if isinstance(payload.get(key), list):
                 return len(payload[key])
-        if payload.get("object") is not None:
-            return 1
+        for key in ("object", "where", "monitoring", "fields"):
+            if payload.get(key):
+                return 1
     return 0
 
 
-@api_view(["POST", "GET", "DELETE"])
-@authentication_classes([ApiTokenAuthentication])
-@permission_classes([IsAuthenticated])
-def mcp(request):
-    """The whole protocol surface. GET and DELETE exist because clients probe
-    for a streaming session; both answer plainly rather than 405."""
-    from api.views import _get_active_tenant
+class MCPView(APIView):
+    """The whole protocol surface: one JSON-RPC exchange per request."""
 
-    tenant = _get_active_tenant(request)
-    if not integration_enabled(tenant, "ai"):
-        # Same shape as every other integration that is switched off.
-        return Response({"detail": "Integration not enabled."}, status=404)
-    if request.method in ("GET", "DELETE"):
-        return Response(status=405, headers={"Allow": "POST"})
+    authentication_classes = [ApiTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    renderer_classes = [JSONRenderer]
+    content_negotiation_class = AlwaysJSON
 
-    token = getattr(request, "auth", None)
-    if _rate_limited(token):
-        return Response(
-            protocol.error(None, protocol.RATE_LIMITED,
-                           f"More than {RATE_LIMIT} calls a minute; wait and retry."),
-            status=429, headers={"Retry-After": str(RATE_WINDOW)},
-        )
+    def _tenant_or_404(self, request):
+        from api.views import _get_active_tenant
 
-    body = request.data
-    if isinstance(body, list):
-        # A JSON-RPC batch. Notifications drop out of the answer.
+        tenant = _get_active_tenant(request)
+        if not integration_enabled(tenant, "ai"):
+            # The same shape as every other integration that is switched off.
+            raise Http404("Integration not enabled.")
+        return tenant
+
+    def get(self, request):
+        """Clients probe for a streaming session; this server has none."""
+        self._tenant_or_404(request)
+        return Response({"detail": "This server is stateless; POST JSON-RPC to this URL."},
+                        status=405, headers={"Allow": "POST"})
+
+    delete = get
+
+    def post(self, request):
+        tenant = self._tenant_or_404(request)
+        token = getattr(request, "auth", None)
+        if _rate_limited(token):
+            return Response(
+                protocol.error(None, protocol.RATE_LIMITED,
+                               f"More than {RATE_LIMIT} calls a minute; wait and retry."),
+                status=429, headers={"Retry-After": str(RATE_WINDOW)},
+            )
+        body = request.data
         ctx = _context(request, tenant)
-        answers = [a for a in (_handle(m, ctx) for m in body if isinstance(m, dict)) if a]
-        return Response(answers or [], status=200)
-    if not isinstance(body, dict):
-        return Response(protocol.error(None, protocol.INVALID_REQUEST,
-                                       "Expected a JSON-RPC object."), status=400)
+        if isinstance(body, list):
+            # A JSON-RPC batch. Notifications drop out of the answer.
+            answers = [a for a in (_handle(m, ctx) for m in body if isinstance(m, dict)) if a]
+            return Response(answers or [], status=200)
+        if not isinstance(body, dict):
+            return Response(protocol.error(None, protocol.INVALID_REQUEST,
+                                           "Expected a JSON-RPC object."), status=400)
+        answer = _handle(body, ctx)
+        if answer is None:
+            return Response(status=202)  # a notification: accepted, nothing to say
+        return Response(answer, status=200)
 
-    ctx = _context(request, tenant)
-    answer = _handle(body, ctx)
-    if answer is None:
-        return Response(status=202)  # a notification: accepted, nothing to say
-    return Response(answer, status=200)
+
+mcp = MCPView.as_view()
 
 
 def _context(request, tenant) -> Context:
@@ -234,8 +263,3 @@ def _context(request, tenant) -> Context:
         writes_enabled=writes,
         client=str(request.headers.get("User-Agent", ""))[:120],
     )
-
-
-def token_fingerprint(raw: str) -> str:
-    """Only used by the settings page, to show which token a call came from."""
-    return hashlib.sha256(raw.encode()).hexdigest()[:12]

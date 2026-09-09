@@ -127,6 +127,19 @@ class AuthTests(_Base):
         for method in (self.client.get, self.client.delete):
             response = method("/api/mcp/", HTTP_AUTHORIZATION=f"Token {self.key}")
             self.assertEqual(response.status_code, 405)
+            self.assertIn("POST", response["Allow"])
+
+    def test_any_accept_header_works(self):
+        """A Streamable HTTP client offers text/event-stream; some offer only
+        that. Negotiating would turn a workable request into a 406."""
+        for accept in ("application/json, text/event-stream", "text/event-stream",
+                       "*/*", "application/json"):
+            response = self.client.post(
+                "/api/mcp/", json.dumps(rpc("ping")), content_type="application/json",
+                HTTP_AUTHORIZATION=f"Token {self.key}", HTTP_ACCEPT=accept,
+            )
+            self.assertEqual(response.status_code, 200, accept)
+            self.assertEqual(response["Content-Type"], "application/json")
 
 
 class HandshakeTests(_Base):
