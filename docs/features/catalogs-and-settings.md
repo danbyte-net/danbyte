@@ -73,10 +73,17 @@ that exists at more than one scope, like Email or Directory, carries a
 inheriting shows the value it would fall back to.
 
 The **search box** above the sidebar filters both the grid and the rail as
-you type. It matches a page's name, its description and its keywords, so
-"relay", "587" or "starttls" all find Email. Every page is declared once in
-`frontend/src/lib/settings-catalog.ts`, which is what both navigations and
-the search read - a page cannot appear in one and be missing from another.
+you type, and matches individual settings as well as pages: type "session
+timeout" and the result is the **Sessions** card, not a list of pages to go
+hunting through. Picking one opens its page scrolled to that card. It
+matches a name, its description and its keywords, so "relay", "587" or
+"starttls" all find the mail server.
+
+Every page and card is declared once in
+`frontend/src/lib/settings-catalog.ts`, which is what both navigations, the
+search and the assistant read - a page cannot appear in one and be missing
+from another, and a test fails the build if a card is renamed there without
+being renamed in the page that draws it.
 
 ## Managing the catalogs
 

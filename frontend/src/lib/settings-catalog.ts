@@ -335,3 +335,356 @@ export function openingScope<T extends SettingsScope>(
   const preferred = allowed.find((s) => s === wanted)
   return preferred ?? allowed[0]
 }
+
+/* ── cards ───────────────────────────────────────────────────────────── */
+
+/**
+ * One entry per card, so search finds the *setting* rather than the page it
+ * sits on: someone looking for "session timeout" should not have to guess
+ * that it lives under Security.
+ *
+ * `label` has to match the card's own `title` exactly - that is what derives
+ * the anchor a result links to, and `settings-catalog.test.ts` fails the
+ * build if a label here no longer exists in the page it claims.
+ */
+export interface SettingsCardEntry {
+  /** Stable id, unique across the catalog. */
+  key: string
+  /** The card's title, verbatim. */
+  label: string
+  description: string
+  /** Catalog key of the page it lives on. */
+  page: string
+  keywords: string[]
+}
+
+export const SETTINGS_CARDS: SettingsCardEntry[] = [
+  // Email
+  {
+    key: "email.server",
+    label: "Mail server",
+    page: "email",
+    description: "Host, port, credentials and the From address",
+    keywords: ["smtp", "relay", "587", "465", "starttls", "from address"],
+  },
+  {
+    key: "email.test",
+    label: "Send a test",
+    page: "email",
+    description: "Check the relay actually works",
+    keywords: ["test email", "verify", "try"],
+  },
+  {
+    key: "email.templates",
+    label: "Preview templates",
+    page: "email",
+    description: "Send a sample of any message Danbyte writes",
+    keywords: ["template", "preview", "digest", "invite", "sample"],
+  },
+
+  // Security
+  {
+    key: "security.sessions",
+    label: "Sessions",
+    page: "security",
+    description: "Idle timeout, and signing everyone out",
+    keywords: ["session", "idle", "timeout", "sign out", "logout"],
+  },
+  {
+    key: "security.secrets",
+    label: "Secret store",
+    page: "security",
+    description: "Where credentials are kept at rest",
+    keywords: ["vault", "azure key vault", "secret", "encryption", "kms"],
+  },
+  {
+    key: "security.outbound",
+    label: "Outbound connections",
+    page: "security",
+    description: "Internal hosts the server may reach despite the SSRF guard",
+    keywords: ["ssrf", "allowlist", "internal", "cidr", "egress"],
+  },
+  {
+    key: "security.delivery",
+    label: "Outbound delivery",
+    page: "security",
+    description: "Public base URL, webhook timeout and proxy",
+    keywords: ["proxy", "webhook timeout", "base url", "deep link"],
+  },
+  {
+    key: "security.ssh",
+    label: "In-browser SSH terminal",
+    page: "security",
+    description: "Whether operators can open a shell from a device page",
+    keywords: ["ssh", "terminal", "console", "shell"],
+  },
+  {
+    key: "security.model",
+    label: "Assistant model",
+    page: "security",
+    description: "Which model the in-app chat and MCP server talk to",
+    keywords: ["ai", "llm", "anthropic", "openai", "ollama", "local model"],
+  },
+
+  // Branding & identity
+  {
+    key: "branding.identity",
+    label: "Identity",
+    page: "branding",
+    description: "Install name, logo and favicon",
+    keywords: ["logo", "favicon", "name", "brand", "login page"],
+  },
+  {
+    key: "branding.datetime",
+    label: "Date & time",
+    page: "branding",
+    description: "Deployment default date format, clock and timezone",
+    keywords: ["timezone", "date format", "clock", "24h", "12h"],
+  },
+  {
+    key: "branding.numids",
+    label: "Human-readable IDs",
+    page: "branding",
+    description: "Short per-tenant numbers beside UUIDs",
+    keywords: ["numid", "id", "number", "short id"],
+  },
+  {
+    key: "branding.faceplates",
+    label: "Faceplates",
+    page: "branding",
+    description: "How device front and rear panels are drawn",
+    keywords: ["faceplate", "panel", "render", "port drawing"],
+  },
+  {
+    key: "branding.macvendors",
+    label: "MAC vendors",
+    page: "branding",
+    description: "The OUI database behind MAC vendor lookup",
+    keywords: ["oui", "mac", "vendor", "ieee"],
+  },
+
+  // Tenant policy
+  {
+    key: "tenant.ui",
+    label: "UI policy",
+    page: "tenant-policy",
+    description: "Optional device fields and human-readable numbers",
+    keywords: ["device fields", "numid", "optional fields"],
+  },
+  {
+    key: "tenant.datetime",
+    label: "Date & time",
+    page: "tenant-policy",
+    description: "This tenant's date format, clock and timezone",
+    keywords: ["timezone", "date format", "clock"],
+  },
+  {
+    key: "tenant.onboarding",
+    label: "First-time setup",
+    page: "tenant-policy",
+    description: "Re-open the guided setup wizard",
+    keywords: ["wizard", "onboarding", "getting started"],
+  },
+
+  // Separation
+  {
+    key: "separation.sites",
+    label: "Site separation",
+    page: "separation",
+    description: "Each site behaves like a mini-tenant for site-scoped users",
+    keywords: ["site scoped", "isolation", "mini tenant", "boundary"],
+  },
+  {
+    key: "separation.delegation",
+    label: "Delegation",
+    page: "separation",
+    description: "Whether site editors may invite their own viewers",
+    keywords: ["delegate", "invite", "viewer", "site admin"],
+  },
+
+  // Monitoring
+  {
+    key: "monitoring.drift",
+    label: "Config drift",
+    page: "monitoring",
+    description: "How often drift runs are dispatched",
+    keywords: ["drift", "baseline", "automation", "interval"],
+  },
+  {
+    key: "monitoring.digest",
+    label: "Email digest",
+    page: "monitoring",
+    description: "The recurring monitoring summary and who gets it",
+    keywords: ["digest", "summary", "weekly", "recipients"],
+  },
+
+  // SSO. Directory has no card entries yet: LdapDirectory draws its own
+  // sections rather than SettingsCards, so there is no anchor to link to -
+  // the Directory *page* is still found by its own keywords.
+  {
+    key: "sso.providers",
+    label: "Providers",
+    page: "sso",
+    description: "Each identity provider offered on the login page",
+    keywords: ["oidc", "saml", "entra", "okta", "google", "provider"],
+  },
+  {
+    key: "sso.mappings",
+    label: "Group mappings",
+    page: "sso",
+    description: "Which Danbyte group an asserted group grants",
+    keywords: ["group", "claim", "mapping", "role"],
+  },
+  {
+    key: "sso.local",
+    label: "Local sign-in",
+    page: "sso",
+    description: "Whether the username and password form still shows",
+    keywords: ["local login", "password", "hide login"],
+  },
+
+  // Your data
+  {
+    key: "data.device-fields",
+    label: "Device fields",
+    page: "device-fields",
+    description: "Which fields a device form and page show",
+    keywords: ["device", "fields", "hide", "show"],
+  },
+  {
+    key: "data.table-defaults",
+    label: "Tenant defaults",
+    page: "table-layouts",
+    description: "Publish or lock a table's column layout",
+    keywords: ["columns", "layout", "publish", "lock", "table"],
+  },
+  {
+    key: "data.components",
+    label: "Fields",
+    page: "component-details",
+    description: "What a component popover shows, top to bottom",
+    keywords: ["popover", "hover", "interface", "port"],
+  },
+  {
+    key: "data.maps",
+    label: "Map tiles",
+    page: "maps",
+    description: "Tile server URLs and attribution",
+    keywords: ["tiles", "openstreetmap", "osm", "satellite", "esri"],
+  },
+
+  // Devices & polling
+  {
+    key: "devices.snmp-profiles",
+    label: "Profiles",
+    page: "snmp-profiles",
+    description: "Reusable SNMP credentials for polling",
+    keywords: ["snmp", "v2c", "v3", "community", "credential"],
+  },
+  {
+    key: "devices.snmp-sensors",
+    label: "Sensors",
+    page: "snmp-sensors",
+    description: "Vendor OIDs mapped to inventory item health",
+    keywords: ["oid", "sensor", "temperature", "psu", "fan"],
+  },
+  {
+    key: "devices.connect",
+    label: "Protocols",
+    page: "connect-protocols",
+    description: "The launch actions on a device's Connect menu",
+    keywords: ["ssh", "rdp", "vnc", "https", "telnet", "launch"],
+  },
+
+  // This install
+  {
+    key: "install.version",
+    label: "This install",
+    page: "updates",
+    description: "Version, commit and the versions of what it runs on",
+    keywords: ["version", "commit", "python", "django", "postgres", "redis"],
+  },
+  {
+    key: "install.notes",
+    label: "After this upgrade",
+    page: "updates",
+    description: "Steps a release still needs from an operator",
+    keywords: ["upgrade notes", "manual step", "post upgrade"],
+  },
+  {
+    key: "install.source",
+    label: "Release source",
+    page: "updates",
+    description: "Which repo releases are read from, and automatic updates",
+    keywords: ["repo", "release", "token", "airgap", "auto update"],
+  },
+  {
+    key: "install.bundle",
+    label: "Upgrade from a bundle",
+    page: "updates",
+    description: "Upload a release tarball for an offline install",
+    keywords: ["offline", "airgap", "tarball", "bundle", "upload"],
+  },
+  {
+    key: "install.releases",
+    label: "Releases",
+    page: "updates",
+    description: "Available versions and their changelogs",
+    keywords: ["changelog", "version", "upgrade", "rollback"],
+  },
+  {
+    key: "install.backup-targets",
+    label: "Targets",
+    page: "backups",
+    description: "Where archives are written",
+    keywords: ["s3", "local", "target", "archive", "bucket"],
+  },
+  {
+    key: "install.backup-schedules",
+    label: "Schedules",
+    page: "backups",
+    description: "When backups run and how many are kept",
+    keywords: ["schedule", "retention", "cron", "nightly"],
+  },
+  {
+    key: "install.plugins",
+    label: "Installed plugins",
+    page: "plugins",
+    description: "Enable a plugin for this tenant, or upload one",
+    keywords: ["plugin", "upload", "enable", "module"],
+  },
+  {
+    key: "install.services",
+    label: "Services",
+    page: "plugins",
+    description: "Restart the web and worker processes",
+    keywords: ["restart", "worker", "service", "systemd", "rq"],
+  },
+
+  // Preferences
+  {
+    key: "prefs.display",
+    label: "Display",
+    page: "preferences",
+    description: "Your own theme, date format, clock and timezone",
+    keywords: ["theme", "dark mode", "timezone", "clock", "link icons"],
+  },
+  {
+    key: "prefs.tables",
+    label: "Table layouts",
+    page: "preferences",
+    description: "Your saved column layouts, and resetting one",
+    keywords: ["columns", "reset", "layout"],
+  },
+]
+
+/** Cards on the pages this person can reach. */
+export function visibleCards(pages: SettingsPage[]): SettingsCardEntry[] {
+  const keys = new Set(pages.map((p) => p.key))
+  return SETTINGS_CARDS.filter((c) => keys.has(c.page))
+}
+
+/** The page a card lives on. */
+export function pageOf(card: SettingsCardEntry): SettingsPage | undefined {
+  return SETTINGS_PAGES.find((p) => p.key === card.page)
+}

@@ -97,6 +97,16 @@ export interface SettingsInherit {
  */
 export type SettingsLayout = "stack" | "rows" | "plain" | "flush"
 
+/** A card's anchor: the slug of its title, so a search result can link
+ * straight to it without every call site declaring an id. */
+export function cardAnchor(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
 export function SettingsCard({
   title,
   /** Rendered beside the title (a status pill, a count). Kept separate from
@@ -141,7 +151,13 @@ export function SettingsCard({
     // collapses its margins against the balanced columns above, which left no
     // gap above the spanning card.
     <section
-      className={cn("rounded-lg border border-border bg-card", className)}
+      // Derived from the title so a search result can deep-link here and
+      // the browser does the scrolling.
+      id={cardAnchor(title)}
+      className={cn(
+        "scroll-mt-6 rounded-lg border border-border bg-card",
+        className
+      )}
     >
       <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
         <div className="min-w-0">

@@ -1,9 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 
+import { cardAnchor } from "@/components/settings/settings-card"
+
 import { groupedPages, visiblePages } from "@/lib/settings-catalog"
 import {
   SETTINGS_PAGE_COUNT,
   useFilteredPages,
+  useMatchingCards,
 } from "@/components/settings/settings-filter"
 import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 
@@ -18,11 +21,42 @@ export const Route = createFileRoute("/settings/")({ component: SettingsIndex })
  * scope switch. */
 function SettingsIndex() {
   const held = useSettingsScopes()
-  const pages = useFilteredPages(visiblePages(held))
+  const reachable = visiblePages(held)
+  const pages = useFilteredPages(reachable)
   const groups = groupedPages(pages)
+  const cards = useMatchingCards(reachable)
 
   return (
     <div className="max-w-5xl space-y-7">
+      {cards.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="border-b border-border pb-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Settings
+          </h2>
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
+            {cards.map(({ card, page }) => (
+              <Link
+                key={card.key}
+                to={page.to}
+                hash={cardAnchor(card.label)}
+                className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/40"
+              >
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium">
+                    {card.label}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {card.description}
+                  </span>
+                </span>
+                <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                  {page.label}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       {pages.length !== SETTINGS_PAGE_COUNT && (
         <p className="text-xs text-muted-foreground">
           {pages.length} of {SETTINGS_PAGE_COUNT} pages match.

@@ -2,8 +2,8 @@ import { createContext, useContext, useMemo, useState } from "react"
 import { Search } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
-import { SETTINGS_PAGES } from "@/lib/settings-catalog"
-import type { SettingsPage } from "@/lib/settings-catalog"
+import { pageOf, SETTINGS_PAGES, visibleCards } from "@/lib/settings-catalog"
+import type { SettingsCardEntry, SettingsPage } from "@/lib/settings-catalog"
 
 /**
  * One search box for the settings section (#51).
@@ -80,3 +80,29 @@ export function SettingsSearch({ className }: { className?: string }) {
 
 /** How many pages exist at all - the "n of m" the hub shows while filtering. */
 export const SETTINGS_PAGE_COUNT = SETTINGS_PAGES.length
+
+/** Individual settings a query matches, so "session timeout" answers with
+ * the card rather than leaving someone to guess it lives under Security.
+ *
+ * Only runs while there is a query: with none, the pages are the answer. */
+export function useMatchingCards(
+  pages: SettingsPage[]
+): { card: SettingsCardEntry; page: SettingsPage }[] {
+  const { query } = useSettingsFilter()
+  return useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (needle.length < 2) return []
+    const words = needle.split(/\s+/)
+    return visibleCards(pages)
+      .filter((card) => {
+        const haystack = [card.label, card.description, ...card.keywords]
+          .join(" ")
+          .toLowerCase()
+        return words.every((w) => haystack.includes(w))
+      })
+      .flatMap((card) => {
+        const page = pageOf(card)
+        return page ? [{ card, page }] : []
+      })
+  }, [pages, query])
+}
