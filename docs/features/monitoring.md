@@ -256,6 +256,7 @@ policy carries two, both empty by default:
 | Filter | Effect |
 |---|---|
 | **Name matches** | A glob the device name must match - `core-*`, `*-fw??`. Case-insensitive. |
+| **On an interface named** | A glob the address's interface must match - `Gi0/0/*`. Reads the *port*, not the device, so "only the uplinks" is one setting. An address bound to no interface never matches it. |
 | **Carries all these tags** | Every tag listed must be on the device. Several tags means all of them, not any. |
 
 They **narrow**, never widen: a filter can only stop a policy applying, never
@@ -263,8 +264,9 @@ add a check and never disable one a looser policy already added. That is why
 they are filters rather than scopes - a ladder would need an answer to "is a
 tag more specific than a role", and nobody can predict that one.
 
-Both read the **device**, so a filtered policy does not reach an address with
-nothing on it. Narrower is the safe direction for a rule that can only add
+Name and tags read the **device**, so a policy filtered on either does not
+reach an address with nothing on it; the interface filter reads the address's
+own port. Narrower is the safe direction for a rule that can only add
 monitoring.
 
 !!! warning "A prefix policy competes by its mask length"

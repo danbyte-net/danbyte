@@ -414,6 +414,13 @@ class MonitoringPolicy(TimestampedModel):
         max_length=200, blank=True, default="",
         help_text="Glob the device name must match, e.g. 'core-*'. Empty = any.",
     )
+    match_interface = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text=(
+            "Glob the address's interface name must match, e.g. 'Gi0/0/*'. "
+            "Empty = any. An address bound to no interface never matches."
+        ),
+    )
 
     target = models.CharField(
         max_length=16,

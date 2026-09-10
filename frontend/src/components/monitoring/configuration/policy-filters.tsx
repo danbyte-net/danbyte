@@ -28,12 +28,17 @@ export function PolicyFilterButton({
   disabled,
 }: {
   policy: MonitoringPolicy | undefined
-  onSave: (patch: { match_name: string; match_tags: string[] }) => void
+  onSave: (patch: {
+    match_name: string
+    match_tags: string[]
+    match_interface: string
+  }) => void
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const name = policy?.match_name ?? ""
   const tags = policy?.match_tags ?? []
+  const iface = policy?.match_interface ?? ""
 
   return (
     <>
@@ -46,7 +51,7 @@ export function PolicyFilterButton({
         onClick={() => setOpen(true)}
       >
         <Filter data-icon="inline-start" />
-        <span>{summary(name, tags)}</span>
+        <span>{summary(name, tags, iface)}</span>
         <ChevronDown data-icon="inline-end" />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -58,6 +63,7 @@ export function PolicyFilterButton({
             <FilterForm
               name={name}
               tags={tags}
+              iface={iface}
               onCancel={() => setOpen(false)}
               onSave={(patch) => {
                 onSave(patch)
@@ -72,27 +78,34 @@ export function PolicyFilterButton({
 }
 
 /** What the button says: the filters at a glance, or that there are none. */
-function summary(name: string, tags: string[]): string {
-  if (!name && tags.length === 0) return "Any"
+function summary(name: string, tags: string[], iface: string): string {
   const parts: string[] = []
   if (name) parts.push(name)
+  if (iface) parts.push(iface)
   if (tags.length) parts.push(`${tags.length} tag${tags.length === 1 ? "" : "s"}`)
-  return parts.join(" · ")
+  return parts.length ? parts.join(" · ") : "Any"
 }
 
 function FilterForm({
   name,
   tags,
+  iface,
   onSave,
   onCancel,
 }: {
   name: string
   tags: string[]
-  onSave: (patch: { match_name: string; match_tags: string[] }) => void
+  iface: string
+  onSave: (patch: {
+    match_name: string
+    match_tags: string[]
+    match_interface: string
+  }) => void
   onCancel: () => void
 }) {
   const [pattern, setPattern] = useState(name)
   const [picked, setPicked] = useState<string[]>(tags)
+  const [port, setPort] = useState(iface)
 
   const options = useQuery({
     queryKey: ["tags-picker"],
@@ -119,7 +132,11 @@ function FilterForm({
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        onSave({ match_name: pattern.trim(), match_tags: picked })
+        onSave({
+          match_name: pattern.trim(),
+          match_tags: picked,
+          match_interface: port.trim(),
+        })
       }}
       className="grid gap-4"
     >
@@ -129,6 +146,13 @@ function FilterForm({
         value={pattern}
         onChange={setPattern}
         placeholder="core-*"
+      />
+      <FormText
+        label="On an interface named"
+        hint="A glob, e.g. Gi0/0/*. Empty matches any, including addresses on no interface."
+        value={port}
+        onChange={setPort}
+        placeholder="Gi0/0/*"
       />
       <Field
         label="Carries all these tags"
@@ -144,8 +168,9 @@ function FilterForm({
         />
       </Field>
       <p className="text-[11px] text-muted-foreground">
-        Filters read the device, so a filtered policy never reaches an address
-        with nothing on it.
+        Name and tags read the device, so a policy filtered on either never
+        reaches an address with nothing on it. The interface filter reads the
+        address's own port.
       </p>
       <FormFooter onCancel={onCancel} submitLabel="Save" />
     </form>

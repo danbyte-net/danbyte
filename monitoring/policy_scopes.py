@@ -199,6 +199,18 @@ def filters_pass(policy, ip, device, device_tags=None) -> bool:
     """
     tags = policy.match_tags or []
     pattern = (policy.match_name or "").strip()
+    iface = (policy.match_interface or "").strip()
+    if not tags and not pattern and not iface:
+        return True
+    if iface:
+        # Reads the address's interface rather than the device: "only the
+        # addresses on the uplinks" is a statement about ports, not hosts. An
+        # address bound to nothing never matches, which is the narrow answer.
+        from fnmatch import fnmatchcase
+
+        name = getattr(getattr(ip, "assigned_interface", None), "name", "")
+        if not name or not fnmatchcase(name.lower(), iface.lower()):
+            return False
     if not tags and not pattern:
         return True
     if device is None:

@@ -4627,6 +4627,9 @@ export interface MonitoringPolicy {
   match_tags: string[]
   /** Glob the device name must match, e.g. "core-*". Empty matches any. */
   match_name: string
+  /** Glob the address's interface name must match, e.g. "Gi0/0/*". Reads the
+   * interface, not the device - an address bound to none never matches. */
+  match_interface: string
   /** Which of the matched device's IPs the checks target. Honoured by every
    * scope that can name a device - site and region included. */
   target: "all" | "interfaces" | "primary" | "oob"

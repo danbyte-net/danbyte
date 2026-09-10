@@ -446,3 +446,62 @@ class FilterTests(PrecedenceBase):
         self.policy(MonitoringPolicy.SCOPE_PREFIX, prefix=pfx, interval=900,
                     match_name="core-*")
         self.assertEqual(self.winning_interval(ip), 100)
+
+
+class InterfaceFilterTests(PrecedenceBase):
+    """"Only the addresses on the uplinks" is a statement about ports.
+
+    Unlike the tag and name filters this one reads the *address's* interface,
+    not the device - which is the whole point of it.
+    """
+
+    def iface(self, device, name):
+        from api.models import Interface
+
+        return Interface.objects.create(device=device, name=name)
+
+    def test_a_matching_interface_applies(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        ip.assigned_interface = self.iface(device, "GigabitEthernet0/0/1")
+        ip.save(update_fields=["assigned_interface"])
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_interface="Gigabit*")
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_a_non_matching_interface_does_not(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        ip.assigned_interface = self.iface(device, "Loopback0")
+        ip.save(update_fields=["assigned_interface"])
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_interface="Gigabit*")
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_an_address_on_no_interface_never_matches(self):
+        """The narrow answer: a filter can only remove a policy, so an address
+        with nothing to compare falls out rather than sneaking through."""
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_interface="Gigabit*")
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_it_ignores_case(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        ip.assigned_interface = self.iface(device, "Eth1/1")
+        ip.save(update_fields=["assigned_interface"])
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_interface="eth1/*")
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_it_combines_with_the_other_filters(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        ip.assigned_interface = self.iface(device, "Eth1/1")
+        ip.save(update_fields=["assigned_interface"])
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_interface="eth1/*", match_name="core-*")
+        # Filters narrow: the interface matches, the name does not.
+        self.assertEqual(resolve_effective_checks(ip), [])
