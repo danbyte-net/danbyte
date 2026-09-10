@@ -69,7 +69,11 @@ def check_kinds() -> list[tuple[str, str]]:
     out = list(CheckKind.choices)
     for kind in sorted(CHECKER_REGISTRY):
         if kind not in labels:
-            out.append((kind, kind))
+            # A registered checker may name itself. Optional, so a checker
+            # written against an older Outpost release still registers - it
+            # just reads as its slug.
+            checker = CHECKER_REGISTRY[kind]
+            out.append((kind, getattr(checker, "label", "") or kind))
     return out
 
 
@@ -1036,18 +1040,26 @@ class MonitoringEngine(TimestampedModel):
 
 
 class MonitoringEngineBinding(TimestampedModel):
-    """Assigns a monitoring engine to a Site or Location.
+    """Assigns a monitoring engine to a Device, Site, Location or Prefix.
 
     Kept on the monitoring side (referencing api ids by ``object_id``) so the
     ``api`` app never depends on ``monitoring`` - the same pattern as
-    ``SnmpProfileBinding``. One engine per (tenant, scope, object). Location
-    beats Site when both are set (see ``monitoring/engines.py``).
+    ``SnmpProfileBinding``. One engine per (tenant, scope, object), resolved
+    most-specific-first in ``monitoring/engines.py``: **device → location (→
+    parents) → prefix → site → tenant default → local**.
+
+    The device scope is what lets one host answer somewhere else without
+    moving its whole site - "this switch is watched by Zabbix, the rest of the
+    building is ours" is a normal thing to want, and the site-level switch made
+    it an all-or-nothing choice.
     """
 
+    SCOPE_DEVICE = "device"
     SCOPE_SITE = "site"
     SCOPE_LOCATION = "location"
     SCOPE_PREFIX = "prefix"
     SCOPE_CHOICES = [
+        (SCOPE_DEVICE, "Device"),
         (SCOPE_SITE, "Site"),
         (SCOPE_LOCATION, "Location"),
         (SCOPE_PREFIX, "Prefix"),
@@ -1061,7 +1073,9 @@ class MonitoringEngineBinding(TimestampedModel):
         MonitoringEngine, on_delete=models.CASCADE, related_name="bindings"
     )
     scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
-    object_id = models.UUIDField(help_text="id of the site / location.")
+    object_id = models.UUIDField(
+        help_text="id of the device / site / location / prefix."
+    )
 
     class Meta:
         constraints = [

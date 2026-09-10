@@ -9,16 +9,20 @@ import { isUserInitiated } from "@/lib/user-activation"
 
 const INHERIT = "__inherit__"
 
-/** Assign the monitoring engine (Outpost) that runs checks for a site or
- * location. Saves immediately on change via the engine-binding endpoint - the
+/** Assign the monitoring engine that runs checks for a device, site, location
+ * or prefix. Saves immediately on change via the engine-binding endpoint - the
  * assignment is independent of the form's own save. Render only for an existing
- * object (needs its id). */
+ * object (needs its id).
+ *
+ * Most specific wins: a device binding beats its location, which beats its
+ * prefix, which beats its site. That is what lets one host be answered by a
+ * Zabbix without moving the building it sits in. */
 export function MonitoringEngineField({
   scope,
   objectId,
   disabled = false,
 }: {
-  scope: "site" | "location"
+  scope: "device" | "site" | "location" | "prefix"
   objectId: string
   /** No change grant: render read-only instead of a select whose value snaps
    * back after a refused PUT - which reads as "not saved" (#125). */

@@ -86,7 +86,13 @@ def engine_for_ip(ip) -> MonitoringEngine:
     tenant = ip.tenant
     dev = getattr(ip, "assigned_device", None)
 
-    engine = _location_chain_engine(tenant, dev.location_id if dev else None)
+    # The device first: "this switch is watched by Zabbix, the rest of the
+    # building is ours" has to be sayable without moving a whole site.
+    engine = _binding_engine(
+        tenant, MonitoringEngineBinding.SCOPE_DEVICE, dev.id if dev else None
+    )
+    if engine is None:
+        engine = _location_chain_engine(tenant, dev.location_id if dev else None)
     if engine is None:
         engine = _binding_engine(
             tenant,
@@ -121,7 +127,11 @@ def engine_for_device(device) -> MonitoringEngine:
     ``engine_for_ip`` but keyed off the device's own location/site - used to
     decide which Outpost runs a device's SNMP discovery."""
     tenant = device.tenant
-    engine = _location_chain_engine(tenant, device.location_id)
+    engine = _binding_engine(
+        tenant, MonitoringEngineBinding.SCOPE_DEVICE, device.id
+    )
+    if engine is None:
+        engine = _location_chain_engine(tenant, device.location_id)
     if engine is None:
         engine = _binding_engine(
             tenant, MonitoringEngineBinding.SCOPE_SITE, device.site_id

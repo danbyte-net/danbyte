@@ -974,7 +974,7 @@ def engine_health_view(request):
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def engine_binding_view(request, scope, object_id):
-    """Read/write the monitoring engine bound to a site/location/prefix.
+    """Read/write the monitoring engine bound to a device/site/location/prefix.
 
     GET returns ``{engine_id}``; PUT ``{engine_id}`` sets it (null clears →
     inherit). Prefix bindings drive subnet discovery and prefix-policy checks.
@@ -989,6 +989,7 @@ def engine_binding_view(request, scope, object_id):
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
     if scope not in (
+        MonitoringEngineBinding.SCOPE_DEVICE,
         MonitoringEngineBinding.SCOPE_SITE,
         MonitoringEngineBinding.SCOPE_LOCATION,
         MonitoringEngineBinding.SCOPE_PREFIX,
@@ -1031,6 +1032,33 @@ def engine_binding_view(request, scope, object_id):
             return Response({"engine_id": "Not found."}, status=400)
     set_binding(tenant, scope, object_id, engine)
     return Response({"engine_id": str(engine.id) if engine else None})
+
+
+@extend_schema(
+    summary="Every selectable check kind, built-in and registered",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{'kinds': [{value, label}]} - the built-in enum plus any "
+        "kind a plugin or engine driver registered.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def check_kinds_view(request):
+    """What a check can be.
+
+    The checker registry is the source of truth for what can actually run, so
+    the form asks it rather than restating the list in TypeScript - which is
+    how a registered kind (a Zabbix check, a plugin's own) could exist on the
+    server and be unreachable from the UI.
+    """
+    from .models import check_kinds
+
+    return Response({
+        "kinds": [{"value": value, "label": label} for value, label in check_kinds()]
+    })
 
 
 @extend_schema(

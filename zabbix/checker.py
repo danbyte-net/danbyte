@@ -24,6 +24,10 @@ KIND = "zabbix"
 @register
 class ZabbixChecker:
     kind = KIND
+    #: What the check-kind picker calls it. Without this the registry falls
+    #: back to the slug and an operator picks "zabbix" from a list of things
+    #: like "TLS certificate".
+    label = "Zabbix"
 
     async def run(self, target, params, secret_params, timeout_ms):
         return CheckOutcome.unknown(

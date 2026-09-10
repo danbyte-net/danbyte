@@ -63,6 +63,16 @@ class EngineDriver(Protocol):
         """
         ...
 
+    def claims_kind(self, engine, kind: str) -> bool:
+        """Whether this driver answers checks of ``kind``.
+
+        Optional; the default is "the kind named after the engine kind", which
+        is the shape every driver has had so far. It matters because a target
+        bound to a driver engine still has its *other* checks - an ICMP ping
+        alongside the Zabbix status - and something has to run those.
+        """
+        ...
+
 
 @dataclass(frozen=True)
 class EngineKind:
@@ -150,3 +160,26 @@ def engine_usable(engine) -> bool:
         # An unusable driver is a reason to stop choosing this engine, never a
         # reason to fail the whole resolve for every other target.
         return False
+
+
+def driver_claims_kind(engine, kind: str) -> bool:
+    """Whether ``engine``'s driver answers a check of ``kind``.
+
+    Built-in engines answer everything. A driver answers what it says it does,
+    defaulting to the check kind named after it - so a Zabbix engine takes the
+    ``zabbix`` checks on a target and leaves that target's ICMP to whoever can
+    actually ping it. Without this, binding a device to Zabbix silently stopped
+    every other check it had: nothing claimed them, so nothing ran them.
+    """
+    driver = driver_for(engine)
+    if driver is None:
+        return True
+    asked = getattr(driver, "claims_kind", None)
+    if asked is None:
+        return kind == getattr(engine, "kind", "")
+    try:
+        return bool(asked(engine, kind))
+    except Exception:
+        # A driver that cannot answer must not strand the check. Falling back
+        # to the default keeps the target monitored.
+        return kind == getattr(engine, "kind", "")

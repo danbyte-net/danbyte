@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type CheckKind, type CheckTemplate } from "@/lib/api"
+import { api, type CheckTemplate } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,7 @@ import { FormSelect, FormText } from "@/components/forms"
 import {
   CheckFields,
   INTERVALS,
-  KINDS,
+  useCheckKinds,
   buildParams,
   initialValues,
   missingRequired,
@@ -38,7 +38,8 @@ export function TemplateEditor({
   const isEdit = !!template
 
   const [name, setName] = useState("")
-  const [kind, setKind] = useState<CheckKind>("icmp")
+  const [kind, setKind] = useState<string>("icmp")
+  const kinds = useCheckKinds()
   const [interval, setInterval] = useState("300")
   const [vals, setVals] = useState<Vals>(() => initialValues("icmp"))
 
@@ -122,7 +123,7 @@ export function TemplateEditor({
                   Type
                 </label>
                 <div className="flex h-9 items-center rounded-md border border-border bg-muted/40 px-3 text-sm text-muted-foreground">
-                  {KINDS.find((k) => k.value === kind)?.label ?? kind}
+                  {kinds.find((k) => k.value === kind)?.label ?? kind}
                 </div>
               </div>
             ) : (
@@ -130,11 +131,11 @@ export function TemplateEditor({
                 label="Type"
                 value={kind}
                 onChange={(v) => {
-                  const k = (v as CheckKind) ?? "icmp"
+                  const k = v ?? "icmp"
                   setKind(k)
                   setVals(initialValues(k))
                 }}
-                options={KINDS}
+                options={kinds}
               />
             )}
             <FormSelect

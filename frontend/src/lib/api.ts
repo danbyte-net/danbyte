@@ -5142,7 +5142,7 @@ export interface AlertsResponse {
 export interface Silence {
   id: string
   reason: string
-  match_kinds: CheckKind[]
+  match_kinds: string[]
   match_statuses: CheckStatus[]
   match_tag_slugs: string[]
   match_prefix: string | null
@@ -5162,7 +5162,7 @@ export interface AlertRule {
   name: string
   enabled: boolean
   weight: number
-  match_kinds: CheckKind[]
+  match_kinds: string[]
   match_statuses: CheckStatus[]
   match_tag_slugs: string[]
   match_prefix: string | null

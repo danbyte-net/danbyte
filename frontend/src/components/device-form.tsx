@@ -38,6 +38,8 @@ import { DeviceTypePicker } from "@/components/device-type-picker"
 import { RackPicker } from "@/components/rack-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { MonitoringEngineField } from "@/components/monitoring-engine-field"
+import { useMe } from "@/lib/use-me"
 
 const AIRFLOW_OPTIONS: { value: string; label: string }[] = [
   { value: "front-to-rear", label: "Front to rear" },
@@ -89,6 +91,7 @@ export function DeviceForm({
   onSaved,
   onCancel,
 }: DeviceFormProps) {
+  const { canDo } = useMe()
   const isEdit = !!device
   // Read cloneable field values from the edit object or the clone seed; identity
   // and placement fields deliberately read from `device` only, so a clone starts
@@ -864,6 +867,16 @@ export function DeviceForm({
               />
             </div>
           </FormSection>
+
+          {device?.id && (
+            <FormSection title="Monitoring" card>
+              <MonitoringEngineField
+                scope="device"
+                objectId={device.id}
+                disabled={!canDo("device", "change")}
+              />
+            </FormSection>
+          )}
         </FormColumn>
       </FormColumns>
 

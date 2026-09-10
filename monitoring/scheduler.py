@@ -26,7 +26,7 @@ from django.utils import timezone
 from api.models import IPAddress
 from core.models import Tenant
 
-from .engine_drivers import driver_for, engine_usable
+from .engine_drivers import driver_claims_kind, driver_for, engine_usable
 from .engines import engine_for_ip
 from .models import (
     CheckAssignment, CheckState, MonitoringEngine, MonitoringPolicy,
@@ -302,6 +302,29 @@ def dispatch_drivers(now=None) -> int:
     return total
 
 
+def _unclaimed_driver_states(now) -> list:
+    """Due states on a driver engine that its driver does not answer for.
+
+    Which kinds a driver claims is the driver's to say, so the final word is a
+    Python pass. The query first drops the ones matching the default rule -
+    a Zabbix engine's ``zabbix`` states, which is nearly all of them - so a
+    thousand-host engine does not haul its whole due batch into memory every
+    tick just to discard it.
+
+    The prefilter assumes a driver always claims the kind named after it. A
+    driver that disowned its own kind would strand those states, but that kind
+    exists *because* the driver registered it, so there is nothing to disown.
+    """
+    states = list(
+        CheckState.objects.filter(next_run__lte=now, in_flight=False)
+        .exclude(engine__isnull=True)
+        .exclude(engine__kind__in=(MonitoringEngine.LOCAL, MonitoringEngine.REMOTE))
+        .exclude(kind=models.F("engine__kind"))
+        .select_related("template", "assignment", "engine")
+    )
+    return [s for s in states if not driver_claims_kind(s.engine, s.kind)]
+
+
 def dispatch(now=None, sync: bool = False) -> dict:
     """Enqueue worker jobs for every due check. ``sync=True`` runs them inline
     (for tests / a no-worker box) instead of via RQ."""
@@ -326,6 +349,11 @@ def dispatch(now=None, sync: bool = False) -> dict:
         )
         .select_related("template", "assignment")
     )
+    # Plus the orphans: a target bound to a driver engine still has its other
+    # checks, and a driver only answers its own kind. Nobody was claiming an
+    # ICMP ping on a Zabbix-bound device, so it simply never ran - which reads
+    # as a monitoring system quietly going blind. The core runs them.
+    due += _unclaimed_driver_states(now)
     if not due:
         return {"due": 0, "jobs": 0, "reaped": reaped, "claimed": claimed}
 
@@ -368,4 +396,7 @@ def dispatch(now=None, sync: bool = False) -> dict:
             queue.enqueue(run_generic, shard)
         jobs += 1
 
-    return {"due": len(due), "jobs": jobs, "reaped": reaped}
+    # `claimed` on both exits, not just the empty one: a caller reading the
+    # tick's numbers should not have to know that a driver-only tick reports a
+    # different shape from a busy one.
+    return {"due": len(due), "jobs": jobs, "reaped": reaped, "claimed": claimed}

@@ -29,8 +29,22 @@ surface work over it unchanged.
    verification - and press **Test**. It reports the Zabbix version and how
    many hosts the token can see, which is the fastest way to notice a token
    scoped to nothing.
-4. Create a **monitoring engine** of kind *Zabbix* and bind it to a site or
-   location, exactly as you would an Outpost.
+4. Create a **monitoring engine** of kind *Zabbix* and bind it, exactly as you
+   would an Outpost. The binding decides *where* a target's checks are
+   answered, and the most specific one wins: **device → location → prefix →
+   site**. A device binding is what lets one host be answered by Zabbix without
+   moving the building it sits in - it lives on the device form, under
+   *Monitoring*.
+5. On the device's IP, **add a check** of kind *Zabbix*. That is the whole
+   statement "I want Zabbix watching this": it is an ordinary check, so it
+   carries an interval, history, alert rules and silences like any other, and
+   it is also what puts the device in scope for provisioning. Checks are added
+   from an **IP's** detail page - a device's monitoring panel is a read-only
+   roll-up of its addresses.
+
+A target keeps its other checks. A Zabbix engine answers *Zabbix* checks; an
+ICMP ping on the same device still runs on Danbyte's own workers, so pointing a
+device at Zabbix never silently switches the rest of its monitoring off.
 
 Zabbix **6.0 or newer**. Below that the API differs enough that Danbyte would
 be guessing, and named API tokens do not exist.

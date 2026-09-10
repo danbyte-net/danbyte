@@ -40,20 +40,28 @@ Manage them in **Governance → Monitoring engines** (admin only).
 For each monitored IP, Danbyte resolves the engine **most-specific first**, and
 each level **inherits** from the next when it has no engine of its own:
 
-1. the IP's device **Location**, then its **parent locations** (a child location
+1. the IP's **Device**,
+2. the IP's device **Location**, then its **parent locations** (a child location
    left on *Inherit* falls through to its parent),
-2. the IP's **Site**,
-3. the tenant **default engine** (set on the Monitoring engines page),
-4. the built-in **Local** engine.
+3. the IP's **Prefix**,
+4. the IP's **Site**,
+5. the tenant **default engine** (set on the Monitoring engines page),
+6. the built-in **Local** engine.
 
 A level bound to an engine that cannot answer right now is treated as though it
 had no binding at all, so resolution continues down the list rather than
 stopping on a dead engine.
 
-Assign an engine on the **Site** or **Location** edit form (the *Monitoring
-engine* dropdown - *Inherit* follows the level above). So "everything at Site
-AMS-02" is one setting; a single rack row (a child location) can override it,
-and anything left on *Inherit* rolls up to the site, then the tenant default.
+Assign an engine on the **Device**, **Site** or **Location** edit form (the
+*Monitoring engine* dropdown - *Inherit* follows the level above). So
+"everything at Site AMS-02" is one setting; a single rack row (a child
+location) can override it, one device can override that, and anything left on
+*Inherit* rolls up to the site, then the tenant default.
+
+A driver-backed engine - a [Zabbix](zabbix.md) one - answers only **its own
+check kind**. A device bound to Zabbix keeps its ICMP ping, and Danbyte's own
+workers still run it. Binding a target somewhere else changes who answers what
+it was asked, not what it was asked.
 
 ## The agent repo + staying compatible
 
@@ -199,7 +207,7 @@ Monitoring engines → Outpost versions**. *(Shipped.)*
 3. **Enroll** it → copy the one-liner (the token is shown **once**).
 4. On a host *at the site*, run the one-liner as root. It installs + starts the
    agent, which immediately dials out and begins pulling work.
-5. **Assign** it to a site or location (on their forms) → everything in that
+5. **Assign** it to a device, site or location (on their forms) → everything in that
    scope is now monitored by the Outpost. Watch it go healthy on the engine's
    detail dialog.
 

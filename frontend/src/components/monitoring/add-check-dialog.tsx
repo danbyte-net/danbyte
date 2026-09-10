@@ -4,7 +4,6 @@ import { toast } from "sonner"
 
 import {
   api,
-  type CheckKind,
   type CheckTemplate,
   type Paginated,
 } from "@/lib/api"
@@ -19,7 +18,7 @@ import { FormSelect, FormText } from "@/components/forms"
 import {
   CheckFields,
   INTERVALS,
-  KINDS,
+  useCheckKinds,
   buildParams,
   initialValues,
   missingRequired,
@@ -46,7 +45,8 @@ export function AddCheckDialog({
   const [mode, setMode] = useState<"existing" | "new">("existing")
 
   // New-check fields
-  const [kind, setKind] = useState<CheckKind>("icmp")
+  const [kind, setKind] = useState<string>("icmp")
+  const kinds = useCheckKinds()
   const [name, setName] = useState("")
   const [interval, setInterval] = useState("300")
   const [vals, setVals] = useState<Vals>(() => initialValues("icmp"))
@@ -180,11 +180,11 @@ export function AddCheckDialog({
                   label="Type"
                   value={kind}
                   onChange={(v) => {
-                    const k = (v as CheckKind) ?? "icmp"
+                    const k = v ?? "icmp"
                     setKind(k)
                     setVals(initialValues(k))
                   }}
-                  options={KINDS}
+                  options={kinds}
                 />
                 <FormSelect
                   label="Interval"

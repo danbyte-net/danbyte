@@ -4,7 +4,6 @@ import { toast } from "sonner"
 
 import {
   api,
-  type CheckKind,
   type CheckStatus,
   type Paginated,
   type Prefix,
@@ -22,7 +21,7 @@ import {
   FormText,
 } from "@/components/forms"
 import { CheckStatusBadge } from "./status-badge"
-import { KINDS } from "./check-fields"
+import { useCheckKinds } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const TRIGGER_STATUSES: CheckStatus[] = ["down", "stale", "degraded"]
@@ -59,7 +58,8 @@ export function SilenceForm({
   const [endsAt, setEndsAt] = useState(
     silence ? toLocalInput(silence.ends_at) : plus1h
   )
-  const [kinds, setKinds] = useState<CheckKind[]>(silence?.match_kinds ?? [])
+  const kindOptions = useCheckKinds()
+  const [kinds, setKinds] = useState<string[]>(silence?.match_kinds ?? [])
   const [statuses, setStatuses] = useState<CheckStatus[]>(
     silence?.match_statuses ?? []
   )
@@ -182,7 +182,7 @@ export function SilenceForm({
 
         <Field label="Check kinds" hint="empty = any">
           <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            {KINDS.map((k) => (
+            {kindOptions.map((k) => (
               <label
                 key={k.value}
                 className="flex items-center gap-2 text-[13px]"
