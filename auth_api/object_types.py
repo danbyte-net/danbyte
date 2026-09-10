@@ -96,6 +96,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FHRPGroup", "FHRP groups", "IPAM"),
     ("api.FHRPGroupAssignment", "FHRP group assignments", "IPAM"),
     ("api.IPRole", "IP roles", "IPAM"),
+    ("api.NATRule", "NAT rules", "IPAM"),
     ("api.Service", "Services", "IPAM"),
     ("api.ServiceTemplate", "Service templates", "IPAM"),
     # ─── DCIM ───────────────────────────────────────────────────────

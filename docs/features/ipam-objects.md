@@ -213,6 +213,50 @@ See [IP statuses & roles](catalogs-and-settings.md) for managing these catalogs,
 and [Tags & custom fields](tags-and-custom-fields.md) for attaching your own
 attributes to any of these objects.
 
+## NAT rules
+
+A **NAT rule** records a translation your firewall performs - a port forward, a
+1:1, a source NAT - so the next person can answer *"what is 203.0.113.10:443?"*
+without reading a rule base they may not have access to.
+
+!!! note "Documentation, not configuration"
+    Danbyte writes nothing to any firewall. Deleting a rule here removes the
+    record; the box keeps doing whatever it is doing.
+
+A rule carries:
+
+- a **name**, a **type** (*Destination NAT*, *Source NAT*, *Static (1:1)*,
+  *Masquerade*) and a **protocol** (TCP, UDP, TCP/UDP, ICMP, Any);
+- the **firewall** it runs on - an ordinary Device link, so a firewall's page
+  can show everything it translates. Deleting the device leaves the rule: you
+  replaced a box, the mapping did not stop existing;
+- the **outside** end - an *external address* and *external port*;
+- the **inside** end - an *internal address* and *internal port*;
+- an optional **source restriction** - a prefix ("our office only") or a single
+  address. Both blank means anyone;
+- a **status** (*Active*, *Planned*, *Disabled*), a description, tags and
+  custom fields.
+
+Both address ends point at real **IP address** records wherever you have them,
+so a public address's page shows what it forwards to and an internal server's
+page shows what reaches it. Either end may be left blank - a masquerade rule
+has no external address of its own, and an address you have not recorded yet
+should not stop you writing the rule down.
+
+### Ports
+
+A port field takes **one port** (`443`) or an **inclusive range**
+(`8000-8100`). Two rules the form enforces, because a record of a rule no
+firewall could implement reads exactly like the truth:
+
+- a protocol that carries no ports (ICMP, Any) may not have any;
+- an external **range** needs an internal range of the **same size**, or no
+  internal port at all - forwarding a range straight through keeps the port
+  numbers.
+
+Rules are listed under **Services → NAT rules**, are found by global search on
+name, address or port, and carry the usual journal and change log.
+
 ## Service templates
 
 A **service template** is a reusable service definition - a name plus its ports

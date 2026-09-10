@@ -101,6 +101,7 @@ AUDITED_MODELS = [
     "api.DeviceRole",
     "api.PlatformGroup",
     "api.Platform",
+    "api.NATRule",
     "api.Service",
     "api.ServiceTemplate",
     "api.DeviceTypeService",

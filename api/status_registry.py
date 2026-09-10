@@ -27,6 +27,7 @@ STATUSABLE_MODELS = [
     ("location", "Locations"),
     ("inventoryitem", "Inventory items"),
     ("maintenanceevent", "Maintenance & outage events"),
+    ("natrule", "NAT rules"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
@@ -114,6 +115,10 @@ STATUS_MODEL_VALUES = {
     "powerfeed": ["planned", "active", "offline", "failed"],
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
     "tunnel": ["planned", "active", "disabled"],
+    # NAT rules (#151): a mapping is on, on its way, or written down but not
+    # in force. Nothing here means "broken" - a rule that stopped working is
+    # a device problem, not a state of the record.
+    "natrule": ["active", "planned", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.

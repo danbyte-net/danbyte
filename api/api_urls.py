@@ -227,6 +227,7 @@ from .viewsets import (
     RIRViewSet,
     RouteTargetViewSet,
     ServiceTemplateViewSet,
+    NATRuleViewSet,
     ServiceViewSet,
     SiteMarkerViewSet,
     SiteViewSet,
@@ -319,6 +320,7 @@ router.register(r"rack-type-accessories", RackTypeAccessoryViewSet,
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
+router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
 router.register(r"services",      ServiceViewSet,     basename="service")
 router.register(r"service-templates", ServiceTemplateViewSet, basename="service-template")
 router.register(r"device-types",  DeviceTypeViewSet,  basename="device-type")

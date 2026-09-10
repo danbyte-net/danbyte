@@ -127,6 +127,7 @@ import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
 import { Route as PlanningIndexRouteImport } from './routes/planning.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
+import { Route as NatRulesIndexRouteImport } from './routes/nat-rules.index'
 import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
 import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
 import { Route as MaintenanceIndexRouteImport } from './routes/maintenance.index'
@@ -270,6 +271,7 @@ import { Route as PlatformGroupsIdRouteImport } from './routes/platform-groups.$
 import { Route as PlanningCalendarRouteImport } from './routes/planning.calendar'
 import { Route as PlanningBoardIdRouteImport } from './routes/planning.$boardId'
 import { Route as PermissionsNewRouteImport } from './routes/permissions.new'
+import { Route as NatRulesIdRouteImport } from './routes/nat-rules.$id'
 import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
 import { Route as ModuleTypesIdRouteImport } from './routes/module-types.$id'
 import { Route as ManufacturersNewRouteImport } from './routes/manufacturers.new'
@@ -1015,6 +1017,11 @@ const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => PermissionsRoute,
 } as any)
+const NatRulesIndexRoute = NatRulesIndexRouteImport.update({
+  id: '/nat-rules/',
+  path: '/nat-rules/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModuleTypesIndexRoute = ModuleTypesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1731,6 +1738,11 @@ const PermissionsNewRoute = PermissionsNewRouteImport.update({
   id: '/new',
   path: '/new',
   getParentRoute: () => PermissionsRoute,
+} as any)
+const NatRulesIdRoute = NatRulesIdRouteImport.update({
+  id: '/nat-rules/$id',
+  path: '/nat-rules/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ModuleTypesNewRoute = ModuleTypesNewRouteImport.update({
   id: '/new',
@@ -2657,6 +2669,7 @@ export interface FileRoutesByFullPath {
   '/manufacturers/new': typeof ManufacturersNewRoute
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
+  '/nat-rules/$id': typeof NatRulesIdRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRoute
   '/planning/calendar': typeof PlanningCalendarRoute
@@ -2800,6 +2813,7 @@ export interface FileRoutesByFullPath {
   '/maintenance/': typeof MaintenanceIndexRoute
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
+  '/nat-rules/': typeof NatRulesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -3017,6 +3031,7 @@ export interface FileRoutesByTo {
   '/manufacturers/new': typeof ManufacturersNewRoute
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
+  '/nat-rules/$id': typeof NatRulesIdRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRoute
   '/planning/calendar': typeof PlanningCalendarRoute
@@ -3160,6 +3175,7 @@ export interface FileRoutesByTo {
   '/maintenance': typeof MaintenanceIndexRoute
   '/manufacturers': typeof ManufacturersIndexRoute
   '/module-types': typeof ModuleTypesIndexRoute
+  '/nat-rules': typeof NatRulesIndexRoute
   '/permissions': typeof PermissionsIndexRoute
   '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
@@ -3434,6 +3450,7 @@ export interface FileRoutesById {
   '/manufacturers/new': typeof ManufacturersNewRoute
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
+  '/nat-rules/$id': typeof NatRulesIdRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRoute
   '/planning/calendar': typeof PlanningCalendarRoute
@@ -3577,6 +3594,7 @@ export interface FileRoutesById {
   '/maintenance/': typeof MaintenanceIndexRoute
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
+  '/nat-rules/': typeof NatRulesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -3852,6 +3870,7 @@ export interface FileRouteTypes {
     | '/manufacturers/new'
     | '/module-types/$id'
     | '/module-types/new'
+    | '/nat-rules/$id'
     | '/permissions/new'
     | '/planning/$boardId'
     | '/planning/calendar'
@@ -3995,6 +4014,7 @@ export interface FileRouteTypes {
     | '/maintenance/'
     | '/manufacturers/'
     | '/module-types/'
+    | '/nat-rules/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -4212,6 +4232,7 @@ export interface FileRouteTypes {
     | '/manufacturers/new'
     | '/module-types/$id'
     | '/module-types/new'
+    | '/nat-rules/$id'
     | '/permissions/new'
     | '/planning/$boardId'
     | '/planning/calendar'
@@ -4355,6 +4376,7 @@ export interface FileRouteTypes {
     | '/maintenance'
     | '/manufacturers'
     | '/module-types'
+    | '/nat-rules'
     | '/permissions'
     | '/planning'
     | '/platform-groups'
@@ -4628,6 +4650,7 @@ export interface FileRouteTypes {
     | '/manufacturers/new'
     | '/module-types/$id'
     | '/module-types/new'
+    | '/nat-rules/$id'
     | '/permissions/new'
     | '/planning/$boardId'
     | '/planning/calendar'
@@ -4771,6 +4794,7 @@ export interface FileRouteTypes {
     | '/maintenance/'
     | '/manufacturers/'
     | '/module-types/'
+    | '/nat-rules/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -4988,6 +5012,7 @@ export interface RootRouteChildren {
   IpsNewRoute: typeof IpsNewRoute
   JobsIdRoute: typeof JobsIdRoute
   MaintenanceNewRoute: typeof MaintenanceNewRoute
+  NatRulesIdRoute: typeof NatRulesIdRoute
   PlanningBoardIdRoute: typeof PlanningBoardIdRoute
   PlanningCalendarRoute: typeof PlanningCalendarRoute
   PlatformGroupsIdRoute: typeof PlatformGroupsIdRoute
@@ -5025,6 +5050,7 @@ export interface RootRouteChildren {
   JobsIndexRoute: typeof JobsIndexRoute
   LabelTemplatesIndexRoute: typeof LabelTemplatesIndexRoute
   MaintenanceIndexRoute: typeof MaintenanceIndexRoute
+  NatRulesIndexRoute: typeof NatRulesIndexRoute
   PlanningIndexRoute: typeof PlanningIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
@@ -5889,6 +5915,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/permissions/'
       preLoaderRoute: typeof PermissionsIndexRouteImport
       parentRoute: typeof PermissionsRoute
+    }
+    '/nat-rules/': {
+      id: '/nat-rules/'
+      path: '/nat-rules'
+      fullPath: '/nat-rules/'
+      preLoaderRoute: typeof NatRulesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/module-types/': {
       id: '/module-types/'
@@ -6890,6 +6923,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/permissions/new'
       preLoaderRoute: typeof PermissionsNewRouteImport
       parentRoute: typeof PermissionsRoute
+    }
+    '/nat-rules/$id': {
+      id: '/nat-rules/$id'
+      path: '/nat-rules/$id'
+      fullPath: '/nat-rules/$id'
+      preLoaderRoute: typeof NatRulesIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/module-types/new': {
       id: '/module-types/new'
@@ -9079,6 +9119,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsNewRoute: IpsNewRoute,
   JobsIdRoute: JobsIdRoute,
   MaintenanceNewRoute: MaintenanceNewRoute,
+  NatRulesIdRoute: NatRulesIdRoute,
   PlanningBoardIdRoute: PlanningBoardIdRoute,
   PlanningCalendarRoute: PlanningCalendarRoute,
   PlatformGroupsIdRoute: PlatformGroupsIdRoute,
@@ -9116,6 +9157,7 @@ const rootRouteChildren: RootRouteChildren = {
   JobsIndexRoute: JobsIndexRoute,
   LabelTemplatesIndexRoute: LabelTemplatesIndexRoute,
   MaintenanceIndexRoute: MaintenanceIndexRoute,
+  NatRulesIndexRoute: NatRulesIndexRoute,
   PlanningIndexRoute: PlanningIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,

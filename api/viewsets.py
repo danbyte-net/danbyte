@@ -47,7 +47,9 @@ from .models import (
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
-    Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    Module,
+    ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    NATRule,
     install_module, uninstall_module,
     CableTermination, PortReservation,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
@@ -156,6 +158,7 @@ from .serializers import (
     PlatformGroupMiniSerializer,
     PlatformGroupSerializer,
     PlatformSerializer,
+    NATRuleSerializer,
     ServiceSerializer,
     ServiceTemplateSerializer,
     IPRangeSerializer,
@@ -5590,6 +5593,56 @@ class PlatformViewSet(DeviceRoleViewSet):
 
 
 # ─── Services ────────────────────────────────────────────────────────────────
+class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """NAT / port-forward documentation (#151)."""
+
+    editable_str_fields = ("description",)
+    queryset = NATRule.objects.all().order_by(NATURAL_NAME)
+    serializer_class = NATRuleSerializer
+    pagination_class = StandardPagination
+    rbac_action_map = {"bulk_delete": "delete"}
+    # The mapping is the identity; carry everything that describes it.
+    clone_fields = ("device", "kind", "protocol", "external_ip",
+                    "internal_ip", "source_prefix", "source_ip", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device", "status", "external_ip", "internal_ip",
+                            "source_ip", "source_prefix")
+            .prefetch_related("tags")
+        )
+        if not self.request:
+            return qs
+        s = self.request.query_params.get("search", "").strip()
+        if s:
+            qs = (
+                qs.filter(name__icontains=s)
+                | qs.filter(description__icontains=s)
+                | qs.filter(external_ip__ip_address__icontains=s)
+                | qs.filter(internal_ip__ip_address__icontains=s)
+                | qs.filter(cf_text_q(qs.model, s))
+            )
+            # A port is what someone actually searches for on this page.
+            if s.isdigit():
+                qs = qs | super().get_queryset().filter(
+                    Q(external_ports__startswith=s)
+                    | Q(internal_ports__startswith=s)
+                )
+        for key, field in (
+            ("device", "device_id"),
+            ("kind", "kind"),
+            ("protocol", "protocol"),
+            ("status", "status_id"),
+            ("external_ip", "external_ip_id"),
+            ("internal_ip", "internal_ip_id"),
+        ):
+            v = self.request.query_params.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        return qs.distinct()
+
+
 class ServiceViewSet(TenantScopedViewSet):
     queryset = Service.objects.all().order_by(NATURAL_NAME)
     serializer_class = ServiceSerializer

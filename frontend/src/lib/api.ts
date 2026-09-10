@@ -885,6 +885,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "location", label: "Locations" },
   { value: "inventoryitem", label: "Inventory items" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
+  { value: "natrule", label: "NAT rules" },
 ]
 
 export interface Status {
@@ -3802,6 +3803,33 @@ export type ServiceProtocol = "tcp" | "udp"
 /** Ports per protocol - a service may answer on both (DNS is TCP 53 and UDP
  * 53). Empty/absent means the single `protocol` + `ports` pair applies. */
 export type ProtocolPorts = Partial<Record<ServiceProtocol, number[]>>
+
+/** A NAT / port-forward mapping - documentation, never pushed anywhere. */
+export interface NATRule {
+  id: string
+  numid: number | null
+  name: string
+  kind: "dnat" | "snat" | "static" | "masquerade"
+  kind_display: string
+  protocol: "tcp" | "udp" | "tcp-udp" | "icmp" | "any"
+  protocol_display: string
+  device: { id: string; name: string } | null
+  /** The address reached from outside. Null for masquerade. */
+  external_ip: { id: string; ip_address: string; dns_name: string } | null
+  /** A port or an inclusive range: "443", "8000-8100", or "". */
+  external_ports: string
+  internal_ip: { id: string; ip_address: string; dns_name: string } | null
+  internal_ports: string
+  /** Optional restriction on who the rule applies to. */
+  source_ip: { id: string; ip_address: string; dns_name: string } | null
+  source_prefix: { id: string; cidr: string } | null
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
 
 export interface Service {
   id: string

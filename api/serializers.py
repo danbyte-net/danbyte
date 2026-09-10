@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 
 from django.db import transaction
 from django.utils.text import slugify
@@ -36,7 +37,9 @@ from .models import (
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
-    Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    Module,
+    ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    NATRule,
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
     ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
@@ -5071,6 +5074,132 @@ class ServiceSerializer(CustomFieldsSerializerMixin, ProtocolPortsSerializerMixi
                   "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "check_count", "created_at", "updated_at"]
+
+
+# ─── NAT rules (#151) ────────────────────────────────────────────────────────
+
+#: "", "443" or "8000-8100". Anything else is a typo, and a typo in a port
+#: range is the kind that reads fine and means nothing.
+_PORT_SPEC = re.compile(r"^\d{1,5}(-\d{1,5})?$")
+
+
+def _clean_port_spec(value, field):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if not _PORT_SPEC.match(value):
+        raise serializers.ValidationError(
+            {field: "Use a port (443) or an inclusive range (8000-8100)."}
+        )
+    parts = [int(p) for p in value.split("-")]
+    for p in parts:
+        if not 1 <= p <= 65535:
+            raise serializers.ValidationError(
+                {field: "Ports run from 1 to 65535."}
+            )
+    if len(parts) == 2 and parts[0] > parts[1]:
+        raise serializers.ValidationError(
+            {field: "The range starts above where it ends."}
+        )
+    return value
+
+
+def _port_span(value):
+    """How many ports a spec covers - 0 for blank."""
+    if not value:
+        return 0
+    parts = [int(p) for p in value.split("-")]
+    return 1 if len(parts) == 1 else parts[1] - parts[0] + 1
+
+
+class NATRuleSerializer(
+    CustomFieldsSerializerMixin, StatusSerializerMixin,
+    TaggableSerializerMixin, NumIdModelSerializer,
+):
+    cf_model = "natrule"
+
+    kind_display = serializers.CharField(
+        source="get_kind_display", read_only=True
+    )
+    protocol_display = serializers.CharField(
+        source="get_protocol_display", read_only=True
+    )
+    device = DeviceMiniSerializer(read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    external_ip = IPMiniSerializer(read_only=True)
+    external_ip_id = TenantScopedPrimaryKeyRelatedField(
+        source="external_ip", queryset=IPAddress.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    internal_ip = IPMiniSerializer(read_only=True)
+    internal_ip_id = TenantScopedPrimaryKeyRelatedField(
+        source="internal_ip", queryset=IPAddress.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    source_ip = IPMiniSerializer(read_only=True)
+    source_ip_id = TenantScopedPrimaryKeyRelatedField(
+        source="source_ip", queryset=IPAddress.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    source_prefix = PrefixMiniSerializer(read_only=True)
+    source_prefix_id = TenantScopedPrimaryKeyRelatedField(
+        source="source_prefix", queryset=Prefix.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    def validate_external_ports(self, value):
+        return _clean_port_spec(value, "external_ports")
+
+    def validate_internal_ports(self, value):
+        return _clean_port_spec(value, "internal_ports")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        get = lambda f: attrs.get(f, getattr(self.instance, f, None))  # noqa: E731
+
+        proto = get("protocol")
+        ext, internal = get("external_ports") or "", get("internal_ports") or ""
+        if proto in ("icmp", "any") and (ext or internal):
+            raise serializers.ValidationError(
+                {"protocol": f"{proto.upper()} carries no ports - clear them "
+                             "or pick TCP, UDP or TCP/UDP."}
+            )
+        # A range on one side and a single port on the other is a rule that
+        # cannot be written on any firewall. Ranges must line up 1:1.
+        if _port_span(ext) > 1 and _port_span(internal) > 1:
+            if _port_span(ext) != _port_span(internal):
+                raise serializers.ValidationError(
+                    {"internal_ports": "The two ranges cover a different "
+                                       "number of ports."}
+                )
+        elif _port_span(ext) > 1 and _port_span(internal) == 1:
+            raise serializers.ValidationError(
+                {"internal_ports": "An external range needs an internal range "
+                                   "of the same size, or no internal port."}
+            )
+        return attrs
+
+    class Meta:
+        model = NATRule
+        fields = ["id", "numid", "name", "kind", "kind_display",
+                  "protocol", "protocol_display",
+                  "device", "device_id",
+                  "external_ip", "external_ip_id", "external_ports",
+                  "internal_ip", "internal_ip_id", "internal_ports",
+                  "source_ip", "source_ip_id",
+                  "source_prefix", "source_prefix_id",
+                  "status", "status_id", "description",
+                  "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
 
 
 # ─── Service templates (reusable service definitions) ────────────────────────

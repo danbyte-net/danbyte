@@ -5002,6 +5002,100 @@ class ServiceTemplate(ProtocolPortsMixin, NumIdMixin, TimestampedModel, CustomFi
         return self.name
 
 
+class NATRule(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A NAT mapping - a port forward, a 1:1, a source NAT (#151).
+
+    Documentation, not configuration: Danbyte records what the firewall is
+    doing so the next person can answer "what is 203.0.113.10:443?" without
+    reading a rule base they may not have access to. Nothing here is pushed
+    anywhere.
+
+    Both ends point at real :class:`IPAddress` rows wherever they exist, so a
+    public address's page can show what it forwards to and an internal
+    server's page can show what reaches it. Either end may be blank: the
+    outside address of a masquerade rule is the firewall's own, and an
+    address you have not recorded yet should not stop you writing the rule
+    down.
+    """
+
+    KIND_CHOICES = [
+        ("dnat", "Destination NAT (port forward)"),
+        ("snat", "Source NAT"),
+        ("static", "Static (1:1) NAT"),
+        ("masquerade", "Masquerade"),
+    ]
+    #: "any" and "tcp-udp" are both real firewall choices and mean different
+    #: things - one rule for every protocol, versus one for the two that
+    #: carry ports.
+    PROTOCOL_CHOICES = [
+        ("tcp", "TCP"),
+        ("udp", "UDP"),
+        ("tcp-udp", "TCP/UDP"),
+        ("icmp", "ICMP"),
+        ("any", "Any"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="nat_rules"
+    )
+    name = models.CharField(max_length=128)
+    #: The firewall or router enforcing it. SET_NULL, not CASCADE: replacing
+    #: the box does not mean the mapping stopped existing.
+    device = models.ForeignKey(
+        "Device", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_rules",
+    )
+    kind = models.CharField(max_length=12, choices=KIND_CHOICES, default="dnat")
+    protocol = models.CharField(
+        max_length=8, choices=PROTOCOL_CHOICES, default="tcp"
+    )
+
+    # ── outside ────────────────────────────────────────────────────────
+    external_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_external",
+        help_text="The address reached from outside. Blank for masquerade, "
+                  "which uses whatever the firewall's egress address is.",
+    )
+    #: A single port or an inclusive range - "443", "8000-8100", or blank for
+    #: a protocol that has none. Text rather than a list because the two ends
+    #: have to line up, and two lists of different lengths cannot.
+    external_ports = models.CharField(max_length=32, blank=True, default="")
+
+    # ── inside ─────────────────────────────────────────────────────────
+    internal_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_internal",
+        help_text="The address traffic is translated to.",
+    )
+    internal_ports = models.CharField(max_length=32, blank=True, default="")
+
+    # ── optional source restriction ────────────────────────────────────
+    #: Who the rule applies to. A prefix for "our office only", an address
+    #: for one peer; both blank means anyone.
+    source_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_rules",
+    )
+    source_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_source",
+    )
+
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="nat_rules",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class DeviceTypeService(ProtocolPortsMixin, _ComponentTemplate):
     """A service template on a device type - like an interface/port template,
     but for a network service. Materialises a ``Service`` onto every new device
