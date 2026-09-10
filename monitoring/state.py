@@ -37,6 +37,9 @@ def apply_outcome(
 ) -> StateTransition | None:
     state.last_checked = now
     state.last_latency_ms = outcome.latency_ms
+    # Denormalised alongside status and latency, for the same reason: a list
+    # page must not scan the history table to show what the last run found.
+    state.last_detail = outcome.detail or {}
 
     s = outcome.status
     if s in ("up", "degraded"):

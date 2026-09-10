@@ -120,6 +120,28 @@ other three states never appear here: *Unknown* is what a host with no answer
 gets, and *Stale* and *Skipped* are Danbyte's own bookkeeping, not something a
 Zabbix severity can mean.
 
+### Problems and reachability
+
+Two things Zabbix knows that a Danbyte status cannot say on its own ride back
+with every poll, at no extra API cost - they come from the same read the status
+does:
+
+- **Open problems.** How many Zabbix has raised on the host, and their names.
+- **Reachability, per protocol.** Whether Zabbix can talk to the host over its
+  agent, SNMP, IPMI or JMX interface at all - and, when it cannot, the error in
+  Zabbix's own words.
+
+The second is the one worth having. A host with no open problems reads
+perfectly healthy while its SNMP interface polls nothing because the community
+is wrong or absent, and nothing in Danbyte's own view would ever say so.
+
+They appear as **chips beside the roll-up badge** on device and prefix lists -
+a count for problems, a red protocol chip for anything unreachable - and in
+full on an address's **Monitoring** section, where the error text sits next to
+the protocol it belongs to. Chips rather than columns: most targets carry
+neither, and two mostly-empty columns would cost every list page width it has
+better uses for.
+
 ## What you get for free
 
 Because a Zabbix result goes through the same path an Outpost's does, all of

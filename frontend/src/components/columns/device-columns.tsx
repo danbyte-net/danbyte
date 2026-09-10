@@ -10,6 +10,7 @@ import {
 } from "@/components/columns/monitoring-facet"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import {
   DeviceDriftMarker,
@@ -388,8 +389,12 @@ export function buildDeviceColumns<T extends Device = Device>(
         const e = opts.monitoring?.[row.original.id]
         if (!e || !e.status) return dash
         return (
-          <span title={monitoringTooltip(e)}>
+          <span
+            title={monitoringTooltip(e)}
+            className="inline-flex items-center gap-1.5"
+          >
             <MixedStatusBadge counts={e.counts} status={e.status} />
+            <ExternalChips entry={e} />
           </span>
         )
       },

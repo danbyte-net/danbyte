@@ -94,16 +94,21 @@ class ZabbixClient:
             return {}
         rows = self.call("host.get", {
             "output": ["hostid", "host", "name", "status", "maintenance_status"],
-            "selectInterfaces": ["ip", "dns", "useip"],
+            # `available` and `error` are how Zabbix says whether it can reach
+            # the host at all on each protocol, and why not when it cannot.
+            "selectInterfaces": ["type", "ip", "dns", "useip", "available", "error"],
             "filter": {"ip": list(ips)},
         }) or []
         out = {}
         for row in rows:
-            for iface in row.get("interfaces") or []:
-                addr = iface.get("ip")
-                # First host wins per address. Two hosts on one IP is an
-                # operator's ambiguity to resolve, and picking one at random
-                # would hide it - the caller reports the collision instead.
+            # Per host, not per interface. A host with an agent *and* an SNMP
+            # interface on one address is one host - counting interfaces made
+            # it look like two, and the caller reported an ambiguity that was
+            # not there. Provisioning an SNMP interface used to break the check
+            # for the very host it had just fixed.
+            for addr in {
+                iface.get("ip") for iface in (row.get("interfaces") or [])
+            }:
                 if addr and addr in ips:
                     out.setdefault(addr, []).append(row)
         return out

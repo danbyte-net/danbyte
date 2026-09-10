@@ -656,6 +656,16 @@ class CheckState(TimestampedModel):
     )
     last_checked = models.DateTimeField(null=True, blank=True)
     last_latency_ms = models.FloatField(null=True, blank=True)
+    last_detail = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "The latest result's protocol payload, denormalised. A list page "
+            "wanting the open-problem count or which protocols an external "
+            "system can reach a host on must not scan the history table for "
+            "it - the same reason status and latency live here."
+        ),
+    )
     consecutive_success = models.PositiveIntegerField(default=0)
     consecutive_fail = models.PositiveIntegerField(default=0)
 

@@ -343,6 +343,7 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
             "since",
             "last_checked",
             "last_latency_ms",
+            "last_detail",
             "consecutive_success",
             "consecutive_fail",
             "in_flight",

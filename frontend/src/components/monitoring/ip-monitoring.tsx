@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Activity, Play, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
+import { ExternalDetailPanel } from "./external-detail"
+
 import {
   api,
   type AssignmentOverrides,
@@ -248,6 +250,7 @@ function CheckRow({
       </div>
       {expanded && (
         <div className="space-y-3 border-t border-border bg-background/60 px-3 py-3">
+          <ExternalDetailPanel detail={check.state?.last_detail} />
           {check.source === "direct" ? (
             <OverridePanel ipId={ipId} check={check} />
           ) : check.source === "policy" ? (

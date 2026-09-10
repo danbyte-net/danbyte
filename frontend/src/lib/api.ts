@@ -4388,9 +4388,21 @@ export interface EffectiveCheckState {
   since: string | null
   last_checked: string | null
   last_latency_ms: number | null
+  /** What the last run found. An externally-answered check carries its open
+   * problems here, and which protocols that system cannot reach the host on. */
+  last_detail?: ExternalDetail
   consecutive_success: number
   consecutive_fail: number
   next_run: string | null
+}
+
+/** The parts of a check result an external monitoring system fills in. */
+export interface ExternalDetail {
+  zabbix_host?: string
+  problem_count?: number
+  problems?: { name?: string; severity?: string }[]
+  availability?: Record<string, { state: string; error?: string }>
+  [key: string]: unknown
 }
 
 export interface EffectiveCheck {
@@ -4509,6 +4521,10 @@ export interface BulkStatusEntry {
   checks?: number
   counts?: Partial<Record<CheckStatus, number>>
   monitored_ips?: number
+  /** Open problems an external monitoring system reports. Absent when none. */
+  problems?: number
+  /** Protocols that system cannot reach the target on - "snmp", "agent". */
+  unreachable?: string[]
 }
 
 /** A tenant's own name and colour for one check state. */

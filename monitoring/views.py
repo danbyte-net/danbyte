@@ -331,6 +331,11 @@ def ip_checks_view(request, ip_id):
                         "since": st.since,
                         "last_checked": st.last_checked,
                         "last_latency_ms": st.last_latency_ms,
+                        # What the last run found. For an externally-answered
+                        # check this carries the open problems and which
+                        # protocols that system cannot reach the host on -
+                        # which is the answer to "why is this degraded".
+                        "last_detail": st.last_detail,
                         "consecutive_success": st.consecutive_success,
                         "consecutive_fail": st.consecutive_fail,
                         "next_run": st.next_run,
@@ -1716,6 +1721,45 @@ def checks_list_view(request):
         description="Per-target roll-up status keyed by object id.",
     ),
 )
+def _external_detail(rows) -> dict:
+    """What an external monitoring system said, rolled up for a list column.
+
+    ``{"problems": 3, "unreachable": ["snmp"]}`` - the number of open problems
+    across the target's checks, and the protocols the external system cannot
+    reach it on. Both are things only that system knows, and both are already
+    in ``last_detail``; the alternative was showing a green host whose SNMP has
+    been polling nothing for a week.
+
+    Empty when no check carries either, so nothing renders for the targets this
+    does not apply to - which is most of them.
+    """
+    problems = 0
+    unreachable: list[str] = []
+    for detail in rows:
+        if not isinstance(detail, dict):
+            continue
+        try:
+            problems += int(detail.get("problem_count") or 0)
+        except (TypeError, ValueError):
+            pass
+        # `last_detail` is whatever a checker or a plugin wrote, so nothing
+        # about its shape can be assumed. A status column that 500s on an
+        # unexpected payload takes the whole list page with it.
+        reach = detail.get("availability")
+        if not isinstance(reach, dict):
+            continue
+        for proto, entry in reach.items():
+            if isinstance(entry, dict) and entry.get("state") == "down":
+                if proto not in unreachable:
+                    unreachable.append(str(proto))
+    out: dict = {}
+    if problems:
+        out["problems"] = problems
+    if unreachable:
+        out["unreachable"] = sorted(unreachable)
+    return out
+
+
 @extend_schema(
     methods=["POST"],
     summary="Roll-up status for many IPs/prefixes/devices (body form)",
@@ -1780,16 +1824,20 @@ def bulk_status_view(request):
                 request, tenant,
                 CheckState.objects.filter(tenant=tenant, target_ip_id__in=ids),
             )
-            .values("target_ip_id", "status")
+            .values("target_ip_id", "status", "last_detail")
         )
         grouped: dict = {}
-        for s in states:
-            grouped.setdefault(str(s["target_ip_id"]), []).append(s["status"])
+        details: dict = {}
+        for row in states:
+            key = str(row["target_ip_id"])
+            grouped.setdefault(key, []).append(row["status"])
+            details.setdefault(key, []).append(row["last_detail"])
         for ip_id, statuses in grouped.items():
             out[ip_id] = {
                 "status": worst_status(statuses),
                 "checks": len(statuses),
                 "counts": status_counts(statuses),
+                **_external_detail(details.get(ip_id) or []),
             }
         return Response({"statuses": out})
 
@@ -1814,17 +1862,18 @@ def bulk_status_view(request):
             child_ids = _viewable_child_ip_ids(request, prefix, tenant)
             if not child_ids:
                 continue
-            states = _scope_ip_keyed(
+            rows = list(_scope_ip_keyed(
                 request, tenant,
                 CheckState.objects.filter(target_ip_id__in=child_ids),
-            ).values_list("status", flat=True)
-            statuses = list(states)
+            ).values("status", "last_detail"))
+            statuses = [r["status"] for r in rows]
             if not statuses:
                 continue
             out[str(prefix.id)] = {
                 "status": worst_status(statuses),
                 "counts": status_counts(statuses),
                 "monitored_ips": len(set(child_ids)),
+                **_external_detail([r["last_detail"] for r in rows]),
             }
         return Response({"statuses": out})
 
@@ -1849,11 +1898,11 @@ def bulk_status_view(request):
         for dev_id, ip_id in ip_rows:
             ips_by_device.setdefault(str(dev_id), []).append(ip_id)
         for dev_id, ip_ids in ips_by_device.items():
-            states = _scope_ip_keyed(
+            states = list(_scope_ip_keyed(
                 request,
                 tenant,
                 CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ).values("target_ip_id", "status")
+            ).values("target_ip_id", "status", "last_detail"))
             statuses = [s["status"] for s in states]
             if not statuses:
                 continue
@@ -1861,6 +1910,7 @@ def bulk_status_view(request):
                 "status": worst_status(statuses),
                 "counts": status_counts(statuses),
                 "monitored_ips": len({s["target_ip_id"] for s in states}),
+                **_external_detail([s["last_detail"] for s in states]),
             }
         return Response({"statuses": out})
 

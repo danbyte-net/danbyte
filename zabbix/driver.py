@@ -20,6 +20,7 @@ from integrations.toggles import integration_enabled
 
 from .checker import KIND
 from .client import ZabbixClient, ZabbixError, ZabbixUnreachable
+from .interfaces import availability
 from .models import ZabbixConnection
 from .severity import clean_map, worst
 
@@ -150,6 +151,14 @@ class ZabbixDriver:
             return CheckOutcome("unknown", None, {**detail, "state": "disabled in Zabbix"})
         if str(host.get("maintenance_status")) == "1":
             return CheckOutcome("unknown", None, {**detail, "state": "in maintenance"})
+
+        # What Zabbix can and cannot reach the host on. Free - it rides the
+        # host read the status came from - and it is the fastest answer to
+        # "why is this host green in Danbyte and useless in Zabbix": an SNMP
+        # interface with no community polls nothing and says so here.
+        reach = availability(host)
+        if reach:
+            detail["availability"] = reach
 
         open_problems = problems.get(host["hostid"]) or []
         status = worst((p.get("severity") for p in open_problems), mapping)
