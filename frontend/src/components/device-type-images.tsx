@@ -5,6 +5,16 @@ import { ImageUp, Trash2 } from "lucide-react"
 import { api, ApiError, type DeviceType } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -47,6 +57,7 @@ function FaceCard({
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [px, setPx] = useState<{ w: number; h: number } | null>(null)
+  const [confirming, setConfirming] = useState(false)
   const image = face === "rear" ? deviceType.rear_image : deviceType.front_image
   const label = face === "rear" ? "Rear" : "Front"
 
@@ -97,7 +108,10 @@ function FaceCard({
         body: fd,
       })
     },
-    onSuccess: invalidate,
+    onSuccess: (next) => {
+      setConfirming(false)
+      invalidate(next)
+    },
     onError: (e) =>
       setError(e instanceof ApiError ? e.message : "Remove failed"),
   })
@@ -118,7 +132,7 @@ function FaceCard({
             disabled={busy}
             onClick={() => {
               setError(null)
-              clear.mutate()
+              setConfirming(true)
             }}
           >
             <Trash2 className="h-3.5 w-3.5" /> Remove
@@ -204,6 +218,35 @@ function FaceCard({
       )}
 
       {error && <p className="mt-1.5 text-[11px] text-destructive">{error}</p>}
+
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove the {label.toLowerCase()} image?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the uploaded {label.toLowerCase()} image
+              of {deviceType.name}. This action can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clear.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={clear.isPending}
+              onClick={(e) => {
+                e.preventDefault()
+                clear.mutate()
+              }}
+            >
+              {clear.isPending ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

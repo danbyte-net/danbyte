@@ -14,6 +14,16 @@ import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Field,
   FormCheckbox,
   FormCombobox,
@@ -441,6 +451,7 @@ function LogoField({ logoUrl }: { logoUrl: string | null }) {
   const qc = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<null | "upload" | "reset">(null)
+  const [confirming, setConfirming] = useState(false)
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["deployment-email"] })
@@ -467,6 +478,7 @@ function LogoField({ logoUrl }: { logoUrl: string | null }) {
     try {
       await api("/api/deployment/logo/", { method: "DELETE" })
       refresh()
+      setConfirming(false)
       toast.success("Logo reset to the Danbyte default")
     } catch (e) {
       apiErrorToast(e)
@@ -510,12 +522,20 @@ function LogoField({ logoUrl }: { logoUrl: string | null }) {
             variant="ghost"
             size="sm"
             disabled={busy !== null}
-            onClick={() => void reset()}
+            onClick={() => setConfirming(true)}
           >
             {busy === "reset" ? "Resetting…" : "Reset to default"}
           </Button>
         )}
       </div>
+      <ResetBrandingDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Reset the login-page logo?"
+        description="This removes the uploaded logo and restores the bundled Danbyte one. You can upload it again."
+        pending={busy === "reset"}
+        onConfirm={() => void reset()}
+      />
     </Field>
   )
 }
@@ -526,6 +546,7 @@ function FaviconField({ faviconUrl }: { faviconUrl: string | null }) {
   const qc = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<null | "upload" | "reset">(null)
+  const [confirming, setConfirming] = useState(false)
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["deployment-email"] })
@@ -552,6 +573,7 @@ function FaviconField({ faviconUrl }: { faviconUrl: string | null }) {
     try {
       await api("/api/deployment/favicon/", { method: "DELETE" })
       refresh()
+      setConfirming(false)
       toast.success("Favicon reset to the Danbyte default")
     } catch (e) {
       apiErrorToast(e)
@@ -595,12 +617,65 @@ function FaviconField({ faviconUrl }: { faviconUrl: string | null }) {
             variant="ghost"
             size="sm"
             disabled={busy !== null}
-            onClick={() => void reset()}
+            onClick={() => setConfirming(true)}
           >
             {busy === "reset" ? "Resetting…" : "Reset to default"}
           </Button>
         )}
       </div>
+      <ResetBrandingDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Reset the browser-tab icon?"
+        description="This removes the uploaded icon and restores the bundled Danbyte one. You can upload it again."
+        pending={busy === "reset"}
+        onConfirm={() => void reset()}
+      />
     </Field>
+  )
+}
+
+/**
+ * Confirm before dropping an uploaded branding image. Reverting is recoverable
+ * - the deployment falls back to the bundled Danbyte artwork - so the copy says
+ * that rather than warning about a permanent loss.
+ */
+function ResetBrandingDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  pending,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description: string
+  pending: boolean
+  onConfirm: () => void
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending}
+            onClick={(e) => {
+              e.preventDefault()
+              onConfirm()
+            }}
+          >
+            {pending ? "Resetting…" : "Reset"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
