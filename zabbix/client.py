@@ -167,6 +167,49 @@ class ZabbixClient:
             "selectParentTemplates": ["templateid", "host"],
         }) or []
 
+    def group_ids(self, names) -> list:
+        """Ids for several groups, creating the ones that do not exist.
+
+        One read for the lot, then a create per missing name - a host usually
+        wants two or three groups and Zabbix has no bulk create for them.
+        """
+        names = [n for n in names if n]
+        if not names:
+            return []
+        found = self.call("hostgroup.get", {
+            "output": ["groupid", "name"], "filter": {"name": names},
+        }) or []
+        have = {g["name"]: g["groupid"] for g in found}
+        out = []
+        for name in names:
+            gid = have.get(name)
+            if gid is None:
+                gid = self.call("hostgroup.create", {"name": name})["groupids"][0]
+            out.append(gid)
+        return out
+
+    def host_groups(self, hostid: str) -> set:
+        """Group names a host is already in, so Danbyte only ever adds."""
+        found = self.call("host.get", {
+            "output": ["hostid"], "hostids": hostid,
+            "selectHostGroups": ["groupid", "name"],
+        }) or []
+        if not found:
+            return set()
+        rows = found[0].get("hostgroups") or found[0].get("groups") or []
+        return {g["name"] for g in rows}
+
+    def add_groups(self, hostid: str, group_ids) -> None:
+        """Put a host in more groups without removing the ones it has.
+
+        ``host.massadd``, not ``host.update``: update replaces the group set,
+        and a host has to be in at least one, so a bad update could orphan it.
+        """
+        ids = [{"groupid": g} for g in group_ids]
+        if ids:
+            self.call("host.massadd", {"hosts": [{"hostid": hostid}],
+                                       "groups": ids})
+
     def group_id(self, name: str) -> str:
         """The id of a host group, created if this is the first host in it.
 

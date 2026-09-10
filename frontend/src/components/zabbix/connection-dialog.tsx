@@ -3,7 +3,13 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { CheckStatus, ZabbixConnection, ZabbixDefaults } from "@/lib/api"
+import type {
+  CheckStatus,
+  MonitoringEngine,
+  Paginated,
+  ZabbixConnection,
+  ZabbixDefaults,
+} from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -11,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Field,
   FormCheckbox,
   FormFooter,
   FormSection,
@@ -19,6 +26,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { IdMultiSelect } from "@/components/cells/id-multi-select"
 import { useSaveObject } from "@/lib/save-object"
 
 /** Create or edit the Zabbix connection (#162). */
@@ -77,6 +85,9 @@ function ConnectionForm({
   const [token, setToken] = useState("")
   const [verifyTls, setVerifyTls] = useState(connection?.verify_tls ?? true)
   const [enabled, setEnabled] = useState(connection?.enabled ?? true)
+  const [engineIds, setEngineIds] = useState<string[]>(
+    connection?.engines ?? []
+  )
   const [mode, setMode] = useState<string | null>(
     connection?.provision_mode ?? "off"
   )
@@ -102,6 +113,22 @@ function ConnectionForm({
     queryFn: () => api<ZabbixDefaults>("/api/zabbix/connections/defaults/"),
     staleTime: 60 * 60_000,
   })
+  // Which engines read through this connection. Explicit, because guessing by
+  // name meant a second Zabbix could answer for the first.
+  const engines = useQuery({
+    queryKey: ["zabbix-engine-picker"],
+    queryFn: () =>
+      api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
+    staleTime: 60_000,
+  })
+  const engineOptions = useMemo(
+    () =>
+      (engines.data?.results ?? [])
+        .filter((e) => e.kind === "zabbix")
+        .map((e) => ({ id: e.id, name: e.name })),
+    [engines.data]
+  )
+
   const rows = useMemo(() => defaults.data?.severities ?? [], [defaults.data])
   // Which states a severity may mean is the server's call, and each renders as
   // the pill it renders as everywhere else - so a tenant that calls `down`
@@ -133,6 +160,7 @@ function ConnectionForm({
           ...(token ? { token } : {}),
           verify_tls: verifyTls,
           enabled,
+          engines: engineIds,
           provision_mode: mode,
           auto_sync: autoSync,
           sync_interval_minutes: Number(interval) || 60,
@@ -199,6 +227,24 @@ function ConnectionForm({
           onChange={setVerifyTls}
         />
         <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
+        <Field
+          label="Engines"
+          hint={
+            engineOptions.length
+              ? "Which monitoring engines read through this connection"
+              : "No Zabbix engine yet - add one under Monitoring → Engines"
+          }
+          error={fieldErrors.engines}
+        >
+          <IdMultiSelect
+            options={engineOptions}
+            value={engineIds}
+            onChange={setEngineIds}
+            placeholder="Add an engine…"
+            searchPlaceholder="Search engines…"
+            emptyText="No Zabbix engine."
+          />
+        </Field>
       </FormSection>
 
       <FormSection title="Provisioning" card>

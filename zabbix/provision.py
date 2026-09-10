@@ -34,6 +34,7 @@ from .matching import index_hosts, match_device
 from .models import ZabbixChange, ZabbixConnection, ZabbixHostLink
 from .templates import (
     IFACE_SNMP,
+    groups_for,
     profile_for,
     rules_for,
     snmp_interface,
@@ -94,7 +95,7 @@ def device_address(device) -> str:
     return ""
 
 
-def host_payload(device, group_id, *, template_ids=(), profile=None,
+def host_payload(device, group_ids, *, template_ids=(), profile=None,
                  macros=()) -> dict:
     """What Danbyte would write for this device.
 
@@ -119,7 +120,7 @@ def host_payload(device, group_id, *, template_ids=(), profile=None,
         interfaces.append(snmp)
     payload = {
         "host": device.name,
-        "groups": [{"groupid": group_id}],
+        "groups": [{"groupid": g} for g in group_ids],
         "interfaces": interfaces,
     }
     if template_ids:
@@ -224,10 +225,12 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
                     _propose(conn, device, ZabbixChange.UPDATE,
                              {"hostid": link.hostid, "changes": changed}, fresh)
                 missing = _missing_templates(device, match.host, rules)
-                if missing:
+                groups = _missing_groups(device, match.host, rules)
+                if missing or groups:
                     counts["template"] += 1
                     _propose(conn, device, ZabbixChange.TEMPLATE,
                              {"hostid": link.hostid, "add": missing,
+                              "add_groups": groups,
                               "add_snmp_interface": _needs_snmp_interface(
                                   device, match.host, conn)}, fresh)
                 continue
@@ -235,6 +238,7 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
             _propose(conn, device, ZabbixChange.CREATE,
                      {"name": device.name,
                       "site": device.site.name if device.site_id else None,
+                      "groups": group_names(device, rules),
                       "templates": templates_for(device, rules)},
                      fresh)
 
@@ -245,6 +249,36 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
             id__in=fresh
         ).delete()
     return counts
+
+
+def group_names(device, rules) -> list[str]:
+    """The host groups this device belongs in.
+
+    A rule's groups if any rule has an opinion; otherwise the device's site,
+    which is what every host got before rules existed. Zabbix will not accept a
+    host with no group at all, so there is always a last resort.
+    """
+    named = groups_for(device, rules)
+    if named:
+        return named
+    if device is not None and device.site_id:
+        return [device.site.name]
+    return [FALLBACK_GROUP]
+
+
+def _missing_groups(device, host, rules) -> list[str]:
+    """Groups the rules ask for that this host is not already in.
+
+    Only ever added. A group somebody put a host in is theirs, and Danbyte
+    never proposes the site fallback for an existing host - that default is for
+    hosts it is creating, not an opinion to impose later.
+    """
+    wanted = groups_for(device, rules)
+    if not wanted:
+        return []
+    rows = host.get("hostgroups") or host.get("groups") or []
+    have = {g.get("name") for g in rows}
+    return [name for name in wanted if name not in have]
 
 
 def _missing_templates(device, host, rules) -> list[str]:
@@ -336,16 +370,15 @@ def apply_change(change: ZabbixChange) -> str:
     device = change.device
 
     if change.kind == ZabbixChange.CREATE:
-        group = client.group_id(
-            device.site.name if device and device.site_id else FALLBACK_GROUP
-        )
-        wanted = templates_for(device, rules_for(conn))
+        rules = rules_for(conn)
+        groups = client.group_ids(group_names(device, rules))
+        wanted = templates_for(device, rules)
         found = client.template_ids(wanted)
         missing = [n for n in wanted if n not in found]
         profile = profile_for(device, conn.tenant)
         macros = snmp_macros(profile) if conn.send_snmp_credentials else []
         hostid = client.create_host(host_payload(
-            device, group, template_ids=list(found.values()),
+            device, groups, template_ids=list(found.values()),
             profile=profile, macros=macros,
         ))
         ZabbixHostLink.objects.update_or_create(
@@ -383,8 +416,16 @@ def apply_change(change: ZabbixChange) -> str:
         found = client.template_ids(wanted)
         client.link_templates(detail["hostid"], list(found.values()))
         missing = [n for n in wanted if n not in found]
-        linked = ", ".join(found) or "nothing new"
-        result = f"Linked {linked} to {device.name if device else 'host'}."
+        # Groups the same way: re-read, add only what is absent - and only
+        # ask at all when a rule named some, which most changes do not.
+        want_groups = list(detail.get("add_groups") or [])
+        if want_groups:
+            in_groups = client.host_groups(detail["hostid"])
+            want_groups = [g for g in want_groups if g not in in_groups]
+        if want_groups:
+            client.add_groups(detail["hostid"], client.group_ids(want_groups))
+        did = ", ".join([*found, *want_groups]) or "nothing new"
+        result = f"Linked {did} to {device.name if device else 'host'}."
         if missing:
             result += f" Zabbix has no template named {', '.join(missing)}."
     elif change.kind == ZabbixChange.PRUNE:

@@ -3831,6 +3831,9 @@ export interface ZabbixConnection {
   token_set: boolean
   verify_tls: boolean
   enabled: boolean
+  /** Monitoring engine ids that read through this connection. */
+  engines: string[]
+  engine_names: { id: string; name: string }[]
   /** What the last Test learned. Empty until one has run. */
   version: string
   /** False below the supported floor, or before it has ever answered. */
@@ -3864,8 +3867,9 @@ export interface ZabbixDefaults {
   statuses: { value: string; label: string; color: string; text_color: string }[]
 }
 
-/** A rule saying which Zabbix templates a kind of device should carry. */
-export interface ZabbixTemplateRule {
+/** A rule saying what a kind of device carries in Zabbix - templates, and the
+ * host groups it belongs in. Rules stack. */
+export interface ZabbixProvisionRule {
   id: string
   connection: string
   scope: string
@@ -3873,6 +3877,8 @@ export interface ZabbixTemplateRule {
   object_id: string | null
   object_name: string
   templates: string[]
+  /** Host groups. Empty means the device's site is used, as it always was. */
+  groups: string[]
   enabled: boolean
   created_at: string
   updated_at: string
@@ -3886,7 +3892,7 @@ export interface ZabbixServerTemplates {
   error: string
 }
 
-export interface ZabbixTemplateScopes {
+export interface ZabbixProvisionScopes {
   scopes: { value: string; label: string; catalog: string }[]
 }
 
@@ -4618,7 +4624,7 @@ export interface MonitoringEngine {
   name: string
   slug: string
   description: string
-  kind: "local" | "remote"
+  kind: string
   /** pull = Outpost dials out (HTTPS 443); ssh = Danbyte dials in (SSH 22). */
   transport: "pull" | "ssh"
   enabled: boolean
@@ -7137,7 +7143,7 @@ export interface ScheduledTask {
 export interface EngineHeartbeat {
   id: string
   name: string
-  kind: "local" | "remote"
+  kind: string
   transport: string
   enabled: boolean
   last_seen_at: string | null

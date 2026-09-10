@@ -354,7 +354,7 @@ class ApplyTests(_Base):
         self.scope(d)
         self.plan([])
         change = ZabbixChange.objects.get()
-        with mock.patch.object(ZabbixClient, "group_id", return_value="5"), \
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["5"]), \
              mock.patch.object(ZabbixClient, "create_host", return_value="77") as create:
             provision.apply_change(change)
         self.assertEqual(create.call_args[0][0]["host"], "sw1")
@@ -367,17 +367,17 @@ class ApplyTests(_Base):
         d = self.make_device("sw1", 10)
         self.scope(d)
         self.plan([])
-        with mock.patch.object(ZabbixClient, "group_id", return_value="5") as g, \
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["5"]) as g, \
              mock.patch.object(ZabbixClient, "create_host", return_value="77"):
             provision.apply_change(ZabbixChange.objects.get())
-        g.assert_called_once_with("HQ")
+        g.assert_called_once_with(["HQ"])
 
     def test_one_failure_does_not_stop_the_others(self):
         for n, name in ((10, "sw1"), (11, "sw2"), (12, "sw3")):
             self.scope(self.make_device(name, n))
         self.plan([])
         self.assertEqual(ZabbixChange.objects.count(), 3)
-        with mock.patch.object(ZabbixClient, "group_id", return_value="5"), \
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["5"]), \
              mock.patch.object(
                  ZabbixClient, "create_host",
                  side_effect=["1", ZabbixError("refused"), "3"]):
@@ -400,7 +400,7 @@ class ApplyTests(_Base):
         self.conn.provision_mode = ZabbixConnection.AUTO
         self.conn.save()
         with mock.patch.object(ZabbixClient, "all_hosts", return_value=[]), \
-             mock.patch.object(ZabbixClient, "group_id", return_value="5"), \
+             mock.patch.object(ZabbixClient, "group_ids", return_value=["5"]), \
              mock.patch.object(ZabbixClient, "create_host", return_value="77"):
             counts = provision.sync(self.conn)
         self.assertEqual(counts["applied"], 1)

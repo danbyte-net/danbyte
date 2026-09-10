@@ -55,6 +55,9 @@ class _Base(TestCase):
         self.engine = MonitoringEngine.objects.create(
             tenant=self.tenant, name="zbx", slug="zbx", kind="zabbix"
         )
+        # An engine reads through a connection it is linked to. Explicit, so a
+        # second server cannot answer for the first by sorting earlier.
+        self.conn.engines.add(self.engine)
 
 
 class RegistryTests(_Base):
@@ -531,3 +534,32 @@ class CheckerTests(TestCase):
         from .checker import ZabbixChecker
 
         self.assertIsNone(ZabbixChecker().validate_params({"anything": 1}))
+
+
+class ConnectionLinkTests(_Base):
+    """An engine reads through the connection it is linked to, and no other."""
+
+    def test_an_unlinked_engine_is_not_usable(self):
+        loose = MonitoringEngine.objects.create(
+            tenant=self.tenant, name="loose", slug="loose", kind="zabbix"
+        )
+        self.assertFalse(engine_usable(loose))
+
+    def test_a_second_server_does_not_answer_for_the_first(self):
+        """The old rule matched on name and fell back to whichever connection
+        sorted first, so this engine read the wrong estate's hosts."""
+        other = ZabbixConnection.objects.create(
+            tenant=self.tenant, name="aaa-other", url="https://other.example.com",
+            credentials={"token": TOKEN}, version="7.0.30",
+        )
+        from .driver import _connection
+
+        self.assertEqual(_connection(self.engine), self.conn)
+        self.assertNotEqual(_connection(self.engine), other)
+
+    def test_a_disabled_connection_answers_for_nothing(self):
+        from .driver import _connection
+
+        self.conn.enabled = False
+        self.conn.save(update_fields=["enabled"])
+        self.assertIsNone(_connection(self.engine))

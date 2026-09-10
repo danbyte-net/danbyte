@@ -7,7 +7,7 @@ from .models import (
     ZabbixChange,
     ZabbixConnection,
     ZabbixHostLink,
-    ZabbixTemplateRule,
+    ZabbixProvisionRule,
 )
 from .severity import DEFAULT_MAP, MAPPABLE, SEVERITIES, clean_map
 
@@ -21,6 +21,39 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
     token_set = serializers.BooleanField(read_only=True)
     supported = serializers.BooleanField(read_only=True)
     api_url = serializers.CharField(read_only=True)
+    #: Which monitoring engines read through this connection. Named rather than
+    #: nested so the form can render chips without a second round-trip.
+    engine_names = serializers.SerializerMethodField()
+
+    def get_engine_names(self, obj) -> list:
+        return [
+            {"id": str(e.id), "name": e.name}
+            for e in obj.engines.all().order_by("name")
+        ]
+
+    def validate_engines(self, value):
+        """An engine has to be one of this tenant's, and a Zabbix one.
+
+        A UUID from anywhere is not proof of anything, and linking a local
+        engine to a Zabbix connection would quietly do nothing.
+        """
+        from api.views import _get_active_tenant
+
+        request = self.context.get("request")
+        tenant = (
+            self.instance.tenant if self.instance is not None
+            else (_get_active_tenant(request) if request is not None else None)
+        )
+        for engine in value:
+            if tenant is not None and engine.tenant_id != tenant.id:
+                raise serializers.ValidationError(
+                    "An engine is not in the active tenant."
+                )
+            if engine.kind != "zabbix":
+                raise serializers.ValidationError(
+                    f"{engine.name} is not a Zabbix engine."
+                )
+        return value
 
     def validate_url(self, value):
         value = (value or "").strip().rstrip("/")
@@ -94,14 +127,15 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
         model = ZabbixConnection
         fields = [
             "id", "name", "url", "api_url", "token", "token_set", "verify_tls",
-            "enabled", "version", "supported", "last_checked_at", "last_error",
+            "enabled", "engines", "engine_names",
+            "version", "supported", "last_checked_at", "last_error",
             "severity_map", "provision_mode", "prune_hosts", "prune_after_days",
             "auto_sync", "sync_interval_minutes", "last_sync_at",
             "last_sync_summary", "send_snmp_credentials", "created_at",
             "updated_at",
         ]
         read_only_fields = [
-            "id", "api_url", "token_set", "supported", "version",
+            "id", "api_url", "token_set", "supported", "engine_names", "version",
             "last_checked_at", "last_error", "last_sync_at", "last_sync_summary",
             "created_at", "updated_at",
         ]
@@ -171,8 +205,8 @@ class ZabbixChangeSerializer(serializers.ModelSerializer):
         ]
 
 
-class ZabbixTemplateRuleSerializer(serializers.ModelSerializer):
-    """A rule saying which Zabbix templates a kind of device should carry."""
+class ZabbixProvisionRuleSerializer(serializers.ModelSerializer):
+    """A rule saying what a kind of device carries in Zabbix."""
 
     scope_display = serializers.CharField(source="get_scope_display", read_only=True)
     #: What the rule is about, resolved for display - the SPA should not have
@@ -180,10 +214,10 @@ class ZabbixTemplateRuleSerializer(serializers.ModelSerializer):
     object_name = serializers.SerializerMethodField()
 
     _CATALOG = {
-        ZabbixTemplateRule.SCOPE_ROLE: "DeviceRole",
-        ZabbixTemplateRule.SCOPE_PLATFORM: "Platform",
-        ZabbixTemplateRule.SCOPE_TYPE: "DeviceType",
-        ZabbixTemplateRule.SCOPE_MANUFACTURER: "Manufacturer",
+        ZabbixProvisionRule.SCOPE_ROLE: "DeviceRole",
+        ZabbixProvisionRule.SCOPE_PLATFORM: "Platform",
+        ZabbixProvisionRule.SCOPE_TYPE: "DeviceType",
+        ZabbixProvisionRule.SCOPE_MANUFACTURER: "Manufacturer",
     }
 
     def get_object_name(self, obj) -> str:
@@ -197,22 +231,35 @@ class ZabbixTemplateRuleSerializer(serializers.ModelSerializer):
         ).first()
         return getattr(row, "name", "") if row else ""
 
-    def validate_templates(self, value):
+    @staticmethod
+    def _names(value, what: str) -> list:
         if not isinstance(value, list):
-            raise serializers.ValidationError("Expected a list of template names.")
+            raise serializers.ValidationError(f"Expected a list of {what} names.")
         names = []
         for raw in value:
             name = str(raw or "").strip()
             if name and name not in names:
                 names.append(name)
-        if not names:
-            raise serializers.ValidationError("Name at least one template.")
         return names
 
+    def validate_templates(self, value):
+        return self._names(value, "template")
+
+    def validate_groups(self, value):
+        return self._names(value, "group")
+
     def validate(self, attrs):
+        # A rule naming neither does nothing, while sitting in the list looking
+        # like it does something.
+        templates = attrs.get("templates", getattr(self.instance, "templates", None))
+        groups = attrs.get("groups", getattr(self.instance, "groups", None))
+        if not (templates or groups):
+            raise serializers.ValidationError(
+                {"templates": "Name at least one template or host group."}
+            )
         scope = attrs.get("scope", getattr(self.instance, "scope", None))
         object_id = attrs.get("object_id", getattr(self.instance, "object_id", None))
-        if scope == ZabbixTemplateRule.SCOPE_TENANT:
+        if scope == ZabbixProvisionRule.SCOPE_TENANT:
             # The catch-all is about everything, so an object would be a
             # contradiction rather than extra precision.
             attrs["object_id"] = None
@@ -223,10 +270,11 @@ class ZabbixTemplateRuleSerializer(serializers.ModelSerializer):
         return attrs
 
     class Meta:
-        model = ZabbixTemplateRule
+        model = ZabbixProvisionRule
         fields = [
             "id", "connection", "scope", "scope_display", "object_id",
-            "object_name", "templates", "enabled", "created_at", "updated_at",
+            "object_name", "templates", "groups", "enabled",
+            "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "scope_display", "object_name", "created_at", "updated_at",

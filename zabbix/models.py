@@ -37,6 +37,22 @@ class ZabbixConnection(TimestampedModel):
     credentials = EncryptedJSONField(default=dict, blank=True)
     verify_tls = models.BooleanField(default=True)
     enabled = models.BooleanField(default=True)
+    #: The monitoring engines that read through this connection.
+    #:
+    #: Explicit, because the alternative was matching on the engine's *name*
+    #: and falling back to whichever connection sorted first - so a renamed
+    #: engine, or a second Zabbix server, read somebody else's hosts with no
+    #: error to say so. An engine with no connection is simply not usable,
+    #: which is the honest answer rather than a guess.
+    #:
+    #: Lives here rather than on the engine because ``monitoring`` must not
+    #: depend on ``zabbix`` - the same direction every other integration link
+    #: points.
+    engines = models.ManyToManyField(
+        "monitoring.MonitoringEngine",
+        related_name="zabbix_connections",
+        blank=True,
+    )
     # ── provisioning (#162 phase 2) ────────────────────────────────────
     OFF, REVIEW, AUTO = "off", "review", "auto"
     PROVISION_CHOICES = [
@@ -242,8 +258,8 @@ class ZabbixChange(TimestampedModel):
         return f"{self.kind} {self.device_id or ''}".strip()
 
 
-class ZabbixTemplateRule(TimestampedModel):
-    """Which Zabbix templates a device Danbyte provisions should carry.
+class ZabbixProvisionRule(TimestampedModel):
+    """What a device Danbyte provisions should carry in Zabbix.
 
     A host with no template is an empty host: Zabbix shows it, and it collects
     nothing. Danbyte already knows what a device *is* - its role, its platform,
@@ -280,10 +296,10 @@ class ZabbixTemplateRule(TimestampedModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="zabbix_template_rules"
+        Tenant, on_delete=models.CASCADE, related_name="zabbix_provision_rules"
     )
     connection = models.ForeignKey(
-        ZabbixConnection, on_delete=models.CASCADE, related_name="template_rules"
+        ZabbixConnection, on_delete=models.CASCADE, related_name="provision_rules"
     )
     scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
     #: The role / platform / type / manufacturer this rule is about. Null for
@@ -291,6 +307,11 @@ class ZabbixTemplateRule(TimestampedModel):
     object_id = models.UUIDField(null=True, blank=True)
     #: Zabbix template names, e.g. ["ICMP Ping", "Cisco IOS by SNMP"].
     templates = models.JSONField(default=list, blank=True)
+    #: Zabbix host group names. Groups are how Zabbix scopes permissions,
+    #: dashboards and actions, so which groups a host belongs in is the same
+    #: kind of question a template is - and it was the one thing here still
+    #: hard-coded, to the device's site name. Empty leaves that default alone.
+    groups = models.JSONField(default=list, blank=True)
     enabled = models.BooleanField(default=True)
 
     class Meta:

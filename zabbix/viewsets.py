@@ -17,14 +17,14 @@ from .models import (
     ZabbixChange,
     ZabbixConnection,
     ZabbixHostLink,
-    ZabbixTemplateRule,
+    ZabbixProvisionRule,
 )
 from .serializers import (
     ZabbixChangeSerializer,
     ZabbixConnectionSerializer,
     ZabbixDefaultsSerializer,
     ZabbixHostLinkSerializer,
-    ZabbixTemplateRuleSerializer,
+    ZabbixProvisionRuleSerializer,
 )
 
 
@@ -158,7 +158,7 @@ class ZabbixChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return Response(apply_pending(conn))
 
 
-class ZabbixTemplateRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+class ZabbixProvisionRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     """Which Zabbix templates a kind of device should carry.
 
     Rules stack: a device gets the union of every rule that matches it, so
@@ -166,8 +166,8 @@ class ZabbixTemplateRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     """
 
     integration_keys = ("zabbix",)
-    queryset = ZabbixTemplateRule.objects.all().order_by("scope", "-created_at")
-    serializer_class = ZabbixTemplateRuleSerializer
+    queryset = ZabbixProvisionRule.objects.all().order_by("scope", "-created_at")
+    serializer_class = ZabbixProvisionRuleSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -181,14 +181,14 @@ class ZabbixTemplateRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return Response({"scopes": [
             {"value": v, "label": label,
              "catalog": _SCOPE_ENDPOINT.get(v, "")}
-            for v, label in ZabbixTemplateRule.SCOPE_CHOICES
+            for v, label in ZabbixProvisionRule.SCOPE_CHOICES
         ]})
 
 
 #: Where the SPA fetches the options for each scope.
 _SCOPE_ENDPOINT = {
-    ZabbixTemplateRule.SCOPE_ROLE: "/api/device-roles/",
-    ZabbixTemplateRule.SCOPE_PLATFORM: "/api/platforms/",
-    ZabbixTemplateRule.SCOPE_TYPE: "/api/device-types/",
-    ZabbixTemplateRule.SCOPE_MANUFACTURER: "/api/manufacturers/",
+    ZabbixProvisionRule.SCOPE_ROLE: "/api/device-roles/",
+    ZabbixProvisionRule.SCOPE_PLATFORM: "/api/platforms/",
+    ZabbixProvisionRule.SCOPE_TYPE: "/api/device-types/",
+    ZabbixProvisionRule.SCOPE_MANUFACTURER: "/api/manufacturers/",
 }

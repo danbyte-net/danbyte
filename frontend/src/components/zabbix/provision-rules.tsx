@@ -8,8 +8,8 @@ import type {
   Paginated,
   ZabbixConnection,
   ZabbixServerTemplates,
-  ZabbixTemplateRule,
-  ZabbixTemplateScopes,
+  ZabbixProvisionRule,
+  ZabbixProvisionScopes,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
@@ -32,13 +32,14 @@ import {
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
 
 /**
- * Which Zabbix templates a kind of device should carry (#162 phase 3).
+ * What a kind of device carries in Zabbix (#162 phase 3).
  *
- * A host with no template collects nothing, and what template a device wants
- * is a question about what the device is - which is the question Danbyte
- * exists to answer. Rules stack, so this reads as a short list of statements.
+ * A host with no template collects nothing, and a host in the wrong groups is
+ * invisible to the permissions, dashboards and actions built on them. Both are
+ * questions about what the device *is*, which is the one Danbyte exists to
+ * answer. Rules stack, so this reads as a short list of statements.
  */
-export function ZabbixTemplateRules({
+export function ZabbixProvisionRules({
   connection,
   canManage,
 }: {
@@ -46,13 +47,13 @@ export function ZabbixTemplateRules({
   canManage: boolean
 }) {
   const qc = useQueryClient()
-  const [editing, setEditing] = useState<ZabbixTemplateRule | null>(null)
+  const [editing, setEditing] = useState<ZabbixProvisionRule | null>(null)
   const [adding, setAdding] = useState(false)
 
   const rules = useQuery({
     queryKey: ["zabbix-template-rules", connection.id],
     queryFn: () =>
-      api<Paginated<ZabbixTemplateRule>>(
+      api<Paginated<ZabbixProvisionRule>>(
         `/api/zabbix/template-rules/?connection=${connection.id}`
       ),
   })
@@ -73,7 +74,7 @@ export function ZabbixTemplateRules({
     <section className="rounded-lg border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <h2 className="text-sm font-semibold">
-          Templates{" "}
+          Provisioning rules{" "}
           <span className="num text-xs font-normal text-muted-foreground">
             {rows.length}
           </span>
@@ -91,7 +92,7 @@ export function ZabbixTemplateRules({
       ) : rows.length === 0 ? (
         <p className="px-4 py-3 text-[13px] text-muted-foreground">
           No rules. A host Danbyte creates gets no template, so Zabbix shows it
-          and collects nothing.
+          and collects nothing, and lands in a group named after its site.
         </p>
       ) : (
         <div className="divide-y divide-border">
@@ -117,6 +118,14 @@ export function ZabbixTemplateRules({
                     className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px]"
                   >
                     {t}
+                  </span>
+                ))}
+                {r.groups.map((g) => (
+                  <span
+                    key={g}
+                    className="rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                  >
+                    {g}
                   </span>
                 ))}
               </span>
@@ -168,7 +177,7 @@ function RuleDialog({
   onOpenChange,
 }: {
   connection: ZabbixConnection
-  rule: ZabbixTemplateRule | null
+  rule: ZabbixProvisionRule | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -176,7 +185,7 @@ function RuleDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{rule ? "Edit rule" : "Add template rule"}</DialogTitle>
+          <DialogTitle>{rule ? "Edit rule" : "Add provisioning rule"}</DialogTitle>
         </DialogHeader>
         {open && (
           <RuleForm
@@ -196,7 +205,7 @@ function RuleForm({
   onDone,
 }: {
   connection: ZabbixConnection
-  rule: ZabbixTemplateRule | null
+  rule: ZabbixProvisionRule | null
   onDone: () => void
 }) {
   const qc = useQueryClient()
@@ -209,6 +218,7 @@ function RuleForm({
   // The fallback when Zabbix cannot be reached: one name per line, because a
   // comma is a legal character in a template name.
   const [text, setText] = useState((rule?.templates ?? []).join("\n"))
+  const [groups, setGroups] = useState((rule?.groups ?? []).join("\n"))
   const [enabled, setEnabled] = useState(rule?.enabled ?? true)
 
   // Which scopes exist, and which catalog backs each, comes from the server -
@@ -216,7 +226,7 @@ function RuleForm({
   const scopes = useQuery({
     queryKey: ["zabbix-template-scopes"],
     queryFn: () =>
-      api<ZabbixTemplateScopes>("/api/zabbix/template-rules/scopes/"),
+      api<ZabbixProvisionScopes>("/api/zabbix/template-rules/scopes/"),
     staleTime: 60 * 60_000,
   })
   const catalog = useMemo(
@@ -258,7 +268,7 @@ function RuleForm({
 
   const save = useMutation({
     mutationFn: () =>
-      api<ZabbixTemplateRule>(
+      api<ZabbixProvisionRule>(
         rule
           ? `/api/zabbix/template-rules/${rule.id}/`
           : "/api/zabbix/template-rules/",
@@ -274,6 +284,10 @@ function RuleForm({
                   .split("\n")
                   .map((l) => l.trim())
                   .filter(Boolean),
+            groups: groups
+              .split("\n")
+              .map((l) => l.trim())
+              .filter(Boolean),
             enabled,
           }),
         }
@@ -353,6 +367,13 @@ function RuleForm({
           error={fieldErrors.templates}
         />
       )}
+      <FormTextarea
+        label="Host groups"
+        hint="One per line. Empty uses the device's site, as it always has."
+        value={groups}
+        onChange={setGroups}
+        error={fieldErrors.groups}
+      />
       <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
       <FormFooter
         onCancel={onDone}

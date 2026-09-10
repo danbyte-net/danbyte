@@ -7,7 +7,7 @@ closes both, from facts Danbyte already holds.
 
 Three things get resolved here:
 
-* **Templates** - from :class:`~zabbix.models.ZabbixTemplateRule`. Every rule
+* **Templates** - from :class:`~zabbix.models.ZabbixProvisionRule`. Every rule
   that matches the device contributes, so the mapping reads as a set of small
   statements rather than one list per model.
 * **An SNMP interface** - built when the device resolves to an SNMP profile,
@@ -19,7 +19,7 @@ Three things get resolved here:
 """
 from __future__ import annotations
 
-from .models import ZabbixTemplateRule
+from .models import ZabbixProvisionRule
 
 #: Zabbix interface types.
 IFACE_AGENT = 1
@@ -49,13 +49,13 @@ MACRO_SECRET = 1
 
 def _scope_object(device, scope):
     """The id on ``device`` a rule of this scope matches against."""
-    if scope == ZabbixTemplateRule.SCOPE_ROLE:
+    if scope == ZabbixProvisionRule.SCOPE_ROLE:
         return device.role_id
-    if scope == ZabbixTemplateRule.SCOPE_PLATFORM:
+    if scope == ZabbixProvisionRule.SCOPE_PLATFORM:
         return device.platform_id
-    if scope == ZabbixTemplateRule.SCOPE_TYPE:
+    if scope == ZabbixProvisionRule.SCOPE_TYPE:
         return device.device_type_id
-    if scope == ZabbixTemplateRule.SCOPE_MANUFACTURER:
+    if scope == ZabbixProvisionRule.SCOPE_MANUFACTURER:
         return getattr(device.device_type, "manufacturer_id", None)
     return None
 
@@ -63,8 +63,29 @@ def _scope_object(device, scope):
 def rules_for(conn) -> list:
     """This connection's enabled rules, read once per pass."""
     return list(
-        ZabbixTemplateRule.objects.filter(connection=conn, enabled=True)
+        ZabbixProvisionRule.objects.filter(connection=conn, enabled=True)
     )
+
+
+def _matches(device, rule) -> bool:
+    if rule.scope == ZabbixProvisionRule.SCOPE_TENANT:
+        return True
+    wanted = _scope_object(device, rule.scope)
+    return wanted is not None and str(wanted) == str(rule.object_id)
+
+
+def _collect(device, rules, field: str) -> list[str]:
+    """The union of one list field across every rule that matches, in a stable
+    order and without duplicates."""
+    out: list[str] = []
+    for rule in rules:
+        if not _matches(device, rule):
+            continue
+        for name in getattr(rule, field, None) or []:
+            name = (name or "").strip()
+            if name and name not in out:
+                out.append(name)
+    return out
 
 
 def templates_for(device, rules) -> list[str]:
@@ -73,20 +94,17 @@ def templates_for(device, rules) -> list[str]:
     Rules stack and duplicates collapse, so a device matching three rules gets
     the union of the three - which is what a Zabbix host actually models.
     """
-    out: list[str] = []
-    for rule in rules:
-        if rule.scope == ZabbixTemplateRule.SCOPE_TENANT:
-            match = True
-        else:
-            wanted = _scope_object(device, rule.scope)
-            match = wanted is not None and str(wanted) == str(rule.object_id)
-        if not match:
-            continue
-        for name in rule.templates or []:
-            name = (name or "").strip()
-            if name and name not in out:
-                out.append(name)
-    return out
+    return _collect(device, rules, "templates")
+
+
+def groups_for(device, rules) -> list[str]:
+    """The host groups this device belongs in.
+
+    Empty means "no rule had an opinion", and the caller falls back to the
+    device's site - which is what Danbyte did for every host before rules
+    existed, and is still the right default.
+    """
+    return _collect(device, rules, "groups")
 
 
 def snmp_interface(device, profile, address: str) -> dict | None:

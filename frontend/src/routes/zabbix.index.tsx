@@ -23,7 +23,7 @@ import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ZabbixConnectionDialog } from "@/components/zabbix/connection-dialog"
 import { ZabbixChanges } from "@/components/zabbix/changes"
-import { ZabbixTemplateRules } from "@/components/zabbix/template-rules"
+import { ZabbixProvisionRules } from "@/components/zabbix/provision-rules"
 
 export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
 
@@ -187,6 +187,13 @@ function ZabbixPage() {
               <Row label="API token">
                 {conn.token_set ? "set" : <Warn>not set</Warn>}
               </Row>
+              <Row label="Engines">
+                {conn.engine_names.length ? (
+                  conn.engine_names.map((e) => e.name).join(", ")
+                ) : (
+                  <Warn>none - nothing reads through this connection</Warn>
+                )}
+              </Row>
               <Row label="Provisioning">
                 {conn.provision_mode === "off" ? (
                   <span className="text-muted-foreground">
@@ -251,7 +258,7 @@ function ZabbixPage() {
             loading={changes.isLoading}
           />
 
-          <ZabbixTemplateRules connection={conn} canManage={canManage} />
+          <ZabbixProvisionRules connection={conn} canManage={canManage} />
 
           <section className="rounded-lg border border-border bg-card">
             <div className="border-b border-border px-4 py-2.5">

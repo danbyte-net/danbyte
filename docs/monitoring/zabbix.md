@@ -29,7 +29,12 @@ surface work over it unchanged.
    verification - and press **Test**. It reports the Zabbix version and how
    many hosts the token can see, which is the fastest way to notice a token
    scoped to nothing.
-4. Create a **monitoring engine** of kind *Zabbix* and bind it, exactly as you
+4. Create a **monitoring engine** of kind *Zabbix*, and **link it to the
+   connection** on the connection's form. The link is explicit: an engine reads
+   through the connection it is attached to and no other, so a second Zabbix
+   server can never quietly answer for the first. An engine linked to nothing
+   is not usable, which is the honest answer rather than a guess. Then bind it,
+   exactly as you
    would an Outpost. The binding decides *where* a target's checks are
    answered, and the most specific one wins: **device → location → prefix →
    site**. A device binding is what lets one host be answered by Zabbix without
@@ -176,10 +181,11 @@ Deliberately little: **name, interface addresses, host group, serial** and the
 Zabbix's to own, and two systems editing one field is how both stop being
 trusted. An update only ever carries fields whose value actually differs.
 
-The host group is named after the device's **site**, created on demand, so
-Zabbix's own permissions line up with the structure Danbyte already holds.
+Host groups come from the same rules templates do, and are created on demand.
+With no rule, a host lands in a group named after its **site** - which is what
+every host got before rules existed, and still the right default.
 
-### Templates
+### Templates and host groups
 
 A Zabbix host with no template is an empty host: Zabbix shows it and it
 collects nothing. Which template a device wants is a question about **what the
@@ -201,9 +207,16 @@ the server is no reason to refuse to edit a rule - and a name Zabbix does not
 have is **reported back** when the write happens, never invented and never
 silently dropped.
 
-Danbyte only ever **adds** a template. A template somebody linked by hand is
-theirs, and a rule that stops matching is not a reason to strip a host of its
-monitoring.
+A rule can also name **host groups**. Groups are how Zabbix scopes
+permissions, dashboards and actions, so which groups a host belongs in is the
+same kind of question as which templates it carries - and it was the last thing
+here still hard-coded.
+
+Danbyte only ever **adds** a template or a group. A template somebody linked by
+hand is theirs, a group somebody put a host in is theirs, and a rule that stops
+matching is not a reason to strip a host of its monitoring. The site fallback
+applies only to a host Danbyte is **creating**: it is a sensible default for a
+new host, not an opinion to impose on one that already exists.
 
 !!! tip "Zabbix's refusals are usually the answer"
     Zabbix will not link two templates that define the same item key - the
@@ -289,5 +302,4 @@ what is there.
 ## Not yet
 
 Zabbix proxies mapped to sites, maintenance-window sync and acknowledgement
-write-back are planned. Host groups follow the device's site only - a rule for
-those, the way templates have one, is not written yet.
+write-back are planned.

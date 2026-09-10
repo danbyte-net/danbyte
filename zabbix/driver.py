@@ -29,13 +29,19 @@ CLAIM_BATCH = 500
 
 
 def _connection(engine):
-    """The connection an engine reads through.
+    """The connection an engine reads through, or None.
 
-    One per tenant today, matched by name when there are several - a multi-site
-    Zabbix is one server, so the common case is one row.
+    An explicit link. It used to be a name match with "any enabled connection"
+    as the fallback, which meant a renamed engine - or a second Zabbix server -
+    read the wrong estate's hosts and reported them as this one's, silently.
+    An engine linked to nothing is not usable, and saying so is better than
+    guessing which server somebody meant.
     """
-    qs = ZabbixConnection.objects.filter(tenant=engine.tenant, enabled=True)
-    return qs.filter(name=engine.name).first() or qs.first()
+    return (
+        ZabbixConnection.objects.filter(engines=engine, enabled=True)
+        .order_by("name")
+        .first()
+    )
 
 
 class ZabbixDriver:

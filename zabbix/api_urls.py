@@ -4,7 +4,7 @@ from .viewsets import (
     ZabbixChangeViewSet,
     ZabbixConnectionViewSet,
     ZabbixHostLinkViewSet,
-    ZabbixTemplateRuleViewSet,
+    ZabbixProvisionRuleViewSet,
 )
 
 router = DefaultRouter()
@@ -12,7 +12,7 @@ router.register(r"connections", ZabbixConnectionViewSet, basename="zabbixconnect
 router.register(r"links", ZabbixHostLinkViewSet, basename="zabbixhostlink")
 router.register(r"changes", ZabbixChangeViewSet, basename="zabbixchange")
 router.register(
-    r"template-rules", ZabbixTemplateRuleViewSet, basename="zabbixtemplaterule"
+    r"template-rules", ZabbixProvisionRuleViewSet, basename="zabbixtemplaterule"
 )
 
 urlpatterns = router.urls

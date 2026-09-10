@@ -108,22 +108,26 @@ class _Base(TestCase):
         )
 
     def rule(self, scope, object_id, names, **kw):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        return ZabbixTemplateRule.objects.create(
+        return ZabbixProvisionRule.objects.create(
             tenant=self.tenant, connection=self.conn, scope=scope,
             object_id=object_id, templates=names, **kw
         )
+
+    def plan(self, hosts):
+        with mock.patch.object(ZabbixClient, "all_hosts", return_value=hosts):
+            return provision.plan(self.conn)
 
 
 class ResolutionTests(_Base):
     def test_rules_stack_rather_than_override(self):
         """"Everything gets ICMP", "switches also get SNMP" is two rules."""
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_TENANT, None, ["ICMP Ping"])
-        self.rule(ZabbixTemplateRule.SCOPE_ROLE, self.role.id, ["Generic by SNMP"])
-        self.rule(ZabbixTemplateRule.SCOPE_MANUFACTURER, self.vendor.id,
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.rule(ZabbixProvisionRule.SCOPE_ROLE, self.role.id, ["Generic by SNMP"])
+        self.rule(ZabbixProvisionRule.SCOPE_MANUFACTURER, self.vendor.id,
                   ["Cisco IOS by SNMP"])
         device = self.make_device()
         got = templates.templates_for(device, templates.rules_for(self.conn))
@@ -132,38 +136,38 @@ class ResolutionTests(_Base):
         )
 
     def test_a_rule_for_another_role_does_not_match(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
         other = DeviceRole.objects.create(
             tenant=self.tenant, name="Router", slug="router"
         )
-        self.rule(ZabbixTemplateRule.SCOPE_ROLE, other.id, ["Router by SNMP"])
+        self.rule(ZabbixProvisionRule.SCOPE_ROLE, other.id, ["Router by SNMP"])
         self.assertEqual(
             templates.templates_for(self.make_device(), templates.rules_for(self.conn)),
             [],
         )
 
     def test_a_disabled_rule_contributes_nothing(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_TENANT, None, ["ICMP Ping"],
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, ["ICMP Ping"],
                   enabled=False)
         self.assertEqual(templates.rules_for(self.conn), [])
 
     def test_platform_matches(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_PLATFORM, self.platform.id, ["IOS"])
+        self.rule(ZabbixProvisionRule.SCOPE_PLATFORM, self.platform.id, ["IOS"])
         device = self.make_device(platform=self.platform)
         self.assertEqual(
             templates.templates_for(device, templates.rules_for(self.conn)), ["IOS"]
         )
 
     def test_duplicates_collapse(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_TENANT, None, ["ICMP Ping"])
-        self.rule(ZabbixTemplateRule.SCOPE_ROLE, self.role.id,
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.rule(ZabbixProvisionRule.SCOPE_ROLE, self.role.id,
                   ["ICMP Ping", "Generic by SNMP"])
         got = templates.templates_for(self.make_device(), templates.rules_for(self.conn))
         self.assertEqual(got, ["ICMP Ping", "Generic by SNMP"])
@@ -241,9 +245,9 @@ class PlanTests(_Base):
             return provision.plan(self.conn)
 
     def test_a_linked_host_missing_a_template_is_proposed(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_TENANT, None,
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None,
                   ["ICMP Ping", "Generic by SNMP"])
         device = self.make_device()
         self.scope(device)
@@ -253,9 +257,9 @@ class PlanTests(_Base):
         self.assertEqual(change.detail["add"], ["Generic by SNMP"])
 
     def test_a_host_that_already_has_them_is_left_alone(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, ["ICMP Ping"])
         device = self.make_device()
         self.scope(device)
         counts = self.plan([host("1", "sw1", "10.7.0.10", parents=["ICMP Ping"])])
@@ -271,9 +275,9 @@ class PlanTests(_Base):
         self.assertEqual(counts["template"], 0)
 
     def test_a_create_says_which_templates_it_would_link(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_ROLE, self.role.id, ["Generic by SNMP"])
+        self.rule(ZabbixProvisionRule.SCOPE_ROLE, self.role.id, ["Generic by SNMP"])
         self.scope(self.make_device())
         self.plan([])
         change = ZabbixChange.objects.get(kind=ZabbixChange.CREATE)
@@ -282,15 +286,15 @@ class PlanTests(_Base):
 
 class ApplyTests(_Base):
     def test_creating_links_the_templates_it_found(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, ["ICMP Ping"])
         device = self.make_device()
         change = ZabbixChange.objects.create(
             tenant=self.tenant, connection=self.conn, device=device,
             kind=ZabbixChange.CREATE, detail={"name": device.name},
         )
-        with mock.patch.object(ZabbixClient, "group_id", return_value="4"), \
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["4"]), \
                 mock.patch.object(ZabbixClient, "template_ids",
                                   return_value={"ICMP Ping": "77"}), \
                 mock.patch.object(ZabbixClient, "create_host",
@@ -300,15 +304,15 @@ class ApplyTests(_Base):
         self.assertEqual(payload["templates"], [{"templateid": "77"}])
 
     def test_a_template_zabbix_does_not_have_is_reported(self):
-        from .models import ZabbixTemplateRule
+        from .models import ZabbixProvisionRule
 
-        self.rule(ZabbixTemplateRule.SCOPE_TENANT, None, ["Nonesuch"])
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, ["Nonesuch"])
         device = self.make_device()
         change = ZabbixChange.objects.create(
             tenant=self.tenant, connection=self.conn, device=device,
             kind=ZabbixChange.CREATE, detail={"name": device.name},
         )
-        with mock.patch.object(ZabbixClient, "group_id", return_value="4"), \
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["4"]), \
                 mock.patch.object(ZabbixClient, "template_ids", return_value={}), \
                 mock.patch.object(ZabbixClient, "create_host", return_value="100"):
             result = provision.apply_change(change)
@@ -324,7 +328,7 @@ class ApplyTests(_Base):
             tenant=self.tenant, connection=self.conn, device=device,
             kind=ZabbixChange.CREATE, detail={"name": device.name},
         )
-        with mock.patch.object(ZabbixClient, "group_id", return_value="4"), \
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["4"]), \
                 mock.patch.object(ZabbixClient, "template_ids", return_value={}), \
                 mock.patch.object(ZabbixClient, "create_host",
                                   return_value="100") as create:
@@ -348,7 +352,7 @@ class ApplyTests(_Base):
             tenant=self.tenant, connection=self.conn, device=device,
             kind=ZabbixChange.CREATE, detail={"name": device.name},
         )
-        with mock.patch.object(ZabbixClient, "group_id", return_value="4"), \
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["4"]), \
                 mock.patch.object(ZabbixClient, "template_ids", return_value={}), \
                 mock.patch.object(ZabbixClient, "create_host",
                                   return_value="100") as create:
@@ -510,3 +514,101 @@ class ApplyTests(_Base):
         update.assert_not_called()
         self.assertEqual(iface.call_args[0][0], "9")
         self.assertEqual(iface.call_args[0][1]["ip"], "10.7.0.10")
+
+
+class GroupRuleTests(_Base):
+    """Host groups get the same rule engine templates got.
+
+    Groups are how Zabbix scopes permissions, dashboards and actions, so which
+    groups a host is in is the same kind of question as which templates it
+    carries - and it was the one thing here still hard-coded.
+    """
+
+    def test_rules_stack_groups_too(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], groups=["Danbyte"])
+        self.rule(ZabbixProvisionRule.SCOPE_ROLE, self.role.id, [],
+                  groups=["Switches"])
+        got = templates.groups_for(self.make_device(), templates.rules_for(self.conn))
+        self.assertEqual(sorted(got), ["Danbyte", "Switches"])
+
+    def test_without_a_rule_the_site_is_still_the_group(self):
+        """What every host got before rules existed, and the right default."""
+        device = self.make_device()
+        self.assertEqual(
+            provision.group_names(device, templates.rules_for(self.conn)), ["HQ"]
+        )
+
+    def test_a_rule_replaces_the_site_default(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], groups=["Estate"])
+        device = self.make_device()
+        self.assertEqual(
+            provision.group_names(device, templates.rules_for(self.conn)),
+            ["Estate"],
+        )
+
+    def test_a_device_with_no_site_still_gets_a_group(self):
+        """Zabbix refuses a host with no group at all, so there is always one."""
+        from api.models import Device
+
+        device = Device.objects.create(
+            tenant=self.tenant, name="loose", device_type=self.dtype,
+            role=self.role,
+        )
+        self.assertEqual(
+            provision.group_names(device, []), [provision.FALLBACK_GROUP]
+        )
+
+    def test_a_group_the_host_is_already_in_is_not_proposed(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [],
+                  groups=["Estate", "Switches"])
+        device = self.make_device()
+        self.scope(device)
+        counts = self.plan([{
+            "hostid": "1", "host": "sw1", "name": "sw1", "status": "0",
+            "interfaces": [{"interfaceid": "9", "ip": "10.7.0.10", "type": "1"}],
+            "inventory": {}, "parentTemplates": [],
+            "hostgroups": [{"groupid": "3", "name": "Estate"}],
+        }])
+        self.assertEqual(counts["template"], 1)
+        change = ZabbixChange.objects.get(kind=ZabbixChange.TEMPLATE)
+        self.assertEqual(change.detail["add_groups"], ["Switches"])
+
+    def test_the_site_default_is_never_imposed_on_an_existing_host(self):
+        """That default is for hosts Danbyte creates, not an opinion to push
+        onto one somebody else already grouped."""
+        device = self.make_device()
+        self.scope(device)
+        counts = self.plan([{
+            "hostid": "1", "host": "sw1", "name": "sw1", "status": "0",
+            "interfaces": [{"interfaceid": "9", "ip": "10.7.0.10", "type": "1"}],
+            "inventory": {}, "parentTemplates": [], "hostgroups": [],
+        }])
+        self.assertEqual(counts["template"], 0)
+
+    def test_creating_uses_the_rules_groups(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [],
+                  groups=["Estate", "Switches"])
+        device = self.make_device()
+        change = ZabbixChange.objects.create(
+            tenant=self.tenant, connection=self.conn, device=device,
+            kind=ZabbixChange.CREATE, detail={"name": device.name},
+        )
+        with mock.patch.object(ZabbixClient, "group_ids",
+                               return_value=["7", "8"]) as gids, \
+                mock.patch.object(ZabbixClient, "template_ids", return_value={}), \
+                mock.patch.object(ZabbixClient, "create_host",
+                                  return_value="100") as create:
+            provision.apply_change(change)
+        self.assertEqual(gids.call_args[0][0], ["Estate", "Switches"])
+        self.assertEqual(
+            create.call_args[0][0]["groups"],
+            [{"groupid": "7"}, {"groupid": "8"}],
+        )
