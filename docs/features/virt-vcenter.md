@@ -108,22 +108,28 @@ have:
   their detail is not read, so nothing about them is updated. They still
   count as **present**: a VM that is merely switched off is never treated as
   missing, and so is never pruned for being off.
-- **Remove VMs deleted from the hypervisor** (on) with **Remove after** (days)
-  - a VM that stops appearing is marked *missing* and kept until it has been
-  missing that long. One API error, one network blip, one paused vCenter is
-  then not enough to delete a VM record and everything hanging off it. The
-  moment the VM reappears the clock resets - it does not resume a part-spent
-  delay.
+- **Delete VMs removed from the hypervisor** (**off by default**) with
+  **Delete after** (days). Danbyte does not delete your records unless you ask
+  it to: a VM the hypervisor stops reporting is marked *missing* and kept, and
+  the sync counts it, until you turn this on.
 
-    **0 days** removes it on the first sync that cannot see it, which is what
-    Danbyte did before this setting existed. **Sources that already existed
-    when you upgraded are set to 0**, so nothing changed under you; new
-    sources start at **7 days**. In review mode the *proposal* waits the same
-    delay, because approving a deletion a flaky poll invented loses the same
-    data.
+    With it on, the VM still has to stay missing for the whole delay first.
+    One API error, one network blip, one paused vCenter is then not enough to
+    delete a VM record and everything hanging off it, and the moment the VM
+    reappears the clock resets - it does not resume a part-spent delay. **0
+    days** acts on the first sync that cannot see it.
 
-    Turning the switch off keeps missing VMs indefinitely, flagged, for you to
-    delete by hand.
+    In **review mode** nothing is ever deleted automatically, so the removal
+    is *proposed* for you to approve whether or not this switch is on - a
+    proposal is not a deletion. The delay applies to the proposal too, because
+    approving a removal a flaky poll invented loses the same data.
+
+!!! warning "This changed for existing sources"
+    An auto-mode source used to delete a VM the hypervisor stopped reporting,
+    on the very next sync, with no way to say no. Upgrading turns that **off**
+    and sets the delay to **0**: nothing is deleted any more, and review-mode
+    proposals keep appearing at the pace they always did. New sources start
+    with deleting off and a **7-day** delay for when you enable it.
 
 Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Virtualization → Network topology** draws the whole picture - switches,

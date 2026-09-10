@@ -732,17 +732,16 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                 gone.missing_since = now
                 gone.save(update_fields=["missing_since"])
             if gone.vm_id and gone.created_vm:
-                if not source.auto_prune:
-                    # The operator prunes by hand. The row stays, marked, so
-                    # the VM page can say the hypervisor stopped reporting it.
-                    counts["vms_missing"] = counts.get("vms_missing", 0) + 1
-                    continue
                 if now - gone.missing_since < grace:
                     # Not yet. A vCenter that 500s for one poll must not cost
                     # a VM record and everything hanging off it (#160).
                     counts["vms_missing"] = counts.get("vms_missing", 0) + 1
                     continue
-                if apply:
+                if not apply:
+                    # Review mode proposes; the operator decides. That is not
+                    # a deletion, so it does not need auto_prune.
+                    _queue_change(gone, "removed_guest", {}, now, fresh_changes)
+                elif source.auto_prune:
                     logger.info(
                         "pruning VM %r - missing since %s",
                         gone.vm.name, gone.missing_since.date(),
@@ -750,7 +749,10 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                     gone.vm.delete()
                     gone.delete()
                 else:
-                    _queue_change(gone, "removed_guest", {}, now, fresh_changes)
+                    # Danbyte does not delete a record you did not ask it to.
+                    # The row stays, flagged, so the VM page can say the
+                    # hypervisor stopped reporting it.
+                    counts["vms_missing"] = counts.get("vms_missing", 0) + 1
             else:
                 # An adopted (operator-owned) VM or one never accepted: drop the
                 # tracking row, never the VM.

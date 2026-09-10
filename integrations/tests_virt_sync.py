@@ -175,9 +175,11 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(vm.device, host)
 
     def test_gone_guest_pruned_only_if_sync_created(self):
-        # No grace period here - this is the ownership rule, not the timing.
+        # Deleting is opt-in, and no grace period here - this is the
+        # ownership rule, not the timing.
+        self.source.auto_prune = True
         self.source.auto_prune_after_days = 0
-        self.source.save(update_fields=["auto_prune_after_days"])
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
         self.sync()
         with mock.patch.object(
             virt_sync, "proxmox_get",
@@ -200,8 +202,9 @@ class ProxmoxSyncTests(TestCase):
     def test_a_missing_vm_survives_its_grace_period(self):
         """#160: one bad poll must not cost a VM record. The guest is marked
         missing and kept until the delay has actually elapsed."""
+        self.source.auto_prune = True
         self.source.auto_prune_after_days = 7
-        self.source.save(update_fields=["auto_prune_after_days"])
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
         self.sync()
         counts = self._vanish()
 
@@ -211,8 +214,9 @@ class ProxmoxSyncTests(TestCase):
             self.assertIsNotNone(g.missing_since)
 
     def test_a_vm_still_missing_after_the_delay_is_pruned(self):
+        self.source.auto_prune = True
         self.source.auto_prune_after_days = 7
-        self.source.save(update_fields=["auto_prune_after_days"])
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
         self.sync()
         self._vanish()
         # Back-date the mark rather than the clock: the delay is measured
@@ -225,8 +229,9 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(VirtGuest.objects.count(), 0)
 
     def test_a_vm_that_comes_back_starts_the_delay_over(self):
+        self.source.auto_prune = True
         self.source.auto_prune_after_days = 7
-        self.source.save(update_fields=["auto_prune_after_days"])
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
         self.sync()
         self._vanish()
         VirtGuest.objects.update(
@@ -242,24 +247,32 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(counts["vms_missing"], 2)
         self.assertEqual(VirtualMachine.objects.count(), 2)
 
-    def test_auto_prune_off_keeps_a_missing_vm_indefinitely(self):
-        self.source.auto_prune = False
+    def test_danbyte_does_not_delete_a_vm_unless_asked(self):
+        """The default. A guest the hypervisor stopped reporting is kept and
+        flagged; nothing is removed until an operator turns deleting on."""
+        self.assertFalse(self.source.auto_prune)  # the shipped default
         self.source.auto_prune_after_days = 0
-        self.source.save(
-            update_fields=["auto_prune", "auto_prune_after_days"]
-        )
+        self.source.save(update_fields=["auto_prune_after_days"])
         self.sync()
         counts = self._vanish()
         self.assertEqual(counts["vms_missing"], 2)
+        self.assertEqual(VirtualMachine.objects.count(), 2)
+        # And it stays that way, however long it is gone.
+        VirtGuest.objects.update(
+            missing_since=timezone.now() - timedelta(days=400)
+        )
+        self._vanish()
         self.assertEqual(VirtualMachine.objects.count(), 2)
 
     def test_a_powered_off_vm_is_skipped_but_never_counted_missing(self):
         """#160's own caveat: skip_offline_vms and auto_prune together must
         not delete a VM that is merely switched off."""
         self.source.skip_offline_vms = True
+        self.source.auto_prune = True
         self.source.auto_prune_after_days = 0
         self.source.save(
-            update_fields=["skip_offline_vms", "auto_prune_after_days"]
+            update_fields=["skip_offline_vms", "auto_prune",
+                           "auto_prune_after_days"]
         )
         off = [dict(r, status="stopped") for r in RESOURCES]
         with mock.patch.object(
@@ -834,7 +847,9 @@ class ProxmoxModeTests(TestCase):
 
         self.source.sync_mode = "auto"
         # No grace period: this is about review mode queueing rather than
-        # deleting, not about when the proposal appears.
+        # deleting, not about when the proposal appears. Deliberately leaves
+        # auto_prune off - a proposal is not a deletion, so it does not need
+        # the switch.
         self.source.auto_prune_after_days = 0
         self.source.save(update_fields=["sync_mode", "auto_prune_after_days"])
         self.sync()

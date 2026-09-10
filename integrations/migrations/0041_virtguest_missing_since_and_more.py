@@ -3,16 +3,22 @@
 from django.db import migrations, models
 
 
-def keep_existing_behaviour(apps, schema_editor):
-    """Sources that already exist keep deleting a missing VM on the first pass.
+def stop_deleting_and_keep_the_cadence(apps, schema_editor):
+    """Existing sources stop deleting VMs, and keep proposing at today's pace.
 
-    The new default is a week's grace, which is the right default for a source
-    somebody sets up tomorrow - but silently making an upgrade hold on to VMs
-    for seven days is a behaviour change nobody asked for. Existing rows get
-    0, and the operator raises it when they want the safety net.
+    Two separate things, both moved in the safe direction:
+
+    * ``auto_prune=False`` - an auto-mode source has been deleting a VM the
+      hypervisor stopped reporting, with no way to say no. Danbyte does not
+      delete records you did not ask it to, so that stops on upgrade; the VM
+      is kept and flagged instead, and one toggle turns it back on.
+    * ``auto_prune_after_days=0`` - a review-mode source proposes removal on
+      the first pass that misses a guest. Making an upgrade sit on that for a
+      week is a change to a workflow nobody asked to change. New sources
+      still get the week.
     """
     apps.get_model("integrations", "VirtualizationSource").objects.update(
-        auto_prune_after_days=0
+        auto_prune=False, auto_prune_after_days=0
     )
 
 
@@ -35,7 +41,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='virtualizationsource',
             name='auto_prune',
-            field=models.BooleanField(default=True),
+            field=models.BooleanField(default=False),
         ),
         migrations.AddField(
             model_name='virtualizationsource',
@@ -52,5 +58,5 @@ class Migration(migrations.Migration):
             name='sync_vm_interface_mtu',
             field=models.BooleanField(default=True),
         ),
-        migrations.RunPython(keep_existing_behaviour, noop),
+        migrations.RunPython(stop_deleting_and_keep_the_cadence, noop),
     ]

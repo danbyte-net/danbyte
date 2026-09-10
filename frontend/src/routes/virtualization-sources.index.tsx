@@ -416,7 +416,7 @@ export function SourceDialog({
   const [skipOffline, setSkipOffline] = useState(
     source?.skip_offline_vms ?? false
   )
-  const [autoPrune, setAutoPrune] = useState(source?.auto_prune ?? true)
+  const [autoPrune, setAutoPrune] = useState(source?.auto_prune ?? false)
   const [pruneAfter, setPruneAfter] = useState(
     String(source?.auto_prune_after_days ?? 7)
   )
@@ -636,15 +636,15 @@ export function SourceDialog({
               onChange={setSkipOffline}
             />
             <FormCheckbox
-              label="Remove VMs deleted from the hypervisor"
-              hint="Off keeps them, flagged as missing, for you to delete."
+              label="Delete VMs removed from the hypervisor"
+              hint="Off by default - Danbyte keeps them, flagged as missing, for you to delete. In review mode the removal is proposed either way."
               checked={autoPrune}
               onChange={setAutoPrune}
             />
             {autoPrune && (
               <FormText
                 label="Remove after"
-                hint="days a VM must stay missing - 0 removes it on the first sync that cannot see it"
+                hint="days a VM must stay missing before Danbyte believes it - also delays the review-mode proposal"
                 type="number"
                 value={pruneAfter}
                 onChange={setPruneAfter}

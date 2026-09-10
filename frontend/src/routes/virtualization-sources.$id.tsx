@@ -206,12 +206,12 @@ function SourceDetailPage() {
       value: source.skip_offline_vms ? "Skipped" : "Synced",
     },
     {
-      label: "Remove deleted VMs",
+      label: "Delete removed VMs",
       value: source.auto_prune
         ? source.auto_prune_after_days === 0
           ? "On the next sync"
           : `After ${source.auto_prune_after_days} days missing`
-        : "No",
+        : "No - kept and flagged",
     },
     ...(source.kind === "vcenter"
       ? [

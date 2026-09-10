@@ -540,12 +540,16 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: Ignore powered-off guests. They still count as *present* - a VM that is
     #: merely off must never look missing to auto-prune (#160).
     skip_offline_vms = models.BooleanField(default=False)
-    #: Remove a VM that has vanished from the hypervisor. On since before the
-    #: toggle existed; what is new is the delay below.
-    auto_prune = models.BooleanField(default=True)
-    #: How long a guest must stay missing before it is removed. 0 = the
-    #: original behaviour, gone on the first pass that does not see it - which
-    #: turns one flaky API call into a deleted VM. New sources get a week.
+    #: Delete a VM that has vanished from the hypervisor. **Off by default:
+    #: Danbyte does not delete your records unless you ask it to.** Until this
+    #: is turned on a missing VM is kept and flagged, and in review mode it is
+    #: still *proposed* for removal - proposing is not deleting (#160).
+    auto_prune = models.BooleanField(default=False)
+    #: How long a guest must stay missing before Danbyte believes it. 0 acts on
+    #: the first pass that does not see it, which turns one flaky API call into
+    #: a deleted VM; new sources get a week. Gates the review-mode proposal
+    #: too, because approving a deletion a bad poll invented loses the same
+    #: data.
     auto_prune_after_days = models.PositiveSmallIntegerField(default=7)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
