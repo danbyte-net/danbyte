@@ -325,6 +325,26 @@ class NewScopeTests(PrecedenceBase):
                     interval=300)
         self.assertEqual(self.winning_interval(ip), 300)
 
+    def test_a_slash_18_prefix_policy_ties_the_platform_rank(self):
+        """Platform sits at 18 and a /18 is an ordinary prefix, so the two land
+        on the same rank and the alphabetical scope string decides. Recorded so
+        the collision I introduced is as visible as the ones I inherited."""
+        pfx = self.prefix("10.64.0.0/18")
+        device = Device.objects.create(
+            tenant=self.tenant, name="sw18", device_type=self.dtype,
+            role=self.role, site=self.site, platform=self.platform,
+        )
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.64.0.5", prefix=pfx,
+            assigned_device=device,
+        )
+        self.policy(MonitoringPolicy.SCOPE_PREFIX, prefix=pfx, interval=900)
+        self.policy(MonitoringPolicy.SCOPE_PLATFORM, platform=self.platform,
+                    interval=800)
+        # "platform" sorts before "prefix", so platform is appended first and
+        # the strict > in the winner loop keeps it.
+        self.assertEqual(self.winning_interval(ip), 800)
+
     def test_a_platform_policy_skips_a_device_with_no_platform(self):
         pfx = self.prefix("10.1.0.0/24")
         _device, ip = self.device_ip(pfx)
