@@ -50,7 +50,7 @@ import {
 import { resolveLevels } from "./level-organiser"
 import { roleTiers } from "./levels-param"
 import { RoutedEdge } from "./routed-edge"
-import { ZoneNode } from "./zone-node"
+import { ZONE_DRAG_HANDLE, ZoneNode } from "./zone-node"
 import { ZONE_H, ZONE_W } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { groupLagEdges, lagBundleLabel, sharedLag } from "./lag-bundles"
@@ -71,15 +71,24 @@ const nodeTypes = {
 }
 const edgeTypes = { routed: RoutedEdge }
 
-/** Zones paint behind the cards AND behind the cables, so a cable crossing a
- * zone still reads as a cable. */
-const ZONE_Z = -1
+/**
+ * Zones paint under the cards - they are prepended to the node array, and
+ * React Flow keeps array order for equal zIndex.
+ *
+ * NOT a negative zIndex, which is where this started: a node below zero
+ * renders behind `.react-flow__pane`, and the pane then swallows every
+ * click, drag and right-click aimed at the zone.
+ */
+const ZONE_Z = 0
 
-function zoneToNode(
-  z: Zone,
-  onRename: (id: string, label: string) => void,
+interface ZoneCallbacks {
+  onRename: (id: string, label: string) => void
+  onRecolor: (id: string, color: string) => void
+  onDelete: (id: string) => void
   onResizeEnd: () => void
-): Node {
+}
+
+function zoneToNode(z: Zone, cb: ZoneCallbacks): Node {
   return {
     id: `zone:${z.id}`,
     type: "zone",
@@ -87,15 +96,18 @@ function zoneToNode(
     width: z.w,
     height: z.h,
     zIndex: ZONE_Z,
-    // Never a drag target for a cable, and never dimmed by search or
-    // spotlight - it is the backdrop, not part of the graph.
     selectable: true,
     draggable: true,
+    // Only the label bar drags. With the whole box as the handle, every
+    // grab at a resize corner moved the zone instead of resizing it.
+    dragHandle: `.${ZONE_DRAG_HANDLE}`,
     data: {
       label: z.label,
       color: z.color,
-      onRename: (label: string) => onRename(z.id, label),
-      onResizeEnd,
+      onRename: (label: string) => cb.onRename(z.id, label),
+      onRecolor: (color: string) => cb.onRecolor(z.id, color),
+      onDelete: () => cb.onDelete(z.id),
+      onResizeEnd: cb.onResizeEnd,
     },
   }
 }
@@ -139,6 +151,8 @@ const groupSize = () => ({ width: GROUP_W, height: GROUP_H })
 export interface CanvasHandle {
   /** Current node positions (for saving a view). */
   positions: () => Record<string, [number, number]>
+  /** The middle of what is on screen, in canvas coordinates. */
+  center: () => { x: number; y: number }
   /** Zoom/center on one node. */
   focusNode: (id: string) => void
   /** Render the graph to a PNG data URL - the whole diagram, or just the
@@ -1161,12 +1175,22 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // and a graph rebuild must not drop the zones.
   const zonesRef = useRef<Zone[]>(zones ?? [])
   zonesRef.current = zones ?? []
-  const renameZone = useCallback(
-    (id: string, label: string) =>
+  const patchZone = useCallback(
+    (id: string, patch: Partial<Zone>) =>
       onZonesChange?.(
-        zonesRef.current.map((z) => (z.id === id ? { ...z, label } : z))
+        zonesRef.current.map((z) => (z.id === id ? { ...z, ...patch } : z))
       ),
     [onZonesChange]
+  )
+  const zoneCb = useMemo<ZoneCallbacks>(
+    () => ({
+      onRename: (id, label) => patchZone(id, { label }),
+      onRecolor: (id, color) => patchZone(id, { color }),
+      onDelete: (id) =>
+        onZonesChange?.(zonesRef.current.filter((z) => z.id !== id)),
+      onResizeEnd: () => emitZonesRef.current(),
+    }),
+    [patchZone, onZonesChange]
   )
   const zoneNodes = useRef<Node[]>([])
   // A ref, because the zone nodes are built before emitZones is declared and
@@ -1353,14 +1377,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   useEffect(() => {
     // Read through the ref: `zones` is a fresh array after every drag, and
     // zoneSig is what actually decides whether anything changed.
-    zoneNodes.current = zonesRef.current.map((z) =>
-      zoneToNode(z, renameZone, emitZonesRef.current)
-    )
+    zoneNodes.current = zonesRef.current.map((z) => zoneToNode(z, zoneCb))
     setNodes((cur) => [
       ...zoneNodes.current,
       ...cur.filter((n) => n.type !== "zone"),
     ])
-  }, [zoneSig, renameZone, setNodes])
+  }, [zoneSig, zoneCb, setNodes])
 
   useImperativeHandle(
     ref,
@@ -1377,6 +1399,15 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               [n.position.x, n.position.y] as [number, number],
             ])
         ),
+      center: () => {
+        const el = wrapper.current
+        if (!el) return { x: 0, y: 0 }
+        const r = el.getBoundingClientRect()
+        return flow.screenToFlowPosition({
+          x: r.left + r.width / 2,
+          y: r.top + r.height / 2,
+        })
+      },
       focusNode: (id: string) => {
         const n = flow.getNode(id)
         if (n)

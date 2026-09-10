@@ -188,11 +188,16 @@ takes the device out of the hand-picked set the map is built from.)
 
 ### Zones - boxes to group things by eye
 
-Right-click empty canvas → **Add zone** drops a labelled box behind the map.
-Double-click its label to rename it, drag it to move it, drag a corner to
-resize it, and right-click it to recolour or delete it. Use them to say what
-a cluster of cards *is*: "WAN circuits", "comms closet rack", "customer
-side".
+The **Zone** button (or right-click empty canvas → *Add zone*) drops a
+labelled box behind the map. Use them to say what a cluster of cards *is*:
+"WAN circuits", "comms closet rack", "customer side".
+
+- **Move** it by its label bar - the bar is the grip, so a click anywhere
+  else inside the box still reaches the canvas and the cards under it.
+- **Rename** it by double-clicking the label.
+- **Resize** it by selecting it and dragging a corner.
+- **Recolour or delete** it from the small toolbar above a selected zone, or
+  by right-clicking it.
 
 A zone is an **annotation, not a container** - it owns nothing inside it, so
 dragging one moves the box and leaves every card exactly where it was. That
@@ -201,8 +206,13 @@ Zones sit behind the cables as well as the cards, so a cable crossing a zone
 still reads as a cable.
 
 Like the arrangement, zones are kept **per view style**: a box that frames
-four Flat chips would frame half a card in Wiring. They save with the view,
-and the default map keeps them per browser.
+four Flat chips would frame half a card in Wiring.
+
+Zones and removed cards belong to the map you drew them on. A saved view
+carries its own, the default map keeps its own in this browser, and a
+**custom map is a scratch map** - what you draw there stays there until you
+save it as a view, and exiting the custom map does not carry it back to the
+default map.
 
 ## Filters, focus, search
 

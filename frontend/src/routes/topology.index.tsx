@@ -10,6 +10,7 @@ import {
   Plus,
   Save,
   SlidersHorizontal,
+  Square,
   Trash2,
   X,
 } from "lucide-react"
@@ -56,6 +57,7 @@ import { CanvasLegend } from "@/components/topology/legend"
 import { LogicalTopologyView } from "@/components/topology/logical-view"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
+import { DevicePicker } from "@/components/device-picker"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
 import {
   typeColor,
@@ -557,27 +559,35 @@ function TopologyPage() {
     setPosByStyle({})
     if (viewId === "none") clearStoredPositions()
   }
+  // Which map the annotations belong to. A saved view carries its own; the
+  // default map keeps its own in this browser; a custom map is a scratch
+  // map until it is saved, so what you draw on it must not follow you back
+  // to the default map when you exit.
+  const mapKey =
+    viewId !== "none" ? `view:${viewId}` : builder ? "custom" : "default"
+  const ownScratch = mapKey === "default"
+
   // Cards taken off this map by hand ("Remove from view"). Not a filter: a
   // filter says what kind of thing belongs, this says "not that one" - the
   // last mile of a diagram you are shaping for someone to read.
   const [hidden, setHidden] = useState<string[]>(() =>
-    urlSearch.view ? [] : readStoredHidden()
+    urlSearch.view || urlSearch.devices ? [] : readStoredHidden()
   )
   const setHiddenNodes = (next: string[]) => {
     setHidden(next)
-    if (viewId === "none") writeStoredHidden(next)
+    if (ownScratch) writeStoredHidden(next)
   }
   // Labelled backdrop boxes, per view style - a box framing Flat chips is
   // the wrong size around Stencil cards.
   const [zonesByStyle, setZonesByStyle] = useState<ZonesByStyle>(() =>
-    urlSearch.view ? {} : readStoredZones()
+    urlSearch.view || urlSearch.devices ? {} : readStoredZones()
   )
   const zones = logical ? undefined : zonesByStyle[viewStyle]
   const setZones = (next: Zone[]) => {
     if (logical) return
     const all = { ...zonesByStyle, [viewStyle]: next }
     setZonesByStyle(all)
-    if (viewId === "none") writeStoredZones(all)
+    if (ownScratch) writeStoredZones(all)
   }
   const addZone = (x: number, y: number) =>
     setZones([
@@ -593,10 +603,31 @@ function TopologyPage() {
         color: ZONE_COLORS[(zones?.length ?? 0) % ZONE_COLORS.length],
       },
     ])
+  /** The toolbar button has no click point, so the box lands in the middle
+   * of what is on screen - where the user is looking. */
+  const addZoneCentered = () => {
+    const c = canvas.current?.center()
+    addZone(c?.x ?? 0, c?.y ?? 0)
+  }
   const removeZone = (id: string) =>
     setZones((zones ?? []).filter((z) => z.id !== id))
   const recolorZone = (id: string, color: string) =>
     setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
+
+  // Moving between maps swaps the annotations with them. A saved view's are
+  // restored by the appliedView effect below; these are the other two.
+  const prevMapKey = useRef(mapKey)
+  useEffect(() => {
+    if (prevMapKey.current === mapKey) return
+    prevMapKey.current = mapKey
+    if (mapKey === "custom") {
+      setZonesByStyle({})
+      setHidden([])
+    } else if (mapKey === "default") {
+      setZonesByStyle(readStoredZones())
+      setHidden(readStoredHidden())
+    }
+  }, [mapKey])
 
   const [layoutTick, setLayoutTick] = useState(0)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
@@ -1401,6 +1432,15 @@ function TopologyPage() {
             variant="outline"
             size="sm"
             className="h-7 text-xs"
+            onClick={addZoneCentered}
+            title="Draw a labelled box behind the map to group cards by eye"
+          >
+            <Square className="h-3 w-3" /> Zone
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
             onClick={() => {
               setPositions(undefined)
               setLayoutTick((t) => t + 1)
@@ -1796,6 +1836,7 @@ function TopologyPage() {
       <AddDeviceDialog
         open={addOpen}
         onOpenChange={setAddOpen}
+        excludeIds={custom ?? undefined}
         onPick={(id) => addToCustom([id])}
       />
       <MaterializeCableDialog ghost={ghost} onClose={() => setGhost(null)} />
@@ -2017,42 +2058,42 @@ function MenuItem({
 }
 
 /** Device picker for the custom-map builder's + button. */
+/**
+ * Add a device to the map.
+ *
+ * The shared `DevicePicker`, not a bare combobox: a flat list of every name
+ * is unusable past a few hundred devices, and the advanced search behind it
+ * filters on site, role, type, manufacturer, status and tag server-side -
+ * which is exactly how someone finds the card they want to add.
+ */
 function AddDeviceDialog({
   open,
   onOpenChange,
   onPick,
+  excludeIds,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   onPick: (deviceId: string) => void
+  /** Already on the map - offering them again just adds nothing. */
+  excludeIds?: string[]
 }) {
-  const devices = useQuery({
-    queryKey: ["devices-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/devices/?picker=1"),
-    staleTime: 60_000,
-    enabled: open,
-  })
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Add device to the map</DialogTitle>
         </DialogHeader>
-        <Combobox
+        <DevicePicker
+          label=""
           value={null}
+          excludeIds={excludeIds}
           onChange={(v) => {
             if (!v) return
             onPick(v)
             onOpenChange(false)
           }}
-          options={(devices.data?.results ?? []).map((d) => ({
-            value: d.id,
-            label: d.name,
-          }))}
           placeholder="Pick a device…"
-          searchPlaceholder="Search devices…"
-          emptyText={devices.isLoading ? "Loading…" : "No devices."}
         />
       </DialogContent>
     </Dialog>
