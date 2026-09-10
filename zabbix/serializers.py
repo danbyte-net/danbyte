@@ -50,6 +50,15 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
                 )
         return clean_map(value)
 
+    def validate_sync_interval_minutes(self, value):
+        # A minute is far too often to walk somebody's whole host list, and a
+        # week is not a sync. Both ends are the API's to defend.
+        if not 5 <= value <= 1440:
+            raise serializers.ValidationError(
+                "Between 5 minutes and 24 hours."
+            )
+        return value
+
     def validate_prune_after_days(self, value):
         if value > 365:
             raise serializers.ValidationError(
@@ -82,11 +91,13 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
             "id", "name", "url", "api_url", "token", "token_set", "verify_tls",
             "enabled", "version", "supported", "last_checked_at", "last_error",
             "severity_map", "provision_mode", "prune_hosts", "prune_after_days",
-            "created_at", "updated_at",
+            "auto_sync", "sync_interval_minutes", "last_sync_at",
+            "last_sync_summary", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "api_url", "token_set", "supported", "version",
-            "last_checked_at", "last_error", "created_at", "updated_at",
+            "last_checked_at", "last_error", "last_sync_at", "last_sync_summary",
+            "created_at", "updated_at",
         ]
 
 

@@ -157,6 +157,32 @@ carries fields whose value actually differs.
 The host group is named after the device's **site**, created on demand, so
 Zabbix's own permissions line up with the structure Danbyte already holds.
 
+### Running the pass
+
+**Sync** on the Zabbix page runs it once. **Sync automatically** runs it on a
+timer - a separate switch, because *when it runs* and *what it does with what
+it finds* are two decisions:
+
+| | |
+|---|---|
+| Auto-sync + **Review** | The queue stays fresh on its own; you approve. |
+| Auto-sync + **Auto** | Hands-off. |
+| No auto-sync | Nothing happens until you press Sync. |
+
+The interval is per connection (5 minutes to 24 hours, default hourly). The
+beat itself ticks every minute but only enqueues connections whose own interval
+has elapsed - a Zabbix API is single-threaded per frontend node, and a minute
+is far too often to be walking somebody's whole host list.
+
+A pass records **when it ran and what it found**, and a pass that *fails*
+records that too - so a broken connection backs off to its interval instead of
+being re-queued every minute forever. It appears on **Jobs** as *Zabbix sync*
+like every other scheduled task, so when it stops you can see that it stopped.
+
+The tenant switch is re-checked **inside the job**, not only when it was
+queued: a toggle flipped in between wins, or Danbyte writes hosts into a Zabbix
+somebody just switched off.
+
 ### Working the queue
 
 The **Zabbix** page shows what a sync pass proposed. Each row says what would

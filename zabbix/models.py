@@ -50,6 +50,15 @@ class ZabbixConnection(TimestampedModel):
     provision_mode = models.CharField(
         max_length=8, choices=PROVISION_CHOICES, default=OFF
     )
+    #: Run the sync pass on a timer. Separate from ``provision_mode`` on
+    #: purpose: *when it runs* and *what it does with what it finds* are two
+    #: decisions. Auto-sync with review mode keeps the queue fresh for someone
+    #: to approve; with auto mode it is hands-off.
+    auto_sync = models.BooleanField(default=False)
+    sync_interval_minutes = models.PositiveIntegerField(default=60)
+    last_sync_at = models.DateTimeField(null=True, blank=True)
+    last_sync_summary = models.JSONField(default=dict, blank=True)
+
     #: Delete a Zabbix host Danbyte created and no longer sees a reason for.
     #: Off, like everywhere else - Danbyte does not delete records it did not
     #: get asked to delete, least of all in somebody else's system.
@@ -87,6 +96,24 @@ class ZabbixConnection(TimestampedModel):
     @property
     def token_set(self) -> bool:
         return bool((self.credentials or {}).get("token"))
+
+    def sync_due(self, now) -> bool:
+        """Whether the beat should run this connection now.
+
+        Every gate in one place, so the timer and the button cannot disagree
+        about what "due" means.
+        """
+        if not (self.enabled and self.auto_sync):
+            return False
+        if self.provision_mode == self.OFF:
+            return False
+        if self.last_sync_at is None:
+            return True
+        from datetime import timedelta
+
+        return now - self.last_sync_at >= timedelta(
+            minutes=max(self.sync_interval_minutes, 1)
+        )
 
     def version_tuple(self) -> tuple[int, ...]:
         try:

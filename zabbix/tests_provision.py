@@ -405,3 +405,118 @@ class ApplyTests(_Base):
             counts = provision.sync(self.conn)
         self.assertEqual(counts["applied"], 1)
         self.assertTrue(ZabbixHostLink.objects.filter(created_here=True).exists())
+
+
+class AutoSyncTests(_Base):
+    """When the pass runs, which is a separate decision from what it does."""
+
+    def due(self, **over):
+        for k, v in over.items():
+            setattr(self.conn, k, v)
+        self.conn.save()
+        return self.conn.sync_due(timezone.now())
+
+    def test_off_by_default(self):
+        fresh = ZabbixConnection(tenant=self.tenant, name="n", url="u")
+        self.assertFalse(fresh.auto_sync)
+        self.assertEqual(fresh.sync_interval_minutes, 60)
+
+    def test_never_synced_is_due(self):
+        self.assertTrue(self.due(auto_sync=True))
+
+    def test_not_due_inside_the_interval(self):
+        self.assertFalse(self.due(
+            auto_sync=True, sync_interval_minutes=60,
+            last_sync_at=timezone.now() - timedelta(minutes=30),
+        ))
+
+    def test_due_once_the_interval_has_elapsed(self):
+        self.assertTrue(self.due(
+            auto_sync=True, sync_interval_minutes=60,
+            last_sync_at=timezone.now() - timedelta(minutes=61),
+        ))
+
+    def test_provisioning_off_is_never_due(self):
+        """Nothing to sync if Danbyte is not allowed to write."""
+        self.assertFalse(self.due(
+            auto_sync=True, provision_mode=ZabbixConnection.OFF
+        ))
+
+    def test_a_disabled_connection_is_never_due(self):
+        self.assertFalse(self.due(auto_sync=True, enabled=False))
+
+    def test_the_beat_queues_only_what_is_due(self):
+        from zabbix import sync_tasks
+
+        self.conn.auto_sync = True
+        self.conn.save()
+        with mock.patch.object(sync_tasks, "django_rq") as rq:
+            out = sync_tasks.enqueue_due_syncs()
+        self.assertEqual(out["queued"], 1)
+        rq.get_queue.return_value.enqueue.assert_called_once()
+
+    def test_the_beat_skips_a_tenant_with_the_switch_off(self):
+        from zabbix import sync_tasks
+
+        self.conn.auto_sync = True
+        self.conn.save()
+        s = IntegrationSettings.objects.get(tenant=self.tenant)
+        s.zabbix_enabled = False
+        s.save()
+        with mock.patch.object(sync_tasks, "django_rq") as rq:
+            self.assertEqual(sync_tasks.enqueue_due_syncs()["queued"], 0)
+        rq.get_queue.return_value.enqueue.assert_not_called()
+
+    def test_the_job_rechecks_the_switch_at_run_time(self):
+        """A toggle flipped between enqueue and execution has to win, or
+        Danbyte writes into a Zabbix somebody just switched off."""
+        from zabbix.sync_tasks import run_sync
+
+        s = IntegrationSettings.objects.get(tenant=self.tenant)
+        s.zabbix_enabled = False
+        s.save()
+        with mock.patch("zabbix.provision.sync") as sync:
+            out = run_sync(str(self.conn.id))
+        sync.assert_not_called()
+        self.assertEqual(out["skipped"], "integration off")
+
+    def test_the_job_rechecks_provisioning_at_run_time_too(self):
+        from zabbix.sync_tasks import run_sync
+
+        self.conn.provision_mode = ZabbixConnection.OFF
+        self.conn.save()
+        with mock.patch("zabbix.provision.sync") as sync:
+            out = run_sync(str(self.conn.id))
+        sync.assert_not_called()
+        self.assertEqual(out["skipped"], "provisioning off")
+
+    def test_a_deleted_connection_does_not_crash_the_worker(self):
+        from zabbix.sync_tasks import run_sync
+
+        cid = str(self.conn.id)
+        self.conn.delete()
+        self.assertEqual(run_sync(cid), {"skipped": "gone"})
+
+    def test_a_pass_records_when_it_ran_and_what_it_found(self):
+        d = self.make_device("sw1", 10)
+        self.scope(d)
+        with mock.patch.object(ZabbixClient, "all_hosts", return_value=[]):
+            provision.sync(self.conn)
+        self.conn.refresh_from_db()
+        self.assertIsNotNone(self.conn.last_sync_at)
+        self.assertEqual(self.conn.last_sync_summary["create"], 1)
+
+    def test_a_failing_pass_still_backs_off(self):
+        """Without stamping the attempt, a broken connection stays permanently
+        due and the every-minute beat re-queues it forever."""
+        from zabbix.sync_tasks import run_sync
+
+        self.conn.auto_sync = True
+        self.conn.save()
+        with mock.patch("zabbix.provision.sync", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                run_sync(str(self.conn.id))
+        self.conn.refresh_from_db()
+        self.assertIsNotNone(self.conn.last_sync_at)
+        self.assertIn("boom", self.conn.last_sync_summary["error"])
+        self.assertFalse(self.conn.sync_due(timezone.now()))

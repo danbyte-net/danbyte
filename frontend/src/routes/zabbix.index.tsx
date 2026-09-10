@@ -197,6 +197,24 @@ function ZabbixPage() {
                   ? `After ${conn.prune_after_days} days unwanted`
                   : "No - kept"}
               </Row>
+              <Row label="Automatic sync">
+                {conn.provision_mode === "off" ? (
+                  <span className="text-muted-foreground">-</span>
+                ) : conn.auto_sync ? (
+                  `Every ${conn.sync_interval_minutes} min`
+                ) : (
+                  <span className="text-muted-foreground">
+                    Off - only when you press Sync
+                  </span>
+                )}
+              </Row>
+              <Row label="Last sync">
+                {conn.last_sync_at ? (
+                  <TimeCell iso={conn.last_sync_at} />
+                ) : (
+                  "never"
+                )}
+              </Row>
               <Row label="Last tested">
                 {conn.last_checked_at ? (
                   <TimeCell iso={conn.last_checked_at} />

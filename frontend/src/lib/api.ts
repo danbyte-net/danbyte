@@ -3827,6 +3827,12 @@ export interface ZabbixConnection {
   provision_mode: "off" | "review" | "auto"
   prune_hosts: boolean
   prune_after_days: number
+  /** Run the sync pass on a timer. Separate from provision_mode: when it runs
+   * and what it does with what it finds are two decisions. */
+  auto_sync: boolean
+  sync_interval_minutes: number
+  last_sync_at: string | null
+  last_sync_summary: Record<string, number>
   created_at: string
   updated_at: string
 }

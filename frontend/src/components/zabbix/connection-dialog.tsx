@@ -85,6 +85,10 @@ function ConnectionForm({
   const [mode, setMode] = useState<string | null>(
     connection?.provision_mode ?? "off"
   )
+  const [autoSync, setAutoSync] = useState(connection?.auto_sync ?? false)
+  const [interval, setInterval] = useState(
+    String(connection?.sync_interval_minutes ?? 60)
+  )
   const [prune, setPrune] = useState(connection?.prune_hosts ?? false)
   const [pruneAfter, setPruneAfter] = useState(
     String(connection?.prune_after_days ?? 7)
@@ -121,6 +125,8 @@ function ConnectionForm({
           verify_tls: verifyTls,
           enabled,
           provision_mode: mode,
+          auto_sync: autoSync,
+          sync_interval_minutes: Number(interval) || 60,
           prune_hosts: prune,
           prune_after_days: Number(pruneAfter) || 0,
           severity_map: severity,
@@ -196,6 +202,22 @@ function ConnectionForm({
         />
         {mode !== "off" && (
           <>
+            <FormCheckbox
+              label="Sync automatically"
+              hint="Off runs only when you press Sync."
+              checked={autoSync}
+              onChange={setAutoSync}
+            />
+            {autoSync && (
+              <FormText
+                label="Every"
+                type="number"
+                hint="minutes between passes (5 - 1440)"
+                value={interval}
+                onChange={setInterval}
+                error={fieldErrors.sync_interval_minutes}
+              />
+            )}
             <FormCheckbox
               label="Remove hosts Danbyte created and no longer needs"
               hint="Never touches a host somebody else made."

@@ -321,8 +321,15 @@ def apply_pending(conn: ZabbixConnection) -> dict:
 
 
 def sync(conn: ZabbixConnection, now=None) -> dict:
-    """Plan, and in ``auto`` mode apply. The one entry point."""
+    """Plan, and in ``auto`` mode apply. The one entry point.
+
+    Used by the Sync button and by the beat, so a timer can never do something
+    the button would not have done.
+    """
     counts = plan(conn, now)
     if conn.provision_mode == ZabbixConnection.AUTO:
         counts.update(apply_pending(conn))
+    conn.last_sync_at = timezone.now()
+    conn.last_sync_summary = counts
+    conn.save(update_fields=["last_sync_at", "last_sync_summary"])
     return counts
