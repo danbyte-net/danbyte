@@ -396,6 +396,25 @@ class MonitoringPolicy(TimestampedModel):
     )
     enabled = models.BooleanField(default=True)
     inherit = models.BooleanField(default=True)
+
+    # ── filters ────────────────────────────────────────────────────────
+    # Filters narrow a scope; they are not scopes themselves. Two reasons.
+    # A scope must own a target field the RBAC visibility query can test, and
+    # a name pattern has no object to point at - giving it one would break the
+    # query that recognises a global policy by every target being null. And a
+    # ladder needs an answer to "is a tag more specific than a role", which
+    # nobody can predict. As filters they simply AND with the scope's match,
+    # which is safe because a policy can only ever *add* checks, never
+    # disable one.
+    match_tags = models.JSONField(
+        default=list, blank=True,
+        help_text="Tag slugs the device must carry - all of them. Empty = any.",
+    )
+    match_name = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Glob the device name must match, e.g. 'core-*'. Empty = any.",
+    )
+
     target = models.CharField(
         max_length=16,
         choices=TARGET_CHOICES,

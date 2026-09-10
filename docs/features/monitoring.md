@@ -248,6 +248,25 @@ everything at this site" is one setting - but unlike the device-shaped scopes
 they also reach addresses with no device at all, because those are still at the
 site.
 
+### Narrowing a policy
+
+A scope answers *which* objects; **filters** answer *which of them*. Every
+policy carries two, both empty by default:
+
+| Filter | Effect |
+|---|---|
+| **Name matches** | A glob the device name must match - `core-*`, `*-fw??`. Case-insensitive. |
+| **Carries all these tags** | Every tag listed must be on the device. Several tags means all of them, not any. |
+
+They **narrow**, never widen: a filter can only stop a policy applying, never
+add a check and never disable one a looser policy already added. That is why
+they are filters rather than scopes - a ladder would need an answer to "is a
+tag more specific than a role", and nobody can predict that one.
+
+Both read the **device**, so a filtered policy does not reach an address with
+nothing on it. Narrower is the safe direction for a rule that can only add
+monitoring.
+
 !!! warning "A prefix policy competes by its mask length"
     Scopes are ranked on one scale, and a **prefix** policy takes its rank from
     the prefix's **mask length** rather than a fixed position. So a `/24`

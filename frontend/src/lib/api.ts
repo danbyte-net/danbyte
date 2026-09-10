@@ -4623,6 +4623,10 @@ export interface MonitoringPolicy {
   platform: string | null
   enabled: boolean
   inherit: boolean
+  /** Tag slugs the device must carry - all of them. Empty matches any. */
+  match_tags: string[]
+  /** Glob the device name must match, e.g. "core-*". Empty matches any. */
+  match_name: string
   /** Which of the matched device's IPs the checks target. Honoured by every
    * scope that can name a device - site and region included. */
   target: "all" | "interfaces" | "primary" | "oob"

@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Spinner } from "@/components/ui/spinner"
+import { PolicyFilterButton } from "./policy-filters"
 
 export type SavePolicy<T extends { id: string }> = (args: {
   row: T
@@ -107,6 +108,11 @@ export function PolicyControls<T extends { id: string }>({
           <span>Discover</span>
         </Button>
       )}
+      <PolicyFilterButton
+        policy={policy}
+        disabled={pending}
+        onSave={(patch) => save({ row, patch })}
+      />
       {showTarget && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

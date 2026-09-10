@@ -193,6 +193,29 @@ class QueryCountTests(PrecedenceBase):
             resolve_effective_checks(ip)
         return len(ctx.captured_queries)
 
+    def test_tag_filters_do_not_cost_a_query_each(self):
+        """`device.tags.all()` per policy is the same N+1 the policy prefetch
+        had - one read per address, not per rule."""
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        from core.models import Tag
+
+        tag, _ = Tag.objects.get_or_create(
+            tenant=self.tenant, slug="edge", defaults={"name": "Edge"}
+        )
+        device.tags.add(tag)
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_tags=["edge"])
+        one = self._resolve_queries(ip)
+        self.policy(MonitoringPolicy.SCOPE_DEVICE_TYPE, device_type=self.dtype,
+                    interval=300, match_tags=["edge"])
+        self.policy(MonitoringPolicy.SCOPE_DEVICE_ROLE, device_role=self.role,
+                    interval=400, match_tags=["edge"])
+        self.policy(MonitoringPolicy.SCOPE_DEVICE, device=device, interval=500,
+                    match_tags=["edge"])
+        four = self._resolve_queries(ip)
+        self.assertEqual(one, four, f"{one} then {four} - tags re-read per rule")
+
     def test_more_policies_do_not_cost_more_queries(self):
         pfx = self.prefix("10.1.0.0/24")
         device, ip = self.device_ip(pfx)
@@ -318,3 +341,88 @@ class NewScopeTests(PrecedenceBase):
         self.policy(MonitoringPolicy.SCOPE_REGION, region=self.europe,
                     interval=700)
         self.assertEqual(self.winning_interval(ip), 700)
+
+
+class FilterTests(PrecedenceBase):
+    """Tags and a name pattern narrow a scope rather than being scopes.
+
+    A scope needs a target object the RBAC query can test, and a name pattern
+    has none. As filters they AND with the scope's match, which is safe because
+    a policy can only ever add a check, never disable one.
+    """
+
+    def tag(self, device, *names):
+        from core.models import Tag
+
+        for name in names:
+            tag, _ = Tag.objects.get_or_create(
+                tenant=self.tenant, slug=name, defaults={"name": name.title()}
+            )
+            device.tags.add(tag)
+
+    def test_no_filters_matches_everything(self):
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100)
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_a_name_pattern_narrows_the_scope(self):
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)  # named sw1
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_name="core-*")
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_a_matching_name_still_applies(self):
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_name="sw*")
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_a_name_pattern_ignores_case(self):
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_name="SW*")
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_all_tags_must_be_present(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        self.tag(device, "edge")
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_tags=["edge", "critical"])
+        self.assertEqual(resolve_effective_checks(ip), [])
+        self.tag(device, "critical")
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_a_filtered_policy_does_not_reach_a_device_less_address(self):
+        """A tag belongs to a thing; an address with nothing on it has none.
+        Narrower is the safe direction for a rule that can only add checks."""
+        pfx = self.prefix("10.1.0.0/24")
+        loose = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.1.0.99", prefix=pfx,
+        )
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_tags=["edge"])
+        self.assertEqual(resolve_effective_checks(loose), [])
+
+    def test_filters_narrow_a_prefix_policy_too(self):
+        """The prefix branch returns early, so it needs the filter applied
+        separately - an easy place to leave a hole."""
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_PREFIX, prefix=pfx, interval=900,
+                    match_name="core-*")
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_a_filter_never_disables_a_broader_policy(self):
+        """Filters narrow which policies apply; they cannot remove a check a
+        looser policy already added."""
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100)
+        self.policy(MonitoringPolicy.SCOPE_PREFIX, prefix=pfx, interval=900,
+                    match_name="core-*")
+        self.assertEqual(self.winning_interval(ip), 100)

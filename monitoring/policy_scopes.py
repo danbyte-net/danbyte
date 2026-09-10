@@ -182,3 +182,42 @@ def _region_chain(site_id) -> set:
             .first()
         )
     return out
+
+
+def filters_pass(policy, ip, device, device_tags=None) -> bool:
+    """Whether a policy's filters admit this address.
+
+    Filters narrow whatever the scope matched; they never widen it and never
+    disable a check, so ANDing them is the whole semantics. A policy with no
+    filters passes everything, which is what every policy written before they
+    existed does.
+
+    Both read from the **device**: a tag or a name belongs to a thing, and an
+    address with nothing on it has neither. So a filtered policy simply does
+    not reach an unassigned address - narrower, never wider, which is the safe
+    direction for a rule that can only add monitoring.
+    """
+    tags = policy.match_tags or []
+    pattern = (policy.match_name or "").strip()
+    if not tags and not pattern:
+        return True
+    if device is None:
+        return False
+    if pattern:
+        from fnmatch import fnmatchcase
+
+        # Case-insensitive: hostnames are, and an operator typing "CORE-*"
+        # means the same thing as "core-*".
+        if not fnmatchcase((device.name or "").lower(), pattern.lower()):
+            return False
+    if tags:
+        # `device_tags` is read once per address by the caller. Reading it here
+        # would be a query per policy per address, which is how the policy
+        # prefetch got itself into trouble.
+        have = device_tags if device_tags is not None else {
+            t.slug for t in device.tags.all()
+        }
+        # All of them: filters narrow, so several tags is an intersection.
+        if not set(tags) <= have:
+            return False
+    return True
