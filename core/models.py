@@ -436,6 +436,28 @@ class DeploymentSettings(TimestampedModel):
     )
     vault_verify_tls = models.BooleanField(default=True)
 
+    # Azure Key Vault connection (used only when secrets_provider == "azure").
+    # The client secret is a secret and lives in ``secrets["azure_client_secret"]``,
+    # never here. Deployment-tier for the same reason as vault_addr, which is
+    # also what lets it name a sovereign-cloud or Azure Stack endpoint.
+    azure_vault_url = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Key Vault URL, e.g. https://kv-danbyte.vault.azure.net.",
+    )
+    azure_directory_id = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Entra ID directory (tenant) ID the app registration lives in.",
+    )
+    azure_client_id = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Application (client) ID of the app registration.",
+    )
+    azure_authority = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Sign-in endpoint. Blank uses login.microsoftonline.com; set "
+        "it for Azure Government or another sovereign cloud.",
+    )
+
     # ─── the in-app assistant's model connection ─────────────────────────
     # Deployment tier on purpose: a tenant admin must not choose where the
     # conversation is sent or where the key lives. The key itself is in

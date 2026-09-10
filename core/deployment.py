@@ -58,6 +58,11 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     vault_token_set = serializers.SerializerMethodField()
+    # Key Vault app-registration secret for the secret store (write-only).
+    azure_client_secret = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    azure_client_secret_set = serializers.SerializerMethodField()
     # Absolute URL of the custom favicon (read-only); null = the Danbyte
     # default. Uploaded via the dedicated multipart endpoint below.
     favicon_url = serializers.SerializerMethodField()
@@ -90,6 +95,12 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "vault_verify_tls",
             "vault_token",
             "vault_token_set",
+            "azure_vault_url",
+            "azure_directory_id",
+            "azure_client_id",
+            "azure_authority",
+            "azure_client_secret",
+            "azure_client_secret_set",
             "map_tile_url",
             "map_tile_attribution",
             "map_satellite_url",
@@ -210,6 +221,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
     def get_vault_token_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("vault_token"))
 
+    def get_azure_client_secret_set(self, obj) -> bool:
+        return bool((obj.secrets or {}).get("azure_client_secret"))
+
     def update(self, instance, validated_data):
         secrets = dict(instance.secrets or {})
         pw = validated_data.pop("smtp_password", None)
@@ -221,6 +235,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         vtok = validated_data.pop("vault_token", None)
         if vtok:
             secrets["vault_token"] = vtok
+        akey = validated_data.pop("azure_client_secret", None)
+        if akey:
+            secrets["azure_client_secret"] = akey
         instance.secrets = secrets
         for field, value in validated_data.items():
             setattr(instance, field, value)

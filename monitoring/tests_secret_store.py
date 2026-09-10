@@ -19,6 +19,7 @@ from .secret_store import (
     require_secret_store,
     secret_store_enabled,
 )
+from .secret_store_azure import AzureKeyVaultSecretStore
 from .secret_store_vault import VaultSecretStore
 
 
@@ -184,6 +185,179 @@ class VaultSecretStoreTests(TestCase):
         self.assertEqual(s.token, "tok")
 
 
+class AzureKeyVaultSecretStoreTests(TestCase):
+    """Mocked so CI needs no live vault or Entra ID tenant; the request shapes
+    are what the Key Vault REST API expects."""
+
+    def setUp(self):
+        self.store = AzureKeyVaultSecretStore(
+            "https://kv-danbyte.vault.azure.net/",
+            "dir-id",
+            "client-id",
+            "client-secret",
+        )
+        # Skip the token round-trip in the operation tests - it has its own.
+        self.store._token = "tok"
+        self.store._token_expires = float("inf")
+        self.tid = "11111111-1111-1111-1111-111111111111"
+
+    def test_name_is_deterministic_legal_and_ref_specific(self):
+        a = self.store._name(self.tid, "csr/abc")
+        self.assertEqual(a, self.store._name(self.tid, "csr/abc"))
+        self.assertNotEqual(a, self.store._name(self.tid, "csr/abd"))
+        # Another tenant's identical ref is a different secret.
+        self.assertNotEqual(a, self.store._name("22222222" + self.tid[8:], "csr/abc"))
+        self.assertTrue(a.startswith(f"danbyte-{self.tid}-"))
+        self.assertTrue(all(c.isalnum() or c == "-" for c in a))
+        self.assertLessEqual(len(a), 127)
+
+    def test_name_stays_legal_for_a_long_operator_path(self):
+        long_ref = "device-credentials/" + ("x" * 300)
+        name = self.store._name(self.tid, long_ref)
+        self.assertLessEqual(len(name), 127)
+        self.assertTrue(all(c.isalnum() or c == "-" for c in name))
+        self.assertNotEqual(name, self.store._name(self.tid, long_ref + "y"))
+
+    def test_scope_follows_the_vault_host(self):
+        self.assertEqual(self.store._scope(), "https://vault.azure.net/.default")
+        gov = AzureKeyVaultSecretStore(
+            "https://kv.vault.usgovcloudapi.net", "d", "c", "s"
+        )
+        self.assertEqual(gov._scope(), "https://vault.usgovcloudapi.net/.default")
+
+    def test_put_writes_json_under_the_derived_name(self):
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.request", return_value=_resp(200)
+        ) as req:
+            self.store.put(self.tid, "csr/abc", {"private_key": "PK"})
+        args, kw = req.call_args
+        self.assertEqual(args[0], "PUT")
+        self.assertEqual(
+            args[1],
+            f"https://kv-danbyte.vault.azure.net/secrets/"
+            f"{self.store._name(self.tid, 'csr/abc')}",
+        )
+        self.assertEqual(kw["json"], {"value": '{"private_key": "PK"}'})
+        self.assertEqual(kw["params"], {"api-version": "7.4"})
+        self.assertEqual(kw["headers"]["Authorization"], "Bearer tok")
+        self.assertFalse(kw["allow_redirects"])
+
+    def test_get_parses_the_json_value(self):
+        body = {"value": '{"private_key": "PK"}'}
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.request",
+            return_value=_resp(200, body),
+        ):
+            self.assertEqual(self.store.get(self.tid, "csr/abc"), {"private_key": "PK"})
+
+    def test_get_at_path_uses_the_name_verbatim_and_wraps_a_bare_string(self):
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.request",
+            return_value=_resp(200, {"value": "hunter2"}),
+        ) as req:
+            got = self.store.get_at_path(self.tid, "team-ssh")
+        self.assertEqual(got, {"value": "hunter2"})
+        self.assertTrue(req.call_args[0][1].endswith("/secrets/team-ssh"))
+
+    def test_get_missing_is_none(self):
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.request", return_value=_resp(404)
+        ):
+            self.assertIsNone(self.store.get(self.tid, "nope"))
+
+    def test_get_error_raises(self):
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.request",
+            return_value=_resp(403, text="Forbidden"),
+        ):
+            with self.assertRaises(SecretStoreError):
+                self.store.get(self.tid, "x")
+
+    def test_delete_soft_deletes_then_purges(self):
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.request", return_value=_resp(200)
+        ) as req:
+            self.store.delete(self.tid, "csr/abc")
+        calls = [(c[0][0], c[0][1]) for c in req.call_args_list]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], "DELETE")
+        self.assertIn("/secrets/", calls[0][1])
+        self.assertIn("/deletedsecrets/", calls[1][1])
+
+    def test_purge_protection_is_not_an_error(self):
+        # A vault with purge protection refuses the purge; the soft delete
+        # already happened and that is the operator's retention policy.
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.request",
+            side_effect=[_resp(200), _resp(403, text="purge protection")],
+        ):
+            self.store.delete(self.tid, "csr/abc")
+
+    def test_token_is_fetched_once_and_reused(self):
+        store = AzureKeyVaultSecretStore(
+            "https://kv.vault.azure.net", "dir-id", "client-id", "sec"
+        )
+        token = _resp(200, {"access_token": "T", "expires_in": 3600})
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.post", return_value=token
+        ) as post:
+            with mock.patch(
+                "monitoring.secret_store_azure.requests.request",
+                return_value=_resp(200, {"value": "{}"}),
+            ):
+                store.get(self.tid, "a")
+                store.get(self.tid, "b")
+        self.assertEqual(post.call_count, 1)
+        args, kw = post.call_args
+        self.assertEqual(args[0], "https://login.microsoftonline.com/dir-id/oauth2/v2.0/token")
+        self.assertEqual(kw["data"]["grant_type"], "client_credentials")
+        self.assertEqual(kw["data"]["scope"], "https://vault.azure.net/.default")
+
+    def test_sign_in_failure_surfaces_the_body(self):
+        store = AzureKeyVaultSecretStore("https://kv.vault.azure.net", "d", "c", "s")
+        with mock.patch(
+            "monitoring.secret_store_azure.requests.post",
+            return_value=_resp(401, text="AADSTS7000215: Invalid client secret"),
+        ):
+            with self.assertRaises(SecretStoreError) as cm:
+                store.get(self.tid, "a")
+        self.assertIn("AADSTS7000215", str(cm.exception))
+
+    def test_from_deployment_none_until_every_part_is_set(self):
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "azure"
+        dep.azure_vault_url = "https://kv.vault.azure.net"
+        dep.azure_directory_id = "dir"
+        dep.azure_client_id = ""
+        dep.secrets = {"azure_client_secret": "s"}
+        dep.save()
+        self.assertIsNone(AzureKeyVaultSecretStore.from_deployment())
+        # Half-configured means CSR/ACME stay fail-closed rather than erroring
+        # at issuance time.
+        self.assertFalse(secret_store_enabled())
+
+        dep.azure_client_id = "client"
+        dep.save()
+        store = AzureKeyVaultSecretStore.from_deployment()
+        self.assertIsInstance(store, AzureKeyVaultSecretStore)
+        self.assertEqual(store.vault_url, "https://kv.vault.azure.net")
+        self.assertEqual(store.authority, "https://login.microsoftonline.com")
+        self.assertTrue(secret_store_enabled())
+
+    def test_sovereign_authority_is_honoured(self):
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "azure"
+        dep.azure_vault_url = "https://kv.vault.usgovcloudapi.net"
+        dep.azure_directory_id = "dir"
+        dep.azure_client_id = "client"
+        dep.azure_authority = "https://login.microsoftonline.us"
+        dep.secrets = {"azure_client_secret": "s"}
+        dep.save()
+        store = AzureKeyVaultSecretStore.from_deployment()
+        self.assertEqual(store.authority, "https://login.microsoftonline.us")
+        self.assertEqual(store._scope(), "https://vault.usgovcloudapi.net/.default")
+
+
 class RegistryTests(TestCase):
     def setUp(self):
         org = Organization.objects.create(name="O", slug="o")
@@ -196,7 +370,7 @@ class RegistryTests(TestCase):
         from .secret_store import secret_store_providers
 
         kinds = [p.kind for p in secret_store_providers()]
-        self.assertEqual(kinds[:2], ["local", "vault"])
+        self.assertEqual(kinds[:3], ["local", "vault", "azure"])
         vault = next(p for p in secret_store_providers() if p.kind == "vault")
         names = [f["name"] for f in vault.payload()["fields"]]
         self.assertIn("vault_token", names)
@@ -235,7 +409,9 @@ class RegistryTests(TestCase):
         c.force_login(user)
         r = c.get("/api/deployment/secret-stores/")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual([p["kind"] for p in r.json()["providers"]][:2], ["local", "vault"])
+        self.assertEqual(
+            [p["kind"] for p in r.json()["providers"]][:3], ["local", "vault", "azure"]
+        )
         bad = c.put(
             "/api/deployment/email/",
             data='{"secrets_provider": "nope"}',

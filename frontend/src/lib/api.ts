@@ -5441,6 +5441,11 @@ export interface DeploymentSettings {
   vault_mount: string
   vault_verify_tls: boolean
   vault_token_set: boolean
+  azure_vault_url: string
+  azure_directory_id: string
+  azure_client_id: string
+  azure_authority: string
+  azure_client_secret_set: boolean
   map_tile_url: string
   map_tile_attribution: string
   map_satellite_url: string

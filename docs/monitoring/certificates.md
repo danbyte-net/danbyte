@@ -306,6 +306,28 @@ enables under **Settings → Security → Secret store**:
   and deployment-tier, so it may be an internal/loopback Vault - Danbyte reaches
   it directly (TLS-verified, redirects off), not through the tenant SSRF guard.
   A provider selected but not fully configured counts as disabled (fail closed).
+- **Azure Key Vault** - keys live in a Key Vault and Danbyte holds only a
+  reference. Configure the vault URL, the directory (tenant) and application
+  (client) IDs of an app registration, and its client secret; the secret is
+  stored encrypted and never returned. Danbyte signs in with the
+  client-credentials flow and derives the token audience from the vault's own
+  host, so Azure Government and Azure Stack work by URL alone - only the
+  **sign-in endpoint** needs setting on a sovereign cloud (blank is
+  `login.microsoftonline.com`). No Azure SDK is installed: it is three REST
+  calls and a token.
+
+    The app registration needs **Get**, **Set**, **Delete** and **Purge** on
+    secrets - an access policy, or the *Key Vault Secrets Officer* role on an
+    RBAC vault. Deleting drops the secret and then purges it, so a revoked
+    request's key really is gone; on a vault with **purge protection** the purge
+    is refused and the secret stays soft-deleted until its retention expires,
+    which is the vault's policy, not an error.
+
+    Danbyte names its own secrets `danbyte-<tenant>-<ref>-<digest>`, because Key
+    Vault names allow only letters, digits and hyphens. A device credential that
+    points at a secret **you** authored uses that secret's name verbatim; if its
+    value is not JSON it is read back as `{"value": "…"}`.
+
 - **Other stores** - providers are pluggable: a plugin registers one with
   `monitoring.secret_store.register_secret_store`, and it appears in the same
   card with the fields it declares. A store whose plugin is later removed

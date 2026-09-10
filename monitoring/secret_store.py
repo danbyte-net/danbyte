@@ -9,6 +9,7 @@ backend an operator chooses:
   reusing the same Fernet-at-rest machinery as every other credential. Works out
   of the box, airgap-friendly, no external dependency.
 * ``vault`` - an external HashiCorp Vault / OpenBao (added by the Vault backend).
+* ``azure`` - an external Azure Key Vault (added by the Key Vault backend).
 * anything a plugin registers with :func:`register_secret_store`.
 
 It is **opt-in and deployment-tier**: choosing where the org's private keys live
@@ -148,6 +149,15 @@ def secret_store_kinds() -> set[str]:
     return set(_REGISTRY)
 
 
+def _azure_factory() -> SecretStore | None:
+    # Imported lazily so the local path stays dependency-free.
+    try:
+        from .secret_store_azure import AzureKeyVaultSecretStore
+    except ImportError:  # pragma: no cover - backend not present
+        return None
+    return AzureKeyVaultSecretStore.from_deployment()
+
+
 def _vault_factory() -> SecretStore | None:
     # Imported lazily so the local path stays dependency-free.
     try:
@@ -195,6 +205,46 @@ register_secret_store(
             "type": "checkbox",
             "default": True,
             "hint": "Turn off only for a Vault with a self-signed cert on a trusted network.",
+        },
+    ),
+)
+register_secret_store(
+    "azure",
+    "Azure Key Vault",
+    _azure_factory,
+    description="An external Azure Key Vault, reached with an app registration; "
+    "Danbyte holds only a reference.",
+    fields=(
+        {
+            "name": "azure_vault_url",
+            "label": "Key Vault URL",
+            "type": "text",
+            "placeholder": "https://kv-danbyte.vault.azure.net",
+        },
+        {
+            "name": "azure_directory_id",
+            "label": "Directory (tenant) ID",
+            "type": "text",
+            "placeholder": "00000000-0000-0000-0000-000000000000",
+        },
+        {
+            "name": "azure_client_id",
+            "label": "Application (client) ID",
+            "type": "text",
+            "placeholder": "00000000-0000-0000-0000-000000000000",
+        },
+        {
+            "name": "azure_client_secret",
+            "label": "Client secret",
+            "type": "password",
+            "set_flag": "azure_client_secret_set",
+        },
+        {
+            "name": "azure_authority",
+            "label": "Sign-in endpoint",
+            "type": "text",
+            "placeholder": "https://login.microsoftonline.com",
+            "hint": "Blank is the public cloud. Set it for Azure Government.",
         },
     ),
 )
