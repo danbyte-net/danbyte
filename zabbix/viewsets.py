@@ -41,6 +41,23 @@ class ZabbixConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             ZabbixDefaultsSerializer.payload(_get_active_tenant(request))
         )
 
+    @action(detail=True, methods=["get"])
+    def templates(self, request, pk=None):
+        """Every template on the server, so a rule is picked rather than typed.
+
+        Never fails the request: an unreachable Zabbix means the form falls
+        back to typing names, which is worse but still works - and being unable
+        to reach the server is not a reason to refuse to edit a rule.
+        """
+        from .client import ZabbixError
+        from .provision import _client
+
+        try:
+            return Response({"templates": _client(self.get_object()).all_templates(),
+                             "error": ""})
+        except ZabbixError as exc:
+            return Response({"templates": [], "error": str(exc)[:300]})
+
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
         """Reach the server and describe it. Records what it learned."""

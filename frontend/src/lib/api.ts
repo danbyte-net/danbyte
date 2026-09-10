@@ -3878,6 +3878,14 @@ export interface ZabbixTemplateRule {
   updated_at: string
 }
 
+/** Every template on the connected Zabbix server, for the rule picker.
+ * `error` is set instead of failing the request when the server is
+ * unreachable - a rule stays editable either way. */
+export interface ZabbixServerTemplates {
+  templates: { value: string; label: string }[]
+  error: string
+}
+
 export interface ZabbixTemplateScopes {
   scopes: { value: string; label: string; catalog: string }[]
 }

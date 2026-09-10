@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import type {
   Paginated,
   ZabbixConnection,
+  ZabbixServerTemplates,
   ZabbixTemplateRule,
   ZabbixTemplateScopes,
 } from "@/lib/api"
@@ -20,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Field,
   FormCheckbox,
   FormCombobox,
   FormFooter,
@@ -27,6 +29,7 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { IdMultiSelect } from "@/components/cells/id-multi-select"
 
 /**
  * Which Zabbix templates a kind of device should carry (#162 phase 3).
@@ -202,7 +205,8 @@ function RuleForm({
   const [objectId, setObjectId] = useState<string | null>(
     rule?.object_id ?? null
   )
-  // One template per line: an operator pastes a list out of Zabbix, and a
+  const [picked, setPicked] = useState<string[]>(rule?.templates ?? [])
+  // The fallback when Zabbix cannot be reached: one name per line, because a
   // comma is a legal character in a template name.
   const [text, setText] = useState((rule?.templates ?? []).join("\n"))
   const [enabled, setEnabled] = useState(rule?.enabled ?? true)
@@ -229,6 +233,29 @@ function RuleForm({
     staleTime: 10 * 60_000,
   })
 
+  // The templates the server actually has. Typing a name is how a rule gets
+  // silently refused later - Zabbix is strict, and this is the list it is
+  // strict about.
+  const server = useQuery({
+    queryKey: ["zabbix-server-templates", connection.id],
+    queryFn: () =>
+      api<ZabbixServerTemplates>(
+        `/api/zabbix/connections/${connection.id}/templates/`
+      ),
+    staleTime: 10 * 60_000,
+  })
+  const canPick = (server.data?.templates.length ?? 0) > 0
+  // A name already on the rule stays visible as a chip even when the server
+  // no longer offers it - otherwise editing a rule would quietly drop it.
+  const templateOptions = useMemo(() => {
+    const rows = server.data?.templates ?? []
+    const known = new Set(rows.map((t) => t.value))
+    return [
+      ...rows.map((t) => ({ id: t.value, name: t.label })),
+      ...picked.filter((p) => !known.has(p)).map((p) => ({ id: p, name: p })),
+    ]
+  }, [server.data, picked])
+
   const save = useMutation({
     mutationFn: () =>
       api<ZabbixTemplateRule>(
@@ -241,10 +268,12 @@ function RuleForm({
             connection: connection.id,
             scope,
             object_id: scope === "tenant" ? null : objectId,
-            templates: text
-              .split("\n")
-              .map((l) => l.trim())
-              .filter(Boolean),
+            templates: canPick
+              ? picked
+              : text
+                  .split("\n")
+                  .map((l) => l.trim())
+                  .filter(Boolean),
             enabled,
           }),
         }
@@ -294,14 +323,36 @@ function RuleForm({
           error={fieldErrors.object_id}
         />
       )}
-      <FormTextarea
-        label="Templates"
-        required
-        hint="One name per line, exactly as Zabbix spells it"
-        value={text}
-        onChange={setText}
-        error={fieldErrors.templates}
-      />
+      {canPick ? (
+        <Field
+          label="Templates"
+          required
+          hint={`${server.data?.templates.length ?? 0} on the server`}
+          error={fieldErrors.templates}
+        >
+          <IdMultiSelect
+            options={templateOptions}
+            value={picked}
+            onChange={setPicked}
+            placeholder="Add a template…"
+            searchPlaceholder="Search templates…"
+            emptyText="No template by that name."
+          />
+        </Field>
+      ) : (
+        <FormTextarea
+          label="Templates"
+          required
+          hint={
+            server.data?.error
+              ? "Zabbix is unreachable - type the names for now"
+              : "One name per line, exactly as Zabbix spells it"
+          }
+          value={text}
+          onChange={setText}
+          error={fieldErrors.templates}
+        />
+      )}
       <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
       <FormFooter
         onCancel={onDone}

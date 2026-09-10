@@ -196,6 +196,23 @@ class ZabbixClient:
         }) or []
         return {t["host"]: t["templateid"] for t in found}
 
+    def all_templates(self) -> list:
+        """Every template on the server, for the rule form to pick from.
+
+        ``host`` is the technical name templates are linked by and the one a
+        rule stores; ``name`` is what Zabbix shows. Usually identical, but the
+        form displays the visible one and saves the technical one, so a rule
+        keeps working if somebody renames the display name.
+        """
+        found = self.call("template.get", {
+            "output": ["templateid", "host", "name"],
+        }) or []
+        rows = [
+            {"value": t["host"], "label": t.get("name") or t["host"]}
+            for t in found
+        ]
+        return sorted(rows, key=lambda r: r["label"].lower())
+
     def host_templates(self, hostid: str) -> set:
         """Template names already linked to a host, so Danbyte only ever adds."""
         found = self.call("host.get", {

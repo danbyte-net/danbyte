@@ -178,10 +178,14 @@ SNMP" and "Cisco also gets Cisco IOS by SNMP" are three rules rather than one
 list per model, and a device gets the union of every rule that matches it.
 Duplicates collapse.
 
-Templates are named, not picked from a list of ids: a template id means nothing
-on the next Zabbix server, and the name is what you read in Zabbix. A name
-Zabbix does not have is **reported back**, never invented and never silently
-dropped.
+The rule form lists **the templates your server actually has** - Danbyte reads
+them from Zabbix when you open it - so a name is picked rather than typed. What
+gets stored is the template's technical name, not its id: an id means nothing on
+the next Zabbix server, and the name survives a display rename. If Zabbix cannot
+be reached the field falls back to typing names, because being unable to reach
+the server is no reason to refuse to edit a rule - and a name Zabbix does not
+have is **reported back** when the write happens, never invented and never
+silently dropped.
 
 Danbyte only ever **adds** a template. A template somebody linked by hand is
 theirs, and a rule that stops matching is not a reason to strip a host of its
