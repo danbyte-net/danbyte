@@ -659,6 +659,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     def validate(self, attrs):
         attrs = super().validate(attrs)
         group = attrs.get("group", getattr(self.instance, "group", None))
+        site = attrs.get("site", getattr(self.instance, "site", None))
         vid = attrs.get("vlan_id", getattr(self.instance, "vlan_id", None))
         if group is not None and vid is not None:
             if not (group.min_vid <= vid <= group.max_vid):
@@ -666,7 +667,39 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
                     {"vlan_id": f"VID must be within the group's range "
                                 f"({group.min_vid}–{group.max_vid})."}
                 )
+        if vid is not None:
+            self._check_vid_free(vid, group, site)
         return attrs
+
+    def _check_vid_free(self, vid, group, site):
+        """The VID's namespace is its group, else its site (#159).
+
+        The database says the same thing in two constraints; this says it in
+        a sentence, naming the scope that is actually taken - "already at
+        Warsaw" is a fix someone can act on, an IntegrityError is not.
+        """
+        from api.views import _get_active_tenant
+
+        request = self.context.get("request")
+        tenant = (
+            getattr(self.instance, "tenant", None)
+            or (_get_active_tenant(request) if request is not None else None)
+        )
+        if tenant is None:
+            return
+        taken = VLAN.objects.filter(tenant=tenant, vlan_id=vid)
+        if group is not None:
+            taken = taken.filter(group=group)
+            where = f"in {group.name}"
+        else:
+            taken = taken.filter(group__isnull=True, site=site)
+            where = f"at {site.name}" if site is not None else "with no site"
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        if taken.exists():
+            raise serializers.ValidationError(
+                {"vlan_id": f"VLAN {vid} already exists {where}."}
+            )
 
     class Meta:
         model = VLAN

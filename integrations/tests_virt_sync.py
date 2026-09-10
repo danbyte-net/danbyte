@@ -408,9 +408,47 @@ class ProxmoxSyncTests(TestCase):
         from integrations.models import VirtNetwork
 
         vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
-        # No ungrouped VID 10 → the alphabetically-first group wins, every sync.
-        self.assertEqual(vn.vlan, in_a)
+        # Two unscoped groups both hold VID 10 and neither is bound to this
+        # cluster or its site, so there is nothing to choose between them.
+        # Picking the alphabetically-first one was deterministic but arbitrary
+        # - and arbitrary here means a NIC on the wrong network (#159). The
+        # sync mints its own instead, which is visible and reversible.
+        self.assertNotEqual(vn.vlan, in_a)
         self.assertNotEqual(vn.vlan, in_b)
+        self.assertTrue(vn.created_vlan)
+        self.assertTrue(vn.vlan.group.slug.startswith("virt-"))
+
+    def test_match_prefers_a_group_bound_to_this_cluster(self):
+        """Scoping one of the groups to this cluster makes the VID
+        unambiguous again, and the operator's VLAN wins (#159)."""
+        from api.models import VLANGroup
+        from integrations.models import VirtNetwork
+
+        # Pass 1 creates the cluster, so the group can be bound to it.
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        cluster = Cluster.objects.get(tenant=self.tenant, name="DB-CLUSTER01")
+
+        mine_grp = VLANGroup.objects.create(
+            tenant=self.tenant, name="Alpha", slug="alpha2", cluster=cluster
+        )
+        other = VLANGroup.objects.create(
+            tenant=self.tenant, name="Beta", slug="beta2"
+        )
+        VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-beta", group=other
+        )
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-alpha", group=mine_grp
+        )
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["match_existing_vlans"])
+        self.sync()
+
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        self.assertEqual(vn.vlan, mine)
+        self.assertFalse(vn.created_vlan)
 
     def test_networks_off_by_default(self):
         self.sync()  # source.sync_networks defaults False

@@ -62,15 +62,36 @@ where you wire them up:
 
 Both respect your prefix permissions (*change* and *add* respectively).
 
+### Where a VLAN ID has to be unique
+
+A VLAN ID is an L2 namespace, and the namespace is a **group** or a **site** -
+never the whole tenant. Kyiv VLAN 105 and Warsaw VLAN 105 are different
+broadcast domains that happen to share a number, and both are valid.
+
+- **Ungrouped:** the VID is unique **per site**. A VLAN with no site at all is
+  not "every site" - it is one tenant-wide VLAN, and there can only be one of
+  those per VID.
+- **Grouped:** the group is the namespace, across every site it spans. That is
+  what a group is for, so the same VID twice in one group is still refused.
+
+!!! note "Reading a VID off a switch or a hypervisor"
+    Because a bare VID no longer names one VLAN, SNMP sync, drift and
+    virtualization sync resolve it **within the device's or cluster's site**:
+    the site's own ungrouped VLAN first, then a group bound to that site or
+    cluster, then a tenant-wide VLAN. Where two sites' VLANs are equally
+    plausible, Danbyte assigns **nothing** rather than guess - a missing
+    assignment reappears as drift on the next poll, a wrong one looks like the
+    truth forever. SNMP creates a VLAN it has never seen **at the polled
+    device's site**.
+
 ### VLAN groups
 
 A **VLAN group** is a named grouping that scopes VID uniqueness and defines a
 valid VID range:
 
-- The same VID can exist in different groups; ungrouped VLANs stay unique across
-  the tenant.
 - Assigning a VLAN to a group checks that its VID falls inside the group's range.
-- A group can optionally be bound to a site or cluster.
+- A group can optionally be bound to a site or cluster - which is also what lets
+  a synced VID resolve to it.
 
 !!! warning "Delete order"
     You can't delete a VLAN group that still contains VLANs. Move or remove its

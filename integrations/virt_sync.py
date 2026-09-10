@@ -238,6 +238,8 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     """Shared: upsert VirtualSwitch(bridge) + VirtNetwork(→VLAN) and blank-fill
     the VM interface's VLAN. Returns 1 if a network row was touched."""
     from api.models import VLAN, VMInterface, VirtualSwitch
+    from api.vlan_scope import resolve_vid
+
     from .models import VirtNetwork
 
     if not bridge:
@@ -267,27 +269,24 @@ def _link_network(source, cluster, guest, iface_name, bridge, tag, name, now,
     made_vlan = False
     if tag is not None:
         # Opt-in (#116): the operator's own VLAN with this VID, before minting
-        # a duplicate in the per-source group. Ungrouped first (the tenant-wide
-        # constraint guarantees at most one), then any non-virt group - by
-        # group name, so several matches resolve the same way every sync.
+        # a duplicate in the per-source group. Scoped to the cluster's site
+        # (#159) - a VID is unique within a site or a group, never across the
+        # tenant, so matching on VID alone could bind this hypervisor's port
+        # group to another site's segment. Ambiguous means no match, and the
+        # per-source group below takes over: an extra VLAN in our own group is
+        # a tidy-up, the wrong VLAN is a wrong network.
         if source.match_existing_vlans:
-            vlan = VLAN.objects.filter(
-                tenant=source.tenant, vlan_id=tag, group__isnull=True
-            ).first()
-            if vlan is None:
-                grouped = list(
-                    VLAN.objects.filter(tenant=source.tenant, vlan_id=tag)
-                    .exclude(group__slug__startswith="virt-")
-                    .select_related("group")
-                    .order_by("group__name")[:2]
+            vlan, why = resolve_vid(
+                source.tenant, tag,
+                site=c.site, cluster=c,
+                exclude_group_prefix="virt-",
+            )
+            if why == "ambiguous":
+                logger.info(
+                    "VID %s exists at several sites and cluster %r has none - "
+                    "using this source's own VLAN group", tag, c.name,
                 )
-                if len(grouped) > 1:
-                    logger.info(
-                        "VID %s exists in several groups; matching %r",
-                        tag, grouped[0].group.name,
-                    )
-                vlan = grouped[0] if grouped else None
-            if vlan is not None:
+            elif vlan is not None:
                 logger.info("matched existing VLAN %s (%s) for %s",
                             tag, vlan.name, bridge)
         if vlan is None:
@@ -2169,7 +2168,8 @@ def _accept_iface_change(guest, detail: dict) -> None:
     the tenant already has with that vid, and leaves it alone otherwise rather
     than minting a half-specified one.
     """
-    from api.models import VLAN, VMInterface
+    from api.models import VMInterface
+    from api.vlan_scope import resolve_vid
 
     if guest.vm is None:
         return
@@ -2182,9 +2182,12 @@ def _accept_iface_change(guest, detail: dict) -> None:
         for field, pair in (diff or {}).items():
             value = pair.get("hypervisor")
             if field == "vlan_vid":
-                vlan = VLAN.objects.filter(
-                    tenant=guest.source.tenant, vlan_id=value
-                ).first()
+                # Same site scoping as the vswitch path (#159): a bare VID off
+                # a hypervisor is not enough to name a VLAN any more.
+                vlan, _why = resolve_vid(
+                    guest.source.tenant, value,
+                    site=guest.vm.site, cluster=guest.vm.cluster,
+                )
                 if vlan is None:
                     continue
                 iface.vlan = vlan

@@ -2166,14 +2166,27 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     class Meta:
         ordering = ["vlan_id"]
         constraints = [
-            # VID is unique within a group; ungrouped VLANs (NULL group) are
-            # unique per tenant. nulls_distinct=False makes the NULL-group
-            # bucket behave like a real value for uniqueness.
+            # A VLAN ID is an L2 namespace, and the namespace is either a
+            # group or a site - never the whole tenant. Kyiv VLAN 105 and
+            # Warsaw VLAN 105 are different broadcast domains that happen to
+            # share a number, and refusing the second one was wrong (#159).
+            #
+            # Grouped: the group is the namespace, across every site it
+            # spans - that is what a group is for.
             models.UniqueConstraint(
                 fields=["tenant", "group", "vlan_id"],
+                condition=models.Q(group__isnull=False),
+                name="uniq_vlan_group_vid",
+            ),
+            # Ungrouped: the site is the namespace. nulls_distinct=False
+            # makes the site-less bucket behave like a real value, so VLANs
+            # with no site at all stay unique per tenant.
+            models.UniqueConstraint(
+                fields=["tenant", "site", "vlan_id"],
+                condition=models.Q(group__isnull=True),
                 nulls_distinct=False,
-                name="uniq_vlan_tenant_group_vid",
-            )
+                name="uniq_vlan_site_vid",
+            ),
         ]
 
     def __str__(self) -> str:

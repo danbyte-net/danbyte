@@ -9,6 +9,7 @@ of truth while still letting reality flow in on demand.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 import ipaddress as ipmod
@@ -16,11 +17,14 @@ import ipaddress as ipmod
 from django.db import IntegrityError
 
 from api.models import Interface, IPAddress, MACAddress, Prefix, VLAN
+from api.vlan_scope import resolve_vid
 from api.speed import fmt_speed, speed_mbps
 from api.vrf_placement import ANY_VRF, containing_prefix
 
 from .models import DeviceSnmp, MonitoringSettings
 from .vc_stack import observed_for, stack_state
+
+log = logging.getLogger("monitoring.snmp_drift")
 
 
 def _real_ip(ip: str) -> bool:
@@ -703,7 +707,9 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
             iface.save(update_fields=["speed"])
             return True
         if field == "vlan":
-            vlan = _resolve_observed_vlan(tenant, {"vlan": action.get("observed")})
+            vlan = _resolve_observed_vlan(
+                tenant, {"vlan": action.get("observed")}, device
+            )
             if vlan is None:
                 return False
             iface.vlan = vlan
@@ -835,7 +841,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
         if policy["snmp_skip_unrouted_vlans"] and _is_unrouted_vlan(o):
             continue
         speed = _fmt_speed(o.get("speed_mbps"))
-        vlan = _resolve_observed_vlan(tenant, o)
+        vlan = _resolve_observed_vlan(tenant, o, device)
         # Match on ifName then ifDescr (see _match_observed): a library-built
         # switch stores the FULL name (GigabitEthernet1/0/1) that SNMP reports
         # as ifDescr, so name-only matching would create a duplicate short-named
@@ -946,30 +952,40 @@ def _ensure_mac_object(tenant, iface, mac: str) -> None:
     )
 
 
-def _resolve_observed_vlan(tenant, o: dict):
+def _resolve_observed_vlan(tenant, o: dict, device=None):
     """Find-or-create the access VLAN an observed interface reports (Q-BRIDGE
-    PVID), or ``None`` when it reports no usable VLAN. Ungrouped, tenant-scoped -
-    so a switch's VLANs become first-class Danbyte VLAN objects on sync."""
+    PVID), or ``None`` when it reports no usable VLAN.
+
+    Scoped to the polled device's **site** (#159): a VID is only unique within
+    its site or its group, so "VLAN 105" off a switch in Warsaw must not
+    resolve to Kyiv's 105. Where the VID is genuinely ambiguous - several
+    sites' VLANs and nothing to choose between them - this returns ``None``
+    and the caller leaves the port's VLAN alone. A missing assignment shows up
+    as drift on the next poll; a wrong one looks like the truth forever.
+    """
     try:
         vid = int(o.get("vlan"))
     except (ValueError, TypeError):
         return None
     if not (1 <= vid <= 4094):
         return None
-    vlan = VLAN.objects.filter(tenant=tenant, vlan_id=vid, group__isnull=True).first()
-    if vlan is None:
-        # Grouped VLANs count too (site-scoped groups are the norm on larger
-        # estates) - same resolution order as virt sync's match_existing_vlans:
-        # ungrouped first, then by group name, virt-sync groups excluded.
-        vlan = (
-            VLAN.objects.filter(tenant=tenant, vlan_id=vid)
-            .exclude(group__slug__startswith="virt-")
-            .order_by("group__name")
-            .first()
+
+    site = getattr(device, "site", None)
+    vlan, why = resolve_vid(
+        tenant, vid, site=site, exclude_group_prefix="virt-"
+    )
+    if why == "ambiguous":
+        log.info(
+            "VID %s exists at several sites and this device has none - "
+            "leaving the port's VLAN unset", vid,
         )
+        return None
     if vlan is None:
+        # New to Danbyte: create it AT THE DEVICE'S SITE, so the same VID
+        # polled from another site creates that site's own VLAN rather than
+        # colliding with this one.
         vlan = VLAN.objects.create(
-            tenant=tenant, vlan_id=vid,
+            tenant=tenant, vlan_id=vid, site=site,
             name=(o.get("vlan_name") or f"VLAN {vid}")[:255],
         )
     return vlan
