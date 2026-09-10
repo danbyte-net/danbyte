@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ZabbixConnectionDialog } from "@/components/zabbix/connection-dialog"
 import { ZabbixChanges } from "@/components/zabbix/changes"
+import { ZabbixTemplateRules } from "@/components/zabbix/template-rules"
 
 export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
 
@@ -82,7 +83,7 @@ function ZabbixPage() {
         method: "POST",
       }),
     onSuccess: (r) => {
-      const proposed = r.create + r.update + r.prune + r.ambiguous
+      const proposed = r.create + r.update + r.template + r.prune + r.ambiguous
       toast.success(
         r.applied !== undefined
           ? `Applied ${r.applied}${r.failed ? `, ${r.failed} failed` : ""}.`
@@ -90,6 +91,11 @@ function ZabbixPage() {
             ? `Nothing to do - ${r.linked} of ${r.scoped} in scope already match.`
             : `${proposed} change${proposed === 1 ? "" : "s"} to review.`
       )
+      // Zabbix's own words for what it refused. A count alone leaves the
+      // operator with nothing to act on.
+      for (const e of r.errors ?? []) {
+        toast.error(`${e.device || "Host"}: ${e.detail}`)
+      }
       void qc.invalidateQueries({ queryKey: ["zabbix-changes"] })
       void qc.invalidateQueries({ queryKey: ["zabbix-links"] })
     },
@@ -192,6 +198,15 @@ function ZabbixPage() {
                   "Auto - applies changes"
                 )}
               </Row>
+              <Row label="SNMP credentials">
+                {conn.send_snmp_credentials ? (
+                  "Sent as secret macros"
+                ) : (
+                  <span className="text-muted-foreground">
+                    Not sent - Danbyte keeps them
+                  </span>
+                )}
+              </Row>
               <Row label="Remove hosts">
                 {conn.prune_hosts
                   ? `After ${conn.prune_after_days} days unwanted`
@@ -235,6 +250,8 @@ function ZabbixPage() {
             changes={changes.data?.results ?? []}
             loading={changes.isLoading}
           />
+
+          <ZabbixTemplateRules connection={conn} canManage={canManage} />
 
           <section className="rounded-lg border border-border bg-card">
             <div className="border-b border-border px-4 py-2.5">

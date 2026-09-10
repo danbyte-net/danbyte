@@ -161,6 +161,10 @@ class ZabbixClient:
             "output": ["hostid", "host", "name", "status"],
             "selectInterfaces": ["interfaceid", "type", "ip", "dns", "useip", "port"],
             "selectInventory": ["serialno_a"],
+            # Linked templates come along on the same read: planning has to
+            # know what a host already carries, and asking per host would turn
+            # one call into a thousand.
+            "selectParentTemplates": ["templateid", "host"],
         }) or []
 
     def group_id(self, name: str) -> str:
@@ -176,6 +180,77 @@ class ZabbixClient:
         if found:
             return found[0]["groupid"]
         return self.call("hostgroup.create", {"name": name})["groupids"][0]
+
+    def template_ids(self, names) -> dict:
+        """``{name: templateid}`` for the templates that exist.
+
+        A name Zabbix does not have is simply absent from the answer. The
+        caller reports it - inventing a template, or silently dropping the
+        host's only one, are both worse than saying so.
+        """
+        names = [n for n in names if n]
+        if not names:
+            return {}
+        found = self.call("template.get", {
+            "output": ["templateid", "host"], "filter": {"host": names},
+        }) or []
+        return {t["host"]: t["templateid"] for t in found}
+
+    def host_templates(self, hostid: str) -> set:
+        """Template names already linked to a host, so Danbyte only ever adds."""
+        found = self.call("host.get", {
+            "output": ["hostid"], "hostids": hostid,
+            "selectParentTemplates": ["templateid", "host"],
+        }) or []
+        if not found:
+            return set()
+        return {t["host"] for t in found[0].get("parentTemplates") or []}
+
+    def link_templates(self, hostid: str, template_ids) -> None:
+        """Link templates to an existing host, **additively**.
+
+        ``host.massadd`` rather than ``host.update``: update replaces the
+        linked set, so one pass would silently unlink every template somebody
+        attached by hand. Danbyte adds what it knows and removes nothing.
+        """
+        ids = [{"templateid": t} for t in template_ids]
+        if ids:
+            self.call("host.massadd", {"hosts": [{"hostid": hostid}],
+                                       "templates": ids})
+
+    def host_interfaces(self, hostid: str) -> list:
+        found = self.call("host.get", {
+            "output": ["hostid"], "hostids": hostid,
+            "selectInterfaces": ["interfaceid", "type", "ip", "dns", "useip", "port"],
+        }) or []
+        return (found[0].get("interfaces") if found else []) or []
+
+    def create_interface(self, hostid: str, payload: dict) -> str:
+        return self.call(
+            "hostinterface.create", {"hostid": hostid, **payload}
+        )["interfaceids"][0]
+
+    def host_macro_names(self, hostid: str) -> set:
+        """Which macros a host already has.
+
+        Names only, deliberately: a secret macro's value never comes back, so
+        presence is the only question Danbyte can honestly ask - and the only
+        one it should, since a value somebody changed is theirs.
+        """
+        found = self.call("usermacro.get", {
+            "output": ["macro"], "hostids": hostid,
+        }) or []
+        return {m["macro"] for m in found}
+
+    def add_macros(self, hostid: str, macros) -> None:
+        for m in macros:
+            self.call("usermacro.create", {"hostid": hostid, **m})
+
+    def update_interface(self, interfaceid: str, payload: dict) -> None:
+        """Change an existing interface. ``host.update`` cannot do this - an
+        address correction has to go to ``hostinterface.update`` or it is
+        accepted and quietly does nothing."""
+        self.call("hostinterface.update", {"interfaceid": interfaceid, **payload})
 
     def create_host(self, payload: dict) -> str:
         return self.call("host.create", payload)["hostids"][0]

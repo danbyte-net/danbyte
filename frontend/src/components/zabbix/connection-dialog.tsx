@@ -84,6 +84,9 @@ function ConnectionForm({
   const [interval, setInterval] = useState(
     String(connection?.sync_interval_minutes ?? 60)
   )
+  const [sendCreds, setSendCreds] = useState(
+    connection?.send_snmp_credentials ?? false
+  )
   const [prune, setPrune] = useState(connection?.prune_hosts ?? false)
   const [pruneAfter, setPruneAfter] = useState(
     String(connection?.prune_after_days ?? 7)
@@ -133,6 +136,7 @@ function ConnectionForm({
           provision_mode: mode,
           auto_sync: autoSync,
           sync_interval_minutes: Number(interval) || 60,
+          send_snmp_credentials: sendCreds,
           prune_hosts: prune,
           prune_after_days: Number(pruneAfter) || 0,
           severity_map: severity,
@@ -224,6 +228,12 @@ function ConnectionForm({
                 error={fieldErrors.sync_interval_minutes}
               />
             )}
+            <FormCheckbox
+              label="Send SNMP credentials"
+              hint="Written as secret macros on hosts Danbyte creates"
+              checked={sendCreds}
+              onChange={setSendCreds}
+            />
             <FormCheckbox
               label="Remove hosts Danbyte created and no longer needs"
               hint="Never touches a host somebody else made."

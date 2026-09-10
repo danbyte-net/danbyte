@@ -3,7 +3,11 @@ import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { ZabbixChange, ZabbixConnection } from "@/lib/api"
+import type {
+  ZabbixApplyResult,
+  ZabbixChange,
+  ZabbixConnection,
+} from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
@@ -67,14 +71,19 @@ export function ZabbixChanges({
 
   const applyAll = useMutation({
     mutationFn: () =>
-      api<{ applied: number; failed: number }>(
-        "/api/zabbix/changes/apply-all/",
-        { method: "POST", body: JSON.stringify({ connection: connection.id }) }
-      ),
+      api<ZabbixApplyResult>("/api/zabbix/changes/apply-all/", {
+        method: "POST",
+        body: JSON.stringify({ connection: connection.id }),
+      }),
     onSuccess: (r) => {
       toast.success(
         `Applied ${r.applied}${r.failed ? `, ${r.failed} failed` : ""}.`
       )
+      // One toast per refusal, in Zabbix's own words: "these two templates
+      // both define icmpping" is a rule to fix, and a count is not.
+      for (const e of r.errors ?? []) {
+        toast.error(`${e.device || "Host"}: ${e.detail}`)
+      }
       refresh()
     },
     onError: (e) => apiErrorToast(e),
@@ -188,22 +197,37 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
         from Zabbix - Danbyte created it and no longer has a reason for it.
       </span>
     )
+  if (change.kind === "link_template") {
+    const add = (d.add ?? []) as string[]
+    return (
+      <span className="block text-[12px] text-muted-foreground">
+        Links {add.join(", ")}
+        {d.add_snmp_interface
+          ? " - and adds the SNMP interface Zabbix needs before it will."
+          : "."}
+      </span>
+    )
+  }
   if (change.kind === "update_host") {
     const changes = (d.changes ?? {}) as Record<string, unknown>
     const fields = Object.entries(changes)
-      // A leading underscore marks something Danbyte noticed but does not
-      // write - an interface address is Zabbix's own shape to edit.
-      .filter(([k]) => !k.startsWith("_"))
-      .map(([k, v]) => `${k} → ${String(v)}`)
+      // `_interfaceid` is how the write is addressed, not something being
+      // changed; `_address` is a change, it just goes to a different call.
+      .filter(([k]) => k !== "_interfaceid")
+      .map(([k, v]) =>
+        k === "_address" ? `address → ${String(v)}` : `${k} → ${String(v)}`
+      )
     return (
       <span className="block text-[12px] text-muted-foreground">
         {fields.length > 0 ? fields.join(", ") : "No writable difference."}
       </span>
     )
   }
+  const templates = (d.templates ?? []) as string[]
   return (
     <span className="block text-[12px] text-muted-foreground">
-      Creates a host{d.site ? ` in group “${String(d.site)}”` : ""}.
+      Creates a host{d.site ? ` in group “${String(d.site)}”` : ""}
+      {templates.length > 0 ? `, with ${templates.join(", ")}` : ""}.
     </span>
   )
 }

@@ -13,12 +13,18 @@ from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 from integrations.toggles import IntegrationToggleMixin
 
-from .models import ZabbixChange, ZabbixConnection, ZabbixHostLink
+from .models import (
+    ZabbixChange,
+    ZabbixConnection,
+    ZabbixHostLink,
+    ZabbixTemplateRule,
+)
 from .serializers import (
     ZabbixChangeSerializer,
     ZabbixConnectionSerializer,
     ZabbixDefaultsSerializer,
     ZabbixHostLinkSerializer,
+    ZabbixTemplateRuleSerializer,
 )
 
 
@@ -133,3 +139,39 @@ class ZabbixChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         if conn is None:
             return Response({"detail": "Unknown connection."}, status=404)
         return Response(apply_pending(conn))
+
+
+class ZabbixTemplateRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+    """Which Zabbix templates a kind of device should carry.
+
+    Rules stack: a device gets the union of every rule that matches it, so
+    small statements compose instead of one list per model.
+    """
+
+    integration_keys = ("zabbix",)
+    queryset = ZabbixTemplateRule.objects.all().order_by("scope", "-created_at")
+    serializer_class = ZabbixTemplateRuleSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        conn = self.request.query_params.get("connection") if self.request else None
+        return qs.filter(connection_id=conn) if conn else qs
+
+    @action(detail=False, methods=["get"])
+    def scopes(self, request):
+        """What a rule can be about, and the catalog behind each - so the form
+        does not hard-code Danbyte's own object model in TypeScript."""
+        return Response({"scopes": [
+            {"value": v, "label": label,
+             "catalog": _SCOPE_ENDPOINT.get(v, "")}
+            for v, label in ZabbixTemplateRule.SCOPE_CHOICES
+        ]})
+
+
+#: Where the SPA fetches the options for each scope.
+_SCOPE_ENDPOINT = {
+    ZabbixTemplateRule.SCOPE_ROLE: "/api/device-roles/",
+    ZabbixTemplateRule.SCOPE_PLATFORM: "/api/platforms/",
+    ZabbixTemplateRule.SCOPE_TYPE: "/api/device-types/",
+    ZabbixTemplateRule.SCOPE_MANUFACTURER: "/api/manufacturers/",
+}

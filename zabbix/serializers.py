@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import ZabbixChange, ZabbixConnection, ZabbixHostLink
+from .models import (
+    ZabbixChange,
+    ZabbixConnection,
+    ZabbixHostLink,
+    ZabbixTemplateRule,
+)
 from .severity import DEFAULT_MAP, MAPPABLE, SEVERITIES, clean_map
 
 
@@ -92,7 +97,8 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
             "enabled", "version", "supported", "last_checked_at", "last_error",
             "severity_map", "provision_mode", "prune_hosts", "prune_after_days",
             "auto_sync", "sync_interval_minutes", "last_sync_at",
-            "last_sync_summary", "created_at", "updated_at",
+            "last_sync_summary", "send_snmp_credentials", "created_at",
+            "updated_at",
         ]
         read_only_fields = [
             "id", "api_url", "token_set", "supported", "version",
@@ -162,4 +168,66 @@ class ZabbixChangeSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "kind", "kind_display", "device", "detail", "applicable",
             "created_at",
+        ]
+
+
+class ZabbixTemplateRuleSerializer(serializers.ModelSerializer):
+    """A rule saying which Zabbix templates a kind of device should carry."""
+
+    scope_display = serializers.CharField(source="get_scope_display", read_only=True)
+    #: What the rule is about, resolved for display - the SPA should not have
+    #: to fetch four catalogs to render a list of rules.
+    object_name = serializers.SerializerMethodField()
+
+    _CATALOG = {
+        ZabbixTemplateRule.SCOPE_ROLE: "DeviceRole",
+        ZabbixTemplateRule.SCOPE_PLATFORM: "Platform",
+        ZabbixTemplateRule.SCOPE_TYPE: "DeviceType",
+        ZabbixTemplateRule.SCOPE_MANUFACTURER: "Manufacturer",
+    }
+
+    def get_object_name(self, obj) -> str:
+        model_name = self._CATALOG.get(obj.scope)
+        if not model_name or not obj.object_id:
+            return ""
+        from django.apps import apps
+
+        row = apps.get_model("api", model_name).objects.filter(
+            pk=obj.object_id, tenant=obj.tenant
+        ).first()
+        return getattr(row, "name", "") if row else ""
+
+    def validate_templates(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Expected a list of template names.")
+        names = []
+        for raw in value:
+            name = str(raw or "").strip()
+            if name and name not in names:
+                names.append(name)
+        if not names:
+            raise serializers.ValidationError("Name at least one template.")
+        return names
+
+    def validate(self, attrs):
+        scope = attrs.get("scope", getattr(self.instance, "scope", None))
+        object_id = attrs.get("object_id", getattr(self.instance, "object_id", None))
+        if scope == ZabbixTemplateRule.SCOPE_TENANT:
+            # The catch-all is about everything, so an object would be a
+            # contradiction rather than extra precision.
+            attrs["object_id"] = None
+        elif not object_id:
+            raise serializers.ValidationError(
+                {"object_id": "Pick what this rule is about."}
+            )
+        return attrs
+
+    class Meta:
+        model = ZabbixTemplateRule
+        fields = [
+            "id", "connection", "scope", "scope_display", "object_id",
+            "object_name", "templates", "enabled", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "scope_display", "object_name", "created_at", "updated_at",
         ]

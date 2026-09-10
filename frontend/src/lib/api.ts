@@ -3847,7 +3847,11 @@ export interface ZabbixConnection {
   auto_sync: boolean
   sync_interval_minutes: number
   last_sync_at: string | null
-  last_sync_summary: Record<string, number>
+  last_sync_summary: Record<string, unknown>
+  /** Write the device's SNMP credentials into Zabbix as secret host macros.
+   * Its own switch: creating a host is inventory, handing over a community
+   * string is handing a credential to another system. */
+  send_snmp_credentials: boolean
   created_at: string
   updated_at: string
 }
@@ -3858,6 +3862,24 @@ export interface ZabbixDefaults {
   /** The statuses a severity can map onto, named and coloured by the tenant's
    * own catalog where it has an opinion. */
   statuses: { value: string; label: string; color: string; text_color: string }[]
+}
+
+/** A rule saying which Zabbix templates a kind of device should carry. */
+export interface ZabbixTemplateRule {
+  id: string
+  connection: string
+  scope: string
+  scope_display: string
+  object_id: string | null
+  object_name: string
+  templates: string[]
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ZabbixTemplateScopes {
+  scopes: { value: string; label: string; catalog: string }[]
 }
 
 export interface ZabbixTestResult {
@@ -3884,7 +3906,12 @@ export interface ZabbixHostLink {
 /** One proposed write, waiting for a person. */
 export interface ZabbixChange {
   id: string
-  kind: "create_host" | "update_host" | "ambiguous" | "prune_host"
+  kind:
+    | "create_host"
+    | "update_host"
+    | "link_template"
+    | "ambiguous"
+    | "prune_host"
   kind_display: string
   device: { id: string; name: string } | null
   detail: Record<string, unknown>
@@ -3894,15 +3921,27 @@ export interface ZabbixChange {
   created_at: string
 }
 
+/** What applying a batch of proposals did, and what Zabbix refused. */
+export interface ZabbixApplyResult {
+  applied: number
+  failed: number
+  errors?: { device: string; kind: string; detail: string }[]
+}
+
 export interface ZabbixSyncResult {
   scoped: number
   linked: number
   create: number
   update: number
+  /** Linked hosts missing a template a rule asks for. */
+  template: number
   ambiguous: number
   prune: number
   applied?: number
   failed?: number
+  /** What Zabbix said about the writes it refused - its refusals are usually
+   * the answer ("both templates define icmpping"), not just noise. */
+  errors?: { device: string; kind: string; detail: string }[]
 }
 
 export interface NATRule {

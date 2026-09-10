@@ -67,6 +67,13 @@ class ZabbixConnection(TimestampedModel):
     #: cannot empty a monitoring system.
     prune_after_days = models.PositiveSmallIntegerField(default=7)
 
+    #: Write the device's resolved SNMP credentials into Zabbix as host
+    #: macros. **Off by default, and deliberately its own switch**: creating a
+    #: host is inventory, handing over a community string is handing a
+    #: credential to another system, and one is not the other. Only ever set on
+    #: a host Danbyte is creating - after that the macro is Zabbix's.
+    send_snmp_credentials = models.BooleanField(default=False)
+
     #: Zabbix trigger severity (0-5, as a string key) -> Danbyte status.
     #: Editable because where an estate draws the line between "worth a colour"
     #: and "worth a page" is an operational decision. Empty = the defaults in
@@ -190,11 +197,16 @@ class ZabbixChange(TimestampedModel):
 
     CREATE = "create_host"
     UPDATE = "update_host"
+    #: Templates a rule says the host should carry and does not. Its own kind
+    #: rather than an update: it is a different API call, and "link two
+    #: templates" is a different thing to agree to than "rename a host".
+    TEMPLATE = "link_template"
     AMBIGUOUS = "ambiguous"
     PRUNE = "prune_host"
     KIND_CHOICES = [
         (CREATE, "Create host"),
         (UPDATE, "Update host"),
+        (TEMPLATE, "Link templates"),
         (AMBIGUOUS, "Needs a decision"),
         (PRUNE, "Remove host"),
     ]
@@ -228,3 +240,68 @@ class ZabbixChange(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.kind} {self.device_id or ''}".strip()
+
+
+class ZabbixTemplateRule(TimestampedModel):
+    """Which Zabbix templates a device Danbyte provisions should carry.
+
+    A host with no template is an empty host: Zabbix shows it, and it collects
+    nothing. Danbyte already knows what a device *is* - its role, its platform,
+    its model, who made it - and that is exactly the question a template
+    answers, so the mapping belongs here rather than in somebody's head.
+
+    Rules **stack**. Every rule that matches contributes its templates, so
+    "everything gets ICMP Ping", "switches also get Generic SNMP" and "Cisco
+    also gets Cisco IOS by SNMP" are three rules, not one combinatorial list.
+    Duplicates collapse.
+
+    Templates are named, not referenced by id: a Zabbix template id means
+    nothing on the next server, and the name is what the operator reads. A
+    name Zabbix does not have is reported, never invented.
+
+    Scoped by ``scope`` + ``object_id`` rather than four nullable foreign keys
+    - the same shape :class:`monitoring.models.SnmpProfileBinding` uses, and
+    for the same reason: ``zabbix`` referencing ``api`` ids by value keeps the
+    dependency pointing one way.
+    """
+
+    SCOPE_TENANT = "tenant"
+    SCOPE_ROLE = "role"
+    SCOPE_PLATFORM = "platform"
+    SCOPE_TYPE = "device_type"
+    SCOPE_MANUFACTURER = "manufacturer"
+    SCOPE_CHOICES = [
+        (SCOPE_TENANT, "Every device"),
+        (SCOPE_ROLE, "Device role"),
+        (SCOPE_PLATFORM, "Platform"),
+        (SCOPE_TYPE, "Device type"),
+        (SCOPE_MANUFACTURER, "Manufacturer"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="zabbix_template_rules"
+    )
+    connection = models.ForeignKey(
+        ZabbixConnection, on_delete=models.CASCADE, related_name="template_rules"
+    )
+    scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
+    #: The role / platform / type / manufacturer this rule is about. Null for
+    #: the tenant-wide rule, which is the only scope that has no object.
+    object_id = models.UUIDField(null=True, blank=True)
+    #: Zabbix template names, e.g. ["ICMP Ping", "Cisco IOS by SNMP"].
+    templates = models.JSONField(default=list, blank=True)
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["scope", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "scope", "object_id"],
+                name="uniq_zbx_tplrule_conn_scope_object",
+                nulls_distinct=False,
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.scope}:{self.object_id or '*'}"

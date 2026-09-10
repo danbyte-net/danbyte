@@ -32,6 +32,14 @@ from .checker import KIND
 from .client import ZabbixClient, ZabbixError
 from .matching import index_hosts, match_device
 from .models import ZabbixChange, ZabbixConnection, ZabbixHostLink
+from .templates import (
+    IFACE_SNMP,
+    profile_for,
+    rules_for,
+    snmp_interface,
+    snmp_macros,
+    templates_for,
+)
 
 log = logging.getLogger("zabbix.provision")
 
@@ -80,29 +88,44 @@ def devices_in_scope(conn: ZabbixConnection):
     )
 
 
-def host_payload(device, group_id) -> dict:
+def device_address(device) -> str:
+    if device.primary_ip_id and device.primary_ip:
+        return str(device.primary_ip.ip_address).split("/")[0]
+    return ""
+
+
+def host_payload(device, group_id, *, template_ids=(), profile=None,
+                 macros=()) -> dict:
     """What Danbyte would write for this device.
 
-    Deliberately small. Danbyte states the facts it owns - name, address,
-    group, serial - and says nothing about items, triggers or templates, which
-    are Zabbix's to own. Two systems editing one field is how both stop being
-    trusted.
+    Still deliberately small: Danbyte states the facts it owns - name, address,
+    group, serial - and says nothing about items or triggers, which are
+    Zabbix's. Templates are the one place the line moved, and on purpose: a
+    host with no template monitors nothing, and which template a device wants
+    is a question about what the device *is*, which is the one Danbyte exists
+    to answer.
     """
-    address = ""
-    if device.primary_ip_id and device.primary_ip:
-        address = str(device.primary_ip.ip_address).split("/")[0]
+    address = device_address(device)
+    interfaces = [{
+        "type": IFACE_AGENT,
+        "main": 1,
+        "useip": 1 if address else 0,
+        "ip": address,
+        "dns": "" if address else device.name,
+        "port": DEFAULT_AGENT_PORT,
+    }]
+    snmp = snmp_interface(device, profile, address)
+    if snmp is not None:
+        interfaces.append(snmp)
     payload = {
         "host": device.name,
         "groups": [{"groupid": group_id}],
-        "interfaces": [{
-            "type": IFACE_AGENT,
-            "main": 1,
-            "useip": 1 if address else 0,
-            "ip": address,
-            "dns": "" if address else device.name,
-            "port": DEFAULT_AGENT_PORT,
-        }],
+        "interfaces": interfaces,
     }
+    if template_ids:
+        payload["templates"] = [{"templateid": t} for t in template_ids]
+    if macros:
+        payload["macros"] = list(macros)
     if device.serial_number:
         # inventory_mode 0 = manual: Danbyte is stating the serial, not asking
         # Zabbix to discover it.
@@ -121,15 +144,21 @@ def _differences(device, host) -> dict:
     out = {}
     if device.name and host.get("host") != device.name:
         out["host"] = device.name
-    address = ""
-    if device.primary_ip_id and device.primary_ip:
-        address = str(device.primary_ip.ip_address).split("/")[0]
+    address = device_address(device)
     if address:
-        addresses = {
-            (i.get("ip") or "") for i in host.get("interfaces") or []
-        }
+        interfaces = host.get("interfaces") or []
+        addresses = {(i.get("ip") or "") for i in interfaces}
         if address not in addresses:
             out["_address"] = address
+            # An address lives on an interface, and `host.update` cannot touch
+            # one - without the id, applying this said "Updated" and changed
+            # nothing. The agent interface is the one Danbyte wrote.
+            agent = next(
+                (i for i in interfaces if str(i.get("type")) == str(IFACE_AGENT)),
+                None,
+            ) or (interfaces[0] if interfaces else None)
+            if agent and agent.get("interfaceid"):
+                out["_interfaceid"] = agent["interfaceid"]
     return out
 
 
@@ -143,7 +172,7 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
     """
     now = now or timezone.now()
     counts = {"scoped": 0, "linked": 0, "create": 0, "update": 0,
-              "ambiguous": 0, "prune": 0}
+              "template": 0, "ambiguous": 0, "prune": 0}
     if conn.provision_mode == ZabbixConnection.OFF:
         return counts
     if not integration_enabled(conn.tenant, "zabbix"):
@@ -166,6 +195,9 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
 
     index = index_hosts(hosts)
     index["by_id"] = {h["hostid"]: h for h in hosts}
+    # One read for the whole pass: a rule set is small and every device is
+    # matched against all of it.
+    rules = rules_for(conn)
     links = {
         link.device_id: link
         for link in ZabbixHostLink.objects.filter(connection=conn)
@@ -191,11 +223,19 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
                     counts["update"] += 1
                     _propose(conn, device, ZabbixChange.UPDATE,
                              {"hostid": link.hostid, "changes": changed}, fresh)
+                missing = _missing_templates(device, match.host, rules)
+                if missing:
+                    counts["template"] += 1
+                    _propose(conn, device, ZabbixChange.TEMPLATE,
+                             {"hostid": link.hostid, "add": missing,
+                              "add_snmp_interface": _needs_snmp_interface(
+                                  device, match.host, conn)}, fresh)
                 continue
             counts["create"] += 1
             _propose(conn, device, ZabbixChange.CREATE,
                      {"name": device.name,
-                      "site": device.site.name if device.site_id else None},
+                      "site": device.site.name if device.site_id else None,
+                      "templates": templates_for(device, rules)},
                      fresh)
 
         counts["prune"] = _plan_prune(conn, {d.id for d in devices}, now, fresh)
@@ -205,6 +245,36 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
             id__in=fresh
         ).delete()
     return counts
+
+
+def _missing_templates(device, host, rules) -> list[str]:
+    """Templates the rules ask for that this host does not already carry.
+
+    Danbyte only ever adds. A template somebody linked by hand is theirs, and
+    a rule that stops matching is not a reason to strip a host of monitoring.
+    """
+    wanted = templates_for(device, rules)
+    if not wanted:
+        return []
+    have = {t.get("host") for t in host.get("parentTemplates") or []}
+    return [name for name in wanted if name not in have]
+
+
+def _needs_snmp_interface(device, host, conn) -> bool:
+    """Whether this host would have to grow an SNMP interface first.
+
+    Zabbix refuses to link an SNMP template to a host that has nowhere to poll
+    through - and a host Danbyte created before it knew how to write SNMP
+    interfaces is exactly that. Reported at plan time so the operator agrees to
+    the interface as well as the template, and fixed at apply time so they do
+    not have to do it by hand.
+    """
+    if profile_for(device, conn.tenant) is None:
+        return False
+    return not any(
+        str(i.get("type")) == str(IFACE_SNMP)
+        for i in host.get("interfaces") or []
+    )
 
 
 def _propose(conn, device, kind, detail, fresh):
@@ -269,7 +339,15 @@ def apply_change(change: ZabbixChange) -> str:
         group = client.group_id(
             device.site.name if device and device.site_id else FALLBACK_GROUP
         )
-        hostid = client.create_host(host_payload(device, group))
+        wanted = templates_for(device, rules_for(conn))
+        found = client.template_ids(wanted)
+        missing = [n for n in wanted if n not in found]
+        profile = profile_for(device, conn.tenant)
+        macros = snmp_macros(profile) if conn.send_snmp_credentials else []
+        hostid = client.create_host(host_payload(
+            device, group, template_ids=list(found.values()),
+            profile=profile, macros=macros,
+        ))
         ZabbixHostLink.objects.update_or_create(
             connection=conn, device=device,
             defaults={"tenant": conn.tenant, "hostid": hostid,
@@ -278,13 +356,37 @@ def apply_change(change: ZabbixChange) -> str:
                       "unwanted_since": None},
         )
         result = f"Created {device.name} in Zabbix."
+        if missing:
+            # The host exists and is worth saying so; the templates Zabbix has
+            # never heard of are worth saying too, in the same breath.
+            result += f" Zabbix has no template named {', '.join(missing)}."
     elif change.kind == ZabbixChange.UPDATE:
         detail = change.detail or {}
-        payload = {k: v for k, v in (detail.get("changes") or {}).items()
-                   if not k.startswith("_")}
+        changes = detail.get("changes") or {}
+        payload = {k: v for k, v in changes.items() if not k.startswith("_")}
         if payload:
             client.update_host(detail["hostid"], payload)
+        address, interfaceid = changes.get("_address"), changes.get("_interfaceid")
+        if address and interfaceid:
+            client.update_interface(interfaceid, {"useip": 1, "ip": address})
         result = f"Updated {device.name if device else 'host'} in Zabbix."
+    elif change.kind == ZabbixChange.TEMPLATE:
+        detail = change.detail or {}
+        # The interface first: an SNMP template will not link to a host with
+        # nowhere to poll through, and doing it in two changes would leave the
+        # order to chance.
+        _ensure_snmp_ready(client, conn, device, detail["hostid"])
+        # Re-read rather than trusting the plan: a template linked by hand
+        # since, or one Zabbix does not have, both belong in the answer.
+        already = client.host_templates(detail["hostid"])
+        wanted = [n for n in (detail.get("add") or []) if n not in already]
+        found = client.template_ids(wanted)
+        client.link_templates(detail["hostid"], list(found.values()))
+        missing = [n for n in wanted if n not in found]
+        linked = ", ".join(found) or "nothing new"
+        result = f"Linked {linked} to {device.name if device else 'host'}."
+        if missing:
+            result += f" Zabbix has no template named {', '.join(missing)}."
     elif change.kind == ZabbixChange.PRUNE:
         hostid = (change.detail or {}).get("hostid")
         client.delete_hosts([hostid])
@@ -299,13 +401,46 @@ def apply_change(change: ZabbixChange) -> str:
     return result
 
 
+def _ensure_snmp_ready(client, conn, device, hostid) -> bool:
+    """Give a host what its SNMP templates need, if it does not have it.
+
+    Two things, both **only ever added**: the SNMP interface Zabbix insists on
+    before it will link an SNMP template, and - when the connection's
+    credential switch is on - the macros that interface refers to. An interface
+    somebody configured is theirs, and a macro somebody set is theirs; a host
+    that has neither cannot poll, which is the case worth closing.
+    """
+    if device is None:
+        return False
+    profile = profile_for(device, conn.tenant)
+    if profile is None:
+        return False
+    acted = False
+    existing = client.host_interfaces(hostid)
+    if not any(str(i.get("type")) == str(IFACE_SNMP) for i in existing):
+        payload = snmp_interface(device, profile, device_address(device))
+        if payload is not None:
+            client.create_interface(hostid, payload)
+            acted = True
+    if conn.send_snmp_credentials:
+        # A secret macro's value never comes back, so presence is the only
+        # honest question - and the only one worth asking, because a value
+        # somebody changed is theirs.
+        have = client.host_macro_names(hostid)
+        missing = [m for m in snmp_macros(profile) if m["macro"] not in have]
+        if missing:
+            client.add_macros(hostid, missing)
+            acted = True
+    return acted
+
+
 def apply_pending(conn: ZabbixConnection) -> dict:
     """Apply every proposal - what ``auto`` mode does after planning.
 
     One failure never stops the rest: a single host Zabbix refuses should not
     hold up forty it would have accepted.
     """
-    done = {"applied": 0, "failed": 0}
+    done = {"applied": 0, "failed": 0, "errors": []}
     for change in list(
         ZabbixChange.objects.filter(connection=conn, ignored=False)
         .exclude(kind=ZabbixChange.AMBIGUOUS)
@@ -317,6 +452,15 @@ def apply_pending(conn: ZabbixConnection) -> dict:
         except (ZabbixError, ValueError) as exc:
             done["failed"] += 1
             log.warning("zabbix %s: %s failed: %s", conn.name, change.kind, exc)
+            # What Zabbix said, not just that something failed. Its refusals
+            # are usually the operator's answer - "these two templates both
+            # define icmpping" is a rule to fix, and a bare count is not.
+            if len(done["errors"]) < 10:
+                done["errors"].append({
+                    "device": change.device.name if change.device_id else "",
+                    "kind": change.kind,
+                    "detail": str(exc)[:300],
+                })
     return done
 
 

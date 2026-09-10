@@ -391,7 +391,7 @@ class ApplyTests(_Base):
         with mock.patch.object(ZabbixClient, "create_host") as create:
             done = provision.apply_pending(self.conn)
         create.assert_not_called()
-        self.assertEqual(done, {"applied": 0, "failed": 0})
+        self.assertEqual(done, {"applied": 0, "failed": 0, "errors": []})
         self.assertTrue(ZabbixChange.objects.exists())
 
     def test_auto_mode_plans_then_applies(self):

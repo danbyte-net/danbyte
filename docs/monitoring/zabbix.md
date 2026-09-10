@@ -157,13 +157,67 @@ flag it - a missing pairing is visible and fixable, a wrong one is neither.
 
 ### What Danbyte writes
 
-Deliberately little: **name, agent interface address, host group and serial**.
-Nothing about items, triggers or templates - those are Zabbix's to own, and two
-systems editing one field is how both stop being trusted. An update only ever
-carries fields whose value actually differs.
+Deliberately little: **name, interface addresses, host group, serial** and the
+**templates your rules ask for**. Nothing about items or triggers - those are
+Zabbix's to own, and two systems editing one field is how both stop being
+trusted. An update only ever carries fields whose value actually differs.
 
 The host group is named after the device's **site**, created on demand, so
 Zabbix's own permissions line up with the structure Danbyte already holds.
+
+### Templates
+
+A Zabbix host with no template is an empty host: Zabbix shows it and it
+collects nothing. Which template a device wants is a question about **what the
+device is** - its role, its platform, its model, who made it - which is the
+question Danbyte exists to answer, so the mapping lives on the Zabbix page as a
+short list of rules.
+
+Rules **stack**. "Every device gets ICMP Ping", "switches also get Generic by
+SNMP" and "Cisco also gets Cisco IOS by SNMP" are three rules rather than one
+list per model, and a device gets the union of every rule that matches it.
+Duplicates collapse.
+
+Templates are named, not picked from a list of ids: a template id means nothing
+on the next Zabbix server, and the name is what you read in Zabbix. A name
+Zabbix does not have is **reported back**, never invented and never silently
+dropped.
+
+Danbyte only ever **adds** a template. A template somebody linked by hand is
+theirs, and a rule that stops matching is not a reason to strip a host of its
+monitoring.
+
+!!! tip "Zabbix's refusals are usually the answer"
+    Zabbix will not link two templates that define the same item key - the
+    stock SNMP templates already include ICMP Ping, so asking for both is a
+    conflict. When a write is refused, Danbyte shows you **what Zabbix said**,
+    because that sentence is the rule to fix.
+
+### SNMP interfaces and credentials
+
+Zabbix will not link an SNMP template to a host that has nowhere to poll
+through. So when a device resolves to an
+[SNMP profile](../features/monitoring.md), Danbyte gives its host an **SNMP
+interface** - on create, and on an existing host at the moment its first SNMP
+template needs one. Only ever added: an interface somebody configured is
+theirs.
+
+The interface names `{$SNMP_COMMUNITY}` rather than carrying a community
+string, which is how Zabbix's own templates are built. The secret lives in the
+macro, so the interface is readable by anyone with Zabbix access without
+leaking anything.
+
+Whether Danbyte fills that macro in is **its own switch, off by default**.
+Creating a host is inventory; handing over a community string is handing a
+credential to another system, and one is not the other. With **Send SNMP
+credentials** on, Danbyte writes the profile's community (or, for v3, the auth
+and priv passphrases) as Zabbix **secret macros** - encrypted at rest and never
+readable back through the API - and only where the macro is **absent**. A value
+that is already there was set by somebody, and a secret macro's value never
+comes back, so presence is the only honest question to ask.
+
+With the switch off you still get the interface, naming a macro you can fill in
+by hand.
 
 ### Running the pass
 
@@ -216,6 +270,6 @@ what is there.
 
 ## Not yet
 
-Templates and macros from Danbyte's roles and credentials, Zabbix proxies
-mapped to sites, maintenance-window sync and acknowledgement write-back are
-planned.
+Zabbix proxies mapped to sites, maintenance-window sync and acknowledgement
+write-back are planned. Host groups follow the device's site only - a rule for
+those, the way templates have one, is not written yet.
