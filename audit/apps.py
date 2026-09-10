@@ -102,6 +102,7 @@ AUDITED_MODELS = [
     "api.PlatformGroup",
     "api.Platform",
     "api.NATRule",
+    "zabbix.ZabbixConnection",
     "api.Service",
     "api.ServiceTemplate",
     "api.DeviceTypeService",

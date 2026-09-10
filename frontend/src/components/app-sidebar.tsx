@@ -158,7 +158,7 @@ type NavItem = {
   anyOf?: string[]
   perm?: string
   /** Also require one of these Settings → Integrations toggles to be on. */
-  integration?: Array<"dhcp" | "dns" | "virtualization" | "ai">
+  integration?: Array<"dhcp" | "dns" | "virtualization" | "ai" | "zabbix">
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
 // sub-heading). `label` is optional - a single unlabelled cluster renders as a
@@ -913,6 +913,13 @@ const sections: NavSection[] = [
             icon: Cloud,
             objectType: "virtualizationsource",
             integration: ["virtualization"],
+          },
+          {
+            title: "Zabbix",
+            url: "/zabbix",
+            icon: Activity,
+            objectType: "zabbixconnection",
+            integration: ["zabbix"],
           },
         ],
       },

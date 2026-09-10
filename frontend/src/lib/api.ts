@@ -3805,6 +3805,82 @@ export type ServiceProtocol = "tcp" | "udp"
 export type ProtocolPorts = Partial<Record<ServiceProtocol, number[]>>
 
 /** A NAT / port-forward mapping - documentation, never pushed anywhere. */
+/** One Zabbix server Danbyte reads from (#162). */
+export interface ZabbixConnection {
+  id: string
+  name: string
+  url: string
+  /** Derived - the JSON-RPC endpoint Danbyte actually posts to. */
+  api_url: string
+  /** Whether an API token is stored. The value is never returned. */
+  token_set: boolean
+  verify_tls: boolean
+  enabled: boolean
+  /** What the last Test learned. Empty until one has run. */
+  version: string
+  /** False below the supported floor, or before it has ever answered. */
+  supported: boolean
+  last_checked_at: string | null
+  last_error: string
+  /** Zabbix severity (0-5, keyed as a string) -> Danbyte status. */
+  severity_map: Record<string, string>
+  provision_mode: "off" | "review" | "auto"
+  prune_hosts: boolean
+  prune_after_days: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ZabbixDefaults {
+  severities: { value: string; label: string }[]
+  default_map: Record<string, string>
+}
+
+export interface ZabbixTestResult {
+  ok: boolean
+  detail: string
+  version: string
+  hosts: number | null
+}
+
+/** A device paired with a Zabbix host. */
+export interface ZabbixHostLink {
+  id: string
+  device: { id: string; name: string } | null
+  hostid: string
+  host_name: string
+  /** link | address | serial | name | created */
+  matched_by: string
+  /** Danbyte made this host, so Danbyte may remove it. */
+  created_here: boolean
+  last_seen_at: string | null
+  unwanted_since: string | null
+}
+
+/** One proposed write, waiting for a person. */
+export interface ZabbixChange {
+  id: string
+  kind: "create_host" | "update_host" | "ambiguous" | "prune_host"
+  kind_display: string
+  device: { id: string; name: string } | null
+  detail: Record<string, unknown>
+  ignored: boolean
+  /** False for "needs a decision" - it has to be resolved by hand. */
+  applicable: boolean
+  created_at: string
+}
+
+export interface ZabbixSyncResult {
+  scoped: number
+  linked: number
+  create: number
+  update: number
+  ambiguous: number
+  prune: number
+  applied?: number
+  failed?: number
+}
+
 export interface NATRule {
   id: string
   numid: number | null

@@ -92,7 +92,7 @@ const CARDS: IntegrationCard[] = [
     info: "Reads over the Zabbix JSON-RPC API with a named API token. Danbyte does not run the checks - it reads what Zabbix already knows.",
     description:
       "Let an existing Zabbix answer for a site's monitoring status, alongside or instead of Danbyte's own engine.",
-    configure: { to: "/settings/monitoring", label: "Engines" },
+    configure: { to: "/zabbix", label: "Connection" },
   },
   {
     key: "ai_access_enabled",

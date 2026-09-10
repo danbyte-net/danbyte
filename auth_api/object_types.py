@@ -97,6 +97,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FHRPGroupAssignment", "FHRP group assignments", "IPAM"),
     ("api.IPRole", "IP roles", "IPAM"),
     ("api.NATRule", "NAT rules", "IPAM"),
+    ("zabbix.ZabbixConnection", "Zabbix connections", "Monitoring"),
+    ("zabbix.ZabbixHostLink", "Zabbix host links", "Monitoring"),
+    ("zabbix.ZabbixChange", "Zabbix pending changes", "Monitoring"),
     ("api.Service", "Services", "IPAM"),
     ("api.ServiceTemplate", "Service templates", "IPAM"),
     # ─── DCIM ───────────────────────────────────────────────────────

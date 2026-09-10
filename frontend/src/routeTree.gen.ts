@@ -86,6 +86,7 @@ import { Route as AggregatesRouteImport } from './routes/aggregates'
 import { Route as AgentAccessRouteImport } from './routes/agent-access'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ZonesIndexRouteImport } from './routes/zones.index'
+import { Route as ZabbixIndexRouteImport } from './routes/zabbix.index'
 import { Route as WirelessLansIndexRouteImport } from './routes/wireless-lans.index'
 import { Route as WirelessLanGroupsIndexRouteImport } from './routes/wireless-lan-groups.index'
 import { Route as WindowsServersIndexRouteImport } from './routes/windows-servers.index'
@@ -810,6 +811,11 @@ const ZonesIndexRoute = ZonesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ZonesRoute,
+} as any)
+const ZabbixIndexRoute = ZabbixIndexRouteImport.update({
+  id: '/zabbix/',
+  path: '/zabbix/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WirelessLansIndexRoute = WirelessLansIndexRouteImport.update({
   id: '/',
@@ -2855,6 +2861,7 @@ export interface FileRoutesByFullPath {
   '/windows-servers/': typeof WindowsServersIndexRoute
   '/wireless-lan-groups/': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans/': typeof WirelessLansIndexRoute
+  '/zabbix/': typeof ZabbixIndexRoute
   '/zones/': typeof ZonesIndexRoute
   '/aggregates/$id/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id/edit': typeof AlertRulesIdEditRoute
@@ -3217,6 +3224,7 @@ export interface FileRoutesByTo {
   '/windows-servers': typeof WindowsServersIndexRoute
   '/wireless-lan-groups': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans': typeof WirelessLansIndexRoute
+  '/zabbix': typeof ZabbixIndexRoute
   '/zones': typeof ZonesIndexRoute
   '/aggregates/$id/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id/edit': typeof AlertRulesIdEditRoute
@@ -3636,6 +3644,7 @@ export interface FileRoutesById {
   '/windows-servers/': typeof WindowsServersIndexRoute
   '/wireless-lan-groups/': typeof WirelessLanGroupsIndexRoute
   '/wireless-lans/': typeof WirelessLansIndexRoute
+  '/zabbix/': typeof ZabbixIndexRoute
   '/zones/': typeof ZonesIndexRoute
   '/aggregates/$id_/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id_/edit': typeof AlertRulesIdEditRoute
@@ -4056,6 +4065,7 @@ export interface FileRouteTypes {
     | '/windows-servers/'
     | '/wireless-lan-groups/'
     | '/wireless-lans/'
+    | '/zabbix/'
     | '/zones/'
     | '/aggregates/$id/edit'
     | '/alert-rules/$id/edit'
@@ -4418,6 +4428,7 @@ export interface FileRouteTypes {
     | '/windows-servers'
     | '/wireless-lan-groups'
     | '/wireless-lans'
+    | '/zabbix'
     | '/zones'
     | '/aggregates/$id/edit'
     | '/alert-rules/$id/edit'
@@ -4836,6 +4847,7 @@ export interface FileRouteTypes {
     | '/windows-servers/'
     | '/wireless-lan-groups/'
     | '/wireless-lans/'
+    | '/zabbix/'
     | '/zones/'
     | '/aggregates/$id_/edit'
     | '/alert-rules/$id_/edit'
@@ -5066,6 +5078,7 @@ export interface RootRouteChildren {
   VirtualizationSourcesIndexRoute: typeof VirtualizationSourcesIndexRoute
   WatchedEndpointsIndexRoute: typeof WatchedEndpointsIndexRoute
   WindowsServersIndexRoute: typeof WindowsServersIndexRoute
+  ZabbixIndexRoute: typeof ZabbixIndexRoute
   AlertRulesIdEditRoute: typeof AlertRulesIdEditRoute
   ChannelsIdEditRoute: typeof ChannelsIdEditRoute
   ClusterGroupsIdEditRoute: typeof ClusterGroupsIdEditRoute
@@ -5628,6 +5641,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/zones/'
       preLoaderRoute: typeof ZonesIndexRouteImport
       parentRoute: typeof ZonesRoute
+    }
+    '/zabbix/': {
+      id: '/zabbix/'
+      path: '/zabbix'
+      fullPath: '/zabbix/'
+      preLoaderRoute: typeof ZabbixIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/wireless-lans/': {
       id: '/wireless-lans/'
@@ -9173,6 +9193,7 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualizationSourcesIndexRoute: VirtualizationSourcesIndexRoute,
   WatchedEndpointsIndexRoute: WatchedEndpointsIndexRoute,
   WindowsServersIndexRoute: WindowsServersIndexRoute,
+  ZabbixIndexRoute: ZabbixIndexRoute,
   AlertRulesIdEditRoute: AlertRulesIdEditRoute,
   ChannelsIdEditRoute: ChannelsIdEditRoute,
   ClusterGroupsIdEditRoute: ClusterGroupsIdEditRoute,

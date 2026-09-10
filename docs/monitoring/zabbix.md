@@ -18,13 +18,17 @@ surface work over it unchanged.
 ## Turning it on
 
 1. **Settings → Integrations → Zabbix monitoring**. Off by default, per tenant,
-   like every other integration.
+   like every other integration. Switching it on reveals the **Zabbix** page
+   under *Integrations* in the sidebar; switching it off hides the page and
+   404s the API, so a disabled integration is invisible rather than merely
+   inert.
 2. Create an **API token** in Zabbix (*Users → API tokens*) and give it an
    expiry. A username and password is not enough: a token can be revoked on its
    own and is what Zabbix's own guidance points at.
-3. Add the connection - frontend URL, token, TLS verification - and press
-   **Test**. It reports the Zabbix version and how many hosts the token can
-   see, which is the fastest way to notice a token scoped to nothing.
+3. On the **Zabbix** page, add the connection - frontend URL, token, TLS
+   verification - and press **Test**. It reports the Zabbix version and how
+   many hosts the token can see, which is the fastest way to notice a token
+   scoped to nothing.
 4. Create a **monitoring engine** of kind *Zabbix* and bind it to a site or
    location, exactly as you would an Outpost.
 
@@ -152,6 +156,18 @@ carries fields whose value actually differs.
 
 The host group is named after the device's **site**, created on demand, so
 Zabbix's own permissions line up with the structure Danbyte already holds.
+
+### Working the queue
+
+The **Zabbix** page shows what a sync pass proposed. Each row says what would
+be written and why; **Apply** does that one write, **Dismiss** keeps it from
+being raised again. *Needs a decision* rows carry no Apply button at all -
+they are resolved by fixing the ambiguity in Zabbix or in Danbyte, and
+**Apply all** skips them rather than guessing.
+
+A proposal that stops being true is dropped on the next pass: a change nobody
+has looked at, for something that has since been done by hand, is worse than
+no proposal.
 
 ### Removing hosts
 
