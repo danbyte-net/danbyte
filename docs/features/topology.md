@@ -174,6 +174,36 @@ with a [saved view](#saved-views), so a curated diagram ("core row",
 "customer X hand-off") is one select away. Right-click also offers *Open
 device* and *Focus here* in any mode.
 
+### Removing a card from the map
+
+*Remove from view* takes one card off **any** map, not just a custom one -
+the last mile of a diagram you are shaping for someone else to read, where a
+filter says what kind of thing belongs and this says "not that one". Its
+cables go with it: a cable to a card that is not drawn has nowhere to land.
+A **"n removed · Show all"** chip in the corner puts them back. The list
+saves with the view, and the default map remembers it per browser.
+
+(In a custom map, *Remove from map* is the different thing next to it: it
+takes the device out of the hand-picked set the map is built from.)
+
+### Zones - boxes to group things by eye
+
+Right-click empty canvas → **Add zone** drops a labelled box behind the map.
+Double-click its label to rename it, drag it to move it, drag a corner to
+resize it, and right-click it to recolour or delete it. Use them to say what
+a cluster of cards *is*: "WAN circuits", "comms closet rack", "customer
+side".
+
+A zone is an **annotation, not a container** - it owns nothing inside it, so
+dragging one moves the box and leaves every card exactly where it was. That
+is what makes it safe to draw one across a map somebody else arranged.
+Zones sit behind the cables as well as the cards, so a cable crossing a zone
+still reads as a cable.
+
+Like the arrangement, zones are kept **per view style**: a box that frames
+four Flat chips would frame half a card in Wiring. They save with the view,
+and the default map keeps them per browser.
+
 ## Filters, focus, search
 
 Filter by **site / role / status / tag** - the filter fields are searchable

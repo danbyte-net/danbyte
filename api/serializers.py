@@ -3294,6 +3294,26 @@ class TopologyViewSerializer(NumIdModelSerializer):
                 raise serializers.ValidationError(
                     f"positions_by_style.{style} must be an object (≤5000 nodes)"
                 )
+        # Labelled backdrop boxes, per style like the arrangements. Bounded so
+        # a view can never become a payload nobody can load.
+        zones = v.get("zones_by_style", {})
+        if not isinstance(zones, dict):
+            raise serializers.ValidationError("zones_by_style must be an object")
+        for style, entry in zones.items():
+            if style not in self.POSITION_STYLES:
+                raise serializers.ValidationError(
+                    f"zones_by_style: unknown view style '{style}'"
+                )
+            if not isinstance(entry, list) or len(entry) > 200:
+                raise serializers.ValidationError(
+                    f"zones_by_style.{style} must be a list (≤200 zones)"
+                )
+        # Nodes the author took off this map by hand.
+        hidden = v.get("hidden", [])
+        if not isinstance(hidden, list) or len(hidden) > 5000:
+            raise serializers.ValidationError("hidden must be a list (≤5000 ids)")
+        if any(not isinstance(x, str) for x in hidden):
+            raise serializers.ValidationError("hidden must be a list of node ids")
         return v
 
     class Meta:

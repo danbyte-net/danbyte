@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Camera,
   Crosshair,
+  EyeOff,
   Filter,
   LayoutGrid,
   Link2 as LinkIcon,
@@ -87,7 +88,13 @@ import {
 } from "@/components/topology/levels-param"
 import {
   migratePositions,
+  prunedHidden,
+  viewHidden,
   viewPositions,
+  viewZones,
+  ZONE_COLORS,
+  ZONE_H,
+  ZONE_W,
   type PosByStyle,
   type PosMap,
 } from "@/components/topology/view-positions"
@@ -280,6 +287,46 @@ function clearStoredPositions() {
   }
 }
 
+// Hidden cards and zones ride with the arrangement: they are part of how the
+// default map is shaped, and a reload that forgot them would put back cards
+// the user had just taken out.
+// Derived from the reader rather than imported: this import block already
+// carries the repo's inline-type-specifier debt and does not need two more.
+type ZonesByStyle = ReturnType<typeof viewZones>
+type Zone = NonNullable<ZonesByStyle["stencil"]>[number]
+
+const HIDDEN_KEY = "danbyte-topology-hidden"
+const ZONES_KEY = "danbyte-topology-zones"
+
+function readStoredHidden(): string[] {
+  try {
+    return viewHidden(JSON.parse(localStorage.getItem(HIDDEN_KEY)!))
+  } catch {
+    return []
+  }
+}
+function writeStoredHidden(ids: string[]) {
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(ids))
+  } catch {
+    /* quota / private mode - non-fatal */
+  }
+}
+function readStoredZones(): ZonesByStyle {
+  try {
+    return viewZones(JSON.parse(localStorage.getItem(ZONES_KEY)!))
+  } catch {
+    return {}
+  }
+}
+function writeStoredZones(z: ZonesByStyle) {
+  try {
+    localStorage.setItem(ZONES_KEY, JSON.stringify(z))
+  } catch {
+    /* non-fatal */
+  }
+}
+
 // Display settings (Levels order/bonds/distances, direction, colour mode,
 // edge routing) for the DEFAULT topology - like the dragged positions above,
 // they must survive a reload. Saved views persist theirs via Save.
@@ -465,8 +512,14 @@ function TopologyPage() {
   const [menu, setMenu] = useState<{
     x: number
     y: number
+    /** Canvas coordinates - a zone is created where the click landed, not
+     * where the screen happens to be. */
+    fx?: number
+    fy?: number
     node?: TopoNode["data"]
+    nodeId?: string
     group?: TopoGroupData
+    zoneId?: string
   } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [search, setSearch] = useUrlText("q", "", { replace: true })
@@ -504,6 +557,47 @@ function TopologyPage() {
     setPosByStyle({})
     if (viewId === "none") clearStoredPositions()
   }
+  // Cards taken off this map by hand ("Remove from view"). Not a filter: a
+  // filter says what kind of thing belongs, this says "not that one" - the
+  // last mile of a diagram you are shaping for someone to read.
+  const [hidden, setHidden] = useState<string[]>(() =>
+    urlSearch.view ? [] : readStoredHidden()
+  )
+  const setHiddenNodes = (next: string[]) => {
+    setHidden(next)
+    if (viewId === "none") writeStoredHidden(next)
+  }
+  // Labelled backdrop boxes, per view style - a box framing Flat chips is
+  // the wrong size around Stencil cards.
+  const [zonesByStyle, setZonesByStyle] = useState<ZonesByStyle>(() =>
+    urlSearch.view ? {} : readStoredZones()
+  )
+  const zones = logical ? undefined : zonesByStyle[viewStyle]
+  const setZones = (next: Zone[]) => {
+    if (logical) return
+    const all = { ...zonesByStyle, [viewStyle]: next }
+    setZonesByStyle(all)
+    if (viewId === "none") writeStoredZones(all)
+  }
+  const addZone = (x: number, y: number) =>
+    setZones([
+      ...(zones ?? []),
+      {
+        id: `z${Date.now().toString(36)}`,
+        label: "Zone",
+        // Dropped centred on the click, which is where the eye is.
+        x: Math.round(x - ZONE_W / 2),
+        y: Math.round(y - ZONE_H / 2),
+        w: ZONE_W,
+        h: ZONE_H,
+        color: ZONE_COLORS[(zones?.length ?? 0) % ZONE_COLORS.length],
+      },
+    ])
+  const removeZone = (id: string) =>
+    setZones((zones ?? []).filter((z) => z.id !== id))
+  const recolorZone = (id: string, color: string) =>
+    setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
+
   const [layoutTick, setLayoutTick] = useState(0)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [ghost, setGhost] = useState<GhostEdgeData | null>(null)
@@ -718,14 +812,30 @@ function TopologyPage() {
       ),
   })
 
+  /** How many of the hidden ids are actually on this map - a view saved
+   * against one filter can carry ids the current query never returns, and
+   * offering to restore those would be a lie. */
+  const hiddenHere = useMemo(
+    () =>
+      q.data ? prunedHidden(hidden, new Set(q.data.nodes.map((n) => n.id))) : [],
+    [q.data, hidden]
+  )
+
   const graph = useMemo<TopologyGraph | undefined>(() => {
     if (!q.data) return undefined
-    const present = new Set(q.data.nodes.map((n) => n.id))
+    const gone = new Set(hiddenHere)
+    // A cable to a card that is not drawn has nowhere to land, so it goes
+    // with the card - the same rule the site map follows for a hidden site.
+    const nodes = q.data.nodes.filter((n) => !gone.has(n.id))
+    const present = new Set(nodes.map((n) => n.id))
+    const edges = q.data.edges.filter(
+      (e) => present.has(e.source) && present.has(e.target)
+    )
     const ghostEdges = (ghosts.data?.edges ?? []).filter(
       (e) => present.has(e.source) && present.has(e.target)
     )
-    return { ...q.data, edges: [...q.data.edges, ...ghostEdges] }
-  }, [q.data, ghosts.data])
+    return { ...q.data, nodes, edges: [...edges, ...ghostEdges] }
+  }, [q.data, ghosts.data, hiddenHere])
 
   // Media types on the map - the legend swatches them in type color mode.
   const presentTypes = useMemo(() => {
@@ -782,6 +892,8 @@ function TopologyPage() {
     if (restoredView.current === key) return
     restoredView.current = key
     setPosByStyle(viewPositions(appliedView, sanitizeViewStyle))
+    setZonesByStyle(viewZones(appliedView.state.zones_by_style))
+    setHidden(viewHidden(appliedView.state.hidden))
     setLayoutTick((t) => t + 1)
   }, [appliedView])
 
@@ -793,6 +905,8 @@ function TopologyPage() {
     })
     restoredView.current = null
     setPosByStyle(readStoredPositions(viewStyle as NodeStyle))
+    setZonesByStyle(readStoredZones())
+    setHidden(readStoredHidden())
     setLayoutTick((t) => t + 1)
   }
 
@@ -828,6 +942,8 @@ function TopologyPage() {
       positions_by_style: byStyle,
       // Kept in step for anything still reading the single-map field.
       positions: byStyle[viewStyle as NodeStyle] ?? {},
+      zones_by_style: zonesByStyle,
+      hidden,
     }
   }
 
@@ -1372,13 +1488,22 @@ function TopologyPage() {
               onOpenDevice={(id) =>
                 nav({ to: "/devices/$id", params: { id } })
               }
+              zones={zones}
+              onZonesChange={setZones}
               onNodeContext={(node, x, y) => {
-                if (node.type === "sitegroup")
+                if (node.type === "zone")
+                  setMenu({ x, y, zoneId: node.id.slice(5) })
+                else if (node.type === "sitegroup")
                   setMenu({ x, y, group: node.data as unknown as TopoGroupData })
                 else if (node.type === "device" || node.type === "flat")
-                  setMenu({ x, y, node: node.data as TopoNode["data"] })
+                  setMenu({
+                    x,
+                    y,
+                    node: node.data as TopoNode["data"],
+                    nodeId: node.id,
+                  })
               }}
-              onPaneContext={(x, y) => setMenu({ x, y })}
+              onPaneContext={(x, y, fx, fy) => setMenu({ x, y, fx, fy })}
               onCanvasClick={clearSel}
               onDragEnd={() => {
                 const p = canvas.current?.positions()
@@ -1390,6 +1515,23 @@ function TopologyPage() {
               }}
             />
           </Suspense>
+        )}
+
+        {hiddenHere.length > 0 && (
+          <div className="absolute right-3 bottom-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
+            <EyeOff className="size-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">
+              <span className="num">{hiddenHere.length}</span> removed
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[11px]"
+              onClick={() => setHiddenNodes([])}
+            >
+              Show all
+            </Button>
+          </div>
         )}
 
         {graph && viewStyle === "hierarchy" && count > 60 && !hintDismissed && (
@@ -1563,6 +1705,45 @@ function TopologyPage() {
                     Start custom map here
                   </MenuItem>
                 )}
+                {menu.nodeId && (
+                  <MenuItem
+                    onClick={() => {
+                      const id = menu.nodeId!
+                      setMenu(null)
+                      setHiddenNodes([...hidden, id])
+                    }}
+                  >
+                    Remove from view
+                  </MenuItem>
+                )}
+              </>
+            )}
+            {menu.zoneId && (
+              <>
+                <div className="flex items-center gap-1 px-2 py-1.5">
+                  {ZONE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        recolorZone(menu.zoneId!, c)
+                        setMenu(null)
+                      }}
+                      aria-label={`Colour this zone ${c}`}
+                      className="size-4 rounded-sm border border-border"
+                      style={{ background: c }}
+                    />
+                  ))}
+                </div>
+                <MenuItem
+                  onClick={() => {
+                    const id = menu.zoneId!
+                    setMenu(null)
+                    removeZone(id)
+                  }}
+                >
+                  Delete zone
+                </MenuItem>
               </>
             )}
             {menu.group && (
@@ -1575,7 +1756,7 @@ function TopologyPage() {
                 Open group
               </MenuItem>
             )}
-            {!menu.node && !menu.group && (
+            {!menu.node && !menu.group && !menu.zoneId && (
               <>
                 <MenuItem
                   onClick={() => {
@@ -1585,6 +1766,17 @@ function TopologyPage() {
                 >
                   Add device…
                 </MenuItem>
+                {!logical && (
+                  <MenuItem
+                    onClick={() => {
+                      const { fx, fy } = menu
+                      setMenu(null)
+                      addZone(fx ?? 0, fy ?? 0)
+                    }}
+                  >
+                    Add zone
+                  </MenuItem>
+                )}
                 {builder && (
                   <MenuItem
                     onClick={() => {

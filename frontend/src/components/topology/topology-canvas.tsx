@@ -50,6 +50,9 @@ import {
 import { resolveLevels } from "./level-organiser"
 import { roleTiers } from "./levels-param"
 import { RoutedEdge } from "./routed-edge"
+import { ZoneNode } from "./zone-node"
+import { ZONE_H, ZONE_W } from "./view-positions"
+import type { Zone } from "./view-positions"
 import { groupLagEdges, lagBundleLabel, sharedLag } from "./lag-bundles"
 
 // Defined once, outside the component (re-creating nodeTypes each render
@@ -64,8 +67,58 @@ const nodeTypes = {
   interface: PortNode,
   front_port: PortNode,
   rear_port: PortNode,
+  zone: ZoneNode,
 }
 const edgeTypes = { routed: RoutedEdge }
+
+/** Zones paint behind the cards AND behind the cables, so a cable crossing a
+ * zone still reads as a cable. */
+const ZONE_Z = -1
+
+function zoneToNode(
+  z: Zone,
+  onRename: (id: string, label: string) => void,
+  onResizeEnd: () => void
+): Node {
+  return {
+    id: `zone:${z.id}`,
+    type: "zone",
+    position: { x: z.x, y: z.y },
+    width: z.w,
+    height: z.h,
+    zIndex: ZONE_Z,
+    // Never a drag target for a cable, and never dimmed by search or
+    // spotlight - it is the backdrop, not part of the graph.
+    selectable: true,
+    draggable: true,
+    data: {
+      label: z.label,
+      color: z.color,
+      onRename: (label: string) => onRename(z.id, label),
+      onResizeEnd,
+    },
+  }
+}
+
+/** Zone nodes as the canvas currently holds them, back in save shape. */
+function nodesToZones(nodes: Node[], previous: Zone[]): Zone[] {
+  const was = new Map(previous.map((z) => [z.id, z]))
+  const out: Zone[] = []
+  for (const n of nodes) {
+    if (n.type !== "zone") continue
+    const id = n.id.slice(5)
+    const prev = was.get(id)
+    if (!prev) continue
+    out.push({
+      ...prev,
+      x: Math.round(n.position.x),
+      y: Math.round(n.position.y),
+      w: Math.round(n.width ?? n.measured?.width ?? ZONE_W),
+      h: Math.round(n.height ?? n.measured?.height ?? ZONE_H),
+    })
+  }
+  return out
+}
 
 export type EdgeColorMode = "cable" | "type" | "status" | "speed" | "none"
 
@@ -970,6 +1023,10 @@ export interface TopologyCanvasProps {
   bundleLags?: boolean
   /** Saved-view node positions; nodes not listed get the auto layout. */
   positions?: Record<string, [number, number]>
+  /** Labelled backdrop boxes drawn behind the map. */
+  zones?: Zone[]
+  /** A zone was moved, resized or renamed - the parent persists the list. */
+  onZonesChange?: (zones: Zone[]) => void
   /** Bump to discard drags/saved positions and re-run the auto layout. */
   layoutTick?: number
   /** Identity of the underlying query (filters/focus/grouping). When it
@@ -1001,7 +1058,9 @@ export interface TopologyCanvasProps {
    * on type (device/flat vs sitegroup). */
   onNodeContext?: (node: Node, x: number, y: number) => void
   /** Right-click on empty canvas. */
-  onPaneContext?: (x: number, y: number) => void
+  /** Right-click on empty canvas. `fx`/`fy` are the same point in canvas
+   * coordinates, so a zone can be created where the click landed. */
+  onPaneContext?: (x: number, y: number, fx: number, fy: number) => void
   onGhostEdge?: (ghost: GhostEdgeData) => void
   onCanvasClick?: () => void
   /** Fired after a node drag settles - the parent can persist positions(). */
@@ -1021,6 +1080,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     bundleLags = true,
     nodeStyle = "stencil",
     positions,
+    zones,
+    onZonesChange,
     layoutTick = 0,
     fitKey = "",
     matchedIds,
@@ -1094,6 +1155,29 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       originId,
     ]
   )
+
+  // ── zones ──────────────────────────────────────────────────────────
+  // Held outside `built`, because a zone drag must not rebuild the graph -
+  // and a graph rebuild must not drop the zones.
+  const zonesRef = useRef<Zone[]>(zones ?? [])
+  zonesRef.current = zones ?? []
+  const renameZone = useCallback(
+    (id: string, label: string) =>
+      onZonesChange?.(
+        zonesRef.current.map((z) => (z.id === id ? { ...z, label } : z))
+      ),
+    [onZonesChange]
+  )
+  const zoneNodes = useRef<Node[]>([])
+  // A ref, because the zone nodes are built before emitZones is declared and
+  // must not be rebuilt every time its identity changes.
+  const emitZonesRef = useRef<() => void>(() => undefined)
+  // Signature, not identity: the parent hands back a new array after every
+  // drag, and re-seeding the nodes from it on each one would fight the drag
+  // that produced it.
+  const zoneSig = (zones ?? [])
+    .map((z) => `${z.id}:${z.label}:${z.color}:${z.x}:${z.y}:${z.w}:${z.h}`)
+    .join("|")
 
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges)
@@ -1216,7 +1300,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const kept = prev.get(n.id)
       return kept && keepingDrags ? { ...n, position: kept } : n
     })
-    setNodes(nextNodes)
+    // Zones are not part of the built graph, so a rebuild would drop them.
+    setNodes([...zoneNodes.current, ...nextNodes])
     // When we kept dragged positions, `built.edges` were routed for the
     // layout's positions, not the kept ones - re-route from the actual
     // rendered positions so cables always match their cards.
@@ -1262,6 +1347,21 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     prevNodes.current = nodes
   }, [nodes])
 
+  // Zone nodes live alongside the built graph: replaced whole whenever the
+  // parent's list changes (added, deleted, renamed, or restored with a saved
+  // view), never on the graph rebuilds that would otherwise drop them.
+  useEffect(() => {
+    // Read through the ref: `zones` is a fresh array after every drag, and
+    // zoneSig is what actually decides whether anything changed.
+    zoneNodes.current = zonesRef.current.map((z) =>
+      zoneToNode(z, renameZone, emitZonesRef.current)
+    )
+    setNodes((cur) => [
+      ...zoneNodes.current,
+      ...cur.filter((n) => n.type !== "zone"),
+    ])
+  }, [zoneSig, renameZone, setNodes])
+
   useImperativeHandle(
     ref,
     () => ({
@@ -1269,6 +1369,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         Object.fromEntries(
           flow
             .getNodes()
+            // Zones carry their own geometry - a zone id in the arrangement
+            // would be a node the layout keeps trying to place.
+            .filter((n) => n.type !== "zone")
             .map((n) => [
               n.id,
               [n.position.x, n.position.y] as [number, number],
@@ -1425,7 +1528,24 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // Dragging a card changes which side of it faces each neighbour - re-snap
   // the edges, and RE-ROUTE the cables from the new positions (so moving a
   // node re-bends its cables around cards instead of leaving them straight).
+  /** Zone geometry back to the parent. Called on drag stop and on resize
+   * end, the only two things that move a box. */
+  const emitZones = useCallback(() => {
+    if (!onZonesChange) return
+    const next = nodesToZones(flow.getNodes(), zonesRef.current)
+    const same =
+      next.length === zonesRef.current.length &&
+      next.every((z, i) => {
+        const p = zonesRef.current[i]
+        return z.id === p.id && z.x === p.x && z.y === p.y && z.w === p.w && z.h === p.h
+      })
+    if (!same) onZonesChange(next)
+  }, [flow, onZonesChange])
+
+  emitZonesRef.current = emitZones
+
   const onNodeDragStop = useCallback(() => {
+    emitZones()
     if (nodeStyle === "hierarchy") {
       // Both ends of every moved cable re-align: chips re-stack toward
       // their peers' current positions, handles follow, blocked cables
@@ -1535,7 +1655,16 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       })
     })
     onDragEnd?.()
-  }, [flow, setEdges, setNodes, direction, routingActive, onDragEnd, nodeStyle])
+  }, [
+    flow,
+    setEdges,
+    setNodes,
+    direction,
+    routingActive,
+    onDragEnd,
+    nodeStyle,
+    emitZones,
+  ])
 
   if (!mounted)
     return <div className="h-full w-full animate-pulse bg-muted/30" />
@@ -1568,7 +1697,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         }}
         onPaneContextMenu={(ev) => {
           ev.preventDefault()
-          onPaneContext?.(ev.clientX, ev.clientY)
+          const p = flow.screenToFlowPosition({
+            x: ev.clientX,
+            y: ev.clientY,
+          })
+          onPaneContext?.(ev.clientX, ev.clientY, p.x, p.y)
         }}
         onNodeDragStop={onNodeDragStop}
         onEdgeClick={onEdgeClick}

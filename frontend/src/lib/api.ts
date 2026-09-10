@@ -2802,6 +2802,10 @@ export interface TopologyViewState {
   /** The style-on-save arrangement. Predates `positions_by_style`; still
    * written so older readers keep working. */
   positions?: Record<string, [number, number]>
+  /** Labelled backdrop boxes, per view style - same reason as positions. */
+  zones_by_style?: Record<string, unknown>
+  /** Node ids taken off the map by hand ("Remove from view"). */
+  hidden?: unknown
 }
 
 export interface TopologyViewSaved {
