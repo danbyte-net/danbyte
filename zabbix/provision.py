@@ -95,6 +95,45 @@ def device_address(device) -> str:
     return ""
 
 
+def scope_report(conn) -> list[dict]:
+    """Every device this connection should be keeping a host for, and where it
+    has got to.
+
+    Scope is derived rather than declared - a ``zabbix`` check on one of this
+    connection's engines *is* the statement "I want Zabbix watching this" - and
+    derived state that nothing renders is state nobody can trust. Two devices
+    silently left scope during a reconciliation pass and there was no page that
+    would have shown it.
+    """
+    links = {
+        link.device_id: link
+        for link in ZabbixHostLink.objects.filter(connection=conn)
+    }
+    pending = {
+        (c.device_id, c.kind) for c in
+        ZabbixChange.objects.filter(connection=conn, ignored=False)
+    }
+    rules = rules_for(conn)
+    out = []
+    for device in devices_in_scope(conn):
+        link = links.get(device.id)
+        out.append({
+            "device": {"id": str(device.id), "name": device.name},
+            "site": device.site.name if device.site_id else "",
+            "address": device_address(device),
+            "hostid": link.hostid if link else "",
+            "host_name": link.host_name if link else "",
+            "matched_by": link.matched_by if link else "",
+            "created_here": bool(link and link.created_here),
+            "templates": templates_for(device, rules),
+            "groups": group_names(device, rules),
+            "pending": sorted(
+                kind for (did, kind) in pending if did == device.id
+            ),
+        })
+    return sorted(out, key=lambda r: r["device"]["name"].lower())
+
+
 def host_payload(device, group_ids, *, template_ids=(), profile=None,
                  macros=()) -> dict:
     """What Danbyte would write for this device.

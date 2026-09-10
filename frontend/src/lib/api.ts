@@ -3887,6 +3887,24 @@ export interface ZabbixProvisionRule {
 /** Every template on the connected Zabbix server, for the rule picker.
  * `error` is set instead of failing the request when the server is
  * unreachable - a rule stays editable either way. */
+/** Which devices a connection should keep hosts for, and where each has got
+ * to. Scope is derived from the checks, so this is the only place it is
+ * visible. */
+export interface ZabbixScope {
+  devices: {
+    device: { id: string; name: string }
+    site: string
+    address: string
+    hostid: string
+    host_name: string
+    matched_by: string
+    created_here: boolean
+    templates: string[]
+    groups: string[]
+    pending: string[]
+  }[]
+}
+
 export interface ZabbixServerTemplates {
   templates: { value: string; label: string }[]
   error: string

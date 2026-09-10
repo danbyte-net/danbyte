@@ -612,3 +612,43 @@ class GroupRuleTests(_Base):
             create.call_args[0][0]["groups"],
             [{"groupid": "7"}, {"groupid": "8"}],
         )
+
+
+class ScopeReportTests(_Base):
+    """Scope is derived from the checks, so this is the only place it shows."""
+
+    def test_a_device_in_scope_is_listed_with_what_it_would_get(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, ["ICMP Ping"],
+                  groups=["Estate"])
+        device = self.make_device()
+        self.scope(device)
+        rows = provision.scope_report(self.conn)
+        self.assertEqual([r["device"]["name"] for r in rows], ["sw1"])
+        self.assertEqual(rows[0]["templates"], ["ICMP Ping"])
+        self.assertEqual(rows[0]["groups"], ["Estate"])
+        self.assertEqual(rows[0]["address"], "10.7.0.10")
+        self.assertEqual(rows[0]["hostid"], "")
+
+    def test_a_device_with_no_zabbix_check_is_not_listed(self):
+        self.make_device()
+        self.assertEqual(provision.scope_report(self.conn), [])
+
+    def test_a_pending_proposal_is_named(self):
+        device = self.make_device()
+        self.scope(device)
+        self.plan([])
+        rows = provision.scope_report(self.conn)
+        self.assertEqual(rows[0]["pending"], ["create_host"])
+
+    def test_a_linked_device_carries_its_host(self):
+        device = self.make_device()
+        self.scope(device)
+        ZabbixHostLink.objects.create(
+            tenant=self.tenant, connection=self.conn, device=device,
+            hostid="42", host_name="sw1", matched_by="address",
+        )
+        rows = provision.scope_report(self.conn)
+        self.assertEqual(rows[0]["hostid"], "42")
+        self.assertEqual(rows[0]["matched_by"], "address")

@@ -66,6 +66,14 @@ class ZabbixConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         result = test_connection(self.get_object())
         return Response(result, status=200 if result["ok"] else 502)
 
+    @action(detail=True, methods=["get"])
+    def scope(self, request, pk=None):
+        """Which devices this connection should keep hosts for, and where each
+        has got to - linked, waiting on a proposal, or neither."""
+        from .provision import scope_report
+
+        return Response({"devices": scope_report(self.get_object())})
+
     @action(detail=True, methods=["post"])
     def sync(self, request, pk=None):
         """Work out what provisioning would do now - and in auto mode, do it.

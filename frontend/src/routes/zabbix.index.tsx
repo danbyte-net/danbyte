@@ -24,6 +24,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { ZabbixConnectionDialog } from "@/components/zabbix/connection-dialog"
 import { ZabbixChanges } from "@/components/zabbix/changes"
 import { ZabbixProvisionRules } from "@/components/zabbix/provision-rules"
+import { ZabbixScopeList } from "@/components/zabbix/scope-list"
 
 export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
 
@@ -259,6 +260,8 @@ function ZabbixPage() {
           />
 
           <ZabbixProvisionRules connection={conn} canManage={canManage} />
+
+          <ZabbixScopeList connection={conn} />
 
           <section className="rounded-lg border border-border bg-card">
             <div className="border-b border-border px-4 py-2.5">
