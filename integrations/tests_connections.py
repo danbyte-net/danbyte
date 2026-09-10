@@ -64,12 +64,11 @@ class ConnectionApiTests(APITestCase):
         self._login(self.admin)
         res = self.client.get("/api/integrations/settings/")
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {
-            "dhcp_sync_enabled": False, "dns_sync_enabled": False,
-            "virt_proxmox_enabled": False,
-            "virt_vcenter_enabled": False, "ai_access_enabled": False,
-            "ai_writes_enabled": False, "ai_chat_enabled": False,
-        })
+        # Every registered toggle, off - derived rather than listed, because a
+        # hand-kept list here is what let a missing serializer field ship.
+        from .toggles import KEYS
+
+        self.assertEqual(res.json(), {f: False for f in KEYS.values()})
         res = self.client.put(
             "/api/integrations/settings/", {"dhcp_sync_enabled": True},
             format="json",

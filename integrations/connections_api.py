@@ -19,6 +19,7 @@ from api.viewsets import TenantScopedViewSet
 from auth_api.permissions import can_manage_admin
 
 from .models import IntegrationSettings, VirtualizationSource, WindowsServerConnection
+from .toggles import KEYS as TOGGLE_KEYS
 from .toggles import IntegrationToggleMixin
 
 
@@ -48,13 +49,18 @@ class AddressPlacementSerializerMixin(serializers.Serializer):
 
 
 class IntegrationSettingsSerializer(serializers.ModelSerializer):
+    """Every toggle, taken from the registry rather than listed by hand.
+
+    A ModelSerializer drops fields it was not told about **silently**, so a
+    hand-kept list meant adding an integration and forgetting this line left a
+    switch in the UI that saved nothing and reported success. Reading
+    ``toggles.KEYS`` makes that impossible: the switch exists exactly when the
+    integration does. ``integrations.tests_toggles`` holds the two together.
+    """
+
     class Meta:
         model = IntegrationSettings
-        fields = [
-            "dhcp_sync_enabled", "dns_sync_enabled",
-            "virt_proxmox_enabled", "virt_vcenter_enabled",
-            "ai_access_enabled", "ai_writes_enabled", "ai_chat_enabled",
-        ]
+        fields = sorted(TOGGLE_KEYS.values())
 
 
 @api_view(["GET"])
