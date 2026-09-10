@@ -86,6 +86,8 @@ permission; without either, it shows you the code to paste in.
   that site.
 - Results are **capped** at the row limit on the Agent access page, and it
   is told when a result was cut short.
+- **"Where do I change X?"** is answered from the settings catalog rather
+  than from memory, so the link it gives you is a page that exists.
 - **Cabling and circuits** have their own tools: it cables two ports by
   name, and lands a circuit's A and Z ends at their sites, rather than
   assembling the payload by hand.

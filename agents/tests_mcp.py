@@ -282,6 +282,27 @@ class ReadToolTests(_Base):
         )
         self.assertIn("create", self.tool("script_guide")["you_may"])
 
+    def test_find_setting_answers_with_a_real_path(self):
+        payload = self.tool("find_setting", {"query": "session timeout"})
+        top = payload["matches"][0]
+        self.assertEqual(top["setting"], "Sessions")
+        self.assertEqual(top["url"], "/settings/security#sessions")
+        self.assertIn("deployment", top["scopes"])
+
+    def test_find_setting_survives_a_question(self):
+        """Requiring every word matched nothing for a real question."""
+        payload = self.tool("find_setting", {"query": "where do I set the timezone"})
+        self.assertTrue(payload["matches"])
+        self.assertIn("Date & time", [m["setting"] for m in payload["matches"]])
+
+    def test_find_setting_says_so_when_nothing_matches(self):
+        payload = self.tool("find_setting", {"query": "zzzz nonexistent"})
+        self.assertEqual(payload["matches"], [])
+        self.assertIn("search box", payload["note"])
+
+    def test_find_setting_needs_something_to_look_for(self):
+        self.assertIn("Say which setting", self.tool("find_setting", {"query": " "})["error"])
+
     def test_unknown_type_says_what_to_do(self):
         payload = self.tool("get", {"type": "widget", "id": "x"})
         self.assertIn("Unknown object type", payload["error"])

@@ -119,6 +119,7 @@ off at once.
 | `changes` | Change-log entries for one object: who, what, when. |
 | `lifecycle` | Device types past or approaching end of sale or support. |
 | `script_guide` | The script SDK and the fields a script row takes, so an assistant can write a [script](scripts.md) that runs against the same API. |
+| `find_setting` | Where a setting is configured, read from the same catalog the settings sidebar, hub and search are built from - so the path it answers with exists. |
 
 With writes on, five more: `create`, `update`, `delete`, `connect` and
 `terminate`. A delete has to name the object it removes, so a mistaken

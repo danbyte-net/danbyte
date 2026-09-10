@@ -1,0 +1,546 @@
+{
+  "groups": [
+    {
+      "key": "access",
+      "label": "Identity & access"
+    },
+    {
+      "key": "integrations",
+      "label": "Integrations"
+    },
+    {
+      "key": "notifications",
+      "label": "Notifications"
+    },
+    {
+      "key": "data",
+      "label": "Your data"
+    },
+    {
+      "key": "devices",
+      "label": "Devices & polling"
+    },
+    {
+      "key": "install",
+      "label": "This install"
+    }
+  ],
+  "pages": [
+    {
+      "key": "directory",
+      "label": "Directory",
+      "description": "LDAP and Active Directory sign-in",
+      "to": "/settings/directory",
+      "group": "access",
+      "scopes": ["deployment", "tenant"],
+      "defaultScope": "deployment",
+      "keywords": ["ldap", "active directory", "ad", "bind", "group mapping"]
+    },
+    {
+      "key": "sso",
+      "label": "Single sign-on",
+      "description": "Identity providers and group mapping",
+      "to": "/settings/sso",
+      "group": "access",
+      "scopes": ["deployment"],
+      "keywords": ["sso", "saml", "oidc", "oauth", "entra", "okta", "google"]
+    },
+    {
+      "key": "security",
+      "label": "Security",
+      "description": "Sessions, secrets and outbound connections",
+      "to": "/settings/security",
+      "group": "access",
+      "scopes": ["deployment"],
+      "keywords": ["session", "vault", "ssrf", "proxy", "ssh", "secret store"]
+    },
+    {
+      "key": "separation",
+      "label": "Separation",
+      "description": "Site boundaries and delegation",
+      "to": "/settings/separation",
+      "group": "access",
+      "scopes": ["deployment", "tenant"],
+      "defaultScope": "deployment",
+      "keywords": ["site separation", "delegation", "site admin", "scoped"]
+    },
+    {
+      "key": "email",
+      "label": "Email",
+      "description": "Mail server, test sends and templates",
+      "to": "/settings/email",
+      "group": "notifications",
+      "scopes": ["deployment", "tenant", "site"],
+      "defaultScope": "deployment",
+      "keywords": ["smtp", "relay", "587", "starttls", "from address", "digest"]
+    },
+    {
+      "key": "monitoring",
+      "label": "Monitoring",
+      "description": "Schedules, alerting, drift and digests",
+      "to": "/settings/monitoring",
+      "group": "notifications",
+      "scopes": ["deployment", "tenant"],
+      "defaultScope": "tenant",
+      "keywords": [
+        "checks",
+        "alerts",
+        "drift",
+        "digest",
+        "flapping",
+        "interval"
+      ]
+    },
+    {
+      "key": "integrations",
+      "label": "Integrations",
+      "description": "What Danbyte talks to, and what it may change",
+      "to": "/settings/integrations",
+      "group": "integrations",
+      "scopes": ["tenant"],
+      "keywords": [
+        "vcenter",
+        "proxmox",
+        "dhcp sync",
+        "dns sync",
+        "assistant chat",
+        "agent access",
+        "mcp",
+        "allow writes",
+        "webhook",
+        "netbox import"
+      ]
+    },
+    {
+      "key": "device-fields",
+      "label": "Device field visibility",
+      "description": "Which fields a device shows",
+      "to": "/settings/device-fields",
+      "group": "data",
+      "scopes": ["deployment"],
+      "keywords": ["device", "fields", "hide", "show", "form"]
+    },
+    {
+      "key": "table-layouts",
+      "label": "Table layouts",
+      "description": "Default columns for every table",
+      "to": "/settings/table-defaults",
+      "group": "data",
+      "scopes": ["deployment"],
+      "keywords": ["columns", "table", "default", "layout", "lock"]
+    },
+    {
+      "key": "component-details",
+      "label": "Component details",
+      "description": "What a device component's popover shows",
+      "to": "/settings/components",
+      "group": "data",
+      "scopes": ["deployment"],
+      "keywords": ["popover", "interface", "port", "hover", "component"]
+    },
+    {
+      "key": "floorplans",
+      "label": "Floor plans",
+      "description": "Tiles and the fields a plan shows",
+      "to": "/settings/floorplan",
+      "group": "data",
+      "scopes": ["tenant", "deployment"],
+      "defaultScope": "tenant",
+      "keywords": ["floor", "plan", "tile", "rack", "popover"]
+    },
+    {
+      "key": "maps",
+      "label": "Maps",
+      "description": "Tile servers behind the site map",
+      "to": "/settings/maps",
+      "group": "data",
+      "scopes": ["deployment"],
+      "keywords": ["tiles", "openstreetmap", "osm", "satellite", "basemap"]
+    },
+    {
+      "key": "snmp-profiles",
+      "label": "SNMP profiles",
+      "description": "Credentials used to poll devices",
+      "to": "/settings/snmp",
+      "group": "devices",
+      "scopes": ["tenant"],
+      "keywords": ["snmp", "v2c", "v3", "community", "credential", "poll"]
+    },
+    {
+      "key": "snmp-sensors",
+      "label": "SNMP sensors",
+      "description": "What to read from each model",
+      "to": "/settings/snmp-sensors",
+      "group": "devices",
+      "scopes": ["tenant"],
+      "keywords": ["oid", "sensor", "temperature", "psu", "fan", "mib"]
+    },
+    {
+      "key": "connect-protocols",
+      "label": "Connect protocols",
+      "description": "How the Connect button reaches a device",
+      "to": "/settings/connect",
+      "group": "devices",
+      "scopes": ["tenant"],
+      "keywords": ["ssh", "console", "https", "rdp", "vnc", "launch"]
+    },
+    {
+      "key": "branding",
+      "label": "Branding & identity",
+      "description": "Name, logo, IDs and faceplates",
+      "to": "/settings/admin",
+      "group": "install",
+      "scopes": ["deployment"],
+      "keywords": [
+        "logo",
+        "favicon",
+        "name",
+        "numid",
+        "faceplate",
+        "mac vendor"
+      ]
+    },
+    {
+      "key": "tenant-policy",
+      "label": "Tenant policy",
+      "description": "UI rules and date & time for this tenant",
+      "to": "/settings/tenant",
+      "group": "install",
+      "scopes": ["tenant"],
+      "keywords": ["timezone", "date format", "clock", "ui policy", "human ids"]
+    },
+    {
+      "key": "updates",
+      "label": "Updates",
+      "description": "Release source and upgrades",
+      "to": "/settings/updates",
+      "group": "install",
+      "scopes": ["deployment"],
+      "keywords": ["upgrade", "release", "version", "bundle", "changelog"]
+    },
+    {
+      "key": "backups",
+      "label": "Backups",
+      "description": "Targets, schedules and restores",
+      "to": "/settings/backups",
+      "group": "install",
+      "scopes": ["deployment"],
+      "keywords": ["backup", "restore", "s3", "archive", "dbk", "schedule"]
+    },
+    {
+      "key": "plugins",
+      "label": "Plugins",
+      "description": "Installed plugins and host services",
+      "to": "/settings/plugins",
+      "group": "install",
+      "scopes": ["tenant", "deployment"],
+      "defaultScope": "tenant",
+      "keywords": ["plugin", "service", "restart", "worker", "upload"]
+    },
+    {
+      "key": "preferences",
+      "label": "Your preferences",
+      "description": "Display, two-factor and API tokens",
+      "to": "/settings/preferences",
+      "group": "install",
+      "scopes": ["user"],
+      "keywords": ["theme", "timezone", "2fa", "token", "columns", "display"]
+    }
+  ],
+  "cards": [
+    {
+      "key": "email.server",
+      "label": "Mail server",
+      "description": "Host, port, credentials and the From address",
+      "page": "email",
+      "keywords": ["smtp", "relay", "587", "465", "starttls", "from address"]
+    },
+    {
+      "key": "email.test",
+      "label": "Send a test",
+      "description": "Check the relay actually works",
+      "page": "email",
+      "keywords": ["test email", "verify", "try"]
+    },
+    {
+      "key": "email.templates",
+      "label": "Preview templates",
+      "description": "Send a sample of any message Danbyte writes",
+      "page": "email",
+      "keywords": ["template", "preview", "digest", "invite", "sample"]
+    },
+    {
+      "key": "security.sessions",
+      "label": "Sessions",
+      "description": "Idle timeout, and signing everyone out",
+      "page": "security",
+      "keywords": ["session", "idle", "timeout", "sign out", "logout"]
+    },
+    {
+      "key": "security.secrets",
+      "label": "Secret store",
+      "description": "Where credentials are kept at rest",
+      "page": "security",
+      "keywords": ["vault", "azure key vault", "secret", "encryption", "kms"]
+    },
+    {
+      "key": "security.outbound",
+      "label": "Outbound connections",
+      "description": "Internal hosts the server may reach despite the SSRF guard",
+      "page": "security",
+      "keywords": ["ssrf", "allowlist", "internal", "cidr", "egress"]
+    },
+    {
+      "key": "security.delivery",
+      "label": "Outbound delivery",
+      "description": "Public base URL, webhook timeout and proxy",
+      "page": "security",
+      "keywords": ["proxy", "webhook timeout", "base url", "deep link"]
+    },
+    {
+      "key": "security.ssh",
+      "label": "In-browser SSH terminal",
+      "description": "Whether operators can open a shell from a device page",
+      "page": "security",
+      "keywords": ["ssh", "terminal", "console", "shell"]
+    },
+    {
+      "key": "security.model",
+      "label": "Assistant model",
+      "description": "Which model the in-app chat and MCP server talk to",
+      "page": "security",
+      "keywords": ["ai", "llm", "anthropic", "openai", "ollama", "local model"]
+    },
+    {
+      "key": "branding.identity",
+      "label": "Identity",
+      "description": "Install name, logo and favicon",
+      "page": "branding",
+      "keywords": ["logo", "favicon", "name", "brand", "login page"]
+    },
+    {
+      "key": "branding.datetime",
+      "label": "Date & time",
+      "description": "Deployment default date format, clock and timezone",
+      "page": "branding",
+      "keywords": ["timezone", "date format", "clock", "24h", "12h"]
+    },
+    {
+      "key": "branding.numids",
+      "label": "Human-readable IDs",
+      "description": "Short per-tenant numbers beside UUIDs",
+      "page": "branding",
+      "keywords": ["numid", "id", "number", "short id"]
+    },
+    {
+      "key": "branding.faceplates",
+      "label": "Faceplates",
+      "description": "How device front and rear panels are drawn",
+      "page": "branding",
+      "keywords": ["faceplate", "panel", "render", "port drawing"]
+    },
+    {
+      "key": "branding.macvendors",
+      "label": "MAC vendors",
+      "description": "The OUI database behind MAC vendor lookup",
+      "page": "branding",
+      "keywords": ["oui", "mac", "vendor", "ieee"]
+    },
+    {
+      "key": "tenant.ui",
+      "label": "UI policy",
+      "description": "Optional device fields and human-readable numbers",
+      "page": "tenant-policy",
+      "keywords": ["device fields", "numid", "optional fields"]
+    },
+    {
+      "key": "tenant.datetime",
+      "label": "Date & time",
+      "description": "This tenant's date format, clock and timezone",
+      "page": "tenant-policy",
+      "keywords": ["timezone", "date format", "clock"]
+    },
+    {
+      "key": "tenant.onboarding",
+      "label": "First-time setup",
+      "description": "Re-open the guided setup wizard",
+      "page": "tenant-policy",
+      "keywords": ["wizard", "onboarding", "getting started"]
+    },
+    {
+      "key": "separation.sites",
+      "label": "Site separation",
+      "description": "Each site behaves like a mini-tenant for site-scoped users",
+      "page": "separation",
+      "keywords": ["site scoped", "isolation", "mini tenant", "boundary"]
+    },
+    {
+      "key": "separation.delegation",
+      "label": "Delegation",
+      "description": "Whether site editors may invite their own viewers",
+      "page": "separation",
+      "keywords": ["delegate", "invite", "viewer", "site admin"]
+    },
+    {
+      "key": "monitoring.drift",
+      "label": "Config drift",
+      "description": "How often drift runs are dispatched",
+      "page": "monitoring",
+      "keywords": ["drift", "baseline", "automation", "interval"]
+    },
+    {
+      "key": "monitoring.digest",
+      "label": "Email digest",
+      "description": "The recurring monitoring summary and who gets it",
+      "page": "monitoring",
+      "keywords": ["digest", "summary", "weekly", "recipients"]
+    },
+    {
+      "key": "sso.providers",
+      "label": "Providers",
+      "description": "Each identity provider offered on the login page",
+      "page": "sso",
+      "keywords": ["oidc", "saml", "entra", "okta", "google", "provider"]
+    },
+    {
+      "key": "sso.mappings",
+      "label": "Group mappings",
+      "description": "Which Danbyte group an asserted group grants",
+      "page": "sso",
+      "keywords": ["group", "claim", "mapping", "role"]
+    },
+    {
+      "key": "sso.local",
+      "label": "Local sign-in",
+      "description": "Whether the username and password form still shows",
+      "page": "sso",
+      "keywords": ["local login", "password", "hide login"]
+    },
+    {
+      "key": "data.device-fields",
+      "label": "Device fields",
+      "description": "Which fields a device form and page show",
+      "page": "device-fields",
+      "keywords": ["device", "fields", "hide", "show"]
+    },
+    {
+      "key": "data.table-defaults",
+      "label": "Tenant defaults",
+      "description": "Publish or lock a table's column layout",
+      "page": "table-layouts",
+      "keywords": ["columns", "layout", "publish", "lock", "table"]
+    },
+    {
+      "key": "data.components",
+      "label": "Fields",
+      "description": "What a component popover shows, top to bottom",
+      "page": "component-details",
+      "keywords": ["popover", "hover", "interface", "port"]
+    },
+    {
+      "key": "data.maps",
+      "label": "Map tiles",
+      "description": "Tile server URLs and attribution",
+      "page": "maps",
+      "keywords": ["tiles", "openstreetmap", "osm", "satellite", "esri"]
+    },
+    {
+      "key": "devices.snmp-profiles",
+      "label": "Profiles",
+      "description": "Reusable SNMP credentials for polling",
+      "page": "snmp-profiles",
+      "keywords": ["snmp", "v2c", "v3", "community", "credential"]
+    },
+    {
+      "key": "devices.snmp-sensors",
+      "label": "Sensors",
+      "description": "Vendor OIDs mapped to inventory item health",
+      "page": "snmp-sensors",
+      "keywords": ["oid", "sensor", "temperature", "psu", "fan"]
+    },
+    {
+      "key": "devices.connect",
+      "label": "Protocols",
+      "description": "The launch actions on a device's Connect menu",
+      "page": "connect-protocols",
+      "keywords": ["ssh", "rdp", "vnc", "https", "telnet", "launch"]
+    },
+    {
+      "key": "install.version",
+      "label": "This install",
+      "description": "Version, commit and the versions of what it runs on",
+      "page": "updates",
+      "keywords": ["version", "commit", "python", "django", "postgres", "redis"]
+    },
+    {
+      "key": "install.notes",
+      "label": "After this upgrade",
+      "description": "Steps a release still needs from an operator",
+      "page": "updates",
+      "keywords": ["upgrade notes", "manual step", "post upgrade"]
+    },
+    {
+      "key": "install.source",
+      "label": "Release source",
+      "description": "Which repo releases are read from, and automatic updates",
+      "page": "updates",
+      "keywords": ["repo", "release", "token", "airgap", "auto update"]
+    },
+    {
+      "key": "install.bundle",
+      "label": "Upgrade from a bundle",
+      "description": "Upload a release tarball for an offline install",
+      "page": "updates",
+      "keywords": ["offline", "airgap", "tarball", "bundle", "upload"]
+    },
+    {
+      "key": "install.releases",
+      "label": "Releases",
+      "description": "Available versions and their changelogs",
+      "page": "updates",
+      "keywords": ["changelog", "version", "upgrade", "rollback"]
+    },
+    {
+      "key": "install.backup-targets",
+      "label": "Targets",
+      "description": "Where archives are written",
+      "page": "backups",
+      "keywords": ["s3", "local", "target", "archive", "bucket"]
+    },
+    {
+      "key": "install.backup-schedules",
+      "label": "Schedules",
+      "description": "When backups run and how many are kept",
+      "page": "backups",
+      "keywords": ["schedule", "retention", "cron", "nightly"]
+    },
+    {
+      "key": "install.plugins",
+      "label": "Installed plugins",
+      "description": "Enable a plugin for this tenant, or upload one",
+      "page": "plugins",
+      "keywords": ["plugin", "upload", "enable", "module"]
+    },
+    {
+      "key": "install.services",
+      "label": "Services",
+      "description": "Restart the web and worker processes",
+      "page": "plugins",
+      "keywords": ["restart", "worker", "service", "systemd", "rq"]
+    },
+    {
+      "key": "prefs.display",
+      "label": "Display",
+      "description": "Your own theme, date format, clock and timezone",
+      "page": "preferences",
+      "keywords": ["theme", "dark mode", "timezone", "clock", "link icons"]
+    },
+    {
+      "key": "prefs.tables",
+      "label": "Table layouts",
+      "description": "Your saved column layouts, and resetting one",
+      "page": "preferences",
+      "keywords": ["columns", "reset", "layout"]
+    }
+  ]
+}

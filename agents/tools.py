@@ -446,6 +446,45 @@ def _script_guide(ctx, **_kw) -> dict:
     }
 
 
+def _find_setting(ctx, query: str = "", **_kw) -> dict:
+    """Where a setting lives, from the catalog the settings UI is built from.
+
+    Without this an assistant asked "where do I turn on LDAP sync?" either
+    guessed a URL or described a path from memory, and both go stale the
+    moment a page is renamed. The catalog is the same file the sidebar, the
+    hub and the settings search read.
+    """
+    from . import settings_catalog
+
+    if not query.strip():
+        raise ToolError("Say which setting to look for, e.g. 'session timeout'.")
+    if not settings_catalog.available():
+        raise ToolError(
+            "The settings catalog is not readable on this install, so I "
+            "cannot look a setting up. Point the person at Settings and its "
+            "search box."
+        )
+    matches = settings_catalog.find(query, limit=8)
+    if not matches:
+        return {
+            "query": query,
+            "matches": [],
+            "note": (
+                "Nothing matched. Settings has its own search box that reads "
+                "the same list - try a different word there."
+            ),
+        }
+    return {
+        "query": query,
+        "matches": matches,
+        "note": (
+            "`url` is a path in this Danbyte, so link it as-is. `scopes` says "
+            "which tiers the page serves; the page opens on a scope switch "
+            "when there is more than one."
+        ),
+    }
+
+
 def _ask_user(ctx, question: str = "", options=None, fields=None, questions=None,
               **_kw) -> dict:
     """Put a question back to the person and stop.
@@ -748,6 +787,14 @@ TOOLS: tuple[Tool, ...] = (
         "Call it before writing or changing a script, so the code uses the real "
         "API rather than an invented one.",
         {}, _script_guide,
+    ),
+    Tool(
+        "find_setting", "Find where a setting lives",
+        "Where a setting is configured, from the catalog the settings UI is "
+        "built from - so the answer is a path that exists rather than one "
+        "recalled. Use it for any 'where do I change/turn on/configure X' "
+        "question instead of describing a menu path from memory.",
+        {"query": STR}, _find_setting, required=("query",),
     ),
     Tool(
         "ask_user", "Ask the person a question",
