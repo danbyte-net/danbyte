@@ -593,8 +593,8 @@ create/move/delete lands in the [change log](change-log.md).
 
 ## Popover fields
 
-**Settings → Deployment → Floor plans** picks which rows the tile popover shows,
-and in what order. A field with nothing to say for a given tile is skipped
+**Settings → Floor plans → Tile popover** picks which rows the tile popover
+shows, and in what order. A field with nothing to say for a given tile is skipped
 automatically - no rack utilization on a wall tile - so turning one on is safe
 everywhere.
 
@@ -613,11 +613,12 @@ fetches the device's ports when the popover opens - which is why it is **off by
 default**: the standard popover answers entirely from data the plan has already
 loaded.
 
-The list is the **deployment default**. A tenant that overrides its UI policy
-(**Settings → This tenant → General**) carries its own list, resolved the same
-way as the optional device fields. Per-tile-type lists are supported too: a tile
-type **without** its own list inherits the global one, so the two can't drift
-apart as you change the default.
+The card is scoped. **Deployment default** is the list every tenant starts
+from; **This tenant** carries its own once you switch the card off inheriting,
+seeded from what it was inheriting so you edit the current look rather than a
+blank slate. Per-tile-type lists are supported too - pick a tile type or device
+role on the left and **Override**; a type **without** its own list inherits the
+global one, so the two can't drift apart as you change the default.
 
 ## Roadmap
 

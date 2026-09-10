@@ -570,6 +570,76 @@
       "description": "Which Danbyte group a directory group grants",
       "page": "directory",
       "keywords": ["group", "mapping", "membership", "ou", "security group"]
+    },
+    {
+      "key": "data.floorplan-popover",
+      "label": "Tile popover",
+      "description": "Fields shown when you hover a floor-plan tile",
+      "page": "floorplans",
+      "keywords": ["popover", "tile", "hover", "fields", "floor plan"]
+    },
+    {
+      "key": "integrations.proxmox",
+      "label": "Proxmox VE sync",
+      "description": "Import clusters, hosts and VMs from Proxmox VE",
+      "page": "integrations",
+      "keywords": ["proxmox", "pve", "virtualization", "hypervisor", "sync"]
+    },
+    {
+      "key": "integrations.vcenter",
+      "label": "vCenter sync",
+      "description": "Import clusters, hosts and VMs from vCenter",
+      "page": "integrations",
+      "keywords": [
+        "vcenter",
+        "vmware",
+        "esxi",
+        "virtualization",
+        "hypervisor",
+        "sync"
+      ]
+    },
+    {
+      "key": "integrations.dhcp",
+      "label": "DHCP sync",
+      "description": "Read leases and scopes from Windows DHCP",
+      "page": "integrations",
+      "keywords": ["dhcp", "leases", "scopes", "windows", "microsoft"]
+    },
+    {
+      "key": "integrations.dns",
+      "label": "DNS sync",
+      "description": "Read and write zones on Windows DNS",
+      "page": "integrations",
+      "keywords": [
+        "dns",
+        "zones",
+        "records",
+        "windows",
+        "microsoft",
+        "active directory"
+      ]
+    },
+    {
+      "key": "integrations.agent",
+      "label": "Agent access (MCP)",
+      "description": "Let an assistant read this tenant over MCP",
+      "page": "integrations",
+      "keywords": ["mcp", "ai", "agent", "assistant", "token", "api"]
+    },
+    {
+      "key": "integrations.agent-writes",
+      "label": "Agent access: allow writes",
+      "description": "Whether an agent may change data",
+      "page": "integrations",
+      "keywords": ["mcp", "ai", "agent", "writes", "read only"]
+    },
+    {
+      "key": "integrations.chat",
+      "label": "Assistant chat",
+      "description": "The in-app assistant",
+      "page": "integrations",
+      "keywords": ["ai", "chat", "assistant", "llm", "model"]
     }
   ]
 }

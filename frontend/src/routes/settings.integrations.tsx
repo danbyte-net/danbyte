@@ -10,7 +10,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Switch } from "@/components/ui/switch"
-import { SettingsHeader } from "@/components/settings/settings-card"
+import {
+  cardAnchor,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { VendorLogo } from "@/components/settings/vendor-logo"
 
 export const Route = createFileRoute("/settings/integrations")({
@@ -164,7 +167,10 @@ function IntegrationsSettingsPage() {
             {CARDS.map((card) => (
               <section
                 key={card.key}
-                className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3"
+                // The same anchor SettingsCard derives, so a search result
+                // scrolls to the integration rather than the page top.
+                id={cardAnchor(card.label)}
+                className="flex scroll-mt-6 flex-col gap-2 rounded-lg border border-border bg-card p-3"
               >
                 <div className="flex items-start gap-3">
                   <VendorLogo vendor={card.vendor} />

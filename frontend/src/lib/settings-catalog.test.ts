@@ -74,11 +74,16 @@ describe("settings catalog", () => {
   // The one that earns its keep: renaming a card in the JSX without updating
   // the catalog would leave a search result linking to an anchor that no
   // longer exists, and nothing else would notice.
+  //
+  // Two spellings, because two things render a card heading: `title` on a
+  // SettingsCard, and `label` on a page that maps its own list (Integrations
+  // draws one section per vendor).
   it("still finds every card's title in the page that renders it", () => {
     const missing: string[] = []
     for (const card of SETTINGS_CARDS) {
       const source = sourcesFor(card.page)
-      if (!source.includes(`title="${card.label}"`)) {
+      const spellings = [`title="${card.label}"`, `label: "${card.label}"`]
+      if (!spellings.some((s) => source.includes(s))) {
         missing.push(`${card.key} → title="${card.label}"`)
       }
     }
