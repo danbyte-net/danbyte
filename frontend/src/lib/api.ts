@@ -7690,6 +7690,14 @@ export interface VirtualizationSource {
   /** Enrich those Devices with model, vendor and serial over vSphere SOAP.
    * vCenter only, and off by default - it mints catalog rows. */
   sync_host_hardware: boolean
+  /** Copy the hypervisor's MTU onto a VM interface, and diff it. */
+  sync_vm_interface_mtu: boolean
+  /** Powered-off guests are left alone - but still count as present. */
+  skip_offline_vms: boolean
+  /** Remove a VM that has vanished from the hypervisor. */
+  auto_prune: boolean
+  /** Days it must stay missing first. 0 = on the next sync. */
+  auto_prune_after_days: number
   /** Map the guest OS onto a Platform, creating rows on demand. Off by
    * default - it writes into a catalog you curate. */
   sync_platforms: boolean

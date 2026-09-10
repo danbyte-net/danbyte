@@ -262,6 +262,16 @@ class VirtualizationSourceSerializer(
                 )
         return attrs
 
+    def validate_auto_prune_after_days(self, value):
+        # A year of grace is not a grace period, it is "off" written the long
+        # way - and `auto_prune` already says that plainly.
+        if value > 365:
+            raise serializers.ValidationError(
+                "Prune delay must be 365 days or fewer. To keep missing VMs "
+                "indefinitely, turn auto-prune off."
+            )
+        return value
+
     def validate_sync_allowed_networks(self, value):
         import ipaddress
 
@@ -288,6 +298,8 @@ class VirtualizationSourceSerializer(
                   "credentials_set", "sync_mode", "poll_interval_minutes",
                   "sync_disks", "sync_networks", "match_existing_vlans", "sync_hosts",
                   "sync_host_hardware", "sync_platforms",
+                  "sync_vm_interface_mtu", "skip_offline_vms",
+                  "auto_prune", "auto_prune_after_days",
                   "sync_allowed_networks",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
                   "enabled", "pending_count", "last_sync_at", "last_sync_status",

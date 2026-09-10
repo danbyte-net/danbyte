@@ -90,6 +90,41 @@ Per-source switches widen what a source imports:
   adopted, never duplicated. This is what lets VMs link to their host, and
   what gives bridge uplinks a Device to hang NICs off.
 
+### What the sync is allowed to overwrite, and what it removes
+
+Three more switches decide how far the sync reaches into what you already
+have:
+
+- **Sync interface MTU** (on by default) - copies the hypervisor's MTU onto a
+  VM interface that has none, and reports a differing one as drift. Turn it
+  off to make Danbyte the source of truth for MTU: the value is then not read
+  at all, so it neither fills a blank nor shows up as a disagreement you can
+  never clear.
+
+    vCenter's VM-NIC payload carries no MTU, so on a vCenter source this
+    switch has nothing to act on today. It bites on Proxmox, which states it
+    per NIC.
+- **Skip powered-off VMs** (off by default) - stopped guests are listed but
+  their detail is not read, so nothing about them is updated. They still
+  count as **present**: a VM that is merely switched off is never treated as
+  missing, and so is never pruned for being off.
+- **Remove VMs deleted from the hypervisor** (on) with **Remove after** (days)
+  - a VM that stops appearing is marked *missing* and kept until it has been
+  missing that long. One API error, one network blip, one paused vCenter is
+  then not enough to delete a VM record and everything hanging off it. The
+  moment the VM reappears the clock resets - it does not resume a part-spent
+  delay.
+
+    **0 days** removes it on the first sync that cannot see it, which is what
+    Danbyte did before this setting existed. **Sources that already existed
+    when you upgraded are set to 0**, so nothing changed under you; new
+    sources start at **7 days**. In review mode the *proposal* waits the same
+    delay, because approving a deletion a flaky poll invented loses the same
+    data.
+
+    Turning the switch off keeps missing VMs indefinitely, flagged, for you to
+    delete by hand.
+
 Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Virtualization → Network topology** draws the whole picture - switches,
 their networks (VLANs) as bars, and the VMs on each.

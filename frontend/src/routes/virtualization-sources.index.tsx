@@ -410,6 +410,16 @@ export function SourceDialog({
   const [syncPlatforms, setSyncPlatforms] = useState(
     source?.sync_platforms ?? false
   )
+  const [syncMtu, setSyncMtu] = useState(
+    source?.sync_vm_interface_mtu ?? true
+  )
+  const [skipOffline, setSkipOffline] = useState(
+    source?.skip_offline_vms ?? false
+  )
+  const [autoPrune, setAutoPrune] = useState(source?.auto_prune ?? true)
+  const [pruneAfter, setPruneAfter] = useState(
+    String(source?.auto_prune_after_days ?? 7)
+  )
   const [allowedNetworks, setAllowedNetworks] = useState(
     (source?.sync_allowed_networks ?? []).join("\n")
   )
@@ -441,6 +451,10 @@ export function SourceDialog({
         sync_hosts: syncHosts,
         sync_host_hardware: syncHostHw,
         sync_platforms: syncPlatforms,
+        sync_vm_interface_mtu: syncMtu,
+        skip_offline_vms: skipOffline,
+        auto_prune: autoPrune,
+        auto_prune_after_days: Number(pruneAfter) || 0,
         sync_allowed_networks: allowedNetworks
           .split(/[\n,]+/)
           .map((s) => s.trim())
@@ -609,6 +623,33 @@ export function SourceDialog({
               checked={syncHosts}
               onChange={setSyncHosts}
             />
+            <FormCheckbox
+              label="Sync interface MTU"
+              hint="Copy the hypervisor's MTU onto a VM interface that has none, and report a differing one as drift. Off leaves MTU to you. vCenter does not report a VM NIC's MTU at all."
+              checked={syncMtu}
+              onChange={setSyncMtu}
+            />
+            <FormCheckbox
+              label="Skip powered-off VMs"
+              hint="Leave stopped guests alone. They still count as present, so they are never pruned for being off."
+              checked={skipOffline}
+              onChange={setSkipOffline}
+            />
+            <FormCheckbox
+              label="Remove VMs deleted from the hypervisor"
+              hint="Off keeps them, flagged as missing, for you to delete."
+              checked={autoPrune}
+              onChange={setAutoPrune}
+            />
+            {autoPrune && (
+              <FormText
+                label="Remove after"
+                hint="days a VM must stay missing - 0 removes it on the first sync that cannot see it"
+                type="number"
+                value={pruneAfter}
+                onChange={setPruneAfter}
+              />
+            )}
             <FormCheckbox
               label="Set platform from the guest OS"
               hint="Fill in each VM's platform from what the hypervisor reports, creating the platform on demand. Rename it afterwards if you like - the match survives."

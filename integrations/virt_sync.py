@@ -24,6 +24,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import re
+from datetime import timedelta
 from functools import partial
 
 from django.db import IntegrityError, transaction
@@ -660,7 +661,18 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             guest.node = r.get("node") or ""
             guest.power_state = r.get("status") or ""
             guest.last_seen_at = now
+            # Back from the dead: a guest that reappears starts its grace
+            # period over rather than resuming a part-spent one (#160).
+            guest.missing_since = None
             guest.save()
+            # Skipped, not absent. `seen` already has this vmid, so a powered
+            # off guest is never a candidate for pruning - it exists, we are
+            # simply not reading its detail this pass (#160).
+            if source.skip_offline_vms and guest.power_state != "running":
+                counts["vms_skipped_offline"] = (
+                    counts.get("vms_skipped_offline", 0) + 1
+                )
+                continue
             # Each guest carries the cluster it actually runs on; Proxmox
             # reports one for the whole source, so its behaviour is unchanged.
             guest_cluster_name = r.get("cluster") or cluster_name
@@ -714,9 +726,27 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                     sync_meta_fn(guest, d.get("meta"))
 
         # Guests gone from the hypervisor.
+        grace = timedelta(days=source.auto_prune_after_days)
         for gone in VirtGuest.objects.filter(source=source).exclude(vmid__in=seen):
+            if gone.missing_since is None:
+                gone.missing_since = now
+                gone.save(update_fields=["missing_since"])
             if gone.vm_id and gone.created_vm:
+                if not source.auto_prune:
+                    # The operator prunes by hand. The row stays, marked, so
+                    # the VM page can say the hypervisor stopped reporting it.
+                    counts["vms_missing"] = counts.get("vms_missing", 0) + 1
+                    continue
+                if now - gone.missing_since < grace:
+                    # Not yet. A vCenter that 500s for one poll must not cost
+                    # a VM record and everything hanging off it (#160).
+                    counts["vms_missing"] = counts.get("vms_missing", 0) + 1
+                    continue
                 if apply:
+                    logger.info(
+                        "pruning VM %r - missing since %s",
+                        gone.vm.name, gone.missing_since.date(),
+                    )
                     gone.vm.delete()
                     gone.delete()
                 else:
@@ -1468,21 +1498,27 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
         return 0, []
     n = 0
     seen: list = []
+    # With MTU sync off, the hypervisor's MTU is simply not reported (#160).
+    # "Not stated" is already the rule everything downstream follows, so this
+    # one line turns off the blank-fill AND the drift row - rather than
+    # leaving MTU showing as a disagreement nobody may accept.
+    keep_mtu = guest.source.sync_vm_interface_mtu
     for key, value in (cfg or {}).items():
         if not _NET_KEY.match(str(key)):
             continue
         parsed = _parse_net(str(value))
+        mtu = parsed["mtu"] if keep_mtu else None
         name = parsed["name"] or key  # LXC names its NIC; QEMU keeps netX
         # Report what the hypervisor actually said, so _reconcile_interfaces can
         # diff it. Absent keys mean "not reported" and are never treated as
         # disagreement - see _iface_drift.
         seen.append({"name": name, "mac_address": parsed["mac"],
-                     "mtu": parsed["mtu"], "vlan_vid": parsed["tag"]})
+                     "mtu": mtu, "vlan_vid": parsed["tag"]})
         iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
         if iface is None:
             iface = VMInterface.objects.create(
                 vm=guest.vm, name=name, mac_address=parsed["mac"],
-                mtu=parsed["mtu"], created_interface=True,
+                mtu=mtu, created_interface=True,
             )
             logger.info("created interface %s/%s (%s)", guest.vm.name, name,
                         parsed["mac"] or "no mac")
@@ -1491,8 +1527,8 @@ def _sync_interfaces(guest, cfg: dict) -> tuple[int, list]:
             if parsed["mac"] and not iface.mac_address:
                 iface.mac_address = parsed["mac"]
                 fill.append("mac_address")
-            if parsed["mtu"] and iface.mtu is None:
-                iface.mtu = parsed["mtu"]
+            if mtu and iface.mtu is None:
+                iface.mtu = mtu
                 fill.append("mtu")
             if fill:
                 iface.save(update_fields=fill)

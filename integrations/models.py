@@ -532,6 +532,21 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: territory. The site comes from placement rules when they resolve one;
     #: the device type stays theirs - nothing on the wire says what it is.
     sync_hosts = models.BooleanField(default=False)
+    #: Copy the hypervisor's MTU onto a VM interface that has none, and treat
+    #: a differing MTU as drift. Off makes Danbyte the source of truth for
+    #: MTU, for estates that set it by hand (#160). Note that vCenter's VM-NIC
+    #: payload carries no MTU at all, so this only bites on Proxmox today.
+    sync_vm_interface_mtu = models.BooleanField(default=True)
+    #: Ignore powered-off guests. They still count as *present* - a VM that is
+    #: merely off must never look missing to auto-prune (#160).
+    skip_offline_vms = models.BooleanField(default=False)
+    #: Remove a VM that has vanished from the hypervisor. On since before the
+    #: toggle existed; what is new is the delay below.
+    auto_prune = models.BooleanField(default=True)
+    #: How long a guest must stay missing before it is removed. 0 = the
+    #: original behaviour, gone on the first pass that does not see it - which
+    #: turns one flaky API call into a deleted VM. New sources get a week.
+    auto_prune_after_days = models.PositiveSmallIntegerField(default=7)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
@@ -905,6 +920,9 @@ class VirtGuest(TimestampedModel):
     created_vm = models.BooleanField(default=False)
     power_state = models.CharField(max_length=16, blank=True, default="")
     last_seen_at = models.DateTimeField(null=True, blank=True)
+    #: First pass that did not see this guest. Cleared the moment it comes
+    #: back, so a hypervisor blip does not eat into the prune delay.
+    missing_since = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["vmid"]
