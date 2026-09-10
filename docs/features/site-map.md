@@ -358,3 +358,8 @@ sites (all of them - unplaced ones carry `null` coordinates so the edit panel
 can offer them) and every device with coordinates. Site coordinates are plain
 fields on the Site resource (`latitude` / `longitude`, decimal degrees), so
 they're scriptable like everything else.
+
+`GET /api/site-map/cables/` returns every cable with two placeable ends. An
+end carries the point it draws at, its `device_id` and its `site_id` - a
+device with no coordinates of its own is drawn at its site's point, and that
+device is not in the payload above, so the site is what identifies it.

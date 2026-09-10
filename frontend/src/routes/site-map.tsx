@@ -519,13 +519,18 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     queryKey: ["site-map-cables"],
     queryFn: () => api<{ cables: SiteMapCable[] }>("/api/site-map/cables/"),
   })
+  // An end is hidden when its device is, or when its site is - a device with
+  // no coordinates of its own is drawn at its site's point and never appears
+  // in the map's device list, so the device check alone would miss it.
   const hiddenCableIds = useMemo(() => {
+    const gone = (e: SiteMapCable["a"]) =>
+      hiddenDeviceIds.has(e.device_id) ||
+      (e.site_id !== null && hiddenSiteIds.has(e.site_id))
     const out = new Set<string>()
     for (const c of cablesQuery.data?.cables ?? [])
-      if (hiddenDeviceIds.has(c.a.device_id) || hiddenDeviceIds.has(c.z.device_id))
-        out.add(c.id)
+      if (gone(c.a) || gone(c.z)) out.add(c.id)
     return out
-  }, [cablesQuery.data, hiddenDeviceIds])
+  }, [cablesQuery.data, hiddenDeviceIds, hiddenSiteIds])
   // A route whose every cable is hidden is drawing an empty channel. One with
   // no cables at all is a planned duct and stays.
   const shownRoutes = useMemo(

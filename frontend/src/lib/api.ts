@@ -7417,6 +7417,10 @@ export interface SiteMapCableEnd {
   lng: number
   device_id: string
   device_name: string
+  /** The end's site. An unplaced device is drawn at its site's point, and
+   * that device is absent from the map's (placed-only) device list, so this
+   * is the only way to tell the end belongs to a hidden site. */
+  site_id: string | null
   port: string
   kind: string
 }

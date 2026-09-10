@@ -606,14 +606,20 @@ def site_map_cables(request):
                 if cab.status_id else None
             ),
             "fiber_count": cab.fiber_count,
+            # site_id, because an end without its own coordinates is drawn at
+            # its site's - and the map has to know which site that is to take
+            # the cable off with a hidden one. The device may not be in the
+            # map's device list at all (that list is placed devices only).
             "a": {
                 "lat": a_pt[0], "lng": a_pt[1],
                 "device_id": str(dev_a.id), "device_name": dev_a.name,
+                "site_id": str(dev_a.site_id) if dev_a.site_id else None,
                 "port": pa.name, "kind": ka,
             },
             "z": {
                 "lat": b_pt[0], "lng": b_pt[1],
                 "device_id": str(dev_b.id), "device_name": dev_b.name,
+                "site_id": str(dev_b.site_id) if dev_b.site_id else None,
                 "port": pb.name, "kind": kb,
             },
             "route_ids": routes_by_cable.get(str(cab.id), []),
