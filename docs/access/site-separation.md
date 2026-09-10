@@ -6,9 +6,9 @@ separation makes each site behave like a **mini-tenant** for site-scoped
 users, while HQ (admins and users with cross-site grants) keeps full
 visibility and control.
 
-It's **off by default**. Turn it on under **Settings → Deployment → Site
-separation** (install-wide default) or per tenant under **Settings → This
-tenant → General → Site separation** (override).
+It's **off by default**. Turn it on under **Settings → Separation → Site separation**: the page
+opens on the install-wide default, and its **This tenant** scope carries the
+override.
 
 ## Who counts as "site-scoped"
 

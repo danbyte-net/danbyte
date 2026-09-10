@@ -25,8 +25,8 @@ changes and no frontend rebuild**.
 echo 'PLUGINS=danbyte_acme_plugin' >> .env     # comma-separate multiple
 ```
 
-Then apply it. Either from the UI - **Settings → Deployment → Plugins &
-services → Apply changes** (runs migrations and restarts Danbyte; superuser
+Then apply it. Either from the UI - **Settings → Plugins → Installed
+plugins → Apply changes** (runs migrations and restarts Danbyte; superuser
 only) - or by hand:
 
 ```bash
@@ -47,7 +47,7 @@ there and skipped - it never blocks boot.
 ### Offline / airgapped install (upload an archive)
 
 For a box that can't reach PyPI, a **superuser** can upload the plugin source
-instead of `pip install`: **Settings → Deployment → Plugins & services →
+instead of `pip install`: **Settings → Plugins → Installed plugins →
 Upload plugin**, and pick a `.tar.gz` / `.tgz` / `.tar` / `.zip` of the plugin
 (a `git archive`, a GitHub source download, or an sdist all work). Danbyte
 extracts the package into `DANBYTE_PLUGIN_DIR` (default `plugins_local/`, a

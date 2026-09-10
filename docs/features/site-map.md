@@ -273,7 +273,7 @@ layers). Boundary data © OpenStreetMap contributors, ODbL.
 The header's **Satellite** button swaps the basemap to imagery -
 **Esri World Imagery** by default (their attribution shown as required).
 The choice is remembered per browser. A deployment can point the satellite
-basemap elsewhere in **Settings → Deployment → Map tiles** (satellite URL +
+basemap elsewhere in **Settings → Maps → Map tiles** (satellite URL +
 attribution), same rules as the street tiles: https-only, `{z}`/`{x}`/`{y}`
 placeholders, and the tile host must be allowed in the nginx CSP `img-src`
 (the shipped config already allows `server.arcgisonline.com`).
@@ -296,7 +296,7 @@ Danbyte follows it:
 
 The default is fine for **light internal use** - a handful of operators
 looking at a map. If your deployment is large, busy, or public-facing, the
-policy expects you to use your own tile source: set **Settings → Deployment →
+policy expects you to use your own tile source: set **Settings → Maps →
 Map tiles** to any raster tile server (an `https://…/{z}/{x}/{y}.png`
 template) - a commercial provider, or self-hosted tiles. Set the matching
 attribution string; nearly every provider requires one.

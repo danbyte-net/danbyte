@@ -103,7 +103,7 @@ instead of returning "not found".
 
 Every MAC shows its **vendor**, resolved from the address prefix:
 
-- The **IEEE OUI registry** - loaded under **Settings → Deployment → General →
+- The **IEEE OUI registry** - loaded under **Settings → Branding & identity →
   MAC vendors** from a CSV: the
   [maclookup.app database](https://maclookup.app/downloads/csv-database) or the
   IEEE `oui.csv` / `mam.csv` / `oui36.csv`. Fetch it by URL or upload the

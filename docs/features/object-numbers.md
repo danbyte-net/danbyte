@@ -39,7 +39,7 @@ cable never shows up as a bare UUID in a picker or a connection list.
 
 ## The "Human-readable IDs" toggle
 
-**Settings → Deployment → Human-readable IDs** controls whether the UI surfaces
+**Settings → Branding & identity → Human-readable IDs** controls whether the UI surfaces
 `numid` (the **Number** columns and fields). It's **on** by default.
 
 !!! note "The toggle is display-only"

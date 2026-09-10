@@ -692,7 +692,7 @@ glance. Badges use Danbyte's status palette (green up, red down/stale, amber
 degraded), and a heavily-flapping network is capped so the mail stays a
 reasonable size.
 
-Configure it under **Settings → Deployment → General → Email digest**
+Configure it under **Settings → Monitoring → Email digest**
 (deployment-wide default) - enable it, choose **daily** or **weekly** (with a
 weekday), and set the **recipients** (comma/newline-separated). A tenant can
 override the whole group (schedule + recipients) via its own settings, so an MSP
@@ -731,7 +731,7 @@ Each certificate digest covers, per tenant:
   expiry.
 - **Recent changes** - endpoints now serving a different certificate than before.
 
-Enable it under **Settings → Deployment → General → Email digest → Certificate
+Enable it under **Settings → Monitoring → Email digest → Certificate
 digest**. It runs on the same cadence as the monitoring digest (the daily
 `danbyte-digest` timer) but is gated by its own flag and tracked separately, so a
 tenant can run one, both, or neither. Recipients default to the digest

@@ -75,7 +75,7 @@ is alive and reporting.
 
 The number of RQ worker processes decides how many jobs run in parallel - more
 workers clear a backlog of queued scans/imports faster, at the cost of more
-RAM/CPU. Superusers can change it under **Settings → Deployment → Services →
+RAM/CPU. Superusers can change it under **Settings → Plugins → Services →
 Background workers**: set a value (1–64) and **Apply**. That writes a systemd
 drop-in (`RQ_WORKERS`) and restarts *only* the worker pool - the web, database,
 and other services are untouched. The default is **8**. On installs where the

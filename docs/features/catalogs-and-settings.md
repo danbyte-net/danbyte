@@ -79,11 +79,15 @@ hunting through. Picking one opens its page scrolled to that card. It
 matches a name, its description and its keywords, so "relay", "587" or
 "starttls" all find the mail server.
 
+The [global search](search-and-macs.md) reaches the same catalog, so you can
+type "session timeout" from anywhere without opening Settings first.
+
 Every page and card is declared once in
-`frontend/src/lib/settings-catalog.ts`, which is what both navigations, the
-search and the assistant read - a page cannot appear in one and be missing
-from another, and a test fails the build if a card is renamed there without
-being renamed in the page that draws it.
+`frontend/src/lib/settings-catalog.json` - JSON because two languages read
+it: the SPA builds both navigations and both searches from it, and the
+assistant answers "where do I change X" from the same file. A page cannot
+appear in one and be missing from another, and a test fails the build if a
+card is renamed there without being renamed in the page that draws it.
 
 ## Managing the catalogs
 
@@ -113,9 +117,9 @@ These are saved to your own profile, so they follow you and don't affect other
 users. Each acts as a personal override on top of the tenant default.
 
 Date format, clock, and timezone default to **Auto (tenant default)**: they
-follow the tenant's *Date & time* group under **Settings → This tenant**,
-which in turn inherits the deployment default (**Settings → Deployment →
-General**) until a tenant admin overrides it. Pick an explicit value to
+follow the *Date & time* card under **Settings → Tenant policy**, which in
+turn inherits the deployment default (**Settings → Branding & identity →
+Date & time**) until a tenant admin overrides it. Pick an explicit value to
 override just for yourself; set it back to Auto to inherit again. Date pickers
 across the app display dates in whatever format resolves for you (the value
 stored is always ISO).

@@ -56,7 +56,7 @@ tenant counterpart by design - updates patch the shared process.
 tab **title**, and the login page. The tab **icon** is the `favicon` image:
 blank = the shipped default (the blue Danbyte "D", `frontend/public/favicon.*`),
 else the uploaded file served from media. Both live on `DeploymentSettings` and
-are set from Settings → Deployment → **Identity** (`users.manage`). The favicon
+are set from Settings → Branding & identity → **Identity** (`users.manage`). The favicon
 uploads via `POST /api/deployment/favicon/` (multipart; `DELETE` clears it) -
 only Pillow-decodable raster images are accepted, which rules out SVG so no
 active content lands on the media origin. `me_json` returns `favicon_url`
