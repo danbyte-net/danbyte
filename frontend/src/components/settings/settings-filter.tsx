@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, useState } from "react"
 import { Search } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
-import { pageOf, SETTINGS_PAGES, visibleCards } from "@/lib/settings-catalog"
+import { matchCards, matchPages, SETTINGS_PAGES } from "@/lib/settings-catalog"
 import type { SettingsCardEntry, SettingsPage } from "@/lib/settings-catalog"
 
 /**
@@ -36,28 +36,10 @@ export function useSettingsFilter() {
   return useContext(SettingsFilterContext)
 }
 
-/** The pages a query keeps, in catalog order. An empty query keeps all. */
+/** The pages the section's search box keeps, in catalog order. */
 export function useFilteredPages(pages: SettingsPage[]): SettingsPage[] {
   const { query } = useSettingsFilter()
-  return useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return pages
-    // Every word has to land somewhere, so "email tenant" narrows rather
-    // than widening the way an any-word match would.
-    const words = needle.split(/\s+/)
-    return pages.filter((page) => {
-      const haystack = [
-        page.label,
-        page.description,
-        page.group,
-        ...page.keywords,
-        ...page.scopes,
-      ]
-        .join(" ")
-        .toLowerCase()
-      return words.every((w) => haystack.includes(w))
-    })
-  }, [pages, query])
+  return useMemo(() => matchPages(pages, query), [pages, query])
 }
 
 export function SettingsSearch({ className }: { className?: string }) {
@@ -81,28 +63,10 @@ export function SettingsSearch({ className }: { className?: string }) {
 /** How many pages exist at all - the "n of m" the hub shows while filtering. */
 export const SETTINGS_PAGE_COUNT = SETTINGS_PAGES.length
 
-/** Individual settings a query matches, so "session timeout" answers with
- * the card rather than leaving someone to guess it lives under Security.
- *
- * Only runs while there is a query: with none, the pages are the answer. */
+/** The cards the section's search box matches, with their page. */
 export function useMatchingCards(
   pages: SettingsPage[]
 ): { card: SettingsCardEntry; page: SettingsPage }[] {
   const { query } = useSettingsFilter()
-  return useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (needle.length < 2) return []
-    const words = needle.split(/\s+/)
-    return visibleCards(pages)
-      .filter((card) => {
-        const haystack = [card.label, card.description, ...card.keywords]
-          .join(" ")
-          .toLowerCase()
-        return words.every((w) => haystack.includes(w))
-      })
-      .flatMap((card) => {
-        const page = pageOf(card)
-        return page ? [{ card, page }] : []
-      })
-  }, [pages, query])
+  return useMemo(() => matchCards(pages, query), [pages, query])
 }

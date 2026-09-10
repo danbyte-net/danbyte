@@ -20,6 +20,14 @@ paging. Every hit carries what tells similar objects apart: its status pill
 and its site, location, rack, role, type, device, VRF, VLAN or cluster. The palette's empty state lists what you opened and searched
 recently in this browser.
 
+### Settings
+
+Below the object results, a **Settings** group lists the settings your query
+matches - the individual setting where there is one, so "session timeout"
+opens Security scrolled to that card rather than to the top of the page. Only
+settings you may edit are listed. The settings section has its own search box
+as well; this is the same catalog, reachable without opening it first.
+
 ### How matching works
 
 - **Accents and case don't matter**: `aarhus`, `arhus` and `Århus` are the

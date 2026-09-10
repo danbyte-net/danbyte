@@ -169,3 +169,58 @@ export function visibleCards(pages: SettingsPage[]): SettingsCardEntry[] {
 export function pageOf(card: SettingsCardEntry): SettingsPage | undefined {
   return SETTINGS_PAGES.find((p) => p.key === card.page)
 }
+
+/**
+ * Every word has to land somewhere, so "email tenant" narrows rather than
+ * widening the way an any-word match would.
+ */
+function everyWordHits(parts: string[], haystack: string[]): boolean {
+  const text = haystack.join(" ").toLowerCase()
+  return parts.every((w) => text.includes(w))
+}
+
+function words(query: string): string[] {
+  const needle = query.trim().toLowerCase()
+  return needle ? needle.split(/\s+/) : []
+}
+
+/** The pages a query keeps, in catalog order. An empty query keeps all. */
+export function matchPages(
+  pages: SettingsPage[],
+  query: string
+): SettingsPage[] {
+  const parts = words(query)
+  if (!parts.length) return pages
+  return pages.filter((page) =>
+    everyWordHits(parts, [
+      page.label,
+      page.description,
+      page.group,
+      ...page.keywords,
+      ...page.scopes,
+    ])
+  )
+}
+
+/**
+ * Individual settings a query matches, so "session timeout" answers with the
+ * card rather than leaving someone to guess it lives under Security.
+ *
+ * Needs two characters: one letter matches most of the catalog and the
+ * result is noise, not an answer.
+ */
+export function matchCards(
+  pages: SettingsPage[],
+  query: string
+): { card: SettingsCardEntry; page: SettingsPage }[] {
+  const parts = words(query)
+  if (query.trim().length < 2) return []
+  return visibleCards(pages)
+    .filter((card) =>
+      everyWordHits(parts, [card.label, card.description, ...card.keywords])
+    )
+    .flatMap((card) => {
+      const page = pageOf(card)
+      return page ? [{ card, page }] : []
+    })
+}

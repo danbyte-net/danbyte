@@ -12,6 +12,14 @@ import {
   rememberHit,
   rememberQuery,
 } from "@/lib/search-recents"
+import {
+  matchCards,
+  matchPages,
+  visiblePages,
+} from "@/lib/settings-catalog"
+import type { SettingsPage } from "@/lib/settings-catalog"
+import { cardAnchor } from "@/components/settings/settings-card"
+import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 import { Badge } from "@/components/ui/badge"
 import {
   SearchHitContext,
@@ -31,6 +39,8 @@ import {
 
 const DEBOUNCE_MS = 150
 const SUGGEST_LIMIT = 10
+/** Settings are a sidecar to the object results, not a competing list. */
+const SETTINGS_LIMIT = 6
 
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false
@@ -113,6 +123,14 @@ export function SearchPalette() {
     nav({ to: h.url as never })
   }
 
+  // A card links to the page plus its anchor, so the page scrolls to the
+  // setting rather than dropping someone at the top of a long one.
+  const openSetting = (to: string, hash?: string) => {
+    if (debounced) rememberQuery(debounced)
+    close()
+    nav({ to: to as never, hash })
+  }
+
   const seeAll = () => {
     const term = raw.trim()
     if (!term) return
@@ -124,6 +142,7 @@ export function SearchPalette() {
   const hits = q.data?.hits ?? []
   const recents = recentHits()
   const queries = recentQueries()
+  const settings = useSettingsHits(debounced)
 
   return (
     <>
@@ -202,9 +221,10 @@ export function SearchPalette() {
                 Searching…
               </p>
             )}
-            {debounced.length > 0 && !q.isLoading && hits.length === 0 && (
-              <CommandEmpty>No matches.</CommandEmpty>
-            )}
+            {debounced.length > 0 &&
+              !q.isLoading &&
+              hits.length === 0 &&
+              settings.length === 0 && <CommandEmpty>No matches.</CommandEmpty>}
             {hits.length > 0 && (
               <CommandGroup heading="Results" className={GROUP_CLS}>
                 {hits.map((h, i) => (
@@ -216,6 +236,21 @@ export function SearchPalette() {
                     data-row=""
                   >
                     <HitRow hit={h} />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {settings.length > 0 && (
+              <CommandGroup heading="Settings" className={GROUP_CLS}>
+                {settings.map((hit, i) => (
+                  <CommandItem
+                    key={hit.key}
+                    value={hit.key}
+                    onSelect={() => openSetting(hit.to, hit.hash)}
+                    className={rowCls(i)}
+                    data-row=""
+                  >
+                    <SettingRow label={hit.label} where={hit.where} />
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -238,6 +273,62 @@ export function SearchPalette() {
         </Command>
       </CommandDialog>
     </>
+  )
+}
+
+interface SettingHit {
+  key: string
+  label: string
+  /** The page it sits on, or the group it belongs to. */
+  where: string
+  to: string
+  hash?: string
+}
+
+/**
+ * Settings the query matches, cards first (#51).
+ *
+ * The settings section has its own search box, but nobody looking for
+ * "session timeout" thinks to open Settings first - they type it here. The
+ * catalog is the same one that builds the hub, so a result is a page that
+ * exists and the scopes gate it exactly as the section does.
+ */
+function useSettingsHits(query: string): SettingHit[] {
+  const held = useSettingsScopes()
+  const pages = visiblePages(held)
+  if (!query) return []
+
+  const cards: SettingHit[] = matchCards(pages, query).map(({ card, page }) => ({
+    key: `setting-card-${card.key}`,
+    label: card.label,
+    where: page.label,
+    to: page.to,
+    hash: cardAnchor(card.label),
+  }))
+  const seen = new Set(cards.map((c) => c.to))
+  const rest: SettingHit[] = matchPages(pages, query)
+    .filter((p: SettingsPage) => !seen.has(p.to))
+    .map((p: SettingsPage) => ({
+      key: `setting-page-${p.key}`,
+      label: p.label,
+      where: p.description,
+      to: p.to,
+    }))
+
+  return [...cards, ...rest].slice(0, SETTINGS_LIMIT)
+}
+
+function SettingRow({ label, where }: { label: string; where: string }) {
+  return (
+    <div className="grid min-w-0 flex-1 grid-cols-[6.5rem_1fr] items-center gap-x-3 gap-y-0.5">
+      <Badge variant="secondary" className="justify-center text-[10px]">
+        Settings
+      </Badge>
+      <span className="min-w-0 truncate text-xs">{label}</span>
+      <span className="col-start-2 min-w-0 truncate text-[11px] text-muted-foreground">
+        {where}
+      </span>
+    </div>
   )
 }
 
