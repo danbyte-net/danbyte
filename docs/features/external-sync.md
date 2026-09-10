@@ -53,6 +53,29 @@ servers and hypervisors are) must be allow-listed under **Settings →
 Deployment → General** (or `DANBYTE_SSRF_ALLOWLIST`) before Danbyte will
 connect. Test connection tells you exactly that when the target isn't listed.
 
+## Vendor names and logos
+
+Danbyte names other people's products the way their owners ask, and ships a
+logo only where its owner has said yes in writing.
+
+- **The mark goes on the most prominent mention** - the integration card, the
+  picker option, the page heading - and is dropped in running text.
+  `frontend/src/lib/vendors.ts` holds both forms per vendor, so the rule is
+  applied in one place: `Proxmox® Virtual Environment` on a card,
+  `Proxmox VE` in a sentence.
+- **Never as a bare noun, never invented.** It is "Proxmox Virtual
+  Environment", not "Proxmox"; "for Proxmox Virtual Environment", never
+  "Proxmox sync" as a product name of ours.
+- **Logos need permission.** Naming a product to say what Danbyte connects to
+  is referential use and needs none; redistributing a mark to every install
+  is a different question. Proxmox Server Solutions GmbH gave that permission
+  for the Proxmox brandmark, so it ships. Every other card's logo slot is
+  empty unless an operator drops a file into
+  `frontend/public/branding/vendors/` for their own install - see the README
+  there - and a card with no file shows no logo rather than an empty box.
+- The Integrations page carries one attribution line naming the owners, and
+  states that Danbyte is not affiliated with or endorsed by any of them.
+
 ## Shared rules of engagement
 
 - **Nothing of yours is overwritten.** Existing objects are adopted - syncs
