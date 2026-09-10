@@ -541,6 +541,35 @@
       "description": "Your saved column layouts, and resetting one",
       "page": "preferences",
       "keywords": ["columns", "reset", "layout"]
+    },
+    {
+      "key": "directory.connection",
+      "label": "Connection",
+      "description": "Server, bind account and the search base",
+      "page": "directory",
+      "keywords": [
+        "ldap",
+        "bind dn",
+        "base dn",
+        "active directory",
+        "port 389",
+        "636",
+        "starttls"
+      ]
+    },
+    {
+      "key": "directory.test-login",
+      "label": "Test a user login",
+      "description": "Dry-run a real directory login and read the trace",
+      "page": "directory",
+      "keywords": ["test", "login", "debug", "cannot sign in", "trace"]
+    },
+    {
+      "key": "directory.mappings",
+      "label": "Group mappings",
+      "description": "Which Danbyte group a directory group grants",
+      "page": "directory",
+      "keywords": ["group", "mapping", "membership", "ou", "security group"]
     }
   ]
 }

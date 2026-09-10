@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FormSelect, FormCheckbox } from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
+import { SettingsCard } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const GROUP_TYPES: { value: LdapGroupType; label: string }[] = [
@@ -115,19 +116,37 @@ export function LdapDirectory({
     setForm({ ...form, [k]: v })
 
   return (
-    <div className="max-w-2xl space-y-8">
-      <section className="space-y-4">
-        <div>
-          {/* The page title already says Directory, and it now carries the
-              scope switch - so this heading names the group, not the page. */}
-          <h2 className="text-sm font-semibold">Connection</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {tenantMode
-              ? "This tenant's own directory. Logins routed here auto-provision accounts owned by this tenant and grant membership to it only."
-              : "Let users sign in with their directory credentials. First login auto-provisions a Danbyte account; group access is granted through the mappings below. Local accounts keep working either way."}
-          </p>
-        </div>
-
+    <div className="max-w-2xl space-y-4">
+      {/* The page title already says Directory and carries the scope switch,
+          so each card names its group rather than the page. */}
+      <SettingsCard
+        title="Connection"
+        description={
+          tenantMode
+            ? "This tenant's own directory. Logins routed here auto-provision accounts owned by this tenant and grant membership to it only."
+            : "Let users sign in with their directory credentials. First login auto-provisions a Danbyte account; group access is granted through the mappings below. Local accounts keep working either way."
+        }
+        footer={
+          <>
+            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+              {save.isPending && <Spinner className="size-4" />}
+              Save connection
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => test.mutate()}
+              disabled={test.isPending}
+            >
+              {test.isPending ? (
+                <Spinner className="size-4" />
+              ) : (
+                <Plug className="size-4" />
+              )}
+              Test connection
+            </Button>
+          </>
+        }
+      >
         {tenantMode && (
           <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border bg-card p-3 text-sm">
             <Checkbox
@@ -307,26 +326,7 @@ export function LdapDirectory({
             </Field>
           </div>
         </div>
-
-        <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-background/90 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/75">
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending && <Spinner className="size-4" />}
-            Save settings
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => test.mutate()}
-            disabled={test.isPending}
-          >
-            {test.isPending ? (
-              <Spinner className="size-4" />
-            ) : (
-              <Plug className="size-4" />
-            )}
-            Test connection
-          </Button>
-        </div>
-      </section>
+      </SettingsCard>
 
       <TestLogin endpoints={endpoints} />
 
@@ -367,12 +367,10 @@ function TestLogin({ endpoints }: { endpoints: LdapEndpoints }) {
   })
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-semibold">Test a user login</h2>
-      <p className="text-[13px] text-muted-foreground">
-        Dry-runs the real directory login and shows the full trace - use it when
-        a user can sign in to AD but not to Danbyte. Nothing is persisted.
-      </p>
+    <SettingsCard
+      title="Test a user login"
+      description="Dry-runs the real directory login and shows the full trace - use it when a user can sign in to the directory but not to Danbyte. Nothing is persisted."
+    >
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Username">
           <Input
@@ -426,7 +424,7 @@ function TestLogin({ endpoints }: { endpoints: LdapEndpoints }) {
           )}
         </div>
       )}
-    </section>
+    </SettingsCard>
   )
 }
 
@@ -564,18 +562,18 @@ function GroupMappings({
   )
 
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-sm font-semibold">Group mappings</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
+    <SettingsCard
+      title="Group mappings"
+      description={
+        <>
           Map a directory group to a Danbyte group. On every login, members of
           the directory group are placed in the mapped Danbyte group (and its
           permissions). Only mapped groups grant access.
           {tenantMode &&
             " Tenant mappings may only target groups whose permissions are narrowed to this tenant."}
-        </p>
-      </div>
-
+        </>
+      }
+    >
       <DataTable
         data={rows}
         columns={columns}
@@ -655,6 +653,6 @@ function GroupMappings({
           </Button>
         </div>
       </div>
-    </section>
+    </SettingsCard>
   )
 }
