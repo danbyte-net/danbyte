@@ -37,6 +37,27 @@ class ZabbixConnection(TimestampedModel):
     credentials = EncryptedJSONField(default=dict, blank=True)
     verify_tls = models.BooleanField(default=True)
     enabled = models.BooleanField(default=True)
+    # ── provisioning (#162 phase 2) ────────────────────────────────────
+    OFF, REVIEW, AUTO = "off", "review", "auto"
+    PROVISION_CHOICES = [
+        (OFF, "Off - Danbyte writes nothing"),
+        (REVIEW, "Review - propose changes for approval"),
+        (AUTO, "Auto - apply changes"),
+    ]
+    #: Whether Danbyte may create or update hosts in Zabbix. **Off by
+    #: default**: reading somebody's monitoring is one decision, writing to it
+    #: is another, and the second is never implied by the first.
+    provision_mode = models.CharField(
+        max_length=8, choices=PROVISION_CHOICES, default=OFF
+    )
+    #: Delete a Zabbix host Danbyte created and no longer sees a reason for.
+    #: Off, like everywhere else - Danbyte does not delete records it did not
+    #: get asked to delete, least of all in somebody else's system.
+    prune_hosts = models.BooleanField(default=False)
+    #: How long a host must stay unwanted before pruning acts, so one bad pass
+    #: cannot empty a monitoring system.
+    prune_after_days = models.PositiveSmallIntegerField(default=7)
+
     #: Zabbix trigger severity (0-5, as a string key) -> Danbyte status.
     #: Editable because where an estate draws the line between "worth a colour"
     #: and "worth a page" is an operational decision. Empty = the defaults in
@@ -78,3 +99,105 @@ class ZabbixConnection(TimestampedModel):
         """False when the server is below the floor - or has never answered."""
         v = self.version_tuple()
         return bool(v) and v >= self.MIN_VERSION
+
+
+class ZabbixHostLink(TimestampedModel):
+    """The durable link between a Danbyte device and a Zabbix host.
+
+    Stored rather than re-derived every pass, because every other way of
+    matching - address, serial, name - is a guess that a rename or a
+    re-addressing breaks. Once a pairing is established it survives both.
+
+    ``created_here`` is what makes pruning safe: Danbyte will only ever
+    consider removing a host it made itself.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="zabbix_links"
+    )
+    connection = models.ForeignKey(
+        ZabbixConnection, on_delete=models.CASCADE, related_name="links"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="zabbix_links"
+    )
+    hostid = models.CharField(max_length=32)
+    #: The Zabbix visible name at the time of linking - for the UI, and to
+    #: notice a rename rather than silently following it.
+    host_name = models.CharField(max_length=255, blank=True, default="")
+    #: How the pairing was first made: link | address | serial | name | created.
+    matched_by = models.CharField(max_length=16, blank=True, default="")
+    #: Danbyte created this host, so Danbyte may remove it.
+    created_here = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    #: First pass that found no reason for this host any more. Cleared the
+    #: moment there is one again.
+    unwanted_since = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["host_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "device"], name="uniq_zbx_link_conn_device"
+            ),
+            models.UniqueConstraint(
+                fields=["connection", "hostid"], name="uniq_zbx_link_conn_hostid"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device_id} -> {self.hostid}"
+
+
+class ZabbixChange(TimestampedModel):
+    """One proposed write, waiting for a person.
+
+    Its own model rather than the virtualization sync's ``VirtChange``, which
+    is built around a guest and a VM and cannot describe "create a host" for
+    anything else.
+
+    A change is a **proposal**, never a record of something done: applying one
+    deletes it.
+    """
+
+    CREATE = "create_host"
+    UPDATE = "update_host"
+    AMBIGUOUS = "ambiguous"
+    PRUNE = "prune_host"
+    KIND_CHOICES = [
+        (CREATE, "Create host"),
+        (UPDATE, "Update host"),
+        (AMBIGUOUS, "Needs a decision"),
+        (PRUNE, "Remove host"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="zabbix_changes"
+    )
+    connection = models.ForeignKey(
+        ZabbixConnection, on_delete=models.CASCADE, related_name="changes"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="zabbix_changes",
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    #: What would be written, and why - rendered for the operator to read
+    #: before they agree to it.
+    detail = models.JSONField(default=dict, blank=True)
+    #: Dismissed: kept so detection does not re-raise it every pass.
+    ignored = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["kind", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "device", "kind"],
+                name="uniq_zbx_change_conn_device_kind",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} {self.device_id or ''}".strip()

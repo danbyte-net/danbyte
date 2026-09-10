@@ -150,6 +150,43 @@ class ZabbixClient:
                 out.setdefault(hostid, []).append(problem)
         return out
 
+    def all_hosts(self):
+        """Every host, with what matching needs: interfaces, inventory, name.
+
+        One call. A host list is small next to its history, and matching a
+        thousand devices against a paged fetch would be far worse than one
+        read of the lot.
+        """
+        return self.call("host.get", {
+            "output": ["hostid", "host", "name", "status"],
+            "selectInterfaces": ["interfaceid", "type", "ip", "dns", "useip", "port"],
+            "selectInventory": ["serialno_a"],
+        }) or []
+
+    def group_id(self, name: str) -> str:
+        """The id of a host group, created if this is the first host in it.
+
+        Zabbix will not accept a host without a group, so this is not optional
+        - and creating one named after the site is better than dumping every
+        Danbyte host into one bucket nobody can filter.
+        """
+        found = self.call("hostgroup.get", {
+            "output": ["groupid"], "filter": {"name": [name]},
+        }) or []
+        if found:
+            return found[0]["groupid"]
+        return self.call("hostgroup.create", {"name": name})["groupids"][0]
+
+    def create_host(self, payload: dict) -> str:
+        return self.call("host.create", payload)["hostids"][0]
+
+    def update_host(self, hostid: str, payload: dict) -> None:
+        self.call("host.update", {"hostid": hostid, **payload})
+
+    def delete_hosts(self, hostids) -> None:
+        if hostids:
+            self.call("host.delete", list(hostids))
+
     def host_count(self) -> int:
         """How many hosts the token can see.
 
