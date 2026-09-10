@@ -1175,23 +1175,27 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // and a graph rebuild must not drop the zones.
   const zonesRef = useRef<Zone[]>(zones ?? [])
   zonesRef.current = zones ?? []
-  const patchZone = useCallback(
-    (id: string, patch: Partial<Zone>) =>
-      onZonesChange?.(
-        zonesRef.current.map((z) => (z.id === id ? { ...z, ...patch } : z))
-      ),
-    [onZonesChange]
-  )
-  const zoneCb = useMemo<ZoneCallbacks>(
-    () => ({
-      onRename: (id, label) => patchZone(id, { label }),
-      onRecolor: (id, color) => patchZone(id, { color }),
+  // Through a ref, and the callbacks are built ONCE. The parent passes a
+  // fresh arrow every render, so a callback that depended on it changed
+  // identity every render too - which re-ran the sync effect below and put
+  // the zone back where it was saved, mid-drag. Nothing moved, ever.
+  const onZonesChangeRef = useRef(onZonesChange)
+  onZonesChangeRef.current = onZonesChange
+  const zoneCb = useMemo<ZoneCallbacks>(() => {
+    const patch = (id: string, p: Partial<Zone>) =>
+      onZonesChangeRef.current?.(
+        zonesRef.current.map((z) => (z.id === id ? { ...z, ...p } : z))
+      )
+    return {
+      onRename: (id, label) => patch(id, { label }),
+      onRecolor: (id, color) => patch(id, { color }),
       onDelete: (id) =>
-        onZonesChange?.(zonesRef.current.filter((z) => z.id !== id)),
+        onZonesChangeRef.current?.(
+          zonesRef.current.filter((z) => z.id !== id)
+        ),
       onResizeEnd: () => emitZonesRef.current(),
-    }),
-    [patchZone, onZonesChange]
-  )
+    }
+  }, [])
   const zoneNodes = useRef<Node[]>([])
   // A ref, because the zone nodes are built before emitZones is declared and
   // must not be rebuilt every time its identity changes.
@@ -1377,11 +1381,18 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   useEffect(() => {
     // Read through the ref: `zones` is a fresh array after every drag, and
     // zoneSig is what actually decides whether anything changed.
-    zoneNodes.current = zonesRef.current.map((z) => zoneToNode(z, zoneCb))
-    setNodes((cur) => [
-      ...zoneNodes.current,
-      ...cur.filter((n) => n.type !== "zone"),
-    ])
+    setNodes((cur) => {
+      // Keep whatever was selected: re-seeding after a resize would
+      // otherwise drop the selection, and the handles with it.
+      const sel = new Set(
+        cur.filter((n) => n.type === "zone" && n.selected).map((n) => n.id)
+      )
+      zoneNodes.current = zonesRef.current.map((z) => {
+        const n = zoneToNode(z, zoneCb)
+        return sel.has(n.id) ? { ...n, selected: true } : n
+      })
+      return [...zoneNodes.current, ...cur.filter((n) => n.type !== "zone")]
+    })
   }, [zoneSig, zoneCb, setNodes])
 
   useImperativeHandle(
@@ -1562,7 +1573,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   /** Zone geometry back to the parent. Called on drag stop and on resize
    * end, the only two things that move a box. */
   const emitZones = useCallback(() => {
-    if (!onZonesChange) return
+    if (!onZonesChangeRef.current) return
     const next = nodesToZones(flow.getNodes(), zonesRef.current)
     const same =
       next.length === zonesRef.current.length &&
@@ -1570,8 +1581,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         const p = zonesRef.current[i]
         return z.id === p.id && z.x === p.x && z.y === p.y && z.w === p.w && z.h === p.h
       })
-    if (!same) onZonesChange(next)
-  }, [flow, onZonesChange])
+    if (!same) onZonesChangeRef.current(next)
+  }, [flow])
 
   emitZonesRef.current = emitZones
 
