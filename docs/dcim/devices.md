@@ -150,8 +150,8 @@ rack-face image, that front/rear photo shows below the cards too.
 
 Uploaded photos and diagrams live on their own **Images** tab (rack shots,
 labels, cabling pictures, faceplate close-ups). Click **Add image** to upload;
-hover an image and click the trash icon to remove it, or click an image to open
-the full-size original in a new tab.
+hover an image and click the trash icon to remove it - a confirmation asks
+first - or click an image to open the full-size original in a new tab.
 
 Two layouts, chosen with the toggle beside **Add image**. The **list**
 (default) names each file with its type, size, dimensions and when it changed,
