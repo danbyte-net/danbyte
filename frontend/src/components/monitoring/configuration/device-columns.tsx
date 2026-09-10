@@ -1,7 +1,17 @@
 import type { ColumnDef } from "@tanstack/react-table"
+import { Link } from "@tanstack/react-router"
 
-import type { Device, DeviceRole, DeviceType } from "@/lib/api"
+import type {
+  Device,
+  DeviceRole,
+  DeviceType,
+  Platform,
+  Region,
+  Site,
+} from "@/lib/api"
+import { SortHeader } from "@/components/data-table"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
+import { buildSiteColumns } from "@/components/columns/site-columns"
 import { buildDeviceRoleColumns } from "@/components/columns/device-role-columns"
 import { buildDeviceTypeColumns } from "@/components/columns/device-type-columns"
 import {
@@ -86,6 +96,80 @@ export function buildDeviceRolePolicyColumns({
       include: ["name", "description", "devices", "vms", "updated"],
       countFacets: "range",
     }),
+    monitoringControlColumn(controls),
+  ]
+}
+
+export function buildSitePolicyColumns({
+  controls,
+}: PolicyColumnContext<Site>): ColumnDef<Site>[] {
+  return [
+    ...buildSiteColumns<Site>({
+      omit: ["gateway_policy", "vlans", "vrfs", "tags"],
+    }),
+    monitoringControlColumn(controls),
+  ]
+}
+
+/** Regions and platforms have no shared column factory, so these are the two
+ * columns a policy tab actually needs - name, and what it contains. */
+export function buildRegionPolicyColumns({
+  controls,
+}: PolicyColumnContext<Region>): ColumnDef<Region>[] {
+  return [
+    {
+      id: "name",
+      accessorKey: "name",
+      header: ({ column }) => <SortHeader column={column} label="Region" />,
+      cell: ({ row }) => (
+        <Link to="/regions/$id" params={{ id: row.original.id }} className="link">
+          {row.original.name}
+        </Link>
+      ),
+    },
+    {
+      id: "parent",
+      header: "Parent",
+      enableSorting: false,
+      cell: ({ row }) =>
+        row.original.parent?.name ?? (
+          <span className="text-muted-foreground">-</span>
+        ),
+    },
+    {
+      id: "description",
+      accessorKey: "description",
+      header: "Description",
+      enableSorting: false,
+    },
+    monitoringControlColumn(controls),
+  ]
+}
+
+export function buildPlatformPolicyColumns({
+  controls,
+}: PolicyColumnContext<Platform>): ColumnDef<Platform>[] {
+  return [
+    {
+      id: "name",
+      accessorKey: "name",
+      header: ({ column }) => <SortHeader column={column} label="Platform" />,
+      cell: ({ row }) => (
+        <Link
+          to="/platforms/$id"
+          params={{ id: row.original.id }}
+          className="link"
+        >
+          {row.original.name}
+        </Link>
+      ),
+    },
+    {
+      id: "description",
+      accessorKey: "description",
+      header: "Description",
+      enableSorting: false,
+    },
     monitoringControlColumn(controls),
   ]
 }

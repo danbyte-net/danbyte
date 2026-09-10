@@ -23,7 +23,9 @@ from api.models import (
     DeviceType,
     IPAddress,
     Manufacturer,
+    Platform,
     Prefix,
+    Region,
     Site,
 )
 from core.models import Organization, Tenant
@@ -211,3 +213,108 @@ class QueryCountTests(PrecedenceBase):
             f"{one} queries for one policy, {five} for five - the prefetch is "
             "being ignored again",
         )
+
+
+class NewScopeTests(PrecedenceBase):
+    """Site, region and platform."""
+
+    def setUp(self):
+        super().setUp()
+        self.europe = Region.objects.create(tenant=self.tenant, name="Europe", slug="europe")
+        self.dk = Region.objects.create(
+            tenant=self.tenant, name="Denmark", slug="dk", parent=self.europe
+        )
+        self.site.region = self.dk
+        self.site.save(update_fields=["region"])
+        self.platform = Platform.objects.create(
+            tenant=self.tenant, name="IOS-XE", slug="ios-xe"
+        )
+
+    def test_a_site_policy_matches_a_device_at_that_site(self):
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_SITE, target_site=self.site, interval=600)
+        self.assertEqual(self.winning_interval(ip), 600)
+
+    def test_a_site_policy_reaches_an_address_with_no_device(self):
+        """A site has addresses nothing is plugged into, and they are still at
+        the site - so this scope must not require a device."""
+        pfx = self.prefix("10.1.0.0/24", site=self.site)
+        loose = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.1.0.99", prefix=pfx,
+        )
+        self.policy(MonitoringPolicy.SCOPE_SITE, target_site=self.site, interval=600)
+        self.assertEqual(self.winning_interval(loose), 600)
+
+    def test_a_site_policy_honours_its_target(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, _primary = self.device_ip(pfx)
+        second = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.1.0.11", prefix=pfx,
+            assigned_device=device,
+        )
+        self.policy(MonitoringPolicy.SCOPE_SITE, target_site=self.site, interval=600,
+                    target=MonitoringPolicy.TARGET_PRIMARY)
+        self.assertEqual(resolve_effective_checks(second), [])
+
+    def test_a_region_policy_reaches_a_site_below_it(self):
+        """A policy on Europe has to reach a site in Denmark."""
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_REGION, region=self.europe,
+                    interval=700)
+        self.assertEqual(self.winning_interval(ip), 700)
+
+    def test_a_region_policy_on_a_sibling_does_not_match(self):
+        other = Region.objects.create(tenant=self.tenant, name="Norway",
+                                      slug="no", parent=self.europe)
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_REGION, region=other, interval=700)
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_a_site_policy_beats_the_region_above_it(self):
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_REGION, region=self.europe,
+                    interval=700)
+        self.policy(MonitoringPolicy.SCOPE_SITE, target_site=self.site, interval=600)
+        self.assertEqual(self.winning_interval(ip), 600)
+
+    def test_a_platform_policy_matches_the_devices_platform(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        device.platform = self.platform
+        device.save(update_fields=["platform"])
+        self.policy(MonitoringPolicy.SCOPE_PLATFORM, platform=self.platform,
+                    interval=800)
+        self.assertEqual(self.winning_interval(ip), 800)
+
+    def test_a_device_type_policy_beats_a_platform_policy(self):
+        """One platform spans many models, so the model is the finer statement."""
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        device.platform = self.platform
+        device.save(update_fields=["platform"])
+        self.policy(MonitoringPolicy.SCOPE_PLATFORM, platform=self.platform,
+                    interval=800)
+        self.policy(MonitoringPolicy.SCOPE_DEVICE_TYPE, device_type=self.dtype,
+                    interval=300)
+        self.assertEqual(self.winning_interval(ip), 300)
+
+    def test_a_platform_policy_skips_a_device_with_no_platform(self):
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_PLATFORM, platform=self.platform,
+                    interval=800)
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_a_region_cycle_does_not_hang_resolution(self):
+        """Region.parent is validated on save, but the resolver runs against
+        whatever is in the table."""
+        Region.objects.filter(pk=self.europe.pk).update(parent=self.dk)
+        pfx = self.prefix("10.1.0.0/24")
+        _device, ip = self.device_ip(pfx)
+        self.policy(MonitoringPolicy.SCOPE_REGION, region=self.europe,
+                    interval=700)
+        self.assertEqual(self.winning_interval(ip), 700)

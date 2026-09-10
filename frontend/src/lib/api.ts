@@ -4595,9 +4595,14 @@ export interface MonitoringProfile {
   updated_at: string
 }
 
+// monitoring/policy_scopes.SCOPES, loosest first. The server is the registry;
+// this mirrors it for the pickers.
 export type MonitoringPolicyScope =
   | "global"
+  | "region"
+  | "site"
   | "vrf"
+  | "platform"
   | "device_type"
   | "device_role"
   | "device"
@@ -4611,9 +4616,15 @@ export interface MonitoringPolicy {
   device_role: string | null
   device: string | null
   prefix: string | null
+  /** The site the policy is *about*. Not `site`: a field of that name is a
+   * record's owning site everywhere else, and gets stamped automatically. */
+  target_site: string | null
+  region: string | null
+  platform: string | null
   enabled: boolean
   inherit: boolean
-  /** Device/type/role scopes: which of the device's IPs the checks target. */
+  /** Which of the matched device's IPs the checks target. Honoured by every
+   * scope that can name a device - site and region included. */
   target: "all" | "interfaces" | "primary" | "oob"
   /** Per-scope check frequency override, seconds. Null = global default. */
   interval_seconds: number | null

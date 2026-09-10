@@ -697,7 +697,8 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
         model = MonitoringPolicy
         fields = [
             "id", "scope", "vrf", "device_type", "device_role", "device",
-            "prefix", "enabled", "inherit", "target", "interval_seconds",
+            "prefix", "target_site", "region", "platform",
+            "enabled", "inherit", "target", "interval_seconds",
             "profiles", "profile_detail", "templates", "template_detail",
             "created_at", "updated_at",
         ]

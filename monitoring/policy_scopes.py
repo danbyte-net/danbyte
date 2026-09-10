@@ -39,9 +39,14 @@ class PolicyScope:
     rbac_slug: str | None
     #: Fixed specificity. ``None`` = the scope computes it (prefix).
     rank: int | None
-    #: Honours ``MonitoringPolicy.target`` and needs the address to belong to a
-    #: device.
-    device_shaped: bool = False
+    #: Honours ``MonitoringPolicy.target`` - "the primary IP of everything at
+    #: this site" is a thing to want, so this is not the same question as
+    #: whether the scope needs a device.
+    honours_target: bool = False
+    #: Matches only an address that belongs to a device. A site policy does
+    #: not: a site has addresses with no device on them, and they are still at
+    #: the site.
+    requires_device: bool = False
     #: ``(policy, ip, device) -> bool``, for the scopes that match on a plain
     #: comparison. ``None`` where the resolver handles it specially.
     match: Callable | None = None
@@ -55,26 +60,58 @@ SCOPES: tuple[PolicyScope, ...] = (
         match=lambda policy, ip, device: True,
     ),
     PolicyScope(
+        value="region", label="Region", field="region", rbac_slug="region",
+        # Above site, and deliberately low: prefix policies rank by mask
+        # length, and nothing realistic is a /4, so region cannot collide.
+        rank=4, honours_target=True,
+        match=lambda policy, ip, device: policy.region_id in _region_chain(
+            address_site_id(ip, device)
+        ),
+    ),
+    PolicyScope(
+        # `field` is deliberately not the scope value: see the model.
+        value="site", label="Site", field="target_site", rbac_slug="site",
+        # Not device-shaped: a site has addresses with no device on them, and
+        # they are still at the site.
+        rank=6, honours_target=True,
+        match=lambda policy, ip, device: (
+            policy.target_site_id is not None
+            and policy.target_site_id == address_site_id(ip, device)
+        ),
+    ),
+    PolicyScope(
         value="vrf", label="VRF", field="vrf", rbac_slug="vrf", rank=10,
         # NULL == NULL on purpose: a VRF policy with no VRF is the Global VRF.
         match=lambda policy, ip, device: policy.vrf_id == ip.vrf_id,
     ),
     PolicyScope(
+        value="platform", label="Platform", field="platform",
+        rbac_slug="platform", rank=18,
+        honours_target=True, requires_device=True,
+        # Broader than a device type: one platform spans many models.
+        match=lambda policy, ip, device: (
+            policy.platform_id is not None
+            and policy.platform_id == device.platform_id
+        ),
+    ),
+    PolicyScope(
         value="device_type", label="Device type", field="device_type",
-        rbac_slug="devicetype", rank=20, device_shaped=True,
+        rbac_slug="devicetype", rank=20,
+        honours_target=True, requires_device=True,
         match=lambda policy, ip, device: (
             policy.device_type_id == device.device_type_id
         ),
     ),
     PolicyScope(
         value="device_role", label="Device role", field="device_role",
-        rbac_slug="devicerole", rank=21, device_shaped=True,
+        rbac_slug="devicerole", rank=21,
+        honours_target=True, requires_device=True,
         # The policy field is `device_role`; the Device field is `role`.
         match=lambda policy, ip, device: policy.device_role_id == device.role_id,
     ),
     PolicyScope(
         value="device", label="Device", field="device", rbac_slug="device",
-        rank=128, device_shaped=True,
+        rank=128, honours_target=True, requires_device=True,
         match=lambda policy, ip, device: policy.device_id == device.id,
     ),
     PolicyScope(
@@ -101,3 +138,47 @@ def target_field(value: str) -> str | None:
     """The field a policy of this scope must fill in, or None for global."""
     scope = BY_VALUE.get(value)
     return scope.field if scope is not None else None
+
+
+def address_site_id(ip, device):
+    """Which site an address is at.
+
+    Its own, then its device's, then its prefix's - the same order the rest of
+    Danbyte reads a site from an address, so a site policy and a site-bound
+    engine agree about where something is.
+    """
+    site_id = getattr(ip, "site_id", None)
+    if site_id:
+        return site_id
+    if device is not None and device.site_id:
+        return device.site_id
+    prefix = getattr(ip, "prefix", None)
+    return getattr(prefix, "site_id", None) if prefix is not None else None
+
+
+def _region_chain(site_id) -> set:
+    """A site's region and every region above it.
+
+    A policy on *Europe* has to reach a site in *Amsterdam*, so this walks up.
+    Bounded and cycle-guarded: ``Region.parent`` is validated on save, but the
+    resolver runs against whatever is in the table.
+    """
+    if not site_id:
+        return set()
+    from api.models import Region, Site
+
+    region_id = (
+        Site.objects.filter(pk=site_id).values_list("region_id", flat=True).first()
+    )
+    out: set = set()
+    seen: set = set()
+    current = region_id
+    while current and current not in seen and len(seen) < 32:
+        seen.add(current)
+        out.add(current)
+        current = (
+            Region.objects.filter(pk=current)
+            .values_list("parent_id", flat=True)
+            .first()
+        )
+    return out

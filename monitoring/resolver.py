@@ -275,7 +275,9 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
             if pfx is not None and pfx.network is not None:
                 add(policy, pfx.network.prefixlen, pfx)
             continue
-        if scope.device_shaped and (device is None or not target_ok(policy)):
+        if scope.requires_device and device is None:
+            continue
+        if scope.honours_target and not target_ok(policy):
             continue
         if scope.match is not None and scope.match(policy, ip, device):
             add(policy, scope.rank)

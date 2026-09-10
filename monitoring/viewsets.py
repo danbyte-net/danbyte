@@ -1553,7 +1553,8 @@ class MonitoringProfileViewSet(TenantScopedViewSet):
 class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSet):
     queryset = (
         MonitoringPolicy.objects.select_related(
-            "vrf", "device_type", "device_role", "device", "prefix"
+            "vrf", "device_type", "device_role", "device", "prefix",
+            "target_site", "region", "platform",
         )
         .prefetch_related("profiles", "templates")
         .all()
@@ -1642,29 +1643,20 @@ class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewS
         from auth_api import rbac
 
         tenant = self._tenant_or_403()
+        # Every target the registry knows, so a new scope cannot arrive with
+        # its object unchecked - which would let a caller point a policy at a
+        # site, region or platform they may not even see.
+        targets = {
+            scope.field: (scope.rbac_slug, self._effective_value(serializer, scope.field))
+            for scope in policy_scopes.SCOPES
+            if scope.field
+        }
         _assert_tenant_objects(
             tenant,
-            vrf=self._effective_value(serializer, "vrf"),
-            device_type=self._effective_value(serializer, "device_type"),
-            device_role=self._effective_value(serializer, "device_role"),
-            device=self._effective_value(serializer, "device"),
-            prefix=self._effective_value(serializer, "prefix"),
             profiles=list(serializer.validated_data.get("profiles", [])),
             templates=list(serializer.validated_data.get("templates", [])),
+            **{field: value for field, (_slug, value) in targets.items()},
         )
-        targets = {
-            "vrf": ("vrf", self._effective_value(serializer, "vrf")),
-            "device_type": (
-                "devicetype",
-                self._effective_value(serializer, "device_type"),
-            ),
-            "device_role": (
-                "devicerole",
-                self._effective_value(serializer, "device_role"),
-            ),
-            "device": ("device", self._effective_value(serializer, "device")),
-            "prefix": ("prefix", self._effective_value(serializer, "prefix")),
-        }
         for field, (slug, target) in targets.items():
             if target is not None and not rbac.can_act_on(
                 self.request.user, tenant, slug, "view", target

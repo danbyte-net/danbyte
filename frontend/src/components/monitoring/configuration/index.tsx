@@ -7,12 +7,24 @@ import {
   buildDevicePolicyColumns,
   buildDeviceRolePolicyColumns,
   buildDeviceTypePolicyColumns,
+  buildPlatformPolicyColumns,
+  buildRegionPolicyColumns,
+  buildSitePolicyColumns,
 } from "./device-columns"
 import { PolicyTable } from "./policy-table"
 import { PrefixPolicyTable } from "./prefix-panel"
 import { ProfilesPanel } from "./profiles-panel"
 
-type ConfigTab = "global" | "devices" | "types" | "roles" | "prefixes" | "deny"
+type ConfigTab =
+  | "global"
+  | "regions"
+  | "sites"
+  | "prefixes"
+  | "platforms"
+  | "types"
+  | "roles"
+  | "devices"
+  | "deny"
 
 // Monitoring configuration: scope-based policy (what checks apply to what)
 // across the inheritance hierarchy. One module per panel - see the sibling
@@ -29,10 +41,15 @@ export function MonitoringConfiguration() {
           value={tab}
           onValueChange={(v) => setTab(v as ConfigTab)}
           items={[
+            // Loosest scope first, the order the resolver ranks them in, so
+            // the strip reads as the inheritance chain it is.
+            { value: "regions", label: "Regions" },
+            { value: "sites", label: "Sites" },
             { value: "prefixes", label: "Prefixes" },
-            { value: "devices", label: "Devices" },
+            { value: "platforms", label: "Platforms" },
             { value: "types", label: "Device types" },
             { value: "roles", label: "Device roles" },
+            { value: "devices", label: "Devices" },
             { value: "global", label: "Global templates" },
             { value: "deny", label: "Prefix deny" },
           ]}
@@ -42,6 +59,33 @@ export function MonitoringConfiguration() {
         <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
           <ProfilesPanel />
         </div>
+      )}
+      {tab === "regions" && (
+        <PolicyTable
+          scope="region"
+          endpoint="/api/regions/?page_size=500"
+          tableId="monitoring-config-regions"
+          exportName="monitoring-region-policies"
+          buildColumns={buildRegionPolicyColumns}
+        />
+      )}
+      {tab === "sites" && (
+        <PolicyTable
+          scope="site"
+          endpoint="/api/sites/?page_size=500"
+          tableId="monitoring-config-sites"
+          exportName="monitoring-site-policies"
+          buildColumns={buildSitePolicyColumns}
+        />
+      )}
+      {tab === "platforms" && (
+        <PolicyTable
+          scope="platform"
+          endpoint="/api/platforms/?page_size=500"
+          tableId="monitoring-config-platforms"
+          exportName="monitoring-platform-policies"
+          buildColumns={buildPlatformPolicyColumns}
+        />
       )}
       {tab === "devices" && (
         <PolicyTable

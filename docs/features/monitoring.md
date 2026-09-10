@@ -231,8 +231,32 @@ checks cover:
 | **OOB / management IP** | the device's out-of-band IP |
 
 A device-type or device-role policy applies the same target to *every* matching
-device. The most-specific scope wins (a per-device policy beats the device's
-type/role).
+device.
+
+Scopes run loosest to tightest - **region**, **site**, VRF, prefix,
+**platform**, device type, device role, device - each inheriting from the ones
+above it, and the most specific one wins:
+
+| Scope | Matches |
+|---|---|
+| **Region** | Every address at a site in that region, **or in any region below it** - a policy on *Europe* reaches a site in *Amsterdam*. |
+| **Site** | Every address at that site, including ones with no device on them. |
+| **Platform** | Every device running it. Broader than a device type, since one platform spans many models. |
+
+Region and site honour the **target** selector too, so "the primary IP of
+everything at this site" is one setting - but unlike the device-shaped scopes
+they also reach addresses with no device at all, because those are still at the
+site.
+
+!!! warning "A prefix policy competes by its mask length"
+    Scopes are ranked on one scale, and a **prefix** policy takes its rank from
+    the prefix's **mask length** rather than a fixed position. So a `/24`
+    prefix policy outranks a device-role policy, while a `/8` one is outranked
+    by a VRF policy. If two policies could both apply to an address and one is
+    prefix-scoped, check the mask before assuming which wins - and prefer a
+    per-device policy when you want certainty, since only a `/128` reaches that
+    high. Region and site sit deliberately below any realistic mask, so they
+    never collide.
 
 **Turning *Monitor* on with no profiles/templates selected monitors basic
 reachability** - the policy falls back to a default ICMP *Reachability (ping)*

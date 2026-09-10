@@ -329,6 +329,9 @@ class MonitoringPolicy(TimestampedModel):
     SCOPE_DEVICE_ROLE = "device_role"
     SCOPE_DEVICE = "device"
     SCOPE_PREFIX = "prefix"
+    SCOPE_SITE = "site"
+    SCOPE_REGION = "region"
+    SCOPE_PLATFORM = "platform"
     #: From the registry, so a scope cannot exist for the resolver and not for
     #: the form, or the other way round.
     SCOPE_CHOICES = policy_scopes.CHOICES
@@ -369,6 +372,26 @@ class MonitoringPolicy(TimestampedModel):
     )
     prefix = models.ForeignKey(
         "api.Prefix", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="monitoring_policies",
+    )
+    # Every target field is nullable, and has to stay that way: the RBAC
+    # visibility filter recognises a global policy by all of them being null.
+    #: Named `target_site`, not `site`: a field called `site` is the record's
+    #: *owning* site everywhere else in Danbyte, and the site-separation
+    #: stamper fills one in for a single-site creator. This is the site the
+    #: policy is *about*, which is a different thing - and left unrenamed, a
+    #: site-scoped admin's every policy came out stamped and then failed its
+    #: own visibility check.
+    target_site = models.ForeignKey(
+        "api.Site", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="monitoring_policies",
+    )
+    region = models.ForeignKey(
+        "api.Region", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="monitoring_policies",
+    )
+    platform = models.ForeignKey(
+        "api.Platform", on_delete=models.CASCADE, null=True, blank=True,
         related_name="monitoring_policies",
     )
     enabled = models.BooleanField(default=True)
@@ -421,6 +444,21 @@ class MonitoringPolicy(TimestampedModel):
                 fields=["tenant", "scope", "prefix"],
                 name="uniq_monitoringpolicy_prefix",
                 condition=models.Q(prefix__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "target_site"],
+                name="uniq_monitoringpolicy_site",
+                condition=models.Q(target_site__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "region"],
+                name="uniq_monitoringpolicy_region",
+                condition=models.Q(region__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "platform"],
+                name="uniq_monitoringpolicy_platform",
+                condition=models.Q(platform__isnull=False),
             ),
         ]
 
