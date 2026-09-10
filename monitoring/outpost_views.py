@@ -93,6 +93,11 @@ class _OutpostIdentity:
     def __init__(self, engine):
         self.engine = engine
 
+    def get_username(self) -> str:
+        """What the audit log calls this caller. Not a Django user, so it never
+        lands in a user foreign key - the name is the whole record of who."""
+        return f"outpost:{self.engine.name}"[:150]
+
 
 def engine_for_token(presented: str, *, pull_only: bool = True):
     """The enabled remote engine whose token matches (constant-time), or None."""

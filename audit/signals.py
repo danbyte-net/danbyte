@@ -13,6 +13,7 @@ import datetime
 import decimal
 import uuid
 
+from django.contrib.auth import get_user_model
 from django.db.models.fields.files import FieldFile
 from django.db.models.signals import post_delete, post_save, pre_save
 
@@ -69,16 +70,35 @@ def _safe_repr(instance) -> str:
         return f"{instance._meta.label} {instance.pk}"[:255]
 
 
+def _actor(user) -> tuple:
+    """``(user_for_the_fk, name_for_the_log)`` for whoever is acting.
+
+    Not every authenticated caller is a Django user. An Outpost presents its
+    engine as ``request.user`` so DRF's ``IsAuthenticated`` passes; it has no
+    username and cannot go in a user foreign key. Naming it and leaving the FK
+    null is both what the log wants to say and the only thing that works -
+    before this, every Outpost write to an audited model died in the audit
+    signal with ``AttributeError``, which is the one place a logger must never
+    fail.
+    """
+    if user is None:
+        return None, ""
+    if isinstance(user, get_user_model()):
+        return user, user.get_username()
+    name = getattr(user, "get_username", None)
+    return None, (name() if callable(name) else str(user))[:150]
+
+
 def _record(instance, action, changes, pre=None, post=None):
     from .site_capture import entry_site_id
 
     if is_suspended():
         return
-    user = current_user()
+    actor, actor_name = _actor(current_user())
     ChangeLogEntry.objects.create(
         tenant_id=getattr(instance, "tenant_id", None),
-        user=user,
-        user_name=(user.get_username() if user else ""),
+        user=actor,
+        user_name=actor_name,
         action=action,
         object_type=instance._meta.label_lower,
         object_label=instance._meta.verbose_name.title(),

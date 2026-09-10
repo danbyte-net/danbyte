@@ -56,6 +56,11 @@ The change log covers the things people edit:
 Bulk edits (changing many rows at once) are recorded too - one entry per affected
 object, each with its own diff.
 
+Not every writer is a person. An [Outpost](../monitoring/outposts.md) writes as
+itself, and is named that way - `outpost:probe-1` - with no linked user account,
+because there is no user to link. The name is the whole record of who, which is
+what you want it to say.
+
 !!! note
     High-volume automatic data - like individual monitoring check results - is
     deliberately left out so the log stays readable and focused on human changes.
