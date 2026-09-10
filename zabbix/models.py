@@ -37,6 +37,11 @@ class ZabbixConnection(TimestampedModel):
     credentials = EncryptedJSONField(default=dict, blank=True)
     verify_tls = models.BooleanField(default=True)
     enabled = models.BooleanField(default=True)
+    #: Zabbix trigger severity (0-5, as a string key) -> Danbyte status.
+    #: Editable because where an estate draws the line between "worth a colour"
+    #: and "worth a page" is an operational decision. Empty = the defaults in
+    #: :mod:`zabbix.severity`.
+    severity_map = models.JSONField(default=dict, blank=True)
 
     # ── what the last connection test learned ──────────────────────────
     version = models.CharField(max_length=32, blank=True, default="")

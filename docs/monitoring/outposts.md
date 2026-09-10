@@ -22,7 +22,8 @@ Every check runs on a **monitoring engine**:
   and can answer for it. Danbyte does not run the checks; it asks the system
   what it knows and folds the answer through the same path an Outpost reports
   through, so alerts, silences, flapping and every notification channel behave
-  identically whichever engine produced the result. **Zabbix** is the first.
+  identically whichever engine produced the result. **Zabbix** is the first -
+  see [Zabbix](zabbix.md).
 
 Manage them in **Governance → Monitoring engines** (admin only).
 

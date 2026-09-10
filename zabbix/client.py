@@ -82,6 +82,74 @@ class ZabbixClient:
     def version(self) -> str:
         return self.call("apiinfo.version", authenticated=False)
 
+    def hosts_by_ip(self, ips):
+        """Zabbix hosts that answer on any of ``ips``, keyed by address.
+
+        One call for the whole batch - a thousand targets must not be a
+        thousand round trips, and Zabbix's frontend API is single-threaded per
+        node. ``maintenance_status`` comes back too: a host inside a Zabbix
+        maintenance window is deliberately quiet, not down.
+        """
+        if not ips:
+            return {}
+        rows = self.call("host.get", {
+            "output": ["hostid", "host", "name", "status", "maintenance_status"],
+            "selectInterfaces": ["ip", "dns", "useip"],
+            "filter": {"ip": list(ips)},
+        }) or []
+        out = {}
+        for row in rows:
+            for iface in row.get("interfaces") or []:
+                addr = iface.get("ip")
+                # First host wins per address. Two hosts on one IP is an
+                # operator's ambiguity to resolve, and picking one at random
+                # would hide it - the caller reports the collision instead.
+                if addr and addr in ips:
+                    out.setdefault(addr, []).append(row)
+        return out
+
+    def problems_by_host(self, hostids):
+        """Unresolved, unsuppressed problems for ``hostids``, by host id.
+
+        Two calls, because ``problem.get`` does not carry the host: a problem
+        names the *trigger* that raised it (``objectid``), and the trigger is
+        what belongs to a host. ``trigger.get`` resolves the whole batch at
+        once, so this stays two round trips whether it is ten hosts or ten
+        thousand.
+
+        ``suppressed=False`` is what makes a Zabbix maintenance window mean
+        something here: somebody who silenced a host in Zabbix should not then
+        be paged by Danbyte for the same host.
+        """
+        if not hostids:
+            return {}
+        problems = self.call("problem.get", {
+            "output": ["eventid", "objectid", "severity", "name", "clock"],
+            "hostids": list(hostids),
+            "recent": False,
+            "suppressed": False,
+        }) or []
+        if not problems:
+            return {}
+
+        trigger_ids = sorted({p["objectid"] for p in problems if p.get("objectid")})
+        host_by_trigger = {}
+        if trigger_ids:
+            for trg in self.call("trigger.get", {
+                "output": ["triggerid"],
+                "triggerids": trigger_ids,
+                "selectHosts": ["hostid"],
+            }) or []:
+                host_by_trigger[trg["triggerid"]] = [
+                    h["hostid"] for h in trg.get("hosts") or []
+                ]
+
+        out = {}
+        for problem in problems:
+            for hostid in host_by_trigger.get(problem.get("objectid"), []):
+                out.setdefault(hostid, []).append(problem)
+        return out
+
     def host_count(self) -> int:
         """How many hosts the token can see.
 
