@@ -253,17 +253,36 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     localStorage.setItem("site-map:hidden", JSON.stringify(hidden))
   }, [hidden])
   // Names, not ids, for roles and regions - a device that gains the role
-  // tomorrow is hidden too, which is what picking the group meant.
+  // tomorrow is hidden too, which is what picking the group meant. Resolved
+  // to site ids once, because everything else (devices, cables, arcs) knows
+  // its site by id, not by region.
+  const hiddenSiteIds = useMemo(() => {
+    const out = new Set<string>()
+    for (const s of data.sites)
+      if (
+        hidden.sites.includes(s.id) ||
+        hidden.regions.includes(s.region?.name ?? "No region")
+      )
+        out.add(s.id)
+    return out
+  }, [data.sites, hidden])
   const siteShown = useCallback(
-    (s: SiteMapSite) =>
-      !hidden.sites.includes(s.id) &&
-      !hidden.regions.includes(s.region?.name ?? "No region"),
-    [hidden]
+    (s: SiteMapSite) => !hiddenSiteIds.has(s.id),
+    [hiddenSiteIds]
   )
+  // Hiding a site hides what belongs to it, not just its pin - otherwise its
+  // devices and their cabling stay on the map with nothing to anchor them.
   const deviceShown = useCallback(
-    (d: SiteMapDevice) => !hidden.roles.includes(d.role?.name ?? "No role"),
-    [hidden]
+    (d: SiteMapDevice) =>
+      !hidden.roles.includes(d.role?.name ?? "No role") &&
+      !(d.site && hiddenSiteIds.has(d.site.id)),
+    [hidden, hiddenSiteIds]
   )
+  const hiddenDeviceIds = useMemo(() => {
+    const out = new Set<string>()
+    for (const d of data.devices) if (!deviceShown(d)) out.add(d.id)
+    return out
+  }, [data.devices, deviceShown])
   const [showFov, setShowFovState] = useState(
     () => localStorage.getItem("site-map:fov") !== "off"
   )
@@ -500,25 +519,56 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     queryKey: ["site-map-cables"],
     queryFn: () => api<{ cables: SiteMapCable[] }>("/api/site-map/cables/"),
   })
-  const drawnCables = useMemo(
-    () => buildDrawnCables(cablesQuery.data?.cables ?? [], routes),
-    [cablesQuery.data, routes]
+  const hiddenCableIds = useMemo(() => {
+    const out = new Set<string>()
+    for (const c of cablesQuery.data?.cables ?? [])
+      if (hiddenDeviceIds.has(c.a.device_id) || hiddenDeviceIds.has(c.z.device_id))
+        out.add(c.id)
+    return out
+  }, [cablesQuery.data, hiddenDeviceIds])
+  // A route whose every cable is hidden is drawing an empty channel. One with
+  // no cables at all is a planned duct and stays.
+  const shownRoutes = useMemo(
+    () =>
+      routes.filter(
+        (r) =>
+          r.cables.length === 0 ||
+          r.cables.some((c) => !hiddenCableIds.has(c.id))
+      ),
+    [routes, hiddenCableIds]
   )
-  // device id → the cable ids touching it, for popover counts + one-click trace.
+  const shownCables = useMemo(
+    () => (cablesQuery.data?.cables ?? []).filter((c) => !hiddenCableIds.has(c.id)),
+    [cablesQuery.data, hiddenCableIds]
+  )
+  const drawnCables = useMemo(
+    () => buildDrawnCables(shownCables, shownRoutes),
+    [shownCables, shownRoutes]
+  )
+  // device id → the cable ids touching it, for popover counts + one-click
+  // trace. Drawn cables only: tracing one that is hidden would highlight
+  // nothing and report a count the map does not show.
   const cablesByDevice = useMemo(() => {
     const m = new Map<string, string[]>()
-    for (const c of cablesQuery.data?.cables ?? []) {
+    for (const c of shownCables) {
       m.set(c.a.device_id, [...(m.get(c.a.device_id) ?? []), c.id])
       if (c.z.device_id !== c.a.device_id)
         m.set(c.z.device_id, [...(m.get(c.z.device_id) ?? []), c.id])
     }
     return m
-  }, [cablesQuery.data])
+  }, [shownCables])
   // Cables are now their own layer (all of them, cross-site or not), so the
   // connections layer only draws circuits + tunnels.
+  // An arc with a hidden end has nothing to land on, so it goes with the
+  // site rather than hanging in the sea.
+  const linked = useCallback(
+    (c: SiteMapConnection) =>
+      !hiddenSiteIds.has(c.site_a.id) && !hiddenSiteIds.has(c.site_z.id),
+    [hiddenSiteIds]
+  )
   const shownConnections = useMemo(
-    () => connections.filter((c) => c.kind !== "cable"),
-    [connections]
+    () => connections.filter((c) => c.kind !== "cable" && linked(c)),
+    [connections, linked]
   )
 
   const invalidate = useCallback(() => {
@@ -888,14 +938,14 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const map = mapRef.current
     if (!map) return
     routesRef.current?.remove()
-    if (!layers.routes || routes.length === 0) return
-    const layer = buildRoutesLayer(routes, {
+    if (!layers.routes || shownRoutes.length === 0) return
+    const layer = buildRoutesLayer(shownRoutes, {
       selectedId: selectedRouteId,
       onSelect: (id) => setSelectedRouteId(id),
     })
     layer.addTo(map)
     routesRef.current = layer
-  }, [routes, layers.routes, selectedRouteId])
+  }, [shownRoutes, layers.routes, selectedRouteId])
 
   // Every cable, drawn: routed cables follow their route geometry, un-routed
   // ones a curved chord. Highlight thickens members, dims the rest. Toggling
@@ -1172,14 +1222,16 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     [placed, data.devices, data.markers, siteShown, deviceShown]
   )
 
-  // Resolve the selection.
+  // Resolve the selection - against what is drawn, so hiding a group closes
+  // the inspector of anything it took off the map.
   const selSite =
     selected?.kind === "site"
-      ? (placed.find((s) => s.id === selected.id) ?? null)
+      ? (placed.find((s) => s.id === selected.id && siteShown(s)) ?? null)
       : null
   const selDevice =
     selected?.kind === "device"
-      ? (data.devices.find((d) => d.id === selected.id) ?? null)
+      ? (data.devices.find((d) => d.id === selected.id && deviceShown(d)) ??
+        null)
       : null
   const selMarker =
     selected?.kind === "marker"
@@ -1187,12 +1239,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       : null
   const selConn =
     selected?.kind === "connection"
-      ? (connections.find((c) => c.id === selected.id) ?? null)
+      ? (connections.find((c) => c.id === selected.id && linked(c)) ?? null)
       : null
   const selCable =
     selected?.kind === "cable"
-      ? ((cablesQuery.data?.cables ?? []).find((c) => c.id === selected.id) ??
-        null)
+      ? (shownCables.find((c) => c.id === selected.id) ?? null)
       : null
 
   // Keyboard: Escape disarms/deselects; Delete removes a selected marker in
@@ -1837,8 +1888,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             sites={data.sites}
             devices={data.devices}
             markers={data.markers}
-            connections={connections}
-            routes={routes}
+            // What the map draws, so the list and the map agree: a link to a
+            // hidden site is gone from both.
+            connections={connections.filter(linked)}
+            routes={shownRoutes}
             regions={data.regions ?? []}
             hidden={hidden}
             onHiddenChange={setHidden}
