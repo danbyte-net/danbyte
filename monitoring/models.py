@@ -40,6 +40,7 @@ from core.models import (
     TimestampedModel,
 )
 
+from . import policy_scopes
 from .secrets import EncryptedJSONField
 
 
@@ -328,14 +329,9 @@ class MonitoringPolicy(TimestampedModel):
     SCOPE_DEVICE_ROLE = "device_role"
     SCOPE_DEVICE = "device"
     SCOPE_PREFIX = "prefix"
-    SCOPE_CHOICES = [
-        (SCOPE_GLOBAL, "Global"),
-        (SCOPE_VRF, "VRF"),
-        (SCOPE_DEVICE_TYPE, "Device type"),
-        (SCOPE_DEVICE_ROLE, "Device role"),
-        (SCOPE_DEVICE, "Device"),
-        (SCOPE_PREFIX, "Prefix"),
-    ]
+    #: From the registry, so a scope cannot exist for the resolver and not for
+    #: the form, or the other way round.
+    SCOPE_CHOICES = policy_scopes.CHOICES
 
     # Which of a device's IPs a device/type/role policy applies to. Ignored for
     # global/vrf/prefix scopes (those already target every IP in their scope).

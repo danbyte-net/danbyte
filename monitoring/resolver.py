@@ -38,6 +38,7 @@ from .models import (
     MonitoringPolicy,
     MonitoringProfile,
 )
+from .policy_scopes import scope_for
 
 if TYPE_CHECKING:  # pragma: no cover
     from api.models import IPAddress, Prefix
@@ -260,35 +261,24 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
         return True  # TARGET_ALL
 
     for policy in policies:
-        if policy.scope == MonitoringPolicy.SCOPE_GLOBAL:
-            add(policy, 0)
-        elif policy.scope == MonitoringPolicy.SCOPE_VRF and policy.vrf_id == ip.vrf_id:
-            add(policy, 10)
-        elif (
-            device
-            and policy.scope == MonitoringPolicy.SCOPE_DEVICE_TYPE
-            and policy.device_type_id == device.device_type_id
-            and target_ok(policy)
-        ):
-            add(policy, 20)
-        elif (
-            device
-            and policy.scope == MonitoringPolicy.SCOPE_DEVICE_ROLE
-            and policy.device_role_id == device.role_id
-            and target_ok(policy)
-        ):
-            add(policy, 21)
-        elif (
-            device
-            and policy.scope == MonitoringPolicy.SCOPE_DEVICE
-            and policy.device_id == device.id
-            and target_ok(policy)
-        ):
-            add(policy, 128)
-        elif policy.scope == MonitoringPolicy.SCOPE_PREFIX and policy.prefix_id:
+        scope = scope_for(policy.scope)
+        if scope is None:
+            # A scope the registry no longer knows. Skipping it is the safe
+            # reading - a policy nobody can explain must not quietly apply.
+            continue
+        if scope.rank is None:
+            # Prefix: its rank is the mask length, so it needs the enclosing
+            # list rather than a plain comparison.
+            if not policy.prefix_id:
+                continue
             pfx = next((p for p in enclosing if p.id == policy.prefix_id), None)
             if pfx is not None and pfx.network is not None:
                 add(policy, pfx.network.prefixlen, pfx)
+            continue
+        if scope.device_shaped and (device is None or not target_ok(policy)):
+            continue
+        if scope.match is not None and scope.match(policy, ip, device):
+            add(policy, scope.rank)
 
     # Stamp the winning frequency override onto every policy candidate so the
     # scheduler can persist it per check-state without re-resolving.

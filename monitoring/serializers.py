@@ -705,15 +705,14 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        from .policy_scopes import TARGET_FIELDS, target_field
+
         scope = attrs.get("scope", getattr(self.instance, "scope", ""))
         targets = {
-            "vrf": attrs.get("vrf", getattr(self.instance, "vrf", None)),
-            "device_type": attrs.get("device_type", getattr(self.instance, "device_type", None)),
-            "device_role": attrs.get("device_role", getattr(self.instance, "device_role", None)),
-            "device": attrs.get("device", getattr(self.instance, "device", None)),
-            "prefix": attrs.get("prefix", getattr(self.instance, "prefix", None)),
+            field: attrs.get(field, getattr(self.instance, field, None))
+            for field in TARGET_FIELDS
         }
-        expected = None if scope == "global" else scope
+        expected = target_field(scope)
         for key, value in targets.items():
             if key == expected:
                 if value is None:

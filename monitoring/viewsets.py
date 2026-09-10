@@ -23,6 +23,7 @@ from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin
 
+from . import policy_scopes
 from .models import (
     PortUtilizationRule,
     AlertRule,
@@ -1559,7 +1560,11 @@ class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewS
     )
     serializer_class = MonitoringPolicySerializer
 
-    _TARGET_FIELDS = ("vrf", "device_type", "device_role", "device", "prefix")
+    #: From the registry. Kept as a name because the queries below read better
+    #: for it - but never hand-maintained: a non-nullable field slipped into
+    #: this tuple makes `global_q` match nothing, which hides **every** global
+    #: policy from every non-superuser with no error to say so.
+    _TARGET_FIELDS = policy_scopes.TARGET_FIELDS
 
     def _site_target_q(self, site_ids):
         from core.effective_settings import separation_enabled
@@ -1581,29 +1586,41 @@ class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewS
         return q
 
     def _filter_visible_targets(self, qs, tenant, user):
-        from api.models import Device, DeviceRole, DeviceType, Prefix, VRF
         from auth_api import rbac
+        from auth_api.object_types import model_for
 
-        target_models = {
-            "vrf": (VRF, "vrf"),
-            "device_type": (DeviceType, "devicetype"),
-            "device_role": (DeviceRole, "devicerole"),
-            "device": (Device, "device"),
-            "prefix": (Prefix, "prefix"),
-        }
-        visible = {
-            field: rbac.restrict_queryset(
-                model.objects.filter(tenant=tenant), user, tenant, slug, "view"
+        # Each scope names the catalog behind it, so adding one cannot leave a
+        # target unfiltered here - an unfiltered target is a policy somebody
+        # sees that names an object they may not.
+        visible = {}
+        for scope in policy_scopes.SCOPES:
+            if not scope.field:
+                continue
+            model = model_for(scope.rbac_slug)
+            if model is None:
+                # No RBAC type for this target: fail closed rather than show
+                # every policy of that scope to everybody.
+                visible[scope.field] = []
+                continue
+            visible[scope.field] = rbac.restrict_queryset(
+                model.objects.filter(tenant=tenant), user, tenant,
+                scope.rbac_slug, "view",
             ).values("pk")
-            for field, (model, slug) in target_models.items()
-        }
 
         global_q = Q(scope=MonitoringPolicy.SCOPE_GLOBAL)
         for field in self._TARGET_FIELDS:
             global_q &= Q(**{f"{field}__isnull": True})
         visibility_q = global_q
-        for field in self._TARGET_FIELDS:
-            scope_q = Q(scope=field, **{f"{field}_id__in": visible[field]})
+        for scope in policy_scopes.SCOPES:
+            field = scope.field
+            if not field:
+                continue
+            # `scope=scope.value`, not `scope=field`: they are equal today for
+            # every scope, and relying on that is how a scope whose value
+            # differs from its field name silently matches nothing.
+            scope_q = Q(
+                scope=scope.value, **{f"{field}_id__in": visible[field]}
+            )
             for other in self._TARGET_FIELDS:
                 if other != field:
                     scope_q &= Q(**{f"{other}__isnull": True})
@@ -1615,7 +1632,7 @@ class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewS
         scope = self.request.query_params.get("scope")
         if scope:
             qs = qs.filter(scope=scope)
-        for key in ("vrf", "device_type", "device_role", "device", "prefix"):
+        for key in policy_scopes.TARGET_FIELDS:
             value = self.request.query_params.get(key)
             if value:
                 qs = qs.filter(**{f"{key}_id": value})
