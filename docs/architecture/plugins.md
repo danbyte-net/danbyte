@@ -25,19 +25,26 @@ changes and no frontend rebuild**.
 echo 'PLUGINS=danbyte_acme_plugin' >> .env     # comma-separate multiple
 ```
 
-Then apply it. Either from the UI - **Settings → Plugins → Installed
-plugins → Apply changes** (runs migrations and restarts Danbyte; superuser
-only) - or by hand:
+Then apply it. Either from the UI - **Settings → Integrations → Plugins →
+Apply changes** (runs migrations and restarts Danbyte; superuser only) - or by
+hand:
 
 ```bash
 .venv/bin/python manage.py migrate
 systemctl --user restart danbyte-web danbyte-workers danbyte-ws
 ```
 
-The **Plugins & services** page lists every plugin with its load state
-(`loaded` / `incompatible` / `error`), flags unapplied migrations, and offers
-per-tenant enable toggles. A broken or version-incompatible plugin is reported
-there and skipped - it never blocks boot.
+Plugins live on the **Integrations** page, as cards beside the sync
+integrations - to an operator both are the same thing, something Danbyte can do
+that is off until you turn it on, so both answer "what is switched on here?" in
+one place. Each card carries the plugin's load state (`loaded` /
+`incompatible` / `error`), flags unapplied migrations, and holds the per-tenant
+switch. A broken or version-incompatible plugin is reported there and skipped -
+it never blocks boot.
+
+A plugin that ships **inside** Danbyte (`settings.BUILTIN_PLUGINS`) appears the
+same way with a **Built-in** tag: there is nothing to upload, apply or
+uninstall, only the switch.
 
 !!! note "Disable ≠ uninstall"
     Disabling a plugin (per tenant or deployment-wide) hides its API/UI but
@@ -47,8 +54,8 @@ there and skipped - it never blocks boot.
 ### Offline / airgapped install (upload an archive)
 
 For a box that can't reach PyPI, a **superuser** can upload the plugin source
-instead of `pip install`: **Settings → Plugins → Installed plugins →
-Upload plugin**, and pick a `.tar.gz` / `.tgz` / `.tar` / `.zip` of the plugin
+instead of `pip install`: **Settings → Integrations → Plugins → Upload
+plugin**, and pick a `.tar.gz` / `.tgz` / `.tar` / `.zip` of the plugin
 (a `git archive`, a GitHub source download, or an sdist all work). Danbyte
 extracts the package into `DANBYTE_PLUGIN_DIR` (default `plugins_local/`, a
 writable dir kept on `sys.path`) and records its module name in

@@ -6,15 +6,14 @@ import { api } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { trademarkNotice, VENDORS } from "@/lib/vendors"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { InfoTip } from "@/components/ui/info-tip"
-import { Switch } from "@/components/ui/switch"
+import { SettingsHeader } from "@/components/settings/settings-card"
 import {
-  cardAnchor,
-  SettingsHeader,
-} from "@/components/settings/settings-card"
+  ToggleCard,
+  ToggleCardGrid,
+} from "@/components/settings/toggle-card"
 import { VendorLogo } from "@/components/settings/vendor-logo"
+import { PluginsSection } from "@/components/settings/plugins-section"
 
 export const Route = createFileRoute("/settings/integrations")({
   component: IntegrationsSettingsPage,
@@ -152,9 +151,10 @@ function IntegrationsSettingsPage() {
   return (
     <div className="max-w-5xl space-y-4">
       <SettingsHeader title="Integrations">
-        What Danbyte talks to, and what it is allowed to change. Everything is
-        off until you turn it on - a disabled integration hides its pages and
-        stops its scheduled syncs for this tenant.
+        What Danbyte talks to and what it is allowed to change, plus the
+        plugins installed on this deployment. Everything is off until you turn
+        it on - a disabled integration hides its pages and stops its scheduled
+        syncs for this tenant.
       </SettingsHeader>
 
       {query.isLoading && (
@@ -163,62 +163,31 @@ function IntegrationsSettingsPage() {
 
       {settings && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ToggleCardGrid>
             {CARDS.map((card) => (
-              <section
+              <ToggleCard
                 key={card.key}
-                // The same anchor SettingsCard derives, so a search result
-                // scrolls to the integration rather than the page top.
-                id={cardAnchor(card.label)}
-                className="flex scroll-mt-6 flex-col gap-2 rounded-lg border border-border bg-card p-3"
-              >
-                <div className="flex items-start gap-3">
-                  <VendorLogo vendor={card.vendor} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <h2 className="text-[13px] font-semibold">
-                        {card.label}
-                      </h2>
-                      <InfoTip>{card.info}</InfoTip>
-                    </div>
-                    {card.names && (
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {card.names
-                          .map((n) => VENDORS[n]?.display ?? n)
-                          .join(" · ")}
-                      </p>
-                    )}
-                  </div>
-                  <Switch
-                    checked={settings[card.key]}
-                    disabled={save.isPending}
-                    onCheckedChange={(on) => save.mutate({ [card.key]: on })}
-                    aria-label={card.label}
-                  />
-                </div>
-
-                <p className="text-xs text-muted-foreground">
-                  {card.description}
-                </p>
-
-                <div className="mt-auto flex items-center gap-2 pt-1">
-                  <Badge variant={settings[card.key] ? "success" : "secondary"}>
-                    {settings[card.key] ? "On" : "Off"}
-                  </Badge>
-                  {card.configure && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="ml-auto"
-                      asChild
-                    >
+                title={card.label}
+                info={card.info}
+                description={card.description}
+                logo={<VendorLogo vendor={card.vendor} />}
+                subtitle={
+                  card.names &&
+                  card.names.map((n) => VENDORS[n]?.display ?? n).join(" · ")
+                }
+                checked={settings[card.key]}
+                disabled={save.isPending}
+                onCheckedChange={(on) => save.mutate({ [card.key]: on })}
+                action={
+                  card.configure && (
+                    <Button size="sm" variant="outline" asChild>
                       <Link to={card.configure.to}>{card.configure.label}</Link>
                     </Button>
-                  )}
-                </div>
-              </section>
+                  )
+                }
+              />
             ))}
-          </div>
+          </ToggleCardGrid>
 
           {notice && (
             <p className="max-w-prose text-[11px] text-muted-foreground">
@@ -227,6 +196,12 @@ function IntegrationsSettingsPage() {
           )}
         </>
       )}
+
+      {/* Plugins are the same thing to an operator: something Danbyte can do
+          that is off until you turn it on. They used to live on a page of
+          their own, which meant looking in two places to answer "what is
+          switched on here?". */}
+      <PluginsSection />
     </div>
   )
 }

@@ -94,21 +94,26 @@
     {
       "key": "integrations",
       "label": "Integrations",
-      "description": "What Danbyte talks to, and what it may change",
+      "description": "What Danbyte talks to, and the plugins installed here",
       "to": "/settings/integrations",
       "group": "integrations",
-      "scopes": ["tenant"],
+      "scopes": ["tenant", "deployment"],
       "keywords": [
-        "vcenter",
-        "proxmox",
+        "add-on",
+        "agent access",
+        "allow writes",
+        "assistant chat",
         "dhcp sync",
         "dns sync",
-        "assistant chat",
-        "agent access",
+        "enable",
+        "extension",
         "mcp",
-        "allow writes",
-        "webhook",
-        "netbox import"
+        "netbox import",
+        "plugin",
+        "proxmox",
+        "toggle",
+        "vcenter",
+        "webhook"
       ]
     },
     {
@@ -216,7 +221,16 @@
       "to": "/settings/updates",
       "group": "install",
       "scopes": ["deployment"],
-      "keywords": ["upgrade", "release", "version", "bundle", "changelog"]
+      "keywords": [
+        "bundle",
+        "changelog",
+        "release",
+        "restart",
+        "service",
+        "upgrade",
+        "version",
+        "worker"
+      ]
     },
     {
       "key": "backups",
@@ -226,16 +240,6 @@
       "group": "install",
       "scopes": ["deployment"],
       "keywords": ["backup", "restore", "s3", "archive", "dbk", "schedule"]
-    },
-    {
-      "key": "plugins",
-      "label": "Plugins",
-      "description": "Installed plugins and host services",
-      "to": "/settings/plugins",
-      "group": "install",
-      "scopes": ["tenant", "deployment"],
-      "defaultScope": "tenant",
-      "keywords": ["plugin", "service", "restart", "worker", "upload"]
     },
     {
       "key": "preferences",
@@ -516,17 +520,25 @@
     },
     {
       "key": "install.plugins",
-      "label": "Installed plugins",
-      "description": "Enable a plugin for this tenant, or upload one",
-      "page": "plugins",
-      "keywords": ["plugin", "upload", "enable", "module"]
+      "label": "Plugins",
+      "description": "Installed plugins, and the switch for each",
+      "page": "integrations",
+      "keywords": [
+        "plugin",
+        "extension",
+        "add-on",
+        "install",
+        "upload",
+        "apply",
+        "built-in"
+      ]
     },
     {
       "key": "install.services",
       "label": "Services",
       "description": "Restart the web and worker processes",
-      "page": "plugins",
-      "keywords": ["restart", "worker", "service", "systemd", "rq"]
+      "page": "updates",
+      "keywords": ["service", "restart", "worker", "rq", "daemon", "systemd"]
     },
     {
       "key": "prefs.display",

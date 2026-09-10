@@ -17,6 +17,8 @@ const EXTRA_SOURCES: Record<string, string[]> = {
   separation: ["src/components/settings/separation-deployment.tsx"],
   security: ["src/components/settings/chat-model-card.tsx"],
   directory: ["src/components/settings/ldap-directory.tsx"],
+  integrations: ["src/components/settings/plugins-section.tsx"],
+  updates: ["src/components/settings/services-section.tsx"],
 }
 
 function sourcesFor(pageKey: string): string {
@@ -75,14 +77,19 @@ describe("settings catalog", () => {
   // the catalog would leave a search result linking to an anchor that no
   // longer exists, and nothing else would notice.
   //
-  // Two spellings, because two things render a card heading: `title` on a
-  // SettingsCard, and `label` on a page that maps its own list (Integrations
-  // draws one section per vendor).
+  // Three spellings, because three things render a card heading: `title` on a
+  // SettingsCard, `label` on a page that maps its own list (Integrations draws
+  // one section per vendor), and a bare `cardAnchor("…")` where a section is
+  // not a SettingsCard but still has to own the anchor a result links to.
   it("still finds every card's title in the page that renders it", () => {
     const missing: string[] = []
     for (const card of SETTINGS_CARDS) {
       const source = sourcesFor(card.page)
-      const spellings = [`title="${card.label}"`, `label: "${card.label}"`]
+      const spellings = [
+        `title="${card.label}"`,
+        `label: "${card.label}"`,
+        `cardAnchor("${card.label}")`,
+      ]
       if (!spellings.some((s) => source.includes(s))) {
         missing.push(`${card.key} → title="${card.label}"`)
       }

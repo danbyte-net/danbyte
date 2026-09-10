@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
+import { ServicesSection } from "@/components/settings/services-section"
 import {
   SettingsCard,
   SettingsHeader,
@@ -320,6 +321,10 @@ docker compose -f docker-compose.prod.yml up -d`}
           ))}
         </dl>
       </SettingsCard>
+
+      {/* Restarting a service is not a switch, so it sits with the rest of
+          "this install" rather than on the page that holds the switches. */}
+      <ServicesSection />
 
       {/* Steps this version still needs from an operator. Hidden once done. */}
       {(notes.data?.pending.length ?? 0) > 0 && (
