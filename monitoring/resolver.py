@@ -29,7 +29,15 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-from .models import CheckAssignment, MonitoringDenySubnet, MonitoringPolicy
+from django.db.models import Prefetch
+
+from .models import (
+    CheckAssignment,
+    CheckTemplate,
+    MonitoringDenySubnet,
+    MonitoringPolicy,
+    MonitoringProfile,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from api.models import IPAddress, Prefix
@@ -130,7 +138,11 @@ def _enclosing_prefixes(ip: "IPAddress") -> list["Prefix"]:
     from api.models import Prefix
 
     try:
-        addr = ipaddress.ip_address(ip.ip_address)
+        # Tolerate a mask. The column is a GenericIPAddressField and should
+        # never hold one, but it validates on full_clean rather than on save,
+        # so an import or a shell can put one there - and every prefix policy
+        # and inherited assignment then silently missed that address.
+        addr = ipaddress.ip_address(str(ip.ip_address).split("/")[0])
     except (ValueError, TypeError):
         return []
 
@@ -168,9 +180,24 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
         return []
 
     device = getattr(ip, "assigned_device", None)
-    policies = (
-        MonitoringPolicy.objects.filter(tenant_id=ip.tenant_id, enabled=True)
-        .prefetch_related("templates", "profiles__templates")
+    # The enabled-only filter has to be in the prefetch, not in the loop below:
+    # `policy.templates.filter(...)` ignores a prefetch and re-queries per
+    # policy, per IP - which, with one enabled policy making every IP in the
+    # tenant a candidate, is the difference between a handful of queries and
+    # thousands.
+    policies = MonitoringPolicy.objects.filter(
+        tenant_id=ip.tenant_id, enabled=True
+    ).prefetch_related(
+        Prefetch("templates", queryset=CheckTemplate.objects.filter(enabled=True)),
+        Prefetch(
+            "profiles",
+            queryset=MonitoringProfile.objects.filter(enabled=True).prefetch_related(
+                Prefetch(
+                    "templates",
+                    queryset=CheckTemplate.objects.filter(enabled=True),
+                )
+            ),
+        ),
     )
     candidates: list[_Candidate] = []
     # Frequency override for this IP = the interval_seconds of the most-specific
@@ -182,9 +209,9 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
     def add(policy: MonitoringPolicy, specificity: int, prefix=None) -> None:
         if policy.interval_seconds:
             interval_by_spec.append((specificity, policy.interval_seconds))
-        templates = list(policy.templates.filter(enabled=True))
-        for profile in policy.profiles.filter(enabled=True).prefetch_related("templates"):
-            templates.extend(list(profile.templates.filter(enabled=True)))
+        templates = list(policy.templates.all())
+        for profile in policy.profiles.all():
+            templates.extend(list(profile.templates.all()))
         if not templates:
             # A "Follow global" policy (inherit) contributes nothing of its own
             # - it just rides the broader-scope policies (and may still carry a
@@ -213,14 +240,23 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
 
     def target_ok(policy) -> bool:
         """Device/type/role policies apply only to the device IPs their target
-        selects (all IPs / interface IPs / primary / OOB)."""
+        selects (all IPs / interface IPs / primary / OOB).
+
+        Every caller checks ``device`` first, so the guard below is unreachable
+        today - it is here because a scope that matches without a device (a
+        site one, say) would otherwise fail with an AttributeError deep in
+        resolution rather than simply not matching.
+        """
         t = policy.target
+        if t == MonitoringPolicy.TARGET_INTERFACES:
+            return ip.assigned_interface_id is not None
+        if device is None:
+            # No device means no primary and no OOB to be one of.
+            return t == MonitoringPolicy.TARGET_ALL
         if t == MonitoringPolicy.TARGET_PRIMARY:
             return device.primary_ip_id == ip.id
         if t == MonitoringPolicy.TARGET_OOB:
             return device.oob_ip_id == ip.id
-        if t == MonitoringPolicy.TARGET_INTERFACES:
-            return ip.assigned_interface_id is not None
         return True  # TARGET_ALL
 
     for policy in policies:
