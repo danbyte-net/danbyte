@@ -68,6 +68,7 @@ import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   MapObjectsSidebar,
+  NO_HIDDEN,
   type MapSelected,
   type MarkerTypeOption,
 } from "@/components/site-map/map-sidebar"
@@ -233,6 +234,36 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   useEffect(() => {
     localStorage.setItem("site-map:layers", JSON.stringify(layers))
   }, [layers])
+  // What the sidebar's eye toggles have taken off the map. Separate from
+  // `layers`: that switches whole kinds, this narrows one kind to the roles,
+  // regions and sites you are actually looking at.
+  // `typeof NO_HIDDEN` is the sidebar's MapHidden - taken from the value that
+  // is already imported rather than importing the type as well.
+  const [hidden, setHidden] = useState<typeof NO_HIDDEN>(() => {
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem("site-map:hidden")!
+      ) as Partial<typeof NO_HIDDEN>
+      return { ...NO_HIDDEN, ...stored }
+    } catch {
+      return NO_HIDDEN
+    }
+  })
+  useEffect(() => {
+    localStorage.setItem("site-map:hidden", JSON.stringify(hidden))
+  }, [hidden])
+  // Names, not ids, for roles and regions - a device that gains the role
+  // tomorrow is hidden too, which is what picking the group meant.
+  const siteShown = useCallback(
+    (s: SiteMapSite) =>
+      !hidden.sites.includes(s.id) &&
+      !hidden.regions.includes(s.region?.name ?? "No region"),
+    [hidden]
+  )
+  const deviceShown = useCallback(
+    (d: SiteMapDevice) => !hidden.roles.includes(d.role?.name ?? "No role"),
+    [hidden]
+  )
   const [showFov, setShowFovState] = useState(
     () => localStorage.getItem("site-map:fov") !== "off"
   )
@@ -953,6 +984,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const sources: FovSource[] = []
     if (layers.devices) {
       for (const d of data.devices) {
+        if (!deviceShown(d)) continue
         const fov = d.id in fovDraft ? fovDraft[d.id] : d.fov
         if (!fov) continue
         sources.push({
@@ -976,7 +1008,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const layer = buildFovLayer(sources)
     layer.addTo(map)
     fovRef.current = layer
-  }, [data, fovDraft, layers.devices, showFov])
+  }, [data, fovDraft, layers.devices, showFov, hidden])
 
   // (Re)draw markers whenever data / edit mode / layers change. Selection is
   // deliberately NOT a dependency: it restyles two markers via markerHandles
@@ -994,6 +1026,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
     if (layers.sites) {
       for (const s of placed) {
+        if (!siteShown(s)) continue
         const isSel = sel?.kind === "site" && sel.id === s.id
         const m = L.marker([s.latitude!, s.longitude!], {
           icon: siteIcon(s, { selected: isSel }),
@@ -1021,6 +1054,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     }
     if (layers.devices) {
       for (const d of data.devices) {
+        if (!deviceShown(d)) continue
         const isSel = sel?.kind === "device" && sel.id === d.id
         const m = L.marker([d.latitude, d.longitude], {
           icon: deviceIcon(d, { selected: isSel }),
@@ -1090,7 +1124,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       ;(map as unknown as { _smFitted?: boolean })._smFitted = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, editing, mode, placed, layers, stacking])
+  }, [data, editing, mode, placed, layers, stacking, hidden])
 
   // Selection restyle + reveal: touch exactly the old and new selected
   // markers, and when the new one sits inside a cluster, zoom/spiderfy until
@@ -1119,10 +1153,12 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       const m = map ?? mapRef.current
       if (!m) return
       const pts: [number, number][] = [
-        ...placed.map((s) => [s.latitude!, s.longitude!] as [number, number]),
-        ...data.devices.map(
-          (d) => [d.latitude, d.longitude] as [number, number]
-        ),
+        ...placed
+          .filter(siteShown)
+          .map((s) => [s.latitude!, s.longitude!] as [number, number]),
+        ...data.devices
+          .filter(deviceShown)
+          .map((d) => [d.latitude, d.longitude] as [number, number]),
         ...data.markers.map(
           (mk) => [mk.latitude, mk.longitude] as [number, number]
         ),
@@ -1133,7 +1169,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
         m.setView([30, 10], 2)
       }
     },
-    [placed, data.devices, data.markers]
+    [placed, data.devices, data.markers, siteShown, deviceShown]
   )
 
   // Resolve the selection.
@@ -1260,7 +1296,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       lng: number
     }[] = []
     for (const s of placed)
-      if (s.check === "down" || s.check === "degraded")
+      // Hidden objects are off the map, so the triage pill skips them too.
+      if (siteShown(s) && (s.check === "down" || s.check === "degraded"))
         list.push({
           kind: "site",
           id: s.id,
@@ -1269,7 +1306,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           lng: s.longitude!,
         })
     for (const d of data.devices)
-      if (d.check === "down" || d.check === "degraded")
+      if (deviceShown(d) && (d.check === "down" || d.check === "degraded"))
         list.push({
           kind: "device",
           id: d.id,
@@ -1280,7 +1317,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     return list.sort((a, b) =>
       a.check === b.check ? 0 : a.check === "down" ? -1 : 1
     )
-  }, [placed, data.devices])
+  }, [placed, data.devices, siteShown, deviceShown])
   const problemIdx = useRef<Record<string, number>>({})
   const nextProblem = (check: "down" | "degraded") => {
     const list = problems.filter((p) => p.check === check)
@@ -1388,8 +1425,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             />
           )}
           <MapSearch
-            sites={placed}
-            devices={data.devices}
+            sites={placed.filter(siteShown)}
+            devices={data.devices.filter(deviceShown)}
             markers={data.markers}
             onPick={(sel, lat, lng) => {
               flyTo(lat, lng)
@@ -1803,6 +1840,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             connections={connections}
             routes={routes}
             regions={data.regions ?? []}
+            hidden={hidden}
+            onHiddenChange={setHidden}
             onFocusRegion={(r) => {
               const map = mapRef.current
               if (!map) return

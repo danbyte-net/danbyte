@@ -76,6 +76,16 @@ The page is a clone of the floor-plan editor's shell:
   under the search box filter the whole list. Group headers show
   down/degraded counts even when folded, and fold state is remembered per
   browser.
+- **Hiding part of the map** - the eye on a group header takes that group
+  off the map: a device role, or a region's sites. Individual sites have
+  their own eye, since sites are the map's top-level objects and there are
+  rarely many. Hiding is by **name**, so a device that gets the role
+  tomorrow is hidden too. Hidden objects stay listed, greyed, so you can
+  bring them back; they drop out of Problems, out of the triage pill, out
+  of **Find on map**, and out of Fit-to-all. A **"n hidden · Show all"**
+  line appears at the top of the sidebar whenever anything is off, and the
+  choice is remembered per browser. This is finer-grained than **View**,
+  which switches whole kinds on and off.
 
 Placed markers are fully editable from the inspector: rename, describe,
 link/unlink a device, tune FOV, or delete (or press Delete in Edit mode).

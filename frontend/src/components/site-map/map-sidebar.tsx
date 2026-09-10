@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Search } from "lucide-react"
+import { EyeOff, Search } from "lucide-react"
 
 import type {
   CableRoute,
@@ -15,6 +15,7 @@ import {
   CheckChip,
   CheckCountChip,
   FoldableGroup,
+  VisibilityToggle,
 } from "@/components/foldable-group"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { KIND_COLOR } from "@/components/site-map/connections-layer"
@@ -31,6 +32,29 @@ export type MapSelected =
   | { kind: "marker"; id: string }
   | { kind: "connection"; id: string }
   | { kind: "cable"; id: string }
+
+/**
+ * What the sidebar's eye toggles have switched off, by name/id.
+ *
+ * Kept as the *group* keys the sidebar shows rather than object ids: someone
+ * hiding "Access Point" means the role, so a new access point placed tomorrow
+ * stays hidden too. Sites are the exception - they are the map's top-level
+ * objects and few enough to hide one at a time.
+ */
+export interface MapHidden {
+  /** Device role names. */
+  roles: string[]
+  /** Region names, as the site groups are titled. */
+  regions: string[]
+  /** Site ids. */
+  sites: string[]
+}
+
+export const NO_HIDDEN: MapHidden = { roles: [], regions: [], sites: [] }
+
+export function hiddenCount(h: MapHidden): number {
+  return h.roles.length + h.regions.length + h.sites.length
+}
 
 /** A placeable marker type from the palette (FloorTileType or DeviceRole). */
 export interface MarkerTypeOption {
@@ -53,12 +77,16 @@ const FOLDS = "site-map:groups"
 function SiteRow({
   site: s,
   indent = false,
+  shown,
+  onShownChange,
   selected,
   onFocus,
   onSelect,
 }: {
   site: SiteMapSite
   indent?: boolean
+  shown: boolean
+  onShownChange: (shown: boolean) => void
   selected: MapSelected | null
   onFocus: (lat: number, lng: number) => void
   onSelect: (sel: MapSelected | null) => void
@@ -80,8 +108,13 @@ function SiteRow({
     >
       {/* No color dot: the pin on the map carries the site's color; in the
           list it's noise. Status chips are the only color here. */}
-      <span className="min-w-0 truncate">{s.name}</span>
+      <span className={cn("min-w-0 truncate", !shown && "text-muted-foreground/60")}>
+        {s.name}
+      </span>
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
+        <VisibilityToggle
+          vis={{ shown, onChange: onShownChange, what: s.name }}
+        />
         <CheckChip check={s.check} />
         <span className="num text-[11px] text-muted-foreground/70">
           {s.device_count}
@@ -105,6 +138,8 @@ export function MapObjectsSidebar({
   connections,
   routes,
   regions,
+  hidden,
+  onHiddenChange,
   selectedRouteId,
   selected,
   onSelect,
@@ -120,6 +155,9 @@ export function MapObjectsSidebar({
   routes: CableRoute[]
   /** Regions with a stored boundary - listed with a fit-to jump. */
   regions: SiteMapRegion[]
+  /** What the eye toggles have taken off the map. */
+  hidden: MapHidden
+  onHiddenChange: (next: MapHidden) => void
   selectedRouteId: string | null
   selected: MapSelected | null
   onSelect: (sel: MapSelected | null) => void
@@ -136,6 +174,23 @@ export function MapObjectsSidebar({
   const match = (name: string) => !filter || name.toLowerCase().includes(filter)
   const matchStatus = (check: string | null | undefined) =>
     !status || check === status
+
+  const hiddenRoles = new Set(hidden.roles)
+  const hiddenRegions = new Set(hidden.regions)
+  const hiddenSites = new Set(hidden.sites)
+  /** A site is off the map if it is hidden itself or its region is. */
+  const siteShown = (s: SiteMapSite) =>
+    !hiddenSites.has(s.id) && !hiddenRegions.has(s.region?.name ?? "No region")
+  const deviceShown = (d: SiteMapDevice) =>
+    !hiddenRoles.has(d.role?.name ?? "No role")
+
+  const toggle = (key: keyof MapHidden, value: string, shown: boolean) =>
+    onHiddenChange({
+      ...hidden,
+      [key]: shown
+        ? hidden[key].filter((v) => v !== value)
+        : [...hidden[key], value],
+    })
 
   const placed = useMemo(
     () => sites.filter((s) => s.latitude !== null),
@@ -228,7 +283,8 @@ export function MapObjectsSidebar({
       mono: boolean
     }[] = []
     for (const s of shownSites)
-      if (s.check === "down" || s.check === "degraded")
+      // Hidden objects are off the map, so they are not this map's problems.
+      if (siteShown(s) && (s.check === "down" || s.check === "degraded"))
         rows.push({
           kind: "site",
           id: s.id,
@@ -239,24 +295,25 @@ export function MapObjectsSidebar({
           mono: false,
         })
     for (const g of deviceGroups)
-      for (const d of g.rows)
-        if (d.check === "down" || d.check === "degraded")
-          rows.push({
-            kind: "device",
-            id: d.id,
-            name: d.name,
-            check: d.check,
-            lat: d.latitude,
-            lng: d.longitude,
-            mono: true,
-          })
+      if (!hiddenRoles.has(g.title))
+        for (const d of g.rows)
+          if (d.check === "down" || d.check === "degraded")
+            rows.push({
+              kind: "device",
+              id: d.id,
+              name: d.name,
+              check: d.check,
+              lat: d.latitude,
+              lng: d.longitude,
+              mono: true,
+            })
     return rows.sort(
       (a, b) =>
         checkRank(a.check) - checkRank(b.check) ||
         a.name.localeCompare(b.name, undefined, { numeric: true })
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownSites, deviceGroups, status])
+  }, [shownSites, deviceGroups, status, hidden])
 
   const linkGroups = useMemo(() => {
     const map = new Map<string, SiteMapConnection[]>()
@@ -337,6 +394,18 @@ export function MapObjectsSidebar({
         ))}
       </div>
 
+      {hiddenCount(hidden) > 0 && (
+        <button
+          type="button"
+          onClick={() => onHiddenChange(NO_HIDDEN)}
+          className="mb-3 flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+        >
+          <EyeOff className="size-3 shrink-0" />
+          <span className="num">{hiddenCount(hidden)}</span> hidden
+          <span className="ml-auto underline underline-offset-2">Show all</span>
+        </button>
+      )}
+
       {total === 0 && (
         <p className="px-1 text-[13px] text-muted-foreground">
           {filter || status ? "No matches." : "Nothing placed yet."}
@@ -385,6 +454,8 @@ export function MapObjectsSidebar({
                 <SiteRow
                   key={s.id}
                   site={s}
+                  shown={siteShown(s)}
+                  onShownChange={(v) => toggle("sites", s.id, v)}
                   selected={selected}
                   onFocus={onFocus}
                   onSelect={onSelect}
@@ -396,6 +467,11 @@ export function MapObjectsSidebar({
                   title={g.title}
                   count={g.rows.length}
                   storageId={FOLDS}
+                  visibility={{
+                    shown: !hiddenRegions.has(g.title),
+                    onChange: (v) => toggle("regions", g.title, v),
+                    what: `${g.title} sites`,
+                  }}
                   extra={
                     <>
                       <CheckCountChip check="down" n={g.down} />
@@ -408,6 +484,8 @@ export function MapObjectsSidebar({
                       key={s.id}
                       site={s}
                       indent
+                      shown={siteShown(s)}
+                      onShownChange={(v) => toggle("sites", s.id, v)}
                       selected={selected}
                       onFocus={onFocus}
                       onSelect={onSelect}
@@ -449,6 +527,11 @@ export function MapObjectsSidebar({
               count={g.rows.length}
               badge={<TileBadge color={g.color} icon={g.icon} />}
               storageId={FOLDS}
+              visibility={{
+                shown: !hiddenRoles.has(g.title),
+                onChange: (v) => toggle("roles", g.title, v),
+                what: `${g.title} devices`,
+              }}
               extra={
                 <>
                   <CheckCountChip check="down" n={g.down} />
@@ -466,6 +549,7 @@ export function MapObjectsSidebar({
                   }}
                   className={cn(
                     "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px]",
+                    !deviceShown(d) && "text-muted-foreground/60",
                     selected?.kind === "device" && selected.id === d.id
                       ? "bg-muted font-medium"
                       : "hover:bg-muted/60"
