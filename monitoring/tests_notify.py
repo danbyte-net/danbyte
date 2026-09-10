@@ -433,3 +433,152 @@ class RetentionTests(Base):
         out = prune()
         self.assertEqual(out["transitions_deleted"], 0)
         self.assertEqual(StateTransition.objects.count(), 1)
+
+
+class TeamsAdaptiveCardTests(Base):
+    """Teams gets an Adaptive Card, not Slack's bare {"text": ...} (#157)."""
+
+    def _channel(self, kind):
+        return NotificationChannel.objects.create(
+            tenant=self.tenant, name=kind, kind=kind,
+            config={"url": f"https://hooks.test/{kind}"},
+        )
+
+    def _alert(self, **kw):
+        from .models import Alert
+
+        base = dict(
+            tenant=self.tenant, target_ip=self.ip, template=self.template,
+            kind="icmp", dedup_key="127.0.0.1:icmp", severity="critical",
+            check_status="down",
+        )
+        base.update(kw)
+        return Alert.objects.create(**base)
+
+    def _base_url(self, value):
+        from core.models import DeploymentSettings
+
+        dep = DeploymentSettings.load()
+        dep.public_base_url = value
+        dep.save(update_fields=["public_base_url"])
+
+    def _card(self, payload):
+        """Assert the message envelope and hand back the AdaptiveCard."""
+        self.assertEqual(payload["type"], "message")
+        self.assertEqual(len(payload["attachments"]), 1)
+        att = payload["attachments"][0]
+        self.assertEqual(
+            att["contentType"], "application/vnd.microsoft.card.adaptive"
+        )
+        self.assertIsNone(att["contentUrl"])
+        card = att["content"]
+        self.assertEqual(card["type"], "AdaptiveCard")
+        self.assertEqual(
+            card["$schema"], "http://adaptivecards.io/schemas/adaptive-card.json"
+        )
+        self.assertEqual(card["version"], "1.4")
+        self.assertEqual(card["body"][0]["type"], "TextBlock")
+        self.assertTrue(card["body"][0]["wrap"])
+        return card
+
+    # ── notify_plain (generic, no Danbyte URL) ──────────────────────────────
+
+    def test_plain_teams_sends_card_without_actions(self):
+        with patch("monitoring.notify.safe_post") as post:
+            notify.notify_plain(self._channel("teams"), "Backup done", "all good")
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertEqual(card["body"][0]["text"], "Backup done\nall good")
+        self.assertNotIn("actions", card)  # no Danbyte URL at this call site
+
+    def test_plain_slack_and_discord_payloads_unchanged(self):
+        with patch("monitoring.notify.safe_post") as post:
+            notify.notify_plain(self._channel("slack"), "Backup done", "all good")
+            self.assertEqual(
+                post.call_args.kwargs["json"], {"text": "Backup done\nall good"}
+            )
+            notify.notify_plain(self._channel("discord"), "Backup done", "all good")
+            self.assertEqual(
+                post.call_args.kwargs["json"], {"content": "Backup done\nall good"}
+            )
+
+    # ── single alert ────────────────────────────────────────────────────────
+
+    def test_alert_teams_card_carries_open_url_action(self):
+        self._base_url("https://danbyte.test/")
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_to_channel(
+                self._channel("teams"), self._alert(), "firing", "127.0.0.1"
+            )
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertIn("127.0.0.1", card["body"][0]["text"])
+        # The link is an action, not appended to the text like Slack does.
+        self.assertNotIn("https://danbyte.test", card["body"][0]["text"])
+        self.assertEqual(
+            card["actions"],
+            [{"type": "Action.OpenUrl", "title": "View in Danbyte",
+              "url": "https://danbyte.test/alerts"}],
+        )
+
+    def test_alert_teams_card_omits_actions_without_base_url(self):
+        self._base_url("")
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_to_channel(
+                self._channel("teams"), self._alert(), "firing", "127.0.0.1"
+            )
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertNotIn("actions", card)
+
+    def test_alert_slack_and_discord_payloads_unchanged(self):
+        self._base_url("https://danbyte.test/")
+        alert = self._alert()
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_to_channel(
+                self._channel("slack"), alert, "firing", "127.0.0.1"
+            )
+            slack = post.call_args.kwargs["json"]
+            notify._dispatch_to_channel(
+                self._channel("discord"), alert, "firing", "127.0.0.1"
+            )
+            discord = post.call_args.kwargs["json"]
+        self.assertEqual(set(slack), {"text"})
+        self.assertTrue(slack["text"].endswith("\nhttps://danbyte.test/alerts"))
+        self.assertEqual(discord, {"content": slack["text"]})
+
+    # ── grouped alerts ──────────────────────────────────────────────────────
+
+    def test_group_teams_card_carries_open_url_action(self):
+        from core.models import DeploymentSettings
+
+        self._base_url("https://danbyte.test/")
+        dep = DeploymentSettings.load()
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_group_to_channel(
+                self._channel("teams"), [self._alert()], "firing", dep
+            )
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertIn("1 alerts", card["body"][0]["text"])
+        self.assertNotIn("https://danbyte.test", card["body"][0]["text"])
+        self.assertEqual(
+            card["actions"],
+            [{"type": "Action.OpenUrl", "title": "View in Danbyte",
+              "url": "https://danbyte.test/alerts"}],
+        )
+
+    def test_group_slack_and_discord_payloads_unchanged(self):
+        from core.models import DeploymentSettings
+
+        self._base_url("https://danbyte.test/")
+        dep = DeploymentSettings.load()
+        alerts = [self._alert()]
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_group_to_channel(
+                self._channel("slack"), alerts, "firing", dep
+            )
+            slack = post.call_args.kwargs["json"]
+            notify._dispatch_group_to_channel(
+                self._channel("discord"), alerts, "firing", dep
+            )
+            discord = post.call_args.kwargs["json"]
+        self.assertEqual(set(slack), {"text"})
+        self.assertTrue(slack["text"].endswith("\nhttps://danbyte.test/alerts"))
+        self.assertEqual(discord, {"content": slack["text"]})

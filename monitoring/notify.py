@@ -64,6 +64,38 @@ def _enrich(transitions: list) -> list[dict]:
     return out
 
 
+def _teams_card(text: str, url: str | None = None) -> dict:
+    """Wrap ``text`` in an Adaptive Card message envelope for Teams.
+
+    Teams cannot take Slack's bare ``{"text": ...}``: both the Workflows webhook
+    and Power Automate's "Post card in a chat or channel" deserialise the body
+    as an Adaptive Card and reject anything else with InvalidBotAdaptiveCard -
+    after the webhook has already answered 202, so the failure is invisible to
+    us. TextBlock renders a markdown subset, so the summary text goes in raw
+    like it does for Slack and Discord.
+    """
+    card = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [{"type": "TextBlock", "text": text, "wrap": True}],
+    }
+    if url:
+        card["actions"] = [
+            {"type": "Action.OpenUrl", "title": "View in Danbyte", "url": url}
+        ]
+    return {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
+                "content": card,
+            }
+        ],
+    }
+
+
 # ─── built-in channels ────────────────────────────────────────────────────
 
 
@@ -384,9 +416,12 @@ def notify_plain(channel, subject: str, text: str = "", payload: dict | None = N
                 ek.send_html_email(
                     subject, recipients, html_body=html, text_body=body + "\n", tenant=channel.tenant_id
                 )
-        elif kind in ("slack", "teams"):
+        elif kind == "slack":
             if cfg.get("url"):
                 safe_post(cfg["url"], json={"text": body}, timeout=timeout, proxies=proxies)
+        elif kind == "teams":
+            if cfg.get("url"):
+                safe_post(cfg["url"], json=_teams_card(body), timeout=timeout, proxies=proxies)
         elif kind == "discord":
             if cfg.get("url"):
                 safe_post(cfg["url"], json={"content": body}, timeout=timeout, proxies=proxies)
@@ -715,7 +750,10 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
     elif kind == "teams":
         if cfg.get("url"):
             safe_post(
-                cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies
+                cfg["url"],
+                json=_teams_card(text, url),  # the link is a card action, not text
+                timeout=timeout,
+                proxies=proxies,
             )
     elif kind == "discord":
         if cfg.get("url"):
@@ -859,9 +897,17 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
                 text_body=body + "\n",
                 tenant=channel.tenant_id,
             )
-    elif channel.kind in ("slack", "teams"):
+    elif channel.kind == "slack":
         if cfg.get("url"):
             safe_post(cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies)
+    elif channel.kind == "teams":
+        if cfg.get("url"):
+            safe_post(
+                cfg["url"],
+                json=_teams_card(text, url),  # the link is a card action, not text
+                timeout=timeout,
+                proxies=proxies,
+            )
     elif channel.kind == "discord":
         if cfg.get("url"):
             safe_post(cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies)

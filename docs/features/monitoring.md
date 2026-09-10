@@ -520,7 +520,8 @@ Supported channels:
 
 | Channel | You provide | Notes |
 |---|---|---|
-| **Slack / Teams / Discord** | An incoming-webhook URL | Posts the alert summary with a deep link. |
+| **Slack / Discord** | An incoming-webhook URL | Posts the alert summary with a deep link. |
+| **Microsoft Teams** | A workflow/webhook URL | Posts the alert summary as an Adaptive Card. |
 | **PagerDuty** | A routing key | Triggers on fire, resolves on clear; deduplicated per condition. |
 | **Webhook** | A URL | POSTs the alert as JSON to your own endpoint. |
 | **Email** | Recipient addresses | Sent via the deployment mail server (below). |
@@ -528,6 +529,19 @@ Supported channels:
 Notifications are best-effort: a failing channel is logged and never breaks a
 check run. When a **public base URL** is configured (see below), messages include
 a clickable link straight back to the alert.
+
+#### Microsoft Teams
+
+Teams messages are sent as an **Adaptive Card** (v1.4) inside the standard
+message envelope, which is what both a **Teams Workflows** webhook and a Power
+Automate flow ending in **Post card in a chat or channel** expect. With a public
+base URL set, the card carries a *View in Danbyte* button instead of a pasted
+link.
+
+Note that the webhook answers **202 Accepted** as soon as the flow accepts the
+request - before the flow has posted anything. A 202 (and so a green **Send
+test**) means Danbyte delivered the payload, not that Teams rendered the message.
+If the card never appears, check the run history of the flow itself.
 
 ### Subscriptions and the Notifications page
 
