@@ -18,8 +18,21 @@ Every check runs on a **monitoring engine**:
   assigned to an Outpost runs here, so nothing changes if you never install one.
 - **Outpost** - a remote engine. You create it in Danbyte, install the agent at
   the site, and assign it a scope.
+- **A driver** - an external monitoring system that already watches the estate
+  and can answer for it. Danbyte does not run the checks; it asks the system
+  what it knows and folds the answer through the same path an Outpost reports
+  through, so alerts, silences, flapping and every notification channel behave
+  identically whichever engine produced the result. **Zabbix** is the first.
 
 Manage them in **Governance → Monitoring engines** (admin only).
+
+!!! note "A driver engine is only chosen when it can answer"
+    An engine whose driver is unusable - the tenant switched the integration
+    off, the connection is gone, the server is below the supported version -
+    is **skipped during resolution** and falls through to the next level, and
+    the health sweep ignores it. Turning an integration off is a quiet switch,
+    not an outage: the alternative is a site bound to an engine that never
+    claims its checks and is then reported unreachable.
 
 ## How an engine is chosen for a target
 
@@ -31,6 +44,10 @@ each level **inherits** from the next when it has no engine of its own:
 2. the IP's **Site**,
 3. the tenant **default engine** (set on the Monitoring engines page),
 4. the built-in **Local** engine.
+
+A level bound to an engine that cannot answer right now is treated as though it
+had no binding at all, so resolution continues down the list rather than
+stopping on a dead engine.
 
 Assign an engine on the **Site** or **Location** edit form (the *Monitoring
 engine* dropdown - *Inherit* follows the level above). So "everything at Site

@@ -26,6 +26,7 @@ from django.utils import timezone
 from api.models import IPAddress
 from core.models import Tenant
 
+from .engine_drivers import driver_for, engine_usable
 from .engines import engine_for_ip
 from .models import (
     CheckAssignment, CheckState, MonitoringEngine, MonitoringPolicy,
@@ -190,6 +191,15 @@ def check_engine_health(now=None) -> dict:
         kind=MonitoringEngine.LOCAL
     )
     for eng in engines:
+        # An engine whose driver cannot answer right now - the tenant switched
+        # its integration off, the connection is gone - is not unreachable, it
+        # is not being asked. Calling that an outage pages somebody for doing
+        # exactly what the switch is for.
+        if not engine_usable(eng):
+            if eng.stale_since:
+                eng.stale_since = None
+                eng.save(update_fields=["stale_since"])
+            continue
         assigned = CheckState.objects.filter(engine=eng).count()
         if assigned == 0:
             # Nothing depends on it - quietly clear any leftover flag.
@@ -260,6 +270,38 @@ def check_engine_health(now=None) -> dict:
 # ─── dispatch ─────────────────────────────────────────────────────────────
 
 
+def dispatch_drivers(now=None) -> int:
+    """Let every driver-backed engine claim the states it answers for.
+
+    Danbyte does not run a driver's checks, so there is nothing to enqueue -
+    the driver reaches its own system and folds what it finds through
+    ``ingest_results``. A driver with no ``claim`` yet (one that is still only
+    a connection) simply reports nothing, which is the correct behaviour while
+    it is being built.
+
+    One driver failing never stops the others, or the local dispatch below it:
+    a monitoring loop that stops because one integration is sulking is worse
+    than the integration being down.
+    """
+    now = now or timezone.now()
+    total = 0
+    engines = MonitoringEngine.objects.filter(enabled=True).exclude(
+        kind__in=(MonitoringEngine.LOCAL, MonitoringEngine.REMOTE)
+    )
+    for eng in engines:
+        if not engine_usable(eng):
+            continue
+        driver = driver_for(eng)
+        claim = getattr(driver, "claim", None)
+        if claim is None:
+            continue
+        try:
+            total += claim(eng, now) or 0
+        except Exception:
+            log.exception("engine driver %r (%s) failed to claim", eng.name, eng.kind)
+    return total
+
+
 def dispatch(now=None, sync: bool = False) -> dict:
     """Enqueue worker jobs for every due check. ``sync=True`` runs them inline
     (for tests / a no-worker box) instead of via RQ."""
@@ -269,8 +311,13 @@ def dispatch(now=None, sync: bool = False) -> dict:
     check_engine_health(now)
     # Reclaim anything a crashed worker left claimed, then dispatch as usual.
     reaped = reap_stale_in_flight(now)["reaped"]
+    # Give every driver kind a chance to claim its own states first. A driver
+    # answers for checks Danbyte does not run, so it materialises and claims
+    # them itself rather than being handed a shard of work.
+    claimed = dispatch_drivers(now)
     # Only LOCAL-engine work runs on the core's RQ workers. Remote (Outpost)
-    # states are left unclaimed for their Outpost to pull via /api/outpost/work.
+    # states are left unclaimed for their Outpost to pull via /api/outpost/work,
+    # and driver states were just handled above.
     due = list(
         CheckState.objects.filter(next_run__lte=now, in_flight=False)
         .filter(
@@ -280,7 +327,7 @@ def dispatch(now=None, sync: bool = False) -> dict:
         .select_related("template", "assignment")
     )
     if not due:
-        return {"due": 0, "jobs": 0, "reaped": reaped}
+        return {"due": 0, "jobs": 0, "reaped": reaped, "claimed": claimed}
 
     # Claim the due states up front so a second tick can't double-dispatch them;
     # stamp the claim time (the reaper uses it) and push next_run forward

@@ -1204,8 +1204,12 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
     """A monitoring engine - the built-in ``local`` or a remote **Outpost**.
 
     The auth token is never read back; the API exposes only ``token_set`` (and
-    the one-time value from the ``enroll`` action). ``kind`` is read-only: remote
-    engines are created here, the local one is the built-in singleton.
+    the one-time value from the ``enroll`` action).
+
+    ``kind`` is set on create and immutable after: an Outpost and a driver-backed
+    engine are different things, and a bound engine changing kind underneath its
+    sites would silently repoint everything. ``local`` is the built-in singleton
+    and is never created here.
     """
 
     slug = serializers.SlugField(required=False, allow_blank=True)
@@ -1216,6 +1220,24 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
     ssh_credential = serializers.JSONField(write_only=True, required=False)
     binding_count = serializers.SerializerMethodField()
     check_count = serializers.SerializerMethodField()
+
+    def validate_kind(self, value):
+        """``remote``, or a kind some driver has registered.
+
+        Validated against the registry rather than an enum so an app or plugin
+        that registers an engine kind becomes selectable without a migration -
+        the same rule DeploymentSettings.secrets_provider follows.
+        """
+        from monitoring.engine_drivers import driver_kinds
+
+        value = (value or "").strip() or MonitoringEngine.REMOTE
+        allowed = {MonitoringEngine.REMOTE} | driver_kinds()
+        if value not in allowed:
+            raise serializers.ValidationError(
+                f"Unknown engine kind '{value}'. Available: "
+                + ", ".join(sorted(allowed))
+            )
+        return value
 
     class Meta:
         model = MonitoringEngine
@@ -1229,7 +1251,7 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
             "binding_count", "check_count", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "kind", "token_set", "is_local", "ssh_configured",
+            "id", "token_set", "is_local", "ssh_configured",
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
             "created_at", "updated_at",
         ]
@@ -1247,6 +1269,14 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])
+        # An Outpost and a driver-backed engine are different things, and a
+        # bound engine changing kind underneath its sites would repoint every
+        # one of them silently.
+        if self.instance and "kind" in attrs and attrs["kind"] != self.instance.kind:
+            raise serializers.ValidationError(
+                {"kind": "An engine's kind cannot change - create a new one "
+                         "and move its bindings."}
+            )
         return attrs
 
 

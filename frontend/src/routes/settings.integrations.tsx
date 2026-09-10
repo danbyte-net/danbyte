@@ -27,6 +27,7 @@ type IntegrationSettings = {
   ai_access_enabled: boolean
   ai_writes_enabled: boolean
   ai_chat_enabled: boolean
+  zabbix_enabled: boolean
 }
 
 interface IntegrationCard {
@@ -82,6 +83,16 @@ const CARDS: IntegrationCard[] = [
     description:
       "Reconcile A/AAAA/PTR records against your IP addresses' DNS names, with drift review and optional push.",
     configure: { to: "/dns-zones", label: "Zones" },
+  },
+  {
+    key: "zabbix_enabled",
+    label: "Zabbix monitoring",
+    vendor: "zabbix",
+    names: ["zabbix"],
+    info: "Reads over the Zabbix JSON-RPC API with a named API token. Danbyte does not run the checks - it reads what Zabbix already knows.",
+    description:
+      "Let an existing Zabbix answer for a site's monitoring status, alongside or instead of Danbyte's own engine.",
+    configure: { to: "/settings/monitoring", label: "Engines" },
   },
   {
     key: "ai_access_enabled",

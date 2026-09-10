@@ -65,6 +65,12 @@ export const VENDORS: Record<string, Vendor | undefined> = {
     short: "NetBox",
     owner: "NetBox Labs",
   },
+  zabbix: {
+    key: "zabbix",
+    display: "Zabbix®",
+    short: "Zabbix",
+    owner: "Zabbix LLC",
+  },
 }
 
 /** The attribution line shown once, under whatever named these vendors.

@@ -15,6 +15,7 @@ object_id) so ``api`` never depends on ``monitoring``.
 """
 from __future__ import annotations
 
+from .engine_drivers import engine_usable
 from .models import (
     MonitoringEngine,
     MonitoringEngineBinding,
@@ -32,7 +33,25 @@ def _binding_engine(tenant, scope, object_id):
         .select_related("engine")
         .first()
     )
-    return b.engine if b and b.engine.enabled else None
+    # `enabled` is the operator's switch on the engine; `engine_usable` also
+    # asks a driver kind whether it can answer at all. A binding to an engine
+    # whose integration is switched off falls through to the next scope rather
+    # than pinning the target to an engine that will never claim its checks.
+    return b.engine if b and engine_usable(b.engine) else None
+
+
+def _default_engine(tenant):
+    """The tenant's default engine, when it is one that can actually answer.
+
+    Same rule as a binding: a default pointing at an engine whose driver is not
+    usable falls through to local, rather than parking every unbound target on
+    an engine that will never claim their checks.
+    """
+    default_id = MonitoringSettings.for_tenant(tenant).default_engine_id
+    if not default_id:
+        return None
+    engine = MonitoringEngine.objects.filter(id=default_id).first()
+    return engine if engine is not None and engine_usable(engine) else None
 
 
 def _location_chain_engine(tenant, location_id):
@@ -78,11 +97,7 @@ def engine_for_ip(ip) -> MonitoringEngine:
         site_id = ip.site_id or (ip.prefix.site_id if ip.prefix_id else None)
         engine = _binding_engine(tenant, MonitoringEngineBinding.SCOPE_SITE, site_id)
     if engine is None:
-        default_id = MonitoringSettings.for_tenant(tenant).default_engine_id
-        if default_id:
-            engine = MonitoringEngine.objects.filter(
-                id=default_id, enabled=True
-            ).first()
+        engine = _default_engine(tenant)
     return engine or MonitoringEngine.local_for(tenant)
 
 
@@ -97,11 +112,7 @@ def engine_for_prefix(prefix) -> MonitoringEngine:
             tenant, MonitoringEngineBinding.SCOPE_SITE, prefix.site_id
         )
     if engine is None:
-        default_id = MonitoringSettings.for_tenant(tenant).default_engine_id
-        if default_id:
-            engine = MonitoringEngine.objects.filter(
-                id=default_id, enabled=True
-            ).first()
+        engine = _default_engine(tenant)
     return engine or MonitoringEngine.local_for(tenant)
 
 
@@ -116,11 +127,7 @@ def engine_for_device(device) -> MonitoringEngine:
             tenant, MonitoringEngineBinding.SCOPE_SITE, device.site_id
         )
     if engine is None:
-        default_id = MonitoringSettings.for_tenant(tenant).default_engine_id
-        if default_id:
-            engine = MonitoringEngine.objects.filter(
-                id=default_id, enabled=True
-            ).first()
+        engine = _default_engine(tenant)
     return engine or MonitoringEngine.local_for(tenant)
 
 

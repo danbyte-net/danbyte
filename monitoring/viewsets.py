@@ -110,9 +110,12 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
         return MonitoringEngine.objects.filter(tenant=tenant)
 
     def perform_create(self, serializer):
-        # Only remote Outposts are created here; ``kind`` is read-only.
+        # An Outpost unless a driver kind was asked for - the serializer has
+        # already checked it against the registry. `local` is the built-in
+        # singleton and is never created through the API.
         serializer.save(
-            tenant=_get_active_tenant(self.request), kind=MonitoringEngine.REMOTE
+            tenant=_get_active_tenant(self.request),
+            kind=serializer.validated_data.get("kind") or MonitoringEngine.REMOTE,
         )
 
     def perform_destroy(self, instance):

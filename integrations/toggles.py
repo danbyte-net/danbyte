@@ -20,6 +20,7 @@ KEYS = {
     "ai": "ai_access_enabled",
     "ai_writes": "ai_writes_enabled",
     "ai_chat": "ai_chat_enabled",
+    "zabbix": "zabbix_enabled",
 }
 
 #: Umbrella keys, true when any of their members is. A page that serves both

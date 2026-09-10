@@ -930,7 +930,12 @@ class MonitoringEngine(TimestampedModel):
         max_length=8, choices=TRANSPORT_CHOICES, default=PULL
     )
     description = models.TextField(blank=True)
-    kind = models.CharField(max_length=6, choices=KIND_CHOICES, default=REMOTE)
+    # No fixed choices, and wide enough for a real name: a driver-registered
+    # kind ("zabbix", "prometheus", "checkmk") is as valid here as the two
+    # built-ins, and is validated against monitoring.engine_drivers' registry
+    # rather than an enum - the same shape DeploymentSettings.secrets_provider
+    # uses for pluggable secret stores.
+    kind = models.CharField(max_length=32, default=REMOTE)
     enabled = models.BooleanField(default=True)
     # Bearer secret the Outpost authenticates with, stored as {"secret": …}.
     # Write-only - the API exposes only whether it's set, never the value.

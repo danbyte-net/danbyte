@@ -357,6 +357,11 @@ class IntegrationSettings(TimestampedModel):
     # The in-app chat. Separate from agent access because it sends the
     # conversation to whichever model the deployment configured.
     ai_chat_enabled = models.BooleanField(default=False)
+    #: Read monitoring status from an existing Zabbix, and later provision it
+    #: (#162). Off until an admin turns it on, like every other integration -
+    #: and re-checked at job time, so switching it off stops the background
+    #: work rather than only hiding the pages.
+    zabbix_enabled = models.BooleanField(default=False)
 
     class Meta:
         verbose_name_plural = "integration settings"
