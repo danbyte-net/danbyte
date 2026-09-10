@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select"
 import { CheckStatusBadge } from "./status-badge"
 import { MixedStatusBadge } from "./mixed-status-badge"
-import { STATUS_COLOR, STATUS_LABEL } from "./charts"
+import { statusColor, statusLabel } from "./status-palette"
 import { AddCheckDialog } from "./add-check-dialog"
 import { DiscoverNowButton } from "./auto-discover-button"
 import { NotifyMeButton } from "./notify-me-button"
@@ -214,14 +214,14 @@ function RollupSummary({ rollup }: { rollup: PrefixChecksResponse["rollup"] }) {
           <span
             key={s}
             className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-            title={STATUS_LABEL[s]}
+            title={statusLabel(s)}
           >
             <span
               className="h-2 w-2 rounded-[3px]"
-              style={{ backgroundColor: STATUS_COLOR[s] }}
+              style={{ backgroundColor: statusColor(s) }}
             />
             <span className="num text-foreground">{rollup.counts[s] ?? 0}</span>
-            <span>{STATUS_LABEL[s].toLowerCase()}</span>
+            <span>{statusLabel(s).toLowerCase()}</span>
           </span>
         ))}
       </div>

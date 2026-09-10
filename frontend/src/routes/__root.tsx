@@ -31,6 +31,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { useEffect } from "react"
 import { useMe } from "@/lib/use-me"
+import { useLoadStatusLabels } from "@/components/monitoring/status-palette"
 import { pageTitle, setTitleSuffix } from "@/lib/page-title"
 import { setUnauthorizedHandler } from "@/lib/api"
 
@@ -129,6 +130,9 @@ function AppLayout() {
   // Brand the browser tab from the admin "deployment name" setting (falls back
   // to Danbyte). useMe is cached, so this is a no-op fetch after first load.
   const { me, isLoading } = useMe()
+  // One fetch for the tenant's own names for the six check states, warm before
+  // any list paints its Monitoring column (see status-palette.ts).
+  useLoadStatusLabels(me.is_authenticated)
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // Routes reachable without a session - rendered bare, no sidebar, and the

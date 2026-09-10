@@ -888,6 +888,17 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "natrule", label: "NAT rules" },
 ]
 
+// api/status_registry.MONITORING_STATES - the six states a check can end in.
+// A Status may claim one, renaming and recolouring it across the app.
+export const MONITORING_STATES: { value: CheckStatus; label: string }[] = [
+  { value: "up", label: "Up" },
+  { value: "degraded", label: "Degraded" },
+  { value: "down", label: "Down" },
+  { value: "unknown", label: "Unknown" },
+  { value: "stale", label: "Stale" },
+  { value: "skipped", label: "Skipped" },
+]
+
 export interface Status {
   id: string
   name: string
@@ -902,6 +913,9 @@ export interface Status {
   requires_note: boolean
   suppresses_alerts: boolean
   is_closed: boolean
+  /** The check state this status speaks for, "" when it is not a monitoring
+   * status. See MONITORING_STATES. */
+  monitoring_state: string
   usage_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
@@ -920,6 +934,7 @@ export interface StatusWritePayload {
   requires_note?: boolean
   suppresses_alerts?: boolean
   is_closed?: boolean
+  monitoring_state?: string
 }
 
 export interface IPRole {
@@ -3840,6 +3855,9 @@ export interface ZabbixConnection {
 export interface ZabbixDefaults {
   severities: { value: string; label: string }[]
   default_map: Record<string, string>
+  /** The statuses a severity can map onto, named and coloured by the tenant's
+   * own catalog where it has an opinion. */
+  statuses: { value: string; label: string; color: string; text_color: string }[]
 }
 
 export interface ZabbixTestResult {
@@ -4420,6 +4438,18 @@ export interface BulkStatusEntry {
   checks?: number
   counts?: Partial<Record<CheckStatus, number>>
   monitored_ips?: number
+}
+
+/** A tenant's own name and colour for one check state. */
+export interface CheckStatusLabel {
+  id: string
+  name: string
+  color: string
+  text_color: string
+}
+
+export interface CheckStatusLabels {
+  labels: Partial<Record<CheckStatus, CheckStatusLabel>>
 }
 
 export interface BulkStatusResponse {

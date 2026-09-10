@@ -281,6 +281,16 @@ To avoid flapping on a single blip, status changes require a streak:
 Every status change is logged so you get a history timeline and can drive
 notifications.
 
+### Calling the states what you call them
+
+The six states are the machine's vocabulary. Yours may differ - plenty of NOCs
+say *Critical* rather than *Down*, and the shipped red is not everybody's red.
+A [status](catalogs-and-settings.md#naming-a-monitoring-check-state) can speak
+for a check state: tick the box, pick the state, and that status's name and
+colour take over every monitoring surface - badges, split badges, the filter
+rail, the dashboard charts. One status per state, and the stored value is
+still the state, so alert rules and webhooks are untouched.
+
 ## Reading results
 
 ### On an IP

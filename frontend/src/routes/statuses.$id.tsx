@@ -4,7 +4,12 @@ import { useQuery } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
-import { api, STATUSABLE_MODELS, type Status } from "@/lib/api"
+import {
+  api,
+  MONITORING_STATES,
+  STATUSABLE_MODELS,
+  type Status,
+} from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -164,6 +169,18 @@ function chipsValue(slugs: string[]): React.ReactNode {
   )
 }
 
+/** The check state this status speaks for, in Danbyte's own words - a
+ * reminder of which machine state the operator's name sits on top of. */
+function monitoringValue(state: string): React.ReactNode {
+  if (!state) return dash
+  const shipped = MONITORING_STATES.find((m) => m.value === state)
+  return (
+    <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px]">
+      {shipped?.label ?? state}
+    </span>
+  )
+}
+
 /** Status attributes that used to crowd the header, grouped into tables. */
 function IpStatusOverview({ status: s }: { status: Status }) {
   const attributes: KvRow[] = [
@@ -176,6 +193,7 @@ function IpStatusOverview({ status: s }: { status: Status }) {
   const applies: KvRow[] = [
     { label: "Available to", value: chipsValue(s.available_to) },
     { label: "Default for", value: chipsValue(s.default_for) },
+    { label: "Check state", value: monitoringValue(s.monitoring_state) },
   ]
   return (
     <div className="grid gap-6 lg:grid-cols-2">

@@ -84,6 +84,7 @@ from .views import (
     engine_health_view,
     settings_view,
     stats_view,
+    status_labels_view,
 )
 
 router = DefaultRouter()
@@ -196,5 +197,6 @@ urlpatterns = [
     path("bulk-discover/", bulk_discover_view, name="monitoring-bulk-discover"),
     path("settings/", settings_view, name="monitoring-settings"),
     path("stats/", stats_view, name="monitoring-stats"),
+    path("status-labels/", status_labels_view, name="monitoring-status-labels"),
     *router.urls,
 ]

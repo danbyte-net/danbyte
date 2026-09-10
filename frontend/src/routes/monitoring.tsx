@@ -43,7 +43,11 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
-import { STATUS_COLOR, STATUS_LABEL } from "@/components/monitoring/charts"
+import {
+  statusColor,
+  statusLabel,
+  useStatusLabels,
+} from "@/components/monitoring/status-palette"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
@@ -91,12 +95,6 @@ const STATUS_ORDER: CheckStatus[] = [
   "unknown",
 ]
 
-const SERIES_CONFIG = {
-  up: { label: "Up", color: STATUS_COLOR.up },
-  degraded: { label: "Degraded", color: STATUS_COLOR.degraded },
-  down: { label: "Down", color: STATUS_COLOR.down },
-} satisfies ChartConfig
-
 // The brand chart palette (from the adopted preset) - used to colour the
 // by-protocol bars, the shadcn way.
 const KIND_PALETTE = [
@@ -110,6 +108,7 @@ const KIND_PALETTE = [
 function MonitoringPage() {
   usePageTitle("Monitoring")
   const { view, status } = Route.useSearch()
+  const labels = useStatusLabels()
   // Same gate the settings page uses - the tab is hidden without it, and the
   // panel is guarded too so a hand-typed ?view=settings shows nothing.
   const { canManage } = useMe()
@@ -142,15 +141,24 @@ function MonitoringPage() {
 
   // shadcn shape: each datum carries `fill: var(--color-<key>)`, and the config
   // maps <key> → { label, color } so ChartStyle injects the matching CSS var.
+  // Both configs read the tenant's names, so the legend under a chart says the
+  // same word as the badge in the table above it.
   const statusConfig = {
     value: { label: "Checks" },
     ...Object.fromEntries(
       STATUS_ORDER.map((s) => [
         s,
-        { label: STATUS_LABEL[s], color: STATUS_COLOR[s] },
+        { label: statusLabel(s, labels), color: statusColor(s, labels) },
       ])
     ),
   } satisfies ChartConfig
+
+  const seriesConfig = Object.fromEntries(
+    (["up", "degraded", "down"] as const).map((s) => [
+      s,
+      { label: statusLabel(s, labels), color: statusColor(s, labels) },
+    ])
+  ) satisfies ChartConfig
 
   const statusData = d
     ? STATUS_ORDER.map((s) => ({
@@ -325,7 +333,7 @@ function MonitoringPage() {
                   />
                 ) : (
                   <ChartContainer
-                    config={SERIES_CONFIG}
+                    config={seriesConfig}
                     className="aspect-auto h-[250px] w-full"
                   >
                     <LineChart

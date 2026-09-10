@@ -12,7 +12,11 @@ import {
 } from "recharts"
 
 import type { DashActivity, DashDist, DashTopPrefix } from "@/lib/api"
-import { STATUS_COLOR, STATUS_LABEL } from "@/components/monitoring/charts"
+import { STATUS_COLOR } from "@/components/monitoring/charts"
+import {
+  statusColor,
+  statusLabel,
+} from "@/components/monitoring/status-palette"
 import {
   ChartContainer,
   ChartTooltip,
@@ -382,11 +386,11 @@ function Dot({ status }: { status: keyof typeof STATUS_COLOR }) {
   return (
     <span
       className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
-      title={STATUS_LABEL[status]}
+      title={statusLabel(status)}
     >
       <span
         className="h-2 w-2 rounded-full"
-        style={{ backgroundColor: STATUS_COLOR[status] }}
+        style={{ backgroundColor: statusColor(status) }}
       />
     </span>
   )

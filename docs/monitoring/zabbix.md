@@ -93,6 +93,14 @@ Warnings is a down host:
 Editable per connection: where an estate draws the line between "worth a colour"
 and "worth a page" is an operational decision.
 
+The three rows on the right are Danbyte's own check states, and the picker
+shows them as the statuses you have named them - so if a status in your catalog
+[speaks for *Down*](../features/catalogs-and-settings.md#naming-a-monitoring-check-state)
+under the name *Critical*, you map Disaster onto *Critical*, in its colour. The
+other three states never appear here: *Unknown* is what a host with no answer
+gets, and *Stale* and *Skipped* are Danbyte's own bookkeeping, not something a
+Zabbix severity can mean.
+
 ## What you get for free
 
 Because a Zabbix result goes through the same path an Outpost's does, all of

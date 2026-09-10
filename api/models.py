@@ -2775,12 +2775,33 @@ class Status(_LabeledChoice):
                    "port utilization - the hardware isn't there (interface "
                    "'Not present' / 'Decommissioning')."),
     )
+    monitoring_state = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text=(
+            "The monitoring check state this status speaks for - blank means "
+            "it is not a monitoring status. Set, and the status replaces that "
+            "state's shipped name and colour wherever monitoring is shown, and "
+            "becomes pickable where a check state is (a Zabbix severity map, "
+            "say). A check still records one of the six states, so at most one "
+            "status per tenant may claim each."
+        ),
+    )
 
     class Meta(_LabeledChoice.Meta):
         verbose_name_plural = "statuses"
         constraints = [
             models.UniqueConstraint(fields=["tenant", "slug"],
                                     name="uniq_status_tenant_slug"),
+            # One status per check state: a CheckState stores the state, not
+            # the status, so two claimants would be indistinguishable after
+            # ingest and the badge would have to guess.
+            models.UniqueConstraint(
+                fields=["tenant", "monitoring_state"],
+                condition=~models.Q(monitoring_state=""),
+                name="uniq_status_tenant_monitoring_state",
+            ),
         ]
 
     def clean(self):
@@ -2799,6 +2820,13 @@ class Status(_LabeledChoice):
             raise ValidationError(
                 {"default_for": f"Must be a subset of available_to: {', '.join(not_in)}"}
             )
+        if self.monitoring_state:
+            from .status_registry import MONITORING_STATE_VALUES
+
+            if self.monitoring_state not in MONITORING_STATE_VALUES:
+                raise ValidationError(
+                    {"monitoring_state": f"Unknown check state: {self.monitoring_state}"}
+                )
 
 
 class Zone(_LabeledChoice, CustomFieldsMixin, TaggableMixin):

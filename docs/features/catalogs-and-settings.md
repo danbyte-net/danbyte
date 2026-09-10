@@ -49,6 +49,31 @@ your devices and prefixes use too. Manage them all under **Statuses**.
     The monitoring **skip** policy can name statuses whose addresses aren't
     checked - point it at *Reserved*, say, and reserved IPs won't be polled.
 
+### Naming a monitoring check state
+
+A check always ends in one of six states - *Up*, *Degraded*, *Down*,
+*Unknown*, *Stale*, *Skipped*. Those are what alert rules, escalation and the
+Outposts run on, and they never change. What you **call** them is yours: tick
+**Speaks for a check state** on a status, pick the state, and that status's
+name and colour replace the shipped ones everywhere monitoring is shown - the
+Monitoring column and its split badge, the roll-up on a device or prefix, the
+filter rail, and the charts on the Monitoring dashboard. Call *Down*
+"Critical" in your own red and the whole product says Critical.
+
+Two rules follow from what actually gets stored:
+
+- **One status per state.** A check records the state, not the status, so a
+  second claimant would be indistinguishable after the fact. The form says
+  which status already has a state when you try to take it.
+- **The state is still what travels.** Webhook payloads, the notification
+  digest and the API keep sending `down` - the name is presentation, so a
+  script you wrote against Danbyte doesn't break when somebody renames a
+  status.
+
+A status that speaks for a state also becomes pickable wherever a check state
+is - mapping [Zabbix](../monitoring/zabbix.md) severities onto Danbyte
+statuses, for one, which then reads in your vocabulary rather than ours.
+
 ## IP roles
 
 An **IP role** describes the functional purpose of an address - for example

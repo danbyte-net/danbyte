@@ -4,7 +4,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from .models import ZabbixChange, ZabbixConnection, ZabbixHostLink
-from .severity import DEFAULT_MAP, SEVERITIES, clean_map
+from .severity import DEFAULT_MAP, MAPPABLE, SEVERITIES, clean_map
 
 
 class ZabbixConnectionSerializer(serializers.ModelSerializer):
@@ -102,18 +102,25 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
 
 
 class ZabbixDefaultsSerializer(serializers.Serializer):
-    """What the form needs to render itself - severities and their defaults."""
+    """What the form needs to render itself - severities, their defaults, and
+    the statuses a severity can map onto, named by the tenant's own catalog."""
 
     severities = serializers.ListField(child=serializers.DictField())
     default_map = serializers.DictField()
+    statuses = serializers.ListField(child=serializers.DictField())
 
     @staticmethod
-    def payload() -> dict:
+    def payload(tenant=None) -> dict:
+        from monitoring.status_labels import status_options
+
         return {
             "severities": [
                 {"value": str(v), "label": label} for v, label in SEVERITIES
             ],
             "default_map": DEFAULT_MAP,
+            # Only the three states a severity can mean: stale and skipped are
+            # Danbyte's own bookkeeping, not something Zabbix can tell us.
+            "statuses": status_options(tenant, MAPPABLE),
         }
 
 

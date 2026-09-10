@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { ZabbixConnection, ZabbixDefaults } from "@/lib/api"
+import type { CheckStatus, ZabbixConnection, ZabbixDefaults } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { useSaveObject } from "@/lib/save-object"
 
 /** Create or edit the Zabbix connection (#162). */
@@ -56,12 +57,6 @@ const MODES = [
   { value: "off", label: "Off - Danbyte writes nothing" },
   { value: "review", label: "Review - propose changes for approval" },
   { value: "auto", label: "Auto - apply changes" },
-]
-
-const STATUSES = [
-  { value: "up", label: "Up" },
-  { value: "degraded", label: "Degraded" },
-  { value: "down", label: "Down" },
 ]
 
 function ConnectionForm({
@@ -105,6 +100,17 @@ function ConnectionForm({
     staleTime: 60 * 60_000,
   })
   const rows = useMemo(() => defaults.data?.severities ?? [], [defaults.data])
+  // Which states a severity may mean is the server's call, and each renders as
+  // the pill it renders as everywhere else - so a tenant that calls `down`
+  // "Critical" maps Disaster onto Critical, in Critical's own red.
+  const statusOptions = useMemo(
+    () =>
+      (defaults.data?.statuses ?? []).map((o) => ({
+        value: o.value,
+        label: <CheckStatusBadge status={o.value as CheckStatus} />,
+      })),
+    [defaults.data]
+  )
   // The stored map only holds what has been overridden, so the default fills
   // the rest in - a severity with no answer would otherwise read as `up`.
   const effective = (value: string) =>
@@ -254,7 +260,7 @@ function ConnectionForm({
                   onChange={(v) =>
                     setSeverity((prev) => ({ ...prev, [row.value]: v ?? "up" }))
                   }
-                  options={STATUSES}
+                  options={statusOptions}
                 />
               </div>
             </div>

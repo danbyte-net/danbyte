@@ -9,6 +9,7 @@ from __future__ import annotations
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 from integrations.toggles import IntegrationToggleMixin
 
@@ -28,9 +29,11 @@ class ZabbixConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["get"])
     def defaults(self, request):
-        """Severities and their default mapping, so the form can render the
-        table without hard-coding Zabbix's enum in TypeScript."""
-        return Response(ZabbixDefaultsSerializer.payload())
+        """Severities, their default mapping and the statuses they can map
+        onto, so the form hard-codes neither Zabbix's enum nor Danbyte's."""
+        return Response(
+            ZabbixDefaultsSerializer.payload(_get_active_tenant(request))
+        )
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):

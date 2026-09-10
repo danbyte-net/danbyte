@@ -31,6 +31,22 @@ STATUSABLE_MODELS = [
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
+# The states a monitoring check can end in - the machine's vocabulary, and the
+# names Danbyte ships for them. A tenant may relabel and recolour any one of
+# them with a Status row (``Status.monitoring_state``); the stored state never
+# changes, so alert rules, escalation and the Outpost protocol are untouched.
+# Mirrors ``monitoring.models.CheckStatus``, which lives in an app ``api`` must
+# not import - ``monitoring.tests_status_labels`` asserts the two agree.
+MONITORING_STATES = [
+    ("up", "Up"),
+    ("degraded", "Degraded"),
+    ("down", "Down"),
+    ("unknown", "Unknown"),
+    ("stale", "Stale"),
+    ("skipped", "Skipped"),
+]
+MONITORING_STATE_VALUES = {s[0] for s in MONITORING_STATES}
+
 # Built-in status value → swatch hex, grouped by meaning (emerald = healthy,
 # amber = transitional, red = bad, neutral zinc = inactive/none).
 BUILTIN_STATUS_COLORS = {

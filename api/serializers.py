@@ -1504,13 +1504,45 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
             return v
         return sum(getattr(obj, rn).count() for rn in self._USAGE_RELS)
 
+    def validate_monitoring_state(self, value):
+        """A check state may be claimed by at most one status per tenant.
+
+        The DB constraint says the same, but an IntegrityError reaches the
+        operator as a 500 - this says which status already has it.
+        """
+        from api.status_registry import MONITORING_STATE_VALUES
+        from api.views import _get_active_tenant
+
+        value = (value or "").strip()
+        if not value:
+            return ""
+        if value not in MONITORING_STATE_VALUES:
+            raise serializers.ValidationError("Not a monitoring check state.")
+        request = self.context.get("request")
+        tenant = (
+            self.instance.tenant if self.instance is not None
+            else (_get_active_tenant(request) if request is not None else None)
+        )
+        if tenant is None:
+            return value
+        clash = (
+            Status.objects.filter(tenant=tenant, monitoring_state=value)
+            .exclude(pk=self.instance.pk if self.instance is not None else None)
+            .first()
+        )
+        if clash is not None:
+            raise serializers.ValidationError(
+                f"{clash.name} already speaks for this check state."
+            )
+        return value
+
     class Meta:
         model = Status
         fields = [
             "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color", "text_color", "description",
                   "weight", "available_to", "default_for",
                   "is_available", "requires_note",
-                  "suppresses_alerts", "is_closed",
+                  "suppresses_alerts", "is_closed", "monitoring_state",
                   "usage_count", "created_at", "updated_at"]
         read_only_fields = ["id", "text_color", "usage_count", "created_at", "updated_at"]
 
@@ -1542,7 +1574,8 @@ class StatusPickerSerializer(NumIdModelSerializer):
         model = Status
         fields = ["id", "name", "slug", "color", "text_color",
                   "available_to", "default_for", "is_available",
-                  "requires_note", "suppresses_alerts", "is_closed", "weight"]
+                  "requires_note", "suppresses_alerts", "is_closed",
+                  "monitoring_state", "weight"]
 
 
 class IPRolePickerSerializer(NumIdModelSerializer):

@@ -1,9 +1,9 @@
-import type { BulkStatusEntry } from "@/lib/api"
+import type { BulkStatusEntry, CheckStatus } from "@/lib/api"
 import {
-  STATUS_COLOR,
-  STATUS_LABEL,
-  STATUS_TEXT,
-} from "@/components/monitoring/charts"
+  statusColor,
+  statusLabel,
+  statusTextColor,
+} from "@/components/monitoring/status-palette"
 
 /** Facet bucket for a monitoring rollup: the single state, `mixed` when the
  * checks sit in more than one state (the split badge), `__none__` without a
@@ -32,11 +32,14 @@ export function monitoringFacet<T>(
     formatValue: (v: string) => {
       if (v === "__none__") return { label: "Not monitored" }
       if (v === "mixed") return { label: "Mixed" }
-      const s = v as keyof typeof STATUS_LABEL
+      // Read straight from the palette snapshot: a facet definition is data,
+      // not a component, and the app shell has the tenant's names loaded
+      // before any list that shows this column paints.
+      const s = v as CheckStatus
       return {
-        label: STATUS_LABEL[s],
-        color: STATUS_COLOR[s],
-        textColor: STATUS_TEXT[s],
+        label: statusLabel(s),
+        color: statusColor(s),
+        textColor: statusTextColor(s),
       }
     },
   }

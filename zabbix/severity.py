@@ -30,7 +30,11 @@ DEFAULT_MAP = {
     "5": "down",
 }
 
-_ALLOWED = {"up", "degraded", "down"}
+#: The statuses a severity may map onto, best first. Danbyte's other two
+#: states are its own bookkeeping - ``stale`` means nobody answered and
+#: ``skipped`` means we chose not to ask, neither of which Zabbix knows.
+MAPPABLE = ["up", "degraded", "down"]
+_ALLOWED = set(MAPPABLE)
 
 
 def clean_map(raw) -> dict:

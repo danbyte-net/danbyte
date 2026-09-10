@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
+  MONITORING_STATES,
   STATUSABLE_MODELS,
   type Status,
   type StatusWritePayload,
@@ -13,6 +14,7 @@ import {
   FormColor,
   FormFooter,
   FormSection,
+  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -49,6 +51,9 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
     status?.suppresses_alerts ?? false
   )
   const [isClosed, setIsClosed] = useState(status?.is_closed ?? false)
+  const [monitoringState, setMonitoringState] = useState(
+    status?.monitoring_state ?? ""
+  )
 
   useEffect(() => {
     if (!status) return
@@ -62,6 +67,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
     setRequiresNote(status.requires_note)
     setSuppressesAlerts(status.suppresses_alerts)
     setIsClosed(status.is_closed)
+    setMonitoringState(status.monitoring_state)
     reset()
   }, [status, reset])
 
@@ -93,6 +99,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         requires_note: requiresNote,
         suppresses_alerts: suppressesAlerts,
         is_closed: isClosed,
+        monitoring_state: monitoringState,
       }
       return saveObject<Status>({
         objectType: "api.status",
@@ -195,6 +202,27 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
             })}
           </div>
         </Field>
+      </FormSection>
+
+      <FormSection title="Monitoring" card>
+        <FormCheckbox
+          label="Speaks for a check state"
+          hint="Renames and recolours it across monitoring"
+          checked={!!monitoringState}
+          // Ticking lands on Down: the state an estate most often wants in its
+          // own words is the bad one.
+          onChange={(on) => setMonitoringState(on ? "down" : "")}
+        />
+        {!!monitoringState && (
+          <FormSelect
+            label="Check state"
+            info="A check always records one of these six. This status takes over that state's name and colour everywhere monitoring is shown, and becomes pickable where a check state is - a Zabbix severity map, say. One status per state."
+            value={monitoringState}
+            onChange={(v) => setMonitoringState(v ?? "")}
+            options={MONITORING_STATES}
+            error={fieldErrors.monitoring_state}
+          />
+        )}
       </FormSection>
 
       <FormSection title="Behaviour" card>

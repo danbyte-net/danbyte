@@ -1034,6 +1034,31 @@ def engine_binding_view(request, scope, object_id):
 
 
 @extend_schema(
+    summary="Check-state names and colours the tenant has overridden",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{'labels': {state: {id, name, color, text_color}}} - only "
+        "the states a Status row claims; the rest keep their shipped names.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def status_labels_view(request):
+    """What this tenant calls each check state.
+
+    Every monitoring surface reads this once and overlays it on the shipped
+    palette, so a tenant that calls ``down`` "Critical" sees Critical in the
+    table, the rollup badge, the filter rail and the charts alike.
+    """
+    from .status_labels import status_labels
+
+    tenant = _get_active_tenant(request)
+    return Response({"labels": status_labels(tenant)})
+
+
+@extend_schema(
     summary="Overall monitoring stats for the active tenant",
     tags=["monitoring"],
     request=None,
