@@ -1124,9 +1124,13 @@ class NotificationChannel(TimestampedModel):
     """Where to send a status-change notification - one row per destination.
 
     ``kind`` selects the transport; ``config`` holds its target
-    (``{"url": …}`` for webhook, ``{"recipients": […]}`` for email).
+    (``{"url": …}`` for webhook, ``{"recipients": […]}`` for email,
+    ``{"chat_id": …, "message_thread_id": …}`` for Telegram).
     ``on_statuses`` optionally filters to transitions *into* the listed statuses
     (e.g. only ``["down", "degraded"]``); empty = every change.
+
+    Credentials never go in ``config`` - that column is returned by the API.
+    They live in ``secrets`` (Fernet-encrypted, write-only in the serializer).
     """
 
     class Kind(models.TextChoices):
@@ -1136,6 +1140,7 @@ class NotificationChannel(TimestampedModel):
         TEAMS = "teams", "Microsoft Teams"
         DISCORD = "discord", "Discord"
         PAGERDUTY = "pagerduty", "PagerDuty"
+        TELEGRAM = "telegram", "Telegram"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -1144,6 +1149,9 @@ class NotificationChannel(TimestampedModel):
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=12, choices=Kind.choices)
     config = models.JSONField(default=dict, blank=True)
+    # Transport credentials - Fernet-encrypted, never serialised back out.
+    # Telegram: {"bot_token": "…"}.
+    secrets = EncryptedJSONField(default=dict, blank=True)
     on_statuses = models.JSONField(
         default=list,
         blank=True,

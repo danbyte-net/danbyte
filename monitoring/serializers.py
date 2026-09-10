@@ -1062,6 +1062,16 @@ class AlertRuleSerializer(serializers.ModelSerializer):
 
 
 class NotificationChannelSerializer(serializers.ModelSerializer):
+    """A notification destination. ``config`` is the transport's plain target and
+    is read back; a credential (the Telegram bot token) is write-only and stored
+    encrypted in ``secrets``, so reads only report whether one is set."""
+
+    # Write-only credential - accepted on create/update, never returned.
+    bot_token = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=True
+    )
+    bot_token_set = serializers.SerializerMethodField()
+
     class Meta:
         model = NotificationChannel
         fields = [
@@ -1069,14 +1079,45 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             "enabled", "self_subscribable", "send_status_changes",
             "status_change_mode", "status_change_interval_minutes",
             "status_change_last_run", "match_prefix", "match_ip", "match_device",
+            "bot_token", "bot_token_set",
             "auto_created", "created_at", "updated_at",
         ]
         read_only_fields = [
             "created_at", "updated_at", "status_change_last_run", "auto_created",
+            "bot_token_set",
         ]
 
     # config validation per transport: which key the channel needs to deliver.
     _URL_KINDS = {"webhook", "slack", "teams", "discord"}
+    # Write-only secrets → the encrypted ``secrets`` map, keyed by field name.
+    _SECRET_FIELDS = {"bot_token": "bot_token"}
+
+    def get_bot_token_set(self, obj) -> bool:
+        return bool((obj.secrets or {}).get("bot_token"))
+
+    def _apply_secrets(self, secrets: dict, validated_data) -> dict:
+        for field, key in self._SECRET_FIELDS.items():
+            value = validated_data.pop(field, None)
+            if value is None:
+                continue  # not supplied - leave the stored secret untouched
+            if value:
+                secrets[key] = value
+            else:
+                secrets.pop(key, None)
+        return secrets
+
+    def create(self, validated_data):
+        secrets = self._apply_secrets({}, validated_data)
+        if secrets:
+            validated_data["secrets"] = secrets
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Set before super().update() so the encrypted column rides the same save.
+        instance.secrets = self._apply_secrets(
+            dict(instance.secrets or {}), validated_data
+        )
+        return super().update(instance, validated_data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -1094,6 +1135,8 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"config": "pagerduty needs an Events v2 'routing_key'."}
             )
+        if kind == "telegram":
+            self._validate_telegram(attrs, config)
         scopes = [
             attrs.get(f, getattr(self.instance, f, None))
             for f in ("match_prefix", "match_ip", "match_device")
@@ -1103,6 +1146,30 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
                 "Scope to at most one of subnet, IP or device."
             )
         return attrs
+
+    def _validate_telegram(self, attrs, config) -> None:
+        """Telegram is not URL-based: it needs a bot token (write-only, kept in
+        ``secrets``) plus the numeric chat ID, and optionally a topic/thread ID
+        for a group with Topics enabled."""
+        if not str(config.get("chat_id") or "").strip():
+            raise serializers.ValidationError(
+                {"config": "telegram needs a 'chat_id'."}
+            )
+        thread = config.get("message_thread_id")
+        if thread not in (None, ""):
+            try:
+                int(thread)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    {"config": "telegram 'message_thread_id' must be a number."}
+                ) from None
+        token = attrs.get("bot_token")
+        stored = (getattr(self.instance, "secrets", None) or {}).get("bot_token")
+        # Blank means "clear it"; omitted on update means "keep what's stored".
+        if not token and (token == "" or not stored):
+            raise serializers.ValidationError(
+                {"bot_token": "Required for a Telegram channel."}
+            )
 
 
 class NotificationSubscriptionSerializer(serializers.ModelSerializer):

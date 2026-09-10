@@ -523,6 +523,7 @@ Supported channels:
 | **Slack / Discord** | An incoming-webhook URL | Posts the alert summary with a deep link. |
 | **Microsoft Teams** | A workflow/webhook URL | Posts the alert summary as an Adaptive Card. |
 | **PagerDuty** | A routing key | Triggers on fire, resolves on clear; deduplicated per condition. |
+| **Telegram** | A bot token and a chat ID | Posts the alert summary as plain text; optionally into one group topic. |
 | **Webhook** | A URL | POSTs the alert as JSON to your own endpoint. |
 | **Email** | Recipient addresses | Sent via the deployment mail server (below). |
 
@@ -542,6 +543,32 @@ Note that the webhook answers **202 Accepted** as soon as the flow accepts the
 request - before the flow has posted anything. A 202 (and so a green **Send
 test**) means Danbyte delivered the payload, not that Teams rendered the message.
 If the card never appears, check the run history of the flow itself.
+
+#### Telegram
+
+Telegram uses the **Bot API**, not a webhook URL. You provide:
+
+- **Bot token** - from [@BotFather](https://t.me/BotFather). Stored encrypted and
+  never read back by the API; leave the field blank when editing to keep it.
+- **Chat ID** - the destination. A private chat, group, supergroup or channel;
+  group and channel IDs are negative (`-1001234567890`).
+- **Topic ID** - optional, for a group with **Topics** enabled. Sent as the Bot
+  API's `message_thread_id`; leave it blank to post in the general topic.
+
+Add the bot to the group or channel **before** testing - a bot cannot message a
+chat it isn't in, and for a channel it needs post rights. A user must have
+messaged the bot at least once before it can DM them.
+
+To find a chat ID, message the chat (or add the bot and post there) and read
+`https://api.telegram.org/bot<TOKEN>/getUpdates` - the `chat.id` in the last
+update is the value to paste. If the group has Topics on, the same update
+carries the `message_thread_id` of the topic you posted in.
+
+Messages are sent as **plain text** with no `parse_mode`, so device names and
+detail strings never need escaping. Telegram answers **HTTP 200** with
+`{"ok": false, "description": …}` when it refuses a message (wrong chat ID, bot
+not in the group, deleted topic) - Danbyte treats that as a failure and **Send
+test** shows the description.
 
 ### Subscriptions and the Notifications page
 
@@ -619,7 +646,7 @@ permission). Email channels all deliver through this one server.
 | **SMTP host / port / security** | The mail server and `none` / `starttls` / `ssl`. |
 | **SMTP username / password** | Auth (the password is encrypted at rest and write-only). |
 | **From address** | The From header on alert emails. |
-| **Public base URL** | Adds clickable links to alerts in Slack/Teams/email/PagerDuty messages. |
+| **Public base URL** | Adds clickable links to alerts in Slack/Teams/Telegram/email/PagerDuty messages. |
 | **Webhook timeout** | How long to wait for outbound webhook POSTs. |
 | **Outbound proxy** | Optional HTTP(S) proxy for outbound webhooks. |
 

@@ -82,6 +82,11 @@ export function ChannelForm({
   )
   const [url, setUrl] = useState(String(cfg.url ?? ""))
   const [routingKey, setRoutingKey] = useState(String(cfg.routing_key ?? ""))
+  const [chatId, setChatId] = useState(String(cfg.chat_id ?? ""))
+  const [threadId, setThreadId] = useState(String(cfg.message_thread_id ?? ""))
+  // Write-only: a stored token never comes back, so blank means "keep it".
+  const [botToken, setBotToken] = useState("")
+  const tokenStored = channel?.bot_token_set ?? false
   const [recipients, setRecipients] = useState(
     Array.isArray(cfg.recipients) ? (cfg.recipients as string[]).join("\n") : ""
   )
@@ -107,6 +112,11 @@ export function ChannelForm({
   const buildConfig = (): Record<string, unknown> => {
     if (URL_KINDS.includes(kind)) return { url: url.trim() }
     if (kind === "pagerduty") return { routing_key: routingKey.trim() }
+    if (kind === "telegram")
+      return {
+        chat_id: chatId.trim(),
+        ...(threadId.trim() ? { message_thread_id: threadId.trim() } : {}),
+      }
     if (kind === "email")
       return {
         recipients: recipients
@@ -126,6 +136,10 @@ export function ChannelForm({
         min_severity: minSeverity,
         on_statuses: statuses,
         config: buildConfig(),
+        // Omitted unless typed, so an edit keeps the stored token.
+        ...(kind === "telegram" && botToken.trim()
+          ? { bot_token: botToken.trim() }
+          : {}),
         send_status_changes: sendStatusChanges,
         status_change_mode: statusMode,
         status_change_interval_minutes: Number(statusInterval) || 30,
@@ -220,6 +234,42 @@ export function ChannelForm({
                 placeholder="R0123456789ABCDEF…"
                 hint="PagerDuty Events API v2 integration key"
               />
+            )}
+
+            {kind === "telegram" && (
+              <>
+                <FormText
+                  label="Bot token"
+                  required={!tokenStored}
+                  mono
+                  type="password"
+                  autoComplete="new-password"
+                  value={botToken}
+                  onChange={setBotToken}
+                  placeholder={
+                    tokenStored ? "Stored - leave blank to keep" : "123456:ABC-DEF…"
+                  }
+                  hint="From @BotFather. Stored encrypted and never read back."
+                />
+                <FormText
+                  label="Chat ID"
+                  required
+                  mono
+                  value={chatId}
+                  onChange={setChatId}
+                  placeholder="-1001234567890"
+                  hint="User, group, supergroup or channel. Add the bot there first."
+                />
+                <FormText
+                  label="Topic ID"
+                  mono
+                  value={threadId}
+                  onChange={setThreadId}
+                  placeholder="Optional"
+                  hint="Only for a group with Topics enabled."
+                  inputClassName="w-40"
+                />
+              </>
             )}
 
             {kind === "email" && (

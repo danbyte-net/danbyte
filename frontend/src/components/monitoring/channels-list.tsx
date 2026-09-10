@@ -35,6 +35,7 @@ export const CHANNEL_KINDS: { value: ChannelKind; label: string }[] = [
   { value: "teams", label: "Microsoft Teams" },
   { value: "discord", label: "Discord" },
   { value: "pagerduty", label: "PagerDuty" },
+  { value: "telegram", label: "Telegram" },
   { value: "webhook", label: "Webhook" },
   { value: "email", label: "Email" },
 ]

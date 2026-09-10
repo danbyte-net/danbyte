@@ -5688,6 +5688,7 @@ export type ChannelKind =
   | "teams"
   | "discord"
   | "pagerduty"
+  | "telegram"
 
 export type MinSeverity = "info" | "warning" | "critical"
 
@@ -5707,6 +5708,8 @@ export interface NotificationChannel {
   match_prefix: string | null
   match_ip: string | null
   match_device: string | null
+  /** Telegram bot token is write-only; reads only say whether one is stored. */
+  bot_token_set: boolean
   auto_created: boolean
   created_at: string
   updated_at: string

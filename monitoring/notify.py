@@ -96,6 +96,58 @@ def _teams_card(text: str, url: str | None = None) -> dict:
     }
 
 
+_TELEGRAM_API = "https://api.telegram.org"
+
+
+def _telegram_send(channel, text: str, timeout, proxies) -> None:
+    """Send one plain-text message through the Telegram Bot API.
+
+    Plain text, no ``parse_mode``: the summary carries device names and detail
+    strings that would otherwise have to be escaped, and Slack/Discord send the
+    same raw text today.
+
+    Telegram answers **HTTP 200** with ``{"ok": false, "description": …}`` for
+    logical failures (wrong chat id, bot never added to the group, topic gone),
+    so the status code alone is not delivery. The body decides, and its
+    description is raised so ``send_test`` can show the operator what to fix.
+
+    The bot token is a credential and lives in the URL, so nothing derived from
+    it - exception text included - leaves this function unredacted.
+    """
+    cfg = channel.config or {}
+    token = str((channel.secrets or {}).get("bot_token") or "").strip()
+    chat_id = str(cfg.get("chat_id") or "").strip()
+    if not token or not chat_id:
+        raise RuntimeError("Telegram needs a bot token and a chat ID.")
+    payload: dict = {"chat_id": chat_id, "text": text}
+    thread = cfg.get("message_thread_id")
+    if thread not in (None, ""):
+        try:
+            payload["message_thread_id"] = int(thread)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("Telegram topic/thread ID must be a number.") from exc
+    try:
+        resp = safe_post(
+            f"{_TELEGRAM_API}/bot{token}/sendMessage",
+            json=payload,
+            timeout=timeout,
+            proxies=proxies,
+        )
+        body = resp.json()
+    except Exception as exc:  # noqa: BLE001 - redact the token before it travels
+        raise RuntimeError(
+            f"Telegram request failed: {str(exc).replace(token, '***')}"
+        ) from None
+    if not isinstance(body, dict) or not body.get("ok"):
+        detail = ""
+        if isinstance(body, dict):
+            detail = str(body.get("description") or "")
+        raise RuntimeError(
+            f"Telegram rejected the message: {detail or f'HTTP {resp.status_code}'}"
+        )
+    log.info("telegram %s → chat %s", channel.name, chat_id)
+
+
 # ─── built-in channels ────────────────────────────────────────────────────
 
 
@@ -425,6 +477,8 @@ def notify_plain(channel, subject: str, text: str = "", payload: dict | None = N
         elif kind == "discord":
             if cfg.get("url"):
                 safe_post(cfg["url"], json={"content": body}, timeout=timeout, proxies=proxies)
+        elif kind == "telegram":
+            _telegram_send(channel, body, timeout, proxies)
         elif kind == "pagerduty":
             key = cfg.get("routing_key")
             if key:
@@ -460,7 +514,7 @@ def notify_plain(channel, subject: str, text: str = "", payload: dict | None = N
 # Alerts (not raw transitions) are the notification source. Each firing/resolved
 # alert is routed to the tenant's channels that pass the severity + status gate,
 # and rendered for the channel's transport (Slack/Teams/Discord/PagerDuty/
-# webhook/email).
+# webhook/email/Telegram).
 
 _SEV_RANK = {"info": 0, "warning": 1, "critical": 2}
 _PD_SEV = {"critical": "critical", "warning": "warning", "info": "info"}
@@ -760,6 +814,8 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
             safe_post(
                 cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies
             )
+    elif kind == "telegram":
+        _telegram_send(channel, linked, timeout, proxies)
     elif kind == "pagerduty":
         key = cfg.get("routing_key")
         if key:
@@ -911,6 +967,8 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
     elif channel.kind == "discord":
         if cfg.get("url"):
             safe_post(cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies)
+    elif channel.kind == "telegram":
+        _telegram_send(channel, linked, timeout, proxies)
     elif channel.kind == "webhook":
         if cfg.get("url"):
             safe_post(
