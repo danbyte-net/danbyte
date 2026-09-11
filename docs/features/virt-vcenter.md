@@ -95,15 +95,15 @@ Per-source switches widen what a source imports:
 Three more switches decide how far the sync reaches into what you already
 have:
 
-- **Sync interface MTU** (on by default) - copies the hypervisor's MTU onto a
-  VM interface that has none, and reports a differing one as drift. Turn it
-  off to make Danbyte the source of truth for MTU: the value is then not read
-  at all, so it neither fills a blank nor shows up as a disagreement you can
-  never clear.
+- **Sync interface MTU** (Proxmox only, on by default) - copies the
+  hypervisor's MTU onto a VM interface that has none, and reports a differing
+  one as drift. Turn it off to make Danbyte the source of truth for MTU: the
+  value is then not read at all, so it neither fills a blank nor shows up as a
+  disagreement you can never clear.
 
-    vCenter's VM-NIC payload carries no MTU, so on a vCenter source this
-    switch has nothing to act on today. It bites on Proxmox, which states it
-    per NIC.
+    The switch is **not shown on a vCenter source**. vSphere puts MTU on the
+    vSwitch or port group, not on a VM's vNIC, so there is nothing for it to
+    copy - and an option that cannot act reads as one that is broken.
 - **Skip powered-off VMs** (off by default) - stopped guests are listed but
   their detail is not read, so nothing about them is updated. They still
   count as **present**: a VM that is merely switched off is never treated as

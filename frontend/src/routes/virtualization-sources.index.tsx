@@ -623,12 +623,18 @@ export function SourceDialog({
               checked={syncHosts}
               onChange={setSyncHosts}
             />
-            <FormCheckbox
-              label="Sync interface MTU"
-              hint="Copy the hypervisor's MTU onto a VM interface that has none, and report a differing one as drift. Off leaves MTU to you. vCenter does not report a VM NIC's MTU at all."
-              checked={syncMtu}
-              onChange={setSyncMtu}
-            />
+            {/* vSphere has no MTU on a VM's vNIC - it is a property of the
+                vSwitch or port group - so there is nothing for this to copy on
+                a vCenter source. Offering it with a disclaimer read as a
+                setting that was simply not working. */}
+            {!isVcenter && (
+              <FormCheckbox
+                label="Sync interface MTU"
+                hint="Copy the hypervisor's MTU onto a VM interface that has none, and report a differing one as drift. Off leaves MTU to you."
+                checked={syncMtu}
+                onChange={setSyncMtu}
+              />
+            )}
             <FormCheckbox
               label="Skip powered-off VMs"
               hint="Leave stopped guests alone. They still count as present, so they are never pruned for being off."

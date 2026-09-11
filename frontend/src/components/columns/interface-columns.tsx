@@ -34,6 +34,7 @@ import {
 import { SnmpLinkBadge } from "@/components/snmp-link-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
+import { IpListCell } from "@/components/cells/ip-list"
 import { hereUrl } from "@/lib/return-url"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { DeviceCell } from "@/components/cells/device-cell"
@@ -474,24 +475,7 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
     ips: () => ({
       id: "ips",
       header: "IP addresses",
-      cell: ({ row }) => {
-        const ips = row.original.ip_addresses
-        if (ips.length === 0) return dash
-        return (
-          <div className="flex flex-wrap gap-1">
-            {ips.map((ip) => (
-              <Link
-                key={ip.id}
-                to="/ips/$id"
-                params={{ id: ip.id }}
-                className="link font-mono text-xs"
-              >
-                {ip.ip_address}
-              </Link>
-            ))}
-          </div>
-        )
-      },
+      cell: ({ row }) => <IpListCell ips={row.original.ip_addresses} />,
     }),
     cables: () => ({
       id: "cables",
@@ -573,7 +557,6 @@ export interface InterfaceActionsOpts<T extends Interface> {
  * Returns `null` when the user can do none of add-IP / assign-IP / edit, so the
  * caller can omit the column entirely.
  */
-
 
 /** Disconnect (delete) the cable on a cabled row (#137) - fetches the full
  * cable when clicked so the shared delete dialog can name both ends. */
