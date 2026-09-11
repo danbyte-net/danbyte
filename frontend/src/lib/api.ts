@@ -3843,6 +3843,9 @@ export interface ZabbixConnection {
   /** Zabbix severity (0-5, keyed as a string) -> Danbyte status. */
   severity_map: Record<string, string>
   provision_mode: "off" | "review" | "auto"
+  /** Which devices get a host: the ones with a Zabbix check, or every device
+   * the provisioning rules match. */
+  provision_scope: "checks" | "rules"
   prune_hosts: boolean
   prune_after_days: number
   /** Run the sync pass on a timer. Separate from provision_mode: when it runs
@@ -4008,6 +4011,8 @@ export interface ZabbixSyncResult {
   prune: number
   /** Zabbix hosts Danbyte has no device for, offered as devices. */
   adopt: number
+  /** Devices the rules match that have no address, so cannot become a host. */
+  no_address?: number
   applied?: number
   failed?: number
   /** What Zabbix said about the writes it refused - its refusals are usually

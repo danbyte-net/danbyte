@@ -92,6 +92,14 @@ function ZabbixPage() {
             ? `Nothing to do - ${r.linked} of ${r.scoped} in scope already match.`
             : `${proposed} change${proposed === 1 ? "" : "s"} to review.`
       )
+      // Matched by a rule but with no address to reach: a host cannot be
+      // made for it, and silently scoping it out is how an operator concludes
+      // the rule is broken.
+      if (r.no_address) {
+        toast.warning(
+          `${r.no_address} matching device${r.no_address === 1 ? " has" : "s have"} no address - no host can be created for ${r.no_address === 1 ? "it" : "them"}.`
+        )
+      }
       // Zabbix's own words for what it refused. A count alone leaves the
       // operator with nothing to act on.
       for (const e of r.errors ?? []) {

@@ -176,10 +176,34 @@ writing to it is another, and the second is never implied by the first.
 
 ### What is in scope
 
-The devices you already asked Zabbix to watch - anything with a **Zabbix check**
-on one of this connection's engines. A check is the statement "I want Zabbix
+Two answers, picked per connection, because two deployments want opposite
+things.
+
+**Devices with a Zabbix check** (the default) - anything with a Zabbix check on
+one of this connection's engines. A check is the statement "I want Zabbix
 watching this", so it drives provisioning too: one scope definition rather than
-two that can disagree.
+two that can disagree. Use it when Zabbix *is* the monitoring engine for those
+devices.
+
+**Every device the rules match** - the provisioning rules below decide, and the
+checks are not consulted at all. This is the hybrid estate: **Danbyte** keeps
+doing the pinging, discovery, TLS and port checks, and Zabbix's host list is
+simply kept in step with Danbyte's inventory, because Danbyte is the source of
+truth for what exists. Without this a rule scoped to *Every device* could only
+ever reach the devices somebody had separately bound to a Zabbix engine and
+given a Zabbix check - which is not what the rule says, and not what anyone
+reading it expects.
+
+A device with **no address** cannot become a host, since a Zabbix host is
+reached at one. Those are left out and counted, and the sync says how many, so
+a rule that looks like it under-matched is explained rather than mysterious.
+
+!!! note "Binding an engine does not hand Zabbix your checks"
+    A Zabbix engine answers only **Zabbix** checks. A device bound to one keeps
+    running its ICMP, SNMP, TLS and port checks on Danbyte's own workers - the
+    scheduler picks up everything the driver does not claim. So the hybrid
+    arrangement needs no special mode: choose *Every device the rules match*,
+    and leave your own checks alone.
 
 The **In scope** table on the Zabbix page lists exactly this set, with the
 address the host would get, the templates, groups and proxy the rules resolve

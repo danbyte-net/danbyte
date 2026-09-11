@@ -66,6 +66,27 @@ class ZabbixConnection(TimestampedModel):
     provision_mode = models.CharField(
         max_length=8, choices=PROVISION_CHOICES, default=OFF
     )
+    #: Which devices get a host. Two honest answers, and they suit different
+    #: deployments:
+    #:
+    #: ``checks`` - the devices with a Zabbix check, i.e. the ones an operator
+    #: asked Zabbix to *watch*. Zabbix is the monitoring engine for them.
+    #:
+    #: ``rules`` - every device the provisioning rules below match, whether or
+    #: not Zabbix watches it. This is for the estate where Danbyte does the
+    #: pinging, discovery and TLS checks and Zabbix is fed from Danbyte as the
+    #: source of truth. Without it a rule saying "every device" could only ever
+    #: mean "every device somebody had already bound to Zabbix by hand", which
+    #: is not what the rule says.
+    SCOPE_CHECKS, SCOPE_RULES = "checks", "rules"
+    PROVISION_SCOPE_CHOICES = [
+        (SCOPE_CHECKS, "Devices with a Zabbix check"),
+        (SCOPE_RULES, "Every device the rules match"),
+    ]
+    #: Defaults to ``checks`` so no existing connection changes what it writes.
+    provision_scope = models.CharField(
+        max_length=8, choices=PROVISION_SCOPE_CHOICES, default=SCOPE_CHECKS
+    )
     #: Run the sync pass on a timer. Separate from ``provision_mode`` on
     #: purpose: *when it runs* and *what it does with what it finds* are two
     #: decisions. Auto-sync with review mode keeps the queue fresh for someone

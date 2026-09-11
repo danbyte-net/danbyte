@@ -64,6 +64,11 @@ export function ZabbixConnectionDialog({
   )
 }
 
+const SCOPES = [
+  { value: "checks", label: "Devices with a Zabbix check" },
+  { value: "rules", label: "Every device the rules match" },
+]
+
 const MODES = [
   { value: "off", label: "Off" },
   { value: "review", label: "Review" },
@@ -93,6 +98,9 @@ function ConnectionForm({
   )
   const [mode, setMode] = useState<string | null>(
     connection?.provision_mode ?? "off"
+  )
+  const [scope, setScope] = useState<string | null>(
+    connection?.provision_scope ?? "checks"
   )
   const [autoSync, setAutoSync] = useState(connection?.auto_sync ?? false)
   const [interval, setInterval] = useState(
@@ -203,6 +211,7 @@ function ConnectionForm({
           enabled,
           engines: engineIds,
           provision_mode: mode,
+          provision_scope: scope,
           auto_sync: autoSync,
           sync_interval_minutes: Number(interval) || 60,
           send_snmp_credentials: sendCreds,
@@ -304,6 +313,16 @@ function ConnectionForm({
               options={MODES}
               error={fieldErrors.provision_mode}
             />
+            {mode !== "off" && (
+              <FormSelect
+                label="Which devices"
+                info="Devices with a Zabbix check are the ones you asked Zabbix to watch - use this when Zabbix is the monitoring engine. Every device the rules match ignores the checks entirely: Danbyte keeps doing its own pinging and discovery, and simply keeps Zabbix's host list in step with the inventory. A device with no address is skipped and counted."
+                value={scope}
+                onChange={setScope}
+                options={SCOPES}
+                error={fieldErrors.provision_scope}
+              />
+            )}
             {mode !== "off" && (
               <>
                 <FormCheckbox

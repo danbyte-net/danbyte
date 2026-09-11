@@ -797,3 +797,72 @@ class PlanReadTests(_Base):
         self.assertIn("selectHostGroups", params)
         self.assertIn("selectParentTemplates", params)
         self.assertIn("proxyid", params["output"])
+
+
+class ProvisionScopeTests(_Base):
+    """Which devices get a host.
+
+    Under `checks` the set comes from the monitoring; under `rules` it comes
+    from the rules, for the estate where Danbyte does the checking and Zabbix
+    is only fed from the inventory.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from .models import ZabbixProvisionRule
+
+        self.Rule = ZabbixProvisionRule
+        self.watched = self.make_device("watched", last_octet=21)
+        self.scope(self.watched)                      # has a zabbix check
+        self.unwatched = self.make_device("unwatched", last_octet=22)
+
+    def in_scope(self):
+        return sorted(d.name for d in provision.devices_in_scope(self.conn))
+
+    def test_checks_scope_is_only_what_zabbix_watches(self):
+        self.rule(self.Rule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.assertEqual(self.conn.provision_scope, ZabbixConnection.SCOPE_CHECKS)
+        self.assertEqual(self.in_scope(), ["watched"])
+
+    def test_rules_scope_reaches_every_device_a_rule_matches(self):
+        """The point of the setting: 'every device' has to mean every device,
+        not every device somebody had already bound to Zabbix by hand."""
+        self.rule(self.Rule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.conn.provision_scope = ZabbixConnection.SCOPE_RULES
+        self.assertEqual(self.in_scope(), ["unwatched", "watched"])
+
+    def test_rules_scope_honours_a_narrower_rule(self):
+        self.rule(self.Rule.SCOPE_ROLE, self.role.id, ["ICMP Ping"])
+        other = DeviceRole.objects.create(tenant=self.tenant, name="AP", slug="ap")
+        odd = self.make_device("odd", last_octet=23)
+        odd.role = other
+        odd.save(update_fields=["role"])
+        self.conn.provision_scope = ZabbixConnection.SCOPE_RULES
+        self.assertNotIn("odd", self.in_scope())
+        self.assertIn("unwatched", self.in_scope())
+
+    def test_no_rules_means_no_hosts_rather_than_every_host(self):
+        self.conn.provision_scope = ZabbixConnection.SCOPE_RULES
+        self.assertEqual(self.in_scope(), [])
+
+    def test_a_device_with_no_address_is_left_out_and_counted(self):
+        from api.models import Device
+
+        Device.objects.create(
+            tenant=self.tenant, name="no-ip", device_type=self.dtype,
+            role=self.role, site=self.site,
+        )
+        self.rule(self.Rule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.conn.provision_scope = ZabbixConnection.SCOPE_RULES
+        self.assertNotIn("no-ip", self.in_scope())
+        self.assertEqual(provision.devices_without_address(self.conn), 1)
+
+    def test_the_pass_proposes_a_host_for_an_unwatched_device(self):
+        self.rule(self.Rule.SCOPE_TENANT, None, ["ICMP Ping"])
+        self.conn.provision_scope = ZabbixConnection.SCOPE_RULES
+        self.conn.save(update_fields=["provision_scope"])
+        counts = self.plan([])
+        self.assertEqual(counts["scoped"], 2)
+        self.assertEqual(counts["create"], 2)
+        names = {c.device.name for c in ZabbixChange.objects.filter(kind=ZabbixChange.CREATE)}
+        self.assertEqual(names, {"watched", "unwatched"})

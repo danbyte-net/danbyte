@@ -32,7 +32,12 @@ from . import facts
 from .checker import KIND
 from .client import ZabbixClient, ZabbixError
 from .matching import index_hosts, match_device
-from .models import ZabbixChange, ZabbixConnection, ZabbixHostLink
+from .models import (
+    ZabbixChange,
+    ZabbixConnection,
+    ZabbixHostLink,
+    ZabbixProvisionRule,
+)
 from .templates import (
     IFACE_SNMP,
     groups_for,
@@ -65,11 +70,25 @@ def _client(conn: ZabbixConnection) -> ZabbixClient:
 def devices_in_scope(conn: ZabbixConnection):
     """The devices this connection should be keeping hosts for.
 
-    Derived from the checks, not from a second filter: a device with a
-    ``zabbix`` check on one of this connection's engines is one an operator
-    has already said they want Zabbix watching.
+    Two answers, because two deployments want opposite things.
+
+    ``checks`` derives the set from the monitoring: a device with a ``zabbix``
+    check on one of this connection's engines is one somebody asked Zabbix to
+    *watch*. One scope definition rather than two that can disagree.
+
+    ``rules`` derives it from the provisioning rules instead - every device
+    they match, watched by Zabbix or not. That is the estate where Danbyte
+    does the pinging and discovery and Zabbix is fed from Danbyte as the source
+    of truth. Under ``checks`` a rule scoped to "every device" could only ever
+    reach the devices somebody had separately bound to a Zabbix engine and
+    given a Zabbix check, which is not what the rule says and not what anyone
+    reading it expects.
     """
     from api.models import Device
+
+    if conn.provision_scope == ZabbixConnection.SCOPE_RULES:
+        return _devices_by_rules(conn)
+
     from monitoring.models import CheckState
 
     engine_ids = list(
@@ -89,6 +108,80 @@ def devices_in_scope(conn: ZabbixConnection):
         Device.objects.filter(tenant=conn.tenant, id__in=list(device_ids))
         .select_related("primary_ip", "site", "role")
     )
+
+
+def _devices_by_rules(conn: ZabbixConnection):
+    """Every device an enabled rule matches, as one query.
+
+    Built from the rules rather than by testing each device, so an estate of
+    thousands costs a query and not a scan.
+
+    A device with no address is left out: a Zabbix host is reached at an
+    address, and creating one without is how a host that can never be polled
+    gets made. ``plan`` counts them so the omission is visible rather than
+    silent.
+    """
+    from django.db.models import Q
+
+    from api.models import Device
+
+    rules = rules_for(conn)
+    if not rules:
+        return Device.objects.none()
+
+    base = Device.objects.filter(
+        tenant=conn.tenant, primary_ip__isnull=False
+    ).select_related("primary_ip", "site", "role")
+
+    field = {
+        ZabbixProvisionRule.SCOPE_SITE: "site_id",
+        ZabbixProvisionRule.SCOPE_ROLE: "role_id",
+        ZabbixProvisionRule.SCOPE_PLATFORM: "platform_id",
+        ZabbixProvisionRule.SCOPE_TYPE: "device_type_id",
+        ZabbixProvisionRule.SCOPE_MANUFACTURER: "device_type__manufacturer_id",
+    }
+    q = Q()
+    for rule in rules:
+        if rule.scope == ZabbixProvisionRule.SCOPE_TENANT:
+            return base          # one rule for everything ends the question
+        column = field.get(rule.scope)
+        if column and rule.object_id:
+            q |= Q(**{column: rule.object_id})
+    return base.filter(q) if q else Device.objects.none()
+
+
+def devices_without_address(conn: ZabbixConnection) -> int:
+    """How many devices the rules match but cannot be given a host."""
+    from django.db.models import Q
+
+    from api.models import Device
+
+    if conn.provision_scope != ZabbixConnection.SCOPE_RULES:
+        return 0
+    rules = rules_for(conn)
+    if not rules:
+        return 0
+    if any(r.scope == ZabbixProvisionRule.SCOPE_TENANT for r in rules):
+        return Device.objects.filter(
+            tenant=conn.tenant, primary_ip__isnull=True
+        ).count()
+    field = {
+        ZabbixProvisionRule.SCOPE_SITE: "site_id",
+        ZabbixProvisionRule.SCOPE_ROLE: "role_id",
+        ZabbixProvisionRule.SCOPE_PLATFORM: "platform_id",
+        ZabbixProvisionRule.SCOPE_TYPE: "device_type_id",
+        ZabbixProvisionRule.SCOPE_MANUFACTURER: "device_type__manufacturer_id",
+    }
+    q = Q()
+    for rule in rules:
+        column = field.get(rule.scope)
+        if column and rule.object_id:
+            q |= Q(**{column: rule.object_id})
+    if not q:
+        return 0
+    return Device.objects.filter(
+        Q(tenant=conn.tenant, primary_ip__isnull=True) & q
+    ).count()
 
 
 def device_address(device) -> str:
@@ -243,7 +336,8 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
     """
     now = now or timezone.now()
     counts = {"scoped": 0, "linked": 0, "create": 0, "update": 0,
-              "template": 0, "ambiguous": 0, "prune": 0, "adopt": 0}
+              "template": 0, "ambiguous": 0, "prune": 0, "adopt": 0,
+              "no_address": 0}
     if conn.provision_mode == ZabbixConnection.OFF:
         return counts
     if not integration_enabled(conn.tenant, "zabbix"):
@@ -251,6 +345,7 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
 
     devices = list(devices_in_scope(conn))
     counts["scoped"] = len(devices)
+    counts["no_address"] = devices_without_address(conn)
 
     hosts = []
     if devices or conn.adopt_hosts:
