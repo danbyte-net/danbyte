@@ -26,6 +26,8 @@ import type { DhcpState } from "@/components/dhcp-badge"
 import { objCan } from "@/lib/use-me"
 import { ipToBigInt, bigIntToIp, enumerableHostInts } from "@/lib/prefix-tree"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { ExternalChips } from "@/components/monitoring/external-chips"
+import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { buildIpColumns } from "@/components/columns/ip-columns"
 import { dash } from "@/components/cells/dash"
@@ -539,7 +541,12 @@ function buildColumns({
       if (row.original.kind !== "registered") return null
       const e = monitoring[row.original.ip.id]
       if (!e || !e.status) return dash
-      return <MixedStatusBadge counts={e.counts} status={e.status} />
+      return (
+        <ExternalStatusHover entry={e}>
+          <MixedStatusBadge counts={e.counts} status={e.status} />
+          <ExternalChips entry={e} />
+        </ExternalStatusHover>
+      )
     },
     meta: { facet: monitoringFacet<IpRow>(rollup) },
   })

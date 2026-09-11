@@ -4,7 +4,13 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type VirtualMachine, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import type {
+  BulkStatusEntry,
+  BulkStatusResponse,
+  Paginated,
+  VirtualMachine,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVmColumns } from "@/components/columns/vm-columns"
@@ -21,6 +27,10 @@ export const Route = createFileRoute("/virtual-machines/")({
     device: typeof s.device === "string" ? s.device : undefined,
   }),
 })
+
+// Stable empty fallback so `columns` (which depends on `monitoring`) keeps its
+// identity while the roll-up loads.
+const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
 function VirtualMachinesPage() {
   const { canDo, humanIds } = useMe()
@@ -44,11 +54,29 @@ function VirtualMachinesPage() {
 
   const handleDelete = useCallback((vm: VirtualMachine) => setDeleting(vm), [])
 
+  // Monitoring rolls up across each VM's addresses, like the device list.
+  const vmIds = useMemo(
+    () => (query.data?.results ?? []).map((vm) => vm.id),
+    [query.data]
+  )
+  const monQuery = useQuery({
+    queryKey: ["vm-monitoring", vmIds],
+    queryFn: () =>
+      api<BulkStatusResponse>("/api/monitoring/status/", {
+        method: "POST",
+        body: JSON.stringify({ vms: vmIds }),
+      }),
+    enabled: vmIds.length > 0,
+    refetchInterval: 60_000,
+  })
+  const monitoring = monQuery.data?.statuses ?? EMPTY_MON
+
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
       buildVmColumns({
         selection: true,
         humanIds,
+        monitoring,
         actions: {
           editTo: "/virtual-machines/$id/edit",
           editParams: (vm) => ({ id: vm.id }),
@@ -57,7 +85,7 @@ function VirtualMachinesPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds]
+    [handleDelete, canEdit, canDelete, humanIds, monitoring]
   )
 
   const allRows = query.data?.results ?? []

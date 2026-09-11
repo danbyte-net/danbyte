@@ -11,6 +11,7 @@ import {
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ExternalChips } from "@/components/monitoring/external-chips"
+import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import {
   DeviceDriftMarker,
@@ -131,15 +132,6 @@ export function DeviceIpRef({
       {ip.ip_address}
     </Link>
   )
-}
-
-function monitoringTooltip(e: BulkStatusEntry): string {
-  const counts = e.counts ?? {}
-  const parts = Object.entries(counts).map(([s, n]) => `${n} ${s}`)
-  const head = `${e.monitored_ips ?? 0} monitored IP${
-    e.monitored_ips === 1 ? "" : "s"
-  }`
-  return parts.length ? `${head} - ${parts.join(", ")}` : head
 }
 
 export function buildDeviceColumns<T extends Device = Device>(
@@ -389,13 +381,10 @@ export function buildDeviceColumns<T extends Device = Device>(
         const e = opts.monitoring?.[row.original.id]
         if (!e || !e.status) return dash
         return (
-          <span
-            title={monitoringTooltip(e)}
-            className="inline-flex items-center gap-1.5"
-          >
+          <ExternalStatusHover entry={e}>
             <MixedStatusBadge counts={e.counts} status={e.status} />
             <ExternalChips entry={e} />
-          </span>
+          </ExternalStatusHover>
         )
       },
       // The rollup is a facet like any status: the rail lists the observed

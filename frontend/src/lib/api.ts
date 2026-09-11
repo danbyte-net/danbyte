@@ -3879,6 +3879,9 @@ export interface ZabbixProvisionRule {
   templates: string[]
   /** Host groups. Empty means the device's site is used, as it always was. */
   groups: string[]
+  /** Zabbix proxy the host is monitored through, by name. Empty = no opinion.
+   * Does not stack: the most specific rule naming one wins, a site first. */
+  proxy: string
   enabled: boolean
   created_at: string
   updated_at: string
@@ -3901,12 +3904,14 @@ export interface ZabbixScope {
     created_here: boolean
     templates: string[]
     groups: string[]
+    proxy: string
     pending: string[]
   }[]
 }
 
 export interface ZabbixServerTemplates {
   templates: { value: string; label: string }[]
+  proxies: { value: string; label: string }[]
   error: string
 }
 
@@ -4399,6 +4404,8 @@ export interface EffectiveCheckState {
 /** The parts of a check result an external monitoring system fills in. */
 export interface ExternalDetail {
   zabbix_host?: string
+  zabbix_url?: string
+  hostid?: string
   problem_count?: number
   problems?: { name?: string; severity?: string }[]
   availability?: Record<string, { state: string; error?: string }>
@@ -4523,8 +4530,23 @@ export interface BulkStatusEntry {
   monitored_ips?: number
   /** Open problems an external monitoring system reports. Absent when none. */
   problems?: number
+  /** The first few of them, name and Zabbix severity (0-5 as a string). */
+  problem_names?: { name: string; severity: string }[]
   /** Protocols that system cannot reach the target on - "snmp", "agent". */
   unreachable?: string[]
+  /** That system's own error per unreachable protocol. */
+  unreachable_errors?: Record<string, string>
+  /** Which system answered, and how to open the host there. */
+  external?: { system: string; host: string; hostid: string; url: string }
+}
+
+/** An engine kind a driver registered - configured on its own page rather
+ * than enrolled like an Outpost. */
+export interface EngineKindInfo {
+  kind: string
+  label: string
+  description: string
+  configure_path: string
 }
 
 /** A tenant's own name and colour for one check state. */

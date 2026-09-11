@@ -1,5 +1,8 @@
+import { ExternalLink } from "lucide-react"
+
 import type { ExternalDetail } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { SeverityPill, zabbixHostUrl } from "./external-status"
 
 /**
  * What the external system that answered this check actually said.
@@ -19,8 +22,21 @@ export function ExternalDetailPanel({ detail }: { detail?: ExternalDetail }) {
   return (
     <div className="space-y-2 text-[11px]">
       {host && (
-        <p className="text-muted-foreground">
-          Answered by <span className="font-mono">{host}</span>
+        <p className="flex items-center justify-between gap-3 text-muted-foreground">
+          <span>
+            Answered by <span className="font-mono">{host}</span>
+          </span>
+          {zabbixHostUrl(detail.zabbix_url ?? "", detail.hostid ?? "") && (
+            <a
+              href={zabbixHostUrl(detail.zabbix_url ?? "", detail.hostid ?? "")}
+              target="_blank"
+              rel="noreferrer"
+              className="link inline-flex items-center gap-1"
+            >
+              Open in Zabbix
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </p>
       )}
 
@@ -57,10 +73,11 @@ export function ExternalDetailPanel({ detail }: { detail?: ExternalDetail }) {
       )}
 
       {problems.length > 0 && (
-        <ul className="space-y-0.5">
+        <ul className="space-y-1">
           {problems.map((p, i) => (
-            <li key={`${p.name}-${i}`} className="text-muted-foreground">
-              {p.name}
+            <li key={`${p.name}-${i}`} className="flex items-start gap-2">
+              <SeverityPill severity={p.severity ?? ""} />
+              <span className="min-w-0 flex-1">{p.name}</span>
             </li>
           ))}
         </ul>

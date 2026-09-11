@@ -1,10 +1,5 @@
 import type { CheckStatus } from "@/lib/api"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
   statusColor,
   statusLabel,
   useStatusLabels,
@@ -62,16 +57,16 @@ export function MixedStatusBadge({
     .map(([s, n]) => `${n} ${statusLabel(s, labels)}`)
     .join(" · ")
 
+  // The bands are the visual; the breakdown is the text. Every cell that
+  // renders this wraps it in the shared hover, so no tooltip of its own.
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          aria-label={breakdown}
-          className="inline-block h-5 w-8 rounded-[5px] align-middle ring-1 ring-black/10 ring-inset dark:ring-white/15"
-          style={{ backgroundImage: `linear-gradient(to top right, ${stops})` }}
-        />
-      </TooltipTrigger>
-      <TooltipContent variant="panel">{breakdown}</TooltipContent>
-    </Tooltip>
+    <span className="inline-flex items-center">
+      <span
+        aria-hidden
+        className="inline-block h-5 w-8 rounded-[5px] align-middle ring-1 ring-black/10 ring-inset dark:ring-white/15"
+        style={{ backgroundImage: `linear-gradient(to top right, ${stops})` }}
+      />
+      <span className="sr-only">{breakdown}</span>
+    </span>
   )
 }

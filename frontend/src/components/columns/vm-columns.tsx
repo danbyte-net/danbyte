@@ -1,7 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
-import type { VirtualMachine } from "@/lib/api"
+import type { BulkStatusEntry, VirtualMachine } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerBadge } from "@/components/cells/power-badge"
@@ -14,6 +14,10 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
+import { monitoringBucket, monitoringFacet } from "@/components/columns/monitoring-facet"
+import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { ExternalChips } from "@/components/monitoring/external-chips"
+import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of virtual machines". Every surface
@@ -36,6 +40,7 @@ export type VmColumnId =
   | "name"
   | "cluster"
   | "status"
+  | "monitoring"
   | "power"
   | "vcpus"
   | "memory"
@@ -53,6 +58,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "name",
   "cluster",
   "status",
+  "monitoring",
   "power",
   "vcpus",
   "memory",
@@ -79,12 +85,16 @@ export interface VmColumnOpts<T extends VirtualMachine = VirtualMachine> {
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
+  /** Bulk monitoring roll-ups keyed by VM id; the column only exists when a
+   * page fetched them, exactly as on the device list. */
+  monitoring?: Record<string, BulkStatusEntry>
 }
 
 export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
   opts: VmColumnOpts<T> = {}
 ): ColumnDef<T, unknown>[] {
   const omit = new Set(opts.omit ?? [])
+  if (!opts.monitoring) omit.add("monitoring")
   // The "#" column only exists where the deployment enables human ids.
   if (!opts.humanIds) omit.add("numid")
   const keep = (id: VmColumnId) =>
@@ -149,6 +159,22 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
           }),
         },
       },
+    }),
+    monitoring: () => ({
+      id: "monitoring",
+      accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),
+      header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
+      cell: ({ row }) => {
+        const e = opts.monitoring?.[row.original.id]
+        if (!e || !e.status) return dash
+        return (
+          <ExternalStatusHover entry={e}>
+            <MixedStatusBadge counts={e.counts} status={e.status} />
+            <ExternalChips entry={e} />
+          </ExternalStatusHover>
+        )
+      },
+      meta: { facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]) },
     }),
     power: () => ({
       id: "power",
