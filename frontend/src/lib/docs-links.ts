@@ -110,6 +110,17 @@ export const DOCS_LINKS: Record<string, string> = {
   "/dns-names": "features/windows-sync/",
   "/virtualization-sources": "features/external-sync/",
   "/zabbix": "monitoring/zabbix/",
+  // The pages the settings merges left standing. Without these they fall
+  // through to "/settings" and the book button opens the access page, which
+  // is the right doc for almost none of them.
+  "/settings/directory": "features/permissions/",
+  "/settings/email": "features/monitoring/",
+  "/settings/backups": "getting-started/backup-restore/",
+  "/settings/separation": "access/site-separation/",
+  "/settings/tenant": "models/tenant/",
+  "/settings/security": "reference/settings/",
+  "/settings/admin": "reference/settings/",
+  "/settings/preferences": "features/catalogs-and-settings/",
   "/settings/integrations": "features/external-sync/",
   "/tags": "features/tags-and-custom-fields/",
   "/custom-fields": "features/tags-and-custom-fields/",
