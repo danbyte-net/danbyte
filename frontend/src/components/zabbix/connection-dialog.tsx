@@ -19,6 +19,8 @@ import {
 import {
   Field,
   FormCheckbox,
+  FormColumn,
+  FormColumns,
   FormFooter,
   FormSection,
   FormSelect,
@@ -44,7 +46,7 @@ export function ZabbixConnectionDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg" className="max-h-[85vh] overflow-y-auto">
+      <DialogContent size="4xl" className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {connection ? `Edit ${connection.name}` : "Add Zabbix connection"}
@@ -137,8 +139,7 @@ function ConnectionForm({
   // name meant a second Zabbix could answer for the first.
   const engines = useQuery({
     queryKey: ["zabbix-engine-picker"],
-    queryFn: () =>
-      api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
+    queryFn: () => api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
     staleTime: 60_000,
   })
   // Small catalogs, read whole; the device-type catalog is not, and gets the
@@ -235,169 +236,179 @@ function ConnectionForm({
       }}
       className="grid gap-4"
     >
-      <FormSection title="Connection" card>
-        <FormText
-          label="Name"
-          required
-          autoFocus={!isEdit}
-          value={name}
-          onChange={setName}
-          placeholder="zabbix-prod"
-          error={fieldErrors.name}
-        />
-        <FormText
-          label="Frontend URL"
-          required
-          mono
-          hint="/api_jsonrpc.php is appended"
-          value={url}
-          onChange={setUrl}
-          placeholder="https://zabbix.example.com"
-          error={fieldErrors.url}
-        />
-        <FormText
-          label="API token"
-          type="password"
-          hint={connection?.token_set ? "Set. Blank keeps it." : undefined}
-          info="A named API token from Zabbix (Users → API tokens), with an expiry. Never a username and password."
-          value={token}
-          onChange={setToken}
-          placeholder={connection?.token_set ? "••••••" : ""}
-          error={fieldErrors.token}
-        />
-        <FormCheckbox
-          label="Verify TLS certificate"
-          checked={verifyTls}
-          onChange={setVerifyTls}
-        />
-        <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
-        <Field
-          label="Engines"
-          hint={engineOptions.length ? undefined : "None yet"}
-          info="The monitoring engines that read through this connection. Create one of kind Zabbix under Governance → Monitoring engines, then link it here."
-          error={fieldErrors.engines}
-        >
-          <IdMultiSelect
-            options={engineOptions}
-            value={engineIds}
-            onChange={setEngineIds}
-            placeholder="Add an engine…"
-            searchPlaceholder="Search engines…"
-            emptyText="No Zabbix engine."
-          />
-        </Field>
-      </FormSection>
-
-      <FormSection title="Provisioning" card>
-        <FormSelect
-          label="Provisioning"
-          info="Whether Danbyte writes hosts into Zabbix. Review proposes every change for approval; Auto applies them. Reading is never affected."
-          value={mode}
-          onChange={setMode}
-          options={MODES}
-          error={fieldErrors.provision_mode}
-        />
-        {mode !== "off" && (
-          <>
-            <FormCheckbox
-              label="Sync automatically"
-              checked={autoSync}
-              onChange={setAutoSync}
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Connection" card>
+            <FormText
+              label="Name"
+              required
+              autoFocus={!isEdit}
+              value={name}
+              onChange={setName}
+              placeholder="zabbix-prod"
+              error={fieldErrors.name}
             />
-            {autoSync && (
-              <FormText
-                label="Interval"
-                type="number"
-                hint="minutes, 5 to 1440"
-                value={interval}
-                onChange={setInterval}
-                error={fieldErrors.sync_interval_minutes}
+            <FormText
+              label="Frontend URL"
+              required
+              mono
+              hint="/api_jsonrpc.php is appended"
+              value={url}
+              onChange={setUrl}
+              placeholder="https://zabbix.example.com"
+              error={fieldErrors.url}
+            />
+            <FormText
+              label="API token"
+              type="password"
+              hint={connection?.token_set ? "Set. Blank keeps it." : undefined}
+              info="A named API token from Zabbix (Users → API tokens), with an expiry. Never a username and password."
+              value={token}
+              onChange={setToken}
+              placeholder={connection?.token_set ? "••••••" : ""}
+              error={fieldErrors.token}
+            />
+            <FormCheckbox
+              label="Verify TLS certificate"
+              checked={verifyTls}
+              onChange={setVerifyTls}
+            />
+            <FormCheckbox
+              label="Enabled"
+              checked={enabled}
+              onChange={setEnabled}
+            />
+            <Field
+              label="Engines"
+              hint={engineOptions.length ? undefined : "None yet"}
+              info="The monitoring engines that read through this connection. Create one of kind Zabbix under Governance → Monitoring engines, then link it here."
+              error={fieldErrors.engines}
+            >
+              <IdMultiSelect
+                options={engineOptions}
+                value={engineIds}
+                onChange={setEngineIds}
+                placeholder="Add an engine…"
+                searchPlaceholder="Search engines…"
+                emptyText="No Zabbix engine."
               />
-            )}
-            <FormCheckbox
-              label="Send SNMP credentials"
-              info="Writes the device's SNMP community or v3 passphrases into Zabbix as secret macros, on hosts Danbyte creates. Off keeps them in Danbyte."
-              checked={sendCreds}
-              onChange={setSendCreds}
-            />
-            <FormCheckbox
-              label="Remove unwanted hosts"
-              info="Deletes a host Danbyte created once it has been out of scope for the grace period. A host somebody else made is never touched."
-              checked={prune}
-              onChange={setPrune}
-            />
-            {prune && (
-              <FormText
-                label="Grace period"
-                type="number"
-                hint="days"
-                value={pruneAfter}
-                onChange={setPruneAfter}
-                error={fieldErrors.prune_after_days}
-              />
-            )}
-          </>
-        )}
-      </FormSection>
+            </Field>
+          </FormSection>
 
-      <FormSection title="Two-way" card>
-        <FormCheckbox
-          label="Sync maintenance windows"
-          info="A confirmed maintenance or outage in Danbyte becomes a Zabbix maintenance period over the hosts this connection has linked. Moving or closing the window follows; a period Danbyte wrote is the only kind it ever removes."
-          checked={syncMaint}
-          onChange={setSyncMaint}
-        />
-        <FormCheckbox
-          label="Write acknowledgements"
-          info="Acknowledging a Danbyte alert that Zabbix raised acknowledges the Zabbix problems behind it, with the operator's name and note. Clearing it clears it there."
-          checked={writeAcks}
-          onChange={setWriteAcks}
-        />
-      </FormSection>
-
-      <FormSection title="Inventory" card>
-        <FormCheckbox
-          label="Read host inventory"
-          info="Records what Zabbix's inventory says about a linked device - its name and serial - and shows any disagreement in that device's drift inbox. Nothing is written to the device until somebody accepts it. Rides the host read the sync already makes, so it costs no extra call."
-          checked={readInventory}
-          onChange={setReadInventory}
-        />
-      </FormSection>
-
-      <FormSection title="Adoption" card>
-        <FormCheckbox
-          label="Adopt hosts"
-          info="A Zabbix host Danbyte has no device for is offered in the review queue; applying makes the device with the host's name, serial and address. Needs provisioning in Review or Auto - the queue is the same one."
-          checked={adopt}
-          onChange={setAdopt}
-        />
-        {adopt && (
-          <>
+          <FormSection title="Provisioning" card>
             <FormSelect
-              label="Site"
-              hint="when no host group names one"
-              value={adoptSite}
-              onChange={setAdoptSite}
-              options={asOptions(sites.data?.results)}
-              noneLabel="None"
-              error={fieldErrors.adopt_site}
+              label="Provisioning"
+              info="Whether Danbyte writes hosts into Zabbix. Review proposes every change for approval; Auto applies them. Reading is never affected."
+              value={mode}
+              onChange={setMode}
+              options={MODES}
+              error={fieldErrors.provision_mode}
             />
-            <FormSelect
-              label="Role"
-              value={adoptRole}
-              onChange={setAdoptRole}
-              options={asOptions(roles.data?.results)}
-              noneLabel="None"
-              error={fieldErrors.adopt_role}
+            {mode !== "off" && (
+              <>
+                <FormCheckbox
+                  label="Sync automatically"
+                  checked={autoSync}
+                  onChange={setAutoSync}
+                />
+                {autoSync && (
+                  <FormText
+                    label="Interval"
+                    type="number"
+                    hint="minutes, 5 to 1440"
+                    value={interval}
+                    onChange={setInterval}
+                    error={fieldErrors.sync_interval_minutes}
+                  />
+                )}
+                <FormCheckbox
+                  label="Send SNMP credentials"
+                  info="Writes the device's SNMP community or v3 passphrases into Zabbix as secret macros, on hosts Danbyte creates. Off keeps them in Danbyte."
+                  checked={sendCreds}
+                  onChange={setSendCreds}
+                />
+                <FormCheckbox
+                  label="Remove unwanted hosts"
+                  info="Deletes a host Danbyte created once it has been out of scope for the grace period. A host somebody else made is never touched."
+                  checked={prune}
+                  onChange={setPrune}
+                />
+                {prune && (
+                  <FormText
+                    label="Grace period"
+                    type="number"
+                    hint="days"
+                    value={pruneAfter}
+                    onChange={setPruneAfter}
+                    error={fieldErrors.prune_after_days}
+                  />
+                )}
+              </>
+            )}
+          </FormSection>
+        </FormColumn>
+
+        <FormColumn>
+          <FormSection title="Two-way" card>
+            <FormCheckbox
+              label="Sync maintenance windows"
+              info="A confirmed maintenance or outage in Danbyte becomes a Zabbix maintenance period over the hosts this connection has linked. Moving or closing the window follows; a period Danbyte wrote is the only kind it ever removes."
+              checked={syncMaint}
+              onChange={setSyncMaint}
             />
-            <DeviceTypePicker
-              value={adoptType}
-              onChange={setAdoptType}
-              hint="when the inventory model names none"
+            <FormCheckbox
+              label="Write acknowledgements"
+              info="Acknowledging a Danbyte alert that Zabbix raised acknowledges the Zabbix problems behind it, with the operator's name and note. Clearing it clears it there."
+              checked={writeAcks}
+              onChange={setWriteAcks}
             />
-          </>
-        )}
-      </FormSection>
+          </FormSection>
+
+          <FormSection title="Inventory" card>
+            <FormCheckbox
+              label="Read host inventory"
+              info="Records what Zabbix's inventory says about a linked device - its name and serial - and shows any disagreement in that device's drift inbox. Nothing is written to the device until somebody accepts it. Rides the host read the sync already makes, so it costs no extra call."
+              checked={readInventory}
+              onChange={setReadInventory}
+            />
+          </FormSection>
+
+          <FormSection title="Adoption" card>
+            <FormCheckbox
+              label="Adopt hosts"
+              info="A Zabbix host Danbyte has no device for is offered in the review queue; applying makes the device with the host's name, serial and address. Needs provisioning in Review or Auto - the queue is the same one."
+              checked={adopt}
+              onChange={setAdopt}
+            />
+            {adopt && (
+              <>
+                <FormSelect
+                  label="Site"
+                  hint="when no host group names one"
+                  value={adoptSite}
+                  onChange={setAdoptSite}
+                  options={asOptions(sites.data?.results)}
+                  noneLabel="None"
+                  error={fieldErrors.adopt_site}
+                />
+                <FormSelect
+                  label="Role"
+                  value={adoptRole}
+                  onChange={setAdoptRole}
+                  options={asOptions(roles.data?.results)}
+                  noneLabel="None"
+                  error={fieldErrors.adopt_role}
+                />
+                <DeviceTypePicker
+                  value={adoptType}
+                  onChange={setAdoptType}
+                  hint="when the inventory model names none"
+                />
+              </>
+            )}
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
 
       <FormSection title="Severity mapping" card>
         <div className="grid gap-3 @md:grid-cols-2">
