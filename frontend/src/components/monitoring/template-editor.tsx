@@ -9,8 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { FormSelect, FormText } from "@/components/forms"
+import { Field, FormFooter, FormSelect, FormText } from "@/components/forms"
 import {
   CheckFields,
   INTERVALS,
@@ -106,7 +105,7 @@ export function TemplateEditor({
       <DialogContent size="xl" className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? `Edit check · ${template!.name}` : "New check template"}
+            {isEdit ? `Edit check · ${template!.name}` : "New check"}
           </DialogTitle>
         </DialogHeader>
         <form
@@ -118,14 +117,11 @@ export function TemplateEditor({
         >
           <div className="grid grid-cols-2 gap-3">
             {isEdit ? (
-              <div className="space-y-1">
-                <label className="text-[11px] tracking-wide text-muted-foreground uppercase">
-                  Type
-                </label>
-                <div className="flex h-9 items-center rounded-md border border-border bg-muted/40 px-3 text-sm text-muted-foreground">
+              <Field label="Type" hint="fixed once created">
+                <div className="flex h-9 items-center text-sm text-muted-foreground">
                   {kinds.find((k) => k.value === kind)?.label ?? kind}
                 </div>
-              </div>
+              </Field>
             ) : (
               <FormSelect
                 label="Type"
@@ -164,19 +160,11 @@ export function TemplateEditor({
             </p>
           )}
 
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={save.isPending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSubmit || save.isPending}>
-              {save.isPending ? "Saving…" : isEdit ? "Save" : "Create"}
-            </Button>
-          </div>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel={isEdit ? "Save changes" : "Create"}
+          />
         </form>
       </DialogContent>
     </Dialog>

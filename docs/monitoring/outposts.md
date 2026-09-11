@@ -23,7 +23,9 @@ Every check runs on a **monitoring engine**:
   what it knows and folds the answer through the same path an Outpost reports
   through, so alerts, silences, flapping and every notification channel behave
   identically whichever engine produced the result. **Zabbix** is the first -
-  see [Zabbix](zabbix.md).
+  see [Zabbix](zabbix.md). On the engines page a driver engine has no token,
+  transport or agent version; it shows the system it answers through and a
+  **Configure** link to that system's page.
 
 Manage them in **Governance → Monitoring engines** (admin only).
 

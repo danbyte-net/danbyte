@@ -2,12 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  MONITORING_STATES,
-  STATUSABLE_MODELS,
-  type Status,
-  type StatusWritePayload,
-} from "@/lib/api"
+import { MONITORING_STATES, STATUSABLE_MODELS } from "@/lib/api"
+import type { CheckStatus, Status, StatusWritePayload } from "@/lib/api"
 import {
   Field,
   FormCheckbox,
@@ -20,6 +16,25 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import {
+  STATUS_COLOR,
+  STATUS_LABEL,
+  STATUS_TEXT,
+} from "@/components/monitoring/charts"
+
+/** A check state in its shipped colour. Not CheckStatusBadge: this form is
+ * what lets a tenant rename a state, and the picker must keep showing the
+ * shipped names while that is being decided. */
+function ShippedStatePill({ state }: { state: CheckStatus }) {
+  return (
+    <span
+      className="inline-flex h-5 items-center rounded-[5px] px-2 text-xs font-medium ring-1 ring-black/10 ring-inset dark:ring-white/10"
+      style={{ backgroundColor: STATUS_COLOR[state], color: STATUS_TEXT[state] }}
+    >
+      {STATUS_LABEL[state]}
+    </span>
+  )
+}
 
 export interface IpStatusFormProps {
   status?: Status
@@ -182,7 +197,8 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         </Field>
         <Field
           label="Default for"
-          hint="Applied to new objects of these types when no status is picked (only types it's available to)"
+          hint="for new objects with no status picked"
+          info="Only types the status is available to can be defaulted. At most one default per type."
           error={fieldErrors.default_for}
         >
           <div className="grid gap-x-4 gap-y-1.5 @md:grid-cols-2">
@@ -192,9 +208,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
                 <FormCheckbox
                   key={m.value}
                   label={m.label}
-                  className={
-                    allowed ? undefined : "pointer-events-none opacity-40"
-                  }
+                  disabled={!allowed}
                   checked={allowed && defaultFor.includes(m.value)}
                   onChange={() => allowed && toggleDefault(m.value)}
                 />
@@ -207,7 +221,7 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
       <FormSection title="Monitoring" card>
         <FormCheckbox
           label="Speaks for a check state"
-          hint="Renames and recolours it across monitoring"
+          hint="renames and recolours it"
           checked={!!monitoringState}
           // Ticking lands on Down: the state an estate most often wants in its
           // own words is the bad one.
@@ -216,10 +230,13 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         {!!monitoringState && (
           <FormSelect
             label="Check state"
-            info="A check always records one of these six. This status takes over that state's name and colour everywhere monitoring is shown, and becomes pickable where a check state is - a Zabbix severity map, say. One status per state."
+            info="One status per state. It replaces the state's shipped name and colour everywhere monitoring is shown."
             value={monitoringState}
             onChange={(v) => setMonitoringState(v ?? "")}
-            options={MONITORING_STATES}
+            options={MONITORING_STATES.map((m) => ({
+              value: m.value,
+              label: <ShippedStatePill state={m.value} />,
+            }))}
             error={fieldErrors.monitoring_state}
           />
         )}
@@ -240,13 +257,13 @@ export function IpStatusForm({ status, onSaved, onCancel }: IpStatusFormProps) {
         />
         <FormCheckbox
           label="Suppresses alerts"
-          hint="A maintenance/outage event in this status silences alerts for its impacted devices"
+          hint="for maintenance and outage events"
           checked={suppressesAlerts}
           onChange={setSuppressesAlerts}
         />
         <FormCheckbox
           label="Closes the event"
-          hint="A maintenance/outage event in this status counts as finished and releases its silence"
+          hint="ends the event and its silence"
           checked={isClosed}
           onChange={setIsClosed}
         />
