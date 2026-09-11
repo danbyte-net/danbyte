@@ -262,6 +262,7 @@ policy carries two, both empty by default:
 | **Name** | A glob the device name must match - `core-*`, `*-fw??`. Case-insensitive. |
 | **Interface** | A glob the address's interface must match - `Gi0/0/*`. Reads the *port*, not the device, so "only the uplinks" is one setting. An address bound to no interface never matches it. |
 | **Tags** | Every tag listed must be on the device. Several tags means all of them, not any. |
+| **Hardware** | A glob at least one of the device's inventory items or installed modules must match, by name or part number - `*PSU*`, `C9300-NM-*`. This is how a policy says *has this hardware, add that sensor*. Case-insensitive. |
 
 They **narrow**, never widen: a filter can only stop a policy applying, never
 add a check and never disable one a looser policy already added. That is why

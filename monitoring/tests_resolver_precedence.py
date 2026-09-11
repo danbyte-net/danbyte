@@ -505,3 +505,80 @@ class InterfaceFilterTests(PrecedenceBase):
                     match_interface="eth1/*", match_name="core-*")
         # Filters narrow: the interface matches, the name does not.
         self.assertEqual(resolve_effective_checks(ip), [])
+
+
+class HardwareFilterTests(PrecedenceBase):
+    """"Has a PSU" is a statement about what is installed.
+
+    Read from inventory items and installed modules, by name and part number,
+    and one match is enough: the filter asks whether the hardware is there.
+    """
+
+    def item(self, device, name, part_id=""):
+        from api.models import InventoryItem
+
+        return InventoryItem.objects.create(device=device, name=name, part_id=part_id)
+
+    def module(self, device, type_name, part_number=""):
+        from api.models import Module, ModuleBay, ModuleType
+
+        mtype = ModuleType.objects.create(
+            tenant=self.tenant, name=type_name, part_number=part_number
+        )
+        bay = ModuleBay.objects.create(device=device, name=f"bay-{type_name}")
+        return Module.objects.create(device=device, module_bay=bay, module_type=mtype)
+
+    def test_a_matching_inventory_item_applies(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        self.item(device, "Power supply 1", part_id="PWR-C1-350WAC")
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100, match_hardware="*PWR-C1*")
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_a_matching_module_type_applies(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        self.module(device, "8x10G uplink", part_number="C9300-NM-8X")
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100, match_hardware="c9300-nm-*")
+        self.assertEqual(self.winning_interval(ip), 100)
+
+    def test_no_matching_hardware_does_not(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        self.item(device, "Fan tray")
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100, match_hardware="*PSU*")
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_a_device_less_address_never_matches(self):
+        pfx = self.prefix("10.1.0.0/24")
+        ip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.1.0.9", prefix=pfx)
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100, match_hardware="*")
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_it_combines_with_the_other_filters(self):
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        self.item(device, "PSU 1")
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100,
+                    match_hardware="PSU*", match_name="core-*")
+        self.assertEqual(resolve_effective_checks(ip), [])
+
+    def test_hardware_is_read_once_per_address_not_per_policy(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def queries(ip) -> int:
+            with CaptureQueriesContext(connection) as ctx:
+                resolve_effective_checks(ip)
+            return len(ctx.captured_queries)
+
+        pfx = self.prefix("10.1.0.0/24")
+        device, ip = self.device_ip(pfx)
+        self.item(device, "PSU 1")
+        self.policy(MonitoringPolicy.SCOPE_GLOBAL, interval=100, match_hardware="PSU*")
+        one = queries(ip)
+        self.policy(MonitoringPolicy.SCOPE_DEVICE_TYPE, device_type=self.dtype,
+                    interval=300, match_hardware="PSU*")
+        self.policy(MonitoringPolicy.SCOPE_DEVICE_ROLE, device_role=self.role,
+                    interval=400, match_hardware="PSU*")
+        self.assertEqual(queries(ip), one)

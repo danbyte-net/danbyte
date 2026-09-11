@@ -38,7 +38,7 @@ from .models import (
     MonitoringPolicy,
     MonitoringProfile,
 )
-from .policy_scopes import filters_pass, scope_for
+from .policy_scopes import filters_pass, hardware_names, scope_for
 
 if TYPE_CHECKING:  # pragma: no cover
     from api.models import IPAddress, Prefix
@@ -212,6 +212,15 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
             )
         return _tags["v"]
 
+    # Same shape for hardware: two reads per address, and only when a policy
+    # asks. Never a query per policy.
+    _hw: dict = {}
+
+    def device_hardware() -> set:
+        if "v" not in _hw:
+            _hw["v"] = hardware_names(device)
+        return _hw["v"]
+
     # Frequency override for this IP = the interval_seconds of the most-specific
     # applicable policy that sets one (a prefix beats VRF beats global). Applied
     # to every policy-sourced check, regardless of which policy the template
@@ -281,7 +290,7 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
             # Prefix: its rank is the mask length, so it needs the enclosing
             # list rather than a plain comparison.
             if not policy.prefix_id or not filters_pass(
-                policy, ip, device, device_tags()
+                policy, ip, device, device_tags(), device_hardware()
             ):
                 continue
             pfx = next((p for p in enclosing if p.id == policy.prefix_id), None)
@@ -292,7 +301,7 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
             continue
         if scope.honours_target and not target_ok(policy):
             continue
-        if not filters_pass(policy, ip, device, device_tags()):
+        if not filters_pass(policy, ip, device, device_tags(), device_hardware()):
             continue
         if scope.match is not None and scope.match(policy, ip, device):
             add(policy, scope.rank)

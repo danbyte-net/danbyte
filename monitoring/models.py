@@ -421,6 +421,14 @@ class MonitoringPolicy(TimestampedModel):
             "Empty = any. An address bound to no interface never matches."
         ),
     )
+    match_hardware = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text=(
+            "Glob at least one of the device's inventory items or installed "
+            "modules must match, by name or part number, e.g. '*PSU*'. "
+            "Empty = any."
+        ),
+    )
 
     target = models.CharField(
         max_length=16,

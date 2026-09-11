@@ -698,7 +698,7 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
         fields = [
             "id", "scope", "vrf", "device_type", "device_role", "device",
             "prefix", "target_site", "region", "platform",
-            "match_tags", "match_name", "match_interface",
+            "match_tags", "match_name", "match_interface", "match_hardware",
             "enabled", "inherit", "target", "interval_seconds",
             "profiles", "profile_detail", "templates", "template_detail",
             "created_at", "updated_at",

@@ -184,7 +184,7 @@ def _region_chain(site_id) -> set:
     return out
 
 
-def filters_pass(policy, ip, device, device_tags=None) -> bool:
+def filters_pass(policy, ip, device, device_tags=None, device_hardware=None) -> bool:
     """Whether a policy's filters admit this address.
 
     Filters narrow whatever the scope matched; they never widen it and never
@@ -192,15 +192,16 @@ def filters_pass(policy, ip, device, device_tags=None) -> bool:
     filters passes everything, which is what every policy written before they
     existed does.
 
-    Both read from the **device**: a tag or a name belongs to a thing, and an
-    address with nothing on it has neither. So a filtered policy simply does
-    not reach an unassigned address - narrower, never wider, which is the safe
-    direction for a rule that can only add monitoring.
+    Tags, name and hardware read from the **device**: they belong to a thing,
+    and an address with nothing on it has none of them. So a filtered policy
+    simply does not reach an unassigned address - narrower, never wider, which
+    is the safe direction for a rule that can only add monitoring.
     """
     tags = policy.match_tags or []
     pattern = (policy.match_name or "").strip()
     iface = (policy.match_interface or "").strip()
-    if not tags and not pattern and not iface:
+    hardware = (getattr(policy, "match_hardware", "") or "").strip()
+    if not tags and not pattern and not iface and not hardware:
         return True
     if iface:
         # Reads the address's interface rather than the device: "only the
@@ -211,7 +212,7 @@ def filters_pass(policy, ip, device, device_tags=None) -> bool:
         name = getattr(getattr(ip, "assigned_interface", None), "name", "")
         if not name or not fnmatchcase(name.lower(), iface.lower()):
             return False
-    if not tags and not pattern:
+    if not tags and not pattern and not hardware:
         return True
     if device is None:
         return False
@@ -232,4 +233,35 @@ def filters_pass(policy, ip, device, device_tags=None) -> bool:
         # All of them: filters narrow, so several tags is an intersection.
         if not set(tags) <= have:
             return False
+    if hardware:
+        from fnmatch import fnmatchcase
+
+        # "Has a PSU" is a statement about what is installed, answered from
+        # inventory items and modules - one match is enough, because the
+        # filter asks whether the hardware is there, not whether all of it is.
+        have = (
+            device_hardware if device_hardware is not None
+            else hardware_names(device)
+        )
+        if not any(fnmatchcase(name, hardware.lower()) for name in have):
+            return False
     return True
+
+
+def hardware_names(device) -> set:
+    """What a device has installed, lower-cased, by name and part number.
+
+    Inventory items (a PSU, a fan, a disk) and installed modules (a line card,
+    an uplink module) are the two places hardware lives; both are read so an
+    operator does not have to know which one their import filled.
+    """
+    names: set = set()
+    if device is None:
+        return names
+    for item in device.inventory_items.all():
+        names.add(item.name)
+        names.add(item.part_id)
+    for module in device.modules.select_related("module_type"):
+        names.add(module.module_type.name)
+        names.add(module.module_type.part_number)
+    return {n.lower() for n in names if n}

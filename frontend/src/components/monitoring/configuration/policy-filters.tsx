@@ -37,6 +37,7 @@ export function PolicyFilterButton({
     match_name: string
     match_tags: string[]
     match_interface: string
+    match_hardware: string
   }) => void
   disabled?: boolean
 }) {
@@ -44,6 +45,7 @@ export function PolicyFilterButton({
   const name = policy?.match_name ?? ""
   const tags = policy?.match_tags ?? []
   const iface = policy?.match_interface ?? ""
+  const hardware = policy?.match_hardware ?? ""
 
   return (
     <>
@@ -54,11 +56,11 @@ export function PolicyFilterButton({
             variant="outline"
             size="sm"
             disabled={disabled}
-            aria-label={`Filters: ${summary(name, tags, iface)}`}
+            aria-label={`Filters: ${summary(name, tags, iface, hardware)}`}
             onClick={() => setOpen(true)}
           >
             <Filter data-icon="inline-start" />
-            <span>{summary(name, tags, iface)}</span>
+            <span>{summary(name, tags, iface, hardware)}</span>
             <ChevronDown data-icon="inline-end" />
           </Button>
         </TooltipTrigger>
@@ -74,6 +76,7 @@ export function PolicyFilterButton({
               name={name}
               tags={tags}
               iface={iface}
+              hardware={hardware}
               onCancel={() => setOpen(false)}
               onSave={(patch) => {
                 onSave(patch)
@@ -88,10 +91,16 @@ export function PolicyFilterButton({
 }
 
 /** What the button says: the filters at a glance, or that there are none. */
-function summary(name: string, tags: string[], iface: string): string {
+function summary(
+  name: string,
+  tags: string[],
+  iface: string,
+  hardware: string
+): string {
   const parts: string[] = []
   if (name) parts.push(name)
   if (iface) parts.push(iface)
+  if (hardware) parts.push(hardware)
   if (tags.length) parts.push(`${tags.length} tag${tags.length === 1 ? "" : "s"}`)
   return parts.length ? parts.join(" · ") : "Any"
 }
@@ -100,22 +109,26 @@ function FilterForm({
   name,
   tags,
   iface,
+  hardware,
   onSave,
   onCancel,
 }: {
   name: string
   tags: string[]
   iface: string
+  hardware: string
   onSave: (patch: {
     match_name: string
     match_tags: string[]
     match_interface: string
+    match_hardware: string
   }) => void
   onCancel: () => void
 }) {
   const [pattern, setPattern] = useState(name)
   const [picked, setPicked] = useState<string[]>(tags)
   const [port, setPort] = useState(iface)
+  const [part, setPart] = useState(hardware)
   const options = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
@@ -142,6 +155,7 @@ function FilterForm({
           match_name: pattern.trim(),
           match_tags: picked,
           match_interface: port.trim(),
+          match_hardware: part.trim(),
         })
       }}
       className="grid gap-4"
@@ -160,6 +174,14 @@ function FilterForm({
         value={port}
         onChange={setPort}
         placeholder="Gi0/0/*"
+      />
+      <FormText
+        label="Hardware"
+        hint="glob, e.g. *PSU*"
+        info="At least one of the device's inventory items or installed modules must match, by name or part number. How a policy says: has this hardware, add that sensor."
+        value={part}
+        onChange={setPart}
+        placeholder="PWR-C1-*"
       />
       <Field
         label="Tags"
