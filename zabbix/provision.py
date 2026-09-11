@@ -28,6 +28,7 @@ from django.utils import timezone
 
 from integrations.toggles import integration_enabled
 
+from . import facts
 from .checker import KIND
 from .client import ZabbixClient, ZabbixError
 from .matching import index_hosts, match_device
@@ -288,6 +289,10 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
             if match.matched:
                 link = _remember(conn, device, match, now)
                 counts["linked"] += 1
+                if conn.read_inventory:
+                    # Free: this host row is already in hand. What it says goes
+                    # to the drift inbox, never to the device.
+                    facts.record(conn, device, match.host, now)
                 changed = _differences(device, match.host)
                 # A proxy only where the host has none. Moving a host between
                 # proxies is somebody's decision; putting a server-polled host

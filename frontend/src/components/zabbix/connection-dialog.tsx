@@ -106,6 +106,9 @@ function ConnectionForm({
   const [writeAcks, setWriteAcks] = useState(
     connection?.write_acknowledgements ?? false
   )
+  const [readInventory, setReadInventory] = useState(
+    connection?.read_inventory ?? false
+  )
   const [adopt, setAdopt] = useState(connection?.adopt_hosts ?? false)
   const [adoptSite, setAdoptSite] = useState<string | null>(
     connection?.adopt_site ?? null
@@ -206,6 +209,7 @@ function ConnectionForm({
           prune_after_days: Number(pruneAfter) || 0,
           sync_maintenance: syncMaint,
           write_acknowledgements: writeAcks,
+          read_inventory: readInventory,
           adopt_hosts: adopt,
           adopt_site: adopt ? adoptSite : null,
           adopt_role: adopt ? adoptRole : null,
@@ -348,6 +352,15 @@ function ConnectionForm({
           info="Acknowledging a Danbyte alert that Zabbix raised acknowledges the Zabbix problems behind it, with the operator's name and note. Clearing it clears it there."
           checked={writeAcks}
           onChange={setWriteAcks}
+        />
+      </FormSection>
+
+      <FormSection title="Inventory" card>
+        <FormCheckbox
+          label="Read host inventory"
+          info="Records what Zabbix's inventory says about a linked device - its name and serial - and shows any disagreement in that device's drift inbox. Nothing is written to the device until somebody accepts it. Rides the host read the sync already makes, so it costs no extra call."
+          checked={readInventory}
+          onChange={setReadInventory}
         />
       </FormSection>
 

@@ -12,6 +12,7 @@ class ZabbixConfig(AppConfig):
         from django.db.models.signals import post_delete
 
         from monitoring.engine_drivers import register_monitoring_engine
+        from monitoring.observations import register_observation_source
         from monitoring.signals import alert_acknowledged, maintenance_window_changed
 
         from . import hooks
@@ -30,6 +31,12 @@ class ZabbixConfig(AppConfig):
         alert_acknowledged.connect(
             hooks.on_alert_acknowledged, dispatch_uid="zabbix.alert_acknowledged"
         )
+
+        # What Zabbix knows about a device reaches the drift inbox the SNMP
+        # poller fills, rather than a second one beside it.
+        from .facts import observed_state
+
+        register_observation_source("zabbix", "Zabbix", observed_state)
 
         register_monitoring_engine(
             "zabbix",

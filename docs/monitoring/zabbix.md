@@ -399,6 +399,39 @@ Both are jobs: the window or the acknowledgement in Danbyte is the decision
 and never waits on Zabbix, and every switch - the tenant's, the connection's -
 is re-checked when the job runs.
 
+## Host inventory {#host-inventory}
+
+Zabbix templates fill a host's **inventory** automatically - serial, model,
+vendor, OS - and a Danbyte device record with a blank serial is the norm. With
+**Read host inventory** on, what Zabbix's inventory says about a linked device
+is recorded and any disagreement appears in that device's
+[drift inbox](../features/snmp-discovery.md#drift-and-reconciliation), beside
+anything Danbyte's own poll found, labelled *Zabbix* so you know which
+observation it is.
+
+It costs nothing: the inventory rides the host read the provisioning pass
+already makes, so there is no extra call and no second schedule. It needs
+provisioning in **Review** or **Auto** for the same reason - that pass is what
+reads the hosts.
+
+Nothing reaches the device until you **accept** the item, which needs the same
+`device.change` permission the device form does. Two fields are offered: the
+**name** and the **serial**. The model and OS are recorded but not proposed - a
+device type is a catalog row you curate, and accepting one would mint a row
+behind your back.
+
+!!! note "Why this is worth having"
+    Danbyte can walk SNMP itself, and a direct walk is better evidence than
+    anything Zabbix can pass along - so where Danbyte polls a device, its own
+    poll wins. This is for the devices it **cannot** poll: a site the core has
+    no route to, kit whose credentials live in Zabbix. Those are exactly the
+    devices a Zabbix engine exists for, and they had no observed state at all
+    before.
+
+A host **disabled** in Zabbix stops being an observation rather than becoming a
+stale one, and turning the switch off withdraws the opinions rather than
+leaving the last ones standing.
+
 ## Adopting Zabbix hosts
 
 The other way in. With **Adopt hosts** on, every Zabbix host that **no device
@@ -429,5 +462,10 @@ for any other device.
 
 ## Not yet
 
-Drift between the two inventories - "Zabbix says 48 interfaces, Danbyte has
-24" - is planned.
+**Interface** drift - "Zabbix says 48 interfaces, Danbyte has 24" - is planned
+but not built, and is a bigger job than the inventory fields above: Zabbix has
+no object for a host's network interfaces (its *interface* is the polling
+endpoint), so the list has to be reconstructed from discovered items, which is
+the heaviest read in the integration. It also only ever runs one way - a port
+missing from Zabbix is not evidence the port is missing from the device, since
+every stock template's discovery rule filters some out.

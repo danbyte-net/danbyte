@@ -171,7 +171,7 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
             "last_sync_summary", "send_snmp_credentials",
             "sync_maintenance", "last_maintenance_sync_at", "write_acknowledgements",
             "adopt_hosts", "adopt_site", "adopt_role", "adopt_device_type",
-            "adopt_names", "created_at",
+            "adopt_names", "read_inventory", "created_at",
             "updated_at",
         ]
         read_only_fields = [

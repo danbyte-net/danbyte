@@ -118,6 +118,11 @@ class ZabbixConnection(TimestampedModel):
     #: for - an existing Zabbix as the way into Danbyte. Off: reading a host
     #: list is one thing, minting inventory rows from it is another.
     adopt_hosts = models.BooleanField(default=False)
+    #: Record what Zabbix's host inventory says about a linked device, so a
+    #: disagreement shows in the device's drift inbox. Free - it rides the host
+    #: read the provisioning pass already makes - but it puts rows in front of
+    #: an operator, so it is theirs to ask for.
+    read_inventory = models.BooleanField(default=False)
     #: Where an adopted device lands when no host group names one of the
     #: tenant's sites, and what it is when the inventory does not say. All
     #: three are needed for a proposal to be applicable; a proposal without
@@ -440,3 +445,54 @@ class ZabbixMaintenance(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} -> {self.maintenanceid}"
+
+
+class ZabbixHostFacts(TimestampedModel):
+    """What Zabbix knows about a linked device, as an *observed* store.
+
+    Shaped like :class:`~monitoring.models.DeviceSnmp` on purpose - ``data``,
+    ``interfaces``, ``polled_at`` and ``reachable`` are exactly the attributes
+    the drift engine reads - so a Zabbix observation lands in the drift inbox
+    an operator already reads instead of needing a second one.
+
+    Separate from ``DeviceSnmp`` rather than written into it: that row is one
+    per device and carries an SNMP profile, so a device both pollers see would
+    flap between two observations and the profile would be a lie for half of
+    them.
+
+    Never the source of truth. Nothing here reaches a ``Device`` field until
+    somebody accepts the drift item it raises.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="zabbix_facts"
+    )
+    connection = models.ForeignKey(
+        ZabbixConnection, on_delete=models.CASCADE, related_name="facts"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="zabbix_facts"
+    )
+    #: System facts, under the keys the drift engine reads: ``sys_name``,
+    #: ``serial``, plus what Zabbix's inventory carries for context.
+    data = models.JSONField(default=dict, blank=True)
+    #: Reserved for interface presence, which is a separate read and a
+    #: separate switch. Empty means "not looked at", never "no interfaces".
+    interfaces = models.JSONField(default=list, blank=True)
+    polled_at = models.DateTimeField(null=True, blank=True)
+    #: Whether Zabbix could reach the host when it last said. ``None`` while
+    #: unknown - the drift engine treats a False as "no observation" rather
+    #: than reading every field as changed.
+    reachable = models.BooleanField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-polled_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "device"], name="uniq_zbx_facts_conn_device"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device_id} facts"

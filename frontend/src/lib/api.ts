@@ -3860,6 +3860,9 @@ export interface ZabbixConnection {
   last_maintenance_sync_at: string | null
   /** Acknowledging an alert acknowledges the Zabbix problems behind it. */
   write_acknowledgements: boolean
+  /** Record what Zabbix's inventory says, so a disagreement shows in the
+   * device's drift inbox. Rides the host read the sync already makes. */
+  read_inventory: boolean
   /** Propose a device for every Zabbix host Danbyte has no device for. */
   adopt_hosts: boolean
   adopt_site: string | null

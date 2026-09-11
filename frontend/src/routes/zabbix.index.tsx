@@ -346,6 +346,14 @@ function ConnectionCard({
       ),
     },
     {
+      label: "Host inventory",
+      value: conn.read_inventory ? (
+        <Badge variant="success">Read</Badge>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
+    },
+    {
       label: "Adopt hosts",
       value: conn.adopt_hosts ? (
         <span className="inline-flex flex-wrap items-center gap-2">
