@@ -4466,7 +4466,7 @@ export interface EffectiveCheck {
   sparkline: SparkPoint[]
 }
 
-export interface IpChecksResponse {
+export interface IpChecksResponse extends ExternalRollup {
   ip_id: string
   ip_address: string
   checks: EffectiveCheck[]
@@ -4557,11 +4557,12 @@ export interface DeviceChecksResponse {
   truncated: boolean
 }
 
-export interface BulkStatusEntry {
-  status: CheckStatus | null
-  checks?: number
-  counts?: Partial<Record<CheckStatus, number>>
-  monitored_ips?: number
+/** What an external monitoring system said about a target, rolled up.
+ *
+ * One shape wherever it is shown. A list row and the target's own page
+ * reading the same fields from the same server-side helper is what stops the
+ * detail page quietly disagreeing with the list it was opened from. */
+export interface ExternalRollup {
   /** Open problems an external monitoring system reports. Absent when none. */
   problems?: number
   /** The first few of them, name and Zabbix severity (0-5 as a string). */
@@ -4572,6 +4573,13 @@ export interface BulkStatusEntry {
   unreachable_errors?: Record<string, string>
   /** Which system answered, and how to open the host there. */
   external?: { system: string; host: string; hostid: string; url: string }
+}
+
+export interface BulkStatusEntry extends ExternalRollup {
+  status: CheckStatus | null
+  checks?: number
+  counts?: Partial<Record<CheckStatus, number>>
+  monitored_ips?: number
 }
 
 /** An engine kind a driver registered - configured on its own page rather

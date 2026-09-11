@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 import { Activity, ArrowRight } from "lucide-react"
 
-import { api, type CheckStatus, type IpChecksResponse } from "@/lib/api"
+import { api, type BulkStatusEntry, type CheckStatus, type IpChecksResponse } from "@/lib/api"
 import { useDateFormat } from "@/lib/datetime"
 import { MixedStatusBadge } from "./mixed-status-badge"
+import { ExternalChips } from "./external-chips"
+import { ExternalStatusHover } from "./external-status"
 import { ObjectCertExpiryBadge } from "./cert-expiry-badge"
 
 /**
@@ -35,6 +37,20 @@ export function IpMonitoringSummary({
     {}
   )
 
+  // The same roll-up the prefix's IP list shows for this very address, from
+  // the same endpoint field - so opening the address does not lose what the
+  // row it was opened from was saying.
+  const entry: BulkStatusEntry = {
+    status: null,
+    checks: checks.length,
+    counts,
+    problems: q.data?.problems,
+    problem_names: q.data?.problem_names,
+    unreachable: q.data?.unreachable,
+    unreachable_errors: q.data?.unreachable_errors,
+    external: q.data?.external,
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-card px-3 py-1.5 text-xs">
       <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
@@ -43,7 +59,12 @@ export function IpMonitoringSummary({
       </span>
       {checks.length > 0 ? (
         <>
-          <MixedStatusBadge counts={counts} />
+          <ExternalStatusHover entry={entry}>
+            <span className="inline-flex items-center gap-1.5">
+              <MixedStatusBadge counts={counts} />
+              <ExternalChips entry={entry} />
+            </span>
+          </ExternalStatusHover>
           <span className="text-muted-foreground">
             <span className="num text-foreground">{checks.length}</span> check
             {checks.length === 1 ? "" : "s"}

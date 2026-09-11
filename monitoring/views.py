@@ -346,7 +346,16 @@ def ip_checks_view(request, ip_id):
                 "sparkline": spark,
             }
         )
-    return Response({"ip_id": str(ip.id), "ip_address": ip.ip_address, "checks": checks})
+    # The same roll-up the lists show, from the same helper: the IP's own page
+    # said nothing about open problems or an unreachable protocol while the
+    # prefix's row for that very address showed both, which reads as the detail
+    # page disagreeing with the list it was opened from.
+    return Response({
+        "ip_id": str(ip.id),
+        "ip_address": ip.ip_address,
+        "checks": checks,
+        **_external_detail([s.last_detail for s in states.values()]),
+    })
 
 
 @extend_schema(

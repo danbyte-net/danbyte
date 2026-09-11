@@ -6,7 +6,8 @@ has to stay silent for those rather than render an empty badge on every row.
 """
 from __future__ import annotations
 
-from django.test import SimpleTestCase
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
 
 from .views import _external_detail
 
@@ -47,3 +48,60 @@ class ExternalDetailTests(SimpleTestCase):
         self.assertEqual(
             _external_detail([None, "nonsense", {"availability": "wrong"}, 7]), {}
         )
+
+
+class IpChecksRollupTests(TestCase):
+    """The address's own page must say what the list it was opened from said.
+
+    The prefix's IP row showed "1 problem, SNMP unreachable" while the IP's
+    detail page said nothing, which reads as the two disagreeing. Both now come
+    from the same helper on the server.
+    """
+
+    def setUp(self):
+        from api.models import IPAddress, Prefix
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.9.0.0/24")
+        self.ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.9.0.5/24", prefix=self.prefix
+        )
+        user = get_user_model().objects.create_superuser("root", "r@x.io", "pw")
+        self.client.force_login(user)
+
+    def _state(self, detail):
+        from django.utils import timezone
+
+        from monitoring.models import CheckState, CheckTemplate
+
+        tmpl = CheckTemplate.objects.create(
+            tenant=self.tenant, name="Zabbix", kind="zabbix", interval_seconds=300
+        )
+        CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=tmpl, kind="zabbix",
+            interval_seconds=300, next_run=timezone.now(), status="down",
+            last_detail=detail,
+        )
+
+    def test_the_endpoint_carries_the_same_rollup_the_lists_use(self):
+        self._state({
+            "zabbix_host": "aarhus-asw1", "hostid": "10683",
+            "zabbix_url": "http://10.0.0.53", "problem_count": 1,
+            "problems": [{"name": "Unavailable by ICMP ping", "severity": "4"}],
+            "availability": {"snmp": {"state": "down", "error": "timed out"}},
+        })
+        r = self.client.get(f"/api/monitoring/ips/{self.ip.id}/checks/")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(body["problems"], 1)
+        self.assertEqual(body["unreachable"], ["snmp"])
+        self.assertEqual(body["external"]["host"], "aarhus-asw1")
+        self.assertEqual(body["problem_names"][0]["severity"], "4")
+
+    def test_an_address_with_nothing_external_carries_nothing(self):
+        self._state({})
+        body = self.client.get(f"/api/monitoring/ips/{self.ip.id}/checks/").json()
+        for key in ("problems", "unreachable", "external"):
+            self.assertNotIn(key, body)
