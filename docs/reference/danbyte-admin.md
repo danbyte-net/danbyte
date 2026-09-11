@@ -206,8 +206,17 @@ danbyte status
 A symlink rather than a shell alias on purpose: an alias exists only in an
 interactive shell that sourced it, so it would be missing from `sudo`, from
 `cron`, and from every non-login session - which is exactly when this is
-wanted. From a source checkout, run `scripts/danbyte-admin` directly or link it
-yourself.
+wanted.
+
+A source checkout has no installer, so link it with:
+
+```bash
+make admin-link
+```
+
+It needs `sudo` for `/usr/local/bin`, which is why it is its own target rather
+than part of `make install-services`. Re-running it re-points the link, so it
+is safe after moving the checkout.
 
 ## Notes
 

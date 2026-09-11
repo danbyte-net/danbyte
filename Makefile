@@ -22,7 +22,7 @@ SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services uninstall-services reload \
+.PHONY: help install-services uninstall-services reload admin-link \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
@@ -41,6 +41,7 @@ help:
 	@echo "    make install-services    Symlink unit files into $(SYSTEMD_DIR)"
 	@echo "    make uninstall-services  Remove the symlinks"
 	@echo "    make reload              systemctl --user daemon-reload"
+	@echo "    make admin-link          Put danbyte-admin on PATH as \`danbyte\`"
 	@echo "    make linger              Enable user-linger so services run when logged out"
 	@echo "    make service-user        Create the '$(SERVICE_USER)' service user in $(SERVICE_HOME) (+linger, +your group)"
 	@echo ""
@@ -62,6 +63,14 @@ help:
 	@echo "    make proxy-uninstall   Remove the danbyte nginx site"
 
 # ---- service installation ----------------------------------------------------
+
+# scripts/install.sh does this for a packaged install; a source checkout has
+# no installer, so the same one-liner lives here rather than being a step
+# everyone rediscovers. /usr/local/bin needs root - the rest of the Makefile
+# does not, so this is its own target and not folded into install-services.
+admin-link:
+	@sudo ln -sfn $(PROJECT_DIR)/scripts/danbyte-admin /usr/local/bin/danbyte
+	@echo "  danbyte -> $(PROJECT_DIR)/scripts/danbyte-admin"
 
 install-services:
 	@mkdir -p $(SYSTEMD_DIR)
