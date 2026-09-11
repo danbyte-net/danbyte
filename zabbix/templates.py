@@ -49,6 +49,8 @@ MACRO_SECRET = 1
 
 def _scope_object(device, scope):
     """The id on ``device`` a rule of this scope matches against."""
+    if scope == ZabbixProvisionRule.SCOPE_SITE:
+        return device.site_id
     if scope == ZabbixProvisionRule.SCOPE_ROLE:
         return device.role_id
     if scope == ZabbixProvisionRule.SCOPE_PLATFORM:
@@ -191,3 +193,21 @@ def profile_for(device, tenant):
 
     profile, _source = resolve_device_profile(device, tenant)
     return profile
+
+
+
+def proxy_for(device, rules) -> str:
+    """The proxy name this device should be monitored through, or "".
+
+    Most specific wins - a host has exactly one proxy, so this is the one
+    thing here that does not stack.
+    """
+    rank = {scope: i for i, scope in enumerate(ZabbixProvisionRule.PROXY_PRECEDENCE)}
+    best = None
+    for rule in rules:
+        name = (rule.proxy or "").strip()
+        if not name or not _matches(device, rule):
+            continue
+        if best is None or rank.get(rule.scope, 99) < rank.get(best.scope, 99):
+            best = rule
+    return (best.proxy or "").strip() if best else ""

@@ -33,7 +33,9 @@ surface work over it unchanged.
    connection** on the connection's form. The link is explicit: an engine reads
    through the connection it is attached to and no other, so a second Zabbix
    server can never quietly answer for the first. An engine linked to nothing
-   is not usable, which is the honest answer rather than a guess. Then bind it,
+   is not usable, which is the honest answer rather than a guess. On the engines page such an engine reads *via
+   Zabbix* with a **Configure** link back here: there is no token to enrol and
+   no agent to install, because Zabbix is the agent. Then bind it,
    exactly as you
    would an Outpost. The binding decides *where* a target's checks are
    answered, and the most specific one wins: **device → location → prefix →
@@ -179,6 +181,11 @@ on one of this connection's engines. A check is the statement "I want Zabbix
 watching this", so it drives provisioning too: one scope definition rather than
 two that can disagree.
 
+The **In scope** table on the Zabbix page lists exactly this set, with the
+address the host would get, the templates, groups and proxy the rules resolve
+to, and one pill for where it has got to: *Linked*, *To review* or *No host*.
+Derived state that nothing renders is state nobody can trust.
+
 ### Matching an existing host
 
 Danbyte tries four ways, most-reliable first, and **stops at the first
@@ -195,6 +202,12 @@ Where a level finds **two** candidates, the answer is **no match**, raised as a
 *needs a decision* item for you to resolve. A wrong pairing means reading one
 host's problems believing they are another's, and nothing downstream would ever
 flag it - a missing pairing is visible and fixable, a wrong one is neither.
+
+Every pairing a pass has made is in the **Linked hosts** table - the device,
+the Zabbix host (a link straight to its dashboard in Zabbix), how it was
+matched and who created it. **Unlink** is the one manual act: it says "that
+pairing is wrong", touches nothing in Zabbix, and the next pass matches from
+scratch.
 
 ### What Danbyte writes
 
@@ -245,6 +258,25 @@ new host, not an opinion to impose on one that already exists.
     stock SNMP templates already include ICMP Ping, so asking for both is a
     conflict. When a write is refused, Danbyte shows you **what Zabbix said**,
     because that sentence is the rule to fix.
+
+### Proxies
+
+A rule can also name the **proxy** a host is monitored through - and a rule
+can now be scoped to a **site**, which is where a proxy belongs: "everything at
+Aarhus goes through the Aarhus proxy" is one rule. The picker lists the proxies
+the server actually has.
+
+Unlike templates and groups, a proxy does not stack - a host has exactly one -
+so the **most specific** rule that names one wins: site, then role, platform,
+type, manufacturer, then the catch-all. And Danbyte only ever sets a proxy on a
+host that is **on the server**. Moving a host between proxies is somebody's
+decision, not a rule's; putting a server-polled host onto the proxy its site
+names is finishing a setup.
+
+A proxy Zabbix does not have is reported, never invented: a proxy is a process
+somebody installed, and a record for one that does not exist would park the
+host on a poller that will never poll it. The host is created on the server
+instead, and the message says so.
 
 ### SNMP interfaces and credentials
 
@@ -310,6 +342,12 @@ A proposal that stops being true is dropped on the next pass: a change nobody
 has looked at, for something that has since been done by hand, is worse than
 no proposal.
 
+Dismissed proposals keep a second list, **Dismissed**, next to the queue;
+**Restore** puts one back. A mis-click is not a permanent silence. Applying
+a *Remove host* proposal - alone or as part of **Apply all** - asks first,
+because it deletes a host, its items and its history in Zabbix and Danbyte
+cannot undo that.
+
 ### Removing hosts
 
 A third switch, also off, with a grace period - and Danbyte will only ever
@@ -323,5 +361,4 @@ what is there.
 
 ## Not yet
 
-Zabbix proxies mapped to sites, maintenance-window sync and acknowledgement
-write-back are planned.
+Maintenance-window sync and acknowledgement write-back are planned.

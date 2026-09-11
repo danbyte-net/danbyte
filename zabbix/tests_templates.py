@@ -652,3 +652,148 @@ class ScopeReportTests(_Base):
         rows = provision.scope_report(self.conn)
         self.assertEqual(rows[0]["hostid"], "42")
         self.assertEqual(rows[0]["matched_by"], "address")
+
+
+class ProxyRuleTests(_Base):
+    """A host has exactly one proxy, so this is the rule field that does not
+    stack: the most specific rule that names one wins, a site first."""
+
+    def test_the_site_rule_beats_the_tenant_rule(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], proxy="central")
+        self.rule(ZabbixProvisionRule.SCOPE_SITE, self.site.id, [], proxy="hq-proxy")
+        device = self.make_device()
+        self.assertEqual(templates.proxy_for(device, templates.rules_for(self.conn)),
+                         "hq-proxy")
+
+    def test_a_rule_with_no_proxy_has_no_opinion(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_SITE, self.site.id, ["ICMP Ping"])
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], proxy="central")
+        device = self.make_device()
+        self.assertEqual(templates.proxy_for(device, templates.rules_for(self.conn)),
+                         "central")
+
+    def test_no_rule_means_the_server_polls(self):
+        self.assertEqual(templates.proxy_for(self.make_device(), []), "")
+
+    def test_a_site_rule_also_gives_templates(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_SITE, self.site.id, ["ICMP Ping"])
+        device = self.make_device()
+        self.assertEqual(
+            templates.templates_for(device, templates.rules_for(self.conn)),
+            ["ICMP Ping"],
+        )
+
+
+class ProxyProvisionTests(_Base):
+    def _create_change(self):
+        device = self.make_device()
+        return device, ZabbixChange.objects.create(
+            tenant=self.tenant, connection=self.conn, device=device,
+            kind=ZabbixChange.CREATE, detail={"name": device.name},
+        )
+
+    def test_creating_on_7_uses_proxyid_and_monitored_by(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], proxy="p1")
+        _device, change = self._create_change()
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["4"]), \
+                mock.patch.object(ZabbixClient, "template_ids", return_value={}), \
+                mock.patch.object(ZabbixClient, "proxy_id", return_value="55"), \
+                mock.patch.object(ZabbixClient, "create_host",
+                                  return_value="100") as create:
+            provision.apply_change(change)
+        payload = create.call_args[0][0]
+        self.assertEqual(payload["proxyid"], "55")
+        self.assertEqual(payload["monitored_by"], 1)
+        self.assertNotIn("proxy_hostid", payload)
+
+    def test_creating_on_6_uses_proxy_hostid(self):
+        """The field was renamed in 7.0, and a write with the wrong name is
+        refused - so the version decides the write shape."""
+        from .models import ZabbixProvisionRule
+
+        self.conn.version = "6.4.10"
+        self.conn.save(update_fields=["version"])
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], proxy="p1")
+        _device, change = self._create_change()
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["4"]), \
+                mock.patch.object(ZabbixClient, "template_ids", return_value={}), \
+                mock.patch.object(ZabbixClient, "proxy_id", return_value="55"), \
+                mock.patch.object(ZabbixClient, "create_host",
+                                  return_value="100") as create:
+            provision.apply_change(change)
+        payload = create.call_args[0][0]
+        self.assertEqual(payload["proxy_hostid"], "55")
+        self.assertNotIn("proxyid", payload)
+
+    def test_an_unknown_proxy_is_reported_and_the_server_polls(self):
+        """A proxy is a process somebody installed; inventing a record would
+        park the host on one that will never poll it."""
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], proxy="nonesuch")
+        _device, change = self._create_change()
+        with mock.patch.object(ZabbixClient, "group_ids", return_value=["4"]), \
+                mock.patch.object(ZabbixClient, "template_ids", return_value={}), \
+                mock.patch.object(ZabbixClient, "proxy_id", return_value=None), \
+                mock.patch.object(ZabbixClient, "create_host",
+                                  return_value="100") as create:
+            result = provision.apply_change(change)
+        self.assertNotIn("proxyid", create.call_args[0][0])
+        self.assertIn("nonesuch", result)
+
+    def test_a_server_polled_host_is_proposed_the_rules_proxy(self):
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], proxy="p1")
+        device = self.make_device()
+        self.scope(device)
+        self.plan([{
+            "hostid": "1", "host": "sw1", "name": "sw1", "status": "0",
+            "proxyid": "0", "monitored_by": "0",
+            "interfaces": [{"interfaceid": "9", "ip": "10.7.0.10", "type": "1"}],
+            "inventory": {}, "parentTemplates": [],
+        }])
+        change = ZabbixChange.objects.get(kind=ZabbixChange.UPDATE)
+        self.assertEqual(change.detail["changes"]["_proxy"], "p1")
+
+    def test_a_host_already_on_a_proxy_is_left_there(self):
+        """Moving a host between proxies is somebody's decision, not a rule's."""
+        from .models import ZabbixProvisionRule
+
+        self.rule(ZabbixProvisionRule.SCOPE_TENANT, None, [], proxy="p1")
+        device = self.make_device()
+        self.scope(device)
+        counts = self.plan([{
+            "hostid": "1", "host": "sw1", "name": "sw1", "status": "0",
+            "proxyid": "77", "monitored_by": "1",
+            "interfaces": [{"interfaceid": "9", "ip": "10.7.0.10", "type": "1"}],
+            "inventory": {}, "parentTemplates": [],
+        }])
+        self.assertEqual(counts["update"], 0)
+
+    def test_a_6x_host_reports_its_proxy_too(self):
+        self.assertEqual(provision.host_proxy_id({"proxy_hostid": "9"}), "9")
+        self.assertEqual(provision.host_proxy_id({"proxyid": "0"}), "")
+        self.assertEqual(provision.host_proxy_id({}), "")
+
+
+
+class PlanReadTests(_Base):
+    """What the planning read asks for. A fake host in a test can carry any
+    key; only the real request proves the planner will see it."""
+
+    def test_the_host_read_asks_for_groups_templates_and_proxy(self):
+        with mock.patch.object(ZabbixClient, "call", return_value=[]) as call:
+            ZabbixClient("http://z/api_jsonrpc.php", "t").all_hosts()
+        params = call.call_args[0][1]
+        self.assertIn("selectHostGroups", params)
+        self.assertIn("selectParentTemplates", params)
+        self.assertIn("proxyid", params["output"])

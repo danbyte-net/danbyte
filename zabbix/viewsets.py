@@ -53,10 +53,16 @@ class ZabbixConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         from .provision import _client
 
         try:
-            return Response({"templates": _client(self.get_object()).all_templates(),
-                             "error": ""})
+            client = _client(self.get_object())
+            return Response({
+                "templates": client.all_templates(),
+                # Proxies ride the same request: the rule form wants both, and
+                # a second round-trip to a single-threaded API is not free.
+                "proxies": client.all_proxies(),
+                "error": "",
+            })
         except ZabbixError as exc:
-            return Response({"templates": [], "error": str(exc)[:300]})
+            return Response({"templates": [], "proxies": [], "error": str(exc)[:300]})
 
     @action(detail=True, methods=["post"])
     def test(self, request, pk=None):
@@ -112,15 +118,31 @@ class ZabbixChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     http_method_names = ["get", "post", "head", "options"]
     queryset = (
         ZabbixChange.objects.select_related("device", "connection")
-        .filter(ignored=False)
         .order_by("kind", "-created_at")
     )
     serializer_class = ZabbixChangeSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
-        conn = self.request.query_params.get("connection") if self.request else None
-        return qs.filter(connection_id=conn) if conn else qs
+        params = self.request.query_params if self.request else {}
+        conn = params.get("connection")
+        if conn:
+            qs = qs.filter(connection_id=conn)
+        # The queue by default; `?ignored=1` is the dismissed pile, which
+        # exists so a mis-click is not a permanent silence.
+        return qs.filter(ignored=params.get("ignored") in ("1", "true"))
+
+    @action(detail=True, methods=["post"])
+    def restore(self, request, pk=None):
+        """Un-dismiss. Back in the queue; the next pass re-checks it anyway."""
+        change = ZabbixChange.objects.filter(
+            pk=pk, tenant=_get_active_tenant(request), ignored=True
+        ).first()
+        if change is None:
+            return Response({"detail": "Not found."}, status=404)
+        change.ignored = False
+        change.save(update_fields=["ignored"])
+        return Response({"ok": True})
 
     @action(detail=True, methods=["post"])
     def apply(self, request, pk=None):
@@ -195,6 +217,7 @@ class ZabbixProvisionRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
 #: Where the SPA fetches the options for each scope.
 _SCOPE_ENDPOINT = {
+    ZabbixProvisionRule.SCOPE_SITE: "/api/sites/",
     ZabbixProvisionRule.SCOPE_ROLE: "/api/device-roles/",
     ZabbixProvisionRule.SCOPE_PLATFORM: "/api/platforms/",
     ZabbixProvisionRule.SCOPE_TYPE: "/api/device-types/",

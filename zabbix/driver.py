@@ -126,9 +126,14 @@ class ZabbixDriver:
         mapping = clean_map(conn.severity_map)
         out = {}
         for addr in addresses:
-            out[addr] = self._for_host(
+            outcome = self._for_host(
                 hosts.get(addr.split("/")[0]) or [], problems, mapping
             )
+            # The frontend URL, so a hover can open the host in Zabbix. The
+            # outcome already names the host; this is what makes it a link.
+            if outcome.detail.get("hostid"):
+                outcome.detail["zabbix_url"] = conn.url
+            out[addr] = outcome
         return out
 
     @staticmethod

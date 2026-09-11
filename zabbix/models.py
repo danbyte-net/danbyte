@@ -282,17 +282,26 @@ class ZabbixProvisionRule(TimestampedModel):
     """
 
     SCOPE_TENANT = "tenant"
+    SCOPE_SITE = "site"
     SCOPE_ROLE = "role"
     SCOPE_PLATFORM = "platform"
     SCOPE_TYPE = "device_type"
     SCOPE_MANUFACTURER = "manufacturer"
     SCOPE_CHOICES = [
         (SCOPE_TENANT, "Every device"),
+        (SCOPE_SITE, "Site"),
         (SCOPE_ROLE, "Device role"),
         (SCOPE_PLATFORM, "Platform"),
         (SCOPE_TYPE, "Device type"),
         (SCOPE_MANUFACTURER, "Manufacturer"),
     ]
+    #: For the one thing a host has exactly one of - its proxy - the most
+    #: specific matching rule wins rather than stacking. A site is the whole
+    #: point of a proxy, so it ranks first.
+    PROXY_PRECEDENCE = (
+        SCOPE_SITE, SCOPE_ROLE, SCOPE_PLATFORM, SCOPE_TYPE,
+        SCOPE_MANUFACTURER, SCOPE_TENANT,
+    )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -312,6 +321,12 @@ class ZabbixProvisionRule(TimestampedModel):
     #: kind of question a template is - and it was the one thing here still
     #: hard-coded, to the device's site name. Empty leaves that default alone.
     groups = models.JSONField(default=list, blank=True)
+    #: The Zabbix proxy the host is monitored through, by name. Blank = no
+    #: opinion. Unlike templates and groups this does not stack - a host has
+    #: one - so the most specific rule that names one wins, and Danbyte only
+    #: ever sets it on a host that is on the server: moving a host between
+    #: proxies is somebody's decision, not a rule's.
+    proxy = models.CharField(max_length=128, blank=True, default="")
     enabled = models.BooleanField(default=True)
 
     class Meta:

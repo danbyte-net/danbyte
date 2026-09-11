@@ -36,6 +36,7 @@ from .templates import (
     IFACE_SNMP,
     groups_for,
     profile_for,
+    proxy_for,
     rules_for,
     snmp_interface,
     snmp_macros,
@@ -127,6 +128,7 @@ def scope_report(conn) -> list[dict]:
             "created_here": bool(link and link.created_here),
             "templates": templates_for(device, rules),
             "groups": group_names(device, rules),
+            "proxy": proxy_for(device, rules),
             "pending": sorted(
                 kind for (did, kind) in pending if did == device.id
             ),
@@ -134,8 +136,34 @@ def scope_report(conn) -> list[dict]:
     return sorted(out, key=lambda r: r["device"]["name"].lower())
 
 
+def host_proxy_id(host) -> str:
+    """The proxy a Zabbix host is on, or "" when the server polls it itself.
+
+    7.0 says ``proxyid``; 6.x said ``proxy_hostid``. Both come back as "0" for
+    a server-monitored host.
+    """
+    for key in ("proxyid", "proxy_hostid"):
+        value = str(host.get(key) or "0")
+        if value not in ("", "0"):
+            return value
+    return ""
+
+
+def proxy_payload(conn, proxyid: str) -> dict:
+    """The write shape for "monitor this host through that proxy".
+
+    The field was renamed in 7.0, and unlike a read, a write with the wrong
+    name is refused - so this is the one place the version is consulted.
+    """
+    if not proxyid:
+        return {}
+    if conn.version_tuple() >= (7, 0):
+        return {"proxyid": proxyid, "monitored_by": 1}
+    return {"proxy_hostid": proxyid}
+
+
 def host_payload(device, group_ids, *, template_ids=(), profile=None,
-                 macros=()) -> dict:
+                 macros=(), proxy=None) -> dict:
     """What Danbyte would write for this device.
 
     Still deliberately small: Danbyte states the facts it owns - name, address,
@@ -166,6 +194,8 @@ def host_payload(device, group_ids, *, template_ids=(), profile=None,
         payload["templates"] = [{"templateid": t} for t in template_ids]
     if macros:
         payload["macros"] = list(macros)
+    if proxy:
+        payload.update(proxy)
     if device.serial_number:
         # inventory_mode 0 = manual: Danbyte is stating the serial, not asking
         # Zabbix to discover it.
@@ -259,6 +289,12 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
                 link = _remember(conn, device, match, now)
                 counts["linked"] += 1
                 changed = _differences(device, match.host)
+                # A proxy only where the host has none. Moving a host between
+                # proxies is somebody's decision; putting a server-polled host
+                # onto the proxy its site's rule names is finishing a setup.
+                wanted_proxy = proxy_for(device, rules)
+                if wanted_proxy and not host_proxy_id(match.host):
+                    changed["_proxy"] = wanted_proxy
                 if changed:
                     counts["update"] += 1
                     _propose(conn, device, ZabbixChange.UPDATE,
@@ -278,7 +314,8 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
                      {"name": device.name,
                       "site": device.site.name if device.site_id else None,
                       "groups": group_names(device, rules),
-                      "templates": templates_for(device, rules)},
+                      "templates": templates_for(device, rules),
+                      "proxy": proxy_for(device, rules)},
                      fresh)
 
         counts["prune"] = _plan_prune(conn, {d.id for d in devices}, now, fresh)
@@ -416,9 +453,12 @@ def apply_change(change: ZabbixChange) -> str:
         missing = [n for n in wanted if n not in found]
         profile = profile_for(device, conn.tenant)
         macros = snmp_macros(profile) if conn.send_snmp_credentials else []
+        proxy_name = proxy_for(device, rules)
+        proxyid = client.proxy_id(proxy_name) if proxy_name else None
         hostid = client.create_host(host_payload(
             device, groups, template_ids=list(found.values()),
             profile=profile, macros=macros,
+            proxy=proxy_payload(conn, proxyid) if proxyid else None,
         ))
         ZabbixHostLink.objects.update_or_create(
             connection=conn, device=device,
@@ -432,6 +472,8 @@ def apply_change(change: ZabbixChange) -> str:
             # The host exists and is worth saying so; the templates Zabbix has
             # never heard of are worth saying too, in the same breath.
             result += f" Zabbix has no template named {', '.join(missing)}."
+        if proxy_name and not proxyid:
+            result += f" Zabbix has no proxy named {proxy_name}; the server polls it."
     elif change.kind == ZabbixChange.UPDATE:
         detail = change.detail or {}
         changes = detail.get("changes") or {}
@@ -442,6 +484,13 @@ def apply_change(change: ZabbixChange) -> str:
         if address and interfaceid:
             client.update_interface(interfaceid, {"useip": 1, "ip": address})
         result = f"Updated {device.name if device else 'host'} in Zabbix."
+        proxy_name = changes.get("_proxy")
+        if proxy_name:
+            proxyid = client.proxy_id(proxy_name)
+            if proxyid:
+                client.update_host(detail["hostid"], proxy_payload(conn, proxyid))
+            else:
+                result += f" Zabbix has no proxy named {proxy_name}; left on the server."
     elif change.kind == ZabbixChange.TEMPLATE:
         detail = change.detail or {}
         # The interface first: an SNMP template will not link to a host with

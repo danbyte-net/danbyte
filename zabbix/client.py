@@ -163,13 +163,19 @@ class ZabbixClient:
         read of the lot.
         """
         return self.call("host.get", {
-            "output": ["hostid", "host", "name", "status"],
+            # proxyid is 7.0's name; 6.x answers with proxy_hostid. Both are
+            # asked for, and the one the server knows comes back.
+            "output": ["hostid", "host", "name", "status", "proxyid", "proxy_hostid",
+                       "monitored_by"],
             "selectInterfaces": ["interfaceid", "type", "ip", "dns", "useip", "port"],
             "selectInventory": ["serialno_a"],
-            # Linked templates come along on the same read: planning has to
-            # know what a host already carries, and asking per host would turn
-            # one call into a thousand.
+            # Linked templates and groups come along on the same read: planning
+            # has to know what a host already carries, and asking per host
+            # would turn one call into a thousand. Without the groups here,
+            # every pass proposed the same groups again and apply found nothing
+            # to do - noise on every sync, forever.
             "selectParentTemplates": ["templateid", "host"],
+            "selectHostGroups": ["groupid", "name"],
         }) or []
 
     def group_ids(self, names) -> list:
@@ -316,6 +322,28 @@ class ZabbixClient:
         address correction has to go to ``hostinterface.update`` or it is
         accepted and quietly does nothing."""
         self.call("hostinterface.update", {"interfaceid": interfaceid, **payload})
+
+    def all_proxies(self) -> list:
+        """Every proxy on the server, for the rule form to pick from."""
+        found = self.call("proxy.get", {"output": ["proxyid", "name"]}) or []
+        return sorted(
+            ({"value": p["name"], "label": p["name"]} for p in found),
+            key=lambda r: r["label"].lower(),
+        )
+
+    def proxy_id(self, name: str) -> str | None:
+        """A proxy's id by name, or None when Zabbix has no such proxy.
+
+        Never created: a proxy is a running process somebody installed, and
+        inventing a record for one that does not exist would park the host on
+        a proxy that will never poll it.
+        """
+        if not name:
+            return None
+        found = self.call("proxy.get", {
+            "output": ["proxyid", "name"], "filter": {"name": [name]},
+        }) or []
+        return found[0]["proxyid"] if found else None
 
     def create_host(self, payload: dict) -> str:
         return self.call("host.create", payload)["hostids"][0]

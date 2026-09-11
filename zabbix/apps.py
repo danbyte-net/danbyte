@@ -21,6 +21,7 @@ class ZabbixConfig(AppConfig):
                 "An existing Zabbix server answers for this scope. Danbyte "
                 "does not run the checks - it reads what Zabbix already knows."
             ),
+            configure_path="/zabbix",
             fields=(
                 {
                     "name": "url",

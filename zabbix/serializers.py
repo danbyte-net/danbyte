@@ -214,6 +214,7 @@ class ZabbixProvisionRuleSerializer(serializers.ModelSerializer):
     object_name = serializers.SerializerMethodField()
 
     _CATALOG = {
+        ZabbixProvisionRule.SCOPE_SITE: "Site",
         ZabbixProvisionRule.SCOPE_ROLE: "DeviceRole",
         ZabbixProvisionRule.SCOPE_PLATFORM: "Platform",
         ZabbixProvisionRule.SCOPE_TYPE: "DeviceType",
@@ -253,9 +254,10 @@ class ZabbixProvisionRuleSerializer(serializers.ModelSerializer):
         # like it does something.
         templates = attrs.get("templates", getattr(self.instance, "templates", None))
         groups = attrs.get("groups", getattr(self.instance, "groups", None))
-        if not (templates or groups):
+        proxy = attrs.get("proxy", getattr(self.instance, "proxy", ""))
+        if not (templates or groups or (proxy or "").strip()):
             raise serializers.ValidationError(
-                {"templates": "Name at least one template or host group."}
+                {"templates": "Name at least one template, host group or proxy."}
             )
         scope = attrs.get("scope", getattr(self.instance, "scope", None))
         object_id = attrs.get("object_id", getattr(self.instance, "object_id", None))
@@ -273,7 +275,7 @@ class ZabbixProvisionRuleSerializer(serializers.ModelSerializer):
         model = ZabbixProvisionRule
         fields = [
             "id", "connection", "scope", "scope_display", "object_id",
-            "object_name", "templates", "groups", "enabled",
+            "object_name", "templates", "groups", "proxy", "enabled",
             "created_at", "updated_at",
         ]
         read_only_fields = [

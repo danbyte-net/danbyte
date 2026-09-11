@@ -83,6 +83,7 @@ from .views import (
     engine_binding_view,
     engine_health_view,
     check_kinds_view,
+    engine_kinds_view,
     settings_view,
     stats_view,
     status_labels_view,
@@ -199,6 +200,7 @@ urlpatterns = [
     path("settings/", settings_view, name="monitoring-settings"),
     path("stats/", stats_view, name="monitoring-stats"),
     path("check-kinds/", check_kinds_view, name="monitoring-check-kinds"),
+    path("engine-kinds/", engine_kinds_view, name="monitoring-engine-kinds"),
     path("status-labels/", status_labels_view, name="monitoring-status-labels"),
     *router.urls,
 ]

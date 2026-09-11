@@ -84,6 +84,11 @@ class EngineKind:
     #: store's: name, label, type (text | password | checkbox), placeholder,
     #: default, hint, and set_flag for a write-only secret.
     fields: tuple[dict, ...] = field(default_factory=tuple)
+    #: Where in the SPA this kind is set up. An engine of a driver kind is
+    #: configured on its integration's own page, not enrolled like an Outpost
+    #: - without this the engines list offered a Zabbix engine an install
+    #: token and a curl one-liner, which meant nothing.
+    configure_path: str = ""
 
     def payload(self) -> dict:
         return {
@@ -91,6 +96,7 @@ class EngineKind:
             "label": self.label,
             "description": self.description,
             "fields": [dict(f) for f in self.fields],
+            "configure_path": self.configure_path,
         }
 
 
@@ -104,6 +110,7 @@ def register_monitoring_engine(
     *,
     description: str = "",
     fields: tuple[dict, ...] | list[dict] = (),
+    configure_path: str = "",
 ) -> EngineKind:
     """Make ``kind`` selectable as a monitoring engine.
 
@@ -117,7 +124,7 @@ def register_monitoring_engine(
         raise ValueError(f"'{kind}' is a built-in engine kind")
     entry = EngineKind(
         kind=kind, label=label, driver=driver, description=description,
-        fields=tuple(dict(f) for f in fields),
+        fields=tuple(dict(f) for f in fields), configure_path=configure_path,
     )
     _REGISTRY[kind] = entry
     return entry

@@ -1040,6 +1040,29 @@ def engine_binding_view(request, scope, object_id):
 
 
 @extend_schema(
+    summary="Engine kinds a driver has registered",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{'kinds': [{kind, label, description, fields, "
+        "configure_path}]} - the engine kinds beyond local and remote.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def engine_kinds_view(request):
+    """What an engine can be, beyond an Outpost.
+
+    The engines list reads this to know that a `zabbix` engine is configured
+    on the Zabbix page rather than enrolled with a token.
+    """
+    from .engine_drivers import engine_kinds
+
+    return Response({"kinds": [k.payload() for k in engine_kinds()]})
+
+
+@extend_schema(
     summary="Every selectable check kind, built-in and registered",
     tags=["monitoring"],
     request=None,
@@ -1734,7 +1757,9 @@ def _external_detail(rows) -> dict:
     does not apply to - which is most of them.
     """
     problems = 0
-    unreachable: list[str] = []
+    names: list[dict] = []
+    unreachable: dict[str, str] = {}
+    external: dict = {}
     for detail in rows:
         if not isinstance(detail, dict):
             continue
@@ -1742,6 +1767,18 @@ def _external_detail(rows) -> dict:
             problems += int(detail.get("problem_count") or 0)
         except (TypeError, ValueError):
             pass
+        for item in detail.get("problems") or []:
+            if isinstance(item, dict) and len(names) < 5:
+                names.append({"name": str(item.get("name") or "")[:120],
+                              "severity": str(item.get("severity") or "")})
+        # Where it came from, so a hover can link straight back to it.
+        if detail.get("zabbix_host") and "host" not in external:
+            external = {
+                "system": "zabbix",
+                "host": str(detail.get("zabbix_host"))[:120],
+                "hostid": str(detail.get("hostid") or ""),
+                "url": str(detail.get("zabbix_url") or ""),
+            }
         # `last_detail` is whatever a checker or a plugin wrote, so nothing
         # about its shape can be assumed. A status column that 500s on an
         # unexpected payload takes the whole list page with it.
@@ -1750,13 +1787,16 @@ def _external_detail(rows) -> dict:
             continue
         for proto, entry in reach.items():
             if isinstance(entry, dict) and entry.get("state") == "down":
-                if proto not in unreachable:
-                    unreachable.append(str(proto))
+                unreachable.setdefault(str(proto), str(entry.get("error") or "")[:300])
     out: dict = {}
     if problems:
         out["problems"] = problems
+        out["problem_names"] = names
     if unreachable:
         out["unreachable"] = sorted(unreachable)
+        out["unreachable_errors"] = unreachable
+    if external:
+        out["external"] = external
     return out
 
 
@@ -1793,6 +1833,7 @@ def bulk_status_view(request):
     ``?devices=id,id`` → ``{statuses: {device_id: {status, counts, monitored_ips}}}``
         - rolled up across every IP assigned to the device (a service's check
         lives on its IP, so service monitoring rolls up here too).
+    ``?vms=id,id`` → the same, across every IP assigned to the virtual machine.
 
     Also accepts POST with ``{"ips": [...]}`` / ``{"prefixes": [...]}`` /
     ``{"devices": [...]}``. A page of ~110 prefix UUIDs makes a ~4.2 KB URL,
@@ -1874,6 +1915,41 @@ def bulk_status_view(request):
                 "counts": status_counts(statuses),
                 "monitored_ips": len(set(child_ids)),
                 **_external_detail([r["last_detail"] for r in rows]),
+            }
+        return Response({"statuses": out})
+
+    vm_param = _ids("vms")
+    if vm_param:
+        from api.models import VirtualMachine
+
+        ids = [x for x in vm_param.split(",") if x]
+        out = {}
+        viewable = list(
+            rbac.restrict_queryset(
+                VirtualMachine.objects.filter(tenant=tenant, id__in=ids),
+                request.user, tenant, "virtualmachine", "view",
+            ).values_list("id", flat=True)
+        )
+        ip_rows = _viewable_ips(
+            request, tenant,
+            IPAddress.objects.filter(assigned_vm_id__in=viewable),
+        ).values_list("assigned_vm_id", "id")
+        ips_by_vm: dict = {}
+        for vm_id, ip_id in ip_rows:
+            ips_by_vm.setdefault(str(vm_id), []).append(ip_id)
+        for vm_id, ip_ids in ips_by_vm.items():
+            states = list(_scope_ip_keyed(
+                request, tenant,
+                CheckState.objects.filter(target_ip_id__in=ip_ids),
+            ).values("target_ip_id", "status", "last_detail"))
+            statuses = [s["status"] for s in states]
+            if not statuses:
+                continue
+            out[vm_id] = {
+                "status": worst_status(statuses),
+                "counts": status_counts(statuses),
+                "monitored_ips": len({s["target_ip_id"] for s in states}),
+                **_external_detail([s["last_detail"] for s in states]),
             }
         return Response({"statuses": out})
 
