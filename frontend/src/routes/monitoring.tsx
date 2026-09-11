@@ -52,7 +52,11 @@ import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
 import { TemplatesList } from "@/components/monitoring/templates-list"
-import { MonitoringConfiguration } from "@/components/monitoring/configuration"
+import {
+  CONFIG_TABS,
+  MonitoringConfiguration,
+} from "@/components/monitoring/configuration"
+import type { ConfigTab } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 import { usePageTitle } from "@/lib/page-title"
 
@@ -65,6 +69,8 @@ type MonitoringView =
 interface MonitoringSearch {
   view: MonitoringView
   status: CheckStatus | "all"
+  /** Configuration tab; absent means the default. */
+  scope?: ConfigTab
 }
 
 const VIEWS: MonitoringView[] = [
@@ -83,6 +89,9 @@ export const Route = createFileRoute("/monitoring")({
       : "overview",
     status:
       typeof s.status === "string" ? (s.status as CheckStatus | "all") : "all",
+    ...(CONFIG_TABS.includes(s.scope as ConfigTab)
+      ? { scope: s.scope as ConfigTab }
+      : {}),
   }),
 })
 

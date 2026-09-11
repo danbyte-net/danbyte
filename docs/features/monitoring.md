@@ -248,6 +248,10 @@ everything at this site" is one setting - but unlike the device-shaped scopes
 they also reach addresses with no device at all, because those are still at the
 site.
 
+The tab is part of the address - `?view=configuration&scope=platforms` - so a
+link to one scope's policies is something you can hand somebody, and a reload
+lands where it was.
+
 ### Narrowing a policy
 
 A scope answers *which* objects; **filters** answer *which of them*. Every
@@ -255,9 +259,9 @@ policy carries two, both empty by default:
 
 | Filter | Effect |
 |---|---|
-| **Name matches** | A glob the device name must match - `core-*`, `*-fw??`. Case-insensitive. |
-| **On an interface named** | A glob the address's interface must match - `Gi0/0/*`. Reads the *port*, not the device, so "only the uplinks" is one setting. An address bound to no interface never matches it. |
-| **Carries all these tags** | Every tag listed must be on the device. Several tags means all of them, not any. |
+| **Name** | A glob the device name must match - `core-*`, `*-fw??`. Case-insensitive. |
+| **Interface** | A glob the address's interface must match - `Gi0/0/*`. Reads the *port*, not the device, so "only the uplinks" is one setting. An address bound to no interface never matches it. |
+| **Tags** | Every tag listed must be on the device. Several tags means all of them, not any. |
 
 They **narrow**, never widen: a filter can only stop a policy applying, never
 add a check and never disable one a looser policy already added. That is why

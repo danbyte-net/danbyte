@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useNavigate, useSearch } from "@tanstack/react-router"
 
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { MonitoringConfigProvider } from "./config-context"
@@ -15,22 +15,33 @@ import { PolicyTable } from "./policy-table"
 import { PrefixPolicyTable } from "./prefix-panel"
 import { ProfilesPanel } from "./profiles-panel"
 
-type ConfigTab =
-  | "global"
-  | "regions"
-  | "sites"
-  | "prefixes"
-  | "platforms"
-  | "types"
-  | "roles"
-  | "devices"
-  | "deny"
+export const CONFIG_TABS = [
+  "global",
+  "regions",
+  "sites",
+  "prefixes",
+  "platforms",
+  "types",
+  "roles",
+  "devices",
+  "deny",
+] as const
+export type ConfigTab = (typeof CONFIG_TABS)[number]
 
 // Monitoring configuration: scope-based policy (what checks apply to what)
 // across the inheritance hierarchy. One module per panel - see the sibling
 // files in this directory.
 export function MonitoringConfiguration() {
-  const [tab, setTab] = useState<ConfigTab>("prefixes")
+  // The tab is a URL parameter so a link to "the platforms policies" exists
+  // and a reload lands where it was.
+  const { scope } = useSearch({ from: "/monitoring" })
+  const navigate = useNavigate({ from: "/monitoring" })
+  const tab: ConfigTab = scope ?? "prefixes"
+  const setTab = (next: ConfigTab) =>
+    void navigate({
+      search: (prev) => ({ ...prev, scope: next }),
+      replace: true,
+    })
 
   return (
     <MonitoringConfigProvider>
