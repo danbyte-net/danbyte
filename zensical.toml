@@ -160,6 +160,7 @@ nav = [
     { "URL routes"        = "reference/url-routes.md" },
     { "Settings"          = "reference/settings.md" },
     { "Makefile"          = "reference/makefile.md" },
+    { "danbyte-admin"     = "reference/danbyte-admin.md" },
     { "Reverse proxy (nginx/443)" = "reference/nginx-proxy.md" },
     { "Icons"             = "reference/icons.md" },
   ] },

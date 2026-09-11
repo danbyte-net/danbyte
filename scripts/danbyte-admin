@@ -1,0 +1,1059 @@
+#!/usr/bin/env python3
+"""Host-side administration for Danbyte (#154).
+
+The jobs the web UI cannot do, or cannot do when the web itself is down:
+restart services, upgrade, take or restore a backup, swap the TLS cert, let a
+locked-out admin back in. Run it bare for a numbered menu, or with subcommands
+so it works in automation:
+
+    danbyte-admin                       # menu
+    danbyte-admin status
+    danbyte-admin services restart danbyte-web
+    danbyte-admin tls install --cert new.crt --key new.key
+
+Standard library only, no shell: every command is an argv list, so a path with
+a space or a password with a quote in it cannot turn into something else.
+
+This touches deployment and host things. Tenant data stays in the UI and API.
+
+Shapes
+------
+Danbyte runs as **systemd user units** - on a dev box under the logged-in
+user, in production under a dedicated ``danbyte`` account with linger enabled.
+There are no system units: ``sudo systemctl restart danbyte-web`` fails on
+every real host, and ``systemctl --user`` run as root talks to *root's*
+manager and silently does nothing. Acting for the service account therefore
+means sudo plus HOME, XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS - the same
+block scripts/install.sh uses. The third shape is Docker, where everything
+goes through ``docker compose exec``.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import ssl
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# Units in the order an operator thinks about them. The real list is whatever
+# this host has installed - discovered at run time, because a live box carries
+# hand-written copies and locals that the repo's services/ directory does not.
+UNIT_ORDER = [
+    "danbyte-web", "danbyte-backend", "danbyte-ws", "danbyte-frontend-prod",
+    "danbyte-frontend", "danbyte-workers", "danbyte-docs", "danbyte-infra",
+    "danbyte-mockups",
+]
+# Dev-only, and dangerous to suggest on a production host: it brings up a
+# second Postgres that fights for 5432 (issue #14).
+DEV_ONLY_UNITS = {"danbyte-infra", "danbyte-mockups", "danbyte-backend", "danbyte-frontend"}
+
+GREEN, RED, AMBER, DIM, BOLD, OFF = (
+    ("\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[1m", "\033[0m")
+    if sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+    else ("", "", "", "", "", "")
+)
+
+
+def out(msg: str = "") -> None:
+    print(msg, flush=True)
+
+
+def ok(msg: str) -> None:
+    out(f"{GREEN}✔{OFF} {msg}")
+
+
+def bad(msg: str) -> None:
+    out(f"{RED}✘{OFF} {msg}")
+
+
+def warn(msg: str) -> None:
+    out(f"{AMBER}!{OFF} {msg}")
+
+
+def die(msg: str, code: int = 1):
+    bad(msg)
+    raise SystemExit(code)
+
+
+# ── running things ──────────────────────────────────────────────────────────
+
+@dataclass
+class Run:
+    code: int
+    out: str
+    err: str
+
+    @property
+    def ok(self) -> bool:
+        return self.code == 0
+
+
+def sh(argv: list[str], *, cwd: str | None = None, env: dict | None = None,
+       capture: bool = True, check: bool = False, stdin_tty: bool = False) -> Run:
+    """Run argv. Never a shell - no string is ever parsed by /bin/sh.
+
+    ``stdin_tty`` hands the terminal over instead of capturing, which the
+    interactive Django commands (createsuperuser, changepassword) require:
+    they call getpass twice and abort without a real TTY.
+    """
+    full = dict(os.environ)
+    if env:
+        full.update(env)
+    try:
+        if stdin_tty or not capture:
+            code = subprocess.call(argv, cwd=cwd, env=full)
+            return Run(code, "", "")
+        p = subprocess.run(argv, cwd=cwd, env=full, capture_output=True, text=True)
+        r = Run(p.returncode, p.stdout, p.stderr)
+    except FileNotFoundError as exc:
+        r = Run(127, "", str(exc))
+    if check and not r.ok:
+        die(f"{' '.join(argv[:3])}… failed: {(r.err or r.out).strip()[:400]}")
+    return r
+
+
+# ── where and what we are ───────────────────────────────────────────────────
+
+@dataclass
+class Ctx:
+    app: Path
+    #: "docker" when this host runs the compose stack (or we are inside it),
+    #: otherwise "systemd".
+    shape: str
+    #: Set when the units belong to a different account than the caller.
+    svc_user: str = ""
+    svc_home: str = ""
+    svc_uid: int = 0
+    inside_container: bool = False
+    compose: Path | None = None
+    units: list[str] = field(default_factory=list)
+    #: Scheduled jobs. Their .service is a oneshot and is inactive between
+    #: runs, which is health, not a fault - so they are reported apart.
+    timers: list[str] = field(default_factory=list)
+
+    @property
+    def python(self) -> str:
+        return str(self.app / ".venv" / "bin" / "python")
+
+    @property
+    def as_service(self) -> bool:
+        return bool(self.svc_user)
+
+    def describe(self) -> str:
+        if self.inside_container:
+            return "docker (inside the container)"
+        if self.shape == "docker":
+            return f"docker compose ({self.compose})"
+        who = f"systemd --user as {self.svc_user}" if self.as_service else \
+              f"systemd --user as {os.environ.get('USER', 'you')}"
+        return who
+
+
+def _service_account(name: str = "danbyte") -> tuple[str, int] | None:
+    """The service account's home and uid, or None if there is no such user."""
+    r = sh(["getent", "passwd", name])
+    if not r.ok or ":" not in r.out:
+        return None
+    parts = r.out.strip().split(":")
+    try:
+        return parts[5], int(parts[2])
+    except (IndexError, ValueError):
+        return None
+
+
+def _user_env(home: str, uid: int, user: str) -> list[str]:
+    """The sudo prelude that makes `systemctl --user` reach another account.
+
+    Without XDG_RUNTIME_DIR and the DBUS address this silently no-ops, which
+    is the single most common way a host script appears to work and does
+    nothing at all.
+    """
+    return [
+        "sudo", "-u", user, "env",
+        f"HOME={home}", f"USER={user}",
+        f"XDG_RUNTIME_DIR=/run/user/{uid}",
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus",
+    ]
+
+
+def resolve() -> Ctx:
+    """Work out which shape this host is and who owns the units."""
+    app = Path(os.environ.get("DANBYTE_DIR") or Path(__file__).resolve().parent.parent)
+    inside = os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")
+    declared = (os.environ.get("DANBYTE_DEPLOYMENT") or "").lower()
+    if inside or declared in {"docker", "container", "compose"}:
+        return Ctx(app=app, shape="docker", inside_container=True)
+
+    # A host running the compose stack: the app dir has the file *and* compose
+    # reports something running. The file alone proves nothing - it ships in
+    # every checkout.
+    compose = app / "docker-compose.prod.yml"
+    if compose.exists() and shutil.which("docker"):
+        r = sh(["docker", "compose", "-f", str(compose), "ps", "-q"])
+        if r.ok and r.out.strip():
+            return Ctx(app=app, shape="docker", compose=compose)
+
+    ctx = Ctx(app=app, shape="systemd")
+    # Ours?
+    if sh(["systemctl", "--user", "cat", "danbyte-workers"]).ok or \
+       sh(["systemctl", "--user", "cat", "danbyte-web"]).ok:
+        ctx.units = _discover_units(ctx)
+        return ctx
+    # The service account's?
+    acct = _service_account()
+    if acct:
+        home, uid = acct
+        probe = Ctx(app=app, shape="systemd", svc_user="danbyte", svc_home=home, svc_uid=uid)
+        if sh(_user_env(home, uid, "danbyte") + ["systemctl", "--user", "cat", "danbyte-web"]).ok:
+            # The app lives under the service account, not wherever we were run from.
+            if not os.environ.get("DANBYTE_DIR"):
+                probe.app = Path(home) / "danbyte"
+            probe.units = _discover_units(probe)
+            return probe
+    ctx.units = _discover_units(ctx)
+    return ctx
+
+
+def systemctl(ctx: Ctx, args: list[str], capture: bool = True) -> Run:
+    argv = ["systemctl", "--user", *args]
+    if ctx.as_service:
+        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+    return sh(argv, capture=capture)
+
+
+def journalctl(ctx: Ctx, args: list[str], capture: bool = False) -> Run:
+    argv = ["journalctl", "--user", *args]
+    if ctx.as_service:
+        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+    return sh(argv, capture=capture)
+
+
+def _discover_units(ctx: Ctx) -> list[str]:
+    """What this host actually has - never derived from the repo's services/.
+
+    A live box carries hand-written unit copies and locals the repo has never
+    heard of, so the host is the only honest source. Timer-backed oneshots are
+    recorded separately: they are idle between runs by design, and listing them
+    beside the long-running services makes a healthy host look half down.
+    """
+    found: set[str] = set()
+    timers: set[str] = set()
+    for args in (["list-unit-files", "danbyte-*", "--no-pager", "--no-legend"],
+                 ["list-units", "danbyte-*", "--all", "--no-pager", "--no-legend"]):
+        r = systemctl(ctx, args)
+        if not r.ok:
+            continue
+        for line in r.out.splitlines():
+            name = line.split()[0] if line.split() else ""
+            if name.endswith(".service"):
+                found.add(name[: -len(".service")])
+            elif name.endswith(".timer"):
+                timers.add(name[: -len(".timer")])
+    ctx.timers = sorted(timers)
+    order = {u: i for i, u in enumerate(UNIT_ORDER)}
+    services = found - timers
+    return sorted(services, key=lambda u: (order.get(u, 99), u))
+
+
+def manage(ctx: Ctx, args: list[str], *, interactive: bool = False,
+           env: dict | None = None) -> Run:
+    """Run a management command in the right shape.
+
+    Always from the app directory: settings.py calls load_dotenv() with no
+    path, so python-dotenv walks up from the *current* directory. Invoked from
+    anywhere else, .env is never read and the database credentials, secret key
+    and allowed hosts all quietly vanish.
+    """
+    if ctx.shape == "docker":
+        svc = "backend"
+        base = (["docker", "compose", "-f", str(ctx.compose), "exec"]
+                if ctx.compose else ["docker", "compose", "exec"])
+        if not interactive:
+            base.append("-T")          # -T with an interactive command aborts it
+        argv = base + [svc, "python", "manage.py", *args] if not ctx.inside_container \
+            else ["python", "manage.py", *args]
+        return sh(argv, cwd=str(ctx.app), capture=not interactive,
+                  stdin_tty=interactive, env=env)
+
+    argv = [ctx.python, str(ctx.app / "manage.py"), *args]
+    if ctx.as_service:
+        pre = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user)
+        # Secrets go through the env block, never argv - /proc is world-readable.
+        pre += [f"{k}={v}" for k, v in (env or {}).items()]
+        argv = pre + argv
+        env = None
+    return sh(argv, cwd=str(ctx.app), capture=not interactive,
+              stdin_tty=interactive, env=env)
+
+
+def shell_json(ctx: Ctx, code: str):
+    """Run a snippet through `manage.py shell` and parse one JSON line.
+
+    ``--no-imports`` is not optional: without it Django 5.2 prints "229 objects
+    imported automatically" onto stdout and the parse fails.
+    """
+    r = manage(ctx, ["shell", "--no-imports", "-c", code])
+    if not r.ok:
+        return None, (r.err or r.out).strip()
+    line = (r.out or "").strip().splitlines()
+    if not line:
+        return None, "no output"
+    try:
+        return json.loads(line[-1]), ""
+    except json.JSONDecodeError as exc:
+        return None, f"{exc}: {line[-1][:200]}"
+
+
+# ── status ──────────────────────────────────────────────────────────────────
+
+def health(ctx: Ctx) -> tuple[dict | None, str]:
+    """GET /api/health/ - the one endpoint that needs no credentials.
+
+    It answers 200 even when degraded (code ahead of the database), on purpose
+    so a probe does not restart-loop a half-finished upgrade. So the status
+    field decides, not the HTTP code.
+    """
+    urls = ["https://127.0.0.1/api/health/", "http://127.0.0.1:8000/api/health/"]
+    if ctx.shape == "docker":
+        urls = [f"http://127.0.0.1:{os.environ.get('HTTP_PORT', '8080')}/api/health/",
+                f"https://127.0.0.1:{os.environ.get('HTTPS_PORT', '8443')}/api/health/"] + urls
+    lax = ssl._create_unverified_context()
+    last = ""
+    for url in urls:
+        try:
+            with urllib.request.urlopen(url, timeout=5, context=lax) as resp:
+                return json.loads(resp.read().decode()), url
+        except urllib.error.HTTPError as exc:           # 503 = database down
+            try:
+                return json.loads(exc.read().decode()), url
+            except Exception:
+                last = f"HTTP {exc.code}"
+        except Exception as exc:
+            last = str(exc)
+    return None, last
+
+
+def cmd_status(ctx: Ctx, _args) -> int:
+    out(f"{BOLD}Danbyte{OFF}  {ctx.app}")
+    out(f"  shape    {ctx.describe()}")
+
+    info, err = shell_json(
+        ctx, "import json; from core.version import system_info; print(json.dumps(system_info()))")
+    if info:
+        out(f"  version  {info.get('version', '?')}  "
+            f"{DIM}{info.get('tag') or info.get('commit') or ''}{OFF}")
+        out(f"  python   {info.get('python', '?')}   django {info.get('django', '?')}")
+        pg, rd = info.get("postgres") or "", info.get("redis") or ""
+        (ok if pg else bad)(f"postgres {pg or 'unreachable'}")
+        (ok if rd else bad)(f"redis    {rd or 'unreachable'}")
+        drift = info.get("migration_drift") or []
+        if drift:
+            warn(f"migration drift: {len(drift)} unapplied - {', '.join(map(str, drift[:5]))}")
+        else:
+            ok("migrations up to date")
+    else:
+        warn(f"could not read system info ({err[:160]})")
+
+    h, where = health(ctx)
+    if h:
+        status = h.get("status")
+        line = f"health   {status} via {where}"
+        (ok if status == "ok" else warn)(line)
+        if h.get("code_behind_db"):
+            warn("the database has migrations this code does not ship - finish the upgrade")
+    else:
+        bad(f"health   unreachable ({where[:120]})")
+
+    out()
+    _print_units(ctx)
+
+    usage = shutil.disk_usage(str(ctx.app))
+    pct = usage.used * 100 // usage.total
+    line = f"disk     {usage.free // (1 << 30)} GiB free of {usage.total // (1 << 30)} GiB ({pct}% used)"
+    (warn if pct >= 90 else out)(line if pct < 90 else line + " - low")
+    return 0
+
+
+def _unit_states(ctx: Ctx, units: list[str]) -> dict[str, dict]:
+    """One systemctl call for every unit, parsed from Key=Value blocks."""
+    if not units:
+        return {}
+    props = ["-p", "Id", "-p", "LoadState", "-p", "ActiveState", "-p", "SubState",
+             "-p", "UnitFileState", "-p", "NRestarts"]
+    r = systemctl(ctx, ["show", *[f"{u}.service" for u in units], *props, "--no-pager"])
+    if not r.ok:
+        return {}
+    states, cur = {}, {}
+    for line in r.out.splitlines():
+        if not line.strip():
+            if cur.get("Id"):
+                states[cur["Id"].removesuffix(".service")] = cur
+            cur = {}
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            cur[k] = v
+    if cur.get("Id"):
+        states[cur["Id"].removesuffix(".service")] = cur
+    return states
+
+
+def _print_units(ctx: Ctx) -> None:
+    if ctx.shape == "docker":
+        r = sh(["docker", "compose", "-f", str(ctx.compose), "ps"]) if ctx.compose else None
+        out(r.out.rstrip() if r and r.ok else "  (docker compose not readable)")
+        return
+    if not ctx.units:
+        warn("no danbyte units found for this account")
+        return
+    states = _unit_states(ctx, ctx.units)
+    active = []
+    for unit in ctx.units:
+        s = states.get(unit, {})
+        load, act, sub = s.get("LoadState", "?"), s.get("ActiveState", "?"), s.get("SubState", "")
+        if load == "not-found":
+            mark, label = f"{DIM}-{OFF}", "not installed"
+        elif act in {"active", "activating", "reloading"}:
+            mark, label = f"{GREEN}●{OFF}", f"{act} ({sub})"
+            active.append(unit)
+        elif act == "failed":
+            mark, label = f"{RED}●{OFF}", f"failed ({sub})"
+        else:
+            mark, label = f"{AMBER}○{OFF}", f"{act} ({sub})"
+        restarts = s.get("NRestarts", "0")
+        extra = f"  {DIM}restarts {restarts}{OFF}" if restarts not in ("0", "") else ""
+        out(f"  {mark} {unit:<24} {label}{extra}")
+    # A real fault worth naming: the dev runserver and gunicorn both bind :8000.
+    if "danbyte-backend" in active and "danbyte-web" in active:
+        warn("danbyte-backend and danbyte-web are both active - they both bind :8000")
+    if ctx.timers:
+        enabled = _timers_enabled(ctx)
+        off = [t for t in ctx.timers if t not in enabled]
+        out(f"  {DIM}timers{OFF}   {len(enabled)}/{len(ctx.timers)} scheduled"
+            + (f"  {AMBER}off: {', '.join(off)}{OFF}" if off else ""))
+
+
+def _timers_enabled(ctx: Ctx) -> set[str]:
+    r = systemctl(ctx, ["list-timers", "danbyte-*", "--no-pager", "--no-legend"])
+    if not r.ok:
+        return set()
+    found = set()
+    for line in r.out.splitlines():
+        for tok in line.split():
+            if tok.endswith(".timer"):
+                found.add(tok[: -len(".timer")])
+    return found
+
+
+# ── services ────────────────────────────────────────────────────────────────
+
+def _resolve_units(ctx: Ctx, names: list[str]) -> list[str]:
+    if not names:
+        return ctx.units
+    picked = []
+    for n in names:
+        unit = n if n.startswith("danbyte-") else f"danbyte-{n}"
+        if unit not in ctx.units:
+            die(f"no unit {unit} on this host. Installed: {', '.join(ctx.units) or 'none'}")
+        picked.append(unit)
+    return picked
+
+
+def cmd_services(ctx: Ctx, args) -> int:
+    if ctx.shape == "docker":
+        return _docker_services(ctx, args)
+    action = args.action
+    if action == "list":
+        _print_units(ctx)
+        out()
+        r = systemctl(ctx, ["list-timers", "danbyte-*", "--all", "--no-pager"])
+        out(r.out.rstrip() if r.ok else "(no timers)")
+        return 0
+
+    units = _resolve_units(ctx, args.units)
+    if action == "logs":
+        if len(units) != 1 and args.units:
+            die("logs takes one unit")
+        follow = ["-f"] if args.follow else []
+        target = units[0] if units else "danbyte-workers"
+        journalctl(ctx, ["-n", str(args.lines), *follow, "-u", target])
+        return 0
+
+    for unit in units:
+        if action == "start" and unit in DEV_ONLY_UNITS and ctx.as_service:
+            warn(f"{unit} is a development unit - skipping on a service-account host")
+            continue
+        r = systemctl(ctx, [action, unit])
+        (ok if r.ok else bad)(f"{action} {unit}" + ("" if r.ok else f": {(r.err or r.out).strip()[:200]}"))
+    return 0
+
+
+def _docker_services(ctx: Ctx, args) -> int:
+    base = ["docker", "compose", "-f", str(ctx.compose)] if ctx.compose else ["docker", "compose"]
+    if args.action == "list":
+        sh(base + ["ps"], capture=False)
+        return 0
+    if args.action == "logs":
+        tail = ["--tail", str(args.lines)] + (["-f"] if args.follow else [])
+        sh(base + ["logs", *tail, *args.units], capture=False)
+        return 0
+    verb = {"start": "start", "stop": "stop", "restart": "restart"}[args.action]
+    sh(base + [verb, *args.units], capture=False)
+    return 0
+
+
+# ── upgrade ─────────────────────────────────────────────────────────────────
+
+def _upgrade_busy(ctx: Ctx) -> str:
+    """Why an upgrade must not start now, or "".
+
+    The shell upgraders do not take the single-slot lock - it lives in
+    core/upgrade.py and is held by the API and the auto-upgrade timer, which
+    fires every 20 minutes. Starting one here regardless is how two upgrades
+    race.
+    """
+    if (ctx.app / ".upgrade.lock").exists():
+        return "an upgrade lock is held (.upgrade.lock)"
+    if systemctl(ctx, ["is-active", "danbyte-upgrade.service"]).out.strip() == "active":
+        return "danbyte-upgrade.service is running"
+    return ""
+
+
+def cmd_upgrade(ctx: Ctx, args) -> int:
+    if ctx.shape == "docker":
+        die("a container install is upgraded by pulling a new image, not from here.\n"
+            "  docker compose pull && docker compose up -d")
+    busy = _upgrade_busy(ctx)
+    if busy and not args.force:
+        die(f"{busy}. Wait for it, or pass --force once you are sure nothing is running.")
+
+    script = ctx.app / "scripts" / (
+        "danbyte-upgrade.sh" if args.action == "online" else "danbyte-upgrade-bundle.sh")
+    if not script.exists():
+        die(f"{script} is missing")
+
+    argv: list[str] = ["bash", str(script)]
+    if args.action == "online":
+        if not (ctx.app / ".git").exists():
+            die("this is a bundle install (no .git) - use: danbyte-admin upgrade bundle <file>")
+        if args.tag:
+            argv.append(args.tag)
+    else:
+        bundle = Path(args.bundle).expanduser().resolve()
+        if not bundle.is_file():
+            die(f"no such bundle: {bundle}")
+        # The bundle script deletes the tarball it is given on success. Never
+        # let that be the operator's only copy.
+        scratch = ctx.app.parent / f".danbyte-bundle-{bundle.name}"
+        shutil.copy2(bundle, scratch)
+        out(f"{DIM}copied to {scratch} - the upgrader consumes the file it is given{OFF}")
+        argv.append(str(scratch))
+
+    env = {"DANBYTE_DIR": str(ctx.app)}     # else it resolves to $HOME/danbyte
+    if args.skip_backup:
+        warn("skipping the pre-upgrade backup - there is no net if this goes wrong")
+        env["DANBYTE_SKIP_BACKUP"] = "1"    # compared as the exact string "1"
+    if ctx.as_service:
+        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + \
+            [f"{k}={v}" for k, v in env.items()] + argv
+        env = {}
+    out(f"{BOLD}Upgrading{OFF} ({args.action}) - this restarts services when it succeeds.")
+    return sh(argv, cwd=str(ctx.app), env=env, capture=False).code
+
+
+# ── backup ──────────────────────────────────────────────────────────────────
+
+LIST_BACKUPS = (
+    "import json\n"
+    "from backups.models import Backup\n"
+    "rows=[{'id':str(b.id),'status':b.status,'kind':b.kind,'at':b.created_at.isoformat(),\n"
+    "       'size':b.size or 0,'protected':b.protected,'location':b.location}\n"
+    "      for b in Backup.objects.order_by('-created_at')[:%d]]\n"
+    "print(json.dumps(rows))"
+)
+
+
+def cmd_backup(ctx: Ctx, args) -> int:
+    if args.action == "run":
+        out("Taking a backup inline - this does not need the workers.")
+        r = manage(ctx, ["backup_now", "--kind", "manual"])
+        if not r.ok:
+            die((r.err or r.out).strip()[:400])
+        ok(r.out.strip())
+        return 0
+
+    if args.action == "list":
+        rows, err = shell_json(ctx, LIST_BACKUPS % args.limit)
+        if rows is None:
+            die(err)
+        if not rows:
+            out("no backups recorded")
+            return 0
+        out(f"{'WHEN':<22} {'KIND':<12} {'STATUS':<10} {'SIZE':>9}  ID")
+        for b in rows:
+            size = f"{b['size'] / (1 << 20):.0f} MiB" if b["size"] else "-"
+            flag = " *" if b["protected"] else ""
+            out(f"{b['at'][:19]:<22} {b['kind']:<12} {b['status']:<10} {size:>9}  {b['id']}{flag}")
+        out(f"\n{DIM}* protected. Path: danbyte-admin backup path <id>{OFF}")
+        return 0
+
+    if args.action == "path":
+        row, err = shell_json(
+            ctx, "import json\nfrom backups.models import Backup\n"
+                 f"b=Backup.objects.get(pk='{args.backup_id}')\n"
+                 "print(json.dumps({'location':b.location,'filename':b.filename}))")
+        if row is None:
+            die(err)
+        out(row["location"] or row["filename"])
+        return 0
+
+    if args.action == "restore":
+        # Without --yes the command prints its six precondition checks and
+        # changes nothing. Always show that first.
+        out(f"{BOLD}Preconditions{OFF}")
+        pre = manage(ctx, ["restore_backup", args.backup_id])
+        out((pre.out or pre.err).rstrip())
+        if not pre.ok:
+            return pre.code
+        if not args.yes:
+            out()
+            warn("restore replaces the database and media. Re-run with --yes to do it.")
+            return 0
+        out(f"{BOLD}Restoring{OFF} - the site answers 503 until this finishes.")
+        r = manage(ctx, ["restore_backup", args.backup_id, "--yes"], interactive=True)
+        return r.code
+
+    if args.action == "unstick":
+        # A killed restore leaves the maintenance flag in Redis with a 6-hour
+        # TTL and nothing else clears it early.
+        row, err = shell_json(
+            ctx, "import json\nfrom backups import maintenance\n"
+                 "maintenance.leave()\nprint(json.dumps({'active':maintenance.active()}))")
+        if row is None:
+            die(err)
+        ok("maintenance flag cleared" if not row["active"] else "flag still set")
+        return 0
+    return 0
+
+
+# ── tls ─────────────────────────────────────────────────────────────────────
+
+def _live_cert_paths() -> list[str]:
+    """Where nginx actually reads its cert from - never assumed.
+
+    Real hosts do not match the Makefile's filenames, so the live config is
+    the only honest source.
+    """
+    r = sh(["sudo", "-n", "nginx", "-T"])
+    if not r.ok:
+        r = sh(["nginx", "-T"])
+    found = []
+    for line in (r.out or "").splitlines():
+        s = line.strip()
+        if s.startswith("ssl_certificate") and not s.startswith("ssl_certificate_key"):
+            found.append(s.split()[1].rstrip(";"))
+    return sorted(set(found))
+
+
+def cmd_tls(ctx: Ctx, args) -> int:
+    if args.action == "show":
+        paths = _live_cert_paths()
+        if not paths:
+            warn("could not read the live nginx config (needs root) - falling back to the "
+                 "canonical path")
+            paths = ["/etc/ssl/danbyte/danbyte.crt"]
+        for p in paths:
+            out(f"{BOLD}{p}{OFF}")
+            r = sh(["openssl", "x509", "-in", p, "-noout", "-subject", "-issuer",
+                    "-dates", "-ext", "subjectAltName"])
+            out((r.out or r.err).rstrip() if r.out or r.err else "  unreadable")
+        return 0
+
+    if args.action == "install":
+        cert, key = Path(args.cert).expanduser(), Path(args.key).expanduser()
+        for f in (cert, key):
+            if not f.is_file():
+                die(f"no such file: {f}")
+        # Both halves must match or nginx reloads onto a broken pair.
+        cm = sh(["openssl", "x509", "-noout", "-modulus", "-in", str(cert)])
+        km = sh(["openssl", "rsa", "-noout", "-modulus", "-in", str(key)])
+        if cm.ok and km.ok and cm.out.strip() != km.out.strip():
+            die("that key does not match that certificate")
+        live = _live_cert_paths() or ["/etc/ssl/danbyte/danbyte.crt"]
+        dest_crt = live[0]
+        dest_key = dest_crt.rsplit(".", 1)[0] + ".key"
+        if dest_crt.startswith("/etc/ssl/danbyte"):
+            dest_key = "/etc/ssl/danbyte/danbyte.key"
+        sh(["sudo", "mkdir", "-p", str(Path(dest_crt).parent)], check=True)
+        sh(["sudo", "install", "-m", "644", str(cert), dest_crt], check=True)
+        sh(["sudo", "install", "-m", "600", str(key), dest_key], check=True)
+        ok(f"installed {dest_crt} and {dest_key}")
+        # Also refresh the repo staging copies, or the next proxy-install (which
+        # every bundle upgrade runs) silently reverts TLS to the self-signed pair.
+        staging = ctx.app / "deploy" / "nginx" / "certs"
+        if staging.is_dir():
+            sh(["sudo", "install", "-m", "644", str(cert), str(staging / "danbyte.crt")])
+            sh(["sudo", "install", "-m", "600", str(key), str(staging / "danbyte.key")])
+            ok(f"refreshed the staging copies in {staging}")
+        return _nginx_reload()
+
+    if args.action == "reload":
+        return _nginx_reload()
+    return 0
+
+
+def _nginx_reload() -> int:
+    t = sh(["sudo", "nginx", "-t"])
+    if not t.ok:
+        bad("nginx -t failed:")
+        out((t.err or t.out).rstrip())
+        return t.code
+    r = sh(["sudo", "systemctl", "reload", "nginx"])   # nginx IS a system unit
+    (ok if r.ok else bad)("nginx reloaded" if r.ok else (r.err or r.out).strip()[:200])
+    return r.code
+
+
+# ── users ───────────────────────────────────────────────────────────────────
+
+SHOW_USER = """
+import json
+from django.contrib.auth import get_user_model
+U = get_user_model()
+u = U.objects.filter(username=%(name)r).first()
+if u is None:
+    print(json.dumps({"found": False}))
+else:
+    p = getattr(u, "profile", None)
+    print(json.dumps({
+        "found": True, "username": u.username, "email": u.email,
+        "active": u.is_active, "staff": u.is_staff, "superuser": u.is_superuser,
+        "last_login": u.last_login.isoformat() if u.last_login else None,
+        "mfa": bool(getattr(p, "totp_secret", "")) if p else False,
+    }))
+"""
+
+CLEAR_MFA = """
+import json
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+U = get_user_model()
+u = U.objects.get(username=%(name)r)
+p = getattr(u, "profile", None)
+cleared = False
+if p is not None:
+    for field, value in (("totp_secret", ""), ("totp_confirmed_at", None),
+                         ("require_mfa", False)):
+        if hasattr(p, field):
+            setattr(p, field, value)
+            cleared = True
+    if cleared:
+        p.save()
+cache.delete("mfa-fail:%%s" %% u.pk)
+print(json.dumps({"cleared": cleared}))
+"""
+
+UNLOCK = """
+import json
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+U = get_user_model()
+u = U.objects.get(username=%(name)r)
+was = u.is_active
+u.is_active = True
+u.save(update_fields=["is_active"])
+cache.delete("mfa-fail:%%s" %% u.pk)
+print(json.dumps({"reactivated": not was}))
+"""
+
+
+def cmd_users(ctx: Ctx, args) -> int:
+    if args.action == "create":
+        # Interactive on purpose: createsuperuser reads the password from a
+        # TTY and there is no --password flag.
+        return manage(ctx, ["createsuperuser"], interactive=True).code
+
+    if args.action == "passwd":
+        # changepassword has no --noinput and needs a real terminal.
+        return manage(ctx, ["changepassword", args.username], interactive=True).code
+
+    if args.action == "show":
+        row, err = shell_json(ctx, SHOW_USER % {"name": args.username})
+        if row is None:
+            die(err)
+        if not row.get("found"):
+            die(f"no user {args.username}")
+        for k in ("username", "email", "active", "staff", "superuser", "mfa", "last_login"):
+            out(f"  {k:<11} {row.get(k)}")
+        return 0
+
+    if args.action == "clear-mfa":
+        row, err = shell_json(ctx, CLEAR_MFA % {"name": args.username})
+        if row is None:
+            die(err)
+        ok(f"MFA cleared for {args.username}" if row.get("cleared")
+           else f"{args.username} had no MFA enrolled")
+        return 0
+
+    if args.action == "unlock":
+        row, err = shell_json(ctx, UNLOCK % {"name": args.username})
+        if row is None:
+            die(err)
+        ok(f"{args.username} re-enabled" if row.get("reactivated")
+           else f"{args.username} was already active; lockout counters cleared")
+        return 0
+    return 0
+
+
+# ── maintenance ─────────────────────────────────────────────────────────────
+
+MAINTENANCE_JOBS = {
+    "reindex": (["rebuild_search_index"], "rebuild the global search index"),
+    "prune": (["prune_check_results"], "prune monitoring history"),
+    "prune-changelog": (["prune_changelog"], "prune the audit change log"),
+    "collectstatic": (["collectstatic", "--noinput"], "collect static files"),
+}
+
+
+def cmd_maintenance(ctx: Ctx, args) -> int:
+    if args.action == "list":
+        for name, (_argv, what) in MAINTENANCE_JOBS.items():
+            out(f"  {name:<16} {what}")
+        return 0
+    argv, what = MAINTENANCE_JOBS[args.action]
+    out(f"{what}…")
+    r = manage(ctx, argv)
+    if not r.ok:
+        die((r.err or r.out).strip()[:400])
+    ok((r.out or "done").strip()[:400])
+    return 0
+
+
+# ── diagnostics ─────────────────────────────────────────────────────────────
+
+def cmd_diagnostics(ctx: Ctx, args) -> int:
+    out(f"{BOLD}Django checks{OFF}")
+    # --database makes it actually touch Postgres; without it a green check is
+    # no evidence the database is up.
+    r = manage(ctx, ["check", "--database", "default"])
+    (ok if r.ok else bad)("check passed" if r.ok else "check failed")
+    if not r.ok:
+        out((r.err or r.out).rstrip()[:1500])
+    if args.deploy:
+        out(f"\n{BOLD}Deployment checks{OFF} {DIM}(warnings count){OFF}")
+        d = manage(ctx, ["check", "--deploy", "--fail-level", "WARNING"])
+        (ok if d.ok else warn)("no deployment warnings" if d.ok else "deployment warnings:")
+        if not d.ok:
+            out((d.err or d.out).rstrip()[:1500])
+
+    out(f"\n{BOLD}Health{OFF}")
+    h, where = health(ctx)
+    if h:
+        (ok if h.get("status") == "ok" else warn)(f"{h.get('status')} via {where}")
+    else:
+        bad(f"unreachable ({where[:160]})")
+
+    if args.url:
+        out(f"\n{BOLD}Outbound guard{OFF} {DIM}{args.url}{OFF}")
+        # Only an SSRFError is a verdict. Anything else is this probe being
+        # wrong, and must not be dressed up as "blocked" - that would send an
+        # operator to edit an allowlist over a bug in here.
+        row, err = shell_json(
+            ctx,
+            "import json\n"
+            "from core.ssrf import SSRFError, assert_public_url\n"
+            "try:\n"
+            f"    assert_public_url({args.url!r})\n"
+            "    print(json.dumps({'verdict': 'allowed', 'detail': ''}))\n"
+            "except SSRFError as exc:\n"
+            "    print(json.dumps({'verdict': 'blocked', 'detail': str(exc)}))")
+        if row is None:
+            bad(f"the guard probe failed to run: {err[:300]}")
+        elif row["verdict"] == "allowed":
+            ok("allowed")
+        else:
+            # Blocking a private address is the guard working, not a fault.
+            # The guard's own message already names the remedy - repeating it
+            # here would only let the two drift apart.
+            warn(f"blocked - {row['detail'][:400]}")
+    return 0
+
+
+# ── menu ────────────────────────────────────────────────────────────────────
+
+MENU = [
+    ("Status", lambda ctx: cmd_status(ctx, None)),
+    ("Services", lambda ctx: _menu_services(ctx)),
+    ("Backup", lambda ctx: _menu_backup(ctx)),
+    ("Users", lambda ctx: _menu_users(ctx)),
+    ("Maintenance", lambda ctx: _menu_maintenance(ctx)),
+    ("TLS", lambda ctx: cmd_tls(ctx, argparse.Namespace(action="show"))),
+    ("Diagnostics", lambda ctx: cmd_diagnostics(ctx, argparse.Namespace(deploy=False, url=""))),
+]
+
+
+def _ask(prompt: str, default: str = "") -> str:
+    try:
+        got = input(f"{prompt}{f' [{default}]' if default else ''}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        out()
+        return ""
+    return got or default
+
+
+def _pick(title: str, options: list[str]) -> str:
+    out(f"\n{BOLD}{title}{OFF}")
+    for i, o in enumerate(options, 1):
+        out(f"  {i}. {o}")
+    got = _ask("Choose", "")
+    if got.isdigit() and 1 <= int(got) <= len(options):
+        return options[int(got) - 1]
+    return ""
+
+
+def _menu_services(ctx: Ctx) -> int:
+    action = _pick("Services", ["list", "restart", "start", "stop", "logs"])
+    if not action:
+        return 0
+    if action == "list":
+        return cmd_services(ctx, argparse.Namespace(action="list", units=[], lines=0, follow=False))
+    unit = _ask("Unit (blank = all)" if action != "logs" else "Unit", "")
+    units = [unit] if unit else []
+    return cmd_services(ctx, argparse.Namespace(
+        action=action, units=units, lines=200, follow=False))
+
+
+def _menu_backup(ctx: Ctx) -> int:
+    action = _pick("Backup", ["list", "run", "restore", "unstick"])
+    if not action:
+        return 0
+    if action in {"list", "run", "unstick"}:
+        return cmd_backup(ctx, argparse.Namespace(action=action, limit=20))
+    bid = _ask("Backup id")
+    if not bid:
+        return 0
+    return cmd_backup(ctx, argparse.Namespace(action="restore", backup_id=bid, yes=False))
+
+
+def _menu_users(ctx: Ctx) -> int:
+    action = _pick("Users", ["show", "create", "passwd", "clear-mfa", "unlock"])
+    if not action:
+        return 0
+    if action == "create":
+        return cmd_users(ctx, argparse.Namespace(action="create"))
+    name = _ask("Username")
+    if not name:
+        return 0
+    return cmd_users(ctx, argparse.Namespace(action=action, username=name))
+
+
+def _menu_maintenance(ctx: Ctx) -> int:
+    action = _pick("Maintenance", list(MAINTENANCE_JOBS))
+    if not action:
+        return 0
+    return cmd_maintenance(ctx, argparse.Namespace(action=action))
+
+
+def menu(ctx: Ctx) -> int:
+    while True:
+        out(f"\n{BOLD}Danbyte admin{OFF}  {DIM}{ctx.describe()}{OFF}")
+        for i, (label, _fn) in enumerate(MENU, 1):
+            out(f"  {i}. {label}")
+        out("  q. Quit")
+        got = _ask("Choose")
+        if got in {"q", "quit", "exit", ""}:
+            return 0
+        if got.isdigit() and 1 <= int(got) <= len(MENU):
+            try:
+                MENU[int(got) - 1][1](ctx)
+            except SystemExit as exc:
+                if exc.code:
+                    bad(f"(exit {exc.code})")
+            except KeyboardInterrupt:
+                out()
+
+
+# ── cli ─────────────────────────────────────────────────────────────────────
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="danbyte-admin",
+        description="Host-side administration for Danbyte. Run bare for a menu.")
+    sub = p.add_subparsers(dest="cmd")
+
+    sub.add_parser("status", help="units, database, Redis, version, drift, disk")
+
+    s = sub.add_parser("services", help="start, stop, restart, tail logs")
+    s.add_argument("action", choices=["list", "start", "stop", "restart", "logs"])
+    s.add_argument("units", nargs="*", help="unit names; blank means all")
+    s.add_argument("-n", "--lines", type=int, default=200)
+    s.add_argument("-f", "--follow", action="store_true")
+
+    u = sub.add_parser("upgrade", help="online, or from an uploaded bundle")
+    u.add_argument("action", choices=["online", "bundle"])
+    u.add_argument("bundle", nargs="?", help="path to a .tar.gz bundle")
+    u.add_argument("--tag", help="release tag for an online upgrade")
+    u.add_argument("--skip-backup", action="store_true",
+                   help="skip the pre-upgrade backup (there is then no net)")
+    u.add_argument("--force", action="store_true", help="ignore a held upgrade lock")
+
+    b = sub.add_parser("backup", help="run one now, list, restore")
+    b.add_argument("action", choices=["run", "list", "restore", "path", "unstick"])
+    b.add_argument("backup_id", nargs="?")
+    b.add_argument("--limit", type=int, default=20)
+    b.add_argument("--yes", action="store_true", help="actually perform the restore")
+
+    t = sub.add_parser("tls", help="show, install a cert and key, reload nginx")
+    t.add_argument("action", choices=["show", "install", "reload"])
+    t.add_argument("--cert")
+    t.add_argument("--key")
+
+    us = sub.add_parser("users", help="superuser, password, MFA, unlock")
+    us.add_argument("action", choices=["create", "passwd", "show", "clear-mfa", "unlock"])
+    us.add_argument("username", nargs="?")
+
+    m = sub.add_parser("maintenance", help="reindex, prune, collectstatic")
+    m.add_argument("action", choices=["list", *MAINTENANCE_JOBS])
+
+    d = sub.add_parser("diagnostics", help="config check, health, outbound guard")
+    d.add_argument("--deploy", action="store_true", help="include deployment warnings")
+    d.add_argument("--url", default="", help="test the outbound guard against this URL")
+    return p
+
+
+def main(argv: list[str]) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    ctx = resolve()
+    if not (ctx.app / "manage.py").exists():
+        die(f"{ctx.app} does not look like a Danbyte install (no manage.py). "
+            f"Set DANBYTE_DIR.")
+
+    if args.cmd is None:
+        return menu(ctx)
+    if args.cmd == "users" and args.action != "create" and not args.username:
+        die(f"users {args.action} needs a username")
+    if args.cmd == "backup" and args.action in {"restore", "path"} and not args.backup_id:
+        die(f"backup {args.action} needs a backup id")
+    if args.cmd == "upgrade" and args.action == "bundle" and not args.bundle:
+        die("upgrade bundle needs a path to the bundle")
+    if args.cmd == "tls" and args.action == "install" and not (args.cert and args.key):
+        die("tls install needs --cert and --key")
+
+    return {
+        "status": cmd_status, "services": cmd_services, "upgrade": cmd_upgrade,
+        "backup": cmd_backup, "tls": cmd_tls, "users": cmd_users,
+        "maintenance": cmd_maintenance, "diagnostics": cmd_diagnostics,
+    }[args.cmd](ctx, args)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None

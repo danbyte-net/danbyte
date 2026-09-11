@@ -15,6 +15,11 @@ current `/opt` layout.
     entirely optional - see [Move an install to /opt](#move-an-install-to-opt)
     if you want to, and skip it otherwise.
 
+!!! tip "From a terminal"
+    `scripts/danbyte-admin upgrade online` wraps the steps below, refuses to
+    start while another upgrade holds the lock, and keeps a copy of a bundle
+    the upgrader would otherwise consume. See [danbyte-admin](../reference/danbyte-admin.md).
+
 ## Upgrade to a new version
 
 !!! info "The Updates page loads instantly"
