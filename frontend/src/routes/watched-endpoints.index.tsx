@@ -11,6 +11,7 @@ import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
+import { useTableFilters } from "@/components/table-filters"
 import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
@@ -71,6 +72,7 @@ function WatchedEndpointsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<WatchedEndpoint | null>(null)
   const [selected, setSelected] = useState<WatchedEndpoint[]>([])
+  const [q, setQ] = useState("")
 
   const query = useQuery({
     queryKey: ["watched-endpoints"],
@@ -79,7 +81,19 @@ function WatchedEndpointsPage() {
         "/api/monitoring/watched-endpoints/?page_size=500"
       ),
   })
-  const rows = useMemo(() => query.data?.results ?? [], [query.data])
+  const all = useMemo(() => query.data?.results ?? [], [query.data])
+  // Partial, case-insensitive, across every name the endpoint answers to -
+  // "test" has to find mail.test.example without anyone knowing the full name,
+  // which is the whole point of searching a certificate list (#161).
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (!needle) return all
+    return all.filter((r) =>
+      [r.host, r.server_name, r.last_certificate_subject_cn ?? ""].some((v) =>
+        v.toLowerCase().includes(needle)
+      )
+    )
+  }, [all, q])
   const canManage = canDo("watchedendpoint", "change")
 
   const columns = useMemo<ColumnDef<WatchedEndpoint>[]>(
@@ -89,6 +103,15 @@ function WatchedEndpointsPage() {
         id: "endpoint",
         accessorFn: (r) => `${r.host}:${r.port}`,
         header: ({ column }) => <SortHeader column={column} label="Endpoint" />,
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Port",
+            get: (r: WatchedEndpoint) => String(r.port),
+            // A list that is all :443 learns nothing from a one-option facet.
+            hideWhenSingle: true,
+          },
+        },
         cell: ({ row }) => {
           const r = row.original
           return (
@@ -108,6 +131,16 @@ function WatchedEndpointsPage() {
         id: "status",
         accessorFn: (r) => r.last_status,
         header: ({ column }) => <SortHeader column={column} label="Status" />,
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Status",
+            get: (r: WatchedEndpoint) => r.last_status || "unchecked",
+            formatValue: (v: string) => ({
+              label: v === "unchecked" ? "Not checked" : v,
+            }),
+          },
+        },
         cell: ({ row }) => (
           <div className="flex flex-col gap-0.5">
             <span className="flex items-center gap-1.5">
@@ -154,6 +187,19 @@ function WatchedEndpointsPage() {
       {
         id: "expires",
         header: "Expires in",
+        // A range, not buckets: "expires within 30 days" is one number an
+        // operator already has in mind, and it keeps expired certificates
+        // (negative days) in the answer instead of hiding them in a band.
+        meta: {
+          facet: {
+            kind: "range",
+            label: "Expires in",
+            unit: "days",
+            get: (r: WatchedEndpoint) =>
+              r.last_detail?.expires_in_days as number | undefined,
+            placeholder: { min: "from", max: "within" },
+          },
+        },
         cell: ({ row }) => {
           const days = row.original.last_detail?.expires_in_days as
             | number
@@ -195,6 +241,14 @@ function WatchedEndpointsPage() {
       {
         id: "enabled",
         header: "Enabled",
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Monitoring",
+            get: (r: WatchedEndpoint) => (r.enabled ? "on" : "off"),
+            formatValue: (v: string) => ({ label: v === "on" ? "On" : "Off" }),
+          },
+        },
         cell: ({ row }) =>
           row.original.enabled ? (
             <Badge variant="secondary">On</Badge>
@@ -224,10 +278,29 @@ function WatchedEndpointsPage() {
     [canManage]
   )
 
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: wiredColumns,
+  } = useTableFilters(columns, rows)
+
   return (
     <ListPageShell
       title="Watched endpoints"
-      count={rows.length}
+      count={filteredRows.length}
+      rail={rail}
+      savedViews={{
+        objectType: "watchedendpoint",
+        filters: { snapshot, restore, activeCount },
+      }}
+      search={{
+        value: q,
+        onChange: setQ,
+        placeholder: "Filter by host, SNI name or certificate…",
+      }}
       actions={
         <div className="flex items-center gap-2">
           {canManage && selected.length > 0 && (
@@ -244,7 +317,7 @@ function WatchedEndpointsPage() {
         </div>
       }
     >
-      {rows.length === 0 ? (
+      {all.length === 0 ? (
         <EmptyState title="No watched endpoints yet.">
           Add a <span className="font-mono">host:port</span> and Danbyte reads
           its TLS certificate on a schedule - no device needed. Observed
@@ -253,8 +326,8 @@ function WatchedEndpointsPage() {
         </EmptyState>
       ) : (
         <DataTable
-          data={rows}
-          columns={columns}
+          data={filteredRows}
+          columns={wiredColumns}
           onSelectedRowsChange={canManage ? setSelected : undefined}
           tableId="watched-endpoints"
         />
