@@ -117,21 +117,41 @@ See [Backup and restore](../getting-started/backup-restore.md).
 
 ```bash
 danbyte-admin tls show
-danbyte-admin tls install --cert new.crt --key new.key
+danbyte-admin tls install --cert new.crt --key new.key   # bring your own
+danbyte-admin tls self-signed [--host name-or-ip]        # regenerate
+danbyte-admin tls renew                                  # ACME / Let's Encrypt
 danbyte-admin tls reload
 ```
 
-`show` reads the paths out of the **live** nginx configuration rather than
-assuming them - real hosts frequently do not use the paths the installer would
-have chosen.
+Danbyte serves either a certificate you supply - including one from Let's
+Encrypt - or a self-signed one, and these are the three ways to change it.
 
-`install` checks that the key matches the certificate before touching
-anything, then writes both the live location and the staging copies inside the
-repository. Both matter: a bundle upgrade re-runs the proxy install, which
-would otherwise put the self-signed certificate back.
+`show` reads the paths out of the **live** nginx configuration rather than
+assuming them, and so does everything that writes. Both the certificate *and*
+the key path come from the config: this is not a detail, because a host that
+keeps its certificate in `/etc/ssl/certs` and its key in `/etc/ssl/private` is
+normal, and deriving one path from the other writes a key somewhere nginx does
+not read - leaving a mismatched pair that does not fail until the next reload.
+If the live configuration cannot be read, these commands stop rather than
+guess.
+
+`install` and `self-signed` both check that the key matches the certificate,
+keep a copy of what was there, run `nginx -t`, and **put the old pair back** if
+nginx refuses the new one. They also refresh the staging copies inside the
+repository: a bundle upgrade re-runs the proxy install, which copies staging
+over live, so writing only the live path means the next upgrade silently
+reverts TLS.
+
+`self-signed` keeps every name the current certificate answers for and adds
+the one you name, so regenerating never costs the site a way of being reached
+- a box reached as both an address and a DNS name keeps both.
+
+`renew` re-issues the ACME certificates in Danbyte's inventory that have
+passed their renewal point - the same job `danbyte-acme-renew.timer` runs. It
+does not install one into nginx; that is still `tls install`.
 
 These steps need root and the script asks for it per action rather than
-demanding it up front. ACME issuance is not here yet.
+demanding it up front.
 
 ### users
 
@@ -172,6 +192,22 @@ Runs Django's checks against the database, reports health, and can test one
 URL against the [outbound guard](settings.md#outbound-requests-ssrf-guard).
 A private address being blocked is the guard working as intended on a
 LAN-only install, and the message says how to permit it if that is wrong.
+
+## Installing it
+
+A packaged install symlinks the script to `/usr/local/bin/danbyte`, so an
+administrator can type:
+
+```bash
+danbyte             # the menu
+danbyte status
+```
+
+A symlink rather than a shell alias on purpose: an alias exists only in an
+interactive shell that sourced it, so it would be missing from `sudo`, from
+`cron`, and from every non-login session - which is exactly when this is
+wanted. From a source checkout, run `scripts/danbyte-admin` directly or link it
+yourself.
 
 ## Notes
 

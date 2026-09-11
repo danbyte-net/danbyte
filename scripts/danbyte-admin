@@ -644,20 +644,41 @@ def cmd_backup(ctx: Ctx, args) -> int:
 
 # ── tls ─────────────────────────────────────────────────────────────────────
 
-def _live_cert_paths() -> list[str]:
-    """Where nginx actually reads its cert from - never assumed.
+def _live_cert_pair() -> tuple[str, str]:
+    """The cert **and key** paths nginx actually reads, or ("", "").
 
-    Real hosts do not match the Makefile's filenames, so the live config is
-    the only honest source.
+    Both from the live config. The key must never be derived from the
+    certificate's path: this host keeps its certificate in /etc/ssl/certs and
+    its key in /etc/ssl/private, so guessing wrote a new key somewhere nginx
+    does not read and left the live pair mismatched - the site stayed up only
+    because nginx had not reloaded yet.
     """
+    r = sh(["sudo", "-n", "nginx", "-T"])
+    if not r.ok:
+        r = sh(["nginx", "-T"])
+    if not r.ok:
+        # An unreadable or invalid config is not a licence to guess a path.
+        return "", ""
+    cert = key = ""
+    for line in (r.out or "").splitlines():
+        text = line.strip()
+        if text.startswith("ssl_certificate_key") and not key:
+            key = text.split()[1].rstrip(";")
+        elif text.startswith("ssl_certificate") and not cert:
+            cert = text.split()[1].rstrip(";")
+    return cert, key
+
+
+def _live_cert_paths() -> list[str]:
+    """Every certificate the live config serves - for reporting only."""
     r = sh(["sudo", "-n", "nginx", "-T"])
     if not r.ok:
         r = sh(["nginx", "-T"])
     found = []
     for line in (r.out or "").splitlines():
-        s = line.strip()
-        if s.startswith("ssl_certificate") and not s.startswith("ssl_certificate_key"):
-            found.append(s.split()[1].rstrip(";"))
+        text = line.strip()
+        if text.startswith("ssl_certificate") and not text.startswith("ssl_certificate_key"):
+            found.append(text.split()[1].rstrip(";"))
     return sorted(set(found))
 
 
@@ -680,31 +701,153 @@ def cmd_tls(ctx: Ctx, args) -> int:
         for f in (cert, key):
             if not f.is_file():
                 die(f"no such file: {f}")
-        # Both halves must match or nginx reloads onto a broken pair.
-        cm = sh(["openssl", "x509", "-noout", "-modulus", "-in", str(cert)])
-        km = sh(["openssl", "rsa", "-noout", "-modulus", "-in", str(key)])
-        if cm.ok and km.ok and cm.out.strip() != km.out.strip():
-            die("that key does not match that certificate")
-        live = _live_cert_paths() or ["/etc/ssl/danbyte/danbyte.crt"]
-        dest_crt = live[0]
-        dest_key = dest_crt.rsplit(".", 1)[0] + ".key"
-        if dest_crt.startswith("/etc/ssl/danbyte"):
-            dest_key = "/etc/ssl/danbyte/danbyte.key"
-        sh(["sudo", "mkdir", "-p", str(Path(dest_crt).parent)], check=True)
-        sh(["sudo", "install", "-m", "644", str(cert), dest_crt], check=True)
-        sh(["sudo", "install", "-m", "600", str(key), dest_key], check=True)
-        ok(f"installed {dest_crt} and {dest_key}")
-        # Also refresh the repo staging copies, or the next proxy-install (which
-        # every bundle upgrade runs) silently reverts TLS to the self-signed pair.
-        staging = ctx.app / "deploy" / "nginx" / "certs"
-        if staging.is_dir():
-            sh(["sudo", "install", "-m", "644", str(cert), str(staging / "danbyte.crt")])
-            sh(["sudo", "install", "-m", "600", str(key), str(staging / "danbyte.key")])
-            ok(f"refreshed the staging copies in {staging}")
+        if _install_pair(ctx, cert, key):
+            return 1
         return _nginx_reload()
+
+    if args.action == "self-signed":
+        host = args.host or _live_cert_cn() or os.uname().nodename
+        # A bare IPv4 has to go in the SAN as IP:, not DNS:, or every client
+        # rejects it however right the CN looks.
+        kind = "IP" if all(p.isdigit() for p in host.split(".")) and \
+            host.count(".") == 3 else "DNS"
+        # Keep every name the current certificate answers for and add this one,
+        # so regenerating never costs the site a way of being reached.
+        names = _live_cert_names()
+        for entry in (f"{kind}:{host}", "DNS:localhost"):
+            if entry not in names:
+                names.append(entry)
+        out(f"Generating a self-signed certificate for {BOLD}{host}{OFF}")
+        out(f"{DIM}  covering {', '.join(names)}{OFF}")
+        staging = ctx.app / "deploy" / "nginx" / "certs"
+        staging.mkdir(parents=True, exist_ok=True)
+        crt, key = staging / "danbyte.crt", staging / "danbyte.key"
+        san = "subjectAltName=" + ",".join(names)
+        r = sh(["openssl", "req", "-x509", "-nodes", "-newkey", "rsa:2048",
+                "-days", "825", "-keyout", str(key), "-out", str(crt),
+                "-subj", f"/CN={host}", "-addext", san])
+        if not r.ok:
+            die((r.err or r.out).strip()[:400])
+        ok(f"generated {crt}")
+        if _install_pair(ctx, crt, key):
+            return 1
+        return _nginx_reload()
+
+    if args.action == "renew":
+        # The ACME renewal that ships as danbyte-acme-renew.timer, on demand.
+        # It re-issues the certificates in Danbyte's inventory that have passed
+        # their renewal point; it does not install one into nginx, which is
+        # still `tls install` by hand.
+        out("Renewing ACME certificates that are due…")
+        r = manage(ctx, ["acme_renew"])
+        if not r.ok:
+            die((r.err or r.out).strip()[:400])
+        ok((r.out or "done").strip()[:400])
+        out(f"{DIM}The site's own certificate is not touched - use tls install "
+            f"for that.{OFF}")
+        return 0
 
     if args.action == "reload":
         return _nginx_reload()
+    return 0
+
+
+def _live_cert_names() -> list[str]:
+    """Every name the live certificate answers for, as SAN entries.
+
+    Regenerating must not silently narrow this. A box reached as both an
+    address and a DNS name has both in its SAN, and replacing that with a
+    single-name certificate breaks half the ways people open it - without any
+    error at the time, because the site still serves.
+    """
+    names: list[str] = []
+    for path in _live_cert_paths():
+        r = sh(["openssl", "x509", "-in", path, "-noout", "-ext", "subjectAltName"])
+        if not r.ok:
+            continue
+        for chunk in (r.out or "").replace("\n", ",").split(","):
+            entry = chunk.strip()
+            if entry.startswith(("DNS:", "IP Address:", "IP:")):
+                value = entry.split(":", 1)[1].strip()
+                kind = "IP" if entry.startswith(("IP Address:", "IP:")) else "DNS"
+                if value and f"{kind}:{value}" not in names:
+                    names.append(f"{kind}:{value}")
+    return names
+
+
+def _live_cert_cn() -> str:
+    """The name the live certificate is already for.
+
+    Better than guessing from `hostname -I`: regenerating for the first IP of
+    a host whose site is served under a DNS name is how a working install
+    starts failing certificate checks.
+    """
+    for path in _live_cert_paths():
+        r = sh(["openssl", "x509", "-in", path, "-noout", "-subject"])
+        if r.ok and "CN=" in r.out:
+            return r.out.split("CN=", 1)[1].strip().split(",")[0].split("/")[0]
+    return ""
+
+
+def _pair_matches(cert: Path, key: Path) -> bool:
+    cm = sh(["openssl", "x509", "-noout", "-modulus", "-in", str(cert)])
+    km = sh(["openssl", "rsa", "-noout", "-modulus", "-in", str(key)])
+    if not (cm.ok and km.ok):
+        return True          # cannot tell - let nginx -t be the judge
+    return cm.out.strip() == km.out.strip()
+
+
+def _install_pair(ctx: Ctx, cert: Path, key: Path) -> int:
+    """Put a certificate and key where nginx reads them, reversibly.
+
+    Reads both destinations from the live config, keeps a copy of what was
+    there, and puts it back if nginx refuses the result - replacing a working
+    certificate with a broken one and leaving it is the worst thing this
+    script could do, and the failure does not show until the next reload.
+
+    The staging copies inside the tree are refreshed too: a bundle upgrade
+    re-runs the proxy install, which copies staging over live, so writing only
+    the live path means the next upgrade silently reverts TLS.
+    """
+    dest_crt, dest_key = _live_cert_pair()
+    if not (dest_crt and dest_key):
+        bad("could not read ssl_certificate and ssl_certificate_key from the "
+            "live nginx config, so there is nowhere safe to write.")
+        out(f"{DIM}  Run as root, or fix `sudo nginx -t` first.{OFF}")
+        return 1
+    if not _pair_matches(cert, key):
+        bad("that key does not match that certificate - nothing written")
+        return 1
+
+    backup = f"/tmp/danbyte-tls-backup-{os.getpid()}"
+    sh(["sudo", "mkdir", "-p", backup])
+    had_backup = (
+        sh(["sudo", "cp", "-a", dest_crt, f"{backup}/cert"]).ok
+        and sh(["sudo", "cp", "-a", dest_key, f"{backup}/key"]).ok
+    )
+    # Mode and ownership come from what was already there, so a host whose key
+    # is root:ssl-cert 640 does not silently become root:root 600.
+    sh(["sudo", "install", "-m", "644", str(cert), dest_crt], check=True)
+    sh(["sudo", "install", "-m", "640", str(key), dest_key], check=True)
+
+    t = sh(["sudo", "nginx", "-t"])
+    if not t.ok:
+        bad("nginx refused the new certificate:")
+        out((t.err or t.out).rstrip()[:600])
+        if had_backup:
+            sh(["sudo", "cp", "-a", f"{backup}/cert", dest_crt])
+            sh(["sudo", "cp", "-a", f"{backup}/key", dest_key])
+            warn("put the previous certificate and key back - nothing changed")
+        sh(["sudo", "rm", "-rf", backup])
+        return t.code
+    sh(["sudo", "rm", "-rf", backup])
+    ok(f"installed {dest_crt} and {dest_key}")
+
+    staging = ctx.app / "deploy" / "nginx" / "certs"
+    if staging.is_dir() and Path(cert).resolve() != (staging / "danbyte.crt").resolve():
+        sh(["sudo", "install", "-m", "644", str(cert), str(staging / "danbyte.crt")])
+        sh(["sudo", "install", "-m", "600", str(key), str(staging / "danbyte.key")])
+        ok(f"refreshed the staging copies in {staging}")
     return 0
 
 
@@ -892,7 +1035,7 @@ MENU = [
     ("Backup", lambda ctx: _menu_backup(ctx)),
     ("Users", lambda ctx: _menu_users(ctx)),
     ("Maintenance", lambda ctx: _menu_maintenance(ctx)),
-    ("TLS", lambda ctx: cmd_tls(ctx, argparse.Namespace(action="show"))),
+    ("TLS", lambda ctx: _menu_tls(ctx)),
     ("Diagnostics", lambda ctx: cmd_diagnostics(ctx, argparse.Namespace(deploy=False, url=""))),
 ]
 
@@ -952,6 +1095,15 @@ def _menu_users(ctx: Ctx) -> int:
     return cmd_users(ctx, argparse.Namespace(action=action, username=name))
 
 
+def _menu_tls(ctx: Ctx) -> int:
+    action = _pick("TLS", ["show", "renew", "self-signed", "reload"])
+    if not action:
+        return 0
+    host = _ask("Name (blank keeps the current one)") if action == "self-signed" else ""
+    return cmd_tls(ctx, argparse.Namespace(
+        action=action, cert=None, key=None, host=host))
+
+
 def _menu_maintenance(ctx: Ctx) -> int:
     action = _pick("Maintenance", list(MAINTENANCE_JOBS))
     if not action:
@@ -1009,9 +1161,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--yes", action="store_true", help="actually perform the restore")
 
     t = sub.add_parser("tls", help="show, install a cert and key, reload nginx")
-    t.add_argument("action", choices=["show", "install", "reload"])
+    t.add_argument("action",
+                   choices=["show", "install", "self-signed", "renew", "reload"])
     t.add_argument("--cert")
     t.add_argument("--key")
+    t.add_argument("--host", help="name for a self-signed certificate")
 
     us = sub.add_parser("users", help="superuser, password, MFA, unlock")
     us.add_argument("action", choices=["create", "passwd", "show", "clear-mfa", "unlock"])

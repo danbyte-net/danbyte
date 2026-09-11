@@ -274,6 +274,15 @@ step "Installing + (re)starting services"
 # Redis stack. On a host that already ran Postgres that left an idle, empty
 # container competing for 5432 (issue #14).
 as_user bash -lc "cd '$APP' && make install-prod-services >/dev/null"
+
+# `danbyte` on PATH, so an administrator over SSH does not have to know where
+# the app was installed. A symlink rather than a shell alias: an alias exists
+# only in an interactive shell that sourced it, so it would be missing from
+# sudo, cron and every non-login session - exactly when this is wanted.
+# -f so a re-install or an upgrade re-points it instead of failing.
+if [ -d /usr/local/bin ]; then
+  ln -sfn "$APP/scripts/danbyte-admin" /usr/local/bin/danbyte
+fi
 DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs"
 # enable = start at boot; restart = pick up freshly-deployed code (a plain
 # `enable --now` is a no-op on already-running units, so a re-install/upgrade
