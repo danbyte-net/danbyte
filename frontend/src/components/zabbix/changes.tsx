@@ -38,6 +38,7 @@ const KIND_VARIANT: Record<
   link_template: "secondary",
   ambiguous: "warning",
   prune_host: "destructive",
+  adopt_host: "info",
 }
 
 export function ZabbixChanges({ connection }: { connection: ZabbixConnection }) {
@@ -166,6 +167,11 @@ export function ZabbixChanges({ connection }: { connection: ZabbixConnection }) 
             >
               {row.original.device.name}
             </Link>
+          ) : row.original.kind === "adopt_host" ? (
+            // Not a device yet - the host's name, which applying makes one.
+            <span className="font-mono text-xs">
+              {String(row.original.detail.name ?? row.original.detail.host ?? "")}
+            </span>
           ) : (
             <span className="text-muted-foreground">-</span>
           ),
@@ -314,6 +320,26 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
         {String(d.reason ?? "")}
       </span>
     )
+  if (change.kind === "adopt_host") {
+    const name = String(d.name ?? d.host ?? "")
+    if (d.reason)
+      return (
+        <span className="text-[12px] text-muted-foreground">
+          <span className="font-mono">{name}</span> - {String(d.reason)}
+        </span>
+      )
+    const parts: string[] = []
+    if (d.device_type) parts.push(`a ${String(d.device_type)}`)
+    if (d.role) parts.push(String(d.role))
+    if (d.site) parts.push(`at ${String(d.site)}`)
+    if (d.address) parts.push(`on ${String(d.address)}`)
+    return (
+      <span className="text-[12px] text-muted-foreground">
+        Creates the device <span className="font-mono">{name}</span>
+        {parts.length ? ` - ${parts.join(", ")}` : ""}.
+      </span>
+    )
+  }
   if (change.kind === "prune_host")
     return (
       <span className="text-[12px] text-muted-foreground">

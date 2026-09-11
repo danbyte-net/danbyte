@@ -83,7 +83,8 @@ function ZabbixPage() {
         method: "POST",
       }),
     onSuccess: (r) => {
-      const proposed = r.create + r.update + r.template + r.prune + r.ambiguous
+      const proposed =
+        r.create + r.update + r.template + r.prune + r.ambiguous + r.adopt
       toast.success(
         r.applied !== undefined
           ? `Applied ${r.applied}${r.failed ? `, ${r.failed} failed` : ""}.`
@@ -340,6 +341,25 @@ function ConnectionCard({
       label: "Acknowledgements",
       value: conn.write_acknowledgements ? (
         <Badge variant="success">Written</Badge>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
+    },
+    {
+      label: "Adopt hosts",
+      value: conn.adopt_hosts ? (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Badge variant="success">On</Badge>
+          <span className="text-muted-foreground">
+            {[
+              conn.adopt_names.site,
+              conn.adopt_names.role,
+              conn.adopt_names.device_type,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "no defaults"}
+          </span>
+        </span>
       ) : (
         <Badge variant="secondary">Off</Badge>
       ),

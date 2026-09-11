@@ -242,7 +242,7 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
     """
     now = now or timezone.now()
     counts = {"scoped": 0, "linked": 0, "create": 0, "update": 0,
-              "template": 0, "ambiguous": 0, "prune": 0}
+              "template": 0, "ambiguous": 0, "prune": 0, "adopt": 0}
     if conn.provision_mode == ZabbixConnection.OFF:
         return counts
     if not integration_enabled(conn.tenant, "zabbix"):
@@ -252,7 +252,7 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
     counts["scoped"] = len(devices)
 
     hosts = []
-    if devices:
+    if devices or conn.adopt_hosts:
         try:
             hosts = _client(conn).all_hosts()
         except ZabbixError as exc:
@@ -319,6 +319,10 @@ def plan(conn: ZabbixConnection, now=None) -> dict:
                      fresh)
 
         counts["prune"] = _plan_prune(conn, {d.id for d in devices}, now, fresh)
+        if conn.adopt_hosts:
+            from .adopt import plan_adoption
+
+            counts["adopt"] = plan_adoption(conn, hosts, fresh)
         # A proposal nobody has looked at, for something that is no longer
         # true, is worse than no proposal.
         ZabbixChange.objects.filter(connection=conn, ignored=False).exclude(
@@ -442,6 +446,13 @@ def apply_change(change: ZabbixChange) -> str:
     happened is not a record of anything.
     """
     conn = change.connection
+    if change.kind == ZabbixChange.ADOPT:
+        # The one proposal that writes into Danbyte rather than Zabbix.
+        from .adopt import apply_adoption
+
+        result = apply_adoption(change)
+        change.delete()
+        return result
     client = _client(conn)
     device = change.device
 

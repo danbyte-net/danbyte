@@ -399,7 +399,35 @@ Both are jobs: the window or the acknowledgement in Danbyte is the decision
 and never waits on Zabbix, and every switch - the tenant's, the connection's -
 is re-checked when the job runs.
 
+## Adopting Zabbix hosts
+
+The other way in. With **Adopt hosts** on, every Zabbix host that **no device
+of yours answers to** - by interface address, inventory serial, or name,
+judged against the whole tenant rather than the provisioning scope - is
+offered in the same review queue as an *Adopt host* proposal. Applying it
+makes the device: the host's visible name and serial, the address from its
+SNMP interface (or the agent's), the **site** from the first host group that
+names one of your sites - the reverse of what provisioning writes, so an
+estate Danbyte provisioned and one built by hand read the same way - and the
+**device type** from the inventory model when you have one by that name.
+
+What the host does not say comes from the connection's defaults: a site, a
+role, a device type. A proposal missing any of them waits, with the reason on
+the row, and cannot be applied until the defaults are set or the host group
+names the site. An address that falls in no prefix of yours is left out and
+said so, never given a prefix it invented.
+
+The link an adoption makes is not one Danbyte *created*, so pruning never
+touches the host. Adoption needs provisioning in **Review** or **Auto** - it
+is the same queue - and in Review nothing is made without a person; in Auto,
+new hosts become devices on the pass. An existing Zabbix is a way into
+Danbyte, which is a strong reason for a Zabbix shop to try it at all.
+
+An adopted device is not automatically watched *by* Zabbix in Danbyte: that
+is still a Zabbix check on its address, from a policy or by hand, exactly as
+for any other device.
+
 ## Not yet
 
-Adopting Zabbix-discovered hosts as Danbyte devices, and drift between the two
-inventories, are planned.
+Drift between the two inventories - "Zabbix says 48 interfaces, Danbyte has
+24" - is planned.

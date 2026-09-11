@@ -3860,6 +3860,16 @@ export interface ZabbixConnection {
   last_maintenance_sync_at: string | null
   /** Acknowledging an alert acknowledges the Zabbix problems behind it. */
   write_acknowledgements: boolean
+  /** Propose a device for every Zabbix host Danbyte has no device for. */
+  adopt_hosts: boolean
+  adopt_site: string | null
+  adopt_role: string | null
+  adopt_device_type: string | null
+  adopt_names: {
+    site: string | null
+    role: string | null
+    device_type: string | null
+  }
   created_at: string
   updated_at: string
 }
@@ -3967,6 +3977,7 @@ export interface ZabbixChange {
     | "link_template"
     | "ambiguous"
     | "prune_host"
+    | "adopt_host"
   kind_display: string
   device: { id: string; name: string } | null
   detail: Record<string, unknown>
@@ -3992,6 +4003,8 @@ export interface ZabbixSyncResult {
   template: number
   ambiguous: number
   prune: number
+  /** Zabbix hosts Danbyte has no device for, offered as devices. */
+  adopt: number
   applied?: number
   failed?: number
   /** What Zabbix said about the writes it refused - its refusals are usually

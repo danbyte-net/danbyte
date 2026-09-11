@@ -32,6 +32,42 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
             for e in obj.engines.all().order_by("name")
         ]
 
+    #: The adoption defaults by name, so the page can say them without a
+    #: round-trip per id.
+    adopt_names = serializers.SerializerMethodField()
+
+    def get_adopt_names(self, obj) -> dict:
+        return {
+            "site": obj.adopt_site.name if obj.adopt_site_id else None,
+            "role": obj.adopt_role.name if obj.adopt_role_id else None,
+            "device_type": obj.adopt_device_type.model if obj.adopt_device_type_id else None,
+        }
+
+    def _tenant(self):
+        from api.views import _get_active_tenant
+
+        request = self.context.get("request")
+        if self.instance is not None:
+            return self.instance.tenant
+        return _get_active_tenant(request) if request is not None else None
+
+    def _own(self, value, what):
+        """A default has to be one of this tenant's rows. A UUID from anywhere
+        is not proof of anything."""
+        tenant = self._tenant()
+        if value is not None and tenant is not None and value.tenant_id != tenant.id:
+            raise serializers.ValidationError(f"That {what} is not in the active tenant.")
+        return value
+
+    def validate_adopt_site(self, value):
+        return self._own(value, "site")
+
+    def validate_adopt_role(self, value):
+        return self._own(value, "role")
+
+    def validate_adopt_device_type(self, value):
+        return self._own(value, "device type")
+
     def validate_engines(self, value):
         """An engine has to be one of this tenant's, and a Zabbix one.
 
@@ -134,7 +170,8 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
             "auto_sync", "sync_interval_minutes", "last_sync_at",
             "last_sync_summary", "send_snmp_credentials",
             "sync_maintenance", "last_maintenance_sync_at", "write_acknowledgements",
-            "created_at",
+            "adopt_hosts", "adopt_site", "adopt_role", "adopt_device_type",
+            "adopt_names", "created_at",
             "updated_at",
         ]
         read_only_fields = [
@@ -214,6 +251,10 @@ class ZabbixChangeSerializer(serializers.ModelSerializer):
         return {"id": str(d.id), "name": d.name} if d else None
 
     def get_applicable(self, obj) -> bool:
+        if obj.kind == ZabbixChange.ADOPT:
+            from .adopt import applicable
+
+            return applicable(obj.detail or {})
         return obj.kind != ZabbixChange.AMBIGUOUS
 
     class Meta:

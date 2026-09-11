@@ -168,7 +168,9 @@ class ZabbixClient:
             "output": ["hostid", "host", "name", "status", "proxyid", "proxy_hostid",
                        "monitored_by"],
             "selectInterfaces": ["interfaceid", "type", "ip", "dns", "useip", "port"],
-            "selectInventory": ["serialno_a"],
+            # Serial for matching; model, vendor and OS so an adopted host
+            # can say what it is rather than arriving as a blank device.
+            "selectInventory": ["serialno_a", "model", "vendor", "os", "type"],
             # Linked templates and groups come along on the same read: planning
             # has to know what a host already carries, and asking per host
             # would turn one call into a thousand. Without the groups here,

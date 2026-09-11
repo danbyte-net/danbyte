@@ -113,6 +113,27 @@ class ZabbixConnection(TimestampedModel):
     #: it, with the operator's name and note. Off by default like every write.
     write_acknowledgements = models.BooleanField(default=False)
 
+    # ── adoption (#162 phase 6) ────────────────────────────────────────
+    #: Propose a Danbyte device for every Zabbix host Danbyte has no device
+    #: for - an existing Zabbix as the way into Danbyte. Off: reading a host
+    #: list is one thing, minting inventory rows from it is another.
+    adopt_hosts = models.BooleanField(default=False)
+    #: Where an adopted device lands when no host group names one of the
+    #: tenant's sites, and what it is when the inventory does not say. All
+    #: three are needed for a proposal to be applicable; a proposal without
+    #: them waits, and says what it is waiting for.
+    adopt_site = models.ForeignKey(
+        "api.Site", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    adopt_role = models.ForeignKey(
+        "api.DeviceRole", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    adopt_device_type = models.ForeignKey(
+        "api.DeviceType", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
     class Meta:
         ordering = ["name"]
         constraints = [
@@ -244,12 +265,17 @@ class ZabbixChange(TimestampedModel):
     TEMPLATE = "link_template"
     AMBIGUOUS = "ambiguous"
     PRUNE = "prune_host"
+    #: The other direction: a Zabbix host Danbyte has no device for becomes
+    #: one. Keyed by ``detail.hostid`` rather than a device, since the device
+    #: is what applying it makes.
+    ADOPT = "adopt_host"
     KIND_CHOICES = [
         (CREATE, "Create host"),
         (UPDATE, "Update host"),
         (TEMPLATE, "Link templates"),
         (AMBIGUOUS, "Needs a decision"),
         (PRUNE, "Remove host"),
+        (ADOPT, "Adopt host"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

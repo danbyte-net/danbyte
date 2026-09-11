@@ -26,6 +26,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { DeviceTypePicker } from "@/components/device-type-picker"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -105,6 +106,16 @@ function ConnectionForm({
   const [writeAcks, setWriteAcks] = useState(
     connection?.write_acknowledgements ?? false
   )
+  const [adopt, setAdopt] = useState(connection?.adopt_hosts ?? false)
+  const [adoptSite, setAdoptSite] = useState<string | null>(
+    connection?.adopt_site ?? null
+  )
+  const [adoptRole, setAdoptRole] = useState<string | null>(
+    connection?.adopt_role ?? null
+  )
+  const [adoptType, setAdoptType] = useState<string | null>(
+    connection?.adopt_device_type ?? null
+  )
   const [pruneAfter, setPruneAfter] = useState(
     String(connection?.prune_after_days ?? 7)
   )
@@ -127,6 +138,26 @@ function ConnectionForm({
       api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
     staleTime: 60_000,
   })
+  // Small catalogs, read whole; the device-type catalog is not, and gets the
+  // real picker below.
+  const sites = useQuery({
+    queryKey: ["zabbix-adopt-sites"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/sites/?page_size=500"),
+    staleTime: 60_000,
+    enabled: adopt,
+  })
+  const roles = useQuery({
+    queryKey: ["zabbix-adopt-roles"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/device-roles/?page_size=500"
+      ),
+    staleTime: 60_000,
+    enabled: adopt,
+  })
+  const asOptions = (rows?: { id: string; name: string }[]) =>
+    (rows ?? []).map((r) => ({ value: r.id, label: r.name }))
   const engineOptions = useMemo(
     () =>
       (engines.data?.results ?? [])
@@ -175,6 +206,10 @@ function ConnectionForm({
           prune_after_days: Number(pruneAfter) || 0,
           sync_maintenance: syncMaint,
           write_acknowledgements: writeAcks,
+          adopt_hosts: adopt,
+          adopt_site: adopt ? adoptSite : null,
+          adopt_role: adopt ? adoptRole : null,
+          adopt_device_type: adopt ? adoptType : null,
           severity_map: severity,
         },
       }),
@@ -314,6 +349,41 @@ function ConnectionForm({
           checked={writeAcks}
           onChange={setWriteAcks}
         />
+      </FormSection>
+
+      <FormSection title="Adoption" card>
+        <FormCheckbox
+          label="Adopt hosts"
+          info="A Zabbix host Danbyte has no device for is offered in the review queue; applying makes the device with the host's name, serial and address. Needs provisioning in Review or Auto - the queue is the same one."
+          checked={adopt}
+          onChange={setAdopt}
+        />
+        {adopt && (
+          <>
+            <FormSelect
+              label="Site"
+              hint="when no host group names one"
+              value={adoptSite}
+              onChange={setAdoptSite}
+              options={asOptions(sites.data?.results)}
+              noneLabel="None"
+              error={fieldErrors.adopt_site}
+            />
+            <FormSelect
+              label="Role"
+              value={adoptRole}
+              onChange={setAdoptRole}
+              options={asOptions(roles.data?.results)}
+              noneLabel="None"
+              error={fieldErrors.adopt_role}
+            />
+            <DeviceTypePicker
+              value={adoptType}
+              onChange={setAdoptType}
+              hint="when the inventory model names none"
+            />
+          </>
+        )}
       </FormSection>
 
       <FormSection title="Severity mapping" card>
