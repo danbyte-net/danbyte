@@ -53,6 +53,7 @@ export function DriftDescription({ item }: { item: SnmpDriftItem }) {
     return (
       <span className={ROW}>
         <span className="text-muted-foreground">{item.label}</span>
+        <SourceChip item={item} />
         <span className={`${MONO} line-through opacity-60`}>
           {item.intended || "-"}
         </span>
@@ -206,5 +207,18 @@ export function DriftBadge({ items }: { items: SnmpDriftItem[] }) {
         </ul>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** Who said so. Danbyte's own poll is the default and goes unmarked; anything
+ * else is named, because "Zabbix says the serial is X" and "the device told us
+ * the serial is X" are different claims, and which one you have is what
+ * decides whether to accept it. */
+function SourceChip({ item }: { item: SnmpDriftItem }) {
+  if (!item.source) return null
+  return (
+    <Badge variant="outline" className="text-[10px] capitalize">
+      {item.source}
+    </Badge>
   )
 }

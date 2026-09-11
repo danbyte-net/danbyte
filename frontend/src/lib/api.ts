@@ -5615,7 +5615,7 @@ export interface SnmpBinding {
   } | null
 }
 
-export type SnmpDriftItem =
+type SnmpDriftItemShape =
   | {
       kind: "device_field"
       field: string
@@ -5688,6 +5688,11 @@ export type SnmpDriftItem =
       observed: string
       lag_interface_id: string | null
     }
+
+/** Which observation raised a difference. Absent means Danbyte's own poll,
+ * which outranks every integration - so a source chip is shown only when
+ * something other than the device itself said it. */
+export type SnmpDriftItem = SnmpDriftItemShape & { source?: string }
 
 export interface SnmpNeighbor {
   local_port: string

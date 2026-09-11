@@ -171,8 +171,15 @@ button. Run it by hand with `python manage.py poll_hardware`.
 
 ## Drift & reconciliation {#drift-and-reconciliation}
 
-The **drift inbox** on the device page compares observed SNMP state to your
-intended configuration and lists the differences:
+The **drift inbox** on the device page compares observed state to your intended
+configuration and lists the differences. Usually that observation is Danbyte's
+own SNMP poll; an integration that already watches the device can offer one too
+(see [Zabbix](../monitoring/zabbix.md#host-inventory)), and where both speak to
+the same field **the poll wins** - walking the device is better evidence than a
+second-hand account of it. An item raised by anything other than the poll is
+labelled with the source that raised it.
+
+The differences:
 
 - **Device name** vs `sysName`.
 - **Interface present on the device but not in Danbyte** (`interface_missing`).
@@ -247,6 +254,9 @@ Click **Accept** on an item to write that observed value into intent. This is th
 Drift kinds:
 
 - **Device name** - `sysName` vs the device name.
+- **Serial** - what an integration's inventory reports vs the device's serial.
+  Danbyte's own SNMP poll does not read a serial, so this one only ever comes
+  from a source that does.
 - **New interface** - observed on the device, missing in Danbyte.
 - **Interface mismatch** - MAC, admin-status, VLAN or **speed** differs. Speed
   is compared as a number, so `1G`, `1 Gbps` and an observed 1000 Mbps are the

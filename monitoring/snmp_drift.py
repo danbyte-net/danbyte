@@ -349,6 +349,64 @@ def _norm_mac(value) -> str:
     return re.sub(r"[^0-9a-f]", "", (value or "").lower())
 
 
+#: Plain ``Device`` fields an observation may speak for: the attribute, the key
+#: it lives under in an observation's ``data``, and what to call it.
+#:
+#: Only fields that are safe to write straight back. A model or a platform is a
+#: foreign key into a catalog the operator curates, so accepting one would mint
+#: a row behind their back - those stay out until there is somewhere honest for
+#: them to land.
+DEVICE_FIELDS = (
+    ("name", "sys_name", "Device name"),
+    ("serial_number", "serial", "Serial"),
+)
+ACCEPTABLE_DEVICE_FIELDS = {field for field, _key, _label in DEVICE_FIELDS}
+
+
+def _device_field_items(device, state) -> list[dict]:
+    """Device fields this observation disagrees with. Absent is not disagreement -
+    a source that does not report a serial is saying nothing about it."""
+    data = state.data or {}
+    out = []
+    for field, key, label in DEVICE_FIELDS:
+        observed = str(data.get(key) or "").strip()
+        if not observed:
+            continue
+        intended = str(getattr(device, field, "") or "").strip()
+        if _norm(observed) == _norm(intended):
+            continue
+        out.append({
+            "kind": "device_field", "field": field, "label": label,
+            "intended": intended, "observed": observed,
+        })
+    return out
+
+
+def _indirect_items(device, tenant, direct: list[dict]) -> list[dict]:
+    """What integrations observe, minus anything the direct poll already said.
+
+    Stamped with the source that raised them, because "Zabbix says the serial
+    is X" and "this device told us the serial is X" are different claims and an
+    operator deciding whether to accept one needs to know which they have.
+    """
+    from .observations import observations_for
+
+    seen = {
+        (i.get("kind"), i.get("field"))
+        for i in direct
+        if i.get("kind") == "device_field"
+    }
+    out: list[dict] = []
+    for source, state in observations_for(device, tenant):
+        for item in _device_field_items(device, state):
+            key = (item["kind"], item["field"])
+            if key in seen:
+                continue  # the direct poll wins, and so does the first source
+            seen.add(key)
+            out.append({**item, "source": source})
+    return out
+
+
 def compute_device_drift(
     device, tenant, state=None, intended_interfaces=None, skip_absent=None
 ) -> list[dict]:
@@ -363,17 +421,16 @@ def compute_device_drift(
     # No poll, or a poll that never reached the device, is no observation -
     # comparing intent against nothing would flag every port stale (#153).
     if state is None or not state.polled_at or state.reachable is False:
-        return []
+        # An integration may still have looked. This is the case the whole
+        # registry exists for: a device Danbyte cannot poll - no route, no
+        # credentials - is precisely the one somebody else's poller knows.
+        return _indirect_items(device, tenant, [])
 
     items: list[dict] = []
 
-    # 1. Device name vs sysName.
-    sys_name = (state.data or {}).get("sys_name")
-    if sys_name and _norm(sys_name) != _norm(device.name):
-        items.append({
-            "kind": "device_field", "field": "name", "label": "Device name",
-            "intended": device.name, "observed": sys_name,
-        })
+    # 1. Device fields - the name against sysName, and anything else a source
+    #    can speak for. Shared with the indirect path below.
+    items.extend(_device_field_items(device, state))
 
     # 2. Interfaces, matched by name (case-insensitive).
     observed = [o for o in (state.interfaces or []) if o.get("name")]
@@ -645,6 +702,7 @@ def compute_device_drift(
                     "observed": f"{device.name} · {iface.name}",
                 })
 
+    items.extend(_indirect_items(device, tenant, items))
     return items
 
 
@@ -652,13 +710,18 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
     """Apply one accepted drift item to intent. Returns True on success."""
     kind = action.get("kind")
 
-    if kind == "device_field" and action.get("field") == "name":
-        observed = action.get("observed")
-        if observed:
-            device.name = observed
-            device.save(update_fields=["name"])
-            return True
-        return False
+    if kind == "device_field":
+        # An allow-list, not whatever the body names: this writes the source of
+        # truth, and a field that reached here by any other route than one
+        # Danbyte offered is not one to set.
+        field = action.get("field")
+        observed = str(action.get("observed") or "").strip()
+        if field not in ACCEPTABLE_DEVICE_FIELDS or not observed:
+            return False
+        limit = device._meta.get_field(field).max_length or 255
+        setattr(device, field, observed[:limit])
+        device.save(update_fields=[field])
+        return True
 
     if kind == "interface_missing":
         observed = action.get("observed") or {}
