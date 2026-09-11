@@ -315,14 +315,20 @@ function RuleForm({
   const canPick = (server.data?.templates.length ?? 0) > 0
   // A name already on the rule stays visible as a chip even when the server
   // no longer offers it - otherwise editing a rule would quietly drop it.
+  const serverOptions = useMemo(
+    () =>
+      (server.data?.templates ?? []).map((t) => ({ id: t.value, name: t.label })),
+    [server.data]
+  )
   const templateOptions = useMemo(() => {
-    const rows = server.data?.templates ?? []
-    const known = new Set(rows.map((t) => t.value))
-    return [
-      ...rows.map((t) => ({ id: t.value, name: t.label })),
-      ...picked.filter((p) => !known.has(p)).map((p) => ({ id: p, name: p })),
-    ]
-  }, [server.data, picked])
+    const known = new Set(serverOptions.map((o) => o.id))
+    const extra = picked
+      .filter((p) => !known.has(p))
+      .map((p) => ({ id: p, name: p }))
+    // Same array back when there is nothing extra, which is the usual case -
+    // rebuilding it on every pick churned the open list under the cursor.
+    return extra.length ? [...serverOptions, ...extra] : serverOptions
+  }, [serverOptions, picked])
 
   const save = useMutation({
     mutationFn: () =>

@@ -48,11 +48,35 @@ export function IdMultiSelect({
   footer?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  // Cleared after each pick. cmdk keeps the query, so choosing one match left
+  // the list filtered to it and the next choice looked impossible without
+  // manually emptying the box first.
+  const [query, setQuery] = useState("")
   const valueSet = useMemo(() => new Set(value), [value])
   const selected = options.filter((o) => valueSet.has(o.id))
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
     onChange(valueSet.has(id) ? value.filter((v) => v !== id) : [...value, id])
+    setQuery("")
+  }
+
+  // What the current search actually shows - so "select all" means the twelve
+  // in front of you when you have searched, not the two hundred behind them.
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options
+  }, [options, query])
+  const allShown = shown.length > 0 && shown.every((o) => valueSet.has(o.id))
+
+  const toggleAll = () => {
+    const ids = shown.map((o) => o.id)
+    onChange(
+      allShown
+        ? value.filter((v) => !ids.includes(v))
+        : [...value, ...ids.filter((id) => !valueSet.has(id))]
+    )
+    setQuery("")
+  }
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
@@ -86,32 +110,65 @@ export function IdMultiSelect({
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 p-0">
-          <Command>
+          {/* The popover stays open across picks: choosing several from one
+              catalog is the normal case, and reopening per item turned a
+              five-template rule into five searches. */}
+          <Command shouldFilter={false}>
             <CommandInput
               placeholder={searchPlaceholder}
+              value={query}
+              onValueChange={setQuery}
               className="h-8 text-xs"
             />
+            {shown.length > 1 && (
+              <div className="flex items-center justify-between border-b border-border px-2 py-1">
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  className="text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  {allShown ? "Clear" : "Select"} all {shown.length}
+                  {query.trim() ? " shown" : ""}
+                </button>
+                {value.length > 0 && (
+                  <span className="num text-[11px] text-muted-foreground">
+                    {value.length} chosen
+                  </span>
+                )}
+              </div>
+            )}
             {/* Taller than the default, and with the scrollbar showing: the
                 whole point of a long catalog is that there is more below. */}
             <CommandList className="max-h-80 [scrollbar-width:thin]!">
               <CommandEmpty>{emptyText}</CommandEmpty>
               <CommandGroup>
-                {options.map((o) => (
-                  <CommandItem
-                    key={o.id}
-                    value={o.name}
-                    onSelect={() => toggle(o.id)}
-                    className="gap-2"
-                  >
-                    <Check
-                      className={cn(
-                        "h-3.5 w-3.5",
-                        valueSet.has(o.id) ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    <span className="truncate text-xs">{o.name}</span>
-                  </CommandItem>
-                ))}
+                {shown.map((o) => {
+                  const on = valueSet.has(o.id)
+                  return (
+                    <CommandItem
+                      key={o.id}
+                      value={o.name}
+                      onSelect={() => toggle(o.id)}
+                      className="gap-2"
+                    >
+                      {/* A box, not a tick: an empty row has to look like
+                          something you can turn on, which a hidden checkmark
+                          does not. */}
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-muted-foreground/40"
+                        )}
+                      >
+                        {on && <Check className="h-2.5 w-2.5" />}
+                      </span>
+                      <span className="truncate text-xs">{o.name}</span>
+                    </CommandItem>
+                  )
+                })}
               </CommandGroup>
             </CommandList>
             {footer && (
