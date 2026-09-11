@@ -535,7 +535,13 @@ def apply_change(change: ZabbixChange) -> str:
     elif change.kind == ZabbixChange.PRUNE:
         hostid = (change.detail or {}).get("hostid")
         client.delete_hosts([hostid])
-        ZabbixHostLink.objects.filter(connection=conn, hostid=hostid).delete()
+        link = ZabbixHostLink.objects.filter(connection=conn, hostid=hostid).first()
+        if link is not None:
+            # The host is gone, so what it last said about the device is not an
+            # observation of anything - drop it rather than let it raise drift
+            # for a device nothing watches any more.
+            facts.forget(conn, link.device)
+            link.delete()
         result = f"Removed {(change.detail or {}).get('host_name')} from Zabbix."
     else:
         # "Needs a decision" is not something Danbyte can apply - resolving it

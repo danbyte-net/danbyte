@@ -231,3 +231,64 @@ class ApiTests(_Base):
         self.assertEqual(r.status_code, 200, r.content)
         self.conn.refresh_from_db()
         self.assertFalse(self.conn.read_inventory)
+
+
+class ForgetTests(_Base):
+    """A host that leaves stops having an opinion.
+
+    Facts outliving their link is how a device nothing watches any more keeps
+    raising drift forever.
+    """
+
+    def test_pruning_a_host_forgets_what_it_said(self):
+        from .models import ZabbixChange, ZabbixHostLink
+
+        facts.record(self.conn, self.device, host("50", "sw1", serialno_a="FOC123"))
+        ZabbixHostLink.objects.create(
+            tenant=self.tenant, connection=self.conn, device=self.device,
+            hostid="50", host_name="sw1", created_here=True,
+        )
+        change = ZabbixChange.objects.create(
+            tenant=self.tenant, connection=self.conn, device=self.device,
+            kind=ZabbixChange.PRUNE, detail={"hostid": "50", "host_name": "sw1"},
+        )
+        with mock.patch.object(ZabbixClient, "delete_hosts"):
+            provision.apply_change(change)
+        self.assertFalse(ZabbixHostFacts.objects.exists())
+        self.assertEqual(self.drift(), [])
+
+    def test_unlinking_through_the_api_forgets_them_too(self):
+        from django.contrib.auth import get_user_model
+
+        from .models import ZabbixHostLink
+
+        user = get_user_model().objects.create_superuser("root2", "r2@x.io", "pw")
+        self.client.force_login(user)
+        facts.record(self.conn, self.device, host("50", "sw1", serialno_a="FOC123"))
+        link = ZabbixHostLink.objects.create(
+            tenant=self.tenant, connection=self.conn, device=self.device,
+            hostid="50", host_name="sw1",
+        )
+        r = self.client.delete(f"/api/zabbix/links/{link.id}/")
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertFalse(ZabbixHostFacts.objects.exists())
+
+
+class RbacRegistryTests(_Base):
+    """Every Zabbix model with a viewset has to be in the RBAC registry, or
+    its endpoint 403s for everyone who is not a superuser."""
+
+    def test_every_zabbix_viewset_model_is_registered(self):
+        from auth_api.object_types import is_registered
+
+        from . import viewsets as vs
+
+        missing = []
+        for name in dir(vs):
+            qs = getattr(getattr(vs, name), "queryset", None)
+            model = getattr(qs, "model", None)
+            if model is None or model._meta.app_label != "zabbix":
+                continue
+            if not is_registered(model._meta.model_name):
+                missing.append(model._meta.model_name)
+        self.assertEqual(missing, [], "these 403 for every non-superuser")

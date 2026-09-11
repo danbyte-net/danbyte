@@ -136,6 +136,15 @@ class ZabbixHostLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         conn = self.request.query_params.get("connection") if self.request else None
         return qs.filter(connection_id=conn) if conn else qs
 
+    def perform_destroy(self, instance):
+        # Unlinking says "that pairing is wrong", so what the host said about
+        # this device stops being an observation of it.
+        from .facts import forget
+
+        conn, device = instance.connection, instance.device
+        super().perform_destroy(instance)
+        forget(conn, device)
+
 
 class ZabbixChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     """The review queue. Changes are proposed by a sync pass, never created
