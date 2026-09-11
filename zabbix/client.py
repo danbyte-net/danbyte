@@ -345,6 +345,48 @@ class ZabbixClient:
         }) or []
         return found[0]["proxyid"] if found else None
 
+    # ── maintenance periods ─────────────────────────────────────────────
+    def maintenances(self, maintenanceids) -> dict:
+        """The periods Danbyte wrote that still exist, by id - so one deleted
+        by hand in Zabbix is noticed and re-created rather than assumed."""
+        ids = [str(i) for i in maintenanceids if i]
+        if not ids:
+            return {}
+        rows = self.call("maintenance.get", {
+            "output": ["maintenanceid", "name", "active_since", "active_till"],
+            "maintenanceids": ids,
+            "selectHosts": ["hostid"],
+        }) or []
+        return {r["maintenanceid"]: r for r in rows}
+
+    def create_maintenance(self, payload: dict) -> str:
+        result = self.call("maintenance.create", payload) or {}
+        return str((result.get("maintenanceids") or [""])[0])
+
+    def update_maintenance(self, maintenanceid: str, payload: dict) -> None:
+        self.call("maintenance.update", {"maintenanceid": maintenanceid, **payload})
+
+    def delete_maintenances(self, maintenanceids) -> None:
+        ids = [str(i) for i in maintenanceids if i]
+        if ids:
+            self.call("maintenance.delete", ids)
+
+    # ── acknowledgements ────────────────────────────────────────────────
+    #: ``event.acknowledge`` action bits. Unacknowledge is 6.0+, which is the
+    #: floor, so no branch.
+    ACK, MESSAGE, UNACK = 2, 4, 16
+
+    def acknowledge(self, eventids, *, message: str = "", acknowledge=True) -> None:
+        ids = [str(i) for i in eventids if i]
+        if not ids:
+            return
+        action = self.ACK if acknowledge else self.UNACK
+        params = {"eventids": ids, "action": action}
+        if message:
+            params["action"] = action | self.MESSAGE
+            params["message"] = message[:2048]
+        self.call("event.acknowledge", params)
+
     def create_host(self, payload: dict) -> str:
         return self.call("host.create", payload)["hostids"][0]
 

@@ -359,6 +359,47 @@ If Danbyte cannot read the host list, it proposes **nothing** - neither
 creations nor removals. It cannot say a host is unwanted when it could not see
 what is there.
 
+## Two-way
+
+Two switches on the connection, both off, each its own decision like every
+other write.
+
+### Maintenance windows
+
+A **confirmed** maintenance or outage in Danbyte - any status that suppresses
+alerts, with at least one device on its impact list - already owns a silence.
+With **Sync maintenance windows** on, the same window is written into Zabbix as
+a **maintenance period** over the hosts this connection has linked, with data
+collection on: Zabbix keeps reading the host and suppresses the problems, so
+Danbyte keeps showing a status while neither system pages anyone.
+
+Schedule it once. Moving the window, adding a device, closing or deleting the
+event all follow on the next pass, which runs when the event changes and on
+the connection's interval regardless of provisioning. A device Zabbix does not
+know is simply not in the period. The **Maintenance windows** table on the
+Zabbix page is the receipt: each window, the hosts it covers, when it was
+written, and Zabbix's own words when a write was refused.
+
+Danbyte compares against what it last wrote, not against Zabbix: a period
+somebody adjusted by hand in Zabbix stands until the Danbyte window changes.
+One deleted by hand is noticed and written again, because the window still
+wants it. And Danbyte removes only periods it created - never one it found.
+
+### Acknowledgements
+
+With **Write acknowledgements** on, acknowledging a Danbyte alert that Zabbix
+raised acknowledges the open problems behind it - the ones the last poll saw
+on the host - with the operator's name and note, so whoever reads either
+screen sees that somebody has it. Clearing the acknowledgement clears it
+there. The alert's *ack* badge says *· Zabbix* once the write landed, and
+*· not in Zabbix* with the reason when it did not. An alert on a check Danbyte
+runs itself is never Zabbix's business.
+
+Both are jobs: the window or the acknowledgement in Danbyte is the decision
+and never waits on Zabbix, and every switch - the tenant's, the connection's -
+is re-checked when the job runs.
+
 ## Not yet
 
-Maintenance-window sync and acknowledgement write-back are planned.
+Adopting Zabbix-discovered hosts as Danbyte devices, and drift between the two
+inventories, are planned.

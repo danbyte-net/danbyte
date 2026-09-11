@@ -3252,6 +3252,7 @@ class MaintenanceEvent(TimestampedModel):
                 silence, self.silence = self.silence, None
                 type(self).objects.filter(pk=self.pk).update(silence=None)
                 silence.delete()
+            _window_changed(self)
             return
 
         from datetime import timedelta
@@ -3277,6 +3278,15 @@ class MaintenanceEvent(TimestampedModel):
             self.silence = silence
             type(self).objects.filter(pk=self.pk).update(silence=silence)
         silence.match_devices.set(device_ids)
+        _window_changed(self)
+
+
+def _window_changed(event) -> None:
+    """Tell whoever mirrors the window - sent only after the silence and its
+    devices are settled, so a listener reads the final shape, never a half."""
+    from .signals import maintenance_window_changed
+
+    maintenance_window_changed.send(sender=type(event), event=event)
 
 
 class EventImpactLevel(models.TextChoices):

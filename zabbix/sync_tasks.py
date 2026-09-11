@@ -55,17 +55,20 @@ def run_sync(connection_id: str) -> dict:
 
 
 def enqueue_due_syncs(now=None) -> dict:
-    """Queue every connection whose interval has elapsed."""
+    """Queue every connection whose interval has elapsed - the provisioning
+    pass, and separately the maintenance reconcile, each on its own stamp."""
+    from .maintenance import run_maintenance_sync
+
     now = now or timezone.now()
     queue = django_rq.get_queue("low")
-    queued = 0
-    for conn in ZabbixConnection.objects.filter(
-        enabled=True, auto_sync=True
-    ).select_related("tenant"):
+    queued = maintenance = 0
+    for conn in ZabbixConnection.objects.filter(enabled=True).select_related("tenant"):
         if not integration_enabled(conn.tenant, "zabbix"):
             continue
-        if not conn.sync_due(now):
-            continue
-        queue.enqueue(run_sync, str(conn.id), job_timeout=900)
-        queued += 1
-    return {"queued": queued}
+        if conn.auto_sync and conn.sync_due(now):
+            queue.enqueue(run_sync, str(conn.id), job_timeout=900)
+            queued += 1
+        if conn.maintenance_due(now):
+            queue.enqueue(run_maintenance_sync, str(conn.id), job_timeout=300)
+            maintenance += 1
+    return {"queued": queued, "maintenance": maintenance}

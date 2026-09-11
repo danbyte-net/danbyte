@@ -9,9 +9,27 @@ class ZabbixConfig(AppConfig):
     def ready(self):
         # Registering the engine kind is the whole point of the app being
         # installed; the driver itself is built lazily, per call.
-        from monitoring.engine_drivers import register_monitoring_engine
+        from django.db.models.signals import post_delete
 
+        from monitoring.engine_drivers import register_monitoring_engine
+        from monitoring.signals import alert_acknowledged, maintenance_window_changed
+
+        from . import hooks
         from .driver import ZabbixDriver
+
+        # Two-way: windows and acknowledgements flow back. The handlers only
+        # queue jobs, which re-check every switch at run time.
+        maintenance_window_changed.connect(
+            hooks.on_window_changed, dispatch_uid="zabbix.window_changed"
+        )
+        post_delete.connect(
+            hooks.on_event_deleted,
+            sender="monitoring.MaintenanceEvent",
+            dispatch_uid="zabbix.event_deleted",
+        )
+        alert_acknowledged.connect(
+            hooks.on_alert_acknowledged, dispatch_uid="zabbix.alert_acknowledged"
+        )
 
         register_monitoring_engine(
             "zabbix",

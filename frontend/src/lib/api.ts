@@ -3855,6 +3855,11 @@ export interface ZabbixConnection {
    * Its own switch: creating a host is inventory, handing over a community
    * string is handing a credential to another system. */
   send_snmp_credentials: boolean
+  /** Mirror maintenance and outage windows as Zabbix maintenance periods. */
+  sync_maintenance: boolean
+  last_maintenance_sync_at: string | null
+  /** Acknowledging an alert acknowledges the Zabbix problems behind it. */
+  write_acknowledgements: boolean
   created_at: string
   updated_at: string
 }
@@ -3927,6 +3932,19 @@ export interface ZabbixTestResult {
 }
 
 /** A device paired with a Zabbix host. */
+/** A Danbyte window as written into Zabbix, for one connection. */
+export interface ZabbixMaintenance {
+  id: string
+  event: { id: string; name: string; kind: "maintenance" | "outage" } | null
+  name: string
+  maintenanceid: string
+  starts_at: string
+  ends_at: string
+  host_count: number
+  synced_at: string | null
+  last_error: string
+}
+
 export interface ZabbixHostLink {
   id: string
   device: { id: string; name: string } | null
@@ -4668,6 +4686,9 @@ export interface MonitoringPolicy {
   /** Glob the address's interface name must match, e.g. "Gi0/0/*". Reads the
    * interface, not the device - an address bound to none never matches. */
   match_interface: string
+  /** Glob at least one inventory item or installed module must match, by
+   * name or part number, e.g. "*PSU*". Empty matches any. */
+  match_hardware: string
   /** Which of the matched device's IPs the checks target. Honoured by every
    * scope that can name a device - site and region included. */
   target: "all" | "interfaces" | "primary" | "oob"

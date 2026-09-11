@@ -17,6 +17,7 @@ from .models import (
     ZabbixChange,
     ZabbixConnection,
     ZabbixHostLink,
+    ZabbixMaintenance,
     ZabbixProvisionRule,
 )
 from .serializers import (
@@ -24,6 +25,7 @@ from .serializers import (
     ZabbixConnectionSerializer,
     ZabbixDefaultsSerializer,
     ZabbixHostLinkSerializer,
+    ZabbixMaintenanceSerializer,
     ZabbixProvisionRuleSerializer,
 )
 
@@ -90,6 +92,31 @@ class ZabbixConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         from .provision import sync
 
         return Response(sync(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="sync-maintenance")
+    def sync_maintenance(self, request, pk=None):
+        """Reconcile Danbyte's windows into Zabbix now. The same function the
+        timer and the workflow hooks run, so the button cannot drift."""
+        from .maintenance import reconcile
+
+        conn = self.get_object()
+        if not conn.sync_maintenance:
+            return Response({"detail": "Maintenance sync is off."}, status=400)
+        return Response(reconcile(conn))
+
+
+class ZabbixMaintenanceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+    """Read-only: a period is written by the reconcile pass, never by hand."""
+
+    integration_keys = ("zabbix",)
+    http_method_names = ["get", "head", "options"]
+    queryset = ZabbixMaintenance.objects.select_related("event").order_by("-starts_at")
+    serializer_class = ZabbixMaintenanceSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        conn = self.request.query_params.get("connection") if self.request else None
+        return qs.filter(connection_id=conn) if conn else qs
 
 
 class ZabbixHostLinkViewSet(IntegrationToggleMixin, TenantScopedViewSet):

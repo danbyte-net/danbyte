@@ -169,7 +169,11 @@ class ZabbixDriver:
         status = worst((p.get("severity") for p in open_problems), mapping)
         if open_problems:
             detail["problems"] = [
-                {"name": p.get("name"), "severity": p.get("severity")}
+                {
+                    "name": p.get("name"),
+                    "severity": p.get("severity"),
+                    "eventid": p.get("eventid"),
+                }
                 for p in open_problems[:10]
             ]
             detail["problem_count"] = len(open_problems)

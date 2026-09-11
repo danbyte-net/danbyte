@@ -7,6 +7,7 @@ from .models import (
     ZabbixChange,
     ZabbixConnection,
     ZabbixHostLink,
+    ZabbixMaintenance,
     ZabbixProvisionRule,
 )
 from .severity import DEFAULT_MAP, MAPPABLE, SEVERITIES, clean_map
@@ -131,7 +132,9 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
             "version", "supported", "last_checked_at", "last_error",
             "severity_map", "provision_mode", "prune_hosts", "prune_after_days",
             "auto_sync", "sync_interval_minutes", "last_sync_at",
-            "last_sync_summary", "send_snmp_credentials", "created_at",
+            "last_sync_summary", "send_snmp_credentials",
+            "sync_maintenance", "last_maintenance_sync_at", "write_acknowledgements",
+            "created_at",
             "updated_at",
         ]
         read_only_fields = [
@@ -176,6 +179,26 @@ class ZabbixHostLinkSerializer(serializers.ModelSerializer):
         fields = [
             "id", "device", "hostid", "host_name", "matched_by",
             "created_here", "last_seen_at", "unwanted_since",
+        ]
+        read_only_fields = fields
+
+
+class ZabbixMaintenanceSerializer(serializers.ModelSerializer):
+    event = serializers.SerializerMethodField()
+    host_count = serializers.SerializerMethodField()
+
+    def get_event(self, obj) -> dict | None:
+        e = obj.event
+        return {"id": str(e.id), "name": e.name, "kind": e.kind} if e else None
+
+    def get_host_count(self, obj) -> int:
+        return len(obj.hostids or [])
+
+    class Meta:
+        model = ZabbixMaintenance
+        fields = [
+            "id", "event", "name", "maintenanceid", "starts_at", "ends_at",
+            "host_count", "synced_at", "last_error",
         ]
         read_only_fields = fields
 

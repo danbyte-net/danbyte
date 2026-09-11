@@ -1565,7 +1565,10 @@ def alert_ack_view(request, alert_id):
     if alert is None:
         return Response({"detail": "Not found."}, status=404)
 
-    if request.query_params.get("action") == "unack":
+    from .signals import alert_acknowledged
+
+    acknowledged = request.query_params.get("action") != "unack"
+    if not acknowledged:
         alert.acknowledged_at = None
         alert.acknowledged_by = None
         alert.ack_note = ""
@@ -1575,6 +1578,9 @@ def alert_ack_view(request, alert_id):
         alert.acknowledged_by = request.user
         alert.ack_note = (request.data or {}).get("note", "")[:255]
         alert.save(update_fields=["acknowledged_at", "acknowledged_by", "ack_note"])
+    alert_acknowledged.send(
+        sender=type(alert), alert=alert, acknowledged=acknowledged, actor=request.user
+    )
     return Response(AlertSerializer(alert).data)
 
 

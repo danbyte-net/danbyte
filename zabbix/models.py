@@ -101,6 +101,18 @@ class ZabbixConnection(TimestampedModel):
     last_checked_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default="")
 
+    # ── two-way (#162 phase 5) ─────────────────────────────────────────
+    #: Mirror Danbyte's maintenance and outage windows as Zabbix maintenance
+    #: periods, for the hosts this connection has linked. Its own switch,
+    #: independent of provisioning: scheduling a window is a different act
+    #: from creating hosts, and an estate that Zabbix owns entirely may still
+    #: want Danbyte's calendar to be the one that quiets it.
+    sync_maintenance = models.BooleanField(default=False)
+    last_maintenance_sync_at = models.DateTimeField(null=True, blank=True)
+    #: Acknowledging a Danbyte alert acknowledges the Zabbix problems behind
+    #: it, with the operator's name and note. Off by default like every write.
+    write_acknowledgements = models.BooleanField(default=False)
+
     class Meta:
         ordering = ["name"]
         constraints = [
@@ -135,6 +147,19 @@ class ZabbixConnection(TimestampedModel):
         from datetime import timedelta
 
         return now - self.last_sync_at >= timedelta(
+            minutes=max(self.sync_interval_minutes, 1)
+        )
+
+    def maintenance_due(self, now) -> bool:
+        """Whether the periodic reconcile should run - same cadence as the
+        provisioning pass, its own stamp, so it runs with provisioning off."""
+        if not self.sync_maintenance:
+            return False
+        if self.last_maintenance_sync_at is None:
+            return True
+        from datetime import timedelta
+
+        return now - self.last_maintenance_sync_at >= timedelta(
             minutes=max(self.sync_interval_minutes, 1)
         )
 
@@ -341,3 +366,51 @@ class ZabbixProvisionRule(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.scope}:{self.object_id or '*'}"
+
+
+class ZabbixMaintenance(TimestampedModel):
+    """The Zabbix maintenance period a Danbyte window is mirrored as.
+
+    Stored so an update or a cancellation addresses the *same* period rather
+    than creating a second one, and so a window that left Zabbix's side (the
+    event deleted, its status closed, its devices removed) can be taken back
+    out. ``event`` is nullable on purpose: an event deleted in Danbyte leaves
+    the row behind as an orphan the next pass deletes in Zabbix - a CASCADE
+    would drop the id and strand the period.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="zabbix_maintenances"
+    )
+    connection = models.ForeignKey(
+        ZabbixConnection, on_delete=models.CASCADE, related_name="maintenances"
+    )
+    event = models.ForeignKey(
+        "monitoring.MaintenanceEvent",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="zabbix_maintenances",
+    )
+    maintenanceid = models.CharField(max_length=32)
+    #: The name as written, so a rename on either side is visible.
+    name = models.CharField(max_length=128)
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    #: Host ids the period covers, as last written.
+    hostids = models.JSONField(default=list, blank=True)
+    synced_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-starts_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "event"],
+                name="uniq_zbx_maintenance_conn_event",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} -> {self.maintenanceid}"

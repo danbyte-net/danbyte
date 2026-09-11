@@ -32,6 +32,7 @@ import { ZabbixChanges } from "@/components/zabbix/changes"
 import { ZabbixProvisionRules } from "@/components/zabbix/provision-rules"
 import { ZabbixScopeList } from "@/components/zabbix/scope-list"
 import { ZabbixLinkedHosts } from "@/components/zabbix/linked-hosts"
+import { ZabbixMaintenanceList } from "@/components/zabbix/maintenance"
 
 export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
 
@@ -164,6 +165,7 @@ function ZabbixPage() {
           <ZabbixProvisionRules connection={conn} canManage={canManage} />
           <ZabbixScopeList connection={conn} />
           <ZabbixLinkedHosts connection={conn} canManage={canManage} />
+          <ZabbixMaintenanceList connection={conn} canManage={canManage} />
         </div>
       )}
 
@@ -317,6 +319,33 @@ function ConnectionCard({
     },
   ]
 
+  const twoWay: KvRow[] = [
+    {
+      label: "Maintenance windows",
+      value: conn.sync_maintenance ? (
+        <Badge variant="success">Synced</Badge>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
+    },
+    {
+      label: "Last window sync",
+      value: conn.last_maintenance_sync_at ? (
+        <TimeCell iso={conn.last_maintenance_sync_at} />
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Acknowledgements",
+      value: conn.write_acknowledgements ? (
+        <Badge variant="success">Written</Badge>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
+    },
+  ]
+
   const syncButton = (
     <Button
       size="sm"
@@ -371,9 +400,10 @@ function ConnectionCard({
           </div>
         )}
       </div>
-      <div className="grid gap-4 p-4 lg:grid-cols-2">
+      <div className="grid gap-4 p-4 lg:grid-cols-3">
         <KvCard title="Connection" rows={connection} />
         <KvCard title="Provisioning" rows={provisioning} />
+        <KvCard title="Two-way" rows={twoWay} />
       </div>
     </section>
   )

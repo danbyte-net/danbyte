@@ -99,6 +99,12 @@ function ConnectionForm({
     connection?.send_snmp_credentials ?? false
   )
   const [prune, setPrune] = useState(connection?.prune_hosts ?? false)
+  const [syncMaint, setSyncMaint] = useState(
+    connection?.sync_maintenance ?? false
+  )
+  const [writeAcks, setWriteAcks] = useState(
+    connection?.write_acknowledgements ?? false
+  )
   const [pruneAfter, setPruneAfter] = useState(
     String(connection?.prune_after_days ?? 7)
   )
@@ -167,6 +173,8 @@ function ConnectionForm({
           send_snmp_credentials: sendCreds,
           prune_hosts: prune,
           prune_after_days: Number(pruneAfter) || 0,
+          sync_maintenance: syncMaint,
+          write_acknowledgements: writeAcks,
           severity_map: severity,
         },
       }),
@@ -291,6 +299,21 @@ function ConnectionForm({
             )}
           </>
         )}
+      </FormSection>
+
+      <FormSection title="Two-way" card>
+        <FormCheckbox
+          label="Sync maintenance windows"
+          info="A confirmed maintenance or outage in Danbyte becomes a Zabbix maintenance period over the hosts this connection has linked. Moving or closing the window follows; a period Danbyte wrote is the only kind it ever removes."
+          checked={syncMaint}
+          onChange={setSyncMaint}
+        />
+        <FormCheckbox
+          label="Write acknowledgements"
+          info="Acknowledging a Danbyte alert that Zabbix raised acknowledges the Zabbix problems behind it, with the operator's name and note. Clearing it clears it there."
+          checked={writeAcks}
+          onChange={setWriteAcks}
+        />
       </FormSection>
 
       <FormSection title="Severity mapping" card>
