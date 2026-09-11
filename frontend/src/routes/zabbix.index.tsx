@@ -7,9 +7,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type {
   Paginated,
-  ZabbixChange,
   ZabbixConnection,
-  ZabbixHostLink,
   ZabbixSyncResult,
   ZabbixTestResult,
 } from "@/lib/api"
@@ -17,14 +15,23 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { ListPageShell } from "@/components/list-page-shell"
-import { QueryError } from "@/components/query-error"
 import { EmptyState } from "@/components/empty-state"
+import { KvCard, dash } from "@/components/kv-card"
+import type { KvRow } from "@/components/kv-card"
 import { TimeCell } from "@/components/cells/time-ago"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { ZabbixConnectionDialog } from "@/components/zabbix/connection-dialog"
 import { ZabbixChanges } from "@/components/zabbix/changes"
 import { ZabbixProvisionRules } from "@/components/zabbix/provision-rules"
 import { ZabbixScopeList } from "@/components/zabbix/scope-list"
+import { ZabbixLinkedHosts } from "@/components/zabbix/linked-hosts"
 
 export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
 
@@ -34,34 +41,25 @@ export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
  * A main-nav page rather than a settings one, for the same reason the
  * virtualization sources have theirs: a connection is set up once, but the
  * review queue is worked - and the queue is the part somebody comes back to.
+ *
+ * Several connections are several servers; a strip picks which one the page
+ * is about. One connection is the common case and the strip stays hidden.
  */
 function ZabbixPage() {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const [editing, setEditing] = useState<ZabbixConnection | null>(null)
   const [adding, setAdding] = useState(false)
+  const [deleting, setDeleting] = useState<ZabbixConnection | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const connections = useQuery({
     queryKey: ["zabbix-connections"],
     queryFn: () =>
       api<Paginated<ZabbixConnection>>("/api/zabbix/connections/"),
   })
-  const conn = connections.data?.results[0]
-
-  const changes = useQuery({
-    queryKey: ["zabbix-changes", conn?.id],
-    queryFn: () =>
-      api<Paginated<ZabbixChange>>(
-        `/api/zabbix/changes/?connection=${conn!.id}`
-      ),
-    enabled: !!conn,
-  })
-  const links = useQuery({
-    queryKey: ["zabbix-links", conn?.id],
-    queryFn: () =>
-      api<Paginated<ZabbixHostLink>>(`/api/zabbix/links/?connection=${conn!.id}`),
-    enabled: !!conn,
-  })
+  const all = connections.data?.results ?? []
+  const conn = all.find((c) => c.id === selectedId) ?? all.at(0)
 
   const test = useMutation({
     mutationFn: (id: string) =>
@@ -69,12 +67,12 @@ function ZabbixPage() {
         method: "POST",
       }),
     onSuccess: (r) => {
+      // A failed test is information, not an error - the detail says what is
+      // wrong, and that is the whole point of pressing the button.
       if (r.ok) toast.success(r.detail)
       else toast.error(r.detail)
       void qc.invalidateQueries({ queryKey: ["zabbix-connections"] })
     },
-    // A failed test is information, not an error - the detail says what is
-    // wrong, and that is the whole point of pressing the button.
     onError: (e) => apiErrorToast(e),
   })
 
@@ -99,18 +97,34 @@ function ZabbixPage() {
       }
       void qc.invalidateQueries({ queryKey: ["zabbix-changes"] })
       void qc.invalidateQueries({ queryKey: ["zabbix-links"] })
+      void qc.invalidateQueries({ queryKey: ["zabbix-scope"] })
+      void qc.invalidateQueries({ queryKey: ["zabbix-connections"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: string) =>
+      api(`/api/zabbix/connections/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast.success("Connection removed")
+      setDeleting(null)
+      setSelectedId(null)
+      void qc.invalidateQueries({ queryKey: ["zabbix-connections"] })
     },
     onError: (e) => apiErrorToast(e),
   })
 
   const canManage = canDo("zabbixconnection", "change")
+  const canAdd = canDo("zabbixconnection", "add")
+  const canDelete = canDo("zabbixconnection", "delete")
 
   return (
     <ListPageShell
       title="Zabbix"
+      count={connections.data ? all.length : undefined}
       actions={
-        canDo("zabbixconnection", "add") &&
-        !conn && (
+        canAdd && (
           <Button size="sm" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" /> Add connection
           </Button>
@@ -118,201 +132,38 @@ function ZabbixPage() {
       }
       query={connections}
     >
-      {connections.isError && <QueryError error={connections.error} />}
-
       {connections.data && !conn && (
         <EmptyState title="No Zabbix connection">
-          Point Danbyte at your Zabbix frontend with a named API token, and an
-          existing Zabbix can answer for a site&apos;s monitoring status.
+          Point Danbyte at a Zabbix frontend with a named API token.
         </EmptyState>
+      )}
+
+      {all.length > 1 && conn && (
+        <SegmentedTabs
+          value={conn.id}
+          onValueChange={setSelectedId}
+          items={all.map((c) => ({ value: c.id, label: c.name }))}
+          className="mb-4"
+        />
       )}
 
       {conn && (
         <div className="flex flex-col gap-6">
-          <section className="rounded-lg border border-border bg-card">
-            <div className="flex flex-wrap items-start gap-3 border-b border-border px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">{conn.name}</h2>
-                  {conn.version ? (
-                    <Badge variant={conn.supported ? "success" : "warning"}>
-                      {conn.version}
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary">never tested</Badge>
-                  )}
-                  {!conn.enabled && <Badge variant="secondary">disabled</Badge>}
-                </div>
-                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                  {conn.api_url}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={test.isPending}
-                  onClick={() => test.mutate(conn.id)}
-                >
-                  {test.isPending ? "Testing…" : "Test"}
-                </Button>
-                {canManage && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={sync.isPending || conn.provision_mode === "off"}
-                      onClick={() => sync.mutate(conn.id)}
-                      title={
-                        conn.provision_mode === "off"
-                          ? "Provisioning is off - Danbyte writes nothing"
-                          : undefined
-                      }
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      {sync.isPending ? "Syncing…" : "Sync"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setEditing(conn)}
-                    >
-                      Edit
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <dl className="grid gap-x-8 gap-y-1.5 px-4 py-3 text-[13px] sm:grid-cols-2">
-              <Row label="API token">
-                {conn.token_set ? "set" : <Warn>not set</Warn>}
-              </Row>
-              <Row label="Engines">
-                {conn.engine_names.length ? (
-                  conn.engine_names.map((e) => e.name).join(", ")
-                ) : (
-                  <Warn>none - nothing reads through this connection</Warn>
-                )}
-              </Row>
-              <Row label="Provisioning">
-                {conn.provision_mode === "off" ? (
-                  <span className="text-muted-foreground">
-                    Off - Danbyte writes nothing
-                  </span>
-                ) : conn.provision_mode === "review" ? (
-                  "Review - proposes changes"
-                ) : (
-                  "Auto - applies changes"
-                )}
-              </Row>
-              <Row label="SNMP credentials">
-                {conn.send_snmp_credentials ? (
-                  "Sent as secret macros"
-                ) : (
-                  <span className="text-muted-foreground">
-                    Not sent - Danbyte keeps them
-                  </span>
-                )}
-              </Row>
-              <Row label="Remove hosts">
-                {conn.prune_hosts
-                  ? `After ${conn.prune_after_days} days unwanted`
-                  : "No - kept"}
-              </Row>
-              <Row label="Automatic sync">
-                {conn.provision_mode === "off" ? (
-                  <span className="text-muted-foreground">-</span>
-                ) : conn.auto_sync ? (
-                  `Every ${conn.sync_interval_minutes} min`
-                ) : (
-                  <span className="text-muted-foreground">
-                    Off - only when you press Sync
-                  </span>
-                )}
-              </Row>
-              <Row label="Last sync">
-                {conn.last_sync_at ? (
-                  <TimeCell iso={conn.last_sync_at} />
-                ) : (
-                  "never"
-                )}
-              </Row>
-              <Row label="Last tested">
-                {conn.last_checked_at ? (
-                  <TimeCell iso={conn.last_checked_at} />
-                ) : (
-                  "never"
-                )}
-              </Row>
-              {conn.last_error && (
-                <div className="sm:col-span-2">
-                  <Warn>{conn.last_error}</Warn>
-                </div>
-              )}
-            </dl>
-          </section>
-
-          <ZabbixChanges
-            connection={conn}
-            changes={changes.data?.results ?? []}
-            loading={changes.isLoading}
+          <ConnectionCard
+            conn={conn}
+            canManage={canManage}
+            canDelete={canDelete}
+            testing={test.isPending}
+            syncing={sync.isPending}
+            onTest={() => test.mutate(conn.id)}
+            onSync={() => sync.mutate(conn.id)}
+            onEdit={() => setEditing(conn)}
+            onDelete={() => setDeleting(conn)}
           />
-
+          <ZabbixChanges connection={conn} />
           <ZabbixProvisionRules connection={conn} canManage={canManage} />
-
           <ZabbixScopeList connection={conn} />
-
-          <section className="rounded-lg border border-border bg-card">
-            <div className="border-b border-border px-4 py-2.5">
-              <h2 className="text-sm font-semibold">
-                Linked hosts{" "}
-                <span className="num text-xs font-normal text-muted-foreground">
-                  {links.data?.results.length ?? 0}
-                </span>
-              </h2>
-            </div>
-            {(links.data?.results.length ?? 0) === 0 ? (
-              <p className="px-4 py-3 text-[13px] text-muted-foreground">
-                Nothing paired yet. A device gets linked the first time a sync
-                pass matches it to a Zabbix host.
-              </p>
-            ) : (
-              <div className="divide-y divide-border">
-                {links.data!.results.map((l) => (
-                  <div
-                    key={l.id}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[13px]"
-                  >
-                    <span className="min-w-0 flex-1">
-                      {l.device ? (
-                        <Link
-                          to="/devices/$id"
-                          params={{ id: l.device.id }}
-                          className="link"
-                        >
-                          {l.device.name}
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                      <span className="text-muted-foreground"> → </span>
-                      <span className="font-mono text-xs">{l.host_name}</span>
-                    </span>
-                    <Badge variant="secondary">matched by {l.matched_by}</Badge>
-                    {l.created_here && (
-                      <Badge variant="secondary">Danbyte created</Badge>
-                    )}
-                    {l.unwanted_since && (
-                      <Badge variant="warning">
-                        unwanted since <TimeCell iso={l.unwanted_since} />
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          <ZabbixLinkedHosts connection={conn} canManage={canManage} />
         </div>
       )}
 
@@ -331,25 +182,199 @@ function ZabbixPage() {
           void qc.invalidateQueries({ queryKey: ["zabbix-connections"] })
         }}
       />
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Remove ${deleting?.name ?? "this connection"}?`}
+        description="Its rules, links and proposals go with it. Nothing in Zabbix is touched."
+        confirmLabel="Remove"
+        pendingLabel="Removing…"
+        pending={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+      />
     </ListPageShell>
   )
 }
 
-function Row({
-  label,
-  children,
+/** One server: what it is, what Danbyte may do to it, and where it is at. */
+function ConnectionCard({
+  conn,
+  canManage,
+  canDelete,
+  testing,
+  syncing,
+  onTest,
+  onSync,
+  onEdit,
+  onDelete,
 }: {
-  label: string
-  children: React.ReactNode
+  conn: ZabbixConnection
+  canManage: boolean
+  canDelete: boolean
+  testing: boolean
+  syncing: boolean
+  onTest: () => void
+  onSync: () => void
+  onEdit: () => void
+  onDelete: () => void
 }) {
-  return (
-    <div className="flex items-baseline gap-3">
-      <dt className="w-32 shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="min-w-0">{children}</dd>
-    </div>
-  )
-}
+  const provisioningOff = conn.provision_mode === "off"
 
-function Warn({ children }: { children: React.ReactNode }) {
-  return <span className="text-amber-700 dark:text-amber-500">{children}</span>
+  const connection: KvRow[] = [
+    {
+      label: "Frontend",
+      value: <span className="font-mono text-xs break-all">{conn.url}</span>,
+    },
+    {
+      label: "Version",
+      value: conn.version ? (
+        <span className="inline-flex items-center gap-2">
+          <Badge variant={conn.supported ? "success" : "warning"}>
+            {conn.version}
+          </Badge>
+          {!conn.supported && (
+            <span className="text-muted-foreground">below 6.0 - unsupported</span>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Never tested</Badge>
+      ),
+    },
+    {
+      label: "API token",
+      value: conn.token_set ? (
+        <Badge variant="success">Set</Badge>
+      ) : (
+        <Badge variant="warning">Not set</Badge>
+      ),
+    },
+    {
+      label: "Engines",
+      value: conn.engine_names.length ? (
+        conn.engine_names.map((e) => e.name).join(", ")
+      ) : (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Badge variant="warning">None</Badge>
+          <Link to="/monitoring-engines" className="link">
+            Add a Zabbix engine, then link it here
+          </Link>
+        </span>
+      ),
+    },
+    {
+      label: "Last tested",
+      value: conn.last_checked_at ? (
+        <TimeCell iso={conn.last_checked_at} />
+      ) : (
+        dash
+      ),
+    },
+    ...(conn.last_error
+      ? [
+          {
+            label: "Last error",
+            value: <Badge variant="destructive">{conn.last_error}</Badge>,
+          },
+        ]
+      : []),
+  ]
+
+  const provisioning: KvRow[] = [
+    {
+      label: "Provisioning",
+      value:
+        conn.provision_mode === "off" ? (
+          <Badge variant="secondary">Off</Badge>
+        ) : conn.provision_mode === "review" ? (
+          <Badge variant="info">Review</Badge>
+        ) : (
+          <Badge variant="success">Auto</Badge>
+        ),
+    },
+    {
+      label: "Sync automatically",
+      value: provisioningOff
+        ? dash
+        : conn.auto_sync
+          ? `Every ${conn.sync_interval_minutes} min`
+          : "Off",
+    },
+    {
+      label: "SNMP credentials",
+      value: conn.send_snmp_credentials
+        ? "Sent as secret macros"
+        : "Kept in Danbyte",
+    },
+    {
+      label: "Remove hosts",
+      value: conn.prune_hosts
+        ? `After ${conn.prune_after_days} days unwanted`
+        : "Never",
+    },
+    {
+      label: "Last sync",
+      value: conn.last_sync_at ? <TimeCell iso={conn.last_sync_at} /> : dash,
+    },
+  ]
+
+  const syncButton = (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={syncing || provisioningOff}
+      onClick={onSync}
+    >
+      <RefreshCw className="h-3.5 w-3.5" />
+      {syncing ? "Syncing…" : "Sync"}
+    </Button>
+  )
+
+  return (
+    <section className="rounded-lg border border-border bg-card">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+        <h2 className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
+          {conn.name}
+          {!conn.enabled && <Badge variant="secondary">Disabled</Badge>}
+        </h2>
+        {canManage && (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={testing}
+              onClick={onTest}
+            >
+              {testing ? "Testing…" : "Test"}
+            </Button>
+            {provisioningOff ? (
+              <Tooltip>
+                {/* A disabled button takes no pointer events; the wrapper is
+                    what the tooltip listens on. */}
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>{syncButton}</span>
+                </TooltipTrigger>
+                <TooltipContent variant="panel">
+                  Provisioning is off - nothing to sync.
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              syncButton
+            )}
+            <Button size="sm" variant="outline" onClick={onEdit}>
+              Edit
+            </Button>
+            {canDelete && (
+              <Button size="sm" variant="ghost" onClick={onDelete}>
+                Remove
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="grid gap-4 p-4 lg:grid-cols-2">
+        <KvCard title="Connection" rows={connection} />
+        <KvCard title="Provisioning" rows={provisioning} />
+      </div>
+    </section>
+  )
 }

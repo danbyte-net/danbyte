@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import type { ColumnDef } from "@tanstack/react-table"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -30,6 +31,10 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { DataTable, SortHeader } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+import { RowActions } from "@/components/row-actions"
 
 /**
  * What a kind of device carries in Zabbix (#162 phase 3).
@@ -49,6 +54,7 @@ export function ZabbixProvisionRules({
   const qc = useQueryClient()
   const [editing, setEditing] = useState<ZabbixProvisionRule | null>(null)
   const [adding, setAdding] = useState(false)
+  const [deleting, setDeleting] = useState<ZabbixProvisionRule | null>(null)
 
   const rules = useQuery({
     queryKey: ["zabbix-template-rules", connection.id],
@@ -62,22 +68,120 @@ export function ZabbixProvisionRules({
     mutationFn: (id: string) =>
       api(`/api/zabbix/template-rules/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
-      toast.success("Rule removed")
-      qc.invalidateQueries({ queryKey: ["zabbix-template-rules"] })
+      toast.success("Rule deleted")
+      setDeleting(null)
+      void qc.invalidateQueries({ queryKey: ["zabbix-template-rules"] })
+      void qc.invalidateQueries({ queryKey: ["zabbix-scope"] })
     },
     onError: apiErrorToast,
   })
 
   const rows = rules.data?.results ?? []
 
+  const columns = useMemo<ColumnDef<ZabbixProvisionRule>[]>(
+    () => [
+      {
+        id: "target",
+        accessorFn: (r) => (r.scope === "tenant" ? "" : r.object_name),
+        header: ({ column }) => <SortHeader column={column} label="Applies to" />,
+        cell: ({ row }) => {
+          const r = row.original
+          return (
+            <span className="inline-flex items-center gap-2">
+              <span className="font-medium">
+                {r.scope === "tenant" ? "Every device" : r.object_name || "-"}
+              </span>
+              {r.scope !== "tenant" && (
+                <span className="text-xs text-muted-foreground">
+                  {r.scope_display}
+                </span>
+              )}
+            </span>
+          )
+        },
+      },
+      {
+        id: "templates",
+        header: "Templates",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.templates.length ? (
+            <span className="flex flex-wrap gap-1">
+              {row.original.templates.map((t) => (
+                <Badge key={t} variant="secondary">
+                  {t}
+                </Badge>
+              ))}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        id: "groups",
+        header: "Host groups",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.groups.length ? (
+            <span className="flex flex-wrap gap-1">
+              {row.original.groups.map((g) => (
+                <Badge key={g} variant="outline">
+                  {g}
+                </Badge>
+              ))}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">site</span>
+          ),
+      },
+      {
+        id: "proxy",
+        accessorKey: "proxy",
+        header: ({ column }) => <SortHeader column={column} label="Proxy" />,
+        cell: ({ row }) =>
+          row.original.proxy ? (
+            <span className="font-mono text-xs">{row.original.proxy}</span>
+          ) : (
+            <span className="text-muted-foreground">server</span>
+          ),
+      },
+      {
+        id: "enabled",
+        accessorKey: "enabled",
+        header: ({ column }) => <SortHeader column={column} label="Enabled" />,
+        cell: ({ row }) =>
+          row.original.enabled ? (
+            <Badge variant="success">On</Badge>
+          ) : (
+            <Badge variant="secondary">Off</Badge>
+          ),
+      },
+      ...(canManage
+        ? [
+            {
+              id: "actions",
+              enableHiding: false,
+              cell: ({ row }) => (
+                <RowActions
+                  onEdit={() => setEditing(row.original)}
+                  onDelete={() => setDeleting(row.original)}
+                />
+              ),
+            } as ColumnDef<ZabbixProvisionRule>,
+          ]
+        : []),
+    ],
+    [canManage]
+  )
+
   return (
     <section className="rounded-lg border border-border bg-card">
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <h2 className="text-sm font-semibold">
-          Provisioning rules{" "}
-          <span className="num text-xs font-normal text-muted-foreground">
+        <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
+          Provisioning rules
+          <Badge variant="secondary" className="num">
             {rows.length}
-          </span>
+          </Badge>
         </h2>
         {canManage && (
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
@@ -88,71 +192,18 @@ export function ZabbixProvisionRules({
       </div>
 
       {rules.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading...</p>
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">
-          No rules. A host Danbyte creates gets no template, so Zabbix shows it
-          and collects nothing, and lands in a group named after its site.
-        </p>
+        <EmptyState title="No rules" className="m-4">
+          A host Danbyte creates has no template until a rule names one.
+        </EmptyState>
       ) : (
-        <div className="divide-y divide-border">
-          {rows.map((r) => (
-            <div
-              key={r.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[13px]"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="font-medium">
-                  {r.scope === "tenant"
-                    ? "Every device"
-                    : r.object_name || r.scope_display}
-                </span>
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {r.scope === "tenant" ? "" : r.scope_display}
-                </span>
-              </span>
-              <span className="flex flex-wrap gap-1">
-                {r.templates.map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px]"
-                  >
-                    {t}
-                  </span>
-                ))}
-                {r.groups.map((g) => (
-                  <span
-                    key={g}
-                    className="rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                  >
-                    {g}
-                  </span>
-                ))}
-              </span>
-              {!r.enabled && <Badge variant="warning">Off</Badge>}
-              {canManage && (
-                <span className="flex gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title="Edit"
-                    onClick={() => setEditing(r)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title="Delete"
-                    onClick={() => remove.mutate(r.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
+        <DataTable
+          tableId="zabbix-provision-rules"
+          data={rows}
+          columns={columns}
+          flexColumn="templates"
+        />
       )}
 
       <RuleDialog
@@ -165,6 +216,14 @@ export function ZabbixProvisionRules({
             setEditing(null)
           }
         }}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title="Delete this rule?"
+        description="Hosts already provisioned keep what it gave them; new ones will not get it."
+        pending={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
       />
     </section>
   )
@@ -185,7 +244,7 @@ function RuleDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{rule ? "Edit rule" : "Add provisioning rule"}</DialogTitle>
+          <DialogTitle>{rule ? "Edit rule" : "Add rule"}</DialogTitle>
         </DialogHeader>
         {open && (
           <RuleForm
@@ -219,6 +278,7 @@ function RuleForm({
   // comma is a legal character in a template name.
   const [text, setText] = useState((rule?.templates ?? []).join("\n"))
   const [groups, setGroups] = useState((rule?.groups ?? []).join("\n"))
+  const [proxy, setProxy] = useState<string | null>(rule?.proxy || null)
   const [enabled, setEnabled] = useState(rule?.enabled ?? true)
 
   // Which scopes exist, and which catalog backs each, comes from the server -
@@ -229,10 +289,8 @@ function RuleForm({
       api<ZabbixProvisionScopes>("/api/zabbix/template-rules/scopes/"),
     staleTime: 60 * 60_000,
   })
-  const catalog = useMemo(
-    () => scopes.data?.scopes.find((s) => s.value === scope)?.catalog ?? "",
-    [scopes.data, scope]
-  )
+  const scopeInfo = scopes.data?.scopes.find((s) => s.value === scope)
+  const catalog = scopeInfo?.catalog ?? ""
   const options = useQuery({
     queryKey: ["zabbix-scope-catalog", catalog],
     queryFn: () =>
@@ -243,9 +301,9 @@ function RuleForm({
     staleTime: 10 * 60_000,
   })
 
-  // The templates the server actually has. Typing a name is how a rule gets
-  // silently refused later - Zabbix is strict, and this is the list it is
-  // strict about.
+  // The templates and proxies the server actually has. Typing a name is how a
+  // rule gets silently refused later - Zabbix is strict, and this is the list
+  // it is strict about.
   const server = useQuery({
     queryKey: ["zabbix-server-templates", connection.id],
     queryFn: () =>
@@ -288,13 +346,15 @@ function RuleForm({
               .split("\n")
               .map((l) => l.trim())
               .filter(Boolean),
+            proxy: proxy ?? "",
             enabled,
           }),
         }
       ),
     onSuccess: () => {
       toast.success(rule ? "Rule saved" : "Rule added")
-      qc.invalidateQueries({ queryKey: ["zabbix-template-rules"] })
+      void qc.invalidateQueries({ queryKey: ["zabbix-template-rules"] })
+      void qc.invalidateQueries({ queryKey: ["zabbix-scope"] })
       onDone()
     },
     onError: (err) => {
@@ -326,7 +386,7 @@ function RuleForm({
       />
       {scope !== "tenant" && (
         <FormCombobox
-          label="Which"
+          label={scopeInfo?.label ?? "Target"}
           required
           value={objectId}
           onChange={setObjectId}
@@ -340,8 +400,7 @@ function RuleForm({
       {canPick ? (
         <Field
           label="Templates"
-          required
-          hint={`${server.data?.templates.length ?? 0} on the server`}
+          info="The templates a matching host is linked to. Rules stack: a host gets the union of every rule that matches it."
           error={fieldErrors.templates}
         >
           <IdMultiSelect
@@ -351,16 +410,16 @@ function RuleForm({
             placeholder="Add a template…"
             searchPlaceholder="Search templates…"
             emptyText="No template by that name."
+            footer={`${server.data?.templates.length ?? 0} on the server`}
           />
         </Field>
       ) : (
         <FormTextarea
           label="Templates"
-          required
           hint={
             server.data?.error
-              ? "Zabbix is unreachable - type the names for now"
-              : "One name per line, exactly as Zabbix spells it"
+              ? "Zabbix unreachable - one name per line"
+              : "One name per line, as Zabbix spells it"
           }
           value={text}
           onChange={setText}
@@ -369,10 +428,21 @@ function RuleForm({
       )}
       <FormTextarea
         label="Host groups"
-        hint="One per line. Empty uses the device's site, as it always has."
+        hint="One per line. Empty uses the site."
         value={groups}
         onChange={setGroups}
         error={fieldErrors.groups}
+      />
+      <FormSelect
+        label="Proxy"
+        info="Which proxy the host is monitored through. A host has one, so the most specific rule naming a proxy wins - a site first. Danbyte sets it only on hosts still polled by the server."
+        value={proxy}
+        onChange={setProxy}
+        options={(server.data?.proxies ?? []).map((p) => ({
+          value: p.value,
+          label: p.label,
+        }))}
+        noneLabel="Zabbix server"
       />
       <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
       <FormFooter

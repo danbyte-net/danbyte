@@ -1,9 +1,15 @@
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
+import type { ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
 import type { ZabbixConnection, ZabbixScope } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { DataTable, SortHeader } from "@/components/data-table"
+import { EmptyState } from "@/components/empty-state"
+
+type ScopeRow = ZabbixScope["devices"][number]
 
 /**
  * Which devices this connection should be keeping hosts for.
@@ -25,75 +31,138 @@ export function ZabbixScopeList({
   })
   const rows = scope.data?.devices ?? []
 
+  const columns = useMemo<ColumnDef<ScopeRow>[]>(
+    () => [
+      {
+        id: "device",
+        accessorFn: (r) => r.device.name,
+        header: ({ column }) => <SortHeader column={column} label="Device" />,
+        cell: ({ row }) => (
+          <Link
+            to="/devices/$id"
+            params={{ id: row.original.device.id }}
+            className="link font-medium"
+          >
+            {row.original.device.name}
+          </Link>
+        ),
+      },
+      {
+        id: "address",
+        accessorKey: "address",
+        header: ({ column }) => <SortHeader column={column} label="Address" />,
+        cell: ({ row }) =>
+          row.original.address ? (
+            <span className="font-mono text-xs">{row.original.address}</span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        id: "site",
+        accessorKey: "site",
+        header: ({ column }) => <SortHeader column={column} label="Site" />,
+        cell: ({ row }) =>
+          row.original.site || <span className="text-muted-foreground">-</span>,
+      },
+      {
+        id: "templates",
+        header: "Templates",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.templates.length ? (
+            <span className="flex flex-wrap gap-1">
+              {row.original.templates.map((t) => (
+                <Badge key={t} variant="secondary">
+                  {t}
+                </Badge>
+              ))}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        id: "groups",
+        header: "Host groups",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="flex flex-wrap gap-1">
+            {row.original.groups.map((g) => (
+              <Badge key={g} variant="outline">
+                {g}
+              </Badge>
+            ))}
+          </span>
+        ),
+      },
+      {
+        id: "proxy",
+        accessorKey: "proxy",
+        header: ({ column }) => <SortHeader column={column} label="Proxy" />,
+        cell: ({ row }) =>
+          row.original.proxy ? (
+            <span className="font-mono text-xs">{row.original.proxy}</span>
+          ) : (
+            <span className="text-muted-foreground">server</span>
+          ),
+      },
+      {
+        id: "state",
+        accessorFn: (r) => stateOf(r).label,
+        header: ({ column }) => <SortHeader column={column} label="State" />,
+        cell: ({ row }) => {
+          const s = stateOf(row.original)
+          return <Badge variant={s.variant}>{s.label}</Badge>
+        },
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "State",
+            get: (r: ScopeRow) => stateOf(r).label,
+            formatValue: (v: string) => ({ label: v }),
+          },
+        },
+      },
+    ],
+    []
+  )
+
   return (
     <section className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-2.5">
-        <h2 className="text-sm font-semibold">
-          In scope{" "}
-          <span className="num text-xs font-normal text-muted-foreground">
+        <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
+          In scope
+          <Badge variant="secondary" className="num">
             {rows.length}
-          </span>
+          </Badge>
         </h2>
       </div>
 
       {scope.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading...</p>
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">
-          Nothing yet. A device enters scope when one of its addresses carries a
-          Zabbix check on an engine this connection reads through.
-        </p>
+        <EmptyState title="Nothing in scope" className="m-4">
+          Add a Zabbix check to a device&apos;s address and it appears here.
+        </EmptyState>
       ) : (
-        <div className="divide-y divide-border">
-          {rows.map((r) => (
-            <div
-              key={r.device.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[13px]"
-            >
-              <Link
-                to="/devices/$id"
-                params={{ id: r.device.id }}
-                className="link min-w-0 flex-1"
-              >
-                {r.device.name}
-              </Link>
-              <span className="num text-xs text-muted-foreground">
-                {r.address || "-"}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {r.site || "-"}
-              </span>
-              <span className="flex flex-wrap gap-1">
-                {r.templates.map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px]"
-                  >
-                    {t}
-                  </span>
-                ))}
-                {r.groups.map((g) => (
-                  <span
-                    key={g}
-                    className="rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                  >
-                    {g}
-                  </span>
-                ))}
-              </span>
-              <ScopeState row={r} />
-            </div>
-          ))}
-        </div>
+        <DataTable
+          tableId="zabbix-scope"
+          data={rows}
+          columns={columns}
+          flexColumn="templates"
+        />
       )}
     </section>
   )
 }
 
-/** Where this device has got to, in one badge. */
-function ScopeState({ row }: { row: ZabbixScope["devices"][number] }) {
-  if (row.pending.length > 0)
-    return <Badge variant="warning">To review</Badge>
-  if (row.hostid) return <Badge variant="success">Linked</Badge>
-  return <Badge variant="destructive">No host</Badge>
+/** Where this device has got to, as one pill. */
+function stateOf(row: ScopeRow): {
+  label: string
+  variant: "success" | "warning" | "destructive"
+} {
+  if (row.pending.length > 0) return { label: "To review", variant: "warning" }
+  if (row.hostid) return { label: "Linked", variant: "success" }
+  return { label: "No host", variant: "destructive" }
 }

@@ -62,9 +62,9 @@ export function ZabbixConnectionDialog({
 }
 
 const MODES = [
-  { value: "off", label: "Off - Danbyte writes nothing" },
-  { value: "review", label: "Review - propose changes for approval" },
-  { value: "auto", label: "Auto - apply changes" },
+  { value: "off", label: "Off" },
+  { value: "review", label: "Review" },
+  { value: "auto", label: "Auto" },
 ]
 
 function ConnectionForm({
@@ -202,7 +202,7 @@ function ConnectionForm({
           label="Frontend URL"
           required
           mono
-          hint="Danbyte appends /api_jsonrpc.php"
+          hint="/api_jsonrpc.php is appended"
           value={url}
           onChange={setUrl}
           placeholder="https://zabbix.example.com"
@@ -211,11 +211,8 @@ function ConnectionForm({
         <FormText
           label="API token"
           type="password"
-          hint={
-            connection?.token_set
-              ? "set - blank keeps the current one"
-              : "a named token from Users → API tokens; give it an expiry"
-          }
+          hint={connection?.token_set ? "Set. Blank keeps it." : undefined}
+          info="A named API token from Zabbix (Users → API tokens), with an expiry. Never a username and password."
           value={token}
           onChange={setToken}
           placeholder={connection?.token_set ? "••••••" : ""}
@@ -229,11 +226,8 @@ function ConnectionForm({
         <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
         <Field
           label="Engines"
-          hint={
-            engineOptions.length
-              ? "Which monitoring engines read through this connection"
-              : "No Zabbix engine yet - add one under Monitoring → Engines"
-          }
+          hint={engineOptions.length ? undefined : "None yet"}
+          info="The monitoring engines that read through this connection. Create one of kind Zabbix under Governance → Monitoring engines, then link it here."
           error={fieldErrors.engines}
         >
           <IdMultiSelect
@@ -249,8 +243,8 @@ function ConnectionForm({
 
       <FormSection title="Provisioning" card>
         <FormSelect
-          label="Write hosts into Zabbix"
-          hint="Reading is one decision; writing is another"
+          label="Provisioning"
+          info="Whether Danbyte writes hosts into Zabbix. Review proposes every change for approval; Auto applies them. Reading is never affected."
           value={mode}
           onChange={setMode}
           options={MODES}
@@ -260,15 +254,14 @@ function ConnectionForm({
           <>
             <FormCheckbox
               label="Sync automatically"
-              hint="Off runs only when you press Sync."
               checked={autoSync}
               onChange={setAutoSync}
             />
             {autoSync && (
               <FormText
-                label="Every"
+                label="Interval"
                 type="number"
-                hint="minutes between passes (5 - 1440)"
+                hint="minutes, 5 to 1440"
                 value={interval}
                 onChange={setInterval}
                 error={fieldErrors.sync_interval_minutes}
@@ -276,21 +269,21 @@ function ConnectionForm({
             )}
             <FormCheckbox
               label="Send SNMP credentials"
-              hint="Written as secret macros on hosts Danbyte creates"
+              info="Writes the device's SNMP community or v3 passphrases into Zabbix as secret macros, on hosts Danbyte creates. Off keeps them in Danbyte."
               checked={sendCreds}
               onChange={setSendCreds}
             />
             <FormCheckbox
-              label="Remove hosts Danbyte created and no longer needs"
-              hint="Never touches a host somebody else made."
+              label="Remove unwanted hosts"
+              info="Deletes a host Danbyte created once it has been out of scope for the grace period. A host somebody else made is never touched."
               checked={prune}
               onChange={setPrune}
             />
             {prune && (
               <FormText
-                label="Remove after"
+                label="Grace period"
                 type="number"
-                hint="days a host must stay unwanted first"
+                hint="days"
                 value={pruneAfter}
                 onChange={setPruneAfter}
                 error={fieldErrors.prune_after_days}
@@ -301,25 +294,22 @@ function ConnectionForm({
       </FormSection>
 
       <FormSection title="Severity mapping" card>
-        <p className="text-xs text-muted-foreground">
-          What a Zabbix problem means for a Danbyte status. Worst wins - one
-          Disaster among a dozen Warnings is a down host.
-        </p>
-        <div className="grid gap-2">
+        <div className="grid gap-3 @md:grid-cols-2">
           {rows.map((row) => (
-            <div key={row.value} className="flex items-center gap-3">
-              <span className="w-36 shrink-0 text-[13px]">{row.label}</span>
-              <div className="min-w-0 flex-1">
-                <FormSelect
-                  label=""
-                  value={effective(row.value)}
-                  onChange={(v) =>
-                    setSeverity((prev) => ({ ...prev, [row.value]: v ?? "up" }))
-                  }
-                  options={statusOptions}
-                />
-              </div>
-            </div>
+            <FormSelect
+              key={row.value}
+              label={row.label}
+              info={
+                row.value === "0"
+                  ? "What each Zabbix severity means for the Danbyte status. Worst wins: one Disaster among a dozen Warnings is a down host."
+                  : undefined
+              }
+              value={effective(row.value)}
+              onChange={(v) =>
+                setSeverity((prev) => ({ ...prev, [row.value]: v ?? "up" }))
+              }
+              options={statusOptions}
+            />
           ))}
         </div>
       </FormSection>

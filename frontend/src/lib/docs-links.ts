@@ -109,6 +109,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/dns-records": "features/windows-sync/",
   "/dns-names": "features/windows-sync/",
   "/virtualization-sources": "features/external-sync/",
+  "/zabbix": "monitoring/zabbix/",
   "/settings/integrations": "features/external-sync/",
   "/tags": "features/tags-and-custom-fields/",
   "/custom-fields": "features/tags-and-custom-fields/",

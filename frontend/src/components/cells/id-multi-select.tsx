@@ -33,6 +33,7 @@ export function IdMultiSelect({
   searchPlaceholder = "Search…",
   emptyText = "Nothing to pick.",
   className,
+  footer,
 }: {
   options: IdOption[]
   value: string[]
@@ -41,6 +42,10 @@ export function IdMultiSelect({
   searchPlaceholder?: string
   emptyText?: string
   className?: string
+  /** A line under the list - a count, usually. A long list scrolls, and
+   * without a visible end an operator who does not know what to search for
+   * assumes the first screen is all there is. */
+  footer?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const valueSet = useMemo(() => new Set(value), [value])
@@ -86,7 +91,9 @@ export function IdMultiSelect({
               placeholder={searchPlaceholder}
               className="h-8 text-xs"
             />
-            <CommandList>
+            {/* Taller than the default, and with the scrollbar showing: the
+                whole point of a long catalog is that there is more below. */}
+            <CommandList className="max-h-80 [scrollbar-width:thin]!">
               <CommandEmpty>{emptyText}</CommandEmpty>
               <CommandGroup>
                 {options.map((o) => (
@@ -107,6 +114,11 @@ export function IdMultiSelect({
                 ))}
               </CommandGroup>
             </CommandList>
+            {footer && (
+              <div className="border-t border-border px-2 py-1.5 text-[11px] text-muted-foreground">
+                {footer}
+              </div>
+            )}
           </Command>
         </PopoverContent>
       </Popover>
