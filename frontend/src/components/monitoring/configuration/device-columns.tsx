@@ -105,7 +105,8 @@ export function buildSitePolicyColumns({
 }: PolicyColumnContext<Site>): ColumnDef<Site>[] {
   return [
     ...buildSiteColumns<Site>({
-      omit: ["gateway_policy", "vlans", "vrfs", "tags"],
+      // Counts belong on /sites; this tab is about which policy applies.
+      omit: ["gateway_policy", "vlans", "vrfs", "tags", "devices", "vms"],
     }),
     monitoringControlColumn(controls),
   ]
