@@ -208,7 +208,7 @@ function UpdatesSettingsPage() {
   const sys = info.data
 
   return (
-    <div className="max-w-5xl space-y-4">
+    <div className="max-w-7xl space-y-4">
       {/* Current version - driven by the instant, network-free info endpoint. */}
       <SettingsHeader
         title="Updates"
@@ -301,312 +301,325 @@ docker compose -f docker-compose.prod.yml up -d`}
         )}
       </div>
 
-      {/* System info - Postgres/Django/etc, loads instantly. */}
-      <SettingsCard title="This install" layout="plain">
-        <dl className="grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
-          {(
-            [
-              ["Danbyte", sys ? `v${sys.version}` : "…"],
-              ["Commit", sys?.commit || (sys ? "not a git install" : "…")],
-              ["Python", sys?.python || "…"],
-              ["Django", sys?.django || "…"],
-              ["PostgreSQL", sys?.postgres || "-"],
-              ["Redis", sys?.redis || "-"],
-              ["Platform", sys?.platform || "…"],
-            ] as const
-          ).map(([label, value]) => (
-            <div key={label} className="contents">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-mono text-xs">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </SettingsCard>
-
-      {/* Restarting a service is not a switch, so it sits with the rest of
-          "this install" rather than on the page that holds the switches. */}
-      <ServicesSection />
-
-      {/* The certificate the host serves Danbyte on - the app drops a pair,
-          the root path unit applies it (#126). */}
-      <SiteCertificateCard />
-
-      {/* Steps this version still needs from an operator. Hidden once done. */}
-      {(notes.data?.pending.length ?? 0) > 0 && (
-        <SettingsCard
-          title="After this upgrade"
-          className="border-amber-500/40"
-          layout="plain"
-          badge={
-            <Badge variant="warning">
-              {notes.data!.pending.length === 1
-                ? "1 step"
-                : `${notes.data!.pending.length} steps`}
-            </Badge>
-          }
-          footer={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => ackNotes.mutate("all")}
-              disabled={ackNotes.isPending}
-            >
-              Mark all done
-            </Button>
-          }
-        >
-          <div className="divide-y divide-border">
-            {notes.data!.pending.map((n) => (
-              <UpgradeNoteRow
-                key={n.id}
-                note={n}
-                onDone={() => ackNotes.mutate([n.id])}
-                busy={ackNotes.isPending}
-              />
-            ))}
-          </div>
-        </SettingsCard>
-      )}
-
-      {/* Release repo config */}
-      <SettingsCard
-        title="Release source"
-        description="Blank uses the official Danbyte repo. Set a custom repo - a fork or private mirror - and a token for a private one."
-        footer={
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {save.isPending ? "Saving…" : "Save release source"}
-          </Button>
-        }
-      >
-        <Field label="Repository URL">
-          <Input
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="https://github.com/danbyte-net/danbyte"
-            className="font-mono text-xs"
-          />
-        </Field>
-        <Field
-          label={
-            settings.data?.release_repo_token_set
-              ? "GitHub token (set - leave blank to keep)"
-              : "GitHub token (private repos)"
-          }
-        >
-          <Input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="github_pat_…"
-            className="font-mono text-xs"
-          />
-        </Field>
-
-        <div className="space-y-3 border-t border-border pt-3">
-          <FormCheckbox
-            className="text-[13px] font-medium"
-            label="Airgapped install (disable update check)"
-            checked={airgapped}
-            onChange={setAirgapped}
-          />
-          <p className="text-[12px] text-muted-foreground">
-            When on, Danbyte never contacts the release repo - no version check,
-            no automatic updates. Upgrade only by uploading a bundle below. Turn
-            this on for installs with no outbound internet access.
+      {/* Two columns: what can change the version on the left, the host it
+          runs on - services, the certificate - on the right. */}
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="space-y-4">
+          <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Update
           </p>
-          <FormCheckbox
-            className="text-[13px] font-medium"
-            label="Hide the “update available” badge"
-            checked={hideBadge}
-            onChange={setHideBadge}
-            disabled={airgapped}
-          />
-          <p className="text-[12px] text-muted-foreground">
-            Keeps checking for updates (visible here) but hides the blue badge
-            in the top bar for everyone.
-          </p>
-        </div>
-
-        <div className="space-y-3 border-t border-border pt-3">
-          <FormCheckbox
-            label="Automatic updates"
-            checked={auto}
-            disabled={airgapped}
-            onChange={setAuto}
-            className="items-center gap-2 text-[13px] font-medium"
-          />
-          <p className="text-[12px] text-muted-foreground">
-            When on, Danbyte upgrades itself (and auto-updating Outposts) to the
-            newest release. Leave the window blank for real-time - upgrade as
-            soon as a release appears.
-            {airgapped && " Unavailable while airgapped mode is on."}
-          </p>
-          {auto && !airgapped && (
-            <div className="space-y-2 pl-6">
-              <FormSelect
-                label="Channel"
-                value={channel}
-                onChange={(v) => setChannel(v as "stable" | "any")}
-                options={[
-                  { value: "stable", label: "Stable only" },
-                  { value: "any", label: "Any (incl. prereleases)" },
-                ]}
-              />
-              <div className="grid grid-cols-3 gap-2">
-                <Field label="Days (blank = any)">
-                  <Input
-                    value={winDays}
-                    onChange={(e) => setWinDays(e.target.value)}
-                    placeholder="sun, sat"
-                    className="h-8 text-xs"
-                  />
-                </Field>
-                <Field label="From">
-                  <Input
-                    type="time"
-                    value={winStart}
-                    onChange={(e) => setWinStart(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </Field>
-                <Field label="To">
-                  <Input
-                    type="time"
-                    value={winEnd}
-                    onChange={(e) => setWinEnd(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </Field>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Window is your server’s local time. Blank days/times = anytime.
-              </p>
-            </div>
-          )}
-        </div>
-      </SettingsCard>
-
-      {/* Offline / airgapped: upgrade by uploading a release bundle. */}
-      <SettingsCard
-        title="Upgrade from a bundle"
-        description="For offline or tarball installs that cannot pull from the release repo."
-      >
-        <p className="text-[13px] text-muted-foreground">
-          Upload a{" "}
-          <code className="font-mono">
-            danbyte-&lt;version&gt;-linux-x86_64.tar.gz
-          </code>{" "}
-          and Danbyte checks its structure, backs up the DB, migrates, and
-          restarts onto it. One-click and automatic updates additionally verify
-          the download&apos;s published SHA-256 - an uploaded file is trusted as
-          you provided it, so only upload bundles you built or trust.
-        </p>
-        <input
-          type="file"
-          accept=".tar.gz,.tgz,application/gzip"
-          disabled={uploadUpgrade.isPending || upgrading || selfUpgradeOff}
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) uploadUpgrade.mutate(f)
-            e.currentTarget.value = ""
-          }}
-          className="block text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-muted/70"
-        />
-        {uploadUpgrade.isPending && (
-          <p className="text-[13px] text-muted-foreground">
-            Uploading bundle… the upgrade will start automatically.
-          </p>
-        )}
-      </SettingsCard>
-
-      {/* Releases + changelog */}
-      <SettingsCard title="Releases" layout="plain">
-        {updates.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : !d?.releases.length ? (
-          <p className="text-sm text-muted-foreground">
-            No releases found in the repo yet.
-          </p>
-        ) : (
-          d.releases.map((r) => (
-            <div
-              key={r.tag}
-              className={
-                "rounded-lg border p-3 " +
-                (r.is_current
-                  ? "border-primary/50 bg-primary/5"
-                  : "border-border")
+          {/* Steps this version still needs from an operator. Hidden once done. */}
+          {(notes.data?.pending.length ?? 0) > 0 && (
+            <SettingsCard
+              title="After this upgrade"
+              className="border-amber-500/40"
+              layout="plain"
+              badge={
+                <Badge variant="warning">
+                  {notes.data!.pending.length === 1
+                    ? "1 step"
+                    : `${notes.data!.pending.length} steps`}
+                </Badge>
+              }
+              footer={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => ackNotes.mutate("all")}
+                  disabled={ackNotes.isPending}
+                >
+                  Mark all done
+                </Button>
               }
             >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono font-medium">{r.tag}</span>
-                {r.name !== r.tag && (
-                  <span className="text-[13px] text-muted-foreground">
-                    {r.name}
-                  </span>
-                )}
-                {r.is_current && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    running
-                  </Badge>
-                )}
-                {r.prerelease && (
-                  <Badge variant="outline" className="text-[10px]">
-                    prerelease
-                  </Badge>
-                )}
-                {r.published_at && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {new Date(r.published_at).toLocaleDateString()}
-                  </span>
-                )}
-                {!r.is_current && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="ml-auto h-7 text-xs"
-                    disabled={upgrade.isPending || upgrading || selfUpgradeOff}
-                    onClick={() => doUpgrade(r.tag)}
-                  >
-                    Upgrade to this
-                  </Button>
-                )}
+              <div className="divide-y divide-border">
+                {notes.data!.pending.map((n) => (
+                  <UpgradeNoteRow
+                    key={n.id}
+                    note={n}
+                    onDone={() => ackNotes.mutate([n.id])}
+                    busy={ackNotes.isPending}
+                  />
+                ))}
               </div>
-              {r.body && (
-                <pre className="mt-2 max-h-52 overflow-auto rounded-md bg-muted/40 p-2 text-[12px] whitespace-pre-wrap">
-                  {r.body}
-                </pre>
+            </SettingsCard>
+          )}
+          {/* Releases + changelog */}
+          <SettingsCard title="Releases" layout="plain">
+            {updates.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : !d?.releases.length ? (
+              <p className="text-sm text-muted-foreground">
+                No releases found in the repo yet.
+              </p>
+            ) : (
+              d.releases.map((r) => (
+                <div
+                  key={r.tag}
+                  className={
+                    "rounded-lg border p-3 " +
+                    (r.is_current
+                      ? "border-primary/50 bg-primary/5"
+                      : "border-border")
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-medium">{r.tag}</span>
+                    {r.name !== r.tag && (
+                      <span className="text-[13px] text-muted-foreground">
+                        {r.name}
+                      </span>
+                    )}
+                    {r.is_current && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        running
+                      </Badge>
+                    )}
+                    {r.prerelease && (
+                      <Badge variant="outline" className="text-[10px]">
+                        prerelease
+                      </Badge>
+                    )}
+                    {r.published_at && (
+                      <span className="text-[11px] text-muted-foreground">
+                        {new Date(r.published_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    {!r.is_current && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7 text-xs"
+                        disabled={
+                          upgrade.isPending || upgrading || selfUpgradeOff
+                        }
+                        onClick={() => doUpgrade(r.tag)}
+                      >
+                        Upgrade to this
+                      </Button>
+                    )}
+                  </div>
+                  {r.body && (
+                    <pre className="mt-2 max-h-52 overflow-auto rounded-md bg-muted/40 p-2 text-[12px] whitespace-pre-wrap">
+                      {r.body}
+                    </pre>
+                  )}
+                </div>
+              ))
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Upgrading takes a DB backup, applies the release, and restarts
+              Danbyte. Post-migration rollback isn’t automatic - the backup is
+              the net.
+            </p>
+            <div className="flex items-center gap-3 border-t border-border pt-3">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={cancelStuck.isPending}
+                onClick={() => cancelStuck.mutate()}
+              >
+                {cancelStuck.isPending ? "Clearing…" : "Clear a stuck upgrade"}
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Use only if a previous upgrade was interrupted and “An upgrade
+                is already running” blocks new ones. It’s refused while an
+                upgrade is genuinely in progress.
+              </p>
+            </div>
+          </SettingsCard>
+          {/* Release repo config */}
+          <SettingsCard
+            title="Release source"
+            description="Blank uses the official Danbyte repo. Set a custom repo - a fork or private mirror - and a token for a private one."
+            footer={
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={save.isPending}
+                onClick={() => save.mutate()}
+              >
+                {save.isPending ? "Saving…" : "Save release source"}
+              </Button>
+            }
+          >
+            <Field label="Repository URL">
+              <Input
+                value={repoUrl}
+                onChange={(e) => setRepoUrl(e.target.value)}
+                placeholder="https://github.com/danbyte-net/danbyte"
+                className="font-mono text-xs"
+              />
+            </Field>
+            <Field
+              label={
+                settings.data?.release_repo_token_set
+                  ? "GitHub token (set - leave blank to keep)"
+                  : "GitHub token (private repos)"
+              }
+            >
+              <Input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="github_pat_…"
+                className="font-mono text-xs"
+              />
+            </Field>
+
+            <div className="space-y-3 border-t border-border pt-3">
+              <FormCheckbox
+                className="text-[13px] font-medium"
+                label="Airgapped install (disable update check)"
+                checked={airgapped}
+                onChange={setAirgapped}
+              />
+              <p className="text-[12px] text-muted-foreground">
+                When on, Danbyte never contacts the release repo - no version
+                check, no automatic updates. Upgrade only by uploading a bundle
+                below. Turn this on for installs with no outbound internet
+                access.
+              </p>
+              <FormCheckbox
+                className="text-[13px] font-medium"
+                label="Hide the “update available” badge"
+                checked={hideBadge}
+                onChange={setHideBadge}
+                disabled={airgapped}
+              />
+              <p className="text-[12px] text-muted-foreground">
+                Keeps checking for updates (visible here) but hides the blue
+                badge in the top bar for everyone.
+              </p>
+            </div>
+
+            <div className="space-y-3 border-t border-border pt-3">
+              <FormCheckbox
+                label="Automatic updates"
+                checked={auto}
+                disabled={airgapped}
+                onChange={setAuto}
+                className="items-center gap-2 text-[13px] font-medium"
+              />
+              <p className="text-[12px] text-muted-foreground">
+                When on, Danbyte upgrades itself (and auto-updating Outposts) to
+                the newest release. Leave the window blank for real-time -
+                upgrade as soon as a release appears.
+                {airgapped && " Unavailable while airgapped mode is on."}
+              </p>
+              {auto && !airgapped && (
+                <div className="space-y-2 pl-6">
+                  <FormSelect
+                    label="Channel"
+                    value={channel}
+                    onChange={(v) => setChannel(v as "stable" | "any")}
+                    options={[
+                      { value: "stable", label: "Stable only" },
+                      { value: "any", label: "Any (incl. prereleases)" },
+                    ]}
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    <Field label="Days (blank = any)">
+                      <Input
+                        value={winDays}
+                        onChange={(e) => setWinDays(e.target.value)}
+                        placeholder="sun, sat"
+                        className="h-8 text-xs"
+                      />
+                    </Field>
+                    <Field label="From">
+                      <Input
+                        type="time"
+                        value={winStart}
+                        onChange={(e) => setWinStart(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </Field>
+                    <Field label="To">
+                      <Input
+                        type="time"
+                        value={winEnd}
+                        onChange={(e) => setWinEnd(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </Field>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Window is your server’s local time. Blank days/times =
+                    anytime.
+                  </p>
+                </div>
               )}
             </div>
-          ))
-        )}
-        <p className="text-[11px] text-muted-foreground">
-          Upgrading takes a DB backup, applies the release, and restarts
-          Danbyte. Post-migration rollback isn’t automatic - the backup is the
-          net.
-        </p>
-        <div className="flex items-center gap-3 border-t border-border pt-3">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            disabled={cancelStuck.isPending}
-            onClick={() => cancelStuck.mutate()}
+          </SettingsCard>
+          {/* Offline / airgapped: upgrade by uploading a release bundle. */}
+          <SettingsCard
+            title="Upgrade from a bundle"
+            description="For offline or tarball installs that cannot pull from the release repo."
           >
-            {cancelStuck.isPending ? "Clearing…" : "Clear a stuck upgrade"}
-          </Button>
-          <p className="text-[11px] text-muted-foreground">
-            Use only if a previous upgrade was interrupted and “An upgrade is
-            already running” blocks new ones. It’s refused while an upgrade is
-            genuinely in progress.
-          </p>
+            <p className="text-[13px] text-muted-foreground">
+              Upload a{" "}
+              <code className="font-mono">
+                danbyte-&lt;version&gt;-linux-x86_64.tar.gz
+              </code>{" "}
+              and Danbyte checks its structure, backs up the DB, migrates, and
+              restarts onto it. One-click and automatic updates additionally
+              verify the download&apos;s published SHA-256 - an uploaded file is
+              trusted as you provided it, so only upload bundles you built or
+              trust.
+            </p>
+            <input
+              type="file"
+              accept=".tar.gz,.tgz,application/gzip"
+              disabled={uploadUpgrade.isPending || upgrading || selfUpgradeOff}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) uploadUpgrade.mutate(f)
+                e.currentTarget.value = ""
+              }}
+              className="block text-sm file:mr-3 file:rounded-md file:border file:border-border file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-muted/70"
+            />
+            {uploadUpgrade.isPending && (
+              <p className="text-[13px] text-muted-foreground">
+                Uploading bundle… the upgrade will start automatically.
+              </p>
+            )}
+          </SettingsCard>
         </div>
-      </SettingsCard>
+        <div className="space-y-4">
+          <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            This install
+          </p>
+          {/* System info - Postgres/Django/etc, loads instantly. */}
+          <SettingsCard title="This install" layout="plain">
+            <dl className="grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
+              {(
+                [
+                  ["Danbyte", sys ? `v${sys.version}` : "…"],
+                  ["Commit", sys?.commit || (sys ? "not a git install" : "…")],
+                  ["Python", sys?.python || "…"],
+                  ["Django", sys?.django || "…"],
+                  ["PostgreSQL", sys?.postgres || "-"],
+                  ["Redis", sys?.redis || "-"],
+                  ["Platform", sys?.platform || "…"],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="font-mono text-xs">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </SettingsCard>
+          {/* Restarting a service is not a switch, so it sits with the rest of
+              "this install" rather than on the page that holds the switches. */}
+          <ServicesSection />
+          {/* The certificate the host serves Danbyte on - the app drops a pair,
+              the root path unit applies it (#126). */}
+          <SiteCertificateCard />
+        </div>
+      </div>
 
       {/* Confirm before upgrading. */}
       <Dialog

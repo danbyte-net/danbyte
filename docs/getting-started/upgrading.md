@@ -23,12 +23,17 @@ current `/opt` layout.
 ## Upgrade to a new version
 
 !!! info "The Updates page loads instantly"
-    **Settings → Updates** shows the running version and an environment table
-    (Python, Django, PostgreSQL, Redis, platform) from a local, network-free
-    check - so it renders immediately even on an airgapped or offline box. The
-    release-repo check (the list of available versions) runs separately; if it's
-    slow, failing, or disabled, the version and environment still show right
-    away.
+    **Settings → Updates** is two columns on a wide screen. **Update** holds
+    everything that changes the version: the after-upgrade steps, the
+    releases with their notes and the upgrade button, the release source,
+    the bundle upload. **This install** holds the host it runs on: the
+    environment table (Python, Django, PostgreSQL, Redis, platform), the
+    services and their restart buttons, and the site certificate. The
+    running version and the environment come from a local, network-free
+    check - so the page renders immediately even on an airgapped or offline
+    box. The release-repo check (the list of available versions) runs
+    separately; if it's slow, failing, or disabled, the version and
+    environment still show right away.
 
 !!! info "The top-bar update badge"
     When a newer release exists, a blue **Update available** badge appears
