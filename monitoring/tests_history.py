@@ -301,9 +301,17 @@ class ScopedListsTests(_Base):
         body = self.get(f"/api/monitoring/ips/{self.ip_a.id}/timeline/", days=1)
         self.assertEqual(len(body["checks"]), 2)
         self.assertEqual([s["status"] for s in body["rollup"]], ["unknown", "down"])
+        # The window's figures ride along, for the whole address and per check.
+        self.assertEqual(
+            set(body["summary"]), {"uptime_pct", "incidents", "down_seconds", "mttr_seconds"}
+        )
+        self.assertEqual(body["summary"]["uptime_pct"], 0.0)
+        self.assertTrue(all("uptime_pct" in c for c in body["checks"]))
         body = self.get(f"/api/monitoring/devices/{self.dev_a.id}/timeline/", days=1)
         self.assertEqual(len(body["ips"]), 1)
         self.assertEqual(body["ips"][0]["rollup"][-1]["status"], "down")
+        self.assertIn("uptime_pct", body["ips"][0])
+        self.assertIn("summary", body)
         r = self.client.post(
             "/api/monitoring/timeline/", {"states": [str(st.id)], "days": 1}, format="json"
         )

@@ -9,7 +9,7 @@ export function FastBadge({ intervalMs }: { intervalMs: number }) {
       ? `${Number.isInteger(intervalMs / 1000) ? intervalMs / 1000 : (intervalMs / 1000).toFixed(1)} s`
       : `${intervalMs} ms`
   return (
-    <Badge variant="outline" className="gap-1 text-[10px]">
+    <Badge variant="outline">
       <Zap className="h-3 w-3" />
       {label}
     </Badge>

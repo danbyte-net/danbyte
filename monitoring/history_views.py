@@ -23,7 +23,7 @@ from .charts import (
     transition_top,
     viewer_tz,
 )
-from .engines import source_of
+from .engines import executing_engine, source_of
 from .history import (
     apply_transition_filters,
     facet_counts,
@@ -32,7 +32,7 @@ from .history import (
     window,
 )
 from .models import CheckResult, CheckState, StateTransition
-from .timeline import merge_worst, segments_for_pairs
+from .timeline import integrate, merge_worst, segments_for_pairs
 from .views import (
     _get_ip,
     _scope_ip_keyed,
@@ -182,6 +182,23 @@ def prefix_transitions_view(request, prefix_id):
 
 # ─── timelines ───────────────────────────────────────────────────────────
 
+_UP = {"up", "degraded"}
+_DOWN = {"down", "stale"}
+
+
+def _summary(segments) -> dict:
+    """The window's figures from a run of segments - the same arithmetic the
+    SLA card used, so the History panel can carry them instead."""
+    t = integrate(segments, up=_UP, down=_DOWN)
+    measured = t["up"] + t["down"]
+    return {
+        "uptime_pct": round(100.0 * t["up"] / measured, 3) if measured > 0 else None,
+        "incidents": t["incidents"],
+        "down_seconds": round(t["down"]),
+        "mttr_seconds": round(t["down"] / t["incidents"], 1) if t["incidents"] else None,
+    }
+
+
 def _check_rows(tenant_id, states, since, until) -> tuple[list, list]:
     """Per-check segments for a set of states, plus their merged rollup."""
     pairs = [(s.target_ip_id, s.template_id) for s in states]
@@ -195,8 +212,11 @@ def _check_rows(tenant_id, states, since, until) -> tuple[list, list]:
             "template_id": str(s.template_id),
             "template_name": s.template.name if s.template_id else None,
             "kind": s.kind,
-            "source": source_of(s.engine if s.engine_id else None),
+            # Who *runs* it, not what it is bound to: a ping on a
+            # Zabbix-bound address is the core's own.
+            "source": source_of(executing_engine(s)),
             "segments": segs,
+            **_summary(segs),
         })
     return checks, merge_worst([c["segments"] for c in checks])
 
@@ -217,6 +237,7 @@ def ip_timeline_view(request, ip_id):
     checks, rollup = _check_rows(tenant.id, states, since, until)
     return Response({
         "since": since, "until": until, "rollup": rollup, "checks": checks,
+        "summary": _summary(rollup),
         "days": per_day(rollup, since, until, viewer_tz(request, tenant)),
     })
 
@@ -246,13 +267,16 @@ def device_timeline_view(request, device_id):
     for c in checks:
         per_ip.setdefault(c["target_ip"]["id"], {"ip": c["target_ip"], "lists": []})
         per_ip[c["target_ip"]["id"]]["lists"].append(c["segments"])
-    ips = [
-        {"id": v["ip"]["id"], "ip_address": v["ip"]["ip_address"],
-         "rollup": merge_worst(v["lists"])}
-        for v in per_ip.values()
-    ]
+    ips = []
+    for v in per_ip.values():
+        merged = merge_worst(v["lists"])
+        ips.append({
+            "id": v["ip"]["id"], "ip_address": v["ip"]["ip_address"],
+            "rollup": merged, **_summary(merged),
+        })
     return Response({
         "since": since, "until": until, "rollup": rollup, "ips": ips, "checks": checks,
+        "summary": _summary(rollup),
         "days": per_day(rollup, since, until, viewer_tz(request, tenant)),
     })
 

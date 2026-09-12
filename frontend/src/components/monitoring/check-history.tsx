@@ -1,8 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type CheckResultRow } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { CheckResultRow } from "@/lib/api"
+import { TimeCell } from "@/components/cells/time-ago"
+import { SimpleTable } from "@/components/ui/simple-table"
+import type { SimpleColumn } from "@/components/ui/simple-table"
 import { CheckStatusBadge } from "./status-badge"
-import { SourceBadge } from "./source-badge"
+import { SourceBadge, SourceHeader } from "./source-badge"
 
 interface HistoryResp {
   count: number
@@ -36,41 +40,48 @@ export function CheckHistory({
       </p>
     )
 
-  return (
-    <table className="w-full text-left text-xs">
-      <thead className="text-[10px] tracking-[0.06em] text-muted-foreground uppercase">
-        <tr>
-          <th className="py-1 pr-3 font-medium">When</th>
-          <th className="py-1 pr-3 font-medium">Status</th>
-          <th className="py-1 pr-3 font-medium">Source</th>
-          <th className="py-1 pr-3 font-medium">Latency</th>
-          <th className="py-1 font-medium">Detail</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-border">
-        {rows.map((r) => (
-          <tr key={r.id}>
-            <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">
-              {new Date(r.timestamp).toLocaleString()}
-            </td>
-            <td className="py-1 pr-3">
-              <CheckStatusBadge status={r.status} />
-            </td>
-            <td className="py-1 pr-3">
-              <SourceBadge source={r.source} engine={r.engine} />
-            </td>
-            <td className="num py-1 pr-3 text-muted-foreground">
-              {r.latency_ms != null ? `${r.latency_ms.toFixed(1)} ms` : "-"}
-            </td>
-            <td className="py-1 font-mono text-[11px] text-muted-foreground">
-              {detailSummary(r.detail)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
+  return <SimpleTable columns={COLUMNS} data={rows} getRowKey={(r) => r.id} />
 }
+
+// The shared table primitive, like every other embedded list - a raw
+// <table> here was the one place on the tab that drew its own rows.
+const COLUMNS: SimpleColumn<CheckResultRow>[] = [
+  {
+    id: "when",
+    header: "When",
+    cell: (r) => <TimeCell iso={r.timestamp} />,
+  },
+  {
+    id: "status",
+    header: "Status",
+    cell: (r) => <CheckStatusBadge status={r.status} />,
+  },
+  {
+    id: "source",
+    header: <SourceHeader />,
+    cell: (r) => <SourceBadge source={r.source} engine={r.engine} />,
+  },
+  {
+    id: "latency",
+    header: "Latency",
+    align: "right",
+    cell: (r) => (
+      <span className="num text-muted-foreground">
+        {r.latency_ms != null ? `${r.latency_ms.toFixed(1)} ms` : "-"}
+      </span>
+    ),
+  },
+  {
+    id: "detail",
+    header: "Detail",
+    flex: true,
+    cell: (r) => (
+      <span className="block truncate text-muted-foreground">
+        {detailSummary(r.detail)}
+      </span>
+    ),
+  },
+]
 
 /** One line for a result's or a change's detail - the error if there was
  * one, else the few fields worth a glance. An external system's payload

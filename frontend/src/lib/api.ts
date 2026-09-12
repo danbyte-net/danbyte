@@ -4473,12 +4473,6 @@ export interface CheckResultRow {
   source: CheckSource
 }
 
-export interface SparkPoint {
-  timestamp: string
-  status: CheckStatus
-  latency_ms: number | null
-}
-
 export interface EffectiveCheckState {
   status: CheckStatus
   since: string | null
@@ -4528,7 +4522,6 @@ export interface EffectiveCheck {
   overrides: AssignmentOverrides
   template_defaults: { interval_seconds: number; rise: number; fall: number }
   state: EffectiveCheckState | null
-  sparkline: SparkPoint[]
 }
 
 export interface IpChecksResponse extends ExternalRollup {
@@ -5233,7 +5226,16 @@ export function transitionsQuery(f: TransitionFilters): string {
   return qs ? `?${qs}` : ""
 }
 
-export interface TimelineCheck {
+/** The window's figures from a run of segments - the same arithmetic as
+ * the uptime report. `uptime_pct` is null when nothing was measured. */
+export interface WindowSummary {
+  uptime_pct: number | null
+  incidents: number
+  down_seconds: number
+  mttr_seconds: number | null
+}
+
+export interface TimelineCheck extends WindowSummary {
   state_id: string
   target_ip: { id: string; ip_address: string }
   template_id: string
@@ -5258,6 +5260,7 @@ export interface IpTimeline {
   until: string
   rollup: StatusSegment[]
   checks: TimelineCheck[]
+  summary: WindowSummary
   days: DayAvailability[]
 }
 
@@ -5280,7 +5283,11 @@ export interface LatencyResponse {
 }
 
 export interface DeviceTimeline extends IpTimeline {
-  ips: { id: string; ip_address: string; rollup: StatusSegment[] }[]
+  ips: ({
+    id: string
+    ip_address: string
+    rollup: StatusSegment[]
+  } & WindowSummary)[]
 }
 
 export interface TimelineBatch {

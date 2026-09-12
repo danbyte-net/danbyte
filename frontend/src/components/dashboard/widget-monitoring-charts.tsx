@@ -117,7 +117,12 @@ export function LatencyWeek({
           tickMargin={6}
           minTickGap={32}
         />
-        <YAxis tickLine={false} axisLine={false} width={40} unit=" ms" />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={56}
+          tickFormatter={(v: number) => `${v} ms`}
+        />
         <ChartTooltip
           cursor={false}
           content={<ChartTooltipContent indicator="line" />}

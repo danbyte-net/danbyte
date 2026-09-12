@@ -34,6 +34,7 @@ import { IdMultiSelect } from "@/components/cells/id-multi-select"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
 
 /**
@@ -83,7 +84,9 @@ export function ZabbixProvisionRules({
       {
         id: "target",
         accessorFn: (r) => (r.scope === "tenant" ? "" : r.object_name),
-        header: ({ column }) => <SortHeader column={column} label="Applies to" />,
+        header: ({ column }) => (
+          <SortHeader column={column} label="Applies to" />
+        ),
         cell: ({ row }) => {
           const r = row.original
           return (
@@ -175,26 +178,22 @@ export function ZabbixProvisionRules({
   )
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
-          Provisioning rules
-          <Badge variant="secondary" className="num">
-            {rows.length}
-          </Badge>
-        </h2>
-        {canManage && (
+    <Section
+      title="Provisioning rules"
+      count={rows.length}
+      actions={
+        canManage && (
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" />
             Add rule
           </Button>
-        )}
-      </div>
-
+        )
+      }
+    >
       {rules.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <EmptyState title="No rules" className="m-4">
+        <EmptyState title="No rules">
           A host Danbyte creates has no template until a rule names one.
         </EmptyState>
       ) : (
@@ -225,7 +224,7 @@ export function ZabbixProvisionRules({
         pending={remove.isPending}
         onConfirm={() => deleting && remove.mutate(deleting.id)}
       />
-    </section>
+    </Section>
   )
 }
 
@@ -317,7 +316,10 @@ function RuleForm({
   // no longer offers it - otherwise editing a rule would quietly drop it.
   const serverOptions = useMemo(
     () =>
-      (server.data?.templates ?? []).map((t) => ({ id: t.value, name: t.label })),
+      (server.data?.templates ?? []).map((t) => ({
+        id: t.value,
+        name: t.label,
+      })),
     [server.data]
   )
   const templateOptions = useMemo(() => {

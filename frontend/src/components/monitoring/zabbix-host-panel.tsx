@@ -5,6 +5,7 @@ import { ApiError, api } from "@/lib/api"
 import type { ZabbixHostStatus } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { InfoTip } from "@/components/ui/info-tip"
+import { Section } from "@/components/ui/section"
 import { TimeCell } from "@/components/cells/time-ago"
 import { AvailabilityList } from "./external-detail"
 import { SeverityPill, zabbixHostUrl } from "./external-status"
@@ -59,22 +60,21 @@ export function ZabbixHostPanel({
     )
   }
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex items-center gap-1.5 px-3 py-2">
-        <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-          Zabbix
-        </h3>
+    <Section
+      title="Zabbix"
+      badge={
         <InfoTip>
           What Zabbix reports about this host. It does not change Danbyte&apos;s
           status.
         </InfoTip>
-      </div>
-      <div className="divide-y divide-border border-t border-border">
+      }
+    >
+      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
         {rows.map((r) => (
           <HostRow key={r.connection.id + r.host.hostid} row={r} />
         ))}
       </div>
-    </section>
+    </Section>
   )
 }
 
@@ -119,15 +119,13 @@ function HostRow({ row }: { row: ZabbixHostStatus }) {
   return (
     <div className="space-y-2 px-3 py-2.5 text-[12px]">
       <div className="flex flex-wrap items-center gap-2">
-        {s.worst_status ? (
-          <CheckStatusBadge status={s.worst_status} />
-        ) : (
-          <Badge variant="secondary">Not read yet</Badge>
-        )}
+        <CheckStatusBadge status={s.worst_status ?? "unknown"} />
         <span className="font-mono font-medium">{row.host.name}</span>
-        <span className="text-muted-foreground">{row.connection.name}</span>
-        {s.disabled && <Badge variant="secondary">Disabled</Badge>}
-        {s.maintenance && <Badge variant="secondary">Maintenance</Badge>}
+        <span className="text-muted-foreground">
+          {row.connection.name}
+          {s.disabled && " · disabled in Zabbix"}
+          {s.maintenance && " · in maintenance"}
+        </span>
         <span className="ml-auto inline-flex items-center gap-3 text-[11px] text-muted-foreground">
           {s.polled_at && (
             <span className="inline-flex items-center gap-1">

@@ -18,6 +18,7 @@ import {
 import { TimeCell } from "@/components/cells/time-ago"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Section } from "@/components/ui/section"
 
 /**
  * Danbyte's windows as Zabbix sees them.
@@ -45,10 +46,14 @@ export function ZabbixMaintenanceList({
 
   const sync = useMutation({
     mutationFn: () =>
-      api<{ created: number; updated: number; deleted: number; failed: number }>(
-        `/api/zabbix/connections/${connection.id}/sync-maintenance/`,
-        { method: "POST" }
-      ),
+      api<{
+        created: number
+        updated: number
+        deleted: number
+        failed: number
+      }>(`/api/zabbix/connections/${connection.id}/sync-maintenance/`, {
+        method: "POST",
+      }),
     onSuccess: (r) => {
       const parts = [
         r.created && `${r.created} created`,
@@ -94,7 +99,9 @@ export function ZabbixMaintenanceList({
         cell: ({ row }) =>
           row.original.event ? (
             <Badge
-              variant={row.original.event.kind === "outage" ? "warning" : "secondary"}
+              variant={
+                row.original.event.kind === "outage" ? "warning" : "secondary"
+              }
             >
               {row.original.event.kind === "outage" ? "Outage" : "Maintenance"}
             </Badge>
@@ -166,15 +173,12 @@ export function ZabbixMaintenanceList({
   )
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
-        <h2 className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
-          Maintenance windows
-          <Badge variant="secondary" className="num">
-            {rows.length}
-          </Badge>
-        </h2>
-        {canManage && connection.sync_maintenance && (
+    <Section
+      title="Maintenance windows"
+      count={rows.length}
+      actions={
+        canManage &&
+        connection.sync_maintenance && (
           <Button
             size="sm"
             variant="outline"
@@ -184,13 +188,13 @@ export function ZabbixMaintenanceList({
             <RefreshCw className="h-3.5 w-3.5" />
             {sync.isPending ? "Syncing…" : "Sync"}
           </Button>
-        )}
-      </div>
-
+        )
+      }
+    >
       {rows_.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <EmptyState title="No windows" className="m-4">
+        <EmptyState title="No windows">
           {connection.sync_maintenance
             ? "A confirmed maintenance or outage with a linked device is written here."
             : "Maintenance sync is off."}
@@ -203,7 +207,7 @@ export function ZabbixMaintenanceList({
           flexColumn="event"
         />
       )}
-    </section>
+    </Section>
   )
 }
 

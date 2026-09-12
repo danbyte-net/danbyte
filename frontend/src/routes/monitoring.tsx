@@ -580,8 +580,8 @@ function MonitoringPage() {
                         <YAxis
                           tickLine={false}
                           axisLine={false}
-                          width={40}
-                          unit=" ms"
+                          width={56}
+                          tickFormatter={(v: number) => `${v} ms`}
                         />
                         <ChartTooltip
                           cursor={false}
@@ -683,35 +683,53 @@ function MonitoringPage() {
                   {!mounted || statusData.length === 0 ? (
                     <Placeholder h="h-[250px]" hint="No checks yet." />
                   ) : (
-                    <ChartContainer
-                      config={statusConfig}
-                      className="mx-auto aspect-square max-h-[250px]"
-                    >
-                      <PieChart>
-                        <ChartTooltip
-                          cursor={false}
-                          content={<ChartTooltipContent hideLabel />}
-                        />
-                        <Pie
-                          data={statusData}
-                          dataKey="value"
-                          nameKey="status"
-                          innerRadius={60}
-                          strokeWidth={5}
-                        >
-                          <Label content={<TotalLabel total={total} />} />
-                        </Pie>
-                        {/* Wrapping flex, every row centred on its own: a
-                            two-column grid read as off-centre because its
-                            right column was as wide as its widest label, so
-                            "Up" trailed white space and the second row sat
-                            left of the first. */}
-                        <ChartLegend
-                          content={<ChartLegendContent nameKey="status" />}
-                          className="-translate-y-2 flex-wrap gap-x-4 gap-y-1"
-                        />
-                      </PieChart>
-                    </ChartContainer>
+                    <>
+                      {/* The legend lives outside the chart on purpose. A
+                          recharts Legend inside the PieChart shrinks the
+                          plot area, the pie moves up, and the centre label
+                          keeps the un-shrunk centre - so "22 checks" sat
+                          below the ring. Outside, the ring, its label and
+                          the legend each centre in their own box. */}
+                      <ChartContainer
+                        config={statusConfig}
+                        className="mx-auto aspect-square max-h-[220px]"
+                      >
+                        <PieChart>
+                          <ChartTooltip
+                            cursor={false}
+                            content={<ChartTooltipContent hideLabel />}
+                          />
+                          <Pie
+                            data={statusData}
+                            dataKey="value"
+                            nameKey="status"
+                            innerRadius={60}
+                            strokeWidth={5}
+                          >
+                            <Label content={<TotalLabel total={total} />} />
+                          </Pie>
+                        </PieChart>
+                      </ChartContainer>
+                      <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 pb-3 text-xs">
+                        {statusData.map((s) => (
+                          <li
+                            key={s.status}
+                            className="flex items-center gap-1.5 text-muted-foreground"
+                          >
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                              style={{
+                                backgroundColor: statusColor(s.status, labels),
+                              }}
+                            />
+                            {statusLabel(s.status, labels)}
+                            <span className="num text-foreground">
+                              {s.value}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   )}
                 </CardContent>
               </Card>

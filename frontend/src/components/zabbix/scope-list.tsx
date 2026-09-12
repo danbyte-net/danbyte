@@ -8,6 +8,7 @@ import type { ZabbixConnection, ZabbixScope } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Section } from "@/components/ui/section"
 
 type ScopeRow = ZabbixScope["devices"][number]
 
@@ -129,20 +130,11 @@ export function ZabbixScopeList({
   )
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="border-b border-border px-4 py-2.5">
-        <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
-          In scope
-          <Badge variant="secondary" className="num">
-            {rows.length}
-          </Badge>
-        </h2>
-      </div>
-
+    <Section title="In scope" count={rows.length}>
       {scope.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <EmptyState title="Nothing in scope" className="m-4">
+        <EmptyState title="Nothing in scope">
           Add a Zabbix check to a device&apos;s address and it appears here.
         </EmptyState>
       ) : (
@@ -153,7 +145,7 @@ export function ZabbixScopeList({
           flexColumn="templates"
         />
       )}
-    </section>
+    </Section>
   )
 }
 

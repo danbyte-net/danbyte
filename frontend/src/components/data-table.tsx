@@ -360,6 +360,12 @@ export function DataTable<T>({
         | undefined,
   })
 
+  // Footer figures, in one place for the pager's "is there anything to page"
+  // question and the row count's grammar.
+  const rowTotal =
+    serverPagination?.totalRows ?? table.getFilteredRowModel().rows.length
+  const pageTotal = serverPagination?.pageCount ?? table.getPageCount()
+
   const selectedCount = Object.keys(rowSelection).length
 
   // Bubble the actual row originals up so parents don't have to map keys.
@@ -677,85 +683,94 @@ export function DataTable<T>({
           selector persists to Settings → Preferences). In `serverPagination`
           mode the same row drives the server's page instead, and the
           rows-per-page control is dropped (the caller owns the page size). */}
-      {(paged || serverPagination) && (
-        <div className="flex items-center justify-between gap-2 text-xs whitespace-nowrap text-muted-foreground">
-          <span className="num truncate">
-            {serverPagination?.totalRows ??
-              table.getFilteredRowModel().rows.length}{" "}
-            rows
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            {!serverPagination && (
-              <span className="flex items-center gap-1">
-                Rows
-                <Select
-                  value={String(prefPageSize)}
-                  onValueChange={(v) => {
-                    const n = Number(v)
-                    table.setPageSize(n)
-                    setPref("page_size", n)
-                  }}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    className="h-6 w-20 text-xs"
-                    aria-label="Rows"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[25, 50, 100, 250, 1000].map((n) => (
-                      <SelectItem key={n} value={String(n)}>
-                        {n}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </span>
-            )}
-            <span className="num">
-              Page{" "}
-              {serverPagination?.page ??
-                table.getState().pagination.pageIndex + 1}{" "}
-              of {serverPagination?.pageCount ?? table.getPageCount()}
+      {/* An embedded, server-paged table with one page has nothing to
+          page and nothing to say - "3 rows" under three rows is chrome. */}
+      {(paged || serverPagination) &&
+        !(embedded && serverPagination && pageTotal <= 1) && (
+          <div className="flex items-center justify-between gap-2 text-xs whitespace-nowrap text-muted-foreground">
+            <span className="num truncate">
+              {rowTotal} {rowTotal === 1 ? "row" : "rows"}
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              onClick={() =>
-                serverPagination
-                  ? serverPagination.onPageChange(serverPagination.page - 1)
-                  : table.previousPage()
-              }
-              disabled={
-                serverPagination
-                  ? serverPagination.page <= 1
-                  : !table.getCanPreviousPage()
-              }
-            >
-              Prev
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              onClick={() =>
-                serverPagination
-                  ? serverPagination.onPageChange(serverPagination.page + 1)
-                  : table.nextPage()
-              }
-              disabled={
-                serverPagination
-                  ? serverPagination.page >= serverPagination.pageCount
-                  : !table.getCanNextPage()
-              }
-            >
-              Next
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              {!serverPagination && (
+                <span className="flex items-center gap-1">
+                  Rows
+                  <Select
+                    value={String(prefPageSize)}
+                    onValueChange={(v) => {
+                      const n = Number(v)
+                      table.setPageSize(n)
+                      setPref("page_size", n)
+                    }}
+                  >
+                    <SelectTrigger
+                      size="sm"
+                      className="h-6 w-20 text-xs"
+                      aria-label="Rows"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[25, 50, 100, 250, 1000].map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </span>
+              )}
+              {/* One page needs no pager: "Page 1 of 1 · Prev · Next" under
+                a three-row table is chrome with nothing to do. */}
+              {pageTotal > 1 && (
+                <span className="num">
+                  Page{" "}
+                  {serverPagination?.page ??
+                    table.getState().pagination.pageIndex + 1}{" "}
+                  of {pageTotal}
+                </span>
+              )}
+              {pageTotal > 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() =>
+                    serverPagination
+                      ? serverPagination.onPageChange(serverPagination.page - 1)
+                      : table.previousPage()
+                  }
+                  disabled={
+                    serverPagination
+                      ? serverPagination.page <= 1
+                      : !table.getCanPreviousPage()
+                  }
+                >
+                  Prev
+                </Button>
+              )}
+              {pageTotal > 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() =>
+                    serverPagination
+                      ? serverPagination.onPageChange(serverPagination.page + 1)
+                      : table.nextPage()
+                  }
+                  disabled={
+                    serverPagination
+                      ? serverPagination.page >= serverPagination.pageCount
+                      : !table.getCanNextPage()
+                  }
+                >
+                  Next
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   )
 }

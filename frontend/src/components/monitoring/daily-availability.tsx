@@ -49,9 +49,6 @@ export function DailyAvailability({
   )
   return (
     <div className={className}>
-      <div className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-        Daily availability
-      </div>
       <ChartContainer config={CONFIG} className="aspect-auto h-[120px] w-full">
         <BarChart
           accessibilityLayer
@@ -70,8 +67,8 @@ export function DailyAvailability({
             domain={[floor, 100]}
             tickLine={false}
             axisLine={false}
-            width={36}
-            unit="%"
+            width={44}
+            tickFormatter={(v: number) => `${v}%`}
           />
           <ChartTooltip
             cursor={false}

@@ -3,9 +3,9 @@ import { statusColor, statusLabel, useStatusLabels } from "./status-palette"
 import { useDateFormat } from "@/lib/datetime"
 
 /** A run of status over a window, to scale: one rect per segment, its width
- * the share of the window it covered. `Sparkline` stays for latency - one bar
- * per sample tells you nothing about *when*, which is the whole point here.
- * Hover a segment for its status, bounds and length. */
+ * the share of the window it covered - one bar per sample would say nothing
+ * about *when*, which is the whole point. Hover a segment for its status,
+ * bounds and length. */
 export function StatusStrip({
   segments,
   since,

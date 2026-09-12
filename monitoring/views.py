@@ -78,8 +78,6 @@ from .snmp_drift import (
 )
 from .vc_stack import stack_members, stack_owner, stack_state
 
-# How many recent results feed the per-check sparkline.
-SPARK_POINTS = 30
 # Cap the per-IP grid on a prefix page so a huge prefix can't return 100k rows.
 GRID_CAP = 1000
 
@@ -262,13 +260,12 @@ def check_now_view(request, ip_id):
 
 
 @extend_schema(
-    summary="Effective checks for an IP with current state and sparkline",
+    summary="Effective checks for an IP with current state",
     tags=["monitoring"],
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="Resolved checks for the IP, each joined with its CheckState "
-        "and a short latency/status sparkline.",
+        description="Resolved checks for the IP, each joined with its CheckState.",
     ),
 )
 
@@ -276,9 +273,11 @@ def check_now_view(request, ip_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ip_checks_view(request, ip_id):
-    """Effective checks for an IP, each joined with its current CheckState and a
-    short latency/status sparkline. Resolves on the fly, so checks show up here
-    immediately after assignment - before the materialiser has run."""
+    """Effective checks for an IP, each joined with its current CheckState.
+    Resolves on the fly, so checks show up here immediately after assignment -
+    before the materialiser has run. Status over time is the timeline's and
+    latency over time the latency endpoint's - neither is fetched per check
+    here, which was one query per row on every open of the tab."""
     ip, tenant = _get_ip(request, ip_id)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
@@ -296,12 +295,6 @@ def ip_checks_view(request, ip_id):
     checks = []
     for rc in resolved:
         st = states.get(rc.template.id)
-        spark = list(
-            CheckResult.objects.filter(target_ip=ip, template=rc.template)
-            .order_by("-timestamp")[:SPARK_POINTS]
-            .values("timestamp", "status", "latency_ms")
-        )
-        spark.reverse()
         # Policy-sourced checks have no CheckAssignment - they're configured on
         # the Monitoring → Configuration policy, not per-IP.
         a = rc.assignment
@@ -349,7 +342,6 @@ def ip_checks_view(request, ip_id):
                     if st
                     else None
                 ),
-                "sparkline": spark,
             }
         )
     # The same roll-up the lists show, from the same helper: the IP's own page

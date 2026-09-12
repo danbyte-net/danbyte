@@ -56,15 +56,20 @@ export function ExternalDetailPanel({ detail }: { detail?: ExternalDetail }) {
   )
 }
 
-/** Which protocols the external system can reach the host on, one line
- * each, with its own words when it cannot. Shared by the check's detail and
- * the host panel so the two never describe the same interface differently. */
+/** Which protocols the external system cannot reach the host on, one line
+ * each in its own words - and the ones it can, as a quiet "reachable".
+ * An interface nobody has polled yet says nothing and is left out: a row
+ * reading "not polled yet" is a row with no fact on it. Shared by the
+ * check's detail and the host panel so the two never describe the same
+ * interface differently. */
 export function AvailabilityList({
   availability,
 }: {
   availability: Record<string, { state: string; error?: string }>
 }) {
-  const protocols = Object.entries(availability)
+  const protocols = Object.entries(availability).filter(
+    ([, info]) => info.state === "down" || info.state === "up"
+  )
   if (protocols.length === 0) return null
   return (
     <div className="space-y-1">
@@ -89,9 +94,7 @@ export function AvailabilityList({
               {info.error}
             </span>
           ) : (
-            <span className="text-muted-foreground">
-              {info.state === "up" ? "reachable" : "not polled yet"}
-            </span>
+            <span className="text-muted-foreground">reachable</span>
           )}
         </div>
       ))}

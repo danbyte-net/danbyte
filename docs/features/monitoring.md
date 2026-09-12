@@ -396,36 +396,36 @@ was tracked have no engine and show as *Local*.
 
 ### On an IP
 
-The IP detail page has a **Monitoring** section with one row per check showing:
+The IP detail page's **Monitoring** tab reads top to bottom as *now → other
+systems → over time*, three sections in the same frame: **Checks**, **Zabbix**
+(only when the address's device is a Zabbix host) and **History**.
 
-- A status badge - up / down / degraded / unknown.
-- The check name and kind.
-- A seven-day **status strip** - the check's state over time, drawn to scale,
-  so an outage two days ago is a red block two days back. Hover a block for
-  its state, bounds and length.
-- An inline **sparkline** of recent latency/status.
-- The last latency and last-run time.
+**Checks** is one row per check: the status pill, the name and kind (with
+*inherited* or *from policy* as muted text when the check is not the
+address's own), a *Fast* badge for a sub-minute check, a *Flapping* pill when
+it is flagged, the last seven days as a **status strip** drawn to scale (an
+outage two days ago is a red block two days back; hover a block for its
+state, bounds and length), the last latency and when it last ran. When the
+checks disagree (one down while others are up), the section's badge is a
+**split badge** - coloured segments sized by how many checks are in each
+state - rather than just the worst one.
 
-Expand a row to see its recent **history** table. When an IP has several checks
-with **different** results (one down while others are up), the badge becomes a
-**split badge** - coloured segments sized by how many checks are in each state,
-with a hover breakdown - rather than collapsing to just the worst one.
+Every row opens: the check's **latency over time** (24h / 7d / 30d - the
+average as a line, each bucket's min–max as a band, packet loss as bars on
+its own axis; a fast-lane check's windows carry their own min, max and loss,
+so a one-second ping and a five-minute one draw the same way), the
+per-check overrides, and its recent raw results.
 
-Expanding a row also shows the check's **latency over time** - a real
-time-scaled chart with 24h / 7d / 30d tabs: the average as a line, each
-bucket's min–max as a band behind it, and packet loss as bars on their own
-axis. Buckets follow the window (five minutes, an hour, six hours); a
-fast-lane check's windows carry their own min, max and loss, so a
-one-second ping and a five-minute one draw the same way.
-
-Below the rows, the **History** panel shows the address over a window of your
-choosing (24h / 7d / 30d / 90d): **daily availability** as one bar per day
-(three nines green, two amber, less red, a day with nothing measured empty),
-a strip for all checks together (worst state wins), one per check when there
-are several, then the status changes behind the picture, paged, with who
-answered each. The strip, the bars and the table come from the same log, so
-they cannot disagree. *Open in Monitoring → History* carries the address into
-the tenant-wide view with its filters set.
+**History** carries the window (24h / 7d / 30d / 90d) and, for that window:
+the availability figure with incidents, MTTR and time down; **daily
+availability** as one bar per day once three or more days were measured
+(three nines green, two amber, less red, a day with nothing measured empty);
+a strip for all checks together (worst state wins) and one per check when
+there are several, each with its availability at the end; then the status
+changes behind the picture, paged, with who answered each. Strip, bars,
+figure and table come from the same log, so they cannot disagree. *Open in
+Monitoring* carries the address into the tenant-wide History view with its
+filters set.
 
 ### On a prefix
 

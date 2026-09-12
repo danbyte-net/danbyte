@@ -39,7 +39,7 @@ const CONFIG = {
  * as a line, the bucket's min–max as a band behind it, and packet loss as
  * bars on their own axis. Fast-lane windows carry their own min/max and
  * loss, so a one-second ping and a five-minute one draw the same way. The
- * inline sparkline stays for a glance; this is the one you read.
+ * row's strip is the glance; this is the one you read.
  */
 export function LatencyChart({
   ipId,
@@ -126,9 +126,8 @@ export function LatencyChart({
               yAxisId="ms"
               tickLine={false}
               axisLine={false}
-              width={36}
-              tickFormatter={(v: number) => `${v}`}
-              unit=" ms"
+              width={56}
+              tickFormatter={(v: number) => `${v} ms`}
             />
             {hasLoss && (
               <YAxis

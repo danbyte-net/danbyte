@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Activity, Play, Plus, Trash2 } from "lucide-react"
+import { ChevronRight, Play, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { ExternalDetailPanel } from "./external-detail"
@@ -18,7 +18,6 @@ import {
   type StatusSegment,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
@@ -30,11 +29,12 @@ import {
 } from "@/components/ui/select"
 import { CheckStatusBadge } from "./status-badge"
 import { MixedStatusBadge } from "./mixed-status-badge"
-import { Sparkline } from "./sparkline"
+import { Section } from "@/components/ui/section"
+import { EmptyState } from "@/components/empty-state"
+import { TimeCell } from "@/components/cells/time-ago"
 import { AddCheckDialog } from "./add-check-dialog"
 import { NotifyMeButton } from "./notify-me-button"
 import { CheckHistory } from "./check-history"
-import { UptimePanel } from "./uptime-panel"
 import { FastBadge } from "./fast-badge"
 import { FlappingPill } from "./flapping-pill"
 import { HistoryPanel } from "./history-panel"
@@ -136,44 +136,49 @@ export function IpMonitoring({
     {}
   )
 
+  const flapping = q.data?.flapping ?? 0
+
   return (
-    <section>
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-          <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-          Monitoring
-        </h2>
-        {checks.length > 0 && <MixedStatusBadge counts={counts} />}
-        {(q.data?.flapping ?? 0) > 0 && (
+    <div className="space-y-6">
+      {/* One Section per thing, heading outside the card, actions on the
+          right - the KvCard / SNMP-tab convention, so the tab reads as
+          three plain sections rather than four differently-framed cards. */}
+      <Section
+        title="Checks"
+        count={checks.length || undefined}
+        badge={
           <>
-            <FlappingPill count={q.data?.flapping} />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => confirmCalm.mutate(undefined)}
-              disabled={confirmCalm.isPending}
-            >
-              {confirmCalm.isPending ? "Confirming…" : "Confirm not flapping"}
-            </Button>
+            {checks.length > 0 && <MixedStatusBadge counts={counts} />}
+            {flapping > 0 && <FlappingPill count={flapping} />}
           </>
-        )}
-        <div className="ml-auto flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-            <Checkbox
-              checked={flapExclude}
-              onCheckedChange={(v) => {
-                setFlapExclude(!!v)
-                flapM.mutate(!!v)
-              }}
-            />
-            Ignore flapping
-            <InfoTip>
-              Never flag this address as flapping - for a known noisy host.
-              Confirm not flapping clears the flag once; this stops it being
-              raised at all.
-            </InfoTip>
-          </label>
-          <div className="flex items-center gap-1.5">
+        }
+        actions={
+          <>
+            {flapping > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => confirmCalm.mutate(undefined)}
+                disabled={confirmCalm.isPending}
+              >
+                {confirmCalm.isPending ? "Confirming…" : "Confirm not flapping"}
+              </Button>
+            )}
+            <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+              <Checkbox
+                checked={flapExclude}
+                onCheckedChange={(v) => {
+                  setFlapExclude(!!v)
+                  flapM.mutate(!!v)
+                }}
+              />
+              Ignore flapping
+              <InfoTip>
+                Never flag this address as flapping - for a known noisy host.
+                Confirm not flapping clears the flag once; this stops it being
+                raised at all.
+              </InfoTip>
+            </label>
             <Button
               variant="outline"
               size="sm"
@@ -187,73 +192,68 @@ export function IpMonitoring({
             <Button size="sm" onClick={() => setAdding(true)}>
               <Plus className="h-3.5 w-3.5" /> Add check
             </Button>
-          </div>
-        </div>
-      </div>
-
-      {checks.length > 0 && <UptimePanel ipId={ip.id} />}
-
-      <div className="overflow-hidden rounded-lg border border-border">
+          </>
+        }
+      >
         {q.isLoading && (
-          <p className="px-4 py-3 text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">Loading…</p>
         )}
         {q.data && checks.length === 0 && (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            No checks on this IP yet. Add one to start monitoring its
-            reachability.
-          </p>
+          <EmptyState title="No checks yet.">
+            Add one to start monitoring this address.
+          </EmptyState>
         )}
-        {checks.map((c, i) => (
-          <CheckRow
-            key={c.template_id}
-            ipId={ip.id}
-            check={c}
-            striped={i % 2 === 1}
-            expanded={expanded === c.template_id}
-            onToggle={() =>
-              setExpanded(expanded === c.template_id ? null : c.template_id)
-            }
-            strip={
-              strips.data
-                ? {
-                    segments: stripFor(c.template_id)?.segments ?? [],
-                    since: strips.data.since,
-                    until: strips.data.until,
-                  }
-                : undefined
-            }
-          />
-        ))}
-      </div>
+        {checks.length > 0 && (
+          <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+            {checks.map((c) => (
+              <CheckRow
+                key={c.template_id}
+                ipId={ip.id}
+                check={c}
+                expanded={expanded === c.template_id}
+                onToggle={() =>
+                  setExpanded(expanded === c.template_id ? null : c.template_id)
+                }
+                strip={
+                  strips.data
+                    ? {
+                        segments: stripFor(c.template_id)?.segments ?? [],
+                        since: strips.data.since,
+                        until: strips.data.until,
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        )}
+      </Section>
 
-      <div className="mt-3 space-y-3 empty:hidden">
-        <ZabbixHostPanel scope={{ ip: ip.id }} />
-        {checks.length > 0 && <HistoryPanel scope={{ ip: ip.id }} />}
-      </div>
+      <ZabbixHostPanel scope={{ ip: ip.id }} />
+      {checks.length > 0 && <HistoryPanel scope={{ ip: ip.id }} />}
 
       <AddCheckDialog
         target={{ kind: "ip", id: ip.id, label: ip.ip_address }}
         open={adding}
         onOpenChange={setAdding}
       />
-    </section>
+    </div>
   )
 }
 
 function CheckRow({
   ipId,
   check,
-  striped,
   expanded,
   onToggle,
   strip,
 }: {
   ipId: string
   check: EffectiveCheck
-  striped: boolean
   expanded: boolean
   onToggle: () => void
-  /** Seven days of status to scale, beside the latency sparkline. */
+  /** Seven days of status to scale - the row's one picture. The latency
+   * chart is a click away in the expanded row. */
   strip?: { segments: StatusSegment[]; since: string; until: string }
 }) {
   const qc = useQueryClient()
@@ -273,52 +273,60 @@ function CheckRow({
   })
 
   return (
-    <div className={striped ? "bg-muted/30" : undefined}>
-      <div className="flex items-center gap-3 px-3 py-2 text-[13px]">
+    <div>
+      {/* The whole row is the disclosure: a chevron that turns, a hover
+          tint and a pointer say so before anyone has to guess. */}
+      <div className="flex items-center gap-3 px-3 py-2 text-[13px] transition-colors hover:bg-muted/50">
         <button
           type="button"
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
         >
+          <ChevronRight
+            className={
+              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform " +
+              (expanded ? "rotate-90" : "")
+            }
+          />
           <CheckStatusBadge status={status} />
           <span className="font-medium">{check.template_name}</span>
           <span className="font-mono text-[11px] text-muted-foreground uppercase">
             {check.kind}
           </span>
+          {/* Provenance is a fact about the row, not a state: muted text,
+              in the same run as the kind. The expanded row explains it. */}
           {check.source === "inherited" && (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-              inherited
-            </Badge>
+            <span className="text-[11px] text-muted-foreground">
+              · inherited
+            </span>
           )}
           {check.source === "policy" && (
-            <Badge
-              variant="outline"
-              className="h-4 px-1.5 text-[10px]"
-              title="Applied by a Monitoring → Configuration policy"
-            >
-              from policy
-            </Badge>
+            <span className="text-[11px] text-muted-foreground">
+              · from policy
+            </span>
           )}
           {check.interval_ms && <FastBadge intervalMs={check.interval_ms} />}
           {check.state?.flapping_since && <FlappingPill />}
         </button>
-        {strip && (
-          <span className="hidden w-36 shrink-0 md:block">
+        <span className="w-40 shrink-0">
+          {strip && (
             <StatusStrip
               segments={strip.segments}
               since={strip.since}
               until={strip.until}
             />
-          </span>
-        )}
-        <Sparkline points={check.sparkline} />
+          )}
+        </span>
         <span className="num w-20 text-right text-xs text-muted-foreground">
           {latency != null ? `${latency.toFixed(1)} ms` : "-"}
         </span>
-        <span className="w-28 text-right text-[11px] text-muted-foreground">
-          {check.state?.last_checked
-            ? new Date(check.state.last_checked).toLocaleTimeString()
-            : "never run"}
+        <span className="w-24 text-right">
+          {check.state?.last_checked ? (
+            <TimeCell iso={check.state.last_checked} align="right" />
+          ) : (
+            <span className="text-xs text-muted-foreground">never run</span>
+          )}
         </span>
         {check.source === "direct" && (
           <Button
@@ -345,7 +353,7 @@ function CheckRow({
               <Link
                 to="/monitoring"
                 search={{ view: "configuration", status: "all" }}
-                className="underline underline-offset-2"
+                className="link"
               >
                 Monitoring → Configuration
               </Link>
@@ -359,7 +367,7 @@ function CheckRow({
                 <Link
                   to="/prefixes/$id"
                   params={{ id: check.prefix_id }}
-                  className="underline underline-offset-2"
+                  className="link"
                 >
                   parent prefix
                 </Link>
@@ -412,7 +420,7 @@ function OverridePanel({
   const td = check.template_defaults
 
   return (
-    <div className="space-y-3 rounded-md border border-border/60 p-3">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2 text-[12px]">
           <Checkbox

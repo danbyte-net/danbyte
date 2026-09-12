@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Section } from "@/components/ui/section"
+import { InfoTip } from "@/components/ui/info-tip"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 
 /**
@@ -43,8 +45,12 @@ const KIND_VARIANT: Record<
 
 export function ZabbixChanges({
   connection,
+  onEditConnection,
 }: {
   connection: ZabbixConnection
+  /** Opens the connection form - where an adoption that is waiting on a
+   * default site, role or type gets what it is waiting for. */
+  onEditConnection?: () => void
 }) {
   const qc = useQueryClient()
   const { canDo } = useMe()
@@ -217,8 +223,25 @@ export function ZabbixChanges({
                       >
                         {applyingId === c.id ? "Applying…" : "Apply"}
                       </Button>
+                    ) : c.kind === "adopt_host" && onEditConnection ? (
+                      // Waiting on the connection's defaults: the button is
+                      // the decision, not a label saying one is needed.
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onEditConnection}
+                      >
+                        Set defaults
+                      </Button>
                     ) : (
-                      <Badge variant="warning">Needs a decision</Badge>
+                      <span className="inline-flex items-center gap-1">
+                        <Badge variant="warning">Not applicable</Badge>
+                        <InfoTip>
+                          The row says why. Sort it out where it points and sync
+                          again; this proposal will be re-made or go away on its
+                          own.
+                        </InfoTip>
+                      </span>
                     )}
                     <Button
                       size="sm"
@@ -241,44 +264,41 @@ export function ZabbixChanges({
   )
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
-        <h2 className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
-          To review
-          <Badge variant="secondary" className="num">
-            {rows.length}
-          </Badge>
-        </h2>
-        <SegmentedTabs
-          value={view}
-          onValueChange={setView}
-          items={[
-            { value: "queue", label: "Queue" },
-            { value: "dismissed", label: "Dismissed" },
-          ]}
-        />
-        {canApply && view === "queue" && applicable.length > 1 && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={applyAll.isPending}
-            onClick={onApplyAll}
-          >
-            {applyAll.isPending
-              ? "Applying…"
-              : `Apply ${applicable.length} changes`}
-          </Button>
-        )}
-      </div>
-
+    <Section
+      title="To review"
+      count={rows.length}
+      actions={
+        <>
+          <SegmentedTabs
+            value={view}
+            onValueChange={setView}
+            items={[
+              { value: "queue", label: "Queue" },
+              { value: "dismissed", label: "Dismissed" },
+            ]}
+          />
+          {canApply && view === "queue" && applicable.length > 1 && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={applyAll.isPending}
+              onClick={onApplyAll}
+            >
+              {applyAll.isPending
+                ? "Applying…"
+                : `Apply ${applicable.length} changes`}
+            </Button>
+          )}
+        </>
+      }
+    >
       {changes.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
         <EmptyState
           title={
             view === "dismissed" ? "Nothing dismissed" : "Nothing to review"
           }
-          className="m-4"
         >
           {view === "dismissed"
             ? "Dismissed proposals wait here until restored."
@@ -315,7 +335,7 @@ export function ZabbixChanges({
         pending={applyAll.isPending}
         onConfirm={() => applyAll.mutate()}
       />
-    </section>
+    </Section>
   )
 }
 

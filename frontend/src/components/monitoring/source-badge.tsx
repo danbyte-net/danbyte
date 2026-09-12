@@ -19,11 +19,7 @@ export function SourceBadge({
       : source === "outpost"
         ? (engine?.name ?? "Outpost")
         : source.charAt(0).toUpperCase() + source.slice(1)
-  return (
-    <Badge variant="outline" className="text-[10px]">
-      {label}
-    </Badge>
-  )
+  return <Badge variant="outline">{label}</Badge>
 }
 
 /** The column header, with the one caveat a reader needs: rows from before

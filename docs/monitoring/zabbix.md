@@ -251,7 +251,7 @@ unambiguous hit**:
 4. **The exact name** - last, because names collide and get reused.
 
 Where a level finds **two** candidates, the answer is **no match**, raised as a
-*needs a decision* item for you to resolve. A wrong pairing means reading one
+*not applicable* item for you to resolve. A wrong pairing means reading one
 host's problems believing they are another's, and nothing downstream would ever
 flag it - a missing pairing is visible and fixable, a wrong one is neither.
 
@@ -389,9 +389,12 @@ system that would change - *Create in Zabbix*, *Adopt into Danbyte* - because
 a host group called "Danbyte estate" beside a bare "Create host" read as
 creating something in Danbyte, which is the opposite of what it does. Each row
 says what would be written and why; **Apply** does that one write, **Dismiss** keeps it from
-being raised again. *Needs a decision* rows carry no Apply button at all -
-they are resolved by fixing the ambiguity in Zabbix or in Danbyte, and
-**Apply all** skips them rather than guessing.
+being raised again. A row that cannot be applied yet says what it is waiting
+for in place of Apply: an adoption with no default site, role or type shows
+**Set defaults**, which opens the connection's form; a *Not applicable* row
+(two hosts on one address, say) is resolved in Zabbix or in Danbyte and the
+proposal is re-made or dropped on the next pass. **Apply all** skips both
+rather than guessing.
 
 A proposal that stops being true is dropped on the next pass: a change nobody
 has looked at, for something that has since been done by hand, is worse than

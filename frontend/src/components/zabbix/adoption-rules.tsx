@@ -26,6 +26,7 @@ import { DeviceTypePicker } from "@/components/device-type-picker"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
 
 /**
@@ -163,26 +164,22 @@ export function ZabbixAdoptionRules({
   )
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
-          Adoption rules
-          <Badge variant="secondary" className="num">
-            {rows.length}
-          </Badge>
-        </h2>
-        {canManage && (
+    <Section
+      title="Adoption rules"
+      count={rows.length}
+      actions={
+        canManage && (
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" />
             Add rule
           </Button>
-        )}
-      </div>
-
+        )
+      }
+    >
       {rules.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <EmptyState title="No rules" className="m-4">
+        <EmptyState title="No rules">
           Adopted hosts land at the connection&apos;s default site. A rule sends{" "}
           <span className="font-mono">kbh-*</span> somewhere else.
         </EmptyState>
@@ -214,7 +211,7 @@ export function ZabbixAdoptionRules({
         pending={remove.isPending}
         onConfirm={() => deleting && remove.mutate(deleting.id)}
       />
-    </section>
+    </Section>
   )
 }
 

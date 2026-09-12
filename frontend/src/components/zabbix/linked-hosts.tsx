@@ -13,6 +13,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
 import { zabbixHostUrl } from "@/components/monitoring/external-status"
 
@@ -77,7 +78,9 @@ export function ZabbixLinkedHosts({
       {
         id: "host",
         accessorKey: "host_name",
-        header: ({ column }) => <SortHeader column={column} label="Zabbix host" />,
+        header: ({ column }) => (
+          <SortHeader column={column} label="Zabbix host" />
+        ),
         cell: ({ row }) => {
           const url = zabbixHostUrl(connection.url, row.original.hostid)
           return url ? (
@@ -98,7 +101,9 @@ export function ZabbixLinkedHosts({
       {
         id: "matched_by",
         accessorKey: "matched_by",
-        header: ({ column }) => <SortHeader column={column} label="Matched by" />,
+        header: ({ column }) => (
+          <SortHeader column={column} label="Matched by" />
+        ),
         cell: ({ row }) => (
           <Badge variant="secondary">{row.original.matched_by}</Badge>
         ),
@@ -114,7 +119,9 @@ export function ZabbixLinkedHosts({
       {
         id: "origin",
         accessorFn: (r) => (r.created_here ? "Danbyte" : "Zabbix"),
-        header: ({ column }) => <SortHeader column={column} label="Created by" />,
+        header: ({ column }) => (
+          <SortHeader column={column} label="Created by" />
+        ),
         cell: ({ row }) =>
           row.original.created_here ? (
             <Badge variant="secondary">Danbyte</Badge>
@@ -157,20 +164,11 @@ export function ZabbixLinkedHosts({
   )
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="border-b border-border px-4 py-2.5">
-        <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
-          Linked hosts
-          <Badge variant="secondary" className="num">
-            {rows.length}
-          </Badge>
-        </h2>
-      </div>
-
+    <Section title="Linked hosts" count={rows.length}>
       {links.isLoading ? (
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <EmptyState title="Nothing linked" className="m-4">
+        <EmptyState title="Nothing linked">
           A sync pass pairs each device in scope with its Zabbix host.
         </EmptyState>
       ) : (
@@ -192,6 +190,6 @@ export function ZabbixLinkedHosts({
         pending={unlink.isPending}
         onConfirm={() => unlinking && unlink.mutate(unlinking.id)}
       />
-    </section>
+    </Section>
   )
 }

@@ -111,6 +111,22 @@ class SourceTests(_Base):
         )
         self.assertEqual(executing_engine(on_outpost), self.outpost)
 
+    def test_the_timeline_says_who_runs_each_check(self):
+        """The strip's label is the executor: a ping on a Zabbix-bound address
+        is the core's own, and must not read as Zabbix beside a table that
+        says Local."""
+        self.state(self.ping, engine=self.zabbix)
+        self.state(self.zbx_tmpl, engine=self.zabbix)
+        user = get_user_model().objects.create_superuser("root", "r@b.c", "pw")
+        self.client.force_login(user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+        r = self.client.get(f"/api/monitoring/ips/{self.ip.id}/timeline/?days=1")
+        self.assertEqual(r.status_code, 200, r.content)
+        by_kind = {c["kind"]: c["source"] for c in r.json()["checks"]}
+        self.assertEqual(by_kind, {"icmp": "local", "zabbix": "zabbix"})
+
     def test_the_annotation_agrees_with_the_python(self):
         self.state(self.ping, engine=self.zabbix)
         self.state(self.zbx_tmpl, engine=self.zabbix)

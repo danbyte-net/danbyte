@@ -170,7 +170,10 @@ function ZabbixPage() {
             onEdit={() => setEditing(conn)}
             onDelete={() => setDeleting(conn)}
           />
-          <ZabbixChanges connection={conn} />
+          <ZabbixChanges
+            connection={conn}
+            onEditConnection={canManage ? () => setEditing(conn) : undefined}
+          />
           <ZabbixProvisionRules connection={conn} canManage={canManage} />
           {conn.adopt_hosts && (
             <ZabbixAdoptionRules connection={conn} canManage={canManage} />
