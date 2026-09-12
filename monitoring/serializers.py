@@ -759,18 +759,38 @@ class CheckStateSerializer(serializers.ModelSerializer):
         ]
 
 
-class CheckResultSerializer(serializers.ModelSerializer):
+class _EngineSourceMixin(serializers.Serializer):
+    """Who answered, on a history row: ``engine`` {id, name} or null, and the
+    one-word ``source`` the lists facet on. Null engine reads as local - true
+    for the core's workers and, honestly, for every row written before the
+    column existed."""
+
+    engine = serializers.SerializerMethodField()
+    source = serializers.SerializerMethodField()
+
+    def get_engine(self, obj) -> dict | None:
+        if not obj.engine_id:
+            return None
+        return {"id": str(obj.engine_id), "name": obj.engine.name}
+
+    def get_source(self, obj) -> str:
+        from .engines import source_of
+
+        return source_of(obj.engine if obj.engine_id else None)
+
+
+class CheckResultSerializer(_EngineSourceMixin, serializers.ModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
 
     class Meta:
         model = CheckResult
         fields = [
             "id", "template", "template_name", "kind", "status",
-            "latency_ms", "detail", "timestamp",
+            "latency_ms", "detail", "timestamp", "engine", "source",
         ]
 
 
-class StateTransitionSerializer(serializers.ModelSerializer):
+class StateTransitionSerializer(_EngineSourceMixin, serializers.ModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
     target_ip = serializers.SerializerMethodField()
 
@@ -778,7 +798,7 @@ class StateTransitionSerializer(serializers.ModelSerializer):
         model = StateTransition
         fields = [
             "id", "target_ip", "template", "template_name", "kind",
-            "from_status", "to_status", "at", "detail",
+            "from_status", "to_status", "at", "detail", "engine", "source",
         ]
 
     def get_target_ip(self, obj):

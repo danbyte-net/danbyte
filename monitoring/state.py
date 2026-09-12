@@ -34,6 +34,7 @@ def apply_outcome(
     now,
     stale_after_scans: int = 0,
     stale_after_days: int = 0,
+    engine_id=None,
 ) -> StateTransition | None:
     state.last_checked = now
     state.last_latency_ms = outcome.latency_ms
@@ -90,6 +91,7 @@ def apply_outcome(
             to_status=new,
             at=now,
             detail=outcome.detail or {},
+            engine_id=engine_id,
         )
     if state.since is None:
         state.since = now

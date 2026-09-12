@@ -12,6 +12,7 @@ import type { SimpleColumn } from "@/components/ui/simple-table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
 import { CheckStatusBadge } from "./status-badge"
+import { SourceBadge, SourceHeader } from "./source-badge"
 
 // Quick-filter tabs (ping-monitor parity). "all" first, then the states an
 // operator scans for most.
@@ -53,6 +54,11 @@ const COLUMNS: SimpleColumn<CheckListRow>[] = [
         {r.kind}
       </span>
     ),
+  },
+  {
+    id: "source",
+    header: <SourceHeader />,
+    cell: (r) => <SourceBadge source={r.source} engine={r.engine} />,
   },
   {
     id: "latency",

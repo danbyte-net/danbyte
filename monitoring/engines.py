@@ -15,11 +15,73 @@ object_id) so ``api`` never depends on ``monitoring``.
 """
 from __future__ import annotations
 
-from .engine_drivers import engine_usable
+from django.db import models
+
+from .engine_drivers import driver_claims_kind, engine_usable
 from .models import (
     MonitoringEngine,
     MonitoringEngineBinding,
     MonitoringSettings,
+)
+
+# ─── Who answered ───────────────────────────────────────────────────────
+#
+# Three words for where a result came from, for the UI and for filters:
+# "local" (the core's own workers), "outpost" (a remote agent), or the driver
+# kind ("zabbix"). Not the engine name: an estate with twelve Outposts still
+# wants one "Outpost" facet.
+
+
+def source_of(engine) -> str:
+    """The source word for an engine, or for None - which is local."""
+    if engine is None:
+        return "local"
+    kind = getattr(engine, "kind", "") or ""
+    if kind in ("", MonitoringEngine.LOCAL):
+        return "local"
+    if kind == MonitoringEngine.REMOTE:
+        return "outpost"
+    return kind
+
+
+def executing_engine(state):
+    """The engine that actually runs a state's check, or None for local.
+
+    ``CheckState.engine`` is the *binding* - the engine a target resolved to.
+    A driver only answers its own kind, so a ping on a Zabbix-bound device is
+    bound to Zabbix and run by the core's workers. The scheduler makes that
+    call in ``_unclaimed_driver_states``; this is the same rule read the other
+    way round, so a list and a scheduler never disagree about who does what.
+    """
+    engine = getattr(state, "engine", None)
+    if engine is None or engine.kind == MonitoringEngine.LOCAL:
+        return None
+    if engine.kind == MonitoringEngine.REMOTE:
+        return engine
+    return engine if driver_claims_kind(engine, state.kind) else None
+
+
+#: The same rule as an annotation, for lists and facet counts over
+#: ``CheckState`` without a Python pass per row. Mirrors the scheduler's
+#: prefilter: a driver claims the kind named after it and nothing else.
+SOURCE_EXPR = models.Case(
+    models.When(engine__isnull=True, then=models.Value("local")),
+    models.When(engine__kind=MonitoringEngine.LOCAL, then=models.Value("local")),
+    models.When(engine__kind=MonitoringEngine.REMOTE, then=models.Value("outpost")),
+    models.When(kind=models.F("engine__kind"), then=models.F("engine__kind")),
+    default=models.Value("local"),
+    output_field=models.CharField(),
+)
+
+#: For ``StateTransition`` and ``CheckResult``, whose ``engine`` is the
+#: executor already - null means local, and that includes every row written
+#: before the column existed.
+STAMPED_SOURCE_EXPR = models.Case(
+    models.When(engine__isnull=True, then=models.Value("local")),
+    models.When(engine__kind=MonitoringEngine.LOCAL, then=models.Value("local")),
+    models.When(engine__kind=MonitoringEngine.REMOTE, then=models.Value("outpost")),
+    default=models.F("engine__kind"),
+    output_field=models.CharField(),
 )
 
 

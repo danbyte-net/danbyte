@@ -399,7 +399,11 @@ def ip_history_view(request, ip_id):
     if (denied := _require(request, "ipaddress", "view")):
         return denied
 
-    qs = CheckResult.objects.filter(target_ip=ip).order_by("-timestamp")
+    qs = (
+        CheckResult.objects.filter(target_ip=ip)
+        .select_related("engine")
+        .order_by("-timestamp")
+    )
     template = request.query_params.get("template")
     if template:
         qs = qs.filter(template_id=template)
@@ -1158,7 +1162,7 @@ def stats_view(request):
 
     recent = (
         _scope_ip_keyed(request, tenant, StateTransition.objects.filter(tenant=tenant))
-        .select_related("template", "target_ip")
+        .select_related("template", "target_ip", "engine")
         .order_by("-at")[:20]
     )
 
@@ -1652,10 +1656,12 @@ def checks_list_view(request):
 
     # Site-aware: only the caller's viewable IPs' checks appear in the list AND
     # the per-status counts.
+    from .engines import SOURCE_EXPR
+
     base = _scope_ip_keyed(
         request, tenant,
         CheckState.objects.filter(tenant=tenant),
-    ).select_related("target_ip", "template")
+    ).select_related("target_ip", "template", "engine").annotate(source=SOURCE_EXPR)
 
     # Counts across all statuses (before the status filter) so the tabs are
     # stable regardless of which one is selected.
@@ -1672,6 +1678,14 @@ def checks_list_view(request):
     kind = request.query_params.get("kind")
     if kind:
         qs = qs.filter(kind=kind)
+    # Who answers: local | outpost | a driver kind. Comma-separated, like the
+    # facets the rail will send.
+    source = (request.query_params.get("source") or "").strip()
+    if source:
+        qs = qs.filter(source__in=[s for s in source.split(",") if s])
+    engine = (request.query_params.get("engine") or "").strip()
+    if engine:
+        qs = qs.filter(engine_id=engine)
     search = (request.query_params.get("search") or "").strip()
     if search:
         qs = qs.filter(
@@ -1715,15 +1729,24 @@ def checks_list_view(request):
             "last_checked": s.last_checked,
             "since": s.since,
             "consecutive_fail": s.consecutive_fail,
+            "source": s.source,
+            "engine": (
+                {"id": str(s.engine_id), "name": s.engine.name} if s.engine_id else None
+            ),
         }
         for s in rows
     ]
+    source_counts = {
+        r["source"]: r["n"]
+        for r in base.values("source").annotate(n=Count("id")).order_by()
+    }
     return Response(
         {
             "count": total,
             "page": page,
             "page_size": page_size,
             "status_counts": status_counts,
+            "source_counts": source_counts,
             "results": results,
         }
     )

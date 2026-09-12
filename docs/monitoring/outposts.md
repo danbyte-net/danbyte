@@ -325,3 +325,10 @@ device is picked up on the next poll with no re-enrollment.
     down still raises the alarm. Checks behind a
   dead Outpost keep their last state rather than flipping down - no results
   means no transitions - until the ordinary staleness rules age them.
+- **Attribution (shipped)** - results and status changes an Outpost phones in
+  are stamped with that Outpost, so the Checks list, an address's history and
+  the recent-changes list can say which agent saw a host go down. A row with
+  no engine is the core's own workers - or predates the stamp, and reads the
+  same way.
+
+

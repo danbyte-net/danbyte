@@ -589,6 +589,15 @@ class CheckResult(models.Model):
         help_text="Protocol-specific payload (rtt, snmp oid/value, http code, "
         "banner, error string).",
     )
+    #: Which engine actually ran this - an Outpost, the Zabbix driver - or
+    #: null for the core's own workers. Stamped from the ingest call, not
+    #: copied from the state's binding: a ping on a Zabbix-bound device is run
+    #: locally, and the binding would say Zabbix. No index on purpose: this is
+    #: displayed on a row that was already found, never used to find one.
+    engine = models.ForeignKey(
+        "MonitoringEngine", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", db_index=False,
+    )
 
     class Meta:
         ordering = ["-timestamp"]
@@ -1722,6 +1731,14 @@ class StateTransition(models.Model):
     to_status = models.CharField(max_length=8, choices=CheckStatus.choices)
     at = models.DateTimeField(default=timezone.now, db_index=True)
     detail = models.JSONField(default=dict, blank=True)
+    #: The engine whose answer caused the change - null for the core's own
+    #: workers, and for every row written before this existed, which the UI
+    #: reads as local. History that cannot say who saw a host go down is
+    #: history an operator has to distrust.
+    engine = models.ForeignKey(
+        "MonitoringEngine", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="transitions",
+    )
 
     class Meta:
         ordering = ["-at"]

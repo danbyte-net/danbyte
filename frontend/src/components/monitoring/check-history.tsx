@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api, type CheckResultRow } from "@/lib/api"
 import { CheckStatusBadge } from "./status-badge"
+import { SourceBadge } from "./source-badge"
 
 interface HistoryResp {
   count: number
@@ -41,6 +42,7 @@ export function CheckHistory({
         <tr>
           <th className="py-1 pr-3 font-medium">When</th>
           <th className="py-1 pr-3 font-medium">Status</th>
+          <th className="py-1 pr-3 font-medium">Source</th>
           <th className="py-1 pr-3 font-medium">Latency</th>
           <th className="py-1 font-medium">Detail</th>
         </tr>
@@ -53,6 +55,9 @@ export function CheckHistory({
             </td>
             <td className="py-1 pr-3">
               <CheckStatusBadge status={r.status} />
+            </td>
+            <td className="py-1 pr-3">
+              <SourceBadge source={r.source} engine={r.engine} />
             </td>
             <td className="num py-1 pr-3 text-muted-foreground">
               {r.latency_ms != null ? `${r.latency_ms.toFixed(1)} ms` : "-"}

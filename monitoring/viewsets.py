@@ -187,7 +187,7 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
             StateTransition.objects.filter(
                 target_ip_id__in=states.values("target_ip_id")
             )
-            .select_related("target_ip")
+            .select_related("target_ip", "engine")
             .order_by("-at")[:12]
         )
         return Response({

@@ -343,6 +343,14 @@ still the state, so alert rules and webhooks are untouched.
 
 ## Reading results
 
+Every result and every status change records **who answered**: Danbyte's own
+workers, an Outpost by name, or Zabbix. It is the engine that *ran* the check,
+not the one the target is bound to - a ping on a device bound to Zabbix is run
+by Danbyte and says so. The Checks list shows it as a **Source** column and
+filters on it (`?source=local|outpost|zabbix`, `?engine=<id>`), and the check
+history and recent-changes lists carry it per row. Rows written before this
+was tracked have no engine and show as *Local*.
+
 ### On an IP
 
 The IP detail page has a **Monitoring** section with one row per check showing:

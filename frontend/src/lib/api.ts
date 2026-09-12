@@ -4432,6 +4432,16 @@ export interface WatchedEndpoint {
   updated_at: string
 }
 
+/** Who answered a check: the core's own workers, an Outpost, or a driver
+ * such as Zabbix. `engine` is null for local - and for every row written
+ * before attribution existed, which the UI reads as local. */
+export type CheckSource = "local" | "outpost" | (string & {})
+
+export interface EngineRef {
+  id: string
+  name: string
+}
+
 export interface CheckResultRow {
   id: number
   template: string | null
@@ -4441,6 +4451,8 @@ export interface CheckResultRow {
   latency_ms: number | null
   detail: Record<string, unknown>
   timestamp: string
+  engine: EngineRef | null
+  source: CheckSource
 }
 
 export interface SparkPoint {
@@ -4940,6 +4952,9 @@ export interface CheckListRow {
   last_checked: string | null
   since: string | null
   consecutive_fail: number
+  /** Who runs it - the executor, not the binding. */
+  source: CheckSource
+  engine: EngineRef | null
 }
 
 export interface CheckListResponse {
@@ -4947,6 +4962,7 @@ export interface CheckListResponse {
   page: number
   page_size: number
   status_counts: Partial<Record<CheckStatus | "all", number>>
+  source_counts: Partial<Record<CheckSource, number>>
   results: CheckListRow[]
 }
 
@@ -4975,6 +4991,8 @@ export interface MonitoringStats {
     to_status: CheckStatus
     at: string
     detail: Record<string, unknown>
+    engine: EngineRef | null
+    source: CheckSource
   }>
 }
 
