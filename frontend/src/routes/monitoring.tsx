@@ -417,9 +417,12 @@ function MonitoringPage() {
                         >
                           <Label content={<TotalLabel total={total} />} />
                         </Pie>
+                        {/* Two per row. Quarters plus a gap overflowed the
+                            row, so four statuses wrapped as three and one;
+                            halves stay balanced whatever the count. */}
                         <ChartLegend
                           content={<ChartLegendContent nameKey="status" />}
-                          className="-translate-y-2 flex-wrap gap-2 *:basis-1/4 *:justify-center"
+                          className="-translate-y-2 flex-wrap gap-x-0 gap-y-1 *:basis-1/2 *:justify-center"
                         />
                       </PieChart>
                     </ChartContainer>

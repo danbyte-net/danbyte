@@ -563,3 +563,64 @@ class ConnectionLinkTests(_Base):
         self.conn.enabled = False
         self.conn.save(update_fields=["enabled"])
         self.assertIsNone(_connection(self.engine))
+
+
+class LivenessTests(_Base):
+    """A driver is seen when it reaches the system it answers through.
+
+    It has no agent phoning home, so without this the health sweep aged the
+    engine from its creation and called it unreachable while every one of its
+    checks was answering on time.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from api.models import IPAddress, Prefix
+        from monitoring.models import CheckState, CheckTemplate
+
+        prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.5.0.0/24")
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.5.0.1/24", prefix=prefix
+        )
+        tmpl = CheckTemplate.objects.create(
+            tenant=self.tenant, name="Zabbix", kind="zabbix", interval_seconds=300
+        )
+        CheckState.objects.create(
+            tenant=self.tenant, target_ip=ip, template=tmpl, engine=self.engine,
+            kind="zabbix", interval_seconds=300, next_run=timezone.now(),
+        )
+
+    def test_a_successful_answer_stamps_last_seen(self):
+        self.assertIsNone(self.engine.last_seen_at)
+        with mock.patch.object(ZabbixClient, "hosts_by_ip", return_value={}), \
+                mock.patch.object(ZabbixClient, "problems_by_host", return_value={}):
+            ZabbixDriver().claim(self.engine, timezone.now())
+        self.engine.refresh_from_db()
+        self.assertIsNotNone(self.engine.last_seen_at)
+
+    def test_a_failed_answer_does_not(self):
+        """A Zabbix that is actually down must still raise the alarm."""
+        with mock.patch.object(
+            ZabbixClient, "hosts_by_ip", side_effect=ZabbixError("gone away")
+        ):
+            ZabbixDriver().claim(self.engine, timezone.now())
+        self.engine.refresh_from_db()
+        self.assertIsNone(self.engine.last_seen_at)
+
+    def test_the_sweep_judges_a_driver_by_its_checks_not_a_poll_interval(self):
+        """An Outpost-style 15 s poll interval made the threshold 3 minutes
+        against checks that run every 5 - stale two minutes in every five."""
+        from monitoring.scheduler import check_engine_health
+
+        self.engine.poll_interval_seconds = 15
+        self.engine.last_seen_at = timezone.now() - timedelta(minutes=4)
+        self.engine.save(update_fields=["poll_interval_seconds", "last_seen_at"])
+        check_engine_health(timezone.now())
+        self.engine.refresh_from_db()
+        self.assertIsNone(self.engine.stale_since, "4 minutes is within 3x a 5-minute check")
+
+        self.engine.last_seen_at = timezone.now() - timedelta(minutes=20)
+        self.engine.save(update_fields=["last_seen_at"])
+        check_engine_health(timezone.now())
+        self.engine.refresh_from_db()
+        self.assertIsNotNone(self.engine.stale_since, "20 minutes is past 3x a 5-minute check")

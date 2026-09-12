@@ -211,13 +211,24 @@ def check_engine_health(now=None) -> dict:
         minutes = MonitoringSettings.for_tenant(
             eng.tenant
         ).engine_offline_after_minutes
-        threshold = (
-            timedelta(minutes=minutes)
-            if minutes
-            else timedelta(
+        if minutes:
+            threshold = timedelta(minutes=minutes)
+        elif driver_for(eng) is not None:
+            # A driver has no heartbeat: it is seen each time it answers, and
+            # it answers on its checks' cadence. Judging it by an Outpost's
+            # poll interval (15 s here, so a 3 minute threshold) against
+            # checks that run every 5 minutes flagged it stale two minutes out
+            # of every five, with a notification each way.
+            shortest = (
+                CheckState.objects.filter(engine=eng)
+                .aggregate(m=models.Min("interval_seconds"))["m"]
+                or 300
+            )
+            threshold = timedelta(seconds=max(3 * shortest, 180))
+        else:
+            threshold = timedelta(
                 seconds=max(3 * (eng.poll_interval_seconds or 60), 180)
             )
-        )
         # Never-seen engines age from creation, so a just-enrolled Outpost
         # gets the same grace window before it's called unreachable.
         basis = eng.last_seen_at or eng.created_at

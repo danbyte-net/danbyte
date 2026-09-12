@@ -315,6 +315,13 @@ device is picked up on the next poll with no re-enrollment.
   notification channels get an *engine unreachable* event (and a *recovered*
   event when it comes back). Engines with no assigned checks never alert.
   The window is configurable per tenant (#129): **Outpost offline after N
-  minutes** in Monitoring settings, 0 = the automatic 3× rule. Checks behind a
+  minutes** in Monitoring settings, 0 = the automatic 3× rule.
+
+    A **driver engine** - Zabbix - has no agent phoning home. It is *seen*
+    each time it reaches the system it answers through, and the automatic
+    window is 3× the shortest interval among **its checks**, not the poll
+    interval, which is an Outpost's setting and meant nothing for it. A
+    failed call is deliberately not a sighting, so a Zabbix that is actually
+    down still raises the alarm. Checks behind a
   dead Outpost keep their last state rather than flipping down - no results
   means no transitions - until the ordinary staleness rules age them.

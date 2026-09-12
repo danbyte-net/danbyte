@@ -94,15 +94,23 @@ class ZabbixDriver:
             due, ["in_flight", "in_flight_since", "next_run"], batch_size=2000
         )
 
-        outcomes = self._answer(conn, [s.target_ip.ip_address for s in due])
+        outcomes, reached = self._answer(conn, [s.target_ip.ip_address for s in due])
+        if reached:
+            # A driver has no agent phoning home; it is seen when it reaches
+            # the system it answers through. Without this stamp the health
+            # sweep aged the engine from its creation and called it
+            # unreachable while every one of its checks was answering on time.
+            # Left unstamped on a failed call on purpose, so a Zabbix that is
+            # actually down still raises the alarm.
+            type(engine).objects.filter(pk=engine.pk).update(last_seen_at=now)
         return ingest_results(
             {str(s.id): outcomes[s.target_ip.ip_address] for s in due},
             engine_id=engine.id,
             tenant_id=engine.tenant_id,
         )
 
-    def _answer(self, conn, addresses) -> dict:
-        """address -> CheckOutcome, from two calls.
+    def _answer(self, conn, addresses) -> tuple[dict, bool]:
+        """(address -> CheckOutcome, whether Zabbix was reached), from two calls.
 
         A failure here answers every address ``unknown`` rather than raising:
         the states are already claimed, and leaving them claimed would strand
@@ -121,7 +129,7 @@ class ZabbixDriver:
         except ZabbixError as exc:
             return {
                 a: CheckOutcome.unknown(f"Zabbix: {exc}") for a in addresses
-            }
+            }, False
 
         mapping = clean_map(conn.severity_map)
         out = {}
@@ -134,7 +142,7 @@ class ZabbixDriver:
             if outcome.detail.get("hostid"):
                 outcome.detail["zabbix_url"] = conn.url
             out[addr] = outcome
-        return out
+        return out, True
 
     @staticmethod
     def _for_host(rows, problems, mapping) -> CheckOutcome:
