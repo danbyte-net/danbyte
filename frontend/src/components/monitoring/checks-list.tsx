@@ -25,6 +25,7 @@ import {
   checkColumns,
 } from "@/components/columns/check-columns"
 import type { CheckColumnId } from "@/components/columns/check-columns"
+import { FlapChart } from "./flap-chart"
 import { MonitoringRail, RAIL_KEYS, railActiveCount } from "./monitoring-rail"
 import type { RailFilters } from "./monitoring-rail"
 
@@ -237,6 +238,9 @@ export function ChecksList({
       }
       query={query}
     >
+      {flappingOnly && (
+        <FlapChart className="mb-4 rounded-lg border border-border bg-card p-3" />
+      )}
       <DataTable<CheckListRow>
         columns={columns}
         data={rows}

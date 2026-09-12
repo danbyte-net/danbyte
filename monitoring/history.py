@@ -200,6 +200,17 @@ def apply_transition_filters(qs, params, now=None):
     engines = _csv(params, "engine")
     if engines:
         qs = qs.filter(engine_id__in=engines)
+    if (params.get("flapping") or "").strip() == "1":
+        # The changes behind what is flagged right now.
+        from .models import CheckState
+
+        pairs = CheckState.objects.filter(flapping_since__isnull=False).values_list(
+            "target_ip_id", "template_id"
+        )
+        q = Q(pk__in=[])
+        for ip_id, template_id in pairs:
+            q |= Q(target_ip_id=ip_id, template_id=template_id)
+        qs = qs.filter(q)
     since, until = window(params, now)
     qs = qs.filter(at__gte=since, at__lte=until)
     return qs, since, until
@@ -217,6 +228,7 @@ _OWN_PARAMS = {
     "platform": ("platform",),
     "template": ("template",),
     "engine": ("engine",),
+    "flapping": ("flapping",),
 }
 
 

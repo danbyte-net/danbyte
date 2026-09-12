@@ -10,6 +10,7 @@ from rest_framework.routers import DefaultRouter
 from .history_views import (
     device_timeline_view,
     device_transitions_view,
+    ip_latency_view,
     ip_timeline_view,
     ip_transitions_view,
     prefix_transitions_view,
@@ -175,6 +176,7 @@ urlpatterns = [
     path("ips/<uuid:ip_id>/uptime/", ip_uptime_view, name="monitoring-ip-uptime"),
     path("ips/<uuid:ip_id>/transitions/", ip_transitions_view, name="monitoring-ip-transitions"),
     path("ips/<uuid:ip_id>/timeline/", ip_timeline_view, name="monitoring-ip-timeline"),
+    path("ips/<uuid:ip_id>/latency/", ip_latency_view, name="monitoring-ip-latency"),
     path("ips/<uuid:ip_id>/check-now/", check_now_view, name="monitoring-check-now"),
     path("prefixes/<uuid:prefix_id>/checks/", prefix_checks_view, name="monitoring-prefix-checks"),
     path("prefixes/<uuid:prefix_id>/transitions/", prefix_transitions_view, name="monitoring-prefix-transitions"),

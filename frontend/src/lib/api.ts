@@ -5049,6 +5049,12 @@ export interface MonitoringStats {
   series: MonitoringSeriesPoint[]
   series_hours: StatsHours
   series_bucket: "hour" | "day"
+  /** Up over up-plus-down across the window's results; null with none. */
+  availability_pct: number | null
+  /** The estate's p50/p95 latency per bucket over the window. */
+  latency_series: { t: string; p50: number | null; p95: number | null }[]
+  /** Alerts opened against resolved, per day. */
+  alerts_series: { t: string; opened: number; resolved: number }[]
   /** Sub-minute checks in view, and the lane's own pulse. */
   fast_lane: {
     fast_checks: number
@@ -5152,6 +5158,25 @@ export type TransitionSeriesPoint = { t: string } & Partial<
   Record<CheckStatus, number>
 >
 
+/** One cell of the when-things-break heatmap; `dow` 0 = Monday, in the
+ * viewer's timezone. */
+export interface HeatCell {
+  dow: number
+  hour: number
+  n: number
+}
+
+export interface TopChanger {
+  ip_id: string
+  ip_address: string
+  dns_name: string | null
+  template_id: string | null
+  template_name: string
+  changes: number
+  /** Of which went to a bad state. */
+  bad: number
+}
+
 export interface TransitionsResponse {
   count: number
   page: number
@@ -5161,6 +5186,8 @@ export interface TransitionsResponse {
   bucket: "hour" | "day"
   facets: Partial<Record<TransitionFacet, FacetBucket[]>>
   series: TransitionSeriesPoint[]
+  heatmap: HeatCell[]
+  top: TopChanger[]
   results: TransitionRow[]
 }
 
@@ -5189,6 +5216,8 @@ export interface TransitionFilters {
   port?: string
   tag?: string
   search?: string
+  /** `1` = only the changes behind checks flagged as flapping right now. */
+  flapping?: string
   ordering?: "at" | "-at" | "ip" | "-ip"
   page?: number
   page_size?: number
@@ -5214,11 +5243,40 @@ export interface TimelineCheck {
   segments: StatusSegment[]
 }
 
+/** One calendar day of availability (the viewer's timezone). `uptime_pct`
+ * is null when nothing was measured that day. */
+export interface DayAvailability {
+  date: string
+  uptime_pct: number | null
+  up_s: number
+  down_s: number
+  incidents: number
+}
+
 export interface IpTimeline {
   since: string
   until: string
   rollup: StatusSegment[]
   checks: TimelineCheck[]
+  days: DayAvailability[]
+}
+
+/** A bucket of latency for one check: sample-weighted average with the
+ * bucket's min/max band and loss. */
+export interface LatencyPoint {
+  t: string
+  avg: number | null
+  min: number | null
+  max: number | null
+  loss: number
+  samples: number
+}
+
+export interface LatencyResponse {
+  since: string
+  until: string
+  bucket_seconds: number
+  points: LatencyPoint[]
 }
 
 export interface DeviceTimeline extends IpTimeline {
@@ -5665,6 +5723,10 @@ export interface DashboardData {
   reachable_pct: number | null
   /** Checks currently flagged as flapping, noisiest first (top 8). */
   flapping: FlappingRow[]
+  /** Seven days: availability, alerts per day, the estate's latency. */
+  availability_7d: number | null
+  alerts_per_day: { t: string; opened: number; resolved: number }[]
+  latency_series: { t: string; p50: number | null; p95: number | null }[]
 }
 
 export type ComplianceCheck =

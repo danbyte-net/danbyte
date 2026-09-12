@@ -411,12 +411,21 @@ with **different** results (one down while others are up), the badge becomes a
 **split badge** - coloured segments sized by how many checks are in each state,
 with a hover breakdown - rather than collapsing to just the worst one.
 
+Expanding a row also shows the check's **latency over time** - a real
+time-scaled chart with 24h / 7d / 30d tabs: the average as a line, each
+bucket's min–max as a band behind it, and packet loss as bars on their own
+axis. Buckets follow the window (five minutes, an hour, six hours); a
+fast-lane check's windows carry their own min, max and loss, so a
+one-second ping and a five-minute one draw the same way.
+
 Below the rows, the **History** panel shows the address over a window of your
-choosing (24h / 7d / 30d / 90d): a strip for all checks together (worst state
-wins), one per check when there are several, then the status changes behind
-the picture, paged, with who answered each. The strip and the table come from
-the same log, so they cannot disagree. *Open in Monitoring → History* carries
-the address into the tenant-wide view with its filters set.
+choosing (24h / 7d / 30d / 90d): **daily availability** as one bar per day
+(three nines green, two amber, less red, a day with nothing measured empty),
+a strip for all checks together (worst state wins), one per check when there
+are several, then the status changes behind the picture, paged, with who
+answered each. The strip, the bars and the table come from the same log, so
+they cannot disagree. *Open in Monitoring → History* carries the address into
+the tenant-wide view with its filters set.
 
 ### On a prefix
 
@@ -529,22 +538,30 @@ exactly like an automatic scan.
 
 **Governance → Monitoring** is the global view. Its tabs:
 
-- **Overview** - stat cards (total checks, monitored IPs, definitions, alert
-  channels), charts (status distribution, checks by type, results over the
-  last 24 hours, 7 days or 30 days - hourly up to three days, daily beyond;
-  30 days is the ceiling because results are pruned after that), **Recent
-  changes** (the latest status changes grouped by the hour they landed in,
-  with who answered), a **Flapping now** count (see below), and the
-  monitoring settings.
+- **Overview** - stat cards (total checks, monitored IPs, **availability**
+  over the chosen window - up over up-plus-down, degraded counting as
+  reachable - definitions, alert channels), charts (status distribution,
+  checks by type, results over the last 24 hours, 7 days or 30 days - hourly
+  up to three days, daily beyond; 30 days is the ceiling because results are
+  pruned after that), **Latency** (the estate's median and 95th percentile
+  per bucket - the median says how it feels, the 95th says who is
+  suffering), **Alerts** (opened against resolved per day - whether you are
+  keeping up), **Recent changes** (the latest status changes grouped by the
+  hour they landed in, with who answered), a **Flapping now** count (see
+  below), and the monitoring settings.
 - **History** - every status change in the tenant. The rail on the left
   filters by the state a change went to or came from, who answered, check
   type, site, device type, role, platform, check and engine - each with a
   count of what ticking it would leave - and narrows by region, device,
   prefix, VRF, VLAN, tag or port. The window is 24h / 7d / 30d / 90d or a
   custom date range; the chart above the table shows changes per hour or per
-  day by state. Everything lives in the URL, so a view is a link, and saved
-  views keep a rail, a window and a search under a name. Export walks every
-  page the filters match, up to 5,000 rows.
+  day by state. Under it, **When changes land** is a weekday × hour heatmap
+  of the same changes in your timezone (a 03:00 column lit on every row is
+  a backup window; a lit Monday row is a boot storm) and **Most changes**
+  lists the ten addresses that changed most, with how many of those changes
+  went bad. Both follow the rail. Everything lives in the URL, so a view is
+  a link, and saved views keep a rail, a window and a search under a name.
+  Export walks every page the filters match, up to 5,000 rows.
 - **Checks** - every check in the tenant, on the same rail as History: status,
   source, type, site, device type, role, platform, check and engine facets
   with counts, plus region, device, prefix, VRF, VLAN, tag and port. The
@@ -556,7 +573,9 @@ exactly like an automatic scan.
   views and export work as on History; the dashboard donut's slices land here
   with the status set.
 - **Flapping** - shown while anything is flagged: the Checks list pinned to
-  flapping checks, with row selection and a bulk **Confirm not flapping**.
+  flapping checks, with row selection and a bulk **Confirm not flapping**,
+  and **Flaps per hour** over the last day for the flagged set, so you can
+  see whether the bouncing is settling before you confirm.
 - **Templates** - your reusable check library.
 
 ### The Settings tab

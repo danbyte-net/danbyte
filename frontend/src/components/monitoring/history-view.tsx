@@ -25,6 +25,8 @@ import {
 import type { ChartConfig } from "@/components/ui/chart"
 import type { FilterSnapshot } from "@/components/table-filters"
 import { transitionColumns } from "@/components/columns/transition-columns"
+import { HistoryHeatmap } from "./history-heatmap"
+import { TopChanges } from "./top-changes"
 import { MonitoringRail, RAIL_KEYS, railActiveCount } from "./monitoring-rail"
 import type { RailFilters } from "./monitoring-rail"
 import { statusColor, statusLabel, useStatusLabels } from "./status-palette"
@@ -291,6 +293,16 @@ export function HistoryView() {
               <ChartLegend content={<ChartLegendContent />} />
             </BarChart>
           </ChartContainer>
+        </div>
+      )}
+      {data && (data.heatmap.length > 0 || data.top.length > 0) && (
+        <div className="mb-4 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-border bg-card p-3">
+            <HistoryHeatmap cells={data.heatmap} />
+          </div>
+          <div className="rounded-lg border border-border bg-card p-3">
+            <TopChanges rows={data.top} />
+          </div>
         </div>
       )}
       <DataTable<TransitionRow>

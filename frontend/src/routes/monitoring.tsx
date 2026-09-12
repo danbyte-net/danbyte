@@ -152,6 +152,16 @@ const STATUS_ORDER: CheckStatus[] = [
   "unknown",
 ]
 
+const LATENCY_CONFIG = {
+  p50: { label: "Median", color: "var(--chart-1)" },
+  p95: { label: "95th percentile", color: "var(--chart-3)" },
+} satisfies ChartConfig
+
+const ALERTS_CONFIG = {
+  opened: { label: "Opened", color: "var(--color-red-500)" },
+  resolved: { label: "Resolved", color: "var(--color-emerald-500)" },
+} satisfies ChartConfig
+
 // The brand chart palette (from the adopted preset) - used to colour the
 // by-protocol bars, the shadcn way.
 const KIND_PALETTE = [
@@ -276,6 +286,28 @@ function MonitoringPage() {
   }))
   const windowLabel =
     hours === 24 ? "24 hours" : hours === 168 ? "7 days" : "30 days"
+  const latencyData = (d?.latency_series ?? []).map((p) => ({
+    ...p,
+    label:
+      d?.series_bucket === "day"
+        ? new Date(p.t).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+          })
+        : hours > 24
+          ? new Date(p.t).toLocaleString([], {
+              weekday: "short",
+              hour: "2-digit",
+            })
+          : new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
+  }))
+  const alertsData = (d?.alerts_series ?? []).map((p) => ({
+    ...p,
+    label: new Date(p.t).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+    }),
+  }))
 
   const total = d?.total_checks ?? 0
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
@@ -377,6 +409,20 @@ function MonitoringPage() {
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
               <Kpi label="Total checks" value={total} />
               <Kpi label="Monitored IPs" value={d.monitored_ips} />
+              {d.availability_pct != null && (
+                <Kpi
+                  label={`Availability · ${windowLabel}`}
+                  value={d.availability_pct}
+                  unit="%"
+                  tone={
+                    d.availability_pct >= 99.9
+                      ? "up"
+                      : d.availability_pct >= 99
+                        ? "flapping"
+                        : "down"
+                  }
+                />
+              )}
               <Kpi
                 label="Up"
                 value={d.by_status.up ?? 0}
@@ -496,6 +542,132 @@ function MonitoringPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* The estate's latency and the alert flow, over the same window */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Latency</CardTitle>
+                  <CardDescription>
+                    Median and 95th percentile across every check, per{" "}
+                    {d.series_bucket === "day" ? "day" : "bucket"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!mounted || latencyData.length === 0 ? (
+                    <Placeholder
+                      h="h-[200px]"
+                      hint={`No latency recorded in the last ${windowLabel}.`}
+                    />
+                  ) : (
+                    <ChartContainer
+                      config={LATENCY_CONFIG}
+                      className="aspect-auto h-[200px] w-full"
+                    >
+                      <LineChart
+                        accessibilityLayer
+                        data={latencyData}
+                        margin={{ left: 0, right: 12 }}
+                      >
+                        <CartesianGrid vertical={false} />
+                        <XAxis
+                          dataKey="label"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          minTickGap={32}
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          width={40}
+                          unit=" ms"
+                        />
+                        <ChartTooltip
+                          cursor={false}
+                          content={<ChartTooltipContent indicator="line" />}
+                        />
+                        <Line
+                          dataKey="p95"
+                          type="monotone"
+                          stroke="var(--color-p95)"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                        <Line
+                          dataKey="p50"
+                          type="monotone"
+                          stroke="var(--color-p50)"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                        <ChartLegend content={<ChartLegendContent />} />
+                      </LineChart>
+                    </ChartContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Alerts</CardTitle>
+                  <CardDescription>
+                    Opened against resolved, per day
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!mounted || alertsData.length === 0 ? (
+                    <Placeholder
+                      h="h-[200px]"
+                      hint="No alerts in this window."
+                    />
+                  ) : (
+                    <ChartContainer
+                      config={ALERTS_CONFIG}
+                      className="aspect-auto h-[200px] w-full"
+                    >
+                      <BarChart
+                        accessibilityLayer
+                        data={alertsData}
+                        margin={{ left: 0, right: 12 }}
+                      >
+                        <CartesianGrid vertical={false} />
+                        <XAxis
+                          dataKey="label"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          minTickGap={24}
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          width={28}
+                          allowDecimals={false}
+                        />
+                        <ChartTooltip
+                          cursor={false}
+                          content={<ChartTooltipContent />}
+                        />
+                        <Bar
+                          dataKey="opened"
+                          fill="var(--color-opened)"
+                          radius={3}
+                        />
+                        <Bar
+                          dataKey="resolved"
+                          fill="var(--color-resolved)"
+                          radius={3}
+                        />
+                        <ChartLegend content={<ChartLegendContent />} />
+                      </BarChart>
+                    </ChartContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
 
             {/* Distribution + by-kind */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
@@ -653,11 +825,14 @@ function Kpi({
   value,
   tone,
   badge,
+  unit,
 }: {
   label: string
   value: number
   tone?: keyof typeof TONE
   badge?: string
+  /** Rendered after the figure, muted - "%" on an availability. */
+  unit?: string
 }) {
   return (
     <Card size="sm">
@@ -669,6 +844,11 @@ function Kpi({
           }`}
         >
           {value.toLocaleString()}
+          {unit && (
+            <span className="ml-0.5 text-base font-normal text-muted-foreground">
+              {unit}
+            </span>
+          )}
         </CardTitle>
         {badge && (
           <CardAction>

@@ -12,6 +12,7 @@ import type {
 import { DataTable } from "@/components/data-table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { transitionColumns } from "@/components/columns/transition-columns"
+import { DailyAvailability } from "./daily-availability"
 import { StatusStrip } from "./status-strip"
 import { SourceBadge } from "./source-badge"
 
@@ -108,6 +109,11 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
         />
       </div>
 
+      {hasStrips && tl && tl.days.length >= 3 && (
+        <div className="border-t border-border px-3 py-2.5">
+          <DailyAvailability days={tl.days} />
+        </div>
+      )}
       {hasStrips && tl && (
         <div className="space-y-1.5 border-t border-border px-3 py-2.5">
           <StripRow

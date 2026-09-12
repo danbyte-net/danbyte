@@ -15,6 +15,7 @@ import { ChangelogWidget } from "./widget-changelog"
 import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
 import { CertHealthWidget } from "./widget-cert-health"
 import { FlappingWidget } from "./widget-flapping"
+import { AlertsPerDay, LatencyWeek } from "./widget-monitoring-charts"
 import { MyTasksWidget } from "./widget-tasks"
 
 // Lazy - pulls in the floor-plan canvas only when the widget is actually shown.
@@ -48,6 +49,9 @@ export type WidgetId =
   | "check-status"
   | "alerts-severity"
   | "flapping"
+  | "availability"
+  | "alerts-per-day"
+  | "latency-week"
   | "expiring-certs"
   | "expired-certs"
   | "cert-health"
@@ -114,6 +118,17 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
   "device-status": DONUT,
   "check-status": DONUT,
   "alerts-severity": DONUT,
+  availability: DONUT,
+  "alerts-per-day": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
+  },
+  "latency-week": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
+  },
   "object-counts": {
     span: { w: 4, h: 2 },
     min: { w: 2, h: 2 },
@@ -413,6 +428,34 @@ export const CATALOG: WidgetDef[] = [
     title: "Certificate health",
     description: "Expiry buckets across the certificate inventory",
     render: () => <CertHealthWidget />,
+  },
+  {
+    id: "availability",
+    fit: "center",
+    title: "Availability",
+    description: "Seven days: time reachable over time measured",
+    render: (d) => (
+      <RadialGauge
+        value={d.availability_7d}
+        label="7-day availability"
+        color="var(--color-emerald-500)"
+      />
+    ),
+  },
+  {
+    id: "alerts-per-day",
+    fit: "stretch",
+    title: "Alerts per day",
+    description: "Opened against resolved, the last seven days",
+    render: (d) => <AlertsPerDay rows={d.alerts_per_day} />,
+  },
+  {
+    id: "latency-week",
+    fit: "stretch",
+    title: "Latency",
+    description:
+      "Median and 95th percentile across every check, hourly, seven days",
+    render: (d) => <LatencyWeek rows={d.latency_series} />,
   },
   {
     id: "flapping",

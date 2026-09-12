@@ -154,6 +154,7 @@ export function ChartTooltipContent({
   color,
   nameKey,
   labelKey,
+  formatter,
 }: {
   active?: boolean
   payload?: ChartItem[]
@@ -166,6 +167,14 @@ export function ChartTooltipContent({
   color?: string
   nameKey?: string
   labelKey?: string
+  /** Render a row's value yourself - a range as "2–8 ms", a percentage with
+   * its sign. The upstream shadcn prop; receives the item's value, its key
+   * and the item. */
+  formatter?: (
+    value: number | string,
+    name: string,
+    item: ChartItem
+  ) => React.ReactNode
 }) {
   const { config } = useChart()
 
@@ -239,13 +248,18 @@ export function ChartTooltipContent({
                     {itemConfig?.label || item.name}
                   </span>
                 </div>
-                {item.value != null && (
-                  <span className="num font-medium text-foreground tabular-nums">
-                    {typeof item.value === "number"
-                      ? item.value.toLocaleString()
-                      : item.value}
-                  </span>
-                )}
+                {item.value != null &&
+                  (formatter ? (
+                    <span className="num font-medium text-foreground tabular-nums">
+                      {formatter(item.value, key, item)}
+                    </span>
+                  ) : (
+                    <span className="num font-medium text-foreground tabular-nums">
+                      {typeof item.value === "number"
+                        ? item.value.toLocaleString()
+                        : item.value}
+                    </span>
+                  ))}
               </div>
             </div>
           )

@@ -1219,6 +1219,24 @@ def stats_view(request):
 
     fast_checks = states.filter(interval_ms__isnull=False).count()
     lane = lane_stats() or {}
+    # Availability over the window from the same buckets the chart draws:
+    # up over up-plus-down, degraded counting as reachable.
+    up_n = sum(p["up"] + p["degraded"] for p in series)
+    down_n = sum(p["down"] for p in series)
+    availability = round(100.0 * up_n / (up_n + down_n), 2) if (up_n + down_n) else None
+    from datetime import timedelta
+
+    from .charts import alerts_per_day, bucket_seconds, latency_percentiles, viewer_tz
+
+    since = timezone.now() - timedelta(hours=hours)
+    scoped_results = _scope_ip_keyed(
+        request, tenant, CheckResult.objects.filter(tenant=tenant)
+    )
+    tz = viewer_tz(request, tenant)
+    q = rbac.row_filter(request.user, tenant, "ipaddress", "view")
+    ip_filter = None if q is True else (
+        IPAddress.objects.filter(tenant=tenant).filter(q) if q else IPAddress.objects.none()
+    )
 
     return Response(
         {
@@ -1232,6 +1250,18 @@ def stats_view(request):
             "series_hours": hours,
             "series_bucket": bucket,
             "recent_transitions": StateTransitionSerializer(recent, many=True).data,
+            "availability_pct": availability,
+            # The estate's latency per bucket - p50 says how it feels, p95
+            # says who is suffering.
+            "latency_series": latency_percentiles(
+                scoped_results, since, timezone.now(), bucket_seconds(hours)
+            ),
+            # Opened against resolved, per day over the window (a day at
+            # least, so the 24 h view still has a bar to compare).
+            "alerts_series": alerts_per_day(
+                tenant, since - timedelta(hours=0 if hours > 24 else 24 * 6),
+                timezone.now(), tz, ip_filter,
+            ),
             # Sub-minute checks in the caller's view, and the lane's own pulse
             # (deployment-wide - one process runs every tenant's).
             "fast_lane": {

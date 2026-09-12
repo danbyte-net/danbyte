@@ -28,6 +28,12 @@ The page is a mosaic of tiles:
 - **Activity widgets** - **Changelog** (the latest audit changes across the
   tenant: who changed what, each linking to the full change and out to the audit
   log) and **Recent activity** (latest monitoring status changes).
+- **Monitoring widgets** - **Availability** (seven days, time reachable over
+  time measured, as a gauge), **Alerts per day** (opened against resolved, the
+  last seven days), **Latency** (the estate's median and 95th percentile per
+  hour over the week) and **Flapping** (the checks currently flagged, with a
+  link to confirm them). Add them from *Add widget*; all four follow the same
+  site scoping as the monitoring pages.
 
 Colours come from your own statuses and roles where you've set them, so the
 charts speak your network's language.

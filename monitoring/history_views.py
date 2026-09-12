@@ -15,6 +15,14 @@ from rest_framework.response import Response
 from api.models import Device, IPAddress, Prefix
 from api.views import _get_active_tenant
 
+from .charts import (
+    bucket_seconds,
+    latency_series,
+    per_day,
+    transition_heatmap,
+    transition_top,
+    viewer_tz,
+)
 from .engines import source_of
 from .history import (
     apply_transition_filters,
@@ -23,7 +31,7 @@ from .history import (
     transition_series,
     window,
 )
-from .models import CheckState, StateTransition
+from .models import CheckResult, CheckState, StateTransition
 from .timeline import merge_worst, segments_for_pairs
 from .views import (
     _get_ip,
@@ -93,9 +101,9 @@ def _transitions_response(request, base, params):
         base, params, TRANSITION_FACETS,
         lambda b, p: apply_transition_filters(b, p),
     )
-    series, bucket = transition_series(
-        apply_transition_filters(base, params)[0], since, until
-    )
+    filtered = apply_transition_filters(base, params)[0]
+    series, bucket = transition_series(filtered, since, until)
+    tz = viewer_tz(request, _get_active_tenant(request))
     return Response({
         "count": total,
         "page": page,
@@ -105,6 +113,10 @@ def _transitions_response(request, base, params):
         "bucket": bucket,
         "facets": facets,
         "series": series,
+        # When changes land (the viewer's week) and who changes most - both
+        # over the same filtered set as the table, so the rail shapes them.
+        "heatmap": transition_heatmap(filtered, tz),
+        "top": transition_top(filtered),
         "results": [_row(t) for t in rows],
     })
 
@@ -203,7 +215,10 @@ def ip_timeline_view(request, ip_id):
         CheckState.objects.filter(target_ip=ip).select_related("template", "target_ip", "engine")
     )
     checks, rollup = _check_rows(tenant.id, states, since, until)
-    return Response({"since": since, "until": until, "rollup": rollup, "checks": checks})
+    return Response({
+        "since": since, "until": until, "rollup": rollup, "checks": checks,
+        "days": per_day(rollup, since, until, viewer_tz(request, tenant)),
+    })
 
 
 @extend_schema(summary="Status over time for one device", tags=["monitoring"], request=None)
@@ -238,6 +253,7 @@ def device_timeline_view(request, device_id):
     ]
     return Response({
         "since": since, "until": until, "rollup": rollup, "ips": ips, "checks": checks,
+        "days": per_day(rollup, since, until, viewer_tz(request, tenant)),
     })
 
 
@@ -274,4 +290,35 @@ def timeline_batch_view(request):
             str(s.id): by_pair.get((str(s.target_ip_id), str(s.template_id)), [])
             for s in states
         },
+    })
+
+
+@extend_schema(summary="Latency over time for one check on an address", tags=["monitoring"], request=None)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def ip_latency_view(request, ip_id):
+    """``?template=<id>&hours=24|168|720`` → buckets of average / min / max
+    latency and loss. Buckets follow the window: five minutes over a day, an
+    hour over a week, six hours over a month."""
+    ip, tenant = _get_ip(request, ip_id)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    if ip is None:
+        return Response({"detail": "Not found."}, status=404)
+    hours = request.query_params.get("hours")
+    hours = int(hours) if hours in ("24", "168", "720") else 24
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    until = timezone.now()
+    since = until - timedelta(hours=hours)
+    qs = CheckResult.objects.filter(target_ip=ip)
+    template = (request.query_params.get("template") or "").strip()
+    if template:
+        qs = qs.filter(template_id=template)
+    bucket = bucket_seconds(hours)
+    return Response({
+        "since": since, "until": until, "bucket_seconds": bucket,
+        "points": latency_series(qs, since, until, bucket),
     })
