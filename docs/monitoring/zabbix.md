@@ -384,7 +384,11 @@ somebody just switched off.
 
 ### Working the queue
 
-The **Zabbix** page shows what a sync pass proposed. Every proposal names the
+The **Zabbix** page has four tabs: **Overview** (the connection and its
+review queue - the part somebody comes back to), **Rules** (provisioning and
+adoption rules), **Hosts** (what is in scope and which host each device is
+paired with) and **Maintenance** (the windows mirrored into Zabbix). The
+queue on Overview shows what a sync pass proposed. Every proposal names the
 system that would change - *Create in Zabbix*, *Adopt into Danbyte* - because
 a host group called "Danbyte estate" beside a bare "Create host" read as
 creating something in Danbyte, which is the opposite of what it does. Each row
