@@ -158,11 +158,13 @@ def apply_target_filters(qs, params):
 
 
 def window(params, now=None) -> tuple:
-    """``(since, until)`` from ``since``/``until`` ISO stamps, else ``days``.
+    """``(since, until)`` from ``since``/``until`` ISO stamps, else ``hours``,
+    else ``days``.
 
-    An explicit stamp wins over ``days``. Naive stamps are refused rather than
-    guessed at: a history query a few hours out because of a timezone is the
-    kind of wrong that looks right.
+    An explicit stamp wins over a span; ``hours`` (1 up to a year) wins over
+    ``days`` so a panel can ask for the last hour or twelve. Naive stamps are
+    refused rather than guessed at: a history query a few hours out because
+    of a timezone is the kind of wrong that looks right.
     """
     now = now or timezone.now()
     until = parse_datetime(params.get("until") or "") if params.get("until") else None
@@ -172,6 +174,12 @@ def window(params, now=None) -> tuple:
     if since is not None and timezone.is_naive(since):
         since = None
     until = until or now
+    if since is None and params.get("hours"):
+        try:
+            hours = max(1, min(int(params.get("hours")), DAYS_MAX * 24))
+            since = until - timedelta(hours=hours)
+        except ValueError:
+            since = None
     if since is None:
         try:
             days = int(params.get("days") or DAYS_DEFAULT)

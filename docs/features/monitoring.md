@@ -445,7 +445,9 @@ while the tab is open. That list lives in Redis, only for addresses
 somebody is watching, and is gone ten minutes after the last look - it is
 a window on the lane, not history.
 
-**History** carries the window (24h / 7d / 30d / 90d) and, for that window:
+**History** carries the window - 1h / 12h / 24h / 7d / 30d / 90d on the
+tabs, or any span at all from the slider button beside them (a number of
+hours or days, an hour to a year) - and, for that window:
 the availability figure with incidents, MTTR and time down; **daily
 availability** as one bar per day once three or more days were measured
 (three nines green, two amber, less red, a day with nothing measured empty);
@@ -530,6 +532,8 @@ series alongside the rows, so one call feeds a rail, a chart and a table:
 - `…/ips/<id>/timeline/?days=` and `…/devices/<id>/timeline/` - status over the
   window as segments `{start, end, status}`, per check and rolled up (worst
   wins), computed from the same transitions the uptime figure integrates.
+  Every window-taking endpoint also accepts `hours=` (1 up to a year), which
+  wins over `days`; explicit `since`/`until` stamps win over both.
   `POST …/timeline/ {states: [...], days}` returns segments for up to 200
   checks at once, for list strips.
 - `…/ips/<id>/history/` pages a check's recorded results backwards with

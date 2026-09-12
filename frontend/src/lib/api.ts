@@ -5188,6 +5188,8 @@ export interface TransitionsResponse {
  * comma-separated and mean any-of; `tag` means every tag named. */
 export interface TransitionFilters {
   days?: number
+  /** Wins over `days`; an hour up to a year. */
+  hours?: number
   since?: string
   until?: string
   to_status?: string

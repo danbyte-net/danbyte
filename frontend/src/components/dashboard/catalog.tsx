@@ -15,6 +15,8 @@ import { ChangelogWidget } from "./widget-changelog"
 import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
 import { CertHealthWidget } from "./widget-cert-health"
 import { FlappingWidget } from "./widget-flapping"
+import { StatusHistoryWidget } from "./widget-status-history"
+import type { StatusHistoryConfig } from "./widget-status-history"
 import { AlertsPerDay, LatencyWeek } from "./widget-monitoring-charts"
 import { MyTasksWidget } from "./widget-tasks"
 
@@ -58,6 +60,7 @@ export type WidgetId =
   | "my-tasks"
   | "map"
   | "floorplan"
+  | "status-history"
 
 import type { WidgetMeta } from "@/lib/dashboard-layout"
 
@@ -148,6 +151,11 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
   },
   map: BIGGY,
   floorplan: BIGGY,
+  "status-history": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 1 },
+    max: { w: 6, h: 4 },
+  },
 }
 
 /** The built-in layout, hand-placed on the 6-column grid rather than flowed:
@@ -494,6 +502,20 @@ export const CATALOG: WidgetDef[] = [
         planId={(ctx?.config?.plan as string) || undefined}
         editing={ctx?.editing}
         onPlanChange={(id) => ctx?.setConfig({ plan: id })}
+      />
+    ),
+  },
+  {
+    id: "status-history",
+    fit: "scroll",
+    multi: true,
+    title: "Status history",
+    description: "The status strips of addresses and devices you choose",
+    render: (_d, ctx) => (
+      <StatusHistoryWidget
+        config={ctx?.config as StatusHistoryConfig | undefined}
+        editing={ctx?.editing}
+        onChange={(c) => ctx?.setConfig({ ...c })}
       />
     ),
   },

@@ -121,6 +121,15 @@ class FilterTests(_Base):
         until = (self.now - timedelta(hours=2, minutes=30)).isoformat()
         self.assertEqual(self.get(days=30, until=until)["count"], 2)
 
+    def test_hours_win_over_days(self):
+        since, until = window({"hours": "12", "days": "30"}, self.now)
+        self.assertEqual(since, self.now - timedelta(hours=12))
+        since, _ = window({"hours": "x"}, self.now)
+        self.assertEqual(since, self.now - timedelta(days=7))
+        since, _ = window({"hours": "99999999"}, self.now)
+        self.assertEqual(since, self.now - timedelta(days=365))
+        self.assertEqual(self.get(hours=2, until=(self.now - timedelta(minutes=30)).isoformat())["count"], 2)
+
     def test_naive_stamps_are_refused_not_guessed(self):
         since, until = window({"since": "2026-01-01T00:00:00"}, self.now)
         self.assertEqual(until, self.now)

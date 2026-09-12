@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { SlidersHorizontal } from "lucide-react"
 
 import { api, transitionsQuery } from "@/lib/api"
 import type {
@@ -12,16 +13,126 @@ import type {
 import { DataTable } from "@/components/data-table"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { transitionColumns } from "@/components/columns/transition-columns"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Section } from "@/components/ui/section"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
 import { DailyAvailability } from "./daily-availability"
 import { StatusStrip, fmtSpan } from "./status-strip"
 
+/** The windows on the tabs, in hours. */
 export const HISTORY_WINDOWS = [
-  { days: 1, label: "24h" },
-  { days: 7, label: "7d" },
-  { days: 30, label: "30d" },
-  { days: 90, label: "90d" },
+  { hours: 1, label: "1h" },
+  { hours: 12, label: "12h" },
+  { hours: 24, label: "24h" },
+  { hours: 168, label: "7d" },
+  { hours: 720, label: "30d" },
+  { hours: 2160, label: "90d" },
 ] as const
+
+/** The slider's stops - an hour to ninety days, denser where an operator
+ * actually looks. */
+const STOPS = [1, 2, 3, 6, 12, 24, 48, 72, 168, 336, 720, 1440, 2160]
+const MAX_HOURS = 365 * 24
+
+export function fmtHours(h: number): string {
+  if (h >= 24 && h % 24 === 0) return `${h / 24}d`
+  return `${h}h`
+}
+
+/** Any window at all: a slider over the stops, or a number with its unit. */
+function CustomWindow({
+  hours,
+  onChange,
+}: {
+  hours: number
+  onChange: (hours: number) => void
+}) {
+  const preset = HISTORY_WINDOWS.some((w) => w.hours === hours)
+  const inDays = hours >= 24 && hours % 24 === 0
+  const [unit, setUnit] = useState<"h" | "d">(inDays ? "d" : "h")
+  const [text, setText] = useState(String(inDays ? hours / 24 : hours))
+  const apply = (raw: string, u: "h" | "d") => {
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n <= 0) return
+    onChange(Math.min(MAX_HOURS, Math.round(u === "d" ? n * 24 : n)))
+  }
+  // Nearest stop for the thumb - the slider is a coarse hand, the input the fine one.
+  const idx = STOPS.reduce(
+    (best, v, i) =>
+      Math.abs(v - hours) < Math.abs(STOPS[best] - hours) ? i : best,
+    0
+  )
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant={preset ? "outline" : "secondary"}
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          {preset ? "Custom" : fmtHours(hours)}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 space-y-3">
+        <Slider
+          min={0}
+          max={STOPS.length - 1}
+          step={1}
+          value={[idx]}
+          onValueChange={(v) => {
+            const h = STOPS[v[0]]
+            const d = h >= 24 && h % 24 === 0
+            setUnit(d ? "d" : "h")
+            setText(String(d ? h / 24 : h))
+            onChange(h)
+          }}
+        />
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            className="h-8 w-24 text-sm"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => apply(text, unit)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") apply(text, unit)
+            }}
+          />
+          <Select
+            value={unit}
+            onValueChange={(u) => {
+              setUnit(u as "h" | "d")
+              apply(text, u as "h" | "d")
+            }}
+          >
+            <SelectTrigger className="h-8 w-24 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="h">hours</SelectItem>
+              <SelectItem value="d">days</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export type HistoryScope =
   | { ip: string }
@@ -45,25 +156,25 @@ const PAGE = 25
  * being its own Monitoring tab's job.
  */
 export function HistoryPanel({ scope }: { scope: HistoryScope }) {
-  const [days, setDays] = useState<number>(7)
+  const [hours, setHours] = useState<number>(168)
   const [page, setPage] = useState(1)
   const path = scopePath(scope)
   const hasStrips = !("prefix" in scope)
 
   const timeline = useQuery({
-    queryKey: ["monitoring-timeline", path, days],
+    queryKey: ["monitoring-timeline", path, hours],
     queryFn: () =>
       api<IpTimeline | DeviceTimeline>(
-        `/api/monitoring/${path}/timeline/?days=${days}`
+        `/api/monitoring/${path}/timeline/?hours=${hours}`
       ),
     enabled: hasStrips,
   })
   const changes = useQuery({
-    queryKey: ["monitoring-transitions", path, days, page],
+    queryKey: ["monitoring-transitions", path, hours, page],
     queryFn: () =>
       api<TransitionsResponse>(
         `/api/monitoring/${path}/transitions/${transitionsQuery({
-          days,
+          hours,
           page,
           page_size: PAGE,
         })}`
@@ -81,7 +192,7 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
   const historySearch = {
     view: "history" as const,
     status: "all" as const,
-    days: String(days),
+    days: String(Math.max(1, Math.ceil(hours / 24))),
     ...("ip" in scope
       ? { ip: scope.ip }
       : "device" in scope
@@ -107,15 +218,22 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
             Open in Monitoring
           </Link>
           <SegmentedTabs
-            value={String(days)}
+            value={String(hours)}
             onValueChange={(v) => {
-              setDays(Number(v))
+              setHours(Number(v))
               setPage(1)
             }}
             items={HISTORY_WINDOWS.map((w) => ({
-              value: String(w.days),
+              value: String(w.hours),
               label: w.label,
             }))}
+          />
+          <CustomWindow
+            hours={hours}
+            onChange={(h) => {
+              setHours(h)
+              setPage(1)
+            }}
           />
         </>
       }
