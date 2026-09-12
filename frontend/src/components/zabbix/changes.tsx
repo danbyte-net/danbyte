@@ -41,7 +41,11 @@ const KIND_VARIANT: Record<
   adopt_host: "info",
 }
 
-export function ZabbixChanges({ connection }: { connection: ZabbixConnection }) {
+export function ZabbixChanges({
+  connection,
+}: {
+  connection: ZabbixConnection
+}) {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const canApply = canDo("zabbixchange", "change")
@@ -68,10 +72,9 @@ export function ZabbixChanges({ connection }: { connection: ZabbixConnection }) 
 
   const apply = useMutation({
     mutationFn: (id: string) =>
-      api<{ ok: boolean; detail: string }>(
-        `/api/zabbix/changes/${id}/apply/`,
-        { method: "POST" }
-      ),
+      api<{ ok: boolean; detail: string }>(`/api/zabbix/changes/${id}/apply/`, {
+        method: "POST",
+      }),
     onSuccess: (r) => {
       toast.success(r.detail)
       setConfirmApply(null)
@@ -127,7 +130,8 @@ export function ZabbixChanges({ connection }: { connection: ZabbixConnection }) 
   // where the rest apply on click.
   const onApply = (c: ZabbixChange) =>
     c.kind === "prune_host" ? setConfirmApply(c) : apply.mutate(c.id)
-  const onApplyAll = () => (prunes > 0 ? setConfirmAll(true) : applyAll.mutate())
+  const onApplyAll = () =>
+    prunes > 0 ? setConfirmAll(true) : applyAll.mutate()
 
   const applyingId = apply.isPending ? apply.variables : null
   const dismissingId = dismiss.isPending ? dismiss.variables : null
@@ -170,7 +174,9 @@ export function ZabbixChanges({ connection }: { connection: ZabbixConnection }) 
           ) : row.original.kind === "adopt_host" ? (
             // Not a device yet - the host's name, which applying makes one.
             <span className="font-mono text-xs">
-              {String(row.original.detail.name ?? row.original.detail.host ?? "")}
+              {String(
+                row.original.detail.name ?? row.original.detail.host ?? ""
+              )}
             </span>
           ) : (
             <span className="text-muted-foreground">-</span>
@@ -269,7 +275,9 @@ export function ZabbixChanges({ connection }: { connection: ZabbixConnection }) 
         <p className="px-4 py-3 text-[13px] text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
         <EmptyState
-          title={view === "dismissed" ? "Nothing dismissed" : "Nothing to review"}
+          title={
+            view === "dismissed" ? "Nothing dismissed" : "Nothing to review"
+          }
           className="m-4"
         >
           {view === "dismissed"
@@ -335,7 +343,7 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
     if (d.address) parts.push(`on ${String(d.address)}`)
     return (
       <span className="text-[12px] text-muted-foreground">
-        Creates the device <span className="font-mono">{name}</span>
+        Creates the device <span className="font-mono">{name}</span> in Danbyte
         {parts.length ? ` - ${parts.join(", ")}` : ""}.
       </span>
     )
@@ -344,7 +352,7 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
     return (
       <span className="text-[12px] text-muted-foreground">
         Deletes <span className="font-mono">{String(d.host_name ?? "")}</span>{" "}
-        - Danbyte created it and it left scope.
+        from Zabbix - Danbyte created it and it left scope.
       </span>
     )
   if (change.kind === "link_template") {
@@ -356,7 +364,7 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
     if (d.add_snmp_interface) parts.push("adds an SNMP interface")
     return (
       <span className="text-[12px] text-muted-foreground">
-        {parts.length ? parts.join(" · ") : "nothing new"}
+        In Zabbix: {parts.length ? parts.join(" · ") : "nothing new"}
       </span>
     )
   }
@@ -369,6 +377,7 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
       .map(([k, v]) => `${k.replace(/^_/, "")} → ${String(v)}`)
     return (
       <span className="text-[12px] text-muted-foreground">
+        In Zabbix:{" "}
         {fields.length > 0 ? fields.join(", ") : "no writable difference"}
       </span>
     )
@@ -376,12 +385,18 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
   const templates = (d.templates ?? []) as string[]
   const groups = (d.groups ?? []) as string[]
   const parts: string[] = []
-  if (groups.length) parts.push(`in ${groups.join(", ")}`)
-  if (templates.length) parts.push(`with ${templates.join(", ")}`)
-  if (d.proxy) parts.push(`via ${String(d.proxy)}`)
+  if (groups.length)
+    parts.push(
+      `${groups.length === 1 ? "group" : "groups"} ${groups.join(", ")}`
+    )
+  if (templates.length)
+    parts.push(
+      `${templates.length === 1 ? "template" : "templates"} ${templates.join(", ")}`
+    )
+  if (d.proxy) parts.push(`proxy ${String(d.proxy)}`)
   return (
     <span className="text-[12px] text-muted-foreground">
-      Creates the host{parts.length ? ` ${parts.join(", ")}` : ""}.
+      Creates a host in Zabbix{parts.length ? ` - ${parts.join(" · ")}` : ""}.
     </span>
   )
 }

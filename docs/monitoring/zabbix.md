@@ -356,8 +356,11 @@ somebody just switched off.
 
 ### Working the queue
 
-The **Zabbix** page shows what a sync pass proposed. Each row says what would
-be written and why; **Apply** does that one write, **Dismiss** keeps it from
+The **Zabbix** page shows what a sync pass proposed. Every proposal names the
+system that would change - *Create in Zabbix*, *Adopt into Danbyte* - because
+a host group called "Danbyte estate" beside a bare "Create host" read as
+creating something in Danbyte, which is the opposite of what it does. Each row
+says what would be written and why; **Apply** does that one write, **Dismiss** keeps it from
 being raised again. *Needs a decision* rows carry no Apply button at all -
 they are resolved by fixing the ambiguity in Zabbix or in Danbyte, and
 **Apply all** skips them rather than guessing.
@@ -368,7 +371,7 @@ no proposal.
 
 Dismissed proposals keep a second list, **Dismissed**, next to the queue;
 **Restore** puts one back. A mis-click is not a permanent silence. Applying
-a *Remove host* proposal - alone or as part of **Apply all** - asks first,
+a *Remove from Zabbix* proposal - alone or as part of **Apply all** - asks first,
 because it deletes a host, its items and its history in Zabbix and Danbyte
 cannot undo that.
 
@@ -461,7 +464,7 @@ leaving the last ones standing.
 The other way in. With **Adopt hosts** on, every Zabbix host that **no device
 of yours answers to** - by interface address, inventory serial, or name,
 judged against the whole tenant rather than the provisioning scope - is
-offered in the same review queue as an *Adopt host* proposal. Applying it
+offered in the same review queue as an *Adopt into Danbyte* proposal. Applying it
 makes the device: the host's visible name and serial, the address from its
 SNMP interface (or the agent's), the **site** from the first host group that
 names one of your sites - the reverse of what provisioning writes, so an

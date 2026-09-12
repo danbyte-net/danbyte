@@ -295,13 +295,16 @@ class ZabbixChange(TimestampedModel):
     #: one. Keyed by ``detail.hostid`` rather than a device, since the device
     #: is what applying it makes.
     ADOPT = "adopt_host"
+    #: Every label names the system that changes. "Create host" beside a host
+    #: group called "Danbyte estate" read as creating something in Danbyte,
+    #: which is the opposite of what it does.
     KIND_CHOICES = [
-        (CREATE, "Create host"),
-        (UPDATE, "Update host"),
-        (TEMPLATE, "Link templates"),
+        (CREATE, "Create in Zabbix"),
+        (UPDATE, "Update in Zabbix"),
+        (TEMPLATE, "Link in Zabbix"),
         (AMBIGUOUS, "Needs a decision"),
-        (PRUNE, "Remove host"),
-        (ADOPT, "Adopt host"),
+        (PRUNE, "Remove from Zabbix"),
+        (ADOPT, "Adopt into Danbyte"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
