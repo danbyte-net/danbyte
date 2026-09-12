@@ -1513,11 +1513,32 @@ class CheckAssignmentViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSe
         self._validate_targets(serializer)
         super().perform_create(serializer)
         self._assert_saved_configuration_scope(serializer.instance, "add")
+        self._materialise(serializer.instance)
 
     def perform_update(self, serializer):
         self._validate_targets(serializer)
         super().perform_update(serializer)
         self._assert_saved_configuration_scope(serializer.instance, "change")
+        self._materialise(serializer.instance)
+
+    def perform_destroy(self, instance):
+        ip = instance.ip_address if instance.ip_address_id else None
+        super().perform_destroy(instance)
+        if ip is not None:
+            from .scheduler import materialise_ip
+
+            materialise_ip(ip)
+
+    @staticmethod
+    def _materialise(assignment) -> None:
+        """A check put on one address starts now, not on the next five-minute
+        materialise pass: the row already shows on the tab, and "never run"
+        for five minutes reads as broken. A prefix check can cover a /16,
+        so that one is left to the pass."""
+        if assignment.ip_address_id:
+            from .scheduler import materialise_ip
+
+            materialise_ip(assignment.ip_address)
 
 
 def _assert_tenant_objects(tenant, **objects):

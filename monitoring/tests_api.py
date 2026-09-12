@@ -91,7 +91,12 @@ class MonitoringApiTests(APITestCase):
 
             summary = self.client.get(f"/api/monitoring/ips/{self.ip.id}/checks/").json()
             self.assertEqual(len(summary["checks"]), 1)
-            self.assertIsNone(summary["checks"][0]["state"])
+            # Materialised on creation, so the check is scheduled at once
+            # rather than "never run" until the next five-minute pass.
+            state = summary["checks"][0]["state"]
+            self.assertIsNotNone(state)
+            self.assertEqual(state["status"], "unknown")
+            self.assertIsNotNone(state["next_run"])
 
             run = self.client.post(f"/api/monitoring/ips/{self.ip.id}/check-now/").json()
             self.assertEqual(run["results"][0]["status"], "up")
@@ -109,9 +114,14 @@ class MonitoringApiTests(APITestCase):
             {"template": t["id"], "ip_address": str(self.ip.id)},
             format="json",
         ).json()
+        from .models import CheckState
+
+        self.assertEqual(CheckState.objects.filter(target_ip=self.ip).count(), 1)
         r = self.client.delete(f"/api/monitoring/assignments/{a['id']}/")
         self.assertEqual(r.status_code, 204)
         self.assertEqual(CheckAssignment.objects.count(), 0)
+        # And gone from the schedule with it.
+        self.assertEqual(CheckState.objects.filter(target_ip=self.ip).count(), 0)
 
     def test_prefix_checks_rollup_and_grid(self):
         listener, port = _open_port()

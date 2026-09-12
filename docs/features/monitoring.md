@@ -42,8 +42,11 @@ works for both IPs and prefixes.
    for example a TCP check asks for a port, an ICMP check for a packet count.
 5. Set the timing and credentials as needed (see [Check types](#check-types) and
    [Schedule modes](#schedule-modes)).
-6. Save. The check appears in the Monitoring section and starts running on its
-   schedule. Use **Check now** if you want a result immediately.
+6. Save. The check appears in the Monitoring section and is scheduled at once
+   - a check on an address runs on the next dispatch (or, on the fast lane,
+   within about ten seconds); a check on a prefix is spread over its
+   addresses by the materialise pass, which runs every five minutes. Use
+   **Check now** if you want a result immediately.
 
 ### Reusable check definitions
 
