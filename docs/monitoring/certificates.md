@@ -464,6 +464,55 @@ can't self-validate, so its certs are left for the operator (the
 [expiry alerting](#expiry-alerting) already warns before they lapse). A renewal
 that is already in flight is never stacked with another.
 
+## The site's own certificate
+
+The certificate Danbyte itself is served on is managed from **Settings →
+Updates → Site certificate** (superusers). The card shows what `:443`
+presents right now - subject, names, expiry with a days-left pill, key,
+fingerprint - and offers the ways to replace it:
+
+- **Let's Encrypt / ACME** - one click for a public certificate: Let's
+  Encrypt is built in (the issuer is created on first use with the account
+  email you give), or pick any issuer you added under [Issuers](#issuers-acme-automated-issuance).
+  **HTTP-01** is answered by Danbyte itself at
+  `/.well-known/acme-challenge/` - the site only has to be reachable from
+  the CA on port 80 under its DNS name (the installer's nginx templates
+  hand that path through; a hand-managed config needs the location, see
+  *After upgrade*). **DNS-01** goes through the issuer's DNS publisher and
+  works for a site the CA cannot reach. The order runs in the background;
+  when the CA signs it the pair is installed, and from then on the normal
+  [renewal](#renewal) beat re-orders it and every renewal is installed the
+  same way. A secret store must be on: the site's private key lives there
+  between renewals, like every request's.
+- **Self-signed** - one click regenerates a pair for every name the site is
+  reached as (what it serves now plus the public host), 825 days like the
+  installer's; *Self-signed with other names* takes a list. *Renew
+  self-signed automatically* (on by default) regenerates it on the daily
+  expiry sweep once it has under thirty days left.
+- **Upload a pair** - paste or pick the certificate, key and chain; the
+  pair is checked (key matches, in date, chain appended for nginx) before
+  anything is written.
+- **Watch <host> for expiry** adds the site to the watched endpoints of the
+  active tenant, so the existing [expiry alerting](#expiry-alerting) covers
+  it too.
+
+The app never touches nginx and never holds root. It writes the pair into
+`deploy/nginx/certs/` - a folder it owns - then a stamp file. The root
+`danbyte-tls.path` unit the installer sets up (`make install-tls-unit` on
+an upgraded host, once) notices the stamp and runs
+`scripts/danbyte-tls-apply.sh`: verify the pair (key matches, in date), keep
+the live pair aside, install onto the paths the live nginx config names
+with their existing owner and mode, `nginx -t`, reload - or put the old
+pair back if nginx refuses. The outcome lands in `danbyte.applied` and the
+card shows it: *waiting for the host*, *applied*, or the failure. Without
+the unit the card says so; `danbyte tls install deploy/nginx/certs/` from
+the [host console](../reference/danbyte-admin.md#tls) does the same by hand.
+
+Private keys pass through the app in memory and into that one 0600 file;
+they are never stored on a row (the inventory refuses key material, above)
+and never returned by the API. From a shell, `manage.py site_certificate
+status|self-signed|upload|acme` drives the same flow.
+
 ## Certificate authorities and chains
 
 An issuer is more than a string. When a certificate is recorded - uploaded or

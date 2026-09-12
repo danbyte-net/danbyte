@@ -153,6 +153,7 @@ AUDITED_MODELS = [
     "core.TenantGroup",
     "core.Tag",
     "core.DeploymentSettings",
+    "core.SiteCertificate",
     "core.TenantSettings",
     "core.SiteSettings",
     "integrations.NetBoxImportRun",

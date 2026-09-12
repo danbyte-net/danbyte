@@ -296,6 +296,9 @@ if [ "$DO_NGINX" -eq 1 ]; then
   ( cd "$APP" && make proxy-install \
       NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
       PROXY_HOST="$HOST" >/dev/null )
+  # The root half of Settings → Updates → Site certificate: the app drops a
+  # pair in a folder it owns, this unit puts it in front of nginx.
+  ( cd "$APP" && make install-tls-unit >/dev/null )
 fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services uninstall-services reload admin-link \
+.PHONY: help install-services uninstall-services reload admin-link install-tls-unit uninstall-tls-unit \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
@@ -43,6 +43,7 @@ help:
 	@echo "    make uninstall-services  Remove the symlinks"
 	@echo "    make reload              systemctl --user daemon-reload"
 	@echo "    make admin-link          Put danbyte-admin on PATH as \`danbyte\`"
+	@echo "    make install-tls-unit    Root path unit that applies a dropped site certificate"
 	@echo "    make linger              Enable user-linger so services run when logged out"
 	@echo "    make service-user        Create the '$(SERVICE_USER)' service user in $(SERVICE_HOME) (+linger, +your group)"
 	@echo ""
@@ -252,6 +253,23 @@ proxy-install: proxy-cert
 	@echo "Proxy live → https://$(PROXY_HOST)/   (docs at /docs/, api at /api/)"
 	@echo "Self-signed cert: your browser will warn once; accept it for the LAN."
 	@echo "Make sure the dev servers are up:  make docs-up backend-up  +  make frontend-dev"
+
+# The root path unit that applies a certificate pair the app drops in
+# deploy/nginx/certs/ (Settings → Updates → Site certificate). Needs sudo;
+# install.sh runs it on a fresh install, an upgraded host runs it once.
+install-tls-unit:
+	@for u in path service; do \
+		sed -e "s|@@APP@@|$(PROJECT_DIR)|g" deploy/systemd/danbyte-tls.$$u.template \
+		  | sudo tee /etc/systemd/system/danbyte-tls.$$u >/dev/null ; \
+	done
+	@sudo systemctl daemon-reload
+	@sudo systemctl enable --now danbyte-tls.path
+	@echo "  danbyte-tls.path watches $(CERT_DIR)/danbyte.apply"
+
+uninstall-tls-unit:
+	@sudo systemctl disable --now danbyte-tls.path 2>/dev/null || true
+	@sudo rm -f /etc/systemd/system/danbyte-tls.path /etc/systemd/system/danbyte-tls.service
+	@sudo systemctl daemon-reload
 
 proxy-reload:
 	@$(RENDER_NGINX)

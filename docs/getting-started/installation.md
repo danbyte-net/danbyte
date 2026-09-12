@@ -241,10 +241,14 @@ The other tabs cover building from source and a local dev checkout.
     ```bash
     make proxy-install NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
       PROXY_HOST=danbyte.example.com
+    make install-tls-unit      # the root unit that applies a certificate dropped from the app
     ```
 
-    Open `https://danbyte.example.com/` and sign in as `admin`. (Self-signed
-    cert by default - swap in a real one, e.g. Let's Encrypt, for a public host.)
+    Open `https://danbyte.example.com/` and sign in as `admin`. The
+    certificate is self-signed; for a public host get a real one from
+    **Settings → Updates → Site certificate** - Let's Encrypt is one click,
+    or upload a pair (see [the site's own
+    certificate](../monitoring/certificates.md#the-sites-own-certificate)).
 
     ??? note "The services (and why there are a few)"
         Danbyte runs as a handful of small user-level systemd units:

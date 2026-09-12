@@ -292,6 +292,14 @@ the one you name, so regenerating never costs the site a way of being reached
 passed their renewal point - the same job `danbyte-acme-renew.timer` runs. It
 does not install one into nginx; that is still `tls install`.
 
+The web UI has its own path to the same result: **Settings → Updates → Site
+certificate** gets one from Let's Encrypt or regenerates a self-signed pair
+and drops it in `deploy/nginx/certs/` for the root `danbyte-tls.path` unit
+to apply (see [the site's own
+certificate](../monitoring/certificates.md#the-sites-own-certificate)).
+`danbyte tls install deploy/nginx/certs/` installs such a drop by hand on a
+host without the unit.
+
 These steps need root and the script asks for it per action rather than
 demanding it up front.
 

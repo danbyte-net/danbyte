@@ -3,6 +3,7 @@ the endpoints and command that surface and acknowledge them."""
 from __future__ import annotations
 
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -118,6 +119,11 @@ class RealNotesTests(APITestCase):
             self.assertTrue(set(n.platforms) <= set(un.PLATFORMS), n.id)
             self.assertTrue(n.title and n.body, n.id)
         self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="docker")], [])
-        self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="systemd")],
-                         ["0.16.0-nginx-backups"])
+        # The tls-unit note checks the host for the unit file.
+        with patch("core.site_tls.UNIT_FILE", Path("/nonexistent/danbyte-tls.path")):
+            self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="systemd")],
+                             ["0.16.0-tls-unit", "0.16.0-nginx-acme", "0.16.0-nginx-backups"])
+        with patch("core.site_tls.UNIT_FILE", Path("/")):
+            self.assertEqual([n.id for n in un.applicable(version="0.16.0", platform="systemd")],
+                             ["0.16.0-nginx-acme", "0.16.0-nginx-backups"])
         self.assertEqual(un.applicable(version="0.15.1", platform="systemd"), [])

@@ -204,6 +204,55 @@ class Organization(TimestampedModel):
         return self.name
 
 
+class SiteCertificate(TimestampedModel):
+    """The certificate Danbyte itself is served on - one row (``pk=1``).
+
+    The app never touches nginx and never holds root. It writes a pair into
+    ``deploy/nginx/certs/`` (a folder it owns) and a stamp file; the root
+    ``danbyte-tls.path`` unit the installer sets up notices the stamp, verifies
+    the pair, keeps the old one aside, installs, tests and reloads nginx, and
+    writes the outcome back for this row to show (``core.site_tls``).
+    """
+
+    class Source(models.TextChoices):
+        NONE = "none", "Not managed here"
+        UPLOAD = "upload", "Uploaded"
+        SELF_SIGNED = "self-signed", "Self-signed"
+        ACME = "acme", "ACME"
+
+    source = models.CharField(max_length=16, choices=Source.choices, default=Source.NONE)
+    #: Regenerate a self-signed certificate on the expiry beat once it has
+    #: under thirty days left. Only meaningful for ``source=self-signed``.
+    auto_renew = models.BooleanField(default=True)
+    #: The names the last dropped certificate answered for (``DNS:x`` / ``IP:y``).
+    names = models.JSONField(default=list, blank=True)
+    #: For ``source=acme``: the request whose key and orders back the site.
+    request = models.ForeignKey(
+        "monitoring.CertificateRequest", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    issuer = models.ForeignKey(
+        "monitoring.Issuer", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    dropped_sha256 = models.CharField(max_length=64, blank=True, default="")
+    dropped_at = models.DateTimeField(null=True, blank=True)
+    dropped_reason = models.CharField(max_length=200, blank=True, default="")
+    updated_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        verbose_name = "site certificate"
+
+    def __str__(self) -> str:
+        return f"Site certificate ({self.source})"
+
+    @classmethod
+    def load(cls) -> "SiteCertificate":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class DeploymentSettings(TimestampedModel):
     """Deployment-wide notification + outbound-delivery settings (singleton).
 

@@ -66,6 +66,7 @@ from compliance.api import (
 from core import (
     deployment,
     service_api,
+    site_tls_api,
     upgrade,
 )
 from core import notifications_api as core_notifications
@@ -484,6 +485,15 @@ urlpatterns = [
     path("system/services/", service_api.services_list, name="services-list"),
     path("system/services/workers/", service_api.set_workers,
          name="services-workers"),
+    path("system/site-certificate/", site_tls_api.site_certificate, name="site-certificate"),
+    path("system/site-certificate/upload/", site_tls_api.site_certificate_upload,
+         name="site-certificate-upload"),
+    path("system/site-certificate/self-signed/", site_tls_api.site_certificate_self_signed,
+         name="site-certificate-self-signed"),
+    path("system/site-certificate/acme/", site_tls_api.site_certificate_acme,
+         name="site-certificate-acme"),
+    path("system/site-certificate/watch/", site_tls_api.site_certificate_watch,
+         name="site-certificate-watch"),
     path("system/services/restart-all/", service_api.restart_danbyte,
          name="services-restart-all"),
     path("system/services/<str:key>/restart/", service_api.service_restart,

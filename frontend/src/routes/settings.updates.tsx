@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
 import { ServicesSection } from "@/components/settings/services-section"
+import { SiteCertificateCard } from "@/components/settings/site-certificate-card"
 import {
   SettingsCard,
   SettingsHeader,
@@ -325,6 +326,10 @@ docker compose -f docker-compose.prod.yml up -d`}
       {/* Restarting a service is not a switch, so it sits with the rest of
           "this install" rather than on the page that holds the switches. */}
       <ServicesSection />
+
+      {/* The certificate the host serves Danbyte on - the app drops a pair,
+          the root path unit applies it (#126). */}
+      <SiteCertificateCard />
 
       {/* Steps this version still needs from an operator. Hidden once done. */}
       {(notes.data?.pending.length ?? 0) > 0 && (

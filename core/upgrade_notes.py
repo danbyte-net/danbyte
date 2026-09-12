@@ -57,8 +57,53 @@ location ^~ /api/backups/ {
 }
 # then: sudo nginx -t && sudo systemctl reload nginx"""
 
+_NGINX_ACME = """\
+# in the :80 server, before the redirect:
+location /.well-known/acme-challenge/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+}
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _tls_unit_installed() -> bool:
+    from .site_tls import UNIT_FILE
+
+    return UNIT_FILE.exists()
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.16.0-tls-unit",
+        version="0.16.0",
+        title="Install the site-certificate apply unit",
+        body=(
+            "Settings → Updates → Site certificate drops a certificate pair "
+            "in a folder Danbyte owns; a root systemd path unit puts it in "
+            "front of nginx. Fresh installs get the unit from the installer; "
+            "an upgraded host installs it once, as a user with sudo, from the "
+            "Danbyte directory."
+        ),
+        snippet="sudo make install-tls-unit",
+        docs="monitoring/certificates/#the-sites-own-certificate",
+        platforms=("systemd",),
+        check=_tls_unit_installed,
+    ),
+    UpgradeNote(
+        id="0.16.0-nginx-acme",
+        version="0.16.0",
+        title="Hand ACME challenges to Danbyte in nginx",
+        body=(
+            "Getting the site's own certificate from Let's Encrypt over HTTP-01 "
+            "needs /.well-known/acme-challenge/ proxied to Danbyte on port 80. "
+            "The installer's templates carry it; a hand-managed config does not. "
+            "Skip this if you will not use HTTP-01."
+        ),
+        snippet=_NGINX_ACME,
+        docs="monitoring/certificates/#the-sites-own-certificate",
+        platforms=("systemd",),
+    ),
     UpgradeNote(
         id="0.16.0-nginx-backups",
         version="0.16.0",

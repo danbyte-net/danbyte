@@ -5,8 +5,13 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
+from core.site_tls_api import acme_challenge
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # HTTP-01 for the site's own certificate, answered by Danbyte itself;
+    # nginx hands this path through (deploy/nginx/*.template).
+    path(".well-known/acme-challenge/<str:token>", acme_challenge, name="acme-challenge"),
     path("django-rq/", include("django_rq.urls")),
     # /api/* - REST endpoints for the v2 React frontend
     path("api/", include("api.api_urls")),

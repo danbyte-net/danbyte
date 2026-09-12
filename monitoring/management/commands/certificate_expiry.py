@@ -12,6 +12,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 
 from core.scheduled_runs import record_run
+from core.site_tls import renew_self_signed_if_due
 from monitoring.cert_expiry import sweep
 
 
@@ -21,6 +22,12 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         with record_run("certificate-expiry", "Certificate expiry") as run:
             r = sweep()
+            # Danbyte's own self-signed certificate, when it runs short.
+            try:
+                if renew_self_signed_if_due():
+                    self.stdout.write("site certificate: self-signed pair regenerated")
+            except Exception as exc:  # noqa: BLE001 - never fail the sweep over it
+                self.stderr.write(f"site certificate: renewal failed: {exc}")
             self.stdout.write(
                 self.style.SUCCESS(
                     f"certificate expiry: {r['checked']} endpoints, "

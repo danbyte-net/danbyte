@@ -1,0 +1,12 @@
+# Installed by `make install-tls-unit` (root). Watches the folder the app
+# owns for the stamp it writes after dropping a certificate pair, and starts
+# danbyte-tls.service to put that pair in front of nginx.
+[Unit]
+Description=Danbyte site certificate: watch for a dropped pair
+
+[Path]
+PathExists=@@APP@@/deploy/nginx/certs/danbyte.apply
+Unit=danbyte-tls.service
+
+[Install]
+WantedBy=multi-user.target
