@@ -340,6 +340,9 @@ def ip_checks_view(request, ip_id):
                         "consecutive_success": st.consecutive_success,
                         "consecutive_fail": st.consecutive_fail,
                         "next_run": st.next_run,
+                        "flapping_since": st.flapping_since,
+                        "flap_count": st.flap_count,
+                        "flap_cleared_at": st.flap_cleared_at,
                     }
                     if st
                     else None
@@ -356,6 +359,7 @@ def ip_checks_view(request, ip_id):
         "ip_address": ip.ip_address,
         "checks": checks,
         **_external_detail([s.last_detail for s in states.values()]),
+        **_flap_rollup(s.flapping_since for s in states.values()),
     })
 
 
@@ -625,7 +629,10 @@ def device_checks_view(request, device_id):
             CheckState.objects.filter(target_ip_id__in=ip_ids),
         )
         .select_related("target_ip")
-        .values("target_ip_id", "target_ip__ip_address", "status", "last_detail")
+        .values(
+            "target_ip_id", "target_ip__ip_address", "status", "last_detail",
+            "flapping_since",
+        )
     )
     by_ip: dict = {}
     for s in states:
@@ -636,10 +643,12 @@ def device_checks_view(request, device_id):
                 "ip_address": s["target_ip__ip_address"],
                 "statuses": [],
                 "details": [],
+                "flapping": [],
             },
         )
         e["statuses"].append(s["status"])
         e["details"].append(s["last_detail"])
+        e["flapping"].append(s["flapping_since"])
 
     # What an external system says rides along per address and for the
     # device as a whole - the same chips the lists show, so the device page
@@ -653,6 +662,7 @@ def device_checks_view(request, device_id):
                 "checks": len(e["statuses"]),
                 "counts": status_counts(e["statuses"]),
                 **_external_detail(e["details"]),
+                **_flap_rollup(e["flapping"]),
             }
             for e in by_ip.values()
         ),
@@ -669,10 +679,12 @@ def device_checks_view(request, device_id):
                 "counts": status_counts([g["status"] for g in grid]),
                 "monitored_ips": len(grid),
                 "total_ips": len(ip_ids),
+                **_flap_rollup(s["flapping_since"] for s in states),
             },
             "ips": grid[:GRID_CAP],
             "truncated": len(grid) > GRID_CAP,
             **_external_detail([s["last_detail"] for s in states]),
+            **_flap_rollup(s["flapping_since"] for s in states),
         }
     )
 
@@ -1570,6 +1582,89 @@ def flapping_view(request):
     return Response({"results": flapping_ips(tenant, viewable_ips=viewable)})
 
 
+def _without_key(params, key):
+    out = {k: v for k, v in params.items() if k != key}
+    return out
+
+
+def _clear_flapping_states(request, tenant, states_qs):
+    """Clear the flapping states the caller may *change* the address of.
+    The change grant rather than view: confirming a host is fine is a
+    statement about the record, and a viewer does not get to make it."""
+    from .flapping import clear_flapping
+
+    q = rbac.row_filter(request.user, tenant, "ipaddress", "change")
+    if q is None:
+        return Response({"detail": "Forbidden."}, status=403)
+    if q is not True:
+        states_qs = states_qs.filter(target_ip__in=IPAddress.objects.filter(tenant=tenant).filter(q))
+    states = list(states_qs.select_related("target_ip", "template"))
+    cleared = clear_flapping(states, request.user)
+    return Response({"cleared": cleared})
+
+
+@extend_schema(
+    summary="Confirm checks are not flapping",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="FlappingClearRequest",
+        fields={
+            "state_ids": serializers.ListField(child=serializers.UUIDField(), required=False),
+            "ip_ids": serializers.ListField(child=serializers.UUIDField(), required=False),
+            "device_ids": serializers.ListField(child=serializers.UUIDField(), required=False),
+        },
+    ),
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT, description="How many cleared."),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def flapping_clear_view(request):
+    """Clear the flapping state on checks, addresses or devices - the operator
+    has looked and the host is fine. Needs ``ipaddress.change`` on each
+    address; the rest of the request is simply not cleared."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    body = request.data or {}
+    state_ids = [str(x) for x in (body.get("state_ids") or [])]
+    ip_ids = [str(x) for x in (body.get("ip_ids") or [])]
+    device_ids = [str(x) for x in (body.get("device_ids") or [])]
+    if not (state_ids or ip_ids or device_ids):
+        return Response({"detail": "Nothing to clear."}, status=400)
+    qs = CheckState.objects.filter(tenant=tenant, flapping_since__isnull=False).filter(
+        Q(id__in=state_ids) | Q(target_ip_id__in=ip_ids)
+        | Q(target_ip__assigned_device_id__in=device_ids)
+    )
+    return _clear_flapping_states(request, tenant, qs)
+
+
+@extend_schema(summary="Confirm an address is not flapping", tags=["monitoring"], request=None)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ip_flapping_clear_view(request, ip_id):
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    qs = CheckState.objects.filter(tenant=tenant, target_ip_id=ip_id, flapping_since__isnull=False)
+    template = (request.data or {}).get("template_id")
+    if template:
+        qs = qs.filter(template_id=template)
+    return _clear_flapping_states(request, tenant, qs)
+
+
+@extend_schema(summary="Confirm a device is not flapping", tags=["monitoring"], request=None)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def device_flapping_clear_view(request, device_id):
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    qs = CheckState.objects.filter(
+        tenant=tenant, target_ip__assigned_device_id=device_id, flapping_since__isnull=False
+    )
+    return _clear_flapping_states(request, tenant, qs)
+
+
 @extend_schema(
     summary="Acknowledge or unacknowledge a firing alert",
     tags=["monitoring"],
@@ -1717,6 +1812,11 @@ def checks_list_view(request):
         engine = (p.get("engine") or "").strip()
         if engine:
             qs = qs.filter(engine_id__in=[v for v in engine.split(",") if v])
+        flapping = (p.get("flapping") or "").strip()
+        if flapping == "1":
+            qs = qs.filter(flapping_since__isnull=False)
+        elif flapping == "0":
+            qs = qs.filter(flapping_since__isnull=True)
         return qs
 
     qs = apply(base, params)
@@ -1805,6 +1905,8 @@ def checks_list_view(request):
             "engine": (
                 {"id": str(st.engine_id), "name": st.engine.name} if st.engine_id else None
             ),
+            "flapping_since": st.flapping_since,
+            "flap_count": st.flap_count,
             "device": {"id": str(device.id), "name": device.name} if device else None,
             "site": site_of(ip),
             "prefix": (
@@ -1824,12 +1926,20 @@ def checks_list_view(request):
          "template", "engine"),
         apply, status_field="status",
     )
+    # One bucket, counted like the others (every filter but its own).
+    flapping_now = apply(base, _without_key(params, "flapping")).filter(
+        flapping_since__isnull=False
+    ).count()
+    facets["flapping"] = (
+        [{"value": "1", "label": "Flapping", "count": flapping_now}] if flapping_now else []
+    )
     body = {
         "count": total,
         "page": page,
         "page_size": page_size,
         "status_counts": status_counts,
         "source_counts": source_counts,
+        "flapping_count": flapping_now,
         "facets": facets,
         "results": results,
     }
@@ -1869,6 +1979,13 @@ def checks_list_view(request):
         description="Per-target roll-up status keyed by object id.",
     ),
 )
+def _flap_rollup(flapping_since_values) -> dict:
+    """``{"flapping": n}`` for the checks currently flagged, or nothing - so
+    the pill renders only where there is something to say."""
+    n = sum(1 for v in flapping_since_values if v is not None)
+    return {"flapping": n} if n else {}
+
+
 def _external_detail(rows) -> dict:
     """What an external monitoring system said, rolled up for a list column.
 
@@ -1990,20 +2107,23 @@ def bulk_status_view(request):
                 request, tenant,
                 CheckState.objects.filter(tenant=tenant, target_ip_id__in=ids),
             )
-            .values("target_ip_id", "status", "last_detail")
+            .values("target_ip_id", "status", "last_detail", "flapping_since")
         )
         grouped: dict = {}
         details: dict = {}
+        flaps: dict = {}
         for row in states:
             key = str(row["target_ip_id"])
             grouped.setdefault(key, []).append(row["status"])
             details.setdefault(key, []).append(row["last_detail"])
+            flaps.setdefault(key, []).append(row["flapping_since"])
         for ip_id, statuses in grouped.items():
             out[ip_id] = {
                 "status": worst_status(statuses),
                 "checks": len(statuses),
                 "counts": status_counts(statuses),
                 **_external_detail(details.get(ip_id) or []),
+                **_flap_rollup(flaps.get(ip_id) or []),
             }
         return Response({"statuses": out})
 
@@ -2031,7 +2151,7 @@ def bulk_status_view(request):
             rows = list(_scope_ip_keyed(
                 request, tenant,
                 CheckState.objects.filter(target_ip_id__in=child_ids),
-            ).values("status", "last_detail"))
+            ).values("status", "last_detail", "flapping_since"))
             statuses = [r["status"] for r in rows]
             if not statuses:
                 continue
@@ -2040,6 +2160,7 @@ def bulk_status_view(request):
                 "counts": status_counts(statuses),
                 "monitored_ips": len(set(child_ids)),
                 **_external_detail([r["last_detail"] for r in rows]),
+                **_flap_rollup(r["flapping_since"] for r in rows),
             }
         return Response({"statuses": out})
 
@@ -2066,7 +2187,7 @@ def bulk_status_view(request):
             states = list(_scope_ip_keyed(
                 request, tenant,
                 CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ).values("target_ip_id", "status", "last_detail"))
+            ).values("target_ip_id", "status", "last_detail", "flapping_since"))
             statuses = [s["status"] for s in states]
             if not statuses:
                 continue
@@ -2075,6 +2196,7 @@ def bulk_status_view(request):
                 "counts": status_counts(statuses),
                 "monitored_ips": len({s["target_ip_id"] for s in states}),
                 **_external_detail([s["last_detail"] for s in states]),
+                **_flap_rollup(s["flapping_since"] for s in states),
             }
         return Response({"statuses": out})
 
@@ -2103,7 +2225,7 @@ def bulk_status_view(request):
                 request,
                 tenant,
                 CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ).values("target_ip_id", "status", "last_detail"))
+            ).values("target_ip_id", "status", "last_detail", "flapping_since"))
             statuses = [s["status"] for s in states]
             if not statuses:
                 continue
@@ -2112,6 +2234,7 @@ def bulk_status_view(request):
                 "counts": status_counts(statuses),
                 "monitored_ips": len({s["target_ip_id"] for s in states}),
                 **_external_detail([s["last_detail"] for s in states]),
+                **_flap_rollup(s["flapping_since"] for s in states),
             }
         return Response({"statuses": out})
 

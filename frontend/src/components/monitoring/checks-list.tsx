@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from "react"
 import { useSearch } from "@tanstack/react-router"
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
+import { X } from "lucide-react"
+import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { CheckListResponse, CheckListRow, CheckStatus } from "@/lib/api"
+import { apiErrorToast } from "@/lib/api-toast"
 import { useUrlPatch } from "@/lib/use-url-state"
-import { DataTable } from "@/components/data-table"
+import { Button } from "@/components/ui/button"
+import { DataTable, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Switch } from "@/components/ui/switch"
@@ -60,9 +69,17 @@ function sortingToOrdering(s: SortingState): string | undefined {
  * and the dashboard donut both write `?status=`; the rail widens it to a
  * list. `?strip=7` draws each row's last seven days to scale.
  */
-export function ChecksList() {
+export function ChecksList({
+  flappingOnly = false,
+}: {
+  /** The Flapping view: the same list pinned to `flapping=1`, rows
+   * selectable, a bulk *Confirm not flapping* on the selection. */
+  flappingOnly?: boolean
+}) {
   const search = useSearch({ strict: false })
   const patch = useUrlPatch()
+  const qc = useQueryClient()
+  const [selected, setSelected] = useState<CheckListRow[]>([])
 
   const rail: RailFilters = Object.fromEntries(
     RAIL_KEYS.map((k) => [k, str(search[k])])
@@ -72,6 +89,7 @@ export function ChecksList() {
   const page = Number(str(search.page) ?? "1") || 1
   const ordering = str(search.ordering) ?? "-last_checked"
   const strip = str(search.strip) === "1"
+  const flapping = flappingOnly ? "1" : str(search.flapping)
 
   const [draft, setDraft] = useState(q)
   useEffect(() => setDraft(q), [q])
@@ -97,8 +115,9 @@ export function ChecksList() {
     p.set("page", String(page))
     p.set("page_size", String(PAGE))
     if (strip) p.set("strip", "7")
+    if (flapping) p.set("flapping", flapping)
     return p.toString()
-  }, [rail, status, q, ordering, page, strip])
+  }, [rail, status, q, ordering, page, strip, flapping])
 
   const query = useQuery({
     queryKey: ["monitoring-checks", params],
@@ -112,15 +131,34 @@ export function ChecksList() {
   const total = data?.count ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE))
 
-  const columns = useMemo(
-    () =>
-      checkColumns(
-        strip && data?.since && data.until
-          ? { since: data.since, until: data.until }
-          : null
-      ),
-    [strip, data?.since, data?.until]
-  )
+  const columns = useMemo(() => {
+    const cols = checkColumns(
+      strip && data?.since && data.until
+        ? { since: data.since, until: data.until }
+        : null
+    )
+    return flappingOnly ? [selectionColumn<CheckListRow>(), ...cols] : cols
+  }, [strip, data?.since, data?.until, flappingOnly])
+
+  const confirmCalm = useMutation({
+    mutationFn: (stateIds: string[]) =>
+      api<{ cleared: number }>("/api/monitoring/flapping/clear/", {
+        method: "POST",
+        body: JSON.stringify({ state_ids: stateIds }),
+      }),
+    onSuccess: (d) => {
+      toast.success(
+        d.cleared === 1
+          ? "Confirmed not flapping"
+          : `Confirmed ${d.cleared} checks`
+      )
+      setSelected([])
+      qc.invalidateQueries({ queryKey: ["monitoring-checks"] })
+      qc.invalidateQueries({ queryKey: ["monitoring-flapping"] })
+      qc.invalidateQueries({ queryKey: ["monitoring-stats"] })
+    },
+    onError: (err) => apiErrorToast(err),
+  })
 
   const snapshot = (): FilterSnapshot => {
     const out: FilterSnapshot = {}
@@ -142,11 +180,12 @@ export function ChecksList() {
   const railFilters: RailFilters = {
     ...rail,
     status: status === "all" ? undefined : status,
+    flapping: flappingOnly ? undefined : flapping,
   }
 
   return (
     <ListPageShell
-      title="Checks"
+      title={flappingOnly ? "Flapping" : "Checks"}
       count={data ? total : undefined}
       rail={
         <MonitoringRail
@@ -161,6 +200,7 @@ export function ChecksList() {
             })
           }
           statusKey="status"
+          showFlapping={!flappingOnly}
         />
       }
       search={{
@@ -169,7 +209,7 @@ export function ChecksList() {
         placeholder: "Address, DNS name, device, check…",
       }}
       savedViews={{
-        objectType: "monitoring-check",
+        objectType: flappingOnly ? "monitoring-flapping" : "monitoring-check",
         filters: {
           snapshot,
           restore,
@@ -204,6 +244,7 @@ export function ChecksList() {
         exportName="monitoring-checks"
         exportTitle="Checks"
         flexColumn="check"
+        onSelectedRowsChange={flappingOnly ? setSelected : undefined}
         exportAll={async () => {
           const out: CheckListRow[] = []
           for (let p = 1; p <= 25; p++) {
@@ -234,6 +275,34 @@ export function ChecksList() {
             }),
         }}
       />
+      {flappingOnly && selected.length > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
+            <span className="pl-2 text-xs font-medium text-foreground">
+              {selected.length} selected
+            </span>
+            <span className="h-4 w-px bg-border" />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              disabled={confirmCalm.isPending}
+              onClick={() => confirmCalm.mutate(selected.map((r) => r.id))}
+            >
+              {confirmCalm.isPending ? "Confirming…" : "Confirm not flapping"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={() => setSelected([])}
+              aria-label="Clear selection"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      )}
     </ListPageShell>
   )
 }

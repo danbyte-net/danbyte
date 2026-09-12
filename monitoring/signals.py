@@ -13,3 +13,7 @@ maintenance_window_changed = Signal()
 
 #: ``alert=`` an Alert, ``acknowledged=`` bool - set or cleared.
 alert_acknowledged = Signal()
+
+#: ``states=`` the CheckStates an operator confirmed as not flapping,
+#: ``user=`` who said so.
+flapping_cleared = Signal()

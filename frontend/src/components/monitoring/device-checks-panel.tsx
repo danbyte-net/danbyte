@@ -1,10 +1,13 @@
 import { Link } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Activity } from "lucide-react"
+import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { DeviceChecksResponse, DeviceTimeline } from "@/lib/api"
 import { EmptyState } from "@/components/empty-state"
+import { Button } from "@/components/ui/button"
+import { apiErrorToast } from "@/lib/api-toast"
 import { ExternalChips } from "./external-chips"
 import { ExternalStatusHover } from "./external-status"
 import { HistoryPanel } from "./history-panel"
@@ -21,6 +24,7 @@ import { ZabbixHostPanel } from "./zabbix-host-panel"
  * beside Danbyte's own status, never folded into it.
  */
 export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
+  const qc = useQueryClient()
   const checks = useQuery({
     queryKey: ["device-checks", deviceId],
     queryFn: () =>
@@ -32,6 +36,28 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
       api<DeviceTimeline>(
         `/api/monitoring/devices/${deviceId}/timeline/?days=7`
       ),
+  })
+
+  const confirmCalm = useMutation({
+    mutationFn: () =>
+      api<{ cleared: number }>(
+        `/api/monitoring/devices/${deviceId}/flapping/clear/`,
+        { method: "POST", body: "{}" }
+      ),
+    onSuccess: (d) => {
+      toast.success(
+        d.cleared === 1
+          ? "Confirmed not flapping"
+          : `Confirmed ${d.cleared} checks`
+      )
+      qc.invalidateQueries({ queryKey: ["device-checks", deviceId] })
+      qc.invalidateQueries({ queryKey: ["monitoring-flapping"] })
+      // Every list's monitoring column reads the same roll-up.
+      qc.invalidateQueries({
+        predicate: (q) => String(q.queryKey[0]).endsWith("-mon-status"),
+      })
+    },
+    onError: (err) => apiErrorToast(err),
   })
 
   const data = checks.data
@@ -72,7 +98,17 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
             {data.rollup.monitored_ips} of {data.rollup.total_ips} address
             {data.rollup.total_ips === 1 ? "" : "es"} monitored
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {(data.rollup.flapping ?? 0) > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => confirmCalm.mutate()}
+                disabled={confirmCalm.isPending}
+              >
+                {confirmCalm.isPending ? "Confirming…" : "Confirm not flapping"}
+              </Button>
+            )}
             <NotifyMeButton device={deviceId} />
           </div>
         </div>

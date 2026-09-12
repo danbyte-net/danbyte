@@ -3,11 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type {
-  MonitoringSettings,
-  Paginated,
-  VRFOption,
-} from "@/lib/api"
+import type { MonitoringSettings, Paginated, VRFOption } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormText } from "@/components/forms/text"
@@ -135,6 +131,10 @@ export function MonitoringSettingsForm() {
           escalate_after_minutes: Number(draft.escalate_after_minutes),
           flap_threshold: Number(draft.flap_threshold),
           flap_window_minutes: Number(draft.flap_window_minutes),
+          auto_clear_flapping: draft.auto_clear_flapping,
+          auto_clear_flapping_after_minutes: Number(
+            draft.auto_clear_flapping_after_minutes
+          ),
           group_notifications: draft.group_notifications,
           group_threshold: Number(draft.group_threshold),
           discovery_enabled: draft.discovery_enabled,
@@ -256,8 +256,8 @@ export function MonitoringSettingsForm() {
                 Only update existing interfaces
               </span>
               <span className="text-[11px] text-muted-foreground">
-                SNMP never adds ports - drift and sync touch fields (MAC,
-                speed, VLAN) on ports you created.
+                SNMP never adds ports - drift and sync touch fields (MAC, speed,
+                VLAN) on ports you created.
               </span>
             </span>
           </label>
@@ -287,8 +287,7 @@ export function MonitoringSettingsForm() {
                 v
                   ? {
                       id: v,
-                      name:
-                        vrfOptions.find((o) => o.id === v)?.name ?? "",
+                      name: vrfOptions.find((o) => o.id === v)?.name ?? "",
                     }
                   : null
               )
@@ -307,9 +306,9 @@ export function MonitoringSettingsForm() {
                 Interface MAC from the MAC table
               </span>
               <span className="text-[11px] text-muted-foreground">
-                The address learned on the port (the attached device) instead
-                of the port's own hardware MAC. Ports with several learners
-                are left alone.
+                The address learned on the port (the attached device) instead of
+                the port's own hardware MAC. Ports with several learners are
+                left alone.
               </span>
             </span>
           </label>
@@ -359,7 +358,10 @@ export function MonitoringSettingsForm() {
                 onChange={(v) =>
                   set(
                     "dns_resolvers",
-                    v.split(",").map((x) => x.trim()).filter(Boolean)
+                    v
+                      .split(",")
+                      .map((x) => x.trim())
+                      .filter(Boolean)
                   )
                 }
                 placeholder="10.0.0.45, 10.0.0.46"
@@ -450,10 +452,9 @@ export function MonitoringSettingsForm() {
           {/* Flap dampening */}
           <div className="space-y-2">
             <div className="flex flex-col">
-              <span className="text-sm font-medium">Flap dampening</span>
+              <span className="text-sm font-medium">Flapping</span>
               <span className="text-[11px] text-muted-foreground">
-                A check that keeps bouncing (down → up → down…) would otherwise
-                re-alert on every flip. When the same alert reopens{" "}
+                A check that goes bad{" "}
                 <span className="font-medium">
                   {draft.flap_threshold || 5}+
                 </span>{" "}
@@ -461,9 +462,9 @@ export function MonitoringSettingsForm() {
                 <span className="font-medium">
                   {draft.flap_window_minutes || 30}
                 </span>{" "}
-                minutes, Danbyte tags it{" "}
-                <span className="font-medium">flapping</span> and pauses its
-                reminders until it settles. Set the threshold to 0 to disable.
+                minutes is <span className="font-medium">flapping</span>: a pill
+                on every list, its alert stops reminding. It stays flagged until
+                somebody confirms it is fine. Set the threshold to 0 to disable.
               </span>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -480,6 +481,29 @@ export function MonitoringSettingsForm() {
                 onChange={(v) => set("flap_window_minutes", v)}
               />
             </div>
+            <label className="flex items-start gap-2">
+              <Checkbox
+                checked={draft.auto_clear_flapping}
+                onCheckedChange={(v) => set("auto_clear_flapping", !!v)}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col">
+                <span className="text-sm font-medium">Auto-clear flapping</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Clear the flag on its own once the check has been quiet long
+                  enough. Off keeps it until an operator confirms.
+                </span>
+              </span>
+            </label>
+            {draft.auto_clear_flapping && (
+              <div className="ml-6 max-w-xs">
+                <NumberField
+                  label="Quiet for (min)"
+                  value={draft.auto_clear_flapping_after_minutes}
+                  onChange={(v) => set("auto_clear_flapping_after_minutes", v)}
+                />
+              </div>
+            )}
 
             {/* Flapping-monitor exclusions */}
             <div className="space-y-1.5 pt-1">
@@ -626,16 +650,17 @@ export function MonitoringSettingsForm() {
                       // spread the same stale draft, so the second silently
                       // discarded the first - the ids list never changed and
                       // saves went out empty (issue #127).
-                      setDraft((cur) =>
-                        cur && {
-                          ...cur,
-                          arp_source_devices: (
-                            cur.arp_source_devices ?? []
-                          ).filter((id) => id !== d.id),
-                          arp_source_devices_detail: (
-                            cur.arp_source_devices_detail ?? []
-                          ).filter((x) => x.id !== d.id),
-                        }
+                      setDraft(
+                        (cur) =>
+                          cur && {
+                            ...cur,
+                            arp_source_devices: (
+                              cur.arp_source_devices ?? []
+                            ).filter((id) => id !== d.id),
+                            arp_source_devices_detail: (
+                              cur.arp_source_devices_detail ?? []
+                            ).filter((x) => x.id !== d.id),
+                          }
                       )
                     }
                   >
@@ -658,10 +683,7 @@ export function MonitoringSettingsForm() {
                 (cur) =>
                   cur && {
                     ...cur,
-                    arp_source_devices: [
-                      ...(cur.arp_source_devices ?? []),
-                      id,
-                    ],
+                    arp_source_devices: [...(cur.arp_source_devices ?? []), id],
                     arp_source_devices_detail: [
                       ...(cur.arp_source_devices_detail ?? []),
                       { id, name: label },
@@ -674,11 +696,11 @@ export function MonitoringSettingsForm() {
           <p className="text-[11px] text-muted-foreground">
             On L2-only networks a switch's own ARP table is nearly empty - add
             the device(s) that actually route (gateways, firewalls); their
-            merged tables feed every switch's suggestions. More than one
-            matters when several firewalls each route part of the network.
-            Leave empty to use each switch's own table. Mark individual ports
-            as <span className="font-medium">Uplink</span> on the interface
-            form to exclude them.
+            merged tables feed every switch's suggestions. More than one matters
+            when several firewalls each route part of the network. Leave empty
+            to use each switch's own table. Mark individual ports as{" "}
+            <span className="font-medium">Uplink</span> on the interface form to
+            exclude them.
           </p>
         </Section>
       </div>

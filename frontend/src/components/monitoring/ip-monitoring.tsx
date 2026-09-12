@@ -35,9 +35,11 @@ import { AddCheckDialog } from "./add-check-dialog"
 import { NotifyMeButton } from "./notify-me-button"
 import { CheckHistory } from "./check-history"
 import { UptimePanel } from "./uptime-panel"
+import { FlappingPill } from "./flapping-pill"
 import { HistoryPanel } from "./history-panel"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
+import { InfoTip } from "@/components/ui/info-tip"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export function IpMonitoring({
@@ -83,6 +85,30 @@ export function IpMonitoring({
       api<IpChecksResponse>(`/api/monitoring/ips/${ip.id}/checks/`),
   })
 
+  // "I looked, it is fine": clears the flapping state and records who said
+  // so. Different from Ignore flapping, which stops it ever being flagged.
+  const confirmCalm = useMutation({
+    mutationFn: (templateId?: string) =>
+      api<{ cleared: number }>(`/api/monitoring/ips/${ip.id}/flapping/clear/`, {
+        method: "POST",
+        body: JSON.stringify(templateId ? { template_id: templateId } : {}),
+      }),
+    onSuccess: (d) => {
+      toast.success(
+        d.cleared === 1
+          ? "Confirmed not flapping"
+          : `Confirmed ${d.cleared} checks`
+      )
+      qc.invalidateQueries({ queryKey: ["ip-checks", ip.id] })
+      qc.invalidateQueries({ queryKey: ["monitoring-flapping"] })
+      // Every list's monitoring column reads the same roll-up.
+      qc.invalidateQueries({
+        predicate: (q) => String(q.queryKey[0]).endsWith("-mon-status"),
+      })
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+
   const checkNow = useMutation({
     mutationFn: () =>
       api<CheckNowResponse>(`/api/monitoring/ips/${ip.id}/check-now/`, {
@@ -116,11 +142,21 @@ export function IpMonitoring({
           Monitoring
         </h2>
         {checks.length > 0 && <MixedStatusBadge counts={counts} />}
+        {(q.data?.flapping ?? 0) > 0 && (
+          <>
+            <FlappingPill count={q.data?.flapping} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => confirmCalm.mutate(undefined)}
+              disabled={confirmCalm.isPending}
+            >
+              {confirmCalm.isPending ? "Confirming…" : "Confirm not flapping"}
+            </Button>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-3">
-          <label
-            className="flex items-center gap-1.5 text-[12px] text-muted-foreground"
-            title="Exclude this IP from the 'flapping a lot' monitor - for a known noisy host."
-          >
+          <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
             <Checkbox
               checked={flapExclude}
               onCheckedChange={(v) => {
@@ -129,6 +165,11 @@ export function IpMonitoring({
               }}
             />
             Ignore flapping
+            <InfoTip>
+              Never flag this address as flapping - for a known noisy host.
+              Confirm not flapping clears the flag once; this stops it being
+              raised at all.
+            </InfoTip>
           </label>
           <div className="flex items-center gap-1.5">
             <Button
@@ -256,6 +297,7 @@ function CheckRow({
               from policy
             </Badge>
           )}
+          {check.state?.flapping_since && <FlappingPill />}
         </button>
         {strip && (
           <span className="hidden w-36 shrink-0 md:block">

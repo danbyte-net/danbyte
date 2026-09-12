@@ -41,6 +41,7 @@ export interface RailFilters {
   vlan?: string
   tag?: string
   port?: string
+  flapping?: string
 }
 
 export type RailPatch = Partial<
@@ -83,12 +84,17 @@ export function MonitoringRail({
   onChange,
   statusKey = "to_status",
   showFrom = false,
+  showFlapping = false,
 }: {
-  facets: Partial<Record<TransitionFacet | "status", FacetBucket[]>>
+  facets: Partial<
+    Record<TransitionFacet | "status" | "flapping", FacetBucket[]>
+  >
   filters: RailFilters
   onChange: (patch: RailPatch) => void
   statusKey?: "to_status" | "status"
   showFrom?: boolean
+  /** Offer the one-bucket Flapping facet (the checks list has it). */
+  showFlapping?: boolean
 }) {
   const labels = useStatusLabels()
   const patch = (key: keyof RailFilters, value: string | undefined) =>
@@ -139,6 +145,14 @@ export function MonitoringRail({
         selected={csv(filters[statusKey])}
         onToggle={toggle(statusKey)}
       />
+      {showFlapping && (
+        <FacetGroup
+          label="Flapping"
+          options={plain(facets.flapping)}
+          selected={csv(filters.flapping)}
+          onToggle={() => patch("flapping", filters.flapping ? undefined : "1")}
+        />
+      )}
       {showFrom && (
         <FacetGroup
           label="From"
@@ -319,4 +333,5 @@ export const RAIL_KEYS: (keyof RailFilters)[] = [
   "vlan",
   "tag",
   "port",
+  "flapping",
 ]

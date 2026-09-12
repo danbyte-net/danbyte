@@ -23,37 +23,35 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from .models import Alert, AlertSeverity, AlertStatus, MonitoringSettings, StateTransition
+from .models import Alert, AlertSeverity, AlertStatus, CheckState, MonitoringSettings
 
 log = logging.getLogger("monitoring.escalation")
 
-_BAD = {"down", "stale", "degraded"}
-
-
-def _flap_count(alert, since) -> int:
-    """How many times this alert's condition has opened (transitioned *into* a
-    bad status) since ``since`` - the flap signal."""
-    return StateTransition.objects.filter(
-        tenant_id=alert.tenant_id,
-        target_ip_id=alert.target_ip_id,
-        template_id=alert.template_id,
-        to_status__in=_BAD,
-        at__gte=since,
-    ).count()
-
 
 def run_alert_maintenance(now=None) -> dict:
-    """Sweep firing alerts and apply renotify / escalation / flap policy."""
+    """Sweep firing alerts and apply renotify / escalation / flap policy.
+
+    Flapping is decided first, for every check and not only the ones with an
+    alert - :func:`monitoring.flapping.sweep_flapping` owns the rule and the
+    stickiness - and an alert reads its check's state rather than counting
+    for itself."""
+    from .flapping import sweep_flapping
     from .notify import notify_alert
 
     now = now or timezone.now()
+    swept = sweep_flapping(now)
     firing = list(
         Alert.objects.filter(status=AlertStatus.FIRING).select_related(
             "target_ip", "template"
         )
     )
     if not firing:
-        return {"flapping": 0, "escalated": 0, "renotified": 0}
+        return {"flapping": swept["flagged"], "escalated": 0, "renotified": 0}
+    flapping_pairs = set(
+        CheckState.objects.filter(
+            tenant_id__in={a.tenant_id for a in firing}, flapping_since__isnull=False
+        ).values_list("target_ip_id", "template_id")
+    )
 
     settings_by_tenant = {
         s.tenant_id: s
@@ -68,11 +66,8 @@ def run_alert_maintenance(now=None) -> dict:
         if ms is None:
             continue
 
-        # ── flap detection ──────────────────────────────────────────────
-        is_flapping = False
-        if ms.flap_threshold:
-            window = now - timedelta(minutes=ms.flap_window_minutes)
-            is_flapping = _flap_count(alert, window) >= ms.flap_threshold
+        # ── flapping: the check's state, mirrored ───────────────────────
+        is_flapping = (alert.target_ip_id, alert.template_id) in flapping_pairs
         if is_flapping != alert.flapping:
             alert.flapping = is_flapping
             alert.save(update_fields=["flapping"])

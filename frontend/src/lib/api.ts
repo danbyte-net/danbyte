@@ -4483,6 +4483,11 @@ export interface EffectiveCheckState {
   consecutive_success: number
   consecutive_fail: number
   next_run: string | null
+  /** Flapping is a state: set by the sweep, cleared by an operator's
+   * confirmation (or by itself when the tenant allows). */
+  flapping_since: string | null
+  flap_count: number
+  flap_cleared_at: string | null
 }
 
 /** The parts of a check result an external monitoring system fills in. */
@@ -4520,6 +4525,8 @@ export interface IpChecksResponse extends ExternalRollup {
   ip_id: string
   ip_address: string
   checks: EffectiveCheck[]
+  /** How many of the address's checks are flagged as flapping. */
+  flapping?: number
 }
 
 export interface CheckNowResult {
@@ -4573,6 +4580,8 @@ export interface PrefixRollup {
   counts: Partial<Record<CheckStatus, number>>
   monitored_ips: number
   total_ips: number
+  /** Checks flagged as flapping across the roll-up; absent at zero. */
+  flapping?: number
 }
 
 export interface PrefixIpStatus extends ExternalRollup {
@@ -4623,6 +4632,9 @@ export interface ExternalRollup {
   unreachable_errors?: Record<string, string>
   /** Which system answered, and how to open the host there. */
   external?: { system: string; host: string; hostid: string; url: string }
+  /** Checks flagged as flapping - a state, sticky until confirmed. Absent
+   * at zero, so the pill renders only where there is something to say. */
+  flapping?: number
 }
 
 export interface BulkStatusEntry extends ExternalRollup {
@@ -4694,6 +4706,10 @@ export interface MonitoringSettings {
   escalate_after_minutes: number
   flap_threshold: number
   flap_window_minutes: number
+  /** Off: a flapping state stays until an operator confirms the host is
+   * fine. On: it clears itself after the settle time of quiet. */
+  auto_clear_flapping: boolean
+  auto_clear_flapping_after_minutes: number
   group_notifications: boolean
   group_threshold: number
   discovery_enabled: boolean
@@ -4942,6 +4958,7 @@ export interface MonitoringEngineStats {
 }
 
 export interface FlappingRow {
+  state_id: string
   ip_id: string
   ip_address: string
   dns_name: string | null
@@ -4950,6 +4967,7 @@ export interface FlappingRow {
   kind: CheckKind
   flap_count: number
   window_minutes: number
+  flapping_since: string
   last_at: string
 }
 
@@ -4966,6 +4984,9 @@ export interface CheckListRow {
   /** Who runs it - the executor, not the binding. */
   source: CheckSource
   engine: EngineRef | null
+  /** Set while the check is flagged as flapping - sticky until confirmed. */
+  flapping_since: string | null
+  flap_count: number
   device: { id: string; name: string } | null
   /** The address's own site, else its prefix's, else its device's. */
   site: { id: string; name: string } | null
@@ -4981,7 +5002,11 @@ export interface CheckListResponse {
   /** Per status before any filter - the quick tabs and the dashboard donut. */
   status_counts: Partial<Record<CheckStatus | "all", number>>
   source_counts: Partial<Record<CheckSource, number>>
-  facets: Partial<Record<TransitionFacet | "status", FacetBucket[]>>
+  /** Checks flagged as flapping under every filter but `flapping` itself. */
+  flapping_count: number
+  facets: Partial<
+    Record<TransitionFacet | "status" | "flapping", FacetBucket[]>
+  >
   /** The strip window, when `?strip=` was asked for. */
   since?: string
   until?: string
@@ -5616,6 +5641,8 @@ export interface DashboardData {
   check_by_status: DashDist[]
   alerts_by_severity: DashDist[]
   reachable_pct: number | null
+  /** Checks currently flagged as flapping, noisiest first (top 8). */
+  flapping: FlappingRow[]
 }
 
 export type ComplianceCheck =

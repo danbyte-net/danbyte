@@ -491,8 +491,8 @@ exactly like an automatic scan.
   last 24 hours, 7 days or 30 days - hourly up to three days, daily beyond;
   30 days is the ceiling because results are pruned after that), **Recent
   changes** (the latest status changes grouped by the hour they landed in,
-  with who answered), a **flapping** card (see below), and the monitoring
-  settings.
+  with who answered), a **Flapping now** count (see below), and the
+  monitoring settings.
 - **History** - every status change in the tenant. The rail on the left
   filters by the state a change went to or came from, who answered, check
   type, site, device type, role, platform, check and engine - each with a
@@ -512,6 +512,8 @@ exactly like an automatic scan.
   list, not the page in hand. **7 days** adds a status strip per row. Saved
   views and export work as on History; the dashboard donut's slices land here
   with the status set.
+- **Flapping** - shown while anything is flagged: the Checks list pinned to
+  flapping checks, with row selection and a bulk **Confirm not flapping**.
 - **Templates** - your reusable check library.
 
 ### The Settings tab
@@ -535,14 +537,43 @@ defaults**.
 | **Reverse-DNS sync** | Keep IPs' DNS names current automatically (see below). |
 | **Discovery & cleanup** | Auto-discovery and stale-IP cleanup options (see below). |
 
-### Flapping monitor
+### Flapping {#flapping}
 
-The Overview tab has a **flapping** card that proactively surfaces IPs bouncing
-between states a lot - "this host is flapping, maybe go look at it" - ranked by how
-noisy each one is, regardless of whether it's currently up or down. To keep
-expected churn out of the list you can exclude whole IP statuses (the DHCP-scope
-escape hatch, in settings) or flip an **Ignore flapping** toggle on a single
-known-noisy IP. It only raises visibility - it doesn't page anyone.
+A check that goes bad **Flap threshold** times (5) within the **Flap window**
+(30 minutes) is **flapping** - and that is something the check *is*, not a
+list you have to ask for. The state shows as a **Flapping** pill beside the
+status badge wherever the status is: the prefix, device and VM lists, the
+address's summary and Monitoring tab (one pill per check), the device's
+Overview and Monitoring tab. The pill's hover says how many checks under the
+target are flagged. A flapping alert stops sending reminders, so a bouncing
+host cannot page on a loop.
+
+It is **sticky**. "It stopped bouncing" and "it is fine" are different
+claims, and the second is the operator's to make: **Confirm not flapping**
+(on the address, on the device, or in bulk on the **Flapping** tab of the
+Monitoring page) clears the state, records who said so in the address's
+change log, and only bad transitions *after* that moment count towards
+flagging it again - a confirmation means something, and the flag re-arms
+only on new evidence. Confirming needs `ipaddress.change` on the address.
+
+A tenant that would rather not be asked turns on **Auto-clear flapping** in
+the monitoring settings: a flagged check then clears itself once it has been
+quiet for **Quiet for** minutes (30) and is under the threshold. Off by
+default.
+
+Two things keep expected churn out: exclude whole IP statuses (the
+DHCP-scope escape hatch, in settings) or tick **Ignore flapping** on one
+known-noisy address - neither is ever flagged, and either clears a flag
+already raised. That is different from confirming: confirming clears the
+flag once, ignoring stops it being raised at all.
+
+The Monitoring page's Overview shows a **Flapping now** count that opens the
+**Flapping** tab - the Checks list pinned to flagged checks, where rows can
+be selected and confirmed together. The dashboard has a **Flapping** widget
+with the same list. `GET /api/monitoring/flapping/` returns it; `POST
+/api/monitoring/flapping/clear/` with `state_ids`, `ip_ids` or `device_ids`
+confirms, as do `…/ips/<id>/flapping/clear/` and
+`…/devices/<id>/flapping/clear/`.
 
 ### Reverse-DNS enrichment
 
@@ -627,7 +658,7 @@ still open and are tracked, but no notification is sent. A silence scheduled for
 the future is effectively a **maintenance window**. Manage these under **Alerts →
 Silences**; silenced alerts are flagged in the list.
 
-### Renotify, escalation, grouping, flap dampening
+### Renotify, escalation, grouping, flapping
 
 These time-based policies are **per-tenant** and **off by default** (except
 grouping), and all of them respect acknowledgement and silences:
@@ -640,9 +671,9 @@ grouping), and all of them respect acknowledgement and silences:
   reminders.
 - **Escalation** - an alert left firing and unacknowledged past a deadline is
   bumped to *critical* and re-notified.
-- **Flap dampening** - an alert whose condition keeps reopening is marked
-  *flapping* and excluded from reminders until it settles, so a flapping host can't
-  page on a loop.
+- **Flapping** - an alert whose check is [flapping](#flapping) is marked so
+  and excluded from reminders until the state is confirmed clear (or clears
+  itself, when auto-clear is on), so a flapping host can't page on a loop.
 
 The Alerts table surfaces *escalated*, *flapping*, *silenced*, and *ack* chips, and
 tracks how many times each alert has notified.

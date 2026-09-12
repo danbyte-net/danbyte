@@ -881,6 +881,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "renotify_enabled", "renotify_interval_minutes",
             "escalate_enabled", "escalate_after_minutes",
             "flap_threshold", "flap_window_minutes",
+            "auto_clear_flapping", "auto_clear_flapping_after_minutes",
             "group_notifications", "group_threshold",
             "discovery_enabled", "discovery_min_prefix_length",
             "discovery_interval_minutes", "discovery_all_prefixes",

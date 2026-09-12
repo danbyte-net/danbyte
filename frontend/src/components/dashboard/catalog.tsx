@@ -14,6 +14,7 @@ import { BookmarksWidget } from "./widget-bookmarks"
 import { ChangelogWidget } from "./widget-changelog"
 import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
 import { CertHealthWidget } from "./widget-cert-health"
+import { FlappingWidget } from "./widget-flapping"
 import { MyTasksWidget } from "./widget-tasks"
 
 // Lazy - pulls in the floor-plan canvas only when the widget is actually shown.
@@ -46,6 +47,7 @@ export type WidgetId =
   | "device-manufacturer"
   | "check-status"
   | "alerts-severity"
+  | "flapping"
   | "expiring-certs"
   | "expired-certs"
   | "cert-health"
@@ -87,18 +89,48 @@ export function baseWidgetId(id: string): WidgetId {
 // rows). Donuts keep a small ceiling - their charts are fixed-size, so a huge
 // tile is empty border. Lists grow to full width; changelog/tasks/map to
 // near-full dashboard, which is the #41 request.
-const D: WidgetMeta = { span: { w: 2, h: 2 }, min: { w: 2, h: 2 }, max: { w: 6, h: 4 } }
-const DONUT: WidgetMeta = { span: { w: 2, h: 2 }, min: { w: 1, h: 2 }, max: { w: 3, h: 3 } }
-const BIGGY: WidgetMeta = { span: { w: 3, h: 3 }, min: { w: 2, h: 2 }, max: { w: 6, h: 6 } }
+const D: WidgetMeta = {
+  span: { w: 2, h: 2 },
+  min: { w: 2, h: 2 },
+  max: { w: 6, h: 4 },
+}
+const DONUT: WidgetMeta = {
+  span: { w: 2, h: 2 },
+  min: { w: 1, h: 2 },
+  max: { w: 3, h: 3 },
+}
+const BIGGY: WidgetMeta = {
+  span: { w: 3, h: 3 },
+  min: { w: 2, h: 2 },
+  max: { w: 6, h: 6 },
+}
 export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
-  "reachable-gauge": DONUT, "ip-status": DONUT, "ip-role": DONUT,
-  "ip-scope": DONUT, "prefix-family": DONUT, "prefix-status": DONUT,
-  "device-status": DONUT, "check-status": DONUT, "alerts-severity": DONUT,
-  "object-counts": { span: { w: 4, h: 2 }, min: { w: 2, h: 2 }, max: { w: 6, h: 4 } },
+  "reachable-gauge": DONUT,
+  "ip-status": DONUT,
+  "ip-role": DONUT,
+  "ip-scope": DONUT,
+  "prefix-family": DONUT,
+  "prefix-status": DONUT,
+  "device-status": DONUT,
+  "check-status": DONUT,
+  "alerts-severity": DONUT,
+  "object-counts": {
+    span: { w: 4, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
+  },
   bookmarks: { span: { w: 2, h: 2 }, min: { w: 1, h: 1 }, max: { w: 4, h: 4 } },
   changelog: BIGGY,
-  "my-tasks": { span: { w: 2, h: 3 }, min: { w: 2, h: 2 }, max: { w: 6, h: 6 } },
-  "cert-health": { span: { w: 2, h: 2 }, min: { w: 2, h: 1 }, max: { w: 6, h: 4 } },
+  "my-tasks": {
+    span: { w: 2, h: 3 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 6 },
+  },
+  "cert-health": {
+    span: { w: 2, h: 2 },
+    min: { w: 2, h: 1 },
+    max: { w: 6, h: 4 },
+  },
   map: BIGGY,
   floorplan: BIGGY,
 }
@@ -381,6 +413,13 @@ export const CATALOG: WidgetDef[] = [
     title: "Certificate health",
     description: "Expiry buckets across the certificate inventory",
     render: () => <CertHealthWidget />,
+  },
+  {
+    id: "flapping",
+    fit: "scroll",
+    title: "Flapping",
+    description: "Checks bouncing between states, until someone confirms",
+    render: (d) => <FlappingWidget rows={d.flapping} />,
   },
   {
     id: "expiring-certs",

@@ -22,7 +22,10 @@ import { statusLabel, useStatusLabels } from "./status-palette"
 
 /** Zabbix trigger severities, 0-5. Colour is for meaning only: two tints for
  * "worth a look", two for "worth a page", grey for the rest. */
-const SEVERITY: Record<string, { label: string; variant: "secondary" | "info" | "warning" | "destructive" }> = {
+const SEVERITY: Record<
+  string,
+  { label: string; variant: "secondary" | "info" | "warning" | "destructive" }
+> = {
   "0": { label: "Not classified", variant: "secondary" },
   "1": { label: "Information", variant: "info" },
   "2": { label: "Warning", variant: "warning" },
@@ -32,7 +35,10 @@ const SEVERITY: Record<string, { label: string; variant: "secondary" | "info" | 
 }
 
 export function SeverityPill({ severity }: { severity: string }) {
-  const s = SEVERITY[severity] ?? { label: `Severity ${severity}`, variant: "secondary" as const }
+  const s = SEVERITY[severity] ?? {
+    label: `Severity ${severity}`,
+    variant: "secondary" as const,
+  }
   return <Badge variant={s.variant}>{s.label}</Badge>
 }
 
@@ -61,11 +67,17 @@ export function ExternalStatusHover({
   return (
     <HoverCard openDelay={150}>
       <HoverCardTrigger asChild>
-        <span className="inline-flex cursor-default items-center gap-1.5" tabIndex={0}>
+        <span
+          className="inline-flex cursor-default items-center gap-1.5"
+          tabIndex={0}
+        >
           {children}
         </span>
       </HoverCardTrigger>
-      <HoverCardContent align="start" className="max-w-sm space-y-2.5 text-[12px]">
+      <HoverCardContent
+        align="start"
+        className="max-w-sm space-y-2.5 text-[12px]"
+      >
         <div className="flex items-center justify-between gap-3">
           <span className="text-muted-foreground">
             {entry.monitored_ips != null
@@ -93,6 +105,14 @@ export function ExternalStatusHover({
           ))}
         </div>
 
+        {(entry.flapping ?? 0) > 0 && (
+          <p className="text-muted-foreground">
+            <span className="num">{entry.flapping}</span>{" "}
+            {entry.flapping === 1 ? "check" : "checks"} flapping - bouncing
+            between states; stays flagged until confirmed.
+          </p>
+        )}
+
         {unreachable.length > 0 && (
           <div className="space-y-1">
             {unreachable.map((proto) => (
@@ -100,7 +120,7 @@ export function ExternalStatusHover({
                 <Badge variant="destructive" className="uppercase">
                   {proto}
                 </Badge>
-                <span className="min-w-0 flex-1 break-all font-mono text-[11px] text-muted-foreground">
+                <span className="min-w-0 flex-1 font-mono text-[11px] break-all text-muted-foreground">
                   {errors[proto] || "not reachable"}
                 </span>
               </div>

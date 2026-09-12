@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Activity, AlertTriangle } from "lucide-react"
+import { Activity } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -68,6 +68,7 @@ type MonitoringView =
   | "overview"
   | "history"
   | "checks"
+  | "flapping"
   | "templates"
   | "configuration"
   | "settings"
@@ -102,6 +103,7 @@ const FILTER_KEYS = [
   "since",
   "until",
   "strip",
+  "flapping",
 ] as const
 type FilterKey = (typeof FILTER_KEYS)[number]
 
@@ -116,6 +118,7 @@ const VIEWS: MonitoringView[] = [
   "overview",
   "history",
   "checks",
+  "flapping",
   "templates",
   "configuration",
   "settings",
@@ -292,6 +295,9 @@ function MonitoringPage() {
             { value: "overview", label: "Overview" },
             { value: "history", label: "History" },
             { value: "checks", label: "Checks" },
+            ...(flaps.length > 0
+              ? [{ value: "flapping", label: "Flapping", count: flaps.length }]
+              : []),
             { value: "templates", label: "Templates" },
             { value: "configuration", label: "Configuration" },
             ...(canManage ? [{ value: "settings", label: "Settings" }] : []),
@@ -311,7 +317,10 @@ function MonitoringPage() {
           /prefixes), so the shared padding lives on the other views instead. */}
       <div
         className={
-          view === "configuration" || view === "history" || view === "checks"
+          view === "configuration" ||
+          view === "history" ||
+          view === "checks" ||
+          view === "flapping"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
         }
@@ -321,6 +330,7 @@ function MonitoringPage() {
         {view === "history" && <HistoryView />}
 
         {view === "checks" && <ChecksList />}
+        {view === "flapping" && <ChecksList flappingOnly />}
 
         {view === "templates" && (
           <div className="mx-auto max-w-7xl">
@@ -385,6 +395,20 @@ function MonitoringPage() {
                 value={d.by_status.skipped ?? 0}
                 tone="skipped"
               />
+              {flaps.length > 0 && (
+                <Link
+                  to="/monitoring"
+                  search={{ view: "flapping", status: "all" }}
+                  className="block"
+                >
+                  <Kpi
+                    label="Flapping now"
+                    value={flaps.length}
+                    tone="flapping"
+                    badge="alert"
+                  />
+                </Link>
+              )}
             </div>
 
             {/* Certificate & key health - expiry buckets, SSH drift, firing
@@ -560,7 +584,7 @@ function MonitoringPage() {
               </Card>
             </div>
 
-            {/* Recent changes + flapping share a row */}
+            {/* Recent changes */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
               <Card>
                 <CardHeader>
@@ -588,53 +612,6 @@ function MonitoringPage() {
                   )}
                 </CardContent>
               </Card>
-
-              {flaps.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      Flapping a lot - maybe check on these
-                    </CardTitle>
-                    <CardDescription>
-                      IPs bouncing repeatedly over the flap window. Tune the
-                      threshold or exclude expected-churn statuses in settings.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="-my-1 divide-y divide-border">
-                      {flaps.map((f) => (
-                        <li
-                          key={`${f.ip_id}:${f.template_id}`}
-                          className="flex items-center gap-2 py-2 text-[13px]"
-                        >
-                          <Link
-                            to="/ips/$id"
-                            params={{ id: f.ip_id }}
-                            className="link truncate font-mono font-medium"
-                          >
-                            {f.ip_address}
-                          </Link>
-                          {f.dns_name && (
-                            <span className="truncate text-muted-foreground">
-                              {f.dns_name}
-                            </span>
-                          )}
-                          <span className="truncate text-muted-foreground">
-                            {f.template_name ?? f.kind}
-                          </span>
-                          <span className="ml-auto shrink-0">
-                            <Badge variant="warning">
-                              <span className="num">{f.flap_count}</span> flaps
-                              / {f.window_minutes}m
-                            </Badge>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
             </div>
 
             <p className="text-[11px] text-muted-foreground">
@@ -656,6 +633,7 @@ const TONE: Record<string, string> = {
   down: "text-red-600 dark:text-red-400",
   stale: "text-red-700 dark:text-red-400",
   skipped: "text-muted-foreground",
+  flapping: "text-amber-600 dark:text-amber-400",
 }
 
 function Kpi({

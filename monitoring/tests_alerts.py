@@ -437,6 +437,14 @@ class AlertMaintenanceTests(TestCase):
         self.ms.flap_window_minutes = 30
         self.ms.save()
         a = self._alert(last_notified_at=timezone.now() - self.td(minutes=10))
+        # Flapping is the check's state, mirrored onto its alert - so the
+        # check has to exist for the alert to read it.
+        from .models import CheckState
+
+        state = CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=self.t, kind="icmp",
+            status="down",
+        )
         # 3 opens within the window → flapping.
         for _ in range(3):
             StateTransition.objects.create(
@@ -445,7 +453,10 @@ class AlertMaintenanceTests(TestCase):
             )
         r = run_alert_maintenance()
         a.refresh_from_db()
+        state.refresh_from_db()
         self.assertTrue(a.flapping)
+        self.assertIsNotNone(state.flapping_since)
+        self.assertEqual(state.flap_count, 3)
         # flapping alert is not renotified despite being overdue.
         self.assertEqual(r["renotified"], 0)
 

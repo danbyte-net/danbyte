@@ -154,6 +154,7 @@ def _empty_dashboard() -> dict:
         "prefix_by_family", "prefix_by_status",
         "top_prefixes", "device_by_status", "device_by_type", "device_by_site",
         "device_by_manufacturer", "check_by_status", "alerts_by_severity",
+        "flapping",
     )
     return {"counts": {}, "reachable_pct": None, **{k: [] for k in keys}}
 
@@ -260,6 +261,7 @@ def dashboard_view(request):
         else {"check_by_status": [], "alerts_by_severity": [],
               "reachable_pct": None}
     )
+    monitoring["flapping"] = _flapping(u, tenant) if can_see_monitoring else []
 
     return Response(
         {
@@ -364,6 +366,23 @@ def _recent_activity(tenant, limit: int = 10) -> list:
         }
         for t in rows
     ]
+
+
+def _flapping(user, tenant, limit: int = 8) -> list:
+    """The checks currently flagged as flapping, noisiest first - the
+    dashboard's "go and look" list. Site-aware like the IP lists: a viewer
+    walled off from a site does not learn which of its hosts bounce."""
+    try:
+        from monitoring.flapping import flapping_ips
+    except Exception:  # noqa: BLE001
+        return []
+    from .models import IPAddress
+
+    q = rbac.row_filter(user, tenant, "ipaddress", "view")
+    if q is None:
+        return []
+    viewable = None if q is True else IPAddress.objects.filter(tenant=tenant).filter(q)
+    return flapping_ips(tenant, limit=limit, viewable_ips=viewable)
 
 
 def _monitoring_block(tenant) -> dict:

@@ -699,6 +699,22 @@ class CheckState(TimestampedModel):
         "states orphaned by a dead/restarted worker.",
     )
 
+    # ─── flapping, as a state ─────────────────────────────────────────────
+    # Set by the flap sweep when bad transitions in the flap window reach the
+    # threshold; sticky until an operator confirms the host is fine, or - if
+    # the tenant asks for it - until it has been quiet for the settle time.
+    # ``Alert.flapping`` mirrors this; the "flapping a lot" list reads it.
+    flapping_since = models.DateTimeField(null=True, blank=True)
+    flap_count = models.PositiveIntegerField(default=0)
+    #: When somebody last said "not flapping" - only bad transitions after
+    #: this count towards flagging it again, so a confirmation means
+    #: something and the flag re-arms only on new evidence.
+    flap_cleared_at = models.DateTimeField(null=True, blank=True)
+    flap_cleared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
     class Meta:
         ordering = ["target_ip", "kind"]
         constraints = [
@@ -709,7 +725,12 @@ class CheckState(TimestampedModel):
         indexes = [
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["next_run", "in_flight"]),
+            models.Index(fields=["tenant", "flapping_since"]),
         ]
+
+    @property
+    def flapping(self) -> bool:
+        return self.flapping_since is not None
 
     def __str__(self) -> str:
         return f"{self.target_ip_id} {self.kind} = {self.status}"
@@ -839,6 +860,18 @@ class MonitoringSettings(TimestampedModel):
     )
     flap_window_minutes = models.PositiveIntegerField(
         default=30, help_text="Window for counting flaps."
+    )
+    # Off: a flapping state stays until somebody confirms the host is fine,
+    # because "it stopped bouncing" and "it is fine" are different claims and
+    # the second is the operator's to make. On: it clears itself once the
+    # check has been quiet for the settle time.
+    auto_clear_flapping = models.BooleanField(
+        default=False,
+        help_text="Clear a flapping state on its own once the check has been quiet "
+        "for the settle time. Off keeps it until an operator confirms.",
+    )
+    auto_clear_flapping_after_minutes = models.PositiveIntegerField(
+        default=30, help_text="Quiet minutes before a flapping state clears itself."
     )
     # Grouping: when one batch opens many alerts (e.g. a switch dies), send one
     # digest per channel instead of a storm of individual messages.
