@@ -160,7 +160,7 @@ The panel shows Danbyte's word for the worst open problem (through the
 connection's severity map), the host and connection, *Disabled* or
 *Maintenance* when Zabbix has it so, a line per protocol Zabbix can or cannot
 reach it on with Zabbix's own error, the first twenty problems with their
-severity and age, when it was last read, and *Open in Zabbix*.
+severity and age, when it was last read, and links to the host's *Problems* and *Latest data* in Zabbix (the host dashboard view is not used - it lists template dashboards and is empty for most templates).
 
 It does **not** change Danbyte's status. A device can be green in Danbyte -
 its ping answers - and carry a High problem here; both are true and both are

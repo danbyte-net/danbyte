@@ -8,7 +8,7 @@ import { InfoTip } from "@/components/ui/info-tip"
 import { Section } from "@/components/ui/section"
 import { TimeCell } from "@/components/cells/time-ago"
 import { AvailabilityList } from "./external-detail"
-import { SeverityPill, zabbixHostUrl } from "./external-status"
+import { SeverityPill, zabbixHostUrl, zabbixLatestUrl } from "./external-status"
 import { CheckStatusBadge } from "./status-badge"
 
 /** The hosts Zabbix has for a device, if any. One fetch for every panel on
@@ -133,15 +133,26 @@ function HostRow({ row }: { row: ZabbixHostStatus }) {
             </span>
           )}
           {link && (
-            <a
-              href={link}
-              target="_blank"
-              rel="noreferrer"
-              className="link inline-flex items-center gap-1"
-            >
-              Open in Zabbix
-              <ExternalLink className="h-3 w-3" />
-            </a>
+            <>
+              <a
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+                className="link inline-flex items-center gap-1"
+              >
+                Problems
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              <a
+                href={zabbixLatestUrl(row.connection.url, row.host.hostid)}
+                target="_blank"
+                rel="noreferrer"
+                className="link inline-flex items-center gap-1"
+              >
+                Latest data
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </>
           )}
         </span>
       </div>

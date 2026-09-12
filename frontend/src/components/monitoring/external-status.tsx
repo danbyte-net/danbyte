@@ -42,11 +42,20 @@ export function SeverityPill({ severity }: { severity: string }) {
   return <Badge variant={s.variant}>{s.label}</Badge>
 }
 
-/** The host's page in Zabbix 7 - the dashboard view, which is where the
- * problems, latest data and graphs all hang off. */
+/** The host's problems in Zabbix 7, filtered to that host. Not the host
+ * dashboard: that view lists the dashboards the host's *templates* carry
+ * and reads "No data found" for the many templates that have none, which
+ * is a dead end from a status pill. Problems always renders and is what a
+ * status sends you to look at. */
 export function zabbixHostUrl(base: string, hostid: string): string {
   if (!base || !hostid) return ""
-  return `${base.replace(/\/+$/, "")}/zabbix.php?action=host.dashboard.view&hostid=${encodeURIComponent(hostid)}`
+  return `${base.replace(/\/+$/, "")}/zabbix.php?action=problem.view&hostids%5B%5D=${encodeURIComponent(hostid)}`
+}
+
+/** The host's latest data - every item's last value. */
+export function zabbixLatestUrl(base: string, hostid: string): string {
+  if (!base || !hostid) return ""
+  return `${base.replace(/\/+$/, "")}/zabbix.php?action=latest.view&hostids%5B%5D=${encodeURIComponent(hostid)}`
 }
 
 export function ExternalStatusHover({
