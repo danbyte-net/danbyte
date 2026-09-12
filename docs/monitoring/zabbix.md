@@ -472,7 +472,28 @@ estate Danbyte provisioned and one built by hand read the same way - and the
 **device type** from the inventory model when you have one by that name.
 
 What the host does not say comes from the connection's defaults: a site, a
-role, a device type. A proposal missing any of them waits, with the reason on
+role, a device type.
+
+### Adoption rules
+
+The defaults put every adopted host at one site. An estate with a Zabbix per
+region and a host per town needs more, so **adoption rules** decide placement
+from what the host looks like - the same idea, and the same matcher, as the
+[VM placement rules](../features/external-sync.md#placement-rules-when-the-names-dont-line-up). A rule matches
+the host's **name**, one of its **host groups** or its **address** - a glob by
+default (`kbh-*`, `*-core?`), `regex:` for a regular expression, a CIDR for an
+address - and names the site, and optionally the role and device type, the
+device is made with.
+
+First match wins, lowest *order* first. A rule sets **only what it names**: one
+that says `kbh-*` is København leaves the role to the default and the type to
+the inventory model, as before. Each field is decided most-specific first - a
+rule, then what the host itself says (a group naming a site, the inventory
+model naming a type), then the defaults - and the queue says which rule placed
+a host so a surprising site is explained rather than mysterious.
+
+A broken regular expression is refused when the rule is saved, and a rule that
+somehow holds one matches nothing rather than everything. A proposal missing any of them waits, with the reason on
 the row, and cannot be applied until the defaults are set or the host group
 names the site. An address that falls in no prefix of yours is left out and
 said so, never given a prefix it invented.

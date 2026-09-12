@@ -33,6 +33,7 @@ import { ZabbixProvisionRules } from "@/components/zabbix/provision-rules"
 import { ZabbixScopeList } from "@/components/zabbix/scope-list"
 import { ZabbixLinkedHosts } from "@/components/zabbix/linked-hosts"
 import { ZabbixMaintenanceList } from "@/components/zabbix/maintenance"
+import { ZabbixAdoptionRules } from "@/components/zabbix/adoption-rules"
 
 export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
 
@@ -56,8 +57,7 @@ function ZabbixPage() {
 
   const connections = useQuery({
     queryKey: ["zabbix-connections"],
-    queryFn: () =>
-      api<Paginated<ZabbixConnection>>("/api/zabbix/connections/"),
+    queryFn: () => api<Paginated<ZabbixConnection>>("/api/zabbix/connections/"),
   })
   const all = connections.data?.results ?? []
   const conn = all.find((c) => c.id === selectedId) ?? all.at(0)
@@ -172,6 +172,9 @@ function ZabbixPage() {
           />
           <ZabbixChanges connection={conn} />
           <ZabbixProvisionRules connection={conn} canManage={canManage} />
+          {conn.adopt_hosts && (
+            <ZabbixAdoptionRules connection={conn} canManage={canManage} />
+          )}
           <ZabbixScopeList connection={conn} />
           <ZabbixLinkedHosts connection={conn} canManage={canManage} />
           <ZabbixMaintenanceList connection={conn} canManage={canManage} />
@@ -244,7 +247,9 @@ function ConnectionCard({
             {conn.version}
           </Badge>
           {!conn.supported && (
-            <span className="text-muted-foreground">below 6.0 - unsupported</span>
+            <span className="text-muted-foreground">
+              below 6.0 - unsupported
+            </span>
           )}
         </span>
       ) : (

@@ -103,6 +103,8 @@ AUDITED_MODELS = [
     "api.Platform",
     "api.NATRule",
     "zabbix.ZabbixConnection",
+    "zabbix.ZabbixProvisionRule",
+    "zabbix.ZabbixAdoptionRule",
     "api.Service",
     "api.ServiceTemplate",
     "api.DeviceTypeService",

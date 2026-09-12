@@ -90,6 +90,13 @@ def strip_builtin_folders(names) -> list:
     return [n for n in names if n and n not in _BUILTIN_FOLDERS]
 
 
+def pattern_matches(pattern: str, value: str, *, scope: str = "") -> bool:
+    """Glob by default, ``regex:`` for a regular expression, and a CIDR when
+    ``scope`` is ``ip``. Shared with the Zabbix adoption rules, so "which site
+    does this name belong to" is answered one way everywhere."""
+    return _matches(pattern, value, scope=scope)
+
+
 def _matches(pattern: str, value: str, *, scope: str = "") -> bool:
     pattern = (pattern or "").strip()
     if not pattern or not value:

@@ -314,3 +314,161 @@ class ApiTests(_Base):
             {"site": "Aarhus", "role": "Switch", "device_type": "C9300-24T"},
         )
         self.assertTrue(r.json()["adopt_hosts"])
+
+
+class PlacementRuleTests(_Base):
+    """Where an adopted host lands, by what it looks like.
+
+    A rule beats what the host says about itself, which beats the connection's
+    defaults - and a rule sets only what it names.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from .models import ZabbixAdoptionRule
+
+        self.Rule = ZabbixAdoptionRule
+        self.kbh = Site.objects.create(tenant=self.tenant, name="København")
+        self.odense = Site.objects.create(tenant=self.tenant, name="Odense")
+
+    def rule(self, pattern, site, scope="name", **kw):
+        return self.Rule.objects.create(
+            tenant=self.tenant, connection=self.conn, scope=scope,
+            pattern=pattern, site=site, **kw,
+        )
+
+    def detail(self, hostid="50"):
+        [change] = self.adoptions()
+        return change.detail
+
+    def test_a_name_glob_places_the_host(self):
+        self.rule("kbh-*", self.kbh)
+        self.plan([host("50", "kbh-asw1", "10.7.0.90")])
+        d = self.detail()
+        self.assertEqual(d["site_id"], str(self.kbh.id))
+        self.assertEqual(d["rule"], "kbh-*")
+
+    def test_a_rule_beats_a_group_that_names_a_site(self):
+        self.rule("kbh-*", self.kbh)
+        self.plan([host("50", "kbh-asw1", "10.7.0.90", groups=["Odense"])])
+        self.assertEqual(self.detail()["site_id"], str(self.kbh.id))
+
+    def test_a_group_naming_a_site_still_beats_the_default(self):
+        self.rule("nomatch-*", self.kbh)
+        self.plan([host("50", "edge-9", "10.7.0.90", groups=["Odense"])])
+        self.assertEqual(self.detail()["site_id"], str(self.odense.id))
+
+    def test_a_regex_rule(self):
+        self.rule("regex:^(kbh|cph)-", self.kbh)
+        self.plan([host("50", "CPH-core1", "10.7.0.90")])
+        self.assertEqual(self.detail()["site_id"], str(self.kbh.id))
+
+    def test_a_group_rule(self):
+        self.rule("Linux*", self.odense, scope="group")
+        self.plan([host("50", "edge-9", "10.7.0.90", groups=["Linux servers"])])
+        self.assertEqual(self.detail()["site_id"], str(self.odense.id))
+
+    def test_an_address_rule_takes_a_cidr(self):
+        self.rule("10.7.0.0/24", self.odense, scope="ip")
+        self.plan([host("50", "edge-9", "10.7.0.90")])
+        self.assertEqual(self.detail()["site_id"], str(self.odense.id))
+
+    def test_lowest_weight_wins(self):
+        self.rule("*", self.odense, weight=200)
+        self.rule("kbh-*", self.kbh, weight=10)
+        self.plan([host("50", "kbh-asw1", "10.7.0.90")])
+        self.assertEqual(self.detail()["site_id"], str(self.kbh.id))
+
+    def test_a_rule_sets_only_what_it_names(self):
+        """Site from the rule, type from the inventory model, role from the
+        connection - each field decided on its own."""
+        other = DeviceType.objects.create(
+            tenant=self.tenant, manufacturer=self.dtype.manufacturer,
+            name="C9500-48Y4C", model="C9500-48Y4C",
+        )
+        self.rule("kbh-*", self.kbh)
+        self.plan([host("50", "kbh-core1", "10.7.0.90", model="c9500-48y4c")])
+        d = self.detail()
+        self.assertEqual(d["site_id"], str(self.kbh.id))
+        self.assertEqual(d["device_type_id"], str(other.id))
+        self.assertEqual(d["role_id"], str(self.role.id))
+
+    def test_a_rule_can_also_name_the_role_and_type(self):
+        ap = DeviceRole.objects.create(tenant=self.tenant, name="AP", slug="ap")
+        self.rule("*-ap?", self.kbh, role=ap)
+        self.plan([host("50", "kbh-ap1", "10.7.0.90")])
+        self.assertEqual(self.detail()["role_id"], str(ap.id))
+
+    def test_a_disabled_rule_does_nothing(self):
+        self.rule("kbh-*", self.kbh, enabled=False)
+        self.plan([host("50", "kbh-asw1", "10.7.0.90")])
+        self.assertEqual(self.detail()["site_id"], str(self.site.id))
+
+    def test_a_broken_regex_matches_nothing(self):
+        self.rule("regex:(", self.kbh)
+        self.plan([host("50", "kbh-asw1", "10.7.0.90")])
+        self.assertEqual(self.detail()["site_id"], str(self.site.id))
+
+
+class PlacementRuleApiTests(_Base):
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth import get_user_model
+
+        self.user = get_user_model().objects.create_superuser("root", "r@x.io", "pw")
+        self.client.force_login(self.user)
+
+    def test_a_broken_regex_is_refused_on_save(self):
+        r = self.client.post(
+            "/api/zabbix/adoption-rules/",
+            {"connection": str(self.conn.id), "scope": "name", "pattern": "regex:(",
+             "site": str(self.site.id)},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("pattern", r.json())
+
+    def test_another_tenants_site_is_refused(self):
+        org = Organization.objects.create(name="O2", slug="o2")
+        other = Tenant.objects.create(org=org, name="T2", slug="t2")
+        foreign = Site.objects.create(tenant=other, name="Elsewhere")
+        r = self.client.post(
+            "/api/zabbix/adoption-rules/",
+            {"connection": str(self.conn.id), "scope": "name", "pattern": "x*",
+             "site": str(foreign.id)},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_another_tenants_connection_is_refused_for_both_rule_kinds(self):
+        org = Organization.objects.create(name="O2", slug="o2")
+        other = Tenant.objects.create(org=org, name="T2", slug="t2")
+        foreign = ZabbixConnection.objects.create(
+            tenant=other, name="theirs", url="https://z2.example.com",
+            credentials={"token": TOKEN}, version="7.0.30",
+        )
+        r = self.client.post(
+            "/api/zabbix/adoption-rules/",
+            {"connection": str(foreign.id), "scope": "name", "pattern": "x*",
+             "site": str(self.site.id)},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        r = self.client.post(
+            "/api/zabbix/template-rules/",
+            {"connection": str(foreign.id), "scope": "tenant", "templates": ["ICMP Ping"]},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_the_list_says_the_names(self):
+        from .models import ZabbixAdoptionRule
+
+        ZabbixAdoptionRule.objects.create(
+            tenant=self.tenant, connection=self.conn, pattern="kbh-*", site=self.site,
+        )
+        r = self.client.get(f"/api/zabbix/adoption-rules/?connection={self.conn.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        [row] = r.json()["results"]
+        self.assertEqual(row["site_name"], "Aarhus")
+        self.assertEqual(row["scope_display"], "Host name")

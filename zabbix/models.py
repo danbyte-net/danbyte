@@ -520,3 +520,63 @@ class ZabbixHostFacts(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.device_id} facts"
+
+
+class ZabbixAdoptionRule(TimestampedModel):
+    """Where an adopted Zabbix host lands, decided by what it looks like.
+
+    The connection's defaults put every adopted host at one site; an estate
+    with a Zabbix per region and a host per town needs more than that. A rule
+    matches the host's **name**, one of its **host groups** or its
+    **address** - glob by default, ``regex:`` for a regular expression, a CIDR
+    for addresses - and names the site, and optionally the role and type, the
+    device is made with. The same matcher the VM placement rules use.
+
+    First match wins, in weight order. A rule only sets what it names: one
+    that says "``kbh-*`` is København" leaves the role and type to the
+    inventory model and the defaults, as before.
+    """
+
+    SCOPE_NAME, SCOPE_GROUP, SCOPE_IP = "name", "group", "ip"
+    SCOPE_CHOICES = [
+        (SCOPE_NAME, "Host name"),
+        (SCOPE_GROUP, "Host group"),
+        (SCOPE_IP, "Address"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="zabbix_adoption_rules"
+    )
+    connection = models.ForeignKey(
+        ZabbixConnection, on_delete=models.CASCADE, related_name="adoption_rules"
+    )
+    scope = models.CharField(max_length=8, choices=SCOPE_CHOICES, default=SCOPE_NAME)
+    pattern = models.CharField(
+        max_length=255,
+        help_text=(
+            "Glob such as kbh-* or *-core?. Prefix with regex: for a regular "
+            "expression. An address rule may be a CIDR."
+        ),
+    )
+    site = models.ForeignKey(
+        "api.Site", on_delete=models.CASCADE, related_name="zabbix_adoption_rules"
+    )
+    role = models.ForeignKey(
+        "api.DeviceRole", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    device_type = models.ForeignKey(
+        "api.DeviceType", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    #: Lower runs first. Ties fall to the pattern, so the order is stable.
+    weight = models.PositiveSmallIntegerField(default=100)
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["weight", "pattern"]
+        indexes = [models.Index(fields=["connection", "enabled"])]
+
+    def __str__(self) -> str:
+        return f"{self.get_scope_display()} {self.pattern} -> {self.site_id}"

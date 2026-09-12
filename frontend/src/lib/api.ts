@@ -3890,6 +3890,28 @@ export interface ZabbixDefaults {
 
 /** A rule saying what a kind of device carries in Zabbix - templates, and the
  * host groups it belongs in. Rules stack. */
+/** Where an adopted Zabbix host lands, decided by its name, group or address.
+ * First match wins in weight order; a rule sets only what it names. */
+export interface ZabbixAdoptionRule {
+  id: string
+  connection: string
+  scope: "name" | "group" | "ip"
+  scope_display: string
+  /** Glob by default, `regex:` for a regular expression, a CIDR for an
+   * address rule. */
+  pattern: string
+  site: string
+  site_name: string
+  role: string | null
+  role_name: string
+  device_type: string | null
+  device_type_name: string
+  weight: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface ZabbixProvisionRule {
   id: string
   connection: string

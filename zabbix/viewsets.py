@@ -14,6 +14,7 @@ from api.viewsets import TenantScopedViewSet
 from integrations.toggles import IntegrationToggleMixin
 
 from .models import (
+    ZabbixAdoptionRule,
     ZabbixChange,
     ZabbixConnection,
     ZabbixHostLink,
@@ -21,6 +22,7 @@ from .models import (
     ZabbixProvisionRule,
 )
 from .serializers import (
+    ZabbixAdoptionRuleSerializer,
     ZabbixChangeSerializer,
     ZabbixConnectionSerializer,
     ZabbixDefaultsSerializer,
@@ -249,6 +251,26 @@ class ZabbixProvisionRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
              "catalog": _SCOPE_ENDPOINT.get(v, "")}
             for v, label in ZabbixProvisionRule.SCOPE_CHOICES
         ]})
+
+
+class ZabbixAdoptionRuleViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+    """Where an adopted host lands, decided by its name, group or address.
+
+    First match wins in weight order - the same shape as the VM placement
+    rules, and the same matcher.
+    """
+
+    integration_keys = ("zabbix",)
+    queryset = (
+        ZabbixAdoptionRule.objects.select_related("site", "role", "device_type")
+        .order_by("weight", "pattern")
+    )
+    serializer_class = ZabbixAdoptionRuleSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        conn = self.request.query_params.get("connection") if self.request else None
+        return qs.filter(connection_id=conn) if conn else qs
 
 
 #: Where the SPA fetches the options for each scope.

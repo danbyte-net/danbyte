@@ -339,7 +339,10 @@ function ChangeDetail({ change }: { change: ZabbixChange }) {
     const parts: string[] = []
     if (d.device_type) parts.push(`a ${String(d.device_type)}`)
     if (d.role) parts.push(String(d.role))
-    if (d.site) parts.push(`at ${String(d.site)}`)
+    if (d.site)
+      parts.push(
+        `at ${String(d.site)}${d.rule ? ` (rule ${String(d.rule)})` : ""}`
+      )
     if (d.address) parts.push(`on ${String(d.address)}`)
     return (
       <span className="text-[12px] text-muted-foreground">

@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from api.models import DeviceRole, DeviceType, Site
+from api.serializers import TenantScopedPrimaryKeyRelatedField
+
 from .models import (
+    ZabbixAdoptionRule,
     ZabbixChange,
     ZabbixConnection,
     ZabbixHostLink,
@@ -273,6 +277,11 @@ class ZabbixChangeSerializer(serializers.ModelSerializer):
 class ZabbixProvisionRuleSerializer(serializers.ModelSerializer):
     """A rule saying what a kind of device carries in Zabbix."""
 
+    # A connection id from anywhere is not proof it is this tenant's.
+    connection = TenantScopedPrimaryKeyRelatedField(
+        queryset=ZabbixConnection.objects.all()
+    )
+
     scope_display = serializers.CharField(source="get_scope_display", read_only=True)
     #: What the rule is about, resolved for display - the SPA should not have
     #: to fetch four catalogs to render a list of rules.
@@ -345,4 +354,53 @@ class ZabbixProvisionRuleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id", "scope_display", "object_name", "created_at", "updated_at",
+        ]
+
+
+class ZabbixAdoptionRuleSerializer(serializers.ModelSerializer):
+    """Where an adopted host lands, by what it looks like."""
+
+    connection = TenantScopedPrimaryKeyRelatedField(
+        queryset=ZabbixConnection.objects.all()
+    )
+    site = TenantScopedPrimaryKeyRelatedField(queryset=Site.objects.all())
+    role = TenantScopedPrimaryKeyRelatedField(
+        queryset=DeviceRole.objects.all(), required=False, allow_null=True
+    )
+    device_type = TenantScopedPrimaryKeyRelatedField(
+        queryset=DeviceType.objects.all(), required=False, allow_null=True
+    )
+    scope_display = serializers.CharField(source="get_scope_display", read_only=True)
+    site_name = serializers.CharField(source="site.name", read_only=True)
+    role_name = serializers.CharField(source="role.name", read_only=True, default="")
+    device_type_name = serializers.CharField(
+        source="device_type.model", read_only=True, default=""
+    )
+
+    def validate_pattern(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("A pattern is needed.")
+        if value.startswith("regex:"):
+            import re
+
+            try:
+                re.compile(value[6:])
+            except re.error as exc:
+                raise serializers.ValidationError(
+                    f"Not a valid regular expression: {exc}"
+                ) from exc
+        return value
+
+    class Meta:
+        model = ZabbixAdoptionRule
+        fields = [
+            "id", "connection", "scope", "scope_display", "pattern",
+            "site", "site_name", "role", "role_name",
+            "device_type", "device_type_name", "weight", "enabled",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "scope_display", "site_name", "role_name", "device_type_name",
+            "created_at", "updated_at",
         ]

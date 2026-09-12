@@ -18,7 +18,7 @@ import logging
 from django.db import transaction
 from django.utils import timezone
 
-from .models import ZabbixChange, ZabbixHostLink
+from .models import ZabbixAdoptionRule, ZabbixChange, ZabbixHostLink
 
 log = logging.getLogger("zabbix.adopt")
 
@@ -71,30 +71,81 @@ def host_address(host) -> str:
     return ""
 
 
-def proposal(conn, host, *, sites, types) -> dict:
+def rules_for(conn) -> list:
+    """This connection's enabled adoption rules, in the order they are tried."""
+    return list(
+        ZabbixAdoptionRule.objects.filter(connection=conn, enabled=True)
+        .select_related("site", "role", "device_type")
+    )
+
+
+def placement(host: dict, rules) -> dict:
+    """What the first matching rule says about a host, or nothing.
+
+    A rule matches the host's name, one of its groups, or one of its
+    addresses. It sets only what it names, so a name rule that knows the site
+    but not the type leaves the type to the inventory model and the defaults.
+    """
+    from integrations.placement import pattern_matches
+
+    if not rules:
+        return {}
+    groups = [g.get("name", "") for g in host.get("hostgroups") or host.get("groups") or []]
+    addresses = [(i.get("ip") or "").strip() for i in host.get("interfaces") or []]
+    candidates = {
+        ZabbixAdoptionRule.SCOPE_NAME: [host.get("name") or "", host.get("host") or ""],
+        ZabbixAdoptionRule.SCOPE_GROUP: groups,
+        ZabbixAdoptionRule.SCOPE_IP: [a for a in addresses if a],
+    }
+    for rule in rules:
+        values = candidates.get(rule.scope) or []
+        if any(pattern_matches(rule.pattern, v, scope=rule.scope) for v in values):
+            out = {"rule": rule.pattern, "site": (rule.site_id, rule.site.name)}
+            if rule.role_id:
+                out["role"] = (rule.role_id, rule.role.name)
+            if rule.device_type_id:
+                out["device_type"] = (rule.device_type_id, rule.device_type.model)
+            return out
+    return {}
+
+
+def proposal(conn, host, *, sites, types, rules=()) -> dict:
     """What applying would make, and what is still missing to make it.
 
     ``sites`` maps a lower-cased site name to its id; ``types`` a lower-cased
-    device-type model to its id. Both are read once per pass.
+    device-type model to its id; ``rules`` are the connection's adoption
+    rules. All read once per pass.
+
+    Each field is decided most-specific first: an adoption rule, then what the
+    host itself says (a group naming a site, the inventory model naming a
+    type), then the connection's defaults.
     """
     inventory = host.get("inventory") or {}
     groups = [g.get("name", "") for g in host.get("hostgroups") or host.get("groups") or []]
-    # The site is the first host group that names one of this tenant's sites -
-    # the reverse of what provisioning writes, so an estate Danbyte provisioned
-    # and one somebody built by hand read the same way.
-    site = next(
-        ((sites[g.lower()], g) for g in groups if g.lower() in sites),
-        None,
-    )
+    placed = placement(host, rules)
+
+    site = placed.get("site")
+    if site is None:
+        # The first host group that names one of this tenant's sites - the
+        # reverse of what provisioning writes, so an estate Danbyte provisioned
+        # and one somebody built by hand read the same way.
+        site = next(
+            ((sites[g.lower()], g) for g in groups if g.lower() in sites),
+            None,
+        )
     if site is None and conn.adopt_site_id:
         site = (conn.adopt_site_id, conn.adopt_site.name)
+
     model = (inventory.get("model") or "").strip()
-    device_type = None
-    if model and model.lower() in types:
+    device_type = placed.get("device_type")
+    if device_type is None and model and model.lower() in types:
         device_type = (types[model.lower()], model)
-    elif conn.adopt_device_type_id:
+    if device_type is None and conn.adopt_device_type_id:
         device_type = (conn.adopt_device_type_id, conn.adopt_device_type.model)
-    role = (conn.adopt_role_id, conn.adopt_role.name) if conn.adopt_role_id else None
+
+    role = placed.get("role")
+    if role is None and conn.adopt_role_id:
+        role = (conn.adopt_role_id, conn.adopt_role.name)
 
     missing = [
         label for label, value in (("site", site), ("role", role), ("device type", device_type))
@@ -116,6 +167,9 @@ def proposal(conn, host, *, sites, types) -> dict:
         "role": role[1] if role else None,
         "device_type_id": str(device_type[0]) if device_type else None,
         "device_type": device_type[1] if device_type else None,
+        # Which rule placed it, so the queue can say why this site and not
+        # the default.
+        "rule": placed.get("rule"),
     }
     if missing:
         detail["reason"] = (
@@ -148,11 +202,12 @@ def plan_adoption(conn, hosts, fresh) -> int:
         for i, m in DeviceType.objects.filter(tenant=conn.tenant)
         .exclude(model="").values_list("id", "model")
     }
+    rules = rules_for(conn)
     n = 0
     for host in hosts:
         if host["hostid"] in linked or is_known(host, index):
             continue
-        detail = proposal(conn, host, sites=sites, types=types)
+        detail = proposal(conn, host, sites=sites, types=types, rules=rules)
         change = ZabbixChange.objects.filter(
             connection=conn, kind=ZabbixChange.ADOPT, detail__hostid=host["hostid"]
         ).first()

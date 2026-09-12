@@ -102,6 +102,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("zabbix.ZabbixChange", "Zabbix pending changes", "Monitoring"),
     ("zabbix.ZabbixProvisionRule", "Zabbix provisioning rules", "Monitoring"),
     ("zabbix.ZabbixMaintenance", "Zabbix maintenance windows", "Monitoring"),
+    ("zabbix.ZabbixAdoptionRule", "Zabbix adoption rules", "Monitoring"),
     ("api.Service", "Services", "IPAM"),
     ("api.ServiceTemplate", "Service templates", "IPAM"),
     # ─── DCIM ───────────────────────────────────────────────────────
