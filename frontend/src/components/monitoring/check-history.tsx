@@ -72,7 +72,9 @@ export function CheckHistory({
   )
 }
 
-function detailSummary(detail: Record<string, unknown>): string {
+/** One line for a result's or a change's detail - the error if there was
+ * one, else the few fields worth a glance. */
+export function detailSummary(detail: Record<string, unknown>): string {
   if (!detail || Object.keys(detail).length === 0) return "-"
   if (typeof detail.error === "string") return detail.error
   const parts: string[] = []

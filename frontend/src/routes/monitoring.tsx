@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Activity, AlertTriangle } from "lucide-react"
 import {
   Bar,
@@ -21,7 +21,9 @@ import {
   type CheckStatus,
   type FlappingRow,
   type MonitoringStats,
+  type StatsHours,
 } from "@/lib/api"
+import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useMe } from "@/lib/use-me"
@@ -51,6 +53,7 @@ import {
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
+import { HistoryView } from "@/components/monitoring/history-view"
 import { TemplatesList } from "@/components/monitoring/templates-list"
 import {
   CONFIG_TABS,
@@ -63,11 +66,46 @@ import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
   | "overview"
+  | "history"
   | "checks"
   | "templates"
   | "configuration"
   | "settings"
-interface MonitoringSearch {
+
+// The filter params the history and checks views keep in the URL. Declared so
+// they survive navigation: a param the route does not validate is dropped
+// when the router rebuilds the location, which is what reset filters on
+// Back elsewhere (#109).
+const FILTER_KEYS = [
+  "to_status",
+  "from_status",
+  "kind",
+  "source",
+  "site",
+  "device_type",
+  "role",
+  "platform",
+  "template",
+  "engine",
+  "region",
+  "device",
+  "prefix",
+  "vrf",
+  "vlan",
+  "tag",
+  "port",
+  "ip",
+  "q",
+  "page",
+  "ordering",
+  "days",
+  "since",
+  "until",
+  "strip",
+] as const
+type FilterKey = (typeof FILTER_KEYS)[number]
+
+interface MonitoringSearch extends Partial<Record<FilterKey, string>> {
   view: MonitoringView
   status: CheckStatus | "all"
   /** Configuration tab; absent means the default. */
@@ -76,6 +114,7 @@ interface MonitoringSearch {
 
 const VIEWS: MonitoringView[] = [
   "overview",
+  "history",
   "checks",
   "templates",
   "configuration",
@@ -93,6 +132,11 @@ export const Route = createFileRoute("/monitoring")({
     ...(CONFIG_TABS.includes(s.scope as ConfigTab)
       ? { scope: s.scope as ConfigTab }
       : {}),
+    ...Object.fromEntries(
+      FILTER_KEYS.filter((k) => typeof s[k] === "string" && s[k] !== "").map(
+        (k) => [k, String(s[k])]
+      )
+    ),
   }),
 })
 
@@ -123,22 +167,33 @@ function MonitoringPage() {
   // panel is guarded too so a hand-typed ?view=settings shows nothing.
   const { canManage } = useMe()
   const nav = useNavigate()
+  // Changing view starts clean - a history filter has no business on the
+  // Templates tab; changing anything else keeps the rest of the URL.
   const go = (next: Partial<MonitoringSearch>) =>
     nav({
       to: "/monitoring",
-      search: (prev): MonitoringSearch => ({
-        view: next.view ?? (prev.view as MonitoringView) ?? "overview",
-        status:
-          next.status ?? (prev.status as MonitoringSearch["status"]) ?? "all",
-      }),
+      search: (prev): MonitoringSearch =>
+        next.view && next.view !== prev.view
+          ? { view: next.view, status: "all" }
+          : {
+              ...(prev as MonitoringSearch),
+              view: (prev.view as MonitoringView) ?? "overview",
+              status:
+                next.status ??
+                (prev.status as MonitoringSearch["status"]) ??
+                "all",
+            },
     })
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
+  const [hours, setHours] = useState<StatsHours>(24)
   const stats = useQuery({
-    queryKey: ["monitoring-stats"],
-    queryFn: () => api<MonitoringStats>("/api/monitoring/stats/"),
+    queryKey: ["monitoring-stats", hours],
+    queryFn: () =>
+      api<MonitoringStats>(`/api/monitoring/stats/?hours=${hours}`),
+    placeholderData: keepPreviousData,
   })
   const d = stats.data
 
@@ -203,8 +258,21 @@ function MonitoringPage() {
 
   const seriesData = (d?.series ?? []).map((p) => ({
     ...p,
-    label: new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
+    label:
+      d?.series_bucket === "day"
+        ? new Date(p.t).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+          })
+        : hours > 24
+          ? new Date(p.t).toLocaleString([], {
+              weekday: "short",
+              hour: "2-digit",
+            })
+          : new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
   }))
+  const windowLabel =
+    hours === 24 ? "24 hours" : hours === 168 ? "7 days" : "30 days"
 
   const total = d?.total_checks ?? 0
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
@@ -222,6 +290,7 @@ function MonitoringPage() {
           onValueChange={(v) => go({ view: v as MonitoringView })}
           items={[
             { value: "overview", label: "Overview" },
+            { value: "history", label: "History" },
             { value: "checks", label: "Checks" },
             { value: "templates", label: "Templates" },
             { value: "configuration", label: "Configuration" },
@@ -242,12 +311,14 @@ function MonitoringPage() {
           /prefixes), so the shared padding lives on the other views instead. */}
       <div
         className={
-          view === "configuration"
+          view === "configuration" || view === "history"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
         }
       >
         {stats.isError && <QueryError error={stats.error} />}
+
+        {view === "history" && <HistoryView />}
 
         {view === "checks" && (
           <div className="mx-auto max-w-7xl">
@@ -332,14 +403,25 @@ function MonitoringPage() {
               <CardHeader>
                 <CardTitle>Check results</CardTitle>
                 <CardDescription>
-                  Outcomes per hour over the last 24 hours
+                  Outcomes per {d.series_bucket} over the last {windowLabel}
                 </CardDescription>
+                <CardAction>
+                  <SegmentedTabs
+                    value={String(hours)}
+                    onValueChange={(v) => setHours(Number(v) as StatsHours)}
+                    items={[
+                      { value: "24", label: "24h" },
+                      { value: "168", label: "7d" },
+                      { value: "720", label: "30d" },
+                    ]}
+                  />
+                </CardAction>
               </CardHeader>
               <CardContent>
                 {!mounted || seriesData.length === 0 ? (
                   <Placeholder
                     h="h-[250px]"
-                    hint="No results recorded in the last 24 hours."
+                    hint={`No results recorded in the last ${windowLabel}.`}
                   />
                 ) : (
                   <ChartContainer
@@ -490,10 +572,19 @@ function MonitoringPage() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Recent status changes</CardTitle>
+                  <CardTitle>What just happened</CardTitle>
                   <CardDescription>
-                    Latest transitions across the tenant
+                    The latest status changes, newest first
                   </CardDescription>
+                  <CardAction>
+                    <Link
+                      to="/monitoring"
+                      search={{ view: "history", status: "all" }}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      All history
+                    </Link>
+                  </CardAction>
                 </CardHeader>
                 <CardContent>
                   {d.recent_transitions.length === 0 ? (
@@ -501,38 +592,7 @@ function MonitoringPage() {
                       No status changes recorded yet.
                     </p>
                   ) : (
-                    <ul className="-my-1 divide-y divide-border">
-                      {d.recent_transitions.map((t) => (
-                        <li
-                          key={t.id}
-                          className="flex items-center gap-2 py-2 text-[13px]"
-                        >
-                          <CheckStatusBadge status={t.from_status} />
-                          <span className="text-muted-foreground">→</span>
-                          <CheckStatusBadge status={t.to_status} />
-                          {t.target_ip ? (
-                            <Link
-                              to="/ips/$id"
-                              params={{ id: t.target_ip.id }}
-                              className="link ml-2 truncate font-mono font-medium"
-                            >
-                              {t.target_ip.ip_address}
-                            </Link>
-                          ) : (
-                            <span className="ml-2 text-muted-foreground">
-                              -
-                            </span>
-                          )}
-                          <span className="truncate text-muted-foreground">
-                            {t.template_name ?? t.kind}
-                          </span>
-                          <SourceBadge source={t.source} engine={t.engine} />
-                          <span className="num ml-auto shrink-0 text-[11px] text-muted-foreground">
-                            {new Date(t.at).toLocaleString()}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <RecentChanges rows={d.recent_transitions} />
                   )}
                 </CardContent>
               </Card>
@@ -688,6 +748,79 @@ function Placeholder({ h, hint }: { h: string; hint: string }) {
       className={`flex items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground ${h}`}
     >
       {hint}
+    </div>
+  )
+}
+
+/** The overview's latest changes, grouped by the hour they landed in so a
+ * burst reads as one event and a lone change as one line. */
+function RecentChanges({
+  rows,
+}: {
+  rows: MonitoringStats["recent_transitions"]
+}) {
+  const groups: { key: string; label: string; rows: typeof rows }[] = []
+  for (const t of rows) {
+    const at = new Date(t.at)
+    const key = `${at.toDateString()} ${at.getHours()}`
+    let g = groups[groups.length - 1]
+    if (!g || g.key !== key) {
+      g = {
+        key,
+        label: at.toLocaleString([], {
+          weekday: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        rows: [],
+      }
+      groups.push(g)
+    }
+    g.rows.push(t)
+  }
+  return (
+    <div className="-my-1 space-y-2">
+      {groups.map((g) => (
+        <div key={g.key}>
+          <div className="flex items-center gap-2 py-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+            {g.label}
+            <span className="font-normal normal-case">
+              · {g.rows.length} change{g.rows.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <ul className="divide-y divide-border">
+            {g.rows.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2 py-1.5 text-[13px]"
+              >
+                <CheckStatusBadge status={t.from_status} />
+                <span className="text-muted-foreground">→</span>
+                <CheckStatusBadge status={t.to_status} />
+                {t.target_ip ? (
+                  <Link
+                    to="/ips/$id"
+                    params={{ id: t.target_ip.id }}
+                    search={{ tab: "monitoring" }}
+                    className="link ml-2 truncate font-mono font-medium"
+                  >
+                    {t.target_ip.ip_address}
+                  </Link>
+                ) : (
+                  <span className="ml-2 text-muted-foreground">-</span>
+                )}
+                <span className="truncate text-muted-foreground">
+                  {t.template_name ?? t.kind}
+                </span>
+                <SourceBadge source={t.source} engine={t.engine} />
+                <span className="ml-auto shrink-0">
+                  <TimeCell iso={t.at} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   )
 }

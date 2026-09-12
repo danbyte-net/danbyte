@@ -219,6 +219,22 @@ class FacetAndSeriesTests(_Base):
         labels = {f["value"]: f["label"] for f in body["facets"]["site"]}
         self.assertEqual(labels[str(self.site_a.id)], "Aarhus")
 
+    def test_site_facet_counts_what_the_site_filter_matches(self):
+        """An address with no site of its own is counted under its prefix's
+        or its device's - the facet must not say 0 for a filter that finds 2."""
+        self.ip_a.site = None
+        self.ip_a.save()
+        shared = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.2.0.0/16", status=status_for(self.tenant)
+        )
+        self.ip_b.site = None
+        self.ip_b.prefix = shared
+        self.ip_b.save()
+        body = self.get()
+        self.assertEqual(
+            self._facet(body, "site"), {str(self.site_a.id): 2, str(self.site_b.id): 1}
+        )
+
     def test_engine_and_source_facets(self):
         body = self.get()
         self.assertEqual(self._facet(body, "source"), {"local": 2, "outpost": 1})

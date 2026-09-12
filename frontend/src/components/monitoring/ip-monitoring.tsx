@@ -13,7 +13,9 @@ import {
   type CheckStatus,
   type EffectiveCheck,
   type IpChecksResponse,
+  type IpTimeline,
   type ScheduleMode,
+  type StatusSegment,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +35,8 @@ import { AddCheckDialog } from "./add-check-dialog"
 import { NotifyMeButton } from "./notify-me-button"
 import { CheckHistory } from "./check-history"
 import { UptimePanel } from "./uptime-panel"
+import { HistoryPanel } from "./history-panel"
+import { StatusStrip } from "./status-strip"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export function IpMonitoring({
@@ -44,6 +48,15 @@ export function IpMonitoring({
   const [adding, setAdding] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [flapExclude, setFlapExclude] = useState(ip.flap_exclude ?? false)
+  // One fetch for every row's seven-day strip - the panel below has its own
+  // window and its own query, so changing that never redraws the rows.
+  const strips = useQuery({
+    queryKey: ["monitoring-timeline", `ips/${ip.id}`, 7],
+    queryFn: () =>
+      api<IpTimeline>(`/api/monitoring/ips/${ip.id}/timeline/?days=7`),
+  })
+  const stripFor = (templateId: string) =>
+    strips.data?.checks.find((c) => c.template_id === templateId)
 
   const flapM = useMutation({
     mutationFn: (next: boolean) =>
@@ -156,9 +169,24 @@ export function IpMonitoring({
             onToggle={() =>
               setExpanded(expanded === c.template_id ? null : c.template_id)
             }
+            strip={
+              strips.data
+                ? {
+                    segments: stripFor(c.template_id)?.segments ?? [],
+                    since: strips.data.since,
+                    until: strips.data.until,
+                  }
+                : undefined
+            }
           />
         ))}
       </div>
+
+      {checks.length > 0 && (
+        <div className="mt-3">
+          <HistoryPanel scope={{ ip: ip.id }} />
+        </div>
+      )}
 
       <AddCheckDialog
         target={{ kind: "ip", id: ip.id, label: ip.ip_address }}
@@ -175,12 +203,15 @@ function CheckRow({
   striped,
   expanded,
   onToggle,
+  strip,
 }: {
   ipId: string
   check: EffectiveCheck
   striped: boolean
   expanded: boolean
   onToggle: () => void
+  /** Seven days of status to scale, beside the latency sparkline. */
+  strip?: { segments: StatusSegment[]; since: string; until: string }
 }) {
   const qc = useQueryClient()
   const status = check.state?.status ?? "unknown"
@@ -226,6 +257,15 @@ function CheckRow({
             </Badge>
           )}
         </button>
+        {strip && (
+          <span className="hidden w-36 shrink-0 md:block">
+            <StatusStrip
+              segments={strip.segments}
+              since={strip.since}
+              until={strip.until}
+            />
+          </span>
+        )}
         <Sparkline points={check.sparkline} />
         <span className="num w-20 text-right text-xs text-muted-foreground">
           {latency != null ? `${latency.toFixed(1)} ms` : "-"}

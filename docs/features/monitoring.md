@@ -357,6 +357,9 @@ The IP detail page has a **Monitoring** section with one row per check showing:
 
 - A status badge - up / down / degraded / unknown.
 - The check name and kind.
+- A seven-day **status strip** - the check's state over time, drawn to scale,
+  so an outage two days ago is a red block two days back. Hover a block for
+  its state, bounds and length.
 - An inline **sparkline** of recent latency/status.
 - The last latency and last-run time.
 
@@ -364,6 +367,13 @@ Expand a row to see its recent **history** table. When an IP has several checks
 with **different** results (one down while others are up), the badge becomes a
 **split badge** - coloured segments sized by how many checks are in each state,
 with a hover breakdown - rather than collapsing to just the worst one.
+
+Below the rows, the **History** panel shows the address over a window of your
+choosing (24h / 7d / 30d / 90d): a strip for all checks together (worst state
+wins), one per check when there are several, then the status changes behind
+the picture, paged, with who answered each. The strip and the table come from
+the same log, so they cannot disagree. *Open in Monitoring → History* carries
+the address into the tenant-wide view with its filters set.
 
 ### On a prefix
 
@@ -385,7 +395,14 @@ you in three places:
 - The **IPs tab** has a **Monitoring** column showing each IP's status badge.
 - The **Overview** has a **Monitoring** summary: the roll-up badge + breakdown
   across every IP assigned to the device (worst status winning) and a per-IP
-  status grid linking to each monitored IP.
+  status grid linking to each monitored IP. What an external system reports -
+  open problems, protocols it cannot reach the host on - shows as chips beside
+  the badge, and in the badge's hover, the same way the lists show it.
+- The **Monitoring** tab: the roll-up with seven days of status to scale, one
+  row per monitored address with its own strip and chips, and the **History**
+  panel with the changes behind them over 24h / 7d / 30d / 90d. The tab
+  beside it, **SNMP**, holds what the device itself reports - system facts,
+  interfaces, sensors, drift.
 
 Because a service's check lives on the service's IP, service monitoring rolls
 up here too. The summary only appears when the device has at least one
@@ -464,12 +481,24 @@ exactly like an automatic scan.
 
 ## The Monitoring dashboard
 
-**Governance → Monitoring** is the global view. It has three tabs:
+**Governance → Monitoring** is the global view. Its tabs:
 
 - **Overview** - stat cards (total checks, monitored IPs, definitions, alert
-  channels), charts (status distribution, checks by type, results over the last
-  24 hours), recent status changes, a **flapping** card (see below), and the
-  monitoring settings.
+  channels), charts (status distribution, checks by type, results over the
+  last 24 hours, 7 days or 30 days - hourly up to three days, daily beyond;
+  30 days is the ceiling because results are pruned after that), **What just
+  happened** (the latest status changes grouped by the hour they landed in,
+  with who answered), a **flapping** card (see below), and the monitoring
+  settings.
+- **History** - every status change in the tenant. The rail on the left
+  filters by the state a change went to or came from, who answered, check
+  type, site, device type, role, platform, check and engine - each with a
+  count of what ticking it would leave - and narrows by region, device,
+  prefix, VRF, VLAN, tag or port. The window is 24h / 7d / 30d / 90d or a
+  custom date range; the chart above the table shows changes per hour or per
+  day by state. Everything lives in the URL, so a view is a link, and saved
+  views keep a rail, a window and a search under a name. Export walks every
+  page the filters match, up to 5,000 rows.
 - **Checks** - a global list of every check with quick-filter tabs (All / Up /
   Degraded / Down / Stale / Skipped / Unknown, each with a count), search, and
   paging. Each row links to its IP.

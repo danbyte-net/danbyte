@@ -105,3 +105,21 @@ class IpChecksRollupTests(TestCase):
         body = self.client.get(f"/api/monitoring/ips/{self.ip.id}/checks/").json()
         for key in ("problems", "unreachable", "external"):
             self.assertNotIn(key, body)
+
+    def test_the_device_page_carries_it_too_per_address_and_overall(self):
+        from api.models import Device
+
+        device = Device.objects.create(tenant=self.tenant, name="asw1")
+        self.ip.assigned_device = device
+        self.ip.save()
+        self._state({
+            "zabbix_host": "aarhus-asw1", "hostid": "10683", "problem_count": 2,
+            "availability": {"snmp": {"state": "down", "error": "timed out"}},
+        })
+        r = self.client.get(f"/api/monitoring/devices/{device.id}/checks/")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(body["problems"], 2)
+        self.assertEqual(body["unreachable"], ["snmp"])
+        self.assertEqual(body["ips"][0]["problems"], 2)
+        self.assertEqual(body["ips"][0]["external"]["host"], "aarhus-asw1")

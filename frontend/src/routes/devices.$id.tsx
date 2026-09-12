@@ -156,6 +156,7 @@ import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ServicesPane } from "@/components/services-pane"
+import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
   DeviceMonitoring,
   DeviceMonitoringBadge,
@@ -173,6 +174,7 @@ const DEVICE_TABS = [
   "components",
   "images",
   "photo-ports",
+  "monitoring",
   "snmp",
   "services",
   "certificates",
@@ -368,11 +370,14 @@ function Body({ device: d }: { device: Device }) {
         ...(d.device_type?.front_image || d.device_type?.rear_image
           ? [{ value: "photo-ports", label: "Photo ports" }]
           : []),
+        { value: "monitoring", label: "Monitoring" },
+        // The value stays "snmp" so every ?tab=snmp link keeps landing here;
+        // the label says what the tab holds now that checks have their own.
         {
           value: "snmp",
           label: (
             <>
-              Monitoring
+              SNMP
               {deviceDrift.length > 0 && <DriftDot />}
             </>
           ),
@@ -402,6 +407,9 @@ function Body({ device: d }: { device: Device }) {
         <PendingFieldsProvider objectType="api.device" objectId={d.id}>
           <DeviceOverview device={d} onTab={setTab} />
         </PendingFieldsProvider>
+      </DetailTab>
+      <DetailTab value="monitoring">
+        <DeviceChecksPanel deviceId={d.id} />
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">

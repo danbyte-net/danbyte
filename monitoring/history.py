@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.db.models import Count, Q
-from django.db.models.functions import TruncDay, TruncHour
+from django.db.models import Count, F, Q, UUIDField
+from django.db.models.functions import Coalesce, TruncDay, TruncHour
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -26,13 +26,22 @@ from .models import CheckStatus
 FACET_FIELDS = {
     "kind": "kind",
     "source": "source",
-    "site": "target_ip__site_id",
+    "site": "_site",
     "device_type": "target_ip__assigned_device__device_type_id",
     "role": "target_ip__assigned_device__role_id",
     "platform": "target_ip__assigned_device__platform_id",
     "template": "template_id",
     "engine": "engine_id",
 }
+
+#: The site an address is *at* - its own, else its prefix's, else its
+#: device's - so the site facet counts what the site filter matches.
+SITE_EXPR = Coalesce(
+    F("target_ip__site_id"),
+    F("target_ip__prefix__site_id"),
+    F("target_ip__assigned_device__site_id"),
+    output_field=UUIDField(),
+)
 
 #: Labels for facet ids, read once per request rather than once per bucket.
 _LABEL_MODELS = {
@@ -243,6 +252,8 @@ def facet_counts(base, params, dims, apply, *, status_field=None) -> dict:
             field = status_field
         else:
             field = FACET_FIELDS.get(dim, dim)
+        if field == "_site":
+            qs = qs.annotate(_site=SITE_EXPR)
         rows = (
             qs.exclude(**{f"{field}__isnull": True})
             .values(field)

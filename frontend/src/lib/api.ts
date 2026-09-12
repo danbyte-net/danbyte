@@ -4564,7 +4564,7 @@ export interface PrefixRollup {
   total_ips: number
 }
 
-export interface PrefixIpStatus {
+export interface PrefixIpStatus extends ExternalRollup {
   id: string
   ip_address: string
   status: CheckStatus | null
@@ -4588,7 +4588,7 @@ export interface PrefixChecksResponse {
 // Device monitoring rolls up across the device's assigned IPs (a service's
 // check lives on its IP, so service monitoring is included). Reuses the same
 // rollup + per-IP grid shapes as prefixes.
-export interface DeviceChecksResponse {
+export interface DeviceChecksResponse extends ExternalRollup {
   device_id: string
   name: string
   rollup: PrefixRollup
@@ -4973,6 +4973,10 @@ export interface MonitoringSeriesPoint {
   down: number
 }
 
+/** The results-chart windows the stats endpoint offers. 720 h is the
+ * result-retention ceiling - older rows are pruned. */
+export type StatsHours = 24 | 168 | 720
+
 export interface MonitoringStats {
   by_status: Partial<Record<CheckStatus, number>>
   by_kind: Partial<Record<CheckKind, number>>
@@ -4981,6 +4985,8 @@ export interface MonitoringStats {
   templates: number
   channels: number
   series: MonitoringSeriesPoint[]
+  series_hours: StatsHours
+  series_bucket: "hour" | "day"
   recent_transitions: Array<{
     id: number
     target_ip: { id: string; ip_address: string } | null
@@ -4994,6 +5000,136 @@ export interface MonitoringStats {
     engine: EngineRef | null
     source: CheckSource
   }>
+}
+
+// ─── Status history ──────────────────────────────────────────────────────
+//
+// The transition log read back: filtered by anything an address is, with the
+// facet counts and the bucketed series that feed a rail and a chart in the
+// same answer. Timelines are the same log as `{start, end, status}` runs.
+
+/** A run of one status over `[start, end)`. */
+export interface StatusSegment {
+  start: string
+  end: string
+  status: CheckStatus
+}
+
+export interface TransitionRow {
+  id: number
+  at: string
+  kind: CheckKind
+  from_status: CheckStatus
+  to_status: CheckStatus
+  detail: Record<string, unknown>
+  template: { id: string; name: string } | null
+  target_ip: { id: string; ip_address: string; dns_name: string } | null
+  device: { id: string; name: string } | null
+  site: { id: string; name: string } | null
+  source: CheckSource
+  engine: EngineRef | null
+}
+
+export interface FacetBucket {
+  value: string
+  label: string
+  count: number
+}
+
+export type TransitionFacet =
+  | "to_status"
+  | "from_status"
+  | "kind"
+  | "source"
+  | "site"
+  | "device_type"
+  | "role"
+  | "platform"
+  | "template"
+  | "engine"
+
+/** Counts per bucket per status the change went *to*. */
+export type TransitionSeriesPoint = { t: string } & Partial<
+  Record<CheckStatus, number>
+>
+
+export interface TransitionsResponse {
+  count: number
+  page: number
+  page_size: number
+  since: string
+  until: string
+  bucket: "hour" | "day"
+  facets: Partial<Record<TransitionFacet, FacetBucket[]>>
+  series: TransitionSeriesPoint[]
+  results: TransitionRow[]
+}
+
+/** The query keys `/api/monitoring/transitions/` understands. Lists are
+ * comma-separated and mean any-of; `tag` means every tag named. */
+export interface TransitionFilters {
+  days?: number
+  since?: string
+  until?: string
+  to_status?: string
+  from_status?: string
+  kind?: string
+  template?: string
+  source?: string
+  engine?: string
+  ip?: string
+  site?: string
+  region?: string
+  device?: string
+  device_type?: string
+  role?: string
+  platform?: string
+  prefix?: string
+  vrf?: string
+  vlan?: string
+  port?: string
+  tag?: string
+  search?: string
+  ordering?: "at" | "-at" | "ip" | "-ip"
+  page?: number
+  page_size?: number
+}
+
+export function transitionsQuery(f: TransitionFilters): string {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(f)) {
+    if (v === undefined || v === null || v === "") continue
+    p.set(k, String(v))
+  }
+  const qs = p.toString()
+  return qs ? `?${qs}` : ""
+}
+
+export interface TimelineCheck {
+  state_id: string
+  target_ip: { id: string; ip_address: string }
+  template_id: string
+  template_name: string | null
+  kind: CheckKind
+  source: CheckSource
+  segments: StatusSegment[]
+}
+
+export interface IpTimeline {
+  since: string
+  until: string
+  rollup: StatusSegment[]
+  checks: TimelineCheck[]
+}
+
+export interface DeviceTimeline extends IpTimeline {
+  ips: { id: string; ip_address: string; rollup: StatusSegment[] }[]
+}
+
+export interface TimelineBatch {
+  since: string
+  until: string
+  segments: Record<string, StatusSegment[]>
 }
 
 // ─── Certificates ────────────────────────────────────────────────────────

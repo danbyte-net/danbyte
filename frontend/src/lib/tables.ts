@@ -96,6 +96,7 @@ export const TABLES: TableMeta[] = [
   { id: "audit-log", label: "Audit log", area: "Governance" },
   { id: "compliance-rules", label: "Compliance rules", area: "Governance" },
   { id: "alerts", label: "Alerts", area: "Monitoring" },
+  { id: "monitoring-history", label: "Monitoring history", area: "Monitoring" },
   {
     id: "monitoring-engines",
     label: "Monitoring engines",

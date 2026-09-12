@@ -624,7 +624,7 @@ def device_checks_view(request, device_id):
             CheckState.objects.filter(target_ip_id__in=ip_ids),
         )
         .select_related("target_ip")
-        .values("target_ip_id", "target_ip__ip_address", "status")
+        .values("target_ip_id", "target_ip__ip_address", "status", "last_detail")
     )
     by_ip: dict = {}
     for s in states:
@@ -634,10 +634,15 @@ def device_checks_view(request, device_id):
                 "id": str(s["target_ip_id"]),
                 "ip_address": s["target_ip__ip_address"],
                 "statuses": [],
+                "details": [],
             },
         )
         e["statuses"].append(s["status"])
+        e["details"].append(s["last_detail"])
 
+    # What an external system says rides along per address and for the
+    # device as a whole - the same chips the lists show, so the device page
+    # cannot read healthier than the row it was opened from.
     grid = sorted(
         (
             {
@@ -646,6 +651,7 @@ def device_checks_view(request, device_id):
                 "status": worst_status(e["statuses"]),
                 "checks": len(e["statuses"]),
                 "counts": status_counts(e["statuses"]),
+                **_external_detail(e["details"]),
             }
             for e in by_ip.values()
         ),
@@ -665,6 +671,7 @@ def device_checks_view(request, device_id):
             },
             "ips": grid[:GRID_CAP],
             "truncated": len(grid) > GRID_CAP,
+            **_external_detail([s["last_detail"] for s in states]),
         }
     )
 

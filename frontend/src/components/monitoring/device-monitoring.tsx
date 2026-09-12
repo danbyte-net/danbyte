@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Activity } from "lucide-react"
 
 import { api, type DeviceChecksResponse } from "@/lib/api"
+import { ExternalChips } from "./external-chips"
+import { ExternalStatusHover } from "./external-status"
 import { MixedStatusBadge } from "./mixed-status-badge"
 import { NotifyMeButton } from "./notify-me-button"
 
@@ -70,10 +72,13 @@ export function DeviceMonitoring({ deviceId }: { deviceId: string }) {
         <Activity className="h-3.5 w-3.5 text-muted-foreground" />
         Monitoring
       </h2>
-      <MixedStatusBadge
-        counts={data.rollup.counts}
-        status={data.rollup.status}
-      />
+      <ExternalStatusHover entry={{ ...data, ...data.rollup }}>
+        <MixedStatusBadge
+          counts={data.rollup.counts}
+          status={data.rollup.status}
+        />
+      </ExternalStatusHover>
+      <ExternalChips entry={{ ...data, ...data.rollup }} />
       <div className="flex items-center gap-x-4 overflow-hidden">
         {shownIps.map((ip) => (
           <Link
@@ -84,6 +89,7 @@ export function DeviceMonitoring({ deviceId }: { deviceId: string }) {
           >
             <MixedStatusBadge counts={ip.counts} status={ip.status} />
             <span className="font-mono">{ip.ip_address}</span>
+            <ExternalChips entry={ip} />
           </Link>
         ))}
         {hiddenCount > 0 && (
