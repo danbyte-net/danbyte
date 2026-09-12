@@ -53,89 +53,96 @@ export function DistDonut({
   const sum = data.reduce((n, d) => n + d.count, 0)
   const chartData = data.map((d) => ({ ...d, fill: d.color }))
   return (
-    <div className="flex h-full flex-col items-center gap-2 sm:flex-row">
-      {/* Grows with the tile: height follows the row, width follows via
-          aspect-square. Fixed 170px made a 3x3 tile look mostly empty.
-          Safe re #42: tile size only changes between gestures - bodies are
-          unmounted placeholders while a drag/resize is in flight. */}
-      <ChartContainer
-        config={configFor(data)}
-        className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] shrink-0"
-      >
-        <PieChart>
-          <ChartTooltip
-            cursor={false}
-            content={<ChartTooltipContent hideLabel />}
-          />
-          <Pie
-            data={chartData}
-            dataKey="count"
-            nameKey="name"
-            innerRadius="62%"
-            strokeWidth={4}
-          >
-            <Label
-              content={({ viewBox }) => {
-                if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
-                  return null
-                const { cx, cy } = viewBox as { cx: number; cy: number }
-                return (
-                  <text x={cx} y={cy} textAnchor="middle">
-                    <tspan
-                      x={cx}
-                      y={cy - 2}
-                      className="fill-foreground"
-                      style={{ fontSize: 22, fontWeight: 700 }}
-                    >
-                      {sum.toLocaleString()}
-                    </tspan>
-                    <tspan
-                      x={cx}
-                      y={cy + 16}
-                      className="fill-muted-foreground"
-                      style={{ fontSize: 11 }}
-                    >
-                      {unit}
-                    </tspan>
-                  </text>
-                )
-              }}
+    // A container query, not a viewport one (#156). A dashboard widget can be
+    // narrow while the screen is wide, so `sm:flex-row` put the legend beside
+    // the donut in a tile with no room for it and the text ran outside the
+    // card. The query has to live on a parent: an element cannot respond to
+    // its own width.
+    <div className="@container h-full">
+      <div className="flex h-full flex-col items-center gap-2 @md:flex-row">
+        {/* Grows with the tile: height follows the row, width follows via
+            aspect-square. Fixed 170px made a 3x3 tile look mostly empty.
+            Safe re #42: tile size only changes between gestures - bodies are
+            unmounted placeholders while a drag/resize is in flight. */}
+        <ChartContainer
+          config={configFor(data)}
+          className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] w-auto max-w-full shrink-0"
+        >
+          <PieChart>
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent hideLabel />}
             />
-          </Pie>
-        </PieChart>
-      </ChartContainer>
-      <ul className="grid w-full grid-cols-2 gap-x-3 gap-y-1 text-[12px] sm:flex-1 sm:grid-cols-1">
-        {data.slice(0, 6).map((d) => {
-          const target = link?.(d)
-          const row = (
-            <>
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-                style={{ backgroundColor: d.color }}
+            <Pie
+              data={chartData}
+              dataKey="count"
+              nameKey="name"
+              innerRadius="62%"
+              strokeWidth={4}
+            >
+              <Label
+                content={({ viewBox }) => {
+                  if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
+                    return null
+                  const { cx, cy } = viewBox as { cx: number; cy: number }
+                  return (
+                    <text x={cx} y={cy} textAnchor="middle">
+                      <tspan
+                        x={cx}
+                        y={cy - 2}
+                        className="fill-foreground"
+                        style={{ fontSize: 22, fontWeight: 700 }}
+                      >
+                        {sum.toLocaleString()}
+                      </tspan>
+                      <tspan
+                        x={cx}
+                        y={cy + 16}
+                        className="fill-muted-foreground"
+                        style={{ fontSize: 11 }}
+                      >
+                        {unit}
+                      </tspan>
+                    </text>
+                  )
+                }}
               />
-              <span className="truncate text-muted-foreground">{d.name}</span>
-              <span className="num ml-auto font-medium text-foreground tabular-nums">
-                {d.count.toLocaleString()}
-              </span>
-            </>
-          )
-          return (
-            <li key={d.name}>
-              {target ? (
-                <Link
-                  to={target.to}
-                  search={target.search}
-                  className="-mx-1 flex items-center gap-1.5 rounded px-1 hover:bg-muted/50"
-                >
-                  {row}
-                </Link>
-              ) : (
-                <span className="flex items-center gap-1.5">{row}</span>
-              )}
-            </li>
-          )
-        })}
-      </ul>
+            </Pie>
+          </PieChart>
+        </ChartContainer>
+        <ul className="grid w-full min-w-0 grid-cols-1 gap-x-3 gap-y-1 text-[12px] @xs:grid-cols-2 @md:flex-1 @md:grid-cols-1">
+          {data.slice(0, 6).map((d) => {
+            const target = link?.(d)
+            const row = (
+              <>
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                  style={{ backgroundColor: d.color }}
+                />
+                <span className="truncate text-muted-foreground">{d.name}</span>
+                <span className="num ml-auto font-medium text-foreground tabular-nums">
+                  {d.count.toLocaleString()}
+                </span>
+              </>
+            )
+            return (
+              <li key={d.name}>
+                {target ? (
+                  <Link
+                    to={target.to}
+                    search={target.search}
+                    className="-mx-1 flex items-center gap-1.5 rounded px-1 hover:bg-muted/50"
+                  >
+                    {row}
+                  </Link>
+                ) : (
+                  <span className="flex items-center gap-1.5">{row}</span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </div>
     </div>
   )
 }
@@ -268,7 +275,6 @@ export function RadialGauge({
     </ChartContainer>
   )
 }
-
 
 /** Top prefixes by utilisation - fills the tile. */
 export function TopPrefixes({ data }: { data: DashTopPrefix[] }) {
