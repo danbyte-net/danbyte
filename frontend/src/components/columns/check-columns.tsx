@@ -157,6 +157,10 @@ export function checkColumns(
             segments={row.original.segments ?? []}
             since={strip.since}
             until={strip.until}
+            scope={{
+              ip: row.original.target_ip.id,
+              template: row.original.template.id,
+            }}
           />
         </span>
       ),

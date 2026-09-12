@@ -327,6 +327,7 @@ function CheckRow({
               segments={strip.segments}
               since={strip.since}
               until={strip.until}
+              scope={{ ip: ipId, template: check.template_id }}
             />
           )}
         </span>

@@ -1564,6 +1564,26 @@ def alerts_view(request):
     kind = request.query_params.get("kind")
     if kind:
         qs = qs.filter(kind=kind)
+    # One object, one check, one window - what a status-strip segment asks:
+    # "which alerts were open while this was going on?". An alert overlaps
+    # the window when it opened before its end and was not resolved before
+    # its start.
+    ip = request.query_params.get("ip")
+    if ip:
+        qs = qs.filter(target_ip_id=ip)
+    device = request.query_params.get("device")
+    if device:
+        qs = qs.filter(target_ip__assigned_device_id=device)
+    template = request.query_params.get("template")
+    if template:
+        qs = qs.filter(template_id=template)
+    from .history import window as _window
+
+    if request.query_params.get("since") or request.query_params.get("until"):
+        since, until = _window(request.query_params)
+        qs = qs.filter(opened_at__lt=until).filter(
+            Q(resolved_at__isnull=True) | Q(resolved_at__gt=since)
+        )
     rows = list(qs.order_by("-opened_at")[:200])
 
     # Annotate which firing alerts are currently muted by a silence - one

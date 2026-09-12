@@ -31,6 +31,7 @@ import {
 import { Slider } from "@/components/ui/slider"
 import { DailyAvailability } from "./daily-availability"
 import { StatusStrip, fmtSpan } from "./status-strip"
+import type { StripScope } from "./status-strip"
 
 /** The windows on the tabs, in hours. */
 export const HISTORY_WINDOWS = [
@@ -272,6 +273,7 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
                 since={tl.since}
                 until={tl.until}
                 uptime={summary?.uptime_pct}
+                scope={"ip" in scope ? { ip: scope.ip } : "device" in scope ? { device: scope.device } : undefined}
                 strong
               />
               {"ips" in tl &&
@@ -293,6 +295,7 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
                     since={tl.since}
                     until={tl.until}
                     uptime={ip.uptime_pct}
+                    scope={{ ip: ip.id }}
                   />
                 ))}
               {"ip" in scope &&
@@ -312,6 +315,7 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
                     since={tl.since}
                     until={tl.until}
                     uptime={c.uptime_pct}
+                    scope={{ ip: c.target_ip.id, template: c.template_id }}
                   />
                 ))}
             </div>
@@ -360,6 +364,7 @@ function StripRow({
   until,
   uptime,
   strong,
+  scope,
 }: {
   label: React.ReactNode
   segments: StatusSegment[]
@@ -368,6 +373,7 @@ function StripRow({
   /** The window's availability for this run, at the strip's end. */
   uptime?: number | null
   strong?: boolean
+  scope?: StripScope
 }) {
   return (
     <div className="flex items-center gap-3 text-[12px]">
@@ -384,6 +390,7 @@ function StripRow({
         since={since}
         until={until}
         height={strong ? 10 : 8}
+        scope={scope}
       />
       <span
         className={`num w-16 shrink-0 text-right text-[11px] ${tier(uptime)}`}

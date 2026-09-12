@@ -164,6 +164,7 @@ export function StatusHistoryWidget({
                       segments={tl.rollup}
                       since={tl.since}
                       until={tl.until}
+                      scope={t.kind === "ip" ? { ip: t.id } : { device: t.id }}
                     />
                   ) : (
                     <div className="h-2 rounded-sm bg-muted/40" />

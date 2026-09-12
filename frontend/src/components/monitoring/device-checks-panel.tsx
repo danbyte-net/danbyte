@@ -146,6 +146,7 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
                       segments={segs}
                       since={tl.since}
                       until={tl.until}
+                      scope={{ ip: ip.id }}
                     />
                   )}
                 </span>

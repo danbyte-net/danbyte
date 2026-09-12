@@ -322,6 +322,42 @@ class AlertAckApiTests(APITestCase):
         ids = {row["id"] for row in r.json()["results"]}
         self.assertEqual(ids, {str(ssh.id)})
 
+    def test_ip_and_window_filters(self):
+        """A strip segment asks for the alerts open while it lasted: opened
+        before its end, not resolved before its start."""
+        from datetime import timedelta
+
+        now = timezone.now()
+        other_ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.6", prefix=self.prefix
+        )
+        Alert.objects.create(
+            tenant=self.tenant, target_ip=other_ip, template=self.t, kind="icmp",
+            dedup_key=f"{other_ip.id}:{self.t.id}", severity="critical", check_status="down",
+        )
+        old = Alert.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=self.t, kind="icmp",
+            dedup_key=f"{self.ip.id}:old", severity="warning", check_status="down",
+            status="resolved", opened_at=now - timedelta(hours=3),
+            resolved_at=now - timedelta(hours=2),
+        )
+        r = self.client.get(f"/api/monitoring/alerts/?status=all&ip={self.ip.id}")
+        self.assertEqual({row["id"] for row in r.json()["results"]},
+                         {str(self.alert.id), str(old.id)})
+        # Stamps go through the client's own encoding: a bare "+00:00" in a
+        # query string reads as a space and the stamp is dropped.
+        r = self.client.get("/api/monitoring/alerts/", {
+            "status": "all", "ip": str(self.ip.id),
+            "since": (now - timedelta(hours=1)).isoformat(), "until": now.isoformat(),
+        })
+        self.assertEqual({row["id"] for row in r.json()["results"]}, {str(self.alert.id)})
+        r = self.client.get("/api/monitoring/alerts/", {
+            "status": "all", "ip": str(self.ip.id),
+            "since": (now - timedelta(hours=2, minutes=30)).isoformat(),
+            "until": (now - timedelta(hours=1, minutes=30)).isoformat(),
+        })
+        self.assertEqual({row["id"] for row in r.json()["results"]}, {str(old.id)})
+
     def test_list_marks_silenced(self):
         from datetime import timedelta
 

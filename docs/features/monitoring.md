@@ -421,7 +421,9 @@ so an estate with nobody watching costs nothing.
 address's own), a *Fast* badge for a sub-minute check, a *Flapping* pill when
 it is flagged, the last seven days as a **status strip** drawn to scale (an
 outage two days ago is a red block two days back; hover a block for its
-state, bounds and length), the last latency and when it last ran. When the
+state and length, click it for its exact bounds, the status change that
+started it and the alerts that were open while it lasted), the last
+latency and when it last ran. When the
 checks disagree (one down while others are up), the section's badge is a
 **split badge** - coloured segments sized by how many checks are in each
 state - rather than just the worst one.
@@ -518,6 +520,9 @@ reads the changes back filtered by anything an address is - the same
 dimensions the list pages filter on - and returns facet counts and a bucketed
 series alongside the rows, so one call feeds a rail, a chart and a table:
 
+- `GET /api/monitoring/alerts/` takes `ip=`, `device=`, `template=` and a
+  `since`/`until` window (an alert overlaps it when it opened before the end
+  and was not resolved before the start) - what a strip segment asks.
 - `GET /api/monitoring/transitions/` - paged (`page`, `page_size` ≤ 200),
   ordered by `at` or `ip`. Window: `since`/`until` (timezone-aware ISO) or
   `days` (default 7, up to 365). Filters: `to_status`, `from_status`, `kind`,
