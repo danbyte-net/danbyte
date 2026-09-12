@@ -31,6 +31,10 @@ class Command(BaseCommand):
         parser.add_argument("--key")
         parser.add_argument("--chain")
         parser.add_argument("--issuer", help="an ACME issuer's name or id")
+        parser.add_argument("--letsencrypt", action="store_true",
+                            help="Let's Encrypt, made as an issuer on first use")
+        parser.add_argument("--email", default="", help="the Let's Encrypt account email")
+        parser.add_argument("--tenant", help="tenant slug when there is more than one")
         parser.add_argument("--challenge", choices=["http-01", "dns-01"], default="http-01")
 
     def emit(self, obj) -> None:
@@ -64,21 +68,42 @@ class Command(BaseCommand):
             if action == "acme":
                 from monitoring.models import Issuer
 
-                if not o["issuer"]:
-                    raise CommandError("acme needs --issuer")
-                qs = Issuer.objects.filter(enabled=True).select_related("tenant")
-                issuer = qs.filter(id=o["issuer"]).first() if _is_uuid(o["issuer"]) else None
-                if issuer is None:
-                    named = list(qs.filter(name=o["issuer"]))
-                    if len(named) != 1:
-                        raise CommandError(f"issuer {o['issuer']!r}: {'not found' if not named else 'ambiguous - use the id'}")
-                    issuer = named[0]
+                if o["letsencrypt"]:
+                    issuer = site_tls.letsencrypt_issuer(_tenant(o["tenant"]), None, o["email"])
+                elif not o["issuer"]:
+                    raise CommandError("acme needs --issuer or --letsencrypt")
+                else:
+                    qs = Issuer.objects.filter(enabled=True).select_related("tenant")
+                    issuer = qs.filter(id=o["issuer"]).first() if _is_uuid(o["issuer"]) else None
+                    if issuer is None:
+                        named = list(qs.filter(name=o["issuer"]))
+                        if len(named) != 1:
+                            raise CommandError(f"issuer {o['issuer']!r}: "
+                                               f"{'not found' if not named else 'ambiguous - use the id'}")
+                        issuer = named[0]
                 order = site_tls.start_acme(issuer.tenant, None, issuer, o["challenge"],
                                             o["name"] or [site_tls.public_host()])
                 return self.emit({"order": str(order.id), "status": order.status,
                                   "issuer": issuer.name, "challenge": o["challenge"]})
         except (site_tls.SiteTlsError, OSError) as exc:
             raise CommandError(str(exc)) from exc
+
+
+def _tenant(slug: str | None):
+    """The named tenant, or the only one - a deployment with several has to
+    say which owns the Let's Encrypt account."""
+    from core.models import Tenant
+
+    if slug:
+        t = Tenant.objects.filter(slug=slug).first()
+        if t is None:
+            raise CommandError(f"no tenant {slug!r}")
+        return t
+    tenants = list(Tenant.objects.order_by("slug")[:2])
+    if len(tenants) != 1:
+        raise CommandError("more than one tenant - pass --tenant <slug>: "
+                           + ", ".join(t.slug for t in Tenant.objects.order_by("slug")))
+    return tenants[0]
 
 
 def _is_uuid(value: str) -> bool:

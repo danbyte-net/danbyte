@@ -181,6 +181,27 @@ class AcmeHookTests(APITestCase):
                 challenge_type=AcmeOrder.Challenge.HTTP01), cert)
         self.assertFalse((Path(self.tmp) / site_tls.STAMP).exists())
 
+    def test_command_orders_from_letsencrypt(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        Issuer.objects.all().delete()
+        with mock.patch.object(site_tls, "start_acme") as start:
+            start.return_value = mock.Mock(id="o1", status="pending")
+            out = StringIO()
+            call_command("site_certificate", "acme", "--letsencrypt", "--email", "ops@example.net",
+                         "--name", "db.example", stdout=out)
+            self.assertEqual(json.loads(out.getvalue())["issuer"], "Let's Encrypt")
+            self.assertEqual(start.call_args.args[3], "http-01")
+            self.assertEqual(start.call_args.args[4], ["db.example"])
+        self.assertEqual(Issuer.objects.filter(name="Let's Encrypt").count(), 1)
+        Organization.objects.create(name="B", slug="b")
+        Tenant.objects.create(org=Organization.objects.get(slug="b"), name="B", slug="b")
+        with self.assertRaises(CommandError):
+            call_command("site_certificate", "acme", "--letsencrypt", "--email", "x@y.z", stdout=StringIO())
+
     def test_letsencrypt_issuer_is_made_once(self):
         Issuer.objects.all().delete()
         with self.assertRaises(site_tls.SiteTlsError):

@@ -3986,8 +3986,8 @@ class Upgrade(Screen):
 
 class Tls(Screen):
     name = "tls"
-    keys = [("i", "install"), ("g", "self-signed"), ("n", "renew acme"), ("l", "reload nginx"),
-            ("r", "re-read")]
+    keys = [("c", "get from a CA"), ("g", "self-signed"), ("i", "install"),
+            ("n", "renew acme"), ("l", "reload nginx"), ("r", "re-read")]
 
     def __init__(self, con):
         super().__init__(con)
@@ -3995,6 +3995,11 @@ class Tls(Screen):
         self.read_at = ""
         self.review: dict | None = None
         self.probe_until = 0.0
+        #: What the app says about the site's certificate (source, the
+        #: drop, the root unit's answer, an open order) - one Django read.
+        self.site: dict | None = None
+        self.site_err = ""
+        self._issuer_tenants: list[str] = []
 
     def enter(self) -> None:
         self.reread()
@@ -4006,7 +4011,20 @@ class Tls(Screen):
             self.facts = tls_facts(con.ctx)
             self.read_at = time.strftime("%H:%M:%S")
             con.dirty.set()
+            row, err = self._site_status()
+            self.site, self.site_err = row, err
+            con.dirty.set()
         con.run("tls", go)
+
+    def _site_status(self) -> tuple[dict | None, str]:
+        r = manage(self.con.ctx, ["site_certificate", "status"])
+        if not r.ok:
+            noise = (r.err or r.out).strip().splitlines()
+            return None, (noise[-1][:120] if noise else "unavailable")
+        try:
+            return json.loads(r.out.strip().splitlines()[-1]), ""
+        except (ValueError, IndexError):
+            return None, "unreadable"
 
     def draw(self, y0: int, y1: int) -> None:
         con, A = self.con, self.con.A
@@ -4080,7 +4098,63 @@ class Tls(Screen):
         con.kv(y, 0, "acme timer", [(("scheduled" if at.get("active") == "active" else "off") if at
                                      else "not installed", 0 if at and at.get("active") == "active" else A[DIMA])])
         y += 2
+        y = self._site_panel(y)
         self.pane(y, y1)
+
+    def _site_panel(self, y: int) -> int:
+        """The app's side of it: where the served pair came from and what the
+        root unit did with the last drop."""
+        con, A = self.con, self.con.A
+        y = con.panel(y, 0, con.cols, "site certificate  the app's drop and the root unit")
+        st = self.site
+        if st is None:
+            con.kv(y, 0, "source", [(self.site_err or "reading", A[WARN] if self.site_err else A[DIMA])])
+            return y + 2
+        source = {"none": "not managed from the app yet", "upload": "uploaded", "self-signed": "self-signed",
+                  "acme": "ACME"}.get(st.get("source", "none"), st.get("source", "?"))
+        row = [(source, 0)]
+        acme = st.get("acme") or {}
+        if acme.get("issuer"):
+            row.append((f"   via {acme['issuer']['name']}", A[DIMA]))
+        if st.get("source") == "self-signed":
+            row.append(("   auto-renew " + ("on" if st.get("auto_renew") else "off"), A[DIMA]))
+        con.kv(y, 0, "source", row)
+        y += 1
+        ap = st.get("apply") or {}
+        applied = ap.get("applied") or {}
+        row = []
+        if not ap.get("unit_installed"):
+            row.append(("apply unit not installed - sudo make install-tls-unit", A[WARN]))
+        elif ap.get("pending"):
+            row.append(("waiting for the host to apply the drop", A[WARN]))
+        elif applied and st.get("dropped_sha256"):
+            same = applied.get("sha256") == st.get("dropped_sha256")
+            if applied.get("outcome") == "applied" and same:
+                row.append(("applied", A[GOOD]))
+            elif applied.get("outcome") == "applied":
+                row.append(("applied an older drop", A[WARN]))
+            else:
+                row.append(("apply failed", A[BAD]))
+            row.append((f"   {applied.get('detail', '')[:70]}", A[DIMA]))
+        else:
+            row.append(("unit installed, nothing dropped yet", A[DIMA]))
+        con.kv(y, 0, "host", row)
+        y += 1
+        if st.get("dropped_at"):
+            con.kv(y, 0, "dropped", [(f"{_local(st['dropped_at'], '%Y-%m-%d %H:%M')}   {st.get('dropped_reason', '')}", 0)])
+            y += 1
+        order = acme.get("order")
+        if order:
+            status = order.get("status", "?")
+            attr = A[GOOD] if status == "valid" else A[BAD] if status in {"invalid", "errored"} else A[WARN]
+            con.kv(y, 0, "order", [(status, attr), (f"   {order.get('challenge_type', '')}   "
+                                                    f"{' '.join(order.get('identifiers') or [])}", 0),
+                                   (f"   {order.get('error', '')[:60]}" if order.get("error") else "", A[BAD])])
+            y += 1
+        if not st.get("secret_store"):
+            con.kv(y, 0, "note", [("ACME needs a secret store: Settings -> Security -> Secret store", A[DIMA])])
+            y += 1
+        return y + 1
 
     def _draw_review(self, y0: int, y1: int) -> None:
         con, A, c = self.con, self.con.A, self.con.curses
@@ -4149,22 +4223,153 @@ class Tls(Screen):
             con.run("acme renew", lambda: cmd_tls(con.ctx, argparse.Namespace(
                 action="renew", cert=None, key=None, host="", source=None, chain=None)))
         elif ch == "g":
+            unit = bool((self.site or {}).get("apply", {}).get("unit_installed"))
+
             def picked(name):
                 if not name:
                     return
                 cn = self.facts.get("cert", {}).get("cn", "") if self.facts else ""
-                con.typed(f"replace CN={cn or '?'} with a self-signed pair for {name}", name,
-                          lambda: con.on_terminal(lambda: cmd_tls(con.ctx, argparse.Namespace(
-                              action="self-signed", cert=None, key=None, host=name, source=None,
-                              chain=None))) or self.reread())
+                if unit:
+                    # Through the app: it records the source, so auto-renew
+                    # applies, and the root unit does the install.
+                    con.typed(f"replace CN={cn or '?'} with a self-signed pair for {name}", name,
+                              lambda: con.run("self-signed", lambda: self._site_cmd(
+                                  ["self-signed", *sum((["--name", n] for n in name.split()), [])]),
+                                  after=self.reread))
+                else:
+                    con.typed(f"replace CN={cn or '?'} with a self-signed pair for {name}", name,
+                              lambda: con.on_terminal(lambda: cmd_tls(con.ctx, argparse.Namespace(
+                                  action="self-signed", cert=None, key=None, host=name, source=None,
+                                  chain=None))) or self.reread())
             cur = self.facts.get("cert", {}).get("cn", "") if self.facts else ""
-            con.ask("name:", picked, default=cur or os.uname().nodename)
+            names = [n.split(":", 1)[1] for n in (self.facts.get("cert", {}).get("names") or [])] \
+                if self.facts and unit else []
+            con.ask("names:" if unit else "name:", picked,
+                    default=" ".join(names) if names else (cur or os.uname().nodename))
+        elif ch == "c":
+            self._from_ca()
         elif ch == "i":
             con.ask("install from (cert, key, live/ directory or one PEM):", self._picked,
                     completer=complete_path)
         else:
             return False
         return True
+
+    # a certificate from a CA --------------------------------------------------
+
+    def _site_cmd(self, args: list[str]) -> None:
+        """``manage.py site_certificate ...`` with its JSON answer read into
+        the pane as words."""
+        r = manage(self.con.ctx, ["site_certificate", *args])
+        text = (r.out or "").strip().splitlines()
+        if not r.ok:
+            bad((r.err or r.out).strip().splitlines()[-1][:200] if (r.err or r.out).strip() else "failed")
+            return
+        try:
+            d = json.loads(text[-1]) if text else {}
+        except ValueError:
+            d = {}
+        if d.get("order"):
+            ok(f"order {d.get('status', 'pending')} at {d.get('issuer', '?')} ({d.get('challenge', '')}) - "
+               "the pair is dropped when the CA signs it")
+        elif d.get("dropped"):
+            ok(f"dropped {d.get('subject', '')} - the root unit installs it")
+        else:
+            ok("done")
+
+    def _from_ca(self) -> None:
+        """Let's Encrypt or one of the app's issuers, HTTP-01 unless the
+        issuer has a DNS publisher, the site's names - then an order."""
+        con = self.con
+        st = self.site or {}
+        if not st:
+            con.say("waiting for the app's status - r re-reads", con.A[WARN])
+            return
+        if not st.get("secret_store"):
+            con.say("ACME needs a secret store on: Settings -> Security -> Secret store", con.A[WARN])
+            return
+        host = st.get("host") or os.uname().nodename
+        choice: dict = {}
+
+        def go():
+            args = ["acme", "--challenge", choice["challenge"]]
+            if choice["issuer"] == "letsencrypt":
+                args += ["--letsencrypt", "--email", choice["email"]]
+                if choice.get("tenant"):
+                    args += ["--tenant", choice["tenant"]]
+            else:
+                args += ["--issuer", choice["issuer"]]
+            for n in choice["names"].split():
+                args += ["--name", n]
+            self._site_cmd(args)
+
+        def ask_names(_v=None):
+            def done(v):
+                if not v:
+                    return
+                choice["names"] = v
+                con.confirm(f"order a certificate for {v} from "
+                            f"{'Let\'s Encrypt' if choice['issuer'] == 'letsencrypt' else choice['issuer']}?",
+                            lambda: con.run("acme", go, after=self.reread))
+            con.ask("names:", done, default=host)
+
+        def ask_challenge(_v=None):
+            def done(v):
+                if v not in {"http-01", "dns-01"}:
+                    return
+                choice["challenge"] = v
+                ask_names()
+            con.ask("challenge (http-01 answered by Danbyte, dns-01 via the issuer's publisher):",
+                    done, default="http-01", completer=complete_words(["http-01", "dns-01"]))
+
+        def ask_email(_v=None):
+            def done(v):
+                if not v or "@" not in v:
+                    return
+                choice["email"] = v
+                ask_challenge()
+            con.ask("Let's Encrypt account email:", done)
+
+        def ask_tenant(slugs):
+            def done(v):
+                if v not in slugs:
+                    return
+                choice["tenant"] = v
+                ask_email()
+            con.ask("tenant for the Let's Encrypt account:", done, default=slugs[0],
+                    completer=complete_words(slugs))
+
+        def picked(v):
+            if not v:
+                return
+            choice["issuer"] = v
+            if v == "letsencrypt":
+                tenants = self._issuer_tenants
+                if len(tenants) > 1:
+                    ask_tenant(tenants)
+                else:
+                    ask_email()
+            else:
+                ask_challenge()
+
+        def load_then_ask():
+            r = manage(con.ctx, ["site_certificate", "issuers"])
+            try:
+                rows = json.loads(r.out.strip().splitlines()[-1]) if r.ok and r.out.strip() else []
+            except ValueError:
+                rows = []
+            names = ["letsencrypt"] + [x["name"] for x in rows
+                                       if "letsencrypt.org" not in x.get("directory_url", "")]
+            self._issuer_tenants = sorted({x["tenant"] for x in rows}) or self._tenant_slugs()
+            con.ask("issuer (letsencrypt, or one of the app's):", picked, default="letsencrypt",
+                    completer=complete_words(names))
+        con.run("issuers", load_then_ask)
+
+    def _tenant_slugs(self) -> list[str]:
+        rows, _ = shell_json(self.con.ctx, "import json; from core.models import Tenant; "
+                                           "print(json.dumps(list(Tenant.objects.order_by('slug')"
+                                           ".values_list('slug', flat=True))))")
+        return rows or []
 
     # install ---------------------------------------------------------------
 

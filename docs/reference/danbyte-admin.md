@@ -76,6 +76,16 @@ unprivileged user journal is stale (a host whose journald writes to `/run`
 and whose caller is not in `systemd-journal` reads days-old entries), it
 reads through `sudo -n` instead and says so on the panel.
 
+**5 tls** shows the served certificate, what `:443` presents beside it,
+and the app's side - the source, the last drop and what the root unit did
+with it. `c` gets the site's certificate from a CA the way the settings
+card does: Let's Encrypt (the account email, HTTP-01 answered by Danbyte)
+or one of the app's issuers, then the names, then a y/n; the order runs
+in the background and the pair is installed by the root unit when the CA
+signs it. `g` regenerates a self-signed pair through the app when the
+apply unit is installed (so it renews itself), by hand through sudo when
+it is not; `i` installs a pair from files with the review.
+
 **3 backups**, **6 users** and **7 maintenance** are the CLI's `backup`,
 `users` and `maintenance` as tables with the actions on keys; the
 maintenance tab lists `rebuild` first, then the scheduled jobs; a restore
