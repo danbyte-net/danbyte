@@ -3,13 +3,16 @@
 
 The jobs the web UI cannot do, or cannot do when the web itself is down:
 restart services, upgrade, take or restore a backup, swap the TLS cert, let a
-locked-out admin back in. Run it bare for a numbered menu, or with subcommands
-so it works in automation:
+locked-out admin back in. Run it bare on a terminal for the full-screen
+console (``--plain`` for the numbered menu), or with subcommands so it works
+in automation:
 
-    danbyte-admin                       # menu
+    danbyte-admin                       # console
+    danbyte-admin --plain               # numbered menu
     danbyte-admin status
     danbyte-admin services restart danbyte-web
     danbyte-admin tls install --cert new.crt --key new.key
+    danbyte-admin tls install /etc/letsencrypt/live/example.com/
 
 Standard library only, no shell: every command is an argv list, so a path with
 a space or a password with a quote in it cannot turn into something else.
@@ -30,13 +33,19 @@ goes through ``docker compose exec``.
 from __future__ import annotations
 
 import argparse
+import collections
+import contextlib
 import json
 import os
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,20 +70,34 @@ GREEN, RED, AMBER, DIM, BOLD, OFF = (
 )
 
 
+#: Where out/ok/bad/warn go. The CLI prints; the console (below) installs a
+#: callable that takes ``(kind, text)`` and draws it into a pane instead, so
+#: every cmd_* runs unchanged in both.
+SINK = None
+
+
+def _emit(kind: str, msg: str) -> None:
+    if SINK is not None:
+        SINK(kind, msg)
+        return
+    glyph = {"ok": f"{GREEN}✔{OFF} ", "bad": f"{RED}✘{OFF} ", "warn": f"{AMBER}!{OFF} "}.get(kind, "")
+    print(glyph + msg, flush=True)
+
+
 def out(msg: str = "") -> None:
-    print(msg, flush=True)
+    _emit("out", msg)
 
 
 def ok(msg: str) -> None:
-    out(f"{GREEN}✔{OFF} {msg}")
+    _emit("ok", msg)
 
 
 def bad(msg: str) -> None:
-    out(f"{RED}✘{OFF} {msg}")
+    _emit("bad", msg)
 
 
 def warn(msg: str) -> None:
-    out(f"{AMBER}!{OFF} {msg}")
+    _emit("warn", msg)
 
 
 def die(msg: str, code: int = 1):
@@ -96,12 +119,14 @@ class Run:
 
 
 def sh(argv: list[str], *, cwd: str | None = None, env: dict | None = None,
-       capture: bool = True, check: bool = False, stdin_tty: bool = False) -> Run:
+       capture: bool = True, check: bool = False, stdin_tty: bool = False,
+       timeout: float | None = None, input: str | None = None) -> Run:
     """Run argv. Never a shell - no string is ever parsed by /bin/sh.
 
     ``stdin_tty`` hands the terminal over instead of capturing, which the
     interactive Django commands (createsuperuser, changepassword) require:
-    they call getpass twice and abort without a real TTY.
+    they call getpass twice and abort without a real TTY. ``timeout`` is
+    what the console's pollers use so a hung systemctl never freezes it.
     """
     full = dict(os.environ)
     if env:
@@ -110,10 +135,13 @@ def sh(argv: list[str], *, cwd: str | None = None, env: dict | None = None,
         if stdin_tty or not capture:
             code = subprocess.call(argv, cwd=cwd, env=full)
             return Run(code, "", "")
-        p = subprocess.run(argv, cwd=cwd, env=full, capture_output=True, text=True)
+        p = subprocess.run(argv, cwd=cwd, env=full, capture_output=True, text=True,
+                           timeout=timeout, input=input)
         r = Run(p.returncode, p.stdout, p.stderr)
     except FileNotFoundError as exc:
         r = Run(127, "", str(exc))
+    except subprocess.TimeoutExpired:
+        r = Run(124, "", f"timed out after {timeout}s")
     if check and not r.ok:
         die(f"{' '.join(argv[:3])}… failed: {(r.err or r.out).strip()[:400]}")
     return r
@@ -168,15 +196,30 @@ def _service_account(name: str = "danbyte") -> tuple[str, int] | None:
         return None
 
 
-def _user_env(home: str, uid: int, user: str) -> list[str]:
+#: True while the console owns the screen - then a sudo that would prompt
+#: must fail fast (``-n``) instead of sitting on an invisible password
+#: prompt. Handovers clear it for the main thread; other threads never see
+#: the terminal, so they are always non-interactive.
+CONSOLE_OWNS_TTY = False
+
+
+def sudo_nonint() -> bool:
+    return CONSOLE_OWNS_TTY or threading.current_thread() is not threading.main_thread()
+
+
+def _user_env(home: str, uid: int, user: str, *, nonint: bool | None = None) -> list[str]:
     """The sudo prelude that makes `systemctl --user` reach another account.
 
     Without XDG_RUNTIME_DIR and the DBUS address this silently no-ops, which
     is the single most common way a host script appears to work and does
-    nothing at all.
+    nothing at all. ``nonint`` adds ``-n``; by default that follows
+    :func:`sudo_nonint` - a poller or worker thread must never sit on a
+    password prompt.
     """
+    if nonint is None:
+        nonint = sudo_nonint()
     return [
-        "sudo", "-u", user, "env",
+        "sudo", *(["-n"] if nonint else []), "-u", user, "env",
         f"HOME={home}", f"USER={user}",
         f"XDG_RUNTIME_DIR=/run/user/{uid}",
         f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus",
@@ -221,11 +264,12 @@ def resolve() -> Ctx:
     return ctx
 
 
-def systemctl(ctx: Ctx, args: list[str], capture: bool = True) -> Run:
+def systemctl(ctx: Ctx, args: list[str], capture: bool = True, *,
+              timeout: float | None = None, quiet: bool | None = None) -> Run:
     argv = ["systemctl", "--user", *args]
     if ctx.as_service:
-        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
-    return sh(argv, capture=capture)
+        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user, nonint=quiet) + argv
+    return sh(argv, capture=capture, timeout=timeout)
 
 
 def journalctl(ctx: Ctx, args: list[str], capture: bool = False) -> Run:
@@ -478,6 +522,11 @@ def cmd_services(ctx: Ctx, args) -> int:
         return 0
 
     units = _resolve_units(ctx, args.units)
+    if not args.units and getattr(args, "active", False) and action == "restart":
+        units = active_units(ctx)
+        if not units:
+            warn("no unit is running")
+            return 0
     if action == "logs":
         if len(units) != 1 and args.units:
             die("logs takes one unit")
@@ -521,9 +570,64 @@ def _upgrade_busy(ctx: Ctx) -> str:
     """
     if (ctx.app / ".upgrade.lock").exists():
         return "an upgrade lock is held (.upgrade.lock)"
-    if systemctl(ctx, ["is-active", "danbyte-upgrade.service"]).out.strip() == "active":
+    if systemctl(ctx, ["is-active", "danbyte-upgrade.service"], timeout=5).out.strip() == "active":
         return "danbyte-upgrade.service is running"
     return ""
+
+
+def git(ctx: Ctx, *args: str, timeout: float = 5) -> str:
+    """git in the checkout, as the account that owns it (a danbyte-owned
+    tree answers "dubious ownership" to anyone else)."""
+    argv = ["git", "-C", str(ctx.app), *args]
+    if ctx.as_service:
+        argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+    r = sh(argv, timeout=timeout)
+    return r.out.strip() if r.ok else ""
+
+
+def release_tags(ctx: Ctx) -> list[str]:
+    """``v*`` tags newest first, a final release above its pre-releases
+    (git's version sort puts ``-rc`` after the final unless told)."""
+    return git(ctx, "-c", "versionsort.suffix=-", "tag", "-l", "v*", "--sort=-v:refname").splitlines()
+
+
+def newest_tag(ctx: Ctx, *, fetch: bool = False) -> str:
+    """The newest final release tag (``vX.Y.Z``), optionally after a fetch -
+    what the upgrade script expects when the operator does not name one. A
+    pre-release is only the answer when no final exists."""
+    import re
+    if fetch:
+        argv = ["git", "-C", str(ctx.app), "fetch", "--tags", "-q", "origin"]
+        if ctx.as_service:
+            argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+        r = sh(argv, timeout=60)
+        if not r.ok:
+            warn(f"git fetch failed - using the tags already here: {(r.err or r.out).strip()[:120]}")
+    tags = release_tags(ctx)
+    finals = [t for t in tags if re.fullmatch(r"v\d+\.\d+\.\d+", t)]
+    return (finals or tags or [""])[0]
+
+
+def stage_bundle(ctx: Ctx, bundle: Path) -> Path:
+    """A copy of the tarball for the upgrader, which deletes the file it is
+    given on success - never the operator's only copy. Written as the
+    service account when there is one (its home is not ours to write in,
+    and ours is not its to read), streamed through tee so neither side
+    needs the other's files."""
+    scratch = ctx.app.parent / f".danbyte-bundle-{bundle.name}"
+    try:
+        if ctx.as_service:
+            with open(bundle, "rb") as src:
+                r = subprocess.run(_user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user)
+                                   + ["tee", str(scratch)], stdin=src, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.PIPE, text=True, timeout=600)
+            if r.returncode:
+                die(f"could not stage the bundle: {r.stderr.strip()[:200]}")
+        else:
+            shutil.copy2(bundle, scratch)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        die(f"could not stage the bundle: {exc}")
+    return scratch
 
 
 def cmd_upgrade(ctx: Ctx, args) -> int:
@@ -543,16 +647,20 @@ def cmd_upgrade(ctx: Ctx, args) -> int:
     if args.action == "online":
         if not (ctx.app / ".git").exists():
             die("this is a bundle install (no .git) - use: danbyte-admin upgrade bundle <file>")
-        if args.tag:
-            argv.append(args.tag)
+        tag = args.tag or newest_tag(ctx, fetch=True)
+        if not tag:
+            die("no release tag to upgrade to - pass --tag")
+        if not args.tag:
+            out(f"{DIM}newest release tag is {tag}{OFF}")
+            if git(ctx, "describe", "--tags", "--exact-match", "--match", "v[0-9]*") == tag \
+                    and not args.force:
+                die(f"already on {tag} - pass --tag to deploy it again")
+        argv.append(tag)
     else:
         bundle = Path(args.bundle).expanduser().resolve()
         if not bundle.is_file():
             die(f"no such bundle: {bundle}")
-        # The bundle script deletes the tarball it is given on success. Never
-        # let that be the operator's only copy.
-        scratch = ctx.app.parent / f".danbyte-bundle-{bundle.name}"
-        shutil.copy2(bundle, scratch)
+        scratch = stage_bundle(ctx, bundle)
         out(f"{DIM}copied to {scratch} - the upgrader consumes the file it is given{OFF}")
         argv.append(str(scratch))
 
@@ -568,13 +676,106 @@ def cmd_upgrade(ctx: Ctx, args) -> int:
     return sh(argv, cwd=str(ctx.app), env=env, capture=False).code
 
 
+# ── rebuild ─────────────────────────────────────────────────────────────────
+
+def _uv(ctx: Ctx) -> str:
+    """uv is not always on a service's PATH - look where the upgrader does."""
+    home = ctx.svc_home or os.path.expanduser("~")
+    for cand in (shutil.which("uv") or "", f"{home}/.local/bin/uv", f"{home}/.cargo/bin/uv",
+                 str(ctx.app / ".venv" / "bin" / "uv")):
+        if cand and os.access(cand, os.X_OK):
+            return cand
+    return ""
+
+
+def active_units(ctx: Ctx) -> list[str]:
+    """The installed units that are running right now, in UNIT_ORDER."""
+    states = _unit_states(ctx, ctx.units)
+    return [u for u in ctx.units if states.get(u, {}).get("ActiveState") == "active"]
+
+
+def cmd_rebuild(ctx: Ctx, args) -> int:
+    """The upgrader's build steps on the code already here - after a git
+    pull, a hand edit, or a bundle unpacked by hand: dependencies, migrate,
+    the frontend build, collectstatic on a gunicorn host, then restart what
+    runs. Stops at the first failing step and says which."""
+    if ctx.shape == "docker":
+        die("a container install is rebuilt by pulling a new image:\n"
+            "  docker compose pull && docker compose up -d")
+    busy = _upgrade_busy(ctx)
+    if busy and not getattr(args, "force", False):
+        die(f"{busy}. Wait for it, or pass --force once you are sure nothing is running.")
+    app = ctx.app
+    py = ctx.python
+    wheels = app / "vendor" / "wheels"
+
+    def run_as(argv: list[str], *, cwd: str | None = None, **kw) -> Run:
+        if ctx.as_service:
+            argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+        return sh(argv, cwd=cwd or str(app), **kw)
+
+    def step(name: str, r: Run, what: str) -> None:
+        if r.ok:
+            ok(f"{name:<10} {what}")
+        else:
+            bad(f"{name:<10} {what}")
+            out((r.err or r.out).strip()[-1200:])
+            raise SystemExit(1)
+
+    if not args.skip_deps:
+        uv = _uv(ctx)
+        if wheels.is_dir():
+            # An offline bundle: its wheelhouse, never the index.
+            step("deps", run_as([py, "-m", "pip", "install", "-q", "--no-index", "--find-links",
+                                 str(wheels), "-r", "requirements.txt"], timeout=900),
+                 "pip install --no-index -r requirements.txt (vendor/wheels)")
+        elif uv:
+            step("deps", run_as([uv, "pip", "install", "-q", "--python", py, "-r", "requirements.txt"],
+                                timeout=900), "uv pip install -r requirements.txt")
+        elif (app / ".venv" / "bin" / "pip").exists():
+            step("deps", run_as([str(app / ".venv" / "bin" / "pip"), "install", "-q", "-r",
+                                 "requirements.txt"], timeout=900), "pip install -r requirements.txt")
+        else:
+            warn("deps       no uv or pip found - skipped")
+    step("migrate", manage(ctx, ["migrate", "--noinput"]), "manage.py migrate")
+    fe = app / "frontend"
+    if args.skip_frontend:
+        out(f"{DIM}frontend   skipped{OFF}")
+    elif wheels.is_dir() and (fe / "dist").is_dir():
+        out(f"{DIM}frontend   prebuilt in the bundle - nothing to build{OFF}")
+    elif not (fe / "package.json").exists():
+        out(f"{DIM}frontend   no frontend/package.json - nothing to build{OFF}")
+    elif not shutil.which("npm"):
+        warn("frontend   npm not found - skipped")
+    else:
+        lock, stamp = fe / "package-lock.json", fe / "node_modules" / ".package-lock.json"
+        if not stamp.exists() or (lock.exists() and lock.stat().st_mtime > stamp.stat().st_mtime):
+            step("npm ci", run_as(["npm", "ci", "--no-audit", "--no-fund", "--silent"],
+                                  cwd=str(fe), timeout=1800), "frontend dependencies")
+        else:
+            out(f"{DIM}npm ci     node_modules is current - skipped{OFF}")
+        step("frontend", run_as(["npm", "run", "build", "--silent"], cwd=str(fe), timeout=1800),
+             "npm run build")
+    if "danbyte-web" in ctx.units:
+        step("static", manage(ctx, ["collectstatic", "--noinput"]), "manage.py collectstatic")
+    units = active_units(ctx)
+    for unit in units:
+        r = systemctl(ctx, ["restart", unit], timeout=120)
+        (ok if r.ok else bad)(f"{'restart':<10} {unit}" + ("" if r.ok else f": {(r.err or r.out).strip()[:120]}"))
+    if not units:
+        warn("restart    no unit was running")
+    ok("rebuilt")
+    return 0
+
+
 # ── backup ──────────────────────────────────────────────────────────────────
 
 LIST_BACKUPS = (
     "import json\n"
     "from backups.models import Backup\n"
     "rows=[{'id':str(b.id),'status':b.status,'kind':b.kind,'at':b.created_at.isoformat(),\n"
-    "       'size':b.size or 0,'protected':b.protected,'location':b.location}\n"
+    "       'size':b.size or 0,'protected':b.protected,'location':b.location,\n"
+    "       'filename':b.filename}\n"
     "      for b in Backup.objects.order_by('-created_at')[:%d]]\n"
     "print(json.dumps(rows))"
 )
@@ -690,21 +891,31 @@ def cmd_tls(ctx: Ctx, args) -> int:
             warn("could not read the live nginx config (needs root) - falling back to the "
                  "canonical path")
             paths = ["/etc/ssl/danbyte/danbyte.crt"]
+        _, key = _live_cert_pair()
         for p in paths:
             out(f"{BOLD}{p}{OFF}")
-            r = sh(["openssl", "x509", "-in", p, "-noout", "-subject", "-issuer",
-                    "-dates", "-ext", "subjectAltName"])
-            out((r.out or r.err).rstrip() if r.out or r.err else "  unreadable")
+            _print_cert(cert_facts(p))
+        if key:
+            out(f"{DIM}key {key}{OFF}")
         return 0
 
     if args.action == "install":
-        cert, key = Path(args.cert).expanduser(), Path(args.key).expanduser()
-        for f in (cert, key):
-            if not f.is_file():
-                die(f"no such file: {f}")
-        if _install_pair(ctx, cert, key):
-            return 1
-        return _nginx_reload()
+        try:
+            cert, key, scratch = resolve_tls_input(args.cert, args.key, args.source, args.chain)
+        except TlsInputError as exc:
+            die(str(exc))
+        try:
+            facts = cert_facts(cert)
+            if not facts["ok"]:
+                die(f"{cert}: {facts['error']}")
+            out(f"{BOLD}Installing{OFF}")
+            _print_cert(facts)
+            if _install_pair(ctx, cert, key):
+                return 1
+            return _nginx_reload()
+        finally:
+            if scratch:
+                shutil.rmtree(scratch, ignore_errors=True)
 
     if args.action == "self-signed":
         host = args.host or _live_cert_cn() or os.uname().nodename
@@ -753,6 +964,29 @@ def cmd_tls(ctx: Ctx, args) -> int:
     return 0
 
 
+def _print_cert(f: dict) -> None:
+    """The lines `tls show` prints for one certificate."""
+    if not f["ok"]:
+        bad(f"  {f['error'] or 'unreadable'}")
+        return
+    out(f"  subject   {f['subject']}" + (f"  {DIM}self-signed{OFF}" if f["self_signed"] else ""))
+    if not f["self_signed"]:
+        out(f"  issuer    {f['issuer']}")
+    if f["names"]:
+        out(f"  names     {', '.join(n.split(':', 1)[1] for n in f['names'])}")
+    if f["not_after"]:
+        left = f["days_left"]
+        when = f["not_after"].strftime("%Y-%m-%d %H:%M UTC")
+        if left < 0:
+            bad(f"expires   {when}  expired {-left} days ago")
+        elif left < 30:
+            warn(f"expires   {when}  {left} days left")
+        else:
+            out(f"  expires   {when}  {DIM}{left} days left{OFF}")
+    if f["fingerprint"]:
+        out(f"  {DIM}sha256    {f['fingerprint']}{OFF}")
+
+
 def _live_cert_names() -> list[str]:
     """Every name the live certificate answers for, as SAN entries.
 
@@ -784,17 +1018,244 @@ def _live_cert_cn() -> str:
     starts failing certificate checks.
     """
     for path in _live_cert_paths():
-        r = sh(["openssl", "x509", "-in", path, "-noout", "-subject"])
-        if r.ok and "CN=" in r.out:
-            return r.out.split("CN=", 1)[1].strip().split(",")[0].split("/")[0]
+        f = cert_facts(path)
+        if f["ok"] and f["cn"]:
+            return f["cn"]
     return ""
 
 
-def _pair_matches(cert: Path, key: Path) -> bool:
-    cm = sh(["openssl", "x509", "-noout", "-modulus", "-in", str(cert)])
-    km = sh(["openssl", "rsa", "-noout", "-modulus", "-in", str(key)])
-    if not (cm.ok and km.ok):
-        return True          # cannot tell - let nginx -t be the judge
+def cert_facts(path: str | Path) -> dict:
+    """What an operator asks about a certificate, parsed from openssl.
+
+    ``days_left`` is negative once expired and None when the certificate is
+    unreadable; ``names`` are SAN entries as ``DNS:x`` / ``IP:y``.
+    """
+    r = sh(["openssl", "x509", "-in", str(path), "-noout", "-subject", "-issuer",
+            "-dates", "-ext", "subjectAltName", "-fingerprint", "-sha256"])
+    noise = (r.err or r.out).strip().splitlines()
+    facts: dict = {"path": str(path), "ok": r.ok,
+                   "error": "" if r.ok else (noise[-1][:160] if noise else "unreadable"),
+                   "subject": "", "issuer": "", "cn": "", "issuer_cn": "",
+                   "not_before": None, "not_after": None, "days_left": None,
+                   "names": [], "fingerprint": "", "self_signed": False}
+    if not r.ok:
+        return facts
+    # The system python runs this, not the venv's: stay 3.10-clean here.
+    from datetime import datetime, timezone
+
+    utc = timezone.utc  # noqa: UP017 - datetime.UTC is 3.11+
+
+    def _when(text: str):
+        try:
+            return datetime.strptime(text.strip(), "%b %d %H:%M:%S %Y %Z").replace(tzinfo=utc)
+        except ValueError:
+            return None
+
+    def _cn(dn: str) -> str:
+        # OpenSSL 1.1 prints "CN=x", 3.0 "CN = x", 3.5 "CN=x" again.
+        for part in dn.replace("/", ",").split(","):
+            k, _, v = part.partition("=")
+            if k.strip() == "CN":
+                return v.strip()
+        return dn.strip()
+
+    for line in r.out.splitlines():
+        text = line.strip()
+        if text.startswith("subject="):
+            facts["subject"] = text[8:].strip()
+            facts["cn"] = _cn(facts["subject"])
+        elif text.startswith("issuer="):
+            facts["issuer"] = text[7:].strip()
+            facts["issuer_cn"] = _cn(facts["issuer"])
+        elif text.startswith("notBefore="):
+            facts["not_before"] = _when(text[10:])
+        elif text.startswith("notAfter="):
+            facts["not_after"] = _when(text[9:])
+        elif "Fingerprint=" in text:
+            facts["fingerprint"] = text.split("=", 1)[1].strip()
+        elif any(c.strip().startswith(("DNS:", "IP Address:", "IP:")) for c in text.split(",")):
+            for chunk in text.split(","):
+                entry = chunk.strip()
+                if entry.startswith(("DNS:", "IP Address:", "IP:")):
+                    value = entry.split(":", 1)[1].strip()
+                    kind = "IP" if entry.startswith(("IP Address:", "IP:")) else "DNS"
+                    if value:
+                        facts["names"].append(f"{kind}:{value}")
+    if facts["not_after"]:
+        facts["days_left"] = (facts["not_after"] - datetime.now(utc)).days
+    facts["self_signed"] = bool(facts["subject"]) and facts["subject"] == facts["issuer"]
+    return facts
+
+
+def _pem_blocks(text: str, kind: str) -> list[str]:
+    """Every ``-----BEGIN <kind>-----`` block in ``text`` (kind ``CERTIFICATE``
+    or ``PRIVATE KEY``, the latter matching RSA/EC/PKCS#8 variants)."""
+    blocks, cur, inside = [], [], False
+    for line in text.splitlines():
+        if line.startswith("-----BEGIN ") and line.rstrip("-").endswith(kind):
+            inside, cur = True, [line]
+        elif inside:
+            cur.append(line)
+            if line.startswith("-----END "):
+                blocks.append("\n".join(cur) + "\n")
+                inside = False
+    return blocks
+
+
+class TlsInputError(ValueError):
+    """What is wrong with what the operator handed over - the CLI dies with
+    it, the console shows it on the review."""
+
+
+def resolve_tls_input(cert: str | None, key: str | None, source: str | None,
+                      chain: str | None) -> tuple[Path, Path, str]:
+    """Turn what the operator handed over into one certificate file and one
+    key file to install, or raise :class:`TlsInputError` with the reason.
+
+    Accepted: ``--cert`` + ``--key``; a Let's Encrypt live directory (or any
+    directory holding ``fullchain.pem``/``privkey.pem``, or exactly one
+    ``*.crt|*.pem`` and one ``*.key``); or one combined PEM file carrying both
+    the certificate chain and the key. ``--chain`` is appended to the
+    certificate, since nginx wants the whole chain in ``ssl_certificate``.
+
+    A source the caller cannot read (``/etc/letsencrypt/live`` is root-only)
+    is reached through ``sudo -n``: the certificate's text is copied into the
+    scratch directory, the key stays where it is - only root ever reads it,
+    in the pair check (public half out) and in the install.
+
+    The third value is a scratch directory to remove afterwards ("" when
+    nothing was written). Scratch files are 0600 in a private directory - a
+    key never touches a world-readable path.
+    """
+    import tempfile
+
+    scratch = ""
+
+    def fail(msg: str):
+        if scratch:
+            shutil.rmtree(scratch, ignore_errors=True)
+        raise TlsInputError(msg)
+
+    def mkscratch() -> str:
+        nonlocal scratch
+        if not scratch:
+            scratch = tempfile.mkdtemp(prefix="danbyte-tls-")
+        return scratch
+
+    if source and not (cert or key):
+        src = Path(source).expanduser()
+        if sudo_isdir(src):
+            fc, pk = src / "fullchain.pem", src / "privkey.pem"
+            if sudo_exists(fc) and sudo_exists(pk):
+                cert, key = str(fc), str(pk)
+            else:
+                certs, keys = [], []
+                for name in sudo_listdir(src):
+                    f = src / name
+                    if f.suffix not in {".crt", ".pem", ".cer", ".key"} or sudo_isdir(f):
+                        continue
+                    text = sudo_read(f)
+                    if _pem_blocks(text, "PRIVATE KEY"):
+                        keys.append(f)
+                    elif _pem_blocks(text, "CERTIFICATE"):
+                        certs.append(f)
+                if len(certs) != 1 or len(keys) != 1:
+                    fail(f"{src}: expected fullchain.pem + privkey.pem, or exactly one certificate "
+                         f"and one key file (found {len(certs)} and {len(keys)})")
+                cert, key = str(certs[0]), str(keys[0])
+        elif sudo_exists(src):
+            text = sudo_read(src)
+            cblocks = _pem_blocks(text, "CERTIFICATE")
+            kblocks = _pem_blocks(text, "PRIVATE KEY")
+            if not (cblocks and kblocks):
+                fail(f"{src}: a combined PEM needs both a certificate and a private key "
+                     f"(found {len(cblocks)} certificate(s), {len(kblocks)} key(s))")
+            cpath, kpath = Path(mkscratch()) / "cert.pem", Path(mkscratch()) / "key.pem"
+            cpath.write_text("".join(cblocks))
+            kpath.write_text(kblocks[0])
+            os.chmod(kpath, 0o600)
+            cert, key = str(cpath), str(kpath)
+        else:
+            fail(f"no such file or directory: {src}")
+    if not (cert and key):
+        fail("tls install needs --cert and --key, or a directory / combined PEM to read them from")
+    cpath, kpath = Path(cert).expanduser(), Path(key).expanduser()
+    for f in (cpath, kpath):
+        if not sudo_exists(f):
+            fail(f"no such file: {f}")
+    ktext = sudo_read(kpath)[:65536]
+    if "ENCRYPTED PRIVATE KEY" in ktext or "Proc-Type: 4,ENCRYPTED" in ktext:
+        fail(f"{kpath}: encrypted key - decrypt it with openssl pkey first")
+    if chain:
+        ch = Path(chain).expanduser()
+        if not sudo_exists(ch):
+            fail(f"no such file: {ch}")
+        blocks = _pem_blocks(sudo_read(cpath), "CERTIFICATE") + \
+            _pem_blocks(sudo_read(ch), "CERTIFICATE")
+        if not blocks:
+            fail(f"{cpath}: no certificate in it")
+        joined = Path(mkscratch()) / "fullchain.pem"
+        joined.write_text("".join(blocks))
+        cpath = joined
+    elif not os.access(cpath, os.R_OK):
+        # The certificate is public; a copy the caller can hand to openssl
+        # is fine. The key is not copied.
+        text = sudo_read(cpath)
+        if not _pem_blocks(text, "CERTIFICATE"):
+            fail(f"{cpath}: not readable, and sudo -n could not read it either")
+        copy = Path(mkscratch()) / "cert.pem"
+        copy.write_text(text)
+        cpath = copy
+    return cpath, kpath, scratch
+
+
+def sudo_exists(path: Path | str) -> bool:
+    if os.path.exists(str(path)):
+        return True
+    return sh(["sudo", "-n", "test", "-e", str(path)], timeout=5).ok
+
+
+def sudo_isdir(path: Path | str) -> bool:
+    if os.path.isdir(str(path)):
+        return True
+    return sh(["sudo", "-n", "test", "-d", str(path)], timeout=5).ok
+
+
+def sudo_read(path: str | Path) -> str:
+    """A file's text, through sudo -n when the caller cannot read it - the
+    way into /etc/letsencrypt/live without running the whole tool as root."""
+    try:
+        return Path(path).read_text(errors="replace")
+    except PermissionError:
+        r = sh(["sudo", "-n", "cat", str(path)], timeout=5)
+        return r.out if r.ok else ""
+    except OSError:
+        return ""
+
+
+def sudo_listdir(path: Path) -> list[str]:
+    try:
+        return sorted(os.listdir(path))
+    except PermissionError:
+        r = sh(["sudo", "-n", "ls", "-1A", str(path)], timeout=5)
+        return sorted(r.out.split()) if r.ok else []
+    except OSError:
+        return []
+
+
+def pair_matches(cert: Path | str, key: Path | str) -> bool | None:
+    """Does the key belong to the certificate? Compares the public keys, so
+    EC and RSA are both answered (the modulus form only knows RSA). None
+    when it cannot tell - an unreadable key is read through ``sudo -n``
+    first, since only its public half ever comes back."""
+    cm = sh(["openssl", "x509", "-noout", "-pubkey", "-in", str(cert)])
+    if not cm.ok:
+        return None
+    km = sh(["openssl", "pkey", "-pubout", "-passin", "pass:", "-in", str(key)])
+    if not km.ok:
+        km = sh(["sudo", "-n", "openssl", "pkey", "-pubout", "-passin", "pass:", "-in", str(key)])
+    if not km.ok:
+        return None
     return cm.out.strip() == km.out.strip()
 
 
@@ -816,32 +1277,57 @@ def _install_pair(ctx: Ctx, cert: Path, key: Path) -> int:
             "live nginx config, so there is nowhere safe to write.")
         out(f"{DIM}  Run as root, or fix `sudo nginx -t` first.{OFF}")
         return 1
-    if not _pair_matches(cert, key):
+    if pair_matches(cert, key) is False:
         bad("that key does not match that certificate - nothing written")
         return 1
 
-    backup = f"/tmp/danbyte-tls-backup-{os.getpid()}"
-    sh(["sudo", "mkdir", "-p", backup])
-    had_backup = (
+    # The previous pair waits in a root-owned directory nobody can guess or
+    # pre-create, until nginx has accepted the new one.
+    mk = sh(["sudo", "mktemp", "-d", "/tmp/danbyte-tls-previous.XXXXXX"])
+    backup = mk.out.strip() if mk.ok else ""
+    had_backup = bool(backup) and (
         sh(["sudo", "cp", "-a", dest_crt, f"{backup}/cert"]).ok
         and sh(["sudo", "cp", "-a", dest_key, f"{backup}/key"]).ok
     )
-    # Mode and ownership come from what was already there, so a host whose key
-    # is root:ssl-cert 640 does not silently become root:root 600.
-    sh(["sudo", "install", "-m", "644", str(cert), dest_crt], check=True)
-    sh(["sudo", "install", "-m", "640", str(key), dest_key], check=True)
+
+    def restore(reason: str) -> None:
+        if had_backup:
+            sh(["sudo", "cp", "-a", f"{backup}/cert", dest_crt])
+            sh(["sudo", "cp", "-a", f"{backup}/key", dest_key])
+            warn(f"{reason} - put the previous certificate and key back, nothing changed")
+        else:
+            bad(f"{reason} - and no copy of the previous pair to put back; check {dest_crt}")
+        if backup:
+            sh(["sudo", "rm", "-rf", backup])
+
+    # Owner, group and mode stay what they were, so a host whose key is
+    # root:ssl-cert 640 does not silently become root:root; a destination
+    # that does not exist yet gets 644 / 640 under root.
+    def install(src: Path, dest: str, default_mode: str) -> Run:
+        st = sh(["sudo", "-n", "stat", "-c", "%U %G %a", dest])
+        args = ["-m", default_mode]
+        if st.ok and len(st.out.split()) == 3:
+            owner, group, mode = st.out.split()
+            args = ["-o", owner, "-g", group, "-m", mode]
+        return sh(["sudo", "install", *args, str(src), dest])
+
+    w = install(cert, dest_crt, "644")
+    if not w.ok:
+        restore(f"could not write {dest_crt}: {(w.err or w.out).strip()[:160]}")
+        return 1
+    w = install(key, dest_key, "640")
+    if not w.ok:
+        restore(f"could not write {dest_key}: {(w.err or w.out).strip()[:160]}")
+        return 1
 
     t = sh(["sudo", "nginx", "-t"])
     if not t.ok:
         bad("nginx refused the new certificate:")
         out((t.err or t.out).rstrip()[:600])
-        if had_backup:
-            sh(["sudo", "cp", "-a", f"{backup}/cert", dest_crt])
-            sh(["sudo", "cp", "-a", f"{backup}/key", dest_key])
-            warn("put the previous certificate and key back - nothing changed")
-        sh(["sudo", "rm", "-rf", backup])
+        restore("nginx -t failed")
         return t.code
-    sh(["sudo", "rm", "-rf", backup])
+    if backup:
+        sh(["sudo", "rm", "-rf", backup])
     ok(f"installed {dest_crt} and {dest_key}")
 
     staging = ctx.app / "deploy" / "nginx" / "certs"
@@ -878,8 +1364,29 @@ else:
         "found": True, "username": u.username, "email": u.email,
         "active": u.is_active, "staff": u.is_staff, "superuser": u.is_superuser,
         "last_login": u.last_login.isoformat() if u.last_login else None,
-        "mfa": bool(getattr(p, "totp_secret", "")) if p else False,
+        "mfa": bool(p and (p.mfa_totp_confirmed or "totp" in (p.secrets or {}))),
     }))
+"""
+
+LIST_USERS = """
+import json
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
+from django.db.models import F
+rows = []
+for u in get_user_model().objects.order_by(F("last_login").desc(nulls_last=True), "username")[:50]:
+    p = getattr(u, "profile", None)
+    sec = (p.secrets or {}) if p else {}
+    rows.append({
+        "username": u.username, "email": u.email, "active": u.is_active,
+        "staff": u.is_staff, "superuser": u.is_superuser,
+        "last_login": u.last_login.isoformat() if u.last_login else None,
+        "mfa": "totp" if p and (p.mfa_totp_confirmed or "totp" in sec)
+               else ("pending" if "totp_pending" in sec else "-"),
+        "require_mfa": bool(p and p.require_mfa),
+        "fails": cache.get("mfa-fail:%s" % u.pk) or 0,
+    })
+print(json.dumps(rows))
 """
 
 CLEAR_MFA = """
@@ -891,15 +1398,16 @@ u = U.objects.get(username=%(name)r)
 p = getattr(u, "profile", None)
 cleared = False
 if p is not None:
-    for field, value in (("totp_secret", ""), ("totp_confirmed_at", None),
-                         ("require_mfa", False)):
-        if hasattr(p, field):
-            setattr(p, field, value)
-            cleared = True
-    if cleared:
-        p.save()
+    sec = dict(p.secrets or {})
+    cleared = p.mfa_totp_confirmed or "totp" in sec or "totp_pending" in sec
+    sec.pop("totp", None)
+    sec.pop("totp_pending", None)
+    p.secrets = sec
+    p.mfa_totp_confirmed = False
+    p.require_mfa = False
+    p.save(update_fields=["secrets", "mfa_totp_confirmed", "require_mfa"])
 cache.delete("mfa-fail:%%s" %% u.pk)
-print(json.dumps({"cleared": cleared}))
+print(json.dumps({"cleared": bool(cleared)}))
 """
 
 UNLOCK = """
@@ -1034,6 +1542,7 @@ MENU = [
     ("Status", lambda ctx: cmd_status(ctx, None)),
     ("Services", lambda ctx: _menu_services(ctx)),
     ("Backup", lambda ctx: _menu_backup(ctx)),
+    ("Upgrade", lambda ctx: _menu_upgrade(ctx)),
     ("Users", lambda ctx: _menu_users(ctx)),
     ("Maintenance", lambda ctx: _menu_maintenance(ctx)),
     ("TLS", lambda ctx: _menu_tls(ctx)),
@@ -1068,6 +1577,18 @@ def _menu_services(ctx: Ctx) -> int:
         return cmd_services(ctx, argparse.Namespace(action="list", units=[], lines=0, follow=False))
     unit = _ask("Unit (blank = all)" if action != "logs" else "Unit", "")
     units = [unit] if unit else []
+    if action == "stop":
+        # The same gate the console has: name what goes down.
+        target = f"danbyte-{unit}" if unit and not unit.startswith("danbyte-") else unit
+        word = "all" if not unit else _short(target) if target in {"danbyte-web", "danbyte-backend"} else ""
+        if word and _ask(f"Type {word} to stop") != word:
+            warn("not stopped")
+            return 0
+        if not word and _ask(f"Stop {unit}? (y/n)", "n").lower() != "y":
+            return 0
+    elif action == "restart" and not unit:
+        if _ask("Restart every unit? (y/n)", "n").lower() != "y":
+            return 0
     return cmd_services(ctx, argparse.Namespace(
         action=action, units=units, lines=200, follow=False))
 
@@ -1097,12 +1618,90 @@ def _menu_users(ctx: Ctx) -> int:
 
 
 def _menu_tls(ctx: Ctx) -> int:
-    action = _pick("TLS", ["show", "renew", "self-signed", "reload"])
+    action = _pick("TLS", ["show", "install", "renew", "self-signed", "reload"])
     if not action:
         return 0
-    host = _ask("Name (blank keeps the current one)") if action == "self-signed" else ""
+    host = source = cert = key = chain = ""
+    if action == "self-signed":
+        host = _ask("Name (blank keeps the current one)")
+    elif action == "install":
+        source = _ask("Certificate, key, live/ directory or one PEM")
+        if not source:
+            return 0
+        kind = classify_tls_source(Path(source).expanduser())
+        if kind == "cert":
+            cert, key = source, _ask("Key")
+            source = ""
+            facts = cert_facts(cert)
+            if facts["ok"] and not facts["self_signed"] and \
+                    len(_pem_blocks(sudo_read(cert), "CERTIFICATE")) == 1:
+                chain = _ask("Chain (blank for none)")
+        elif kind == "key":
+            key, cert = source, _ask("Certificate")
+            source = ""
+        elif kind == "encrypted":
+            die("encrypted key - decrypt it with openssl pkey first")
+        elif kind == "none":
+            die(f"{source}: no certificate or key in it")
+        if not (source or (cert and key)):
+            return 0
+        # Resolve first so every input form meets the same gate: the new
+        # certificate's own name, read back.
+        try:
+            cpath, kpath, scratch = resolve_tls_input(cert or None, key or None, source or None,
+                                                      chain or None)
+        except TlsInputError as exc:
+            die(str(exc))
+        try:
+            facts = cert_facts(cpath)
+            if not facts["ok"]:
+                die(f"{cpath}: {facts['error']}")
+            _print_cert(facts)
+            word = facts["cn"] or (facts["names"][0].split(":", 1)[1] if facts["names"] else "install")
+            out(f"{DIM}installing replaces the site's certificate{OFF}")
+            if _ask(f"Type {word} to continue") != word:
+                warn("nothing written")
+                return 0
+            return cmd_tls(ctx, argparse.Namespace(
+                action="install", cert=str(cpath), key=str(kpath), host="", source=None, chain=None))
+        finally:
+            if scratch:
+                shutil.rmtree(scratch, ignore_errors=True)
+    if action == "self-signed":
+        name = host or _live_cert_cn() or os.uname().nodename
+        if _ask(f"Regenerating replaces the site's certificate. Type {name} to continue") != name:
+            warn("nothing written")
+            return 0
     return cmd_tls(ctx, argparse.Namespace(
-        action=action, cert=None, key=None, host=host))
+        action=action, cert=None, key=None, host=host, source=None, chain=None))
+
+
+def _menu_upgrade(ctx: Ctx) -> int:
+    if ctx.shape == "docker":
+        out("a container install is upgraded by pulling a new image:")
+        out("  docker compose pull && docker compose up -d")
+        return 0
+    action = _pick("Upgrade", ["online", "bundle"])
+    if not action:
+        return 0
+    tag = bundle = ""
+    if action == "online":
+        newest = newest_tag(ctx)
+        tag = _ask("Release tag", newest)
+        if not tag:
+            return 0
+        word = tag
+    else:
+        bundle = _ask("Bundle path")
+        if not bundle:
+            return 0
+        word = Path(bundle).expanduser().name
+    skip = _ask("Skip the pre-upgrade backup? (yes/no)", "no").lower() == "yes"
+    if _ask(f"Type {word} to launch") != word:
+        warn("not launched")
+        return 0
+    return cmd_upgrade(ctx, argparse.Namespace(
+        action=action, tag=tag or None, bundle=bundle, skip_backup=skip, force=False))
 
 
 def _menu_maintenance(ctx: Ctx) -> int:
@@ -1131,12 +1730,2970 @@ def menu(ctx: Ctx) -> int:
                 out()
 
 
+# ── console ─────────────────────────────────────────────────────────────────
+#
+# Run bare on a terminal, the tool is a full-screen console rather than a
+# numbered list: a live ledger of the host's units and timers, the flags that
+# say whether it is safe to act, the journal scrolling underneath, and one
+# screen per job. Plain ASCII and four colours - a serial console and an ssh
+# session draw the same thing, and colour is only ever on the word that
+# carries a state, so a screen with no colour on it is a screen with nothing
+# wrong.
+#
+# Only the main thread touches curses. Facts come from a poller thread with
+# a cadence per source (systemctl, /proc, Redis, the health endpoint), the
+# journal from one long-lived journalctl read by its own thread, and actions
+# from a single-flight worker; a command that needs the real terminal (a
+# password prompt, createsuperuser, a restore) hands the screen over and
+# takes it back. Django is asked once at start and on demand, never on a
+# timer: its 1-2 s start-up is why the ledger reads systemd and Redis
+# directly - it stays useful with Danbyte itself down, which is when this
+# tool tends to be opened.
+
+UNIT_PROPS = [
+    "Id", "LoadState", "ActiveState", "SubState", "UnitFileState", "NRestarts", "MainPID",
+    "ActiveEnterTimestamp", "MemoryCurrent", "CPUUsageNSec", "Result", "ExecMainExitTimestamp",
+    "NextElapseUSecRealtime", "LastTriggerUSec", "TriggeredBy", "Description",
+]
+GOOD, BAD, WARN, DIMA = 1, 2, 3, 4      # colour pair numbers; attrs resolved at start
+RQ_QUEUES = ("high", "default", "low")
+MIN_COLS, MIN_LINES = 80, 24
+
+
+def want_console(args) -> bool:
+    """A real terminal of a useful size, unless the operator said plain."""
+    if getattr(args, "plain", False) or os.environ.get("DANBYTE_ADMIN_PLAIN"):
+        return False
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    if (os.environ.get("TERM") or "dumb") in {"dumb", "unknown"}:
+        return False
+    size = shutil.get_terminal_size((0, 0))
+    if size.columns < MIN_COLS or size.lines < MIN_LINES:
+        return False
+    try:
+        import curses
+        curses.setupterm()
+    except Exception:  # noqa: BLE001 - no terminfo, no console
+        return False
+    return True
+
+
+# -- small formatters --------------------------------------------------------
+
+def _span(seconds: float | None) -> str:
+    """41s, 1m41s, 1h26m, 3d2h - or "-"."""
+    if seconds is None:
+        return "-"
+    s = int(max(0, seconds))
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s" if s % 60 else f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+    return f"{s // 86400}d{(s % 86400) // 3600}h"
+
+
+def _mib(value: str) -> str:
+    try:
+        return f"{int(value) >> 20}M"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _unix(value: str) -> float | None:
+    """systemctl --timestamp=unix prints ``@1789221300``; older systemd
+    prints a formatted date, which reads as unknown here."""
+    if value and value.startswith("@"):
+        try:
+            return float(value[1:])
+        except ValueError:
+            return None
+    return None
+
+
+def _read_env(app: Path) -> dict:
+    env = {}
+    try:
+        for line in (app / ".env").read_text(errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            env[k.strip()] = v.strip().strip("'\"")
+    except OSError:
+        pass
+    return env
+
+
+def _short(unit: str) -> str:
+    return unit[len("danbyte-"):] if unit.startswith("danbyte-") else unit
+
+
+def _local(iso: str | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """An ISO timestamp from Django (UTC) in the terminal's local time."""
+    if not iso:
+        return "-"
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(iso).astimezone().strftime(fmt)
+    except ValueError:
+        return iso[:16].replace("T", " ")
+
+
+# -- Redis, by hand ------------------------------------------------------------
+#
+# A RESP client of a dozen lines is cheaper than importing Django to ask what
+# the queues hold, and it answers with Django down. Keys are the ones
+# django-redis and RQ use (``:1:`` is django-redis's version prefix).
+
+def _resp(f, sock, *args):
+    payload = b"*%d\r\n" % len(args) + b"".join(
+        b"$%d\r\n%s\r\n" % (len(a), a) for a in (str(x).encode() for x in args))
+    sock.sendall(payload)
+    return _resp_read(f)
+
+
+def _resp_read(f):
+    line = f.readline()
+    if not line:
+        raise ConnectionError("closed")
+    kind, body = line[:1], line[1:-2]
+    if kind == b"+":
+        return body.decode()
+    if kind == b"-":
+        raise RuntimeError(body.decode(errors="replace"))
+    if kind == b":":
+        return int(body)
+    if kind == b"$":
+        n = int(body)
+        return None if n < 0 else f.read(n + 2)[:-2]
+    if kind == b"*":
+        n = int(body)
+        return None if n < 0 else [_resp_read(f) for _ in range(n)]
+    raise RuntimeError("bad reply")
+
+
+def redis_probe(url: str, rq_db: int) -> dict:
+    u = urllib.parse.urlsplit(url or "redis://127.0.0.1:6379/0")
+    host, port = u.hostname or "127.0.0.1", u.port or 6379
+    cache_db = int((u.path or "/0").strip("/") or 0)
+    password = urllib.parse.unquote(u.password) if u.password else ""
+    username = urllib.parse.unquote(u.username) if u.username else ""
+    with socket.create_connection((host, port), timeout=0.5) as sock:
+        f = sock.makefile("rb")
+        if password:
+            _resp(f, sock, "AUTH", *([username, password] if username else [password]))
+        _resp(f, sock, "SELECT", cache_db)
+        maint = bool(_resp(f, sock, "EXISTS", ":1:danbyte:maintenance"))
+        fast = _resp(f, sock, "GET", "danbyte:fastlane:stats")
+        _resp(f, sock, "SELECT", rq_db)
+        queues = {q: _resp(f, sock, "LLEN", f"rq:queue:{q}") for q in RQ_QUEUES}
+        # rq:workers keeps a name until its owner cleans up; a worker killed
+        # hard leaves one behind. Its own key has a heartbeat TTL - count those.
+        names = _resp(f, sock, "SMEMBERS", "rq:workers") or []
+        workers = sum(1 for n in names if _resp(f, sock, "EXISTS", n))
+        failed = sum(_resp(f, sock, "ZCARD", f"rq:failed:{q}") for q in RQ_QUEUES)
+    lane = None
+    if fast:
+        try:
+            lane = json.loads(fast)
+        except ValueError:
+            lane = None
+    return {"where": f"{host}:{port}", "db": rq_db, "maintenance": maint, "queues": queues,
+            "workers": workers, "failed": failed, "lane": lane}
+
+
+# -- the facts poller ----------------------------------------------------------
+
+class Facts(threading.Thread):
+    """One thread, one loop, a cadence per source. Every source replaces its
+    entry whole, so the drawer never sees half a snapshot; a source that
+    fails keeps its last value and records when it last succeeded."""
+
+    def __init__(self, ctx: Ctx):
+        super().__init__(daemon=True, name="facts")
+        self.ctx = ctx
+        self.snap: dict = {}
+        self.fresh: dict = {}
+        self.lock = threading.Lock()
+        self.dirty = threading.Event()
+        self.stopping = threading.Event()
+        self.due: dict = {}
+        self.env = _read_env(ctx.app)
+        self.rq_db = self._rq_db()
+        self._cpu_prev: dict = {}
+        self._cpu_at = 0.0
+        slow = 5 if ctx.as_service else 2
+        self.sources = [
+            ("proc", 1, self._proc), ("units", slow, self._units), ("redis", 2, self._redis),
+            ("flags", 2, self._flags), ("health", 5, self._health), ("slow", 60, self._slow),
+            ("ports", 30, self._ports),
+        ]
+
+    def _rq_db(self) -> int:
+        r = systemctl(self.ctx, ["show", "danbyte-workers.service", "-p", "Environment"], timeout=5)
+        for tok in (r.out.split("=", 1)[1].split() if r.ok and "=" in r.out else []):
+            if tok.startswith("RQ_REDIS_DB="):
+                try:
+                    return int(tok.split("=", 1)[1])
+                except ValueError:
+                    pass
+        try:
+            return int(self.env.get("RQ_REDIS_DB", "0"))
+        except ValueError:
+            return 0
+
+    def get(self, name: str):
+        with self.lock:
+            return self.snap.get(name)
+
+    def age(self, name: str) -> float | None:
+        with self.lock:
+            at = self.fresh.get(name)
+        return None if at is None else time.monotonic() - at
+
+    def kick(self, *names: str) -> None:
+        for n in names:
+            self.due[n] = 0.0
+
+    def run(self) -> None:
+        while not self.stopping.is_set():
+            now = time.monotonic()
+            for name, period, fn in self.sources:
+                if now < self.due.get(name, 0.0):
+                    continue
+                self.due[name] = now + period
+                try:
+                    value = fn()
+                except Exception as exc:  # noqa: BLE001 - a source is never fatal
+                    with self.lock:
+                        self.snap.setdefault(name, {})
+                        self.snap[name] = {**(self.snap[name] or {}), "error": str(exc)[:120]}
+                    continue
+                with self.lock:
+                    self.snap[name] = value
+                    self.fresh[name] = time.monotonic()
+                self.dirty.set()
+            self.stopping.wait(0.25)
+
+    # sources ---------------------------------------------------------------
+
+    def _proc(self) -> dict:
+        load = open("/proc/loadavg").read().split()[:3]
+        mem: dict = {}
+        for line in open("/proc/meminfo"):
+            k, v = line.split(":", 1)
+            if k in {"MemTotal", "MemAvailable"}:
+                mem[k] = int(v.split()[0]) * 1024
+        up = float(open("/proc/uptime").read().split()[0])
+        return {"load": load, "mem_total": mem.get("MemTotal", 0),
+                "mem_avail": mem.get("MemAvailable", 0), "uptime": up}
+
+    def _units(self) -> dict:
+        ctx = self.ctx
+        if ctx.shape == "docker":
+            return self._compose()
+        names = [f"{u}.service" for u in ctx.units] + [f"{t}.timer" for t in ctx.timers] + \
+            [f"{t}.service" for t in ctx.timers]
+        if not names:
+            return {"services": {}, "timers": {}, "jobs": {}}
+        props: list[str] = []
+        for p in UNIT_PROPS:
+            props += ["-p", p]
+        r = systemctl(ctx, ["show", *names, *props, "--no-pager", "--timestamp=unix"],
+                      timeout=5, quiet=True)
+        if not r.ok:
+            raise RuntimeError((r.err or r.out).strip()[:80] or "systemctl failed")
+        blocks: dict = {}
+        cur: dict = {}
+        for line in r.out.splitlines() + [""]:
+            if not line.strip():
+                if cur.get("Id"):
+                    blocks[cur["Id"]] = cur
+                cur = {}
+            elif "=" in line:
+                k, v = line.split("=", 1)
+                cur[k] = v
+        now = time.monotonic()
+        wall = time.time()
+        services, timers, jobs = {}, {}, {}
+        for u in ctx.units:
+            b = blocks.get(f"{u}.service", {})
+            cpu = None
+            ns = b.get("CPUUsageNSec", "")
+            if ns.isdigit():
+                prev = self._cpu_prev.get(u)
+                if prev is not None and now > self._cpu_at:
+                    cpu = max(0.0, (int(ns) - prev) / 1e9 / (now - self._cpu_at) * 100)
+                self._cpu_prev[u] = int(ns)
+            since = _unix(b.get("ActiveEnterTimestamp", "")) \
+                if b.get("ActiveState") in {"active", "reloading"} else None
+            services[u] = {
+                "load": b.get("LoadState", "not-found"), "active": b.get("ActiveState", "?"),
+                "sub": b.get("SubState", ""), "file": b.get("UnitFileState", ""),
+                "restarts": b.get("NRestarts", "0"), "pid": b.get("MainPID", "0"),
+                "mem": _mib(b.get("MemoryCurrent", "")), "cpu": cpu,
+                "since": (wall - since) if since else None,
+            }
+        self._cpu_at = now
+        for t in ctx.timers:
+            b = blocks.get(f"{t}.timer", {})
+            j = blocks.get(f"{t}.service", {})
+            nxt, last = _unix(b.get("NextElapseUSecRealtime", "")), _unix(b.get("LastTriggerUSec", ""))
+            timers[t] = {
+                "active": b.get("ActiveState", "?"), "file": b.get("UnitFileState", ""),
+                "next": (nxt - wall) if nxt else None, "last": (wall - last) if last else None,
+                "result": j.get("Result", ""), "job_active": j.get("ActiveState", ""),
+                "exit": _unix(j.get("ExecMainExitTimestamp", "")),
+                "description": b.get("Description", ""),
+            }
+            jobs[t] = j
+        return {"services": services, "timers": timers, "jobs": jobs}
+
+    def _compose(self) -> dict:
+        base = ["docker", "compose", "-f", str(self.ctx.compose)] if self.ctx.compose else \
+            ["docker", "compose"]
+        r = sh(base + ["ps", "--format", "json"], timeout=10)
+        services: dict = {}
+        if r.ok:
+            for line in r.out.splitlines():
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                name = row.get("Service") or row.get("Name", "?")
+                state = row.get("State", "?")
+                services[name] = {"load": "loaded", "active": "active" if state == "running"
+                                  else "inactive", "sub": state, "file": "", "restarts": "0",
+                                  "pid": "", "mem": "-", "cpu": None, "since": None,
+                                  "status": row.get("Status", "")}
+        return {"services": services, "timers": {}, "jobs": {}}
+
+    def _redis(self) -> dict:
+        return redis_probe(self.env.get("REDIS_URL", ""), self.rq_db)
+
+    def _flags(self) -> dict:
+        app = self.ctx.app
+        lock = None
+        if (app / ".upgrade.lock").exists():
+            try:
+                lock = json.loads((app / ".upgrade.lock").read_text())
+            except (OSError, ValueError):
+                lock = {"phase": "?"}
+            lock = {**lock, "age": time.time() - (app / ".upgrade.lock").stat().st_mtime}
+        status = None
+        sf = app / ".upgrade-status.json"
+        if sf.exists():
+            try:
+                status = {**json.loads(sf.read_text()), "age": time.time() - sf.stat().st_mtime}
+            except (OSError, ValueError):
+                status = None
+        r = systemctl(self.ctx, ["is-active", "danbyte-upgrade.service"], timeout=5, quiet=True)
+        return {"maintenance_file": (app / ".maintenance").exists(), "lock": lock,
+                "status": status, "upgrade_unit": r.out.strip() or "inactive"}
+
+    def _health(self) -> dict:
+        h, where = health(self.ctx)
+        return {"health": h, "where": where}
+
+    def _ports(self) -> dict:
+        """The listeners the diagnostics tab reports, plus nginx -t when sudo
+        runs without a prompt - off the drawing thread, on a slow cadence."""
+        env = self.env
+        db_host, db_port = env.get("DB_HOST", "127.0.0.1"), int(env.get("DB_PORT", "5432") or 5432)
+        u = urllib.parse.urlsplit(env.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
+        rd_host, rd_port = u.hostname or "127.0.0.1", u.port or 6379
+
+        def name(label, host, port):
+            return f"{label} {port}" if host in {"127.0.0.1", "localhost", "::1"} \
+                else f"{label} {host}:{port}"
+
+        targets = [("443", "127.0.0.1", 443), ("8000", "127.0.0.1", 8000), ("8002", "127.0.0.1", 8002),
+                   ("3000", "127.0.0.1", 3000), (name("db", db_host, db_port), db_host, db_port),
+                   (name("redis", rd_host, rd_port), rd_host, rd_port)]
+        res = {}
+        for label, host, port in targets:
+            try:
+                with socket.create_connection((host, port), timeout=0.3):
+                    res[label] = True
+            except OSError:
+                res[label] = False
+        nginx_t = None
+        if shutil.which("sudo") and sh(["sudo", "-n", "true"], timeout=5).ok:
+            nginx_t = sh(["sudo", "-n", "nginx", "-t"], timeout=10).ok
+        return {"ports": res, "nginx_t": nginx_t}
+
+    def _slow(self) -> dict:
+        ctx = self.ctx
+        cert, key = _live_cert_pair()
+        facts = cert_facts(cert) if cert else None
+        usage = shutil.disk_usage(str(ctx.app))
+        g: dict = {}
+        if (ctx.app / ".git").exists():
+            g = {"commit": git(ctx, "rev-parse", "--short", "HEAD"),
+                 "branch": git(ctx, "symbolic-ref", "--short", "-q", "HEAD") or "(detached)",
+                 "dirty": len(git(ctx, "status", "--porcelain", "--untracked-files=no").splitlines()),
+                 "tags": release_tags(ctx)[:8],
+                 "newest": newest_tag(ctx),
+                 "exact": git(ctx, "describe", "--tags", "--exact-match", "--match", "v[0-9]*")}
+        version = ""
+        try:
+            import re
+            m = re.search(r'__version__\s*=\s*"([^"]+)"', (ctx.app / "danbyte" / "__init__.py").read_text())
+            version = m.group(1) if m else ""
+        except OSError:
+            pass
+        nginx = sh(["systemctl", "show", "nginx.service", "-p", "ActiveState"], timeout=5)
+        return {"cert": facts, "cert_path": cert, "key_path": key, "disk": usage, "git": g,
+                "version": version,
+                "nginx": nginx.out.strip().split("=", 1)[-1] if nginx.ok else "?"}
+
+
+# -- the journal ---------------------------------------------------------------
+
+class Journal(threading.Thread):
+    """One journalctl for the whole console, read into a ring the screens
+    filter client-side. Unprivileged ``journalctl --user`` can be stale (a
+    host whose journald writes to /run and whose caller is not in
+    systemd-journal reads days-old entries and nothing newer), so the first
+    read is checked against the units' own start times and the follower
+    runs through ``sudo -n`` when that is what it takes."""
+
+    def __init__(self, ctx: Ctx):
+        super().__init__(daemon=True, name="journal")
+        self.ctx = ctx
+        self.lines: collections.deque = collections.deque(maxlen=5000)
+        self.lock = threading.Lock()
+        self.dirty = threading.Event()
+        self.proc: subprocess.Popen | None = None
+        self.mode = ""          # user / sudo / docker
+        self.note = ""          # what the rule line says when something is off
+        self.restart = threading.Event()
+        self.stopping = False
+
+    def _argv(self, newest_start: float | None) -> list[str]:
+        ctx = self.ctx
+        if ctx.shape == "docker":
+            self.mode = "docker"
+            base = ["docker", "compose", "-f", str(ctx.compose)] if ctx.compose else \
+                ["docker", "compose"]
+            return base + ["logs", "--tail", "200", "-f", "--no-color"]
+        plain = ["journalctl", "--user", "-f", "-n", "200", "-o", "json", "--all", "-u", "danbyte-*"]
+        if ctx.as_service:
+            plain = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user, nonint=True) + plain
+        probe = sh(["journalctl", "--user", "-n", "1", "-o", "json", "-u", "danbyte-*"], timeout=5)
+        last = None
+        if probe.ok and probe.out.strip():
+            try:
+                last = int(json.loads(probe.out.strip().splitlines()[-1])["__REALTIME_TIMESTAMP"]) / 1e6
+            except (ValueError, KeyError):
+                last = None
+        # Stale: nothing newer than the youngest running unit's start, or
+        # nothing for hours on a host whose timers fire every minute.
+        if newest_start is None:
+            names = [f"{u}.service" for u in ctx.units]
+            r = systemctl(ctx, ["show", *names, "-p", "ActiveEnterTimestamp", "--timestamp=unix"],
+                          timeout=5, quiet=True) if names else None
+            starts = [_unix(line.split("=", 1)[1]) for line in (r.out.splitlines() if r and r.ok else [])
+                      if line.startswith("ActiveEnterTimestamp=")]
+            starts = [x for x in starts if x]
+            newest_start = max(starts) if starts else None
+        stale = last is None or (newest_start is not None and last < newest_start - 60) or \
+            last < time.time() - 6 * 3600
+        if stale and sh(["sudo", "-n", "true"], timeout=5).ok:
+            uid = ctx.svc_uid or os.getuid()
+            units = [f"{u}.service" for u in ctx.units] + [f"{t}.service" for t in ctx.timers]
+            self.mode = "sudo"
+            # Two OR'd groups: what the units log themselves, and what the
+            # manager logs about them (Starting/Finished/Failed).
+            return ["sudo", "-n", "journalctl", "-f", "-n", "200", "-o", "json", "--all",
+                    f"_UID={uid}"] + [f"_SYSTEMD_USER_UNIT={u}" for u in units] + \
+                ["+", f"_UID={uid}"] + [f"USER_UNIT={u}" for u in units]
+        self.mode = "user"
+        if stale:
+            when = time.strftime("%Y-%m-%d", time.localtime(last)) if last else "ever"
+            self.note = f"stale since {when}, needs sudo"
+        return plain
+
+    def run(self) -> None:
+        newest = None
+        while True:
+            self.restart.clear()
+            try:
+                self.proc = subprocess.Popen(
+                    self._argv(newest), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    start_new_session=True)
+            except OSError as exc:
+                self.note = str(exc)[:60]
+                return
+            assert self.proc.stdout is not None
+            for raw in self.proc.stdout:
+                entry = self._parse(raw)
+                if entry:
+                    with self.lock:
+                        self._insert(entry)
+                    self.dirty.set()
+                if self.restart.is_set():
+                    break
+            self.stop_proc()
+            if self.stopping:
+                return
+            # The follower ended on its own (sudo revoked, journald restarted):
+            # wait for a reopen rather than leaving the console blind for good.
+            self.restart.wait()
+            if self.stopping:
+                return
+            newest = time.time()
+
+    def _insert(self, entry) -> None:
+        """Append, or slot a late line in behind its neighbours - a follower
+        over several units hands them over slightly out of order."""
+        lines = self.lines
+        if not lines or entry[0] >= lines[-1][0]:
+            lines.append(entry)
+            return
+        i = len(lines) - 1
+        floor = max(0, i - 50)
+        while i > floor and lines[i - 1][0] > entry[0]:
+            i -= 1
+        lines.insert(i, entry)
+
+    def _parse(self, raw: bytes):
+        if self.mode == "docker":
+            text = raw.decode(errors="replace").rstrip("\n")
+            unit, _, msg = text.partition("|")
+            return (time.time(), unit.strip()[:14], 6, msg.strip())
+        try:
+            d = json.loads(raw)
+        except ValueError:
+            return None
+        msg = d.get("MESSAGE") or ""
+        if isinstance(msg, list):
+            msg = bytes(msg).decode(errors="replace")
+        elif not isinstance(msg, str):
+            msg = str(msg)
+        try:
+            ts = int(d.get("__REALTIME_TIMESTAMP", 0)) / 1e6
+        except (TypeError, ValueError):
+            ts = time.time()
+        unit = d.get("USER_UNIT") or d.get("UNIT") or d.get("_SYSTEMD_USER_UNIT") or ""
+        unit = _short(unit.removesuffix(".service").removesuffix(".timer"))
+        try:
+            prio = int(d.get("PRIORITY", 6))
+        except (TypeError, ValueError):
+            prio = 6
+        return (ts, unit, prio, "".join(c if c.isprintable() else "?" for c in msg))
+
+    def close(self) -> None:
+        self.stopping = True
+        self.restart.set()
+        self.stop_proc()
+
+    def stop_proc(self) -> None:
+        p, self.proc = self.proc, None
+        if p and p.poll() is None:
+            with contextlib.suppress(OSError):
+                p.terminate()
+
+    def reopen(self) -> None:
+        """After sudo -v: try again for the privileged stream."""
+        self.note = ""
+        self.restart.set()
+        self.stop_proc()
+
+    def snapshot(self) -> list:
+        with self.lock:
+            return list(self.lines)
+
+
+# -- the worker ----------------------------------------------------------------
+
+class Worker(threading.Thread):
+    """One thread, a queue: actions run in the order they were asked for,
+    one at a time, the running one's label on the rule line. A screen's
+    load queued behind the start-up Django read is what makes the first
+    keypress land instead of being refused."""
+
+    def __init__(self):
+        super().__init__(daemon=True, name="worker")
+        self.jobs: collections.deque = collections.deque()
+        self.wake = threading.Event()
+        self.label = ""
+        self.started = 0.0
+        self.target = None      # the screen whose pane the running job writes to
+
+    def run(self) -> None:
+        while True:
+            self.wake.wait()
+            self.wake.clear()
+            while self.jobs:
+                label, fn, after, self.target = self.jobs.popleft()
+                self.label, self.started = label, time.monotonic()
+                try:
+                    fn()
+                except SystemExit as exc:      # die() inside a cmd_*
+                    if exc.code:
+                        bad(f"exit {exc.code}" if not isinstance(exc.code, str) else exc.code)
+                except Exception as exc:  # noqa: BLE001 - shown, never fatal
+                    bad(f"{type(exc).__name__}: {str(exc)[:200]}")
+                finally:
+                    self.label = ""
+                    if after:
+                        with contextlib.suppress(Exception):
+                            after()
+                    self.target = None
+
+    def submit(self, label: str, fn, after=None, target=None) -> int:
+        self.jobs.append((label, fn, after, target))
+        self.wake.set()
+        return len(self.jobs)
+
+    @property
+    def busy(self) -> bool:
+        return bool(self.label) or bool(self.jobs)
+
+
+# -- the prompt line -----------------------------------------------------------
+
+class Prompt:
+    """The footer as a line editor. Modal: while it is up every key belongs
+    to it, so a stray ``r`` cannot restart anything. ``kind`` is ``line``
+    (free text, tab completes paths or a word list), ``yn``, or ``typed``
+    (only the exact ``word`` is accepted - the name of the thing about to be
+    replaced, so the confirmation is the operator reading it back)."""
+
+    def __init__(self, label: str, done, *, kind: str = "line", default: str = "",
+                 word: str = "", completer=None):
+        self.label, self.done, self.kind = label, done, kind
+        self.text, self.pos = default, len(default)
+        self.word, self.completer = word, completer
+        self.candidates: list[str] = []
+
+    def key(self, ch) -> bool:
+        """Returns True when the prompt is finished (answered or abandoned)."""
+        import curses
+        if self.kind == "yn":
+            if ch in ("y", "Y"):
+                self.done(True)
+                return True
+            if ch in ("n", "N", 27, "\x1b"):
+                self.done(None)
+                return True
+            return False
+        if ch in (27, "\x1b"):
+            self.done(None)
+            return True
+        if ch in (10, 13, "\n", "\r", curses.KEY_ENTER):
+            value = self.text.strip()
+            if self.kind == "typed" and value != self.word:
+                self.text, self.pos = "", 0
+                return False
+            self.done(value)
+            return True
+        if ch in (curses.KEY_BACKSPACE, 127, 8, "\x7f", "\b"):
+            if self.pos:
+                self.text = self.text[:self.pos - 1] + self.text[self.pos:]
+                self.pos -= 1
+        elif ch == curses.KEY_DC:
+            self.text = self.text[:self.pos] + self.text[self.pos + 1:]
+        elif ch == curses.KEY_LEFT:
+            self.pos = max(0, self.pos - 1)
+        elif ch == curses.KEY_RIGHT:
+            self.pos = min(len(self.text), self.pos + 1)
+        elif ch in (curses.KEY_HOME, 1, "\x01"):
+            self.pos = 0
+        elif ch in (curses.KEY_END, 5, "\x05"):
+            self.pos = len(self.text)
+        elif ch in (21, "\x15"):                       # ctrl-u
+            self.text, self.pos = "", 0
+        elif ch in (9, "\t"):
+            self._complete()
+        elif isinstance(ch, str) and ch.isprintable():
+            self.text = self.text[:self.pos] + ch + self.text[self.pos:]
+            self.pos += len(ch)
+        else:
+            return False
+        if ch not in (9, "\t"):
+            self.candidates = []
+        return False
+
+    def _complete(self) -> None:
+        if self.completer is None:
+            return
+        head = self.text[:self.pos]
+        options = self.completer(head)
+        if not options:
+            return
+        if len(options) == 1:
+            fill = options[0]
+        else:
+            fill = os.path.commonprefix(options)
+            self.candidates = options[:8]
+        self.text = fill + self.text[self.pos:]
+        self.pos = len(fill)
+
+
+def complete_path(head: str) -> list[str]:
+    """Tab completion the shell way: the directory's entries that start with
+    what was typed, directories with a trailing slash."""
+    raw = head.strip().strip("'\"")
+    expanded = os.path.expanduser(raw) if raw else "."
+    dirname, prefix = os.path.split(expanded)
+    if not dirname:
+        dirname = "."
+    try:
+        names = sorted(os.listdir(dirname))
+    except OSError:
+        return []
+    found = []
+    for n in names:
+        if n.startswith(prefix) and (prefix or not n.startswith(".")):
+            full = os.path.join(dirname if dirname != "." or raw.startswith(".") else "", n)
+            if raw.startswith("~") and not raw.startswith("~/"):
+                full = os.path.join(dirname, n)
+            elif raw.startswith("~/"):
+                full = "~/" + os.path.relpath(os.path.join(dirname, n), os.path.expanduser("~"))
+            found.append(full + ("/" if os.path.isdir(os.path.join(dirname, n)) else ""))
+    return found
+
+
+def complete_words(words: list[str]):
+    def go(head: str) -> list[str]:
+        return [w for w in words if w.startswith(head)]
+    return go
+
+
+# -- screens -------------------------------------------------------------------
+
+class Screen:
+    """A screen owns the body between header and footer, a key map for the
+    footer, and an output pane the cmd_* helpers write into through the
+    sink. ``draw(y0, y1)`` gets the body rows; ``key(ch)`` answers True when
+    it consumed the key."""
+
+    name = ""
+    keys: list[tuple[str, str]] = []
+
+    def __init__(self, con):
+        self.con = con
+        self.out: collections.deque = collections.deque(maxlen=400)
+        self.cursor = 0
+        self.scroll = 0
+
+    def enter(self) -> None:
+        pass
+
+    def leave(self) -> None:
+        pass
+
+    def draw(self, y0: int, y1: int) -> None:
+        pass
+
+    def key(self, ch) -> bool:
+        return False
+
+    def footer(self) -> list[tuple[str, str]]:
+        return self.keys
+
+    def note(self, kind: str, text: str) -> None:
+        import re
+        for line in (text or "").splitlines() or [""]:
+            if BOLD and line.startswith(BOLD) and kind == "out":
+                kind = "head"
+            self.out.append((kind, re.sub(r"\x1b\[[0-9;]*m", "", line)))
+        self.con.dirty.set()
+
+    def pane(self, y0: int, y1: int, label: str = "output", right: str = "",
+             right_attr: int = 0) -> None:
+        """The output rows, newest at the bottom, under a rule."""
+        con = self.con
+        if y1 <= y0:
+            return
+        con.rule(y0, label, right, right_attr)
+        rows = list(self.out)[-(y1 - y0 - 1):] if y1 - y0 - 1 > 0 else []
+        y = y0 + 1
+        for kind, text in rows:
+            token, attr = {"ok": ("ok", con.A[GOOD]), "bad": ("fail", con.A[BAD]),
+                           "warn": ("warn", con.A[WARN])}.get(kind, ("", 0))
+            if token:
+                con.put(y, 0, f"{token:<6}", attr)
+                con.put(y, 6, text)
+            else:
+                con.put(y, 0, text, con.curses.A_BOLD if kind == "head" else 0)
+            y += 1
+
+    def move(self, delta: int, count: int) -> None:
+        if count:
+            self.cursor = max(0, min(count - 1, self.cursor + delta))
+            self.con.dirty.set()
+
+
+# -- the console ---------------------------------------------------------------
+
+TABS = [("1", "overview", "home"), ("2", "logs", "logs"), ("3", "backups", "backups"),
+        ("4", "upgrade", "upgrade"), ("5", "tls", "tls"), ("6", "users", "users"),
+        ("7", "maintenance", "maintenance"), ("8", "diagnostics", "diagnostics")]
+#: Letters that also reach a tab, for fingers that learned the CLI's verbs.
+TAB_LETTERS = {"l": "logs", "b": "backups", "U": "upgrade", "t": "tls", "u": "users",
+               "m": "maintenance", "d": "diagnostics"}
+KEY_W = 13      # the key column of a key/value panel
+
+
+class Console:
+    """The frame every screen shares: a title bar, the tab strip, panels
+    with a titled rule each, and the key bar. Wide terminals get two
+    columns; below 100 columns the panels stack."""
+
+    def __init__(self, stdscr, ctx: Ctx):
+        import curses
+        self.curses = curses
+        self.scr = stdscr
+        self.ctx = ctx
+        self.dirty = threading.Event()
+        self.facts = Facts(ctx)
+        self.journal = Journal(ctx)
+        self.worker = Worker()
+        self.prompt: Prompt | None = None
+        self.help = False
+        self.notice: tuple[str, int, float] | None = None
+        self.sudo = "sudo ?"
+        self.django: dict = {}
+        self.django_at = ""
+        self.A = {GOOD: 0, BAD: 0, WARN: 0, DIMA: 0}
+        self.lines = self.cols = 0
+        self.stop = False
+        self.hr = "─" if (sys.stdout.encoding or "").lower().replace("-", "") == "utf8" else "-"
+        self._colours()
+        stdscr.keypad(True)
+        stdscr.timeout(250)
+        with contextlib.suppress(Exception):
+            curses.curs_set(0)
+        with contextlib.suppress(Exception):
+            curses.set_escdelay(25)
+        self.screens = {s.name: s for s in (
+            Home(self), Logs(self), Backups(self), Upgrade(self), Tls(self), Users(self),
+            Maintenance(self), Diagnostics(self))}
+        self.screen: Screen = self.screens["home"]
+        global SINK
+        SINK = self.sink
+
+    # colours ----------------------------------------------------------------
+
+    def _colours(self) -> None:
+        c = self.curses
+        colour = os.environ.get("NO_COLOR") is None
+        try:
+            c.start_color()
+            c.use_default_colors()
+            colour = colour and c.has_colors()
+        except Exception:  # noqa: BLE001
+            colour = False
+        if colour:
+            c.init_pair(GOOD, c.COLOR_GREEN, -1)
+            c.init_pair(BAD, c.COLOR_RED, -1)
+            c.init_pair(WARN, c.COLOR_YELLOW, -1)
+            if c.COLORS >= 16:
+                c.init_pair(DIMA, 8, -1)
+                dim = c.color_pair(DIMA)
+            else:
+                dim = c.A_DIM
+            self.A = {GOOD: c.color_pair(GOOD), BAD: c.color_pair(BAD),
+                      WARN: c.color_pair(WARN), DIMA: dim}
+        else:
+            self.A = {GOOD: c.A_BOLD, BAD: c.A_BOLD, WARN: c.A_UNDERLINE, DIMA: c.A_DIM}
+
+    def keycap(self, key: str) -> str:
+        """A single capital letter needs shift - say so on the cap."""
+        if len(key) == 1 and key.isupper():
+            return ("\u21e7" if self.hr != "-" else "shift+") + key
+        return key
+
+    # drawing primitives -------------------------------------------------------
+
+    def put(self, y: int, x: int, text: str, attr: int = 0, width: int | None = None) -> None:
+        """The one way onto the screen: clipped, sanitised, and the
+        bottom-right cell's curses.error swallowed."""
+        if y < 0 or y >= self.lines or x >= self.cols or x < 0:
+            return
+        room = self.cols - x if width is None else min(width, self.cols - x)
+        if room <= 0:
+            return
+        text = "".join(ch if ch.isprintable() and (ord(ch) < 0x2500 or ch == self.hr) else "?"
+                       for ch in text)[:room]
+        if not text:
+            return
+        try:
+            self.scr.addnstr(y, x, text, room, attr)
+        except self.curses.error:
+            pass
+
+    def segs(self, y: int, x: int, parts, width: int | None = None) -> int:
+        """Draw ``(text, attr)`` pairs left to right; returns the next x."""
+        end = self.cols if width is None else min(self.cols, x + width)
+        for text, attr in parts:
+            if x >= end:
+                break
+            self.put(y, x, text, attr, end - x)
+            x += len(text)
+        return x
+
+    def panel(self, y: int, x: int, width: int, title: str, right: str = "",
+              right_attr: int = 0) -> int:
+        """A panel's title line: ``TITLE ────────── right``. Returns y + 1."""
+        c, A = self.curses, self.A
+        head, _, rest = title.partition("  ")
+        self.put(y, x, head.upper(), c.A_BOLD, width)
+        rx = x + len(head)
+        if rest:
+            self.put(y, rx + 2, rest, 0, width - len(head) - 2)
+            rx += len(rest) + 2
+        rx += 1
+        if right:
+            rend = x + width - len(right) - 1
+            if rend > rx:
+                self.put(y, rx, self.hr * (rend - rx - 1), A[DIMA])
+                self.put(y, rend, right, right_attr, x + width - rend)
+                return y + 1
+        self.put(y, rx, self.hr * max(0, x + width - rx), A[DIMA])
+        return y + 1
+
+    def rule(self, y: int, label: str, right: str = "", right_attr: int = 0) -> None:
+        """A full-width panel title (the screens that own the whole body)."""
+        self.panel(y, 0, self.cols, label, right, right_attr)
+
+    def kv(self, y: int, x: int, key: str, parts, width: int | None = None) -> None:
+        """One ledger row: a dim key, then the value's segments."""
+        self.put(y, x, key, self.A[DIMA], KEY_W)
+        if isinstance(parts, str):
+            parts = [(parts, 0)]
+        self.segs(y, x + KEY_W, parts, None if width is None else width - KEY_W)
+
+    # the frame ----------------------------------------------------------------
+
+    def title_bar(self) -> None:
+        c = self.curses
+        slow = self.facts.get("slow") or {}
+        g = slow.get("git") or {}
+        version = slow.get("version") or self.django.get("version") or ""
+        left = f" danbyte {version}".rstrip()
+        mid = f"   {os.uname().nodename}   {self.ctx.describe()}"
+        if g.get("commit"):
+            mid += f"   {g['commit']} {g.get('branch', '')}".rstrip()
+        clock = time.strftime("%H:%M:%S")
+        self.put(0, 0, " " * self.cols, c.A_REVERSE)
+        self.put(0, 0, left, c.A_REVERSE | c.A_BOLD)
+        self.put(0, len(left), mid, c.A_REVERSE, self.cols - len(left) - len(clock) - 2)
+        self.put(0, self.cols - len(clock) - 1, clock, c.A_REVERSE | c.A_BOLD)
+
+    def tab_strip(self) -> None:
+        c, A = self.curses, self.A
+        x = 1
+        for num, label, name in TABS:
+            text = f" {num} {label} "
+            if x + len(text) > self.cols - 1:
+                break
+            active = self.screen.name == name
+            self.put(1, x, text, c.A_REVERSE | c.A_BOLD if active else 0)
+            x += len(text) + 1
+        w = self.worker
+        if w.label:
+            note = f"{w.label} {_span(time.monotonic() - w.started)}"
+            if w.jobs:
+                note += f" +{len(w.jobs)}"
+            self.put(1, self.cols - len(note) - 1, note, A[WARN])
+
+    def key_bar(self) -> None:
+        c, A = self.curses, self.A
+        y = self.lines - 1
+        if self.prompt:
+            p = self.prompt
+            self.put(y, 0, " " * self.cols, c.A_REVERSE)
+            if p.kind == "yn":
+                self.put(y, 0, f" {p.label}  y/n ", c.A_REVERSE | c.A_BOLD)
+                return
+            self.put(y, 0, f" {p.label} {p.text}", c.A_REVERSE)
+            cx = len(p.label) + 2 + p.pos
+            if cx < self.cols:
+                ch = p.text[p.pos] if p.pos < len(p.text) else " "
+                self.put(y, cx, ch, c.A_REVERSE | c.A_UNDERLINE | c.A_BOLD)
+            if p.candidates:
+                self.put(y - 1, 0, " " * self.cols)
+                self.put(y - 1, 1, "  ".join(
+                    os.path.basename(v.rstrip("/")) + ("/" if v.endswith("/") else "")
+                    for v in p.candidates), A[DIMA])
+            return
+        x = 1
+        tail = [("?", "help"), ("q", "quit" if self.screen.name == "home" else "back")]
+        reserve = sum(len(k) + len(v) + 5 for k, v in tail)
+        # As many of the screen's keys as fit; help and quit always do.
+        for key, label in self.screen.footer():
+            key = self.keycap(key)
+            if x + len(key) + len(label) + 5 > self.cols - 13 - reserve:
+                break
+            self.put(y, x, f" {key} ", c.A_REVERSE)
+            x += len(key) + 2
+            self.put(y, x, f" {label}", 0)
+            x += len(label) + 3
+        for key, label in tail:
+            self.put(y, x, f" {key} ", c.A_REVERSE)
+            x += len(key) + 2
+            self.put(y, x, f" {label}", 0)
+            x += len(label) + 3
+        if self.notice and time.monotonic() < self.notice[2]:
+            text, attr, _ = self.notice
+            start = self.cols - len(text) - 1
+            self.put(y, max(x, start), text, attr)
+        else:
+            self.put(y, self.cols - len(self.sudo) - 1, self.sudo, A[DIMA])
+
+    def say(self, text: str, attr: int = 0, seconds: float = 5) -> None:
+        self.notice = (text[:self.cols - 2], attr, time.monotonic() + seconds)
+        self.dirty.set()
+
+    def draw(self) -> None:
+        self.scr.erase()
+        self.lines, self.cols = self.scr.getmaxyx()
+        if self.lines < MIN_LINES or self.cols < MIN_COLS:
+            self.put(0, 0, f"danbyte: {self.cols}x{self.lines}, need {MIN_COLS}x{MIN_LINES}")
+            self.scr.refresh()
+            return
+        self.title_bar()
+        self.tab_strip()
+        if self.help:
+            self.help_overlay()
+        else:
+            self.screen.draw(3, self.lines - 1)
+        self.key_bar()
+        self.scr.refresh()
+
+    @property
+    def wide(self) -> bool:
+        return self.cols >= 100
+
+    def help_overlay(self) -> None:
+        c = self.curses
+        y = self.panel(3, 0, self.cols, "keys")
+        cap = self.keycap
+        rows = [
+            ("everywhere", ""),
+            ("  1-8", f"the tabs; also l b {cap('U')} t u m d when the screen does not use the letter"),
+            (f"  {cap('R')}", "re-read the Django facts (version, migrations, last backup)"),
+            ("  !", "authenticate sudo on the terminal, then come back"),
+            ("  q / esc", "back to overview; on overview, quit"),
+            ("", ""),
+            (self.screen.name, ""),
+        ] + [(f"  {cap(k)}", v) for k, v in self.screen.keys] + [
+            ("", ""),
+            ("confirmations", ""),
+            ("  y/n", "restart, disable, run a timer now, prune, unlock, unstick, nginx reload"),
+            ("  type the name", "stop web/backend, upgrade, restore, install a certificate, "
+                                "self-signed, clear MFA"),
+            ("  none", "start, backup now, reindex, collectstatic, fetch"),
+        ]
+        for k, v in rows:
+            if y >= self.lines - 2:
+                break
+            self.put(y, 0, k, c.A_BOLD if not k.startswith("  ") else 0)
+            self.put(y, 18, v)
+            y += 1
+
+    # prompts, actions, handover ----------------------------------------------
+
+    def ask(self, label: str, done, **kw) -> None:
+        self.prompt = Prompt(label, done, **kw)
+        self.dirty.set()
+
+    def confirm(self, question: str, then) -> None:
+        self.ask(question, lambda v: then() if v else None, kind="yn")
+
+    def typed(self, label: str, word: str, then) -> None:
+        self.ask(f"{label} - type {word}:", lambda v: then() if v is not None else None,
+                 kind="typed", word=word)
+
+    def run(self, label: str, fn, after=None) -> None:
+        """An action in the worker, after whatever is already running."""
+        self.worker.submit(label, fn, after, self.screen)
+        self.dirty.set()
+
+    @contextlib.contextmanager
+    def handover(self):
+        """Give the terminal to a child that needs it, take it back after."""
+        c = self.curses
+        c.def_prog_mode()
+        c.endwin()
+        global CONSOLE_OWNS_TTY
+        CONSOLE_OWNS_TTY = False
+        try:
+            yield
+        finally:
+            CONSOLE_OWNS_TTY = True
+            c.reset_prog_mode()
+            self.scr.clear()
+            self.scr.refresh()
+            self.refresh_sudo()
+            self.dirty.set()
+
+    def on_terminal(self, fn, *, wait: bool = True) -> int:
+        """Run ``fn`` on the real terminal (the main thread) and report its
+        exit into the current screen's pane."""
+        code = 0
+        with self.handover():
+            print(flush=True)
+            try:
+                code = fn() or 0
+            except SystemExit as exc:
+                code = int(exc.code or 0) if not isinstance(exc.code, str) else 1
+            except KeyboardInterrupt:
+                code = 130
+            if wait:
+                try:
+                    input(f"\n{DIM}exit {code} - enter to return{OFF}")
+                except (EOFError, KeyboardInterrupt):
+                    pass
+        self.screen.note("ok" if code == 0 else "bad", f"exit {code}")
+        return code
+
+    def refresh_sudo(self) -> None:
+        """``sudo ok`` when commands run without a prompt (a ticket or a
+        NOPASSWD rule), ``sudo asks`` when the next root step will prompt."""
+        if not shutil.which("sudo"):
+            self.sudo = "no sudo"
+            return
+        r = sh(["sudo", "-n", "true"], timeout=5)
+        self.sudo = "sudo ok" if r.ok else "sudo asks"
+
+    def sudo_validate(self) -> None:
+        if self.sudo == "sudo ok":
+            self.say("sudo already runs without a prompt", self.A[DIMA])
+            return
+
+        def go():
+            return sh(["sudo", "-v"], capture=False).code
+        self.on_terminal(go, wait=False)
+        self.journal.reopen()
+
+    def sink(self, kind: str, text: str) -> None:
+        (self.worker.target if threading.current_thread().name == "worker" and self.worker.target
+         else self.screen).note(kind, text)
+
+    def reload_django(self) -> None:
+        """The two Django reads: once at start, on R, after a backup."""
+        def go():
+            info, err = shell_json(
+                self.ctx,
+                "import json; from core.version import system_info; print(json.dumps(system_info()))")
+            rows, _ = shell_json(self.ctx, LIST_BACKUPS % 1)
+            self.django = {**(info or {}), "last_backup": (rows or [None])[0],
+                           "error": err if info is None else ""}
+            self.django_at = time.strftime("%H:%M:%S")
+            self.dirty.set()
+        self.run("django", go)
+
+    # the loop -------------------------------------------------------------------
+
+    def goto(self, name: str) -> None:
+        if self.screen.name != name:
+            self.screen.leave()
+            self.screen = self.screens[name]
+            self.screen.enter()
+        self.dirty.set()
+
+    def loop(self) -> int:
+        c = self.curses
+        self.facts.start()
+        self.journal.start()
+        self.worker.start()
+        self.refresh_sudo()
+        self.reload_django()
+        self.screen.enter()
+        last_draw = 0.0
+        while not self.stop:
+            now = time.monotonic()
+            if self.dirty.is_set() or self.facts.dirty.is_set() or self.journal.dirty.is_set() \
+                    or now - last_draw >= 1.0:
+                self.dirty.clear()
+                self.facts.dirty.clear()
+                self.journal.dirty.clear()
+                self.draw()
+                last_draw = now
+            try:
+                ch = self.scr.get_wch()
+            except c.error:
+                continue
+            if ch == c.KEY_RESIZE:
+                with contextlib.suppress(Exception):
+                    c.update_lines_cols()
+                self.dirty.set()
+                continue
+            self.handle(ch)
+        self.journal.close()
+        self.facts.stopping.set()
+        return 0
+
+    def handle(self, ch) -> None:
+        self.dirty.set()
+        if self.prompt:
+            # The answer's callback may open the next prompt of a flow; only
+            # clear the one that was answered.
+            p = self.prompt
+            if p.key(ch) and self.prompt is p:
+                self.prompt = None
+            return
+        if self.help:
+            self.help = False
+            return
+        if ch == "?":
+            self.help = True
+            return
+        if ch in ("q", 27, "\x1b"):
+            if self.screen.name == "home":
+                if ch == "q":
+                    if self.worker.busy:
+                        self.say(f"busy: {self.worker.label}", self.A[WARN])
+                    else:
+                        self.stop = True
+            else:
+                self.goto("home")
+            return
+        if ch == "R":
+            self.reload_django()
+            return
+        if ch == "!":
+            self.sudo_validate()
+            return
+        if isinstance(ch, str):
+            for num, _label, name in TABS:
+                if ch == num:
+                    self.goto(name)
+                    return
+        if self.screen.key(ch):
+            return
+        if isinstance(ch, str) and ch in TAB_LETTERS:
+            self.goto(TAB_LETTERS[ch])
+
+    # shared drawers ---------------------------------------------------------------
+
+    def state_attr(self, active: str, sub: str, *, timer_backed: bool = False) -> int:
+        if active in {"active", "reloading"}:
+            return self.A[GOOD]
+        if active == "failed":
+            return self.A[BAD]
+        if active in {"activating", "deactivating"}:
+            return 0 if timer_backed else self.A[WARN]
+        return 0
+
+    def log_rows(self, y0: int, y1: int, entries: list, *, wide: bool = False,
+                 wrap: bool = False, collapse: int = 0) -> None:
+        """Journal lines, newest at the bottom, a dim date separator when the
+        day changes, colour on the priority letter alone. ``collapse`` folds
+        a burst from one unit (a traceback) into its first lines and a
+        count, for the strip on the overview."""
+        A = self.A
+        if y1 <= y0:
+            return
+        rows: list = []
+        day = None
+        run_unit, run_n = None, 0
+        for ts, unit, prio, msg in entries:
+            d = time.strftime("%Y-%m-%d", time.localtime(ts))
+            if wide and d != day:
+                rows.append(("sep", d))
+                day = d
+            if collapse:
+                if unit == run_unit:
+                    run_n += 1
+                    if run_n > collapse:
+                        if rows and rows[-1][0] == "more":
+                            rows[-1] = ("more", (unit, rows[-1][1][1] + 1))
+                        else:
+                            rows.append(("more", (unit, 1)))
+                        continue
+                else:
+                    run_unit, run_n = unit, 1
+            rows.append(("line", (ts, unit, prio, msg)))
+        width = self.cols
+        indent = 32 if wide else 28
+        shown: list = []
+        for kind, v in rows:
+            if kind == "sep" or not wrap:
+                shown.append((kind, v))
+                continue
+            ts, unit, prio, msg = v
+            body = width - indent
+            first = True
+            for i in range(0, max(1, len(msg)), max(1, body)):
+                shown.append(("line", (ts, unit, prio, msg[i:i + body])) if first
+                             else ("cont", msg[i:i + body]))
+                first = False
+        shown = shown[-(y1 - y0):]
+        if wide and shown and shown[0][0] != "sep" and y1 - y0 > 2:
+            first = next((v for k, v in shown if k == "line"), None)
+            if first:
+                shown = [("sep", time.strftime("%Y-%m-%d", time.localtime(first[0])))] + shown[1:]
+        y = y0
+        for kind, v in shown:
+            if kind == "sep":
+                self.put(y, 2, f"{v}", A[DIMA])
+            elif kind == "more":
+                self.put(y, indent, f"+ {v[1]} more lines from {v[0]} - open the logs tab", A[DIMA])
+            elif kind == "cont":
+                self.put(y, indent, v)
+            else:
+                ts, unit, prio, msg = v
+                stamp = time.strftime("%H:%M:%S", time.localtime(ts))
+                attr = A[BAD] if prio <= 3 else A[WARN] if prio == 4 else A[DIMA] if prio >= 7 else 0
+                if wide:
+                    stamp += f".{int((ts % 1) * 1000):03d}"
+                    letter = "E" if prio <= 3 else "W" if prio == 4 else "N" if prio == 5 else \
+                        "I" if prio == 6 else "D"
+                    self.put(y, 2, stamp, A[DIMA])
+                    self.put(y, 15, unit[:14], 0)
+                    self.put(y, 30, letter, attr)
+                    self.put(y, 32, msg)
+                else:
+                    self.put(y, 2, stamp, A[DIMA])
+                    self.put(y, 11, unit[:16], 0)
+                    self.put(y, 29, msg, attr if prio <= 4 else 0)
+            y += 1
+
+
+# -- overview --------------------------------------------------------------------
+
+class Home(Screen):
+    """Services and timers on the left, the host and Danbyte facts on the
+    right, the journal underneath. Everything on it is readable with
+    Django down."""
+
+    name = "home"
+    keys = [("enter", "logs"), ("r", "restart"), ("a", "restart all"), ("B", "rebuild"),
+            ("x", "stop"), ("s", "start"), ("e", "enable"), ("tab", "timers")]
+    RIGHT_W = 40
+
+    def __init__(self, con):
+        super().__init__(con)
+        self.pane_idx = 0       # 0 services, 1 timers
+        self.tcur = 0
+        self.tscroll = 0
+
+    def footer(self):
+        if self.pane_idx == 1:
+            return [("enter", "logs"), ("s", "run now"), ("x", "stop"), ("e", "enable"),
+                    ("tab", "services")]
+        return self.keys
+
+    def _timers(self) -> list:
+        units = self.con.facts.get("units") or {}
+        timers = units.get("timers") or {}
+        return sorted(timers, key=lambda t: (timers[t]["next"] is None, timers[t]["next"] or 0))
+
+    def _names(self) -> list:
+        ctx = self.con.ctx
+        if ctx.shape == "docker":
+            return list((self.con.facts.get("units") or {}).get("services") or {})
+        return list(ctx.units)
+
+    # drawing --------------------------------------------------------------------
+
+    def draw(self, y0: int, y1: int) -> None:
+        con = self.con
+        wide = con.wide
+        left_w = con.cols - self.RIGHT_W - 1 if wide else con.cols
+        names, order = self._names(), self._timers()
+        # How tall the left column wants to be, then the journal takes what
+        # is left, capped so a tall terminal does not become a wall of log.
+        want = 1 + max(1, len(names)) + 1 + (1 + len(order) + 1 if order else 0)
+        three = con.cols >= 140
+        right_rows = (10 if three else 20) if wide else 0
+        avail = y1 - y0
+        logs = max(6, min(20, avail - max(want, right_rows) - 1))
+        body_h = avail - logs - 1
+        if three:
+            left_w = min(left_w, con.cols - 2 * self.RIGHT_W - 2)
+        y = self._services(y0, 0, left_w, min(body_h, want if not order else body_h), names)
+        if order:
+            self._timers_panel(y, 0, left_w, y0 + body_h, order)
+        if wide:
+            self._facts(y0, left_w + 1, self.RIGHT_W, y0 + body_h, split=three)
+        ly = y0 + body_h
+        j = con.journal
+        note = j.note
+        con.panel(ly, 0, con.cols, "logs  danbyte-*",
+                  note or (f"follow via {j.mode}" if j.mode else "starting"),
+                  con.A[WARN] if note else con.A[DIMA])
+        con.log_rows(ly + 1, y1, j.snapshot()[-(y1 - ly - 1) * 4:] if y1 - ly - 1 > 0 else [],
+                     collapse=3)
+
+    def _services(self, y: int, x: int, w: int, y_end: int, names: list) -> int:
+        con, A, c = self.con, self.con.A, self.con.curses
+        ctx = con.ctx
+        units = con.facts.get("units") or {}
+        services = units.get("services") or {}
+        active = sum(1 for n in names if services.get(n, {}).get("active") == "active")
+        failed = sum(1 for n in names if services.get(n, {}).get("active") == "failed")
+        title = f"services  {active} of {len(names)} active"
+        right, rattr = "", 0
+        if failed:
+            right, rattr = f"{failed} failed", A[BAD]
+        if {"danbyte-backend", "danbyte-web"} <= {
+                n for n in names if services.get(n, {}).get("active") == "active"}:
+            right, rattr = "backend and web both bind :8000", A[WARN]
+        err = units.get("error")
+        age = con.facts.age("units")
+        if err:
+            right, rattr = ("needs sudo" if "sudo" in err else "stale"), A[WARN]
+        elif age is not None and age > 15:
+            right, rattr = f"stale {_span(age)}", A[WARN]
+        y = con.panel(y, x, w, title, right, rattr)
+        rows = max(1, min(len(names), y_end - y - (1 if len(names) > y_end - y else 0)))
+        self.cursor = min(self.cursor, max(0, len(names) - 1))
+        if self.cursor < self.scroll:
+            self.scroll = self.cursor
+        if self.cursor >= self.scroll + rows:
+            self.scroll = self.cursor - rows + 1
+        for i, n in enumerate(names[self.scroll:self.scroll + rows]):
+            idx = i + self.scroll
+            s = services.get(n, {})
+            sel = idx == self.cursor and self.pane_idx == 0
+            con.put(y + i, x, ">" if sel else " ", c.A_REVERSE if sel else 0)
+            con.put(y + i, x + 2, f"{_short(n)[:13]:<14}", c.A_REVERSE if sel else 0)
+            if s.get("load") == "not-found":
+                con.put(y + i, x + 16, "not installed", A[DIMA])
+                continue
+            if ctx.shape == "docker":
+                con.put(y + i, x + 16, f"{s.get('sub', '?'):<11}", con.state_attr(s.get("active", ""), ""))
+                con.put(y + i, x + 28, s.get("status", ""), A[DIMA], w - 28)
+                continue
+            st = s.get("sub") or s.get("active", "?")
+            if s.get("active") == "inactive" and s.get("file") == "enabled":
+                attr = A[WARN]
+            elif s.get("active") == "inactive":
+                attr = A[DIMA]
+            else:
+                attr = con.state_attr(s.get("active", ""), st)
+            con.put(y + i, x + 16, f"{st[:10]:<11}", attr)
+            pid = s.get("pid", "0")
+            cpu = s.get("cpu")
+            rst = s.get("restarts", "0")
+            cols = [(f"{pid if pid not in ('0', '') else '':>8}", 0),
+                    (f"{s.get('mem', '-'):>7}", 0),
+                    (f"{cpu:>5.1f}%" if cpu is not None else f"{'':>6}", 0),
+                    (f"{_span(s['since']) if s.get('since') is not None else '':>8}", 0)]
+            if rst not in ("0", ""):
+                cols.append((f"  {rst} restarts", A[WARN]))
+            con.segs(y + i, x + 27, cols, w - 27)
+        if len(names) > rows:
+            con.put(y + rows, x + 2, f"{len(names) - rows} more", A[DIMA])
+            rows += 1
+        return y + rows + 1
+
+    def _timers_panel(self, y: int, x: int, w: int, y_end: int, order: list) -> int:
+        con, A, c = self.con, self.con.A, self.con.curses
+        timers = (con.facts.get("units") or {}).get("timers") or {}
+        fails = [t for t in order if timers[t].get("result") not in ("success", "", "-")
+                 and timers[t].get("active") == "active"]
+        nxt = order[0] if order else ""
+        title = f"timers  {len(order)} scheduled"
+        right, rattr = "", 0
+        if fails:
+            right, rattr = f"{len(fails)} failing: " + ", ".join(_short(t) for t in fails[:2]), A[BAD]
+        elif nxt and timers[nxt]["next"] is not None:
+            right, rattr = f"next {_short(nxt)} in {_span(timers[nxt]['next'])}", A[DIMA]
+        y = con.panel(y, x, w, title, right, rattr)
+        rows = max(1, y_end - y - 1)
+        if len(order) > rows:
+            rows = max(1, rows - 1)
+        self.tcur = min(self.tcur, max(0, len(order) - 1))
+        if self.tcur < self.tscroll:
+            self.tscroll = self.tcur
+        if self.tcur >= self.tscroll + rows:
+            self.tscroll = self.tcur - rows + 1
+        for i, t in enumerate(order[self.tscroll:self.tscroll + rows]):
+            idx = i + self.tscroll
+            tm = timers[t]
+            sel = idx == self.tcur and self.pane_idx == 1
+            off = tm.get("active") != "active"
+            con.put(y + i, x, ">" if sel else " ", c.A_REVERSE if sel else 0)
+            con.put(y + i, x + 2, f"{_short(t)[:19]:<20}", c.A_REVERSE if sel else (A[DIMA] if off else 0))
+            last = f"{_span(tm['last'])} ago" if tm["last"] is not None else "never"
+            nxt = f"in {_span(tm['next'])}" if tm["next"] is not None else \
+                ("now" if tm.get("job_active") in {"activating", "active"} else "-")
+            con.put(y + i, x + 22, f"{last:>12}", A[DIMA] if off else 0)
+            con.put(y + i, x + 35, f"{nxt:>10}", A[DIMA] if off else 0)
+            res = tm.get("result") or "-"
+            if tm.get("job_active") in {"activating", "active"}:
+                con.put(y + i, x + 47, "running", A[WARN])
+            elif off:
+                con.put(y + i, x + 47, "off", A[DIMA])
+            else:
+                con.put(y + i, x + 47, res, A[GOOD] if res == "success" else A[BAD] if res != "-" else 0)
+        if len(order) > rows:
+            con.put(y + rows, x + 2, f"{len(order) - rows} more", A[DIMA])
+            rows += 1
+        return y + rows + 1
+
+    def _facts(self, y: int, x: int, w: int, y_end: int, *, split: bool = False) -> None:
+        con, A = self.con, self.con.A
+        proc = con.facts.get("proc") or {}
+        slow = con.facts.get("slow") or {}
+        h = (con.facts.get("health") or {}).get("health")
+        rows: list = []
+        # host
+        if h is None:
+            rows.append(("health", [("unreachable", A[BAD])]))
+        else:
+            st = h.get("status", "?")
+            db = h.get("database")
+            rows.append(("health", [(st, A[GOOD] if st == "ok" else A[WARN]), ("   db ", 0),
+                                    ("up" if db else "down", A[GOOD] if db else A[BAD])]))
+            if h.get("code_behind_db"):
+                rows.append(("migrations", [("behind - finish the upgrade", A[WARN])]))
+            elif con.django.get("error"):
+                rows.append(("migrations", [("django unreachable", A[BAD])]))
+            elif con.django:
+                drift = con.django.get("migration_drift") or []
+                rows.append(("migrations", [(f"{len(drift)} applied that this code does not ship "
+                                             "- finish the upgrade", A[WARN]) if drift
+                                            else ("ok", A[GOOD])]))
+        if proc:
+            mt, ma = proc["mem_total"], proc["mem_avail"]
+            rows.append(("load", [(" ".join(proc["load"]), 0)]))
+            rows.append(("memory", [(f"{(mt - ma) / 2**30:.1f} of {mt / 2**30:.1f} G used", 0)]))
+            disk = slow.get("disk")
+            if disk:
+                pct = disk.used * 100 // disk.total
+                rows.append(("disk", [(f"{disk.free >> 30} G free, {pct}% used",
+                                       A[WARN] if pct >= 90 else 0)]))
+            rows.append(("uptime", [(_span(proc["uptime"]), 0)]))
+        host_rows = rows
+        rows = []
+        # danbyte
+        rd = con.facts.get("redis") or {}
+        if rd.get("error") and not rd.get("queues"):
+            rows.append(("queues", [("redis unreachable", A[BAD])]))
+        elif rd:
+            q = rd["queues"]
+            rows.append(("queues", [(f"high {q.get('high', 0)}  default {q.get('default', 0)}  "
+                                     f"low {q.get('low', 0)}", 0)]))
+            rows.append(("workers", [(str(rd["workers"]), A[BAD] if not rd["workers"] else 0),
+                                     ("   failed jobs ", 0), (str(rd["failed"]), A[WARN] if rd["failed"] else 0)]))
+            lane = rd.get("lane") or {}
+            if lane:
+                rows.append(("fast lane", [(f"{lane.get('checks', 0)} checks  "
+                                            f"{lane.get('probes_per_s', 0)} probes/s", 0)]))
+        fl = con.facts.get("flags") or {}
+        maint = (rd.get("maintenance") if rd else None) or fl.get("maintenance_file")
+        rows.append(("maintenance", [("on - site answers 503", A[WARN]) if maint else ("off", 0)]))
+        lock = fl.get("lock")
+        unit = fl.get("upgrade_unit", "inactive")
+        if lock:
+            rows.append(("upgrade", [(f"lock held, {lock.get('phase', '?')} {_span(lock.get('age'))}", A[WARN])]))
+        elif unit == "active":
+            rows.append(("upgrade", [("running", A[WARN])]))
+        else:
+            rows.append(("upgrade", [("idle, lock free", 0)]))
+        lb = con.django.get("last_backup") if con.django else None
+        if lb:
+            rows.append(("last backup", [(f"{_local(lb['at'])}  ", 0),
+                                         (lb["status"], A[GOOD] if lb["status"] == "success" else A[BAD]),
+                                         (f"  {lb['size'] >> 20}M" if lb.get("size") else "", 0)]))
+        elif con.django and not con.django.get("error"):
+            rows.append(("last backup", [("none recorded", A[WARN])]))
+        cf = slow.get("cert")
+        if cf and cf.get("ok"):
+            left = cf["days_left"]
+            rows.append(("tls", [(f"CN={cf['cn']}  ", 0),
+                                 (f"{left} days left" if left >= 0 else f"expired {-left}d ago",
+                                  A[BAD] if left < 7 else A[WARN] if left < 30 else 0)]))
+        elif slow and not cf:
+            rows.append(("tls", [("nginx config unreadable", A[WARN])]))
+        top = y
+        y = con.panel(y, x, w, "host")
+        for key, parts in host_rows:
+            if y >= y_end:
+                return
+            con.kv(y, x, key, parts, w)
+            y += 1
+        if split:
+            # Three columns: Danbyte's facts beside the host's, not under.
+            x, y = x + w + 1, top
+        else:
+            y += 1
+        if y >= y_end:
+            return
+        y = con.panel(y, x, w, "danbyte")
+        for key, parts in rows:
+            if y >= y_end:
+                return
+            con.kv(y, x, key, parts, w)
+            y += 1
+
+    # keys -------------------------------------------------------------------------
+
+    def _selected(self) -> str:
+        if self.pane_idx == 1:
+            order = self._timers()
+            return order[self.tcur] if order else ""
+        names = self._names()
+        return names[self.cursor] if names else ""
+
+    def _systemctl(self, verb: str, unit: str) -> None:
+        con = self.con
+
+        def go():
+            if con.ctx.shape == "docker":
+                base = ["docker", "compose", "-f", str(con.ctx.compose)] if con.ctx.compose \
+                    else ["docker", "compose"]
+                r = sh(base + [verb, unit], timeout=120)
+            else:
+                r = systemctl(con.ctx, [verb, unit], timeout=120)
+            if r.ok:
+                con.say(f"{verb} {_short(unit)}: ok", con.A[GOOD])
+            else:
+                con.say(f"{verb} {_short(unit)}: {(r.err or r.out).strip()[:60]}", con.A[BAD])
+            con.facts.kick("units")
+        con.run(f"{verb} {_short(unit)}", go)
+
+    def _restart_all(self) -> None:
+        """Every unit that is running, in order - never starts a stopped one."""
+        con = self.con
+        services = (con.facts.get("units") or {}).get("services") or {}
+        units = [u for u in self._names() if services.get(u, {}).get("active") == "active"]
+        if not units:
+            con.say("nothing is running", con.A[WARN])
+            return
+
+        def go():
+            failed = []
+            for u in units:
+                if con.ctx.shape == "docker":
+                    base = ["docker", "compose", "-f", str(con.ctx.compose)] if con.ctx.compose \
+                        else ["docker", "compose"]
+                    r = sh(base + ["restart", u], timeout=120)
+                else:
+                    r = systemctl(con.ctx, ["restart", u], timeout=120)
+                if not r.ok:
+                    failed.append(_short(u))
+                con.facts.kick("units")
+            if failed:
+                con.say(f"restart all: failed {', '.join(failed)}", con.A[BAD], 10)
+            else:
+                con.say(f"restarted {len(units)} units", con.A[GOOD])
+        con.confirm(f"restart all {len(units)} running units?", lambda: con.run("restart all", go))
+
+    def _systemctl_multi(self, args: list[str]) -> None:
+        con = self.con
+
+        def go():
+            r = systemctl(con.ctx, args, timeout=60)
+            con.say(f"{' '.join(args)}: {'ok' if r.ok else (r.err or r.out).strip()[:60]}",
+                    con.A[GOOD] if r.ok else con.A[BAD])
+            con.facts.kick("units")
+        con.run(args[0], go)
+
+    def key(self, ch) -> bool:
+        con, c = self.con, self.con.curses
+        ctx = con.ctx
+        order = self._timers()
+        names = self._names()
+        if ch in ("j", c.KEY_DOWN):
+            if self.pane_idx == 1:
+                self.tcur = min(len(order) - 1, self.tcur + 1)
+            else:
+                self.move(1, len(names) or 1)
+            return True
+        if ch in ("k", c.KEY_UP):
+            if self.pane_idx == 1:
+                self.tcur = max(0, self.tcur - 1)
+            else:
+                self.move(-1, len(names) or 1)
+            return True
+        if ch in (9, "\t"):
+            if order:
+                self.pane_idx = 1 - self.pane_idx
+            return True
+        if ch == "a":
+            self._restart_all()
+            return True
+        if ch == "B":
+            jobs = con.screens["maintenance"]
+            con.confirm("rebuild: deps, migrate, frontend build, restart what runs?",
+                        lambda: (con.goto("maintenance"), jobs.start("rebuild")))
+            return True
+        unit = self._selected()
+        if not unit:
+            return False
+        if ch in (10, 13, "\n", "\r", c.KEY_ENTER):
+            logs = con.screens["logs"]
+            logs.unit = _short(unit)
+            con.goto("logs")
+            return True
+        if self.pane_idx == 1:
+            if ch == "s":
+                con.confirm(f"run {_short(unit)} now?", lambda: self._systemctl("start", f"{unit}.service"))
+            elif ch == "x":
+                con.confirm(f"stop {_short(unit)}.timer?", lambda: self._systemctl("stop", f"{unit}.timer"))
+            elif ch == "e":
+                tm = (con.facts.get("units") or {}).get("timers", {}).get(unit, {})
+                if tm.get("file") == "enabled":
+                    con.confirm(f"disable {_short(unit)}.timer?",
+                                lambda: self._systemctl_multi(["disable", "--now", f"{unit}.timer"]))
+                else:
+                    self._systemctl_multi(["enable", "--now", f"{unit}.timer"])
+            else:
+                return False
+            return True
+        if ch == "r":
+            con.confirm(f"restart {unit}?", lambda: self._systemctl("restart", unit))
+        elif ch == "x":
+            if unit in {"danbyte-web", "danbyte-backend"}:
+                con.typed(f"stop {unit}", _short(unit), lambda: self._systemctl("stop", unit))
+            else:
+                con.confirm(f"stop {unit}?", lambda: self._systemctl("stop", unit))
+        elif ch == "s":
+            if unit in DEV_ONLY_UNITS and ctx.as_service:
+                con.say(f"{unit} is a development unit - not on a service-account host", con.A[WARN])
+            else:
+                self._systemctl("start", unit)
+        elif ch == "e":
+            if ctx.shape == "docker":
+                con.say("compose services have no enable/disable", con.A[WARN])
+                return True
+            st = (con.facts.get("units") or {}).get("services", {}).get(unit, {})
+            if st.get("file") == "enabled":
+                con.confirm(f"disable {unit}?", lambda: self._systemctl("disable", unit))
+            else:
+                self._systemctl("enable", unit)
+        else:
+            return False
+        return True
+
+
+# -- logs ----------------------------------------------------------------------
+
+PRIO_FLOORS = [(None, "all"), (5, "notice"), (4, "warning"), (3, "err")]
+
+
+class Logs(Screen):
+    name = "logs"
+    keys = [("space", "pause/follow"), ("j/k", "scroll"), ("u", "unit"), ("p", "priority"),
+            ("/", "filter"), ("g/G", "top/end"), ("w", "wrap"), ("c", "clear")]
+
+    def __init__(self, con):
+        super().__init__(con)
+        self.unit: str | None = None
+        self.prio = 0
+        self.text = ""
+        self.paused = False
+        self.offset = 0         # lines back from the end
+        self.wrap = False
+
+    def _units(self) -> list:
+        ctx = self.con.ctx
+        return [None] + [_short(u) for u in ctx.units] + [_short(t) for t in ctx.timers]
+
+    def _filtered(self) -> list:
+        floor = PRIO_FLOORS[self.prio][0]
+        needle = self.text.lower()
+        rows = []
+        for e in self.con.journal.snapshot():
+            if self.unit and e[1] != self.unit:
+                continue
+            if floor is not None and e[2] > floor:
+                continue
+            if needle and needle not in e[3].lower():
+                continue
+            rows.append(e)
+        return rows
+
+    def draw(self, y0: int, y1: int) -> None:
+        con, A = self.con, self.con.A
+        rows = self._filtered()
+        label = "logs danbyte-*"
+        if self.unit:
+            label += f"  unit {self.unit}"
+        label += f"  prio {PRIO_FLOORS[self.prio][1]}"
+        if self.text:
+            label += f"  /{self.text}"
+        label += f"  {len(rows)} lines"
+        j = con.journal
+        if j.note:
+            right, rattr = j.note, A[WARN]
+        elif self.paused:
+            right, rattr = f"paused, {self.offset} back" if self.offset else "paused", A[WARN]
+        else:
+            right, rattr = "follow", A[DIMA]
+        con.rule(y0, label, right, rattr)
+        end = len(rows) - self.offset if self.paused else len(rows)
+        height = y1 - y0 - 1
+        con.log_rows(y0 + 1, y1, rows[max(0, end - height * (3 if self.wrap else 1)):end],
+                     wide=True, wrap=self.wrap)
+
+    def key(self, ch) -> bool:
+        con, c = self.con, self.con.curses
+        n = len(self._filtered())
+        if ch == " ":
+            self.paused = not self.paused
+            if not self.paused:
+                self.offset = 0
+        elif ch in ("j", c.KEY_DOWN):
+            self.offset = max(0, self.offset - 1)
+        elif ch in ("k", c.KEY_UP):
+            self.paused = True
+            self.offset = min(max(0, n - 1), self.offset + 1)
+        elif ch == c.KEY_NPAGE:
+            self.offset = max(0, self.offset - (con.lines - 4))
+        elif ch == c.KEY_PPAGE:
+            self.paused = True
+            self.offset = min(max(0, n - 1), self.offset + (con.lines - 4))
+        elif ch == "g":
+            self.paused = True
+            self.offset = max(0, n - 1)
+        elif ch == "G":
+            self.paused, self.offset = False, 0
+        elif ch == "u":
+            units = self._units()
+            i = units.index(self.unit) if self.unit in units else 0
+            self.unit = units[(i + 1) % len(units)]
+        elif ch == "p":
+            self.prio = (self.prio + 1) % len(PRIO_FLOORS)
+        elif ch == "/":
+            def done(v):
+                if v is not None:
+                    self.text = v
+            con.ask("filter:", done, default=self.text)
+        elif ch == "w":
+            self.wrap = not self.wrap
+        elif ch == "c":
+            self.unit, self.prio, self.text = None, 0, ""
+        else:
+            return False
+        return True
+
+
+# -- backups -------------------------------------------------------------------
+
+class Backups(Screen):
+    name = "backups"
+    keys = [("n", "backup now"), ("p", "path"), ("r", "restore"), ("U", "unstick"),
+            ("R", "reload")]
+
+    def __init__(self, con):
+        super().__init__(con)
+        self.rows: list = []
+        self.loaded = ""
+        self.loading = False
+        self.disk: dict = {}
+        self.disk_at = 0.0
+        self.pre: list = []      # restore precondition lines (kind, text)
+
+    def enter(self) -> None:
+        self.load()
+
+    def load(self) -> None:
+        con = self.con
+
+        def go():
+            self.loading = True
+            rows, err = shell_json(con.ctx, LIST_BACKUPS % 20)
+            self.rows = rows or []
+            if rows is None:
+                self.note("bad", err)
+            self.loaded = time.strftime("%H:%M:%S")
+            self.loading = False
+            self.disk_at = 0.0
+            con.dirty.set()
+        con.run("backups", go)
+
+    def _stat(self) -> None:
+        """size / "remote" / "unknown" / None (missing) per backup."""
+        if time.monotonic() - self.disk_at < 30:
+            return
+        self.disk_at = time.monotonic()
+        for b in self.rows:
+            loc = b.get("location") or ""
+            if not loc.startswith("/"):
+                self.disk[b["id"]] = "remote" if loc else None
+                continue
+            try:
+                self.disk[b["id"]] = os.stat(loc).st_size
+            except PermissionError:
+                self.disk[b["id"]] = "unknown"
+            except OSError:
+                self.disk[b["id"]] = None
+
+    def draw(self, y0: int, y1: int) -> None:
+        con, A, c = self.con, self.con.A, self.con.curses
+        self._stat()
+        right, rattr = ("loading", A[DIMA]) if self.loading else (f"loaded {self.loaded}", A[DIMA])
+        y = con.panel(y0, 0, con.cols, "backups  20 most recent", right, rattr)
+        con.put(y, 2, f"{'WHEN':<17}{'KIND':<12}{'STATUS':<9}{'SIZE':>8}  ID", A[DIMA])
+        y += 1
+        rows_room = max(3, min(len(self.rows), (y1 - y) - 10))
+        self.cursor = min(self.cursor, max(0, len(self.rows) - 1))
+        if self.cursor < self.scroll:
+            self.scroll = self.cursor
+        if self.cursor >= self.scroll + rows_room:
+            self.scroll = self.cursor - rows_room + 1
+        for i, b in enumerate(self.rows[self.scroll:self.scroll + rows_room]):
+            sel = i + self.scroll == self.cursor
+            con.put(y + i, 0, ">" if sel else " ", c.A_REVERSE if sel else 0)
+            con.put(y + i, 2, f"{_local(b['at']):<17}{b['kind'][:11]:<12}",
+                    c.A_REVERSE if sel else 0)
+            st = b["status"]
+            con.put(y + i, 31, f"{st:<9}", A[GOOD] if st == "success" else A[BAD] if st == "failed"
+                    else A[WARN])
+            size = f"{b['size'] >> 20} MiB" if b.get("size") else "-"
+            con.put(y + i, 40, f"{size:>8}  {b['id']}{' *' if b.get('protected') else ''}",
+                    A[DIMA] if not sel else 0)
+        if not self.rows and not self.loading:
+            con.put(y, 2, "no backups recorded", A[DIMA])
+        y += rows_room
+        b = self.rows[self.cursor] if self.rows else None
+        y += 1
+        if b:
+            y = con.panel(y, 0, con.cols, "selected")
+            size = self.disk.get(b["id"])
+            con.kv(y, 0, "id", [(b["id"], 0), ("   protected, never pruned" if b.get("protected") else "", A[DIMA])])
+            where = {"remote": ("on the remote target", A[DIMA]), "unknown": ("not readable from here", A[DIMA]),
+                     None: ("missing from disk", A[WARN])}.get(
+                size if isinstance(size, str) or size is None else "n",
+                ("on disk", A[GOOD]))
+            con.kv(y + 1, 0, "file", [(b.get("filename") or "-", 0), ("   ", 0), where,
+                                      (f"  {size >> 20} MiB" if isinstance(size, int) and size else "", 0)])
+            con.kv(y + 2, 0, "where", [(os.path.dirname(b.get("location") or "") or "-", A[DIMA])])
+            y += 4
+        if self.pre:
+            y = con.panel(y, 0, con.cols, "restore checks")
+            for kind, text in self.pre[: max(0, y1 - y - 4)]:
+                token = {"ok": ("ok", A[GOOD]), "bad": ("fail", A[BAD])}.get(kind, ("", 0))
+                con.put(y, 2, f"{token[0]:<6}", token[1])
+                con.put(y, 8, text)
+                y += 1
+            y += 1
+        self.pane(y, y1)
+
+    def key(self, ch) -> bool:
+        con, c = self.con, self.con.curses
+        if ch in ("j", c.KEY_DOWN):
+            self.move(1, len(self.rows))
+        elif ch in ("k", c.KEY_UP):
+            self.move(-1, len(self.rows))
+        elif ch == "R":
+            self.load()
+        elif ch == "n":
+            con.run("backup", lambda: cmd_backup(con.ctx, argparse.Namespace(action="run", limit=20)),
+                    after=self.load)
+        elif ch == "U":
+            con.confirm("clear the maintenance flag?", lambda: con.run(
+                "unstick", lambda: cmd_backup(con.ctx, argparse.Namespace(action="unstick", limit=20))))
+        elif ch == "p" and self.rows:
+            con.say(self.rows[self.cursor].get("location") or "-", 0, 10)
+        elif ch == "r" and self.rows:
+            self._restore(self.rows[self.cursor])
+        else:
+            return False
+        return True
+
+    def _restore(self, b: dict) -> None:
+        """Preconditions first, verbatim; the typed gate only once every
+        line says ok; then the real thing on the terminal."""
+        con = self.con
+        bid = b["id"]
+
+        def check():
+            pre = manage(con.ctx, ["restore_backup", bid])
+            lines = []
+            for line in (pre.out or pre.err).splitlines():
+                t = line.strip()
+                kind = "ok" if t.startswith("[ok]") else "bad" if t.startswith("[FAIL]") else "out"
+                lines.append((kind, t.split("]", 1)[1].strip() if kind != "out" else t))
+            self.pre = lines
+            if pre.ok and lines and all(k == "ok" for k, _ in lines if k != "out"):
+                self.note("out", "every precondition passed")
+                con.dirty.set()
+                self._gate = bid
+            else:
+                self.note("warn", "restore blocked by the preconditions above")
+        self._gate = ""
+
+        def restore():
+            con.on_terminal(lambda: manage(con.ctx, ["restore_backup", bid, "--yes"],
+                                           interactive=True).code)
+            self.load()
+
+        def after():
+            if getattr(self, "_gate", ""):
+                con.typed(f"restore {bid[:8]}... replaces the database and media", bid[:8], restore)
+        con.run("preconditions", check, after=after)
+
+
+# -- upgrade -------------------------------------------------------------------
+
+ONLINE_STEPS = ["preflight", "backup", "checkout", "deps", "migrate", "frontend", "restart",
+                "healthcheck"]
+BUNDLE_STEPS = ["preflight", "backup", "deploy", "deps", "migrate", "static", "restart",
+                "healthcheck"]
+
+
+class Upgrade(Screen):
+    name = "upgrade"
+    keys = [("o", "online"), ("b", "bundle"), ("f", "fetch tags"), ("k", "skip backup"),
+            ("F", "force past lock")]
+
+    def __init__(self, con):
+        super().__init__(con)
+        self.skip_backup = False
+        self.log_lines: list[str] = []
+        self.log_at = 0.0
+        self.fetched = ""
+        self.kind = "online"
+
+    def enter(self) -> None:
+        self.con.facts.kick("slow", "flags")
+
+    def _running(self) -> bool:
+        return bool(self._busy())
+
+    def _busy(self) -> str:
+        """Why not to launch now, from the poller's facts - never a fresh
+        systemctl on the main thread."""
+        fl = self.con.facts.get("flags") or {}
+        if fl.get("lock") or (self.con.ctx.app / ".upgrade.lock").exists():
+            return "an upgrade lock is held (.upgrade.lock)"
+        if fl.get("upgrade_unit") == "active":
+            return "danbyte-upgrade.service is running"
+        return ""
+
+    def _tail(self) -> None:
+        if time.monotonic() - self.log_at < 1:
+            return
+        self.log_at = time.monotonic()
+        path = self.con.ctx.app / ".upgrade.log"
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 16384))
+                self.log_lines = f.read().decode(errors="replace").splitlines()[-200:]
+        except OSError:
+            self.log_lines = []
+
+    def draw(self, y0: int, y1: int) -> None:
+        con, A, c = self.con, self.con.A, self.con.curses
+        ctx = con.ctx
+        slow = con.facts.get("slow") or {}
+        g = slow.get("git") or {}
+        fl = con.facts.get("flags") or {}
+        if ctx.shape == "docker":
+            y = con.panel(y0, 0, con.cols, "upgrade  docker")
+            con.kv(y, 0, "how", "a container install is upgraded by pulling a new image:")
+            con.kv(y + 1, 0, "", "docker compose pull && docker compose up -d")
+            return
+        git_install = (ctx.app / ".git").exists()
+        title = "version  " + ("git install" if git_install else "bundle install")
+        if con.django.get("self_upgrade_supported") is not None:
+            title += ", self-upgrade " + ("supported" if con.django["self_upgrade_supported"] else "unsupported")
+        y = con.panel(y0, 0, con.cols, title, self.fetched and f"tags fetched {self.fetched}", A[DIMA])
+        version = slow.get("version") or con.django.get("version") or "?"
+        row = [(version, c.A_BOLD)]
+        if git_install:
+            row.append((f"   commit {g.get('commit', '?')}   branch {g.get('branch', '?')}", 0))
+        con.kv(y, 0, "running", row)
+        y += 1
+        if git_install:
+            branch = g.get("branch", "")
+            clean = not g.get("dirty")
+            reason = []
+            if branch not in {"main", "master", "(detached)"}:
+                reason.append(f"working branch {branch}")
+            if not clean:
+                reason.append(f"{g.get('dirty')} files modified")
+            con.kv(y, 0, "guard", [("ok - main, master or a tag, clean tree", A[GOOD])] if not reason else
+                   [(" and ".join(reason) + " - the upgrader will refuse", A[WARN])])
+            y += 1
+            tags = g.get("tags") or []
+            parts = []
+            for t in tags:
+                parts.append((t + ("  " if t != g.get("exact") else " (running)  "),
+                              c.A_BOLD if t == g.get("exact") else 0))
+            con.kv(y, 0, "tags", parts or [("none - f fetches them", A[DIMA])])
+            y += 1
+        lock = fl.get("lock")
+        unit = fl.get("upgrade_unit", "?")
+        timers = (con.facts.get("units") or {}).get("timers") or {}
+        at = timers.get("danbyte-auto-upgrade")
+        row = []
+        if lock:
+            unit_active = unit == "active"
+            fresh = (lock.get("age") or 0) < 900
+            text = f"lock held ({lock.get('phase', '?')} via {lock.get('via', '?')}, {_span(lock.get('age'))})"
+            if not (unit_active or fresh):
+                text += " - unit inactive, likely stale"
+            row.append((text, A[WARN]))
+        else:
+            row.append(("lock free", 0))
+        row += [("   danbyte-upgrade.service ", 0), (unit, A[WARN] if unit == "active" else 0),
+                (f"   auto-upgrade timer {'on' if at and at.get('active') == 'active' else 'absent' if not at else 'off'}", 0)]
+        con.kv(y, 0, "state", row)
+        y += 1
+        st = fl.get("status")
+        row = []
+        if st:
+            state = st.get("state", "?")
+            row += [(state, A[GOOD] if state == "done" else A[BAD] if state == "failed" else A[WARN]),
+                    (f"   {st.get('version_from', '?')} -> {st.get('version_to', '?')}   step {st.get('step', '?')}   "
+                     f"{_span(st.get('age'))} ago", 0)]
+            if st.get("error"):
+                row.append((f"   {st['error'][:60]}", A[BAD]))
+        else:
+            row.append(("none", A[DIMA]))
+        con.kv(y, 0, "last run", row)
+        y += 1
+        con.kv(y, 0, "backup", [("skipped - no net if a migration fails", A[WARN]) if self.skip_backup
+                                else ("pre-upgrade backup on", 0)])
+        y += 2
+        running = self._running()
+        y = con.panel(y, 0, con.cols, "run", "running" if running else "idle", A[WARN] if running else A[DIMA])
+        cur = (st or {}).get("step", "")
+        bundle_run = (not git_install) or self.kind == "bundle" or cur in {"deploy", "static"} \
+            or (st or {}).get("version_to", "").endswith(".tar.gz")
+        steps = BUNDLE_STEPS if bundle_run else ONLINE_STEPS
+        state = (st or {}).get("state", "")
+        x = 2
+        for step in steps:
+            attr = 0
+            if st and running and step == cur:
+                attr = c.A_REVERSE
+            elif state == "failed" and step == cur:
+                attr = A[BAD]
+            con.put(y, x, step, attr)
+            x += len(step) + 3
+        if cur == "rollback" or state == "failed":
+            con.put(y, x, state if state == "failed" else cur, A[BAD])
+        y += 1
+        pct = int((st or {}).get("pct") or 0) if st else 0
+        width = max(10, con.cols - 12)
+        fill = pct * width // 100
+        con.put(y, 2, "[" + "#" * fill + " " * (width - fill) + "]", 0)
+        con.put(y, 4 + width, f"{pct:3d}%")
+        y += 2
+        self._tail()
+        y = con.panel(y, 0, con.cols, "output  .upgrade.log")
+        for line in self.log_lines[-(y1 - y):]:
+            con.put(y, 2, line)
+            y += 1
+
+    def key(self, ch) -> bool:
+        con = self.con
+        ctx = con.ctx
+        if ctx.shape == "docker":
+            return False
+        if ch == "k":
+            self.skip_backup = not self.skip_backup
+        elif ch == "f":
+            def go():
+                newest_tag(ctx, fetch=True)
+                self.fetched = time.strftime("%H:%M")
+                con.facts.kick("slow")
+            con.run("fetching", go)
+        elif ch == "o":
+            g = (con.facts.get("slow") or {}).get("git") or {}
+            if not g:
+                con.say("not a git install - use b for a bundle", con.A[WARN])
+                return True
+            tags = g.get("tags") or []
+
+            def picked(tag):
+                if not tag:
+                    return
+                self.kind = "online"
+                con.typed(f"upgrade to {tag} online, backup {'off' if self.skip_backup else 'on'}",
+                          tag, lambda: self._launch(tag, None))
+            con.ask("tag:", picked, default=g.get("newest") or (tags[0] if tags else ""),
+                    completer=complete_words(tags))
+        elif ch == "b":
+            def picked(path):
+                if not path:
+                    return
+                p = Path(path).expanduser()
+                if not p.is_file():
+                    con.say(f"no such bundle: {p}", con.A[BAD])
+                    return
+                import re
+                m = re.match(r"^danbyte-(.*)-linux", p.name)
+                version = m.group(1) if m else p.name
+                self.kind = "bundle"
+                con.typed(f"upgrade from {p.name}, backup {'off' if self.skip_backup else 'on'}",
+                          version, lambda: self._launch(version, p))
+            con.ask("bundle:", picked, completer=complete_path)
+        elif ch == "F":
+            busy = self._busy()
+            if not busy:
+                con.say("nothing to force - no lock is held", 0)
+            else:
+                con.confirm(f"{busy}. ignore it?", lambda: setattr(self, "_force", True))
+        else:
+            return False
+        return True
+
+    def _launch(self, version: str, bundle: Path | None) -> None:
+        """The same transient unit the web UI launches, so a dropped ssh
+        session cannot kill an upgrade between migrate and restart, and the
+        app's own busy check sees it. Output lands in .upgrade.log."""
+        con = self.con
+        ctx = con.ctx
+        busy = self._busy()
+        if busy and not getattr(self, "_force", False):
+            self.note("warn", f"{busy} - F to force")
+            return
+        self._force = False
+        app = ctx.app
+        script = app / "scripts" / ("danbyte-upgrade-bundle.sh" if bundle else "danbyte-upgrade.sh")
+        if not script.exists():
+            self.note("bad", f"{script} is missing")
+            return
+
+        def go():
+            arg = version
+            if bundle:
+                try:
+                    arg = str(stage_bundle(ctx, bundle))
+                except SystemExit:
+                    return
+            log = app / ".upgrade.log"
+            with contextlib.suppress(OSError):
+                log.write_text("")
+            argv = ["systemd-run", "--user", "--collect", "--unit", "danbyte-upgrade",
+                    "-p", f"StandardOutput=append:{log}", "-p", "StandardError=inherit",
+                    f"--setenv=DANBYTE_DIR={app}"]
+            if self.skip_backup:
+                argv.append("--setenv=DANBYTE_SKIP_BACKUP=1")
+            argv += ["bash", str(script), arg]
+            if ctx.as_service:
+                argv = _user_env(ctx.svc_home, ctx.svc_uid, ctx.svc_user) + argv
+            r = sh(argv, cwd=str(app), timeout=20)
+            if r.ok:
+                self.note("ok", f"launched danbyte-upgrade.service for {version}")
+            else:
+                self.note("bad", (r.err or r.out).strip()[:200] or "systemd-run failed")
+            con.facts.kick("flags")
+        con.run("launch", go)
+
+
+# -- tls -----------------------------------------------------------------------
+
+class Tls(Screen):
+    name = "tls"
+    keys = [("i", "install"), ("g", "self-signed"), ("n", "renew acme"), ("l", "reload nginx"),
+            ("r", "re-read")]
+
+    def __init__(self, con):
+        super().__init__(con)
+        self.facts: dict = {}
+        self.read_at = ""
+        self.review: dict | None = None
+        self.probe_until = 0.0
+
+    def enter(self) -> None:
+        self.reread()
+
+    def reread(self) -> None:
+        con = self.con
+
+        def go():
+            self.facts = tls_facts(con.ctx)
+            self.read_at = time.strftime("%H:%M:%S")
+            con.dirty.set()
+        con.run("tls", go)
+
+    def draw(self, y0: int, y1: int) -> None:
+        con, A = self.con, self.con.A
+        if self.review:
+            return self._draw_review(y0, y1)
+        f = self.facts
+        y = con.panel(y0, 0, con.cols, "certificate",
+                      f"read {self.read_at}" if self.read_at else "reading", A[DIMA])
+        if not f:
+            con.put(y, 0, "reading", A[DIMA])
+            return self.pane(y + 2, y1)
+        if f.get("unreadable"):
+            con.kv(y, 0, "nginx", [("config unreadable - needs sudo (! authenticates, r re-reads)", A[WARN])])
+            return self.pane(y + 2, y1)
+        cf = f["cert"]
+        if not cf["ok"]:
+            con.kv(y, 0, "subject", [(cf["error"], A[BAD])])
+            con.kv(y + 1, 0, "files", [(f["cert_path"], A[DIMA])])
+            return self.pane(y + 3, y1)
+        con.kv(y, 0, "subject", [(cf["subject"], 0), ("   self-signed" if cf["self_signed"] else "", A[DIMA])])
+        y += 1
+        if not cf["self_signed"]:
+            con.kv(y, 0, "issuer", cf["issuer"])
+            y += 1
+        con.kv(y, 0, "names", "  ".join(n.split(":", 1)[1] for n in cf["names"]) or "-")
+        y += 1
+        left = cf["days_left"]
+        con.kv(y, 0, "valid", [(f"{cf['not_before']:%Y-%m-%d %H:%M}  to  {cf['not_after']:%Y-%m-%d %H:%M}", 0),
+                               ("     ", 0),
+                               (f"expired {-left} days ago" if left < 0 else f"{left} days left",
+                                A[BAD] if left < 7 else A[WARN] if left < 30 else A[GOOD])])
+        y += 1
+        pm = f.get("pair")
+        con.kv(y, 0, "key", [(f.get("key_kind") or "?", 0), ("   ", 0),
+                             ("matches the certificate", A[GOOD]) if pm else
+                             ("does not match the certificate", A[BAD]) if pm is False else
+                             ("pair not checked", A[WARN])])
+        y += 1
+        con.kv(y, 0, "sha256", [(cf["fingerprint"], A[DIMA])])
+        y += 1
+        con.kv(y, 0, "files", [(f["cert_path"], 0)])
+        con.kv(y + 1, 0, "", [(f["key_path"], 0)])
+        y += 3
+        y = con.panel(y, 0, con.cols, "serving")
+        served = f.get("served")
+        row = []
+        if served is None:
+            row.append(("nothing answered on :443", A[WARN]))
+        else:
+            row += [("same as disk", A[GOOD]) if served["same"] else ("differs from disk - reload nginx", A[WARN]),
+                    (f"   {served['version']}   sni {served['where'].split('sni ', 1)[-1]}"
+                     if "sni" in served["where"] else f"   {served['version']}", A[DIMA])]
+        con.kv(y, 0, "port 443", row)
+        y += 1
+        ng = f.get("nginx", "?")
+        names = f.get("server_names") or []
+        missing = f.get("uncovered") or []
+        row = [(ng, A[GOOD] if ng == "active" else A[BAD]), ("   server_name ", 0), (" ".join(names) or "-", 0),
+               ("   ", 0)]
+        row.append(("all covered", A[GOOD]) if names and not missing else
+                   (f"not in the certificate: {' '.join(missing)}", A[WARN]) if missing else ("", 0))
+        con.kv(y, 0, "nginx", row)
+        y += 1
+        stg = f.get("staging")
+        con.kv(y, 0, "staging", [("deploy/nginx/certs/danbyte.crt   ", A[DIMA]),
+                                 ("absent", A[DIMA]) if stg is None else ("same as live", A[GOOD]) if stg
+                                 else ("differs from live - a bundle upgrade would revert it", A[WARN])])
+        y += 1
+        timers = (con.facts.get("units") or {}).get("timers") or {}
+        at = timers.get("danbyte-acme-renew")
+        con.kv(y, 0, "acme timer", [(("scheduled" if at.get("active") == "active" else "off") if at
+                                     else "not installed", 0 if at and at.get("active") == "active" else A[DIMA])])
+        y += 2
+        self.pane(y, y1)
+
+    def _draw_review(self, y0: int, y1: int) -> None:
+        con, A, c = self.con, self.con.A, self.con.curses
+        r = self.review
+        y = con.panel(y0, 0, con.cols, "install  review before anything is written")
+        con.kv(y, 0, "source", [(r["source"], 0), ("   ", 0), (r["source_kind"], A[DIMA])])
+        y += 1
+        con.kv(y, 0, "", [(r["source_detail"], A[DIMA])])
+        y += 2
+        live, new = r["live"], r["new"]
+        con.put(y, 18, "LIVE NOW", c.A_BOLD)
+        con.put(y, 60, "NEW", c.A_BOLD)
+        y += 1
+
+        def pair(label, a, b, attr_b=0):
+            nonlocal y
+            con.put(y, 0, label, A[DIMA], KEY_W)
+            con.put(y, 18, a, 0, 41)
+            con.put(y, 60, b, attr_b)
+            y += 1
+
+        con.put(y, 0, "", 0)
+        pair("subject", live.get("subject", "-"), new["subject"])
+        pair("issuer", live.get("issuer", "-"), new["issuer"])
+        ln, nn = live.get("names") or ["-"], new["names"] or ["-"]
+        for i in range(max(len(ln), len(nn))):
+            pair("names" if i == 0 else "", ln[i] if i < len(ln) else "", nn[i] if i < len(nn) else "")
+        nleft = new.get("days_left")
+        pair("expires",
+             f"{live['not_after']:%Y-%m-%d}  {live['days_left']}d" if live.get("not_after") else "-",
+             f"{new['not_after']:%Y-%m-%d}  {nleft}d" if new.get("not_after") else "-",
+             0 if nleft is None else A[BAD] if nleft < 7 else A[WARN] if nleft < 30 else 0)
+        pair("key", r["live_key_kind"] or "-", r["new_key_kind"] or "-")
+        pair("sha256", (live.get("fingerprint") or "-")[:23], new["fingerprint"][:23])
+        y += 1
+        for i, (verdict, text) in enumerate(r["checks"]):
+            con.kv(y, 0, "checks" if i == 0 else "", [(text, 0)], con.cols - 8)
+            con.put(y, con.cols - 7, verdict, A[BAD] if verdict == "blocks" else A[WARN] if verdict == "warn" else A[GOOD])
+            y += 1
+        y += 1
+        con.kv(y, 0, "writes", f"{r['dest_cert']} 644   {r['dest_key']} 640")
+        y += 1
+        con.kv(y, 0, "", [("previous pair kept aside until nginx -t passes; staging copies refreshed", A[DIMA])])
+        y += 1
+        con.kv(y, 0, "then", "sudo nginx -t  ->  sudo systemctl reload nginx  ->  :443 fingerprint check")
+        y += 1
+        if r["blocked"]:
+            con.kv(y + 1, 0, "verdict", [(f"not installable: {r['blocked']}", A[BAD])])
+
+    def footer(self):
+        return [("esc", "cancel")] if self.review else self.keys
+
+    def key(self, ch) -> bool:
+        con = self.con
+        if self.review:
+            return True             # the typed prompt owns the keys; esc handled by the prompt
+        if con.ctx.shape == "docker" and ch in ("i", "g", "l"):
+            con.say("TLS terminates in the compose nginx service; the certificate is mounted", con.A[WARN])
+            return True
+        if ch == "r":
+            self.reread()
+        elif ch == "l":
+            con.confirm("nginx -t, then reload nginx?",
+                        lambda: con.on_terminal(_nginx_reload, wait=False) or self.reread())
+        elif ch == "n":
+            con.run("acme renew", lambda: cmd_tls(con.ctx, argparse.Namespace(
+                action="renew", cert=None, key=None, host="", source=None, chain=None)))
+        elif ch == "g":
+            def picked(name):
+                if not name:
+                    return
+                cn = self.facts.get("cert", {}).get("cn", "") if self.facts else ""
+                con.typed(f"replace CN={cn or '?'} with a self-signed pair for {name}", name,
+                          lambda: con.on_terminal(lambda: cmd_tls(con.ctx, argparse.Namespace(
+                              action="self-signed", cert=None, key=None, host=name, source=None,
+                              chain=None))) or self.reread())
+            cur = self.facts.get("cert", {}).get("cn", "") if self.facts else ""
+            con.ask("name:", picked, default=cur or os.uname().nodename)
+        elif ch == "i":
+            con.ask("install from (cert, key, live/ directory or one PEM):", self._picked,
+                    completer=complete_path)
+        else:
+            return False
+        return True
+
+    # install ---------------------------------------------------------------
+
+    def _picked(self, path):
+        if not path:
+            return
+        con = self.con
+        src = Path(path.strip().strip("'\"")).expanduser()
+        if not sudo_exists(src):
+            con.say(f"no such file or directory: {src}", con.A[BAD])
+            return
+        kind = classify_tls_source(src)
+        if kind == "dir" or kind == "both":
+            self._build_review(cert=None, key=None, source=str(src), chain=None)
+        elif kind == "cert":
+            con.ask("key:", lambda k: k and self._maybe_chain(str(src), k), completer=complete_path)
+        elif kind == "key":
+            con.ask("certificate:", lambda c: c and self._maybe_chain(c, str(src)),
+                    completer=complete_path)
+        elif kind == "encrypted":
+            con.say("encrypted key - decrypt it with openssl pkey first", con.A[BAD])
+        else:
+            con.say(f"{src}: no certificate or key in it", con.A[BAD])
+
+    def _maybe_chain(self, cert: str, key: str) -> None:
+        con = self.con
+        facts = cert_facts(cert)
+        blocks = _pem_blocks(sudo_read(cert), "CERTIFICATE")
+        if facts["ok"] and not facts["self_signed"] and len(blocks) == 1:
+            con.ask("chain (blank for none):",
+                    lambda ch: self._build_review(cert=cert, key=key, source=None, chain=ch or None)
+                    if ch is not None else None, completer=complete_path)
+        else:
+            self._build_review(cert=cert, key=key, source=None, chain=None)
+
+    def _build_review(self, **inputs) -> None:
+        con = self.con
+
+        def go():
+            self.review = tls_review(con.ctx, self.facts, **inputs)
+            con.dirty.set()
+
+        def after():
+            r = self.review
+            if not r:
+                return
+            if r["blocked"]:
+                con.ask("not installable - esc to go back", lambda _v: self._cancel(), kind="typed",
+                        word="\x00")
+            else:
+                word = r["new"]["cn"] or (r["new"]["names"][0].split(":", 1)[1] if r["new"]["names"] else "install")
+                con.ask(f"type {word} to install:", lambda v: self._install() if v is not None
+                        else self._cancel(), kind="typed", word=word)
+        con.run("review", go, after=after)
+
+    def _cancel(self) -> None:
+        r, self.review = self.review, None
+        if r and r.get("scratch"):
+            shutil.rmtree(r["scratch"], ignore_errors=True)
+        self.con.dirty.set()
+
+    def _install(self) -> None:
+        con = self.con
+        r, self.review = self.review, None
+        if not r:
+            return
+
+        def go():
+            try:
+                if _install_pair(con.ctx, Path(r["cert"]), Path(r["key"])):
+                    return 1
+                return _nginx_reload()
+            finally:
+                if r.get("scratch"):
+                    shutil.rmtree(r["scratch"], ignore_errors=True)
+        con.on_terminal(go, wait=False)
+        self.probe_until = time.monotonic() + 3
+        self.reread()
+
+
+def classify_tls_source(src: Path) -> str:
+    """dir / both / cert / key / encrypted / none - by content, never by
+    name, so two files can be handed over in either order."""
+    if sudo_isdir(src):
+        return "dir"
+    text = sudo_read(src)[:65536]
+    if "ENCRYPTED PRIVATE KEY" in text or "Proc-Type: 4,ENCRYPTED" in text:
+        return "encrypted"
+    has_c = bool(_pem_blocks(text, "CERTIFICATE"))
+    has_k = bool(_pem_blocks(text, "PRIVATE KEY"))
+    return "both" if has_c and has_k else "cert" if has_c else "key" if has_k else "none"
+
+
+def key_kind(path: str | Path) -> str:
+    """``RSA 2048`` / ``EC prime256v1`` from the public key of a certificate
+    or a key file (the key is read through sudo -n when needed)."""
+    r = sh(["openssl", "x509", "-in", str(path), "-noout", "-text"], timeout=5)
+    if not r.ok:
+        r = sh(["openssl", "pkey", "-in", str(path), "-noout", "-text_pub", "-passin", "pass:"], timeout=5)
+        if not r.ok:
+            r = sh(["sudo", "-n", "openssl", "pkey", "-in", str(path), "-noout", "-text_pub",
+                    "-passin", "pass:"], timeout=5)
+    if not r.ok:
+        return ""
+    algo = bits = curve = ""
+    for line in r.out.splitlines():
+        t = line.strip()
+        if t.startswith("Public Key Algorithm:"):
+            algo = t.split(":", 1)[1].strip()
+        elif "Public-Key:" in t:
+            bits = t.split("(", 1)[1].split()[0] if "(" in t else ""
+        elif t.startswith(("ASN1 OID:", "NIST CURVE:")):
+            curve = t.split(":", 1)[1].strip()
+    if "rsa" in algo.lower() or (not algo and bits and not curve):
+        return f"RSA {bits}".strip()
+    if "ec" in algo.lower() or curve:
+        return f"EC {curve or bits}".strip()
+    return algo or ""
+
+
+def served_fingerprint(host: str, port: int = 443, sni: str = "") -> dict | None:
+    """What :443 actually presents right now, as openssl's colon
+    fingerprint, so the screen can say whether a reload took."""
+    import hashlib
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with socket.create_connection((host, port), timeout=2) as raw, \
+                ctx.wrap_socket(raw, server_hostname=sni or None) as s:
+            der = s.getpeercert(binary_form=True)
+            version = s.version() or ""
+    except (OSError, ssl.SSLError):
+        return None
+    digest = hashlib.sha256(der or b"").hexdigest().upper()
+    return {"fingerprint": ":".join(digest[i:i + 2] for i in range(0, len(digest), 2)),
+            "version": version, "where": f"{host}:{port}" + (f" sni {sni}" if sni else "")}
+
+
+def nginx_text() -> str:
+    r = sh(["sudo", "-n", "nginx", "-T"], timeout=10)
+    if not r.ok:
+        r = sh(["nginx", "-T"], timeout=10)
+    return r.out if r.ok else ""
+
+
+def server_names(text: str) -> list[str]:
+    names: list[str] = []
+    for line in text.splitlines():
+        t = line.strip()
+        if t.startswith("server_name "):
+            for tok in t[len("server_name"):].rstrip(";").split():
+                if tok not in {"_", "localhost", "''", '""'} and tok not in names:
+                    names.append(tok)
+    return names
+
+
+def covered(name: str, sans: list[str]) -> bool:
+    for san in sans:
+        kind, value = san.split(":", 1)
+        if kind == "IP" and value == name:
+            return True
+        if kind == "DNS":
+            if value == name:
+                return True
+            if value.startswith("*.") and name.count(".") == value.count(".") and \
+                    name.endswith(value[1:]):
+                return True
+    return False
+
+
+def tls_facts(ctx: Ctx) -> dict:
+    cert, key = _live_cert_pair()
+    if not cert:
+        return {"unreadable": True}
+    cf = cert_facts(cert)
+    pm = pair_matches(cert, key) if key else None
+    text = nginx_text()
+    names = server_names(text)
+    sni = next((n.split(":", 1)[1] for n in cf["names"] if n.startswith("DNS:")), "")
+    served = served_fingerprint("127.0.0.1", 443, sni)
+    if served:
+        served["same"] = served["fingerprint"] == cf.get("fingerprint")
+    staging = ctx.app / "deploy" / "nginx" / "certs" / "danbyte.crt"
+    stg = None
+    if staging.is_file():
+        stg = cert_facts(staging).get("fingerprint") == cf.get("fingerprint")
+    r = sh(["systemctl", "show", "nginx.service", "-p", "ActiveState"], timeout=5)
+    return {"cert_path": cert, "key_path": key, "cert": cf, "pair": pm, "key_kind": key_kind(cert),
+            "served": served, "staging": stg, "server_names": names,
+            "uncovered": [n for n in names if not covered(n, cf["names"])] if cf["ok"] else [],
+            "nginx": r.out.strip().split("=", 1)[-1] if r.ok else "?"}
+
+
+def tls_review(ctx: Ctx, live_facts: dict, *, cert, key, source, chain) -> dict:
+    """Everything the operator should see before a certificate is written:
+    the live pair beside the new one, and the checks that block or warn."""
+    live = (live_facts or {}).get("cert") or {}
+    try:
+        cpath, kpath, scratch = resolve_tls_input(cert, key, source, chain)
+    except TlsInputError as exc:
+        return {"blocked": str(exc),
+                "source": source or cert or "", "source_kind": "", "source_detail": "",
+                "live": live, "new": {"subject": "", "issuer": "", "names": [], "fingerprint": "",
+                                      "cn": ""},
+                "live_key_kind": "", "new_key_kind": "", "checks": [], "dest_cert": "",
+                "dest_key": "", "scratch": ""}
+    new = cert_facts(cpath)
+    blocks = _pem_blocks(sudo_read(cpath), "CERTIFICATE")
+    src = Path(source).expanduser() if source else Path(cert)
+    if source and src.is_dir():
+        kind, detail = "directory", f"cert {Path(cpath).name}  key {Path(kpath).name}"
+        if (src / "fullchain.pem").exists():
+            kind = "Let's Encrypt live directory"
+    elif source:
+        kind, detail = "combined PEM", f"{len(blocks)} certificate block(s) + key, split into scratch"
+    else:
+        kind, detail = "certificate + key" + (" + chain" if chain else ""), f"key {key}"
+    if len(blocks) > 1:
+        detail += f"  ({len(blocks) - 1} intermediate)"
+    checks: list[tuple[str, str]] = []
+    blocked = ""
+    if not new["ok"]:
+        blocked = new["error"] or "certificate unreadable"
+        checks.append(("blocks", blocked))
+    pm = pair_matches(cpath, kpath)
+    if pm is False:
+        checks.append(("blocks", "key does not match certificate"))
+        blocked = blocked or "key does not match certificate"
+    elif pm is None:
+        checks.append(("warn", "could not compare the key with the certificate"))
+    else:
+        checks.append(("ok", "key matches the certificate"))
+    if new["ok"]:
+        left = new["days_left"]
+        if left < 0:
+            checks.append(("blocks", f"expired {-left} days ago"))
+            blocked = blocked or "certificate expired"
+        else:
+            from datetime import datetime, timezone
+            nb = new["not_before"]
+            if nb and nb > datetime.now(timezone.utc):  # noqa: UP017
+                checks.append(("blocks", f"not valid before {nb:%Y-%m-%d %H:%M}"))
+                blocked = blocked or "certificate not yet valid"
+            else:
+                days = f"{left} day" + ("" if left == 1 else "s")
+                checks.append(("warn", f"valid, but only {days} left") if left < 7
+                              else ("ok", f"valid, {days} left"))
+    nk = key_kind(cpath)
+    if nk and not nk.startswith(("RSA", "EC")):
+        checks.append(("blocks", f"key type {nk} is not RSA or EC"))
+        blocked = blocked or "unsupported key type"
+    if len(blocks) > 1:
+        checks.append(("ok", f"chain present, {len(blocks) - 1} intermediate, leaf first"))
+    elif new["ok"] and not new["self_signed"]:
+        checks.append(("warn", "no intermediate in the file - clients may not build the chain"))
+    names = server_names(nginx_text())
+    for n in names:
+        if new["ok"] and not covered(n, new["names"]):
+            checks.append(("warn", f"server_name {n} is not in the new certificate"))
+    dropped = [n for n in (live.get("names") or []) if n not in new["names"]]
+    if dropped:
+        checks.append(("warn", "drops " + " ".join(dropped)))
+    if live.get("fingerprint") and live["fingerprint"] == new.get("fingerprint"):
+        checks.append(("warn", "identical to the live certificate"))
+    dest_cert, dest_key = _live_cert_pair()
+    if not (dest_cert and dest_key):
+        checks.append(("blocks", "live nginx config unreadable - nowhere safe to write"))
+        blocked = blocked or "nginx config unreadable"
+    return {"blocked": blocked, "source": str(src), "source_kind": kind, "source_detail": detail,
+            "live": live, "new": new, "live_key_kind": (live_facts or {}).get("key_kind", ""),
+            "new_key_kind": nk, "checks": checks, "dest_cert": dest_cert, "dest_key": dest_key,
+            "cert": str(cpath), "key": str(kpath), "scratch": scratch}
+
+
+# -- users ---------------------------------------------------------------------
+
+class Users(Screen):
+    name = "users"
+    keys = [("c", "create superuser"), ("p", "set password"), ("m", "clear mfa"),
+            ("u", "unlock"), ("/", "find"), ("R", "reload")]
+
+    def __init__(self, con):
+        super().__init__(con)
+        self.rows: list = []
+        self.loaded = ""
+        self.loading = False
+
+    def enter(self) -> None:
+        self.load()
+
+    def load(self) -> None:
+        con = self.con
+
+        def go():
+            self.loading = True
+            rows, err = shell_json(con.ctx, LIST_USERS)
+            if rows is None:
+                self.note("bad", err)
+            else:
+                self.rows = rows
+            self.loaded = time.strftime("%H:%M:%S")
+            self.loading = False
+            con.dirty.set()
+        con.run("users", go)
+
+    def draw(self, y0: int, y1: int) -> None:
+        con, A, c = self.con, self.con.A, self.con.curses
+        y = con.panel(y0, 0, con.cols, "users  50 most recently signed in",
+                      "loading" if self.loading else f"loaded {self.loaded}", A[DIMA])
+        con.put(y, 2, f"{'USERNAME':<18}{'EMAIL':<32}{'ACTIVE':<7}{'STAFF':<6}{'SU':<5}{'MFA':<11}LAST LOGIN",
+                A[DIMA])
+        y += 1
+        room = max(3, (y1 - y) - 8)
+        self.cursor = min(self.cursor, max(0, len(self.rows) - 1))
+        if self.cursor < self.scroll:
+            self.scroll = self.cursor
+        if self.cursor >= self.scroll + room:
+            self.scroll = self.cursor - room + 1
+        for i, u in enumerate(self.rows[self.scroll:self.scroll + room]):
+            sel = i + self.scroll == self.cursor
+            dim = A[DIMA] if not u["active"] and not sel else 0
+            con.put(y + i, 0, ">" if sel else " ", c.A_REVERSE if sel else 0)
+            con.put(y + i, 2, f"{u['username'][:17]:<18}", c.A_REVERSE if sel else dim)
+            con.put(y + i, 20, f"{(u['email'] or '')[:31]:<32}", dim)
+            con.put(y + i, 52, "yes" if u["active"] else "no", A[WARN] if not u["active"] else dim)
+            con.put(y + i, 59, "yes" if u["staff"] else "no", dim)
+            con.put(y + i, 65, "yes" if u["superuser"] else "no", dim)
+            if u.get("fails", 0) >= 15:
+                con.put(y + i, 70, f"locked {u['fails']}", A[BAD])
+            else:
+                con.put(y + i, 70, u.get("mfa", "-"), dim)
+            con.put(y + i, 81, _local(u["last_login"]), dim)
+        if not self.rows and not self.loading:
+            con.put(y, 2, "no users listed", A[DIMA])
+        y += room
+        self.pane(y, y1)
+
+    def key(self, ch) -> bool:
+        con, c = self.con, self.con.curses
+        u = self.rows[self.cursor] if self.rows else None
+        if ch in ("j", c.KEY_DOWN):
+            self.move(1, len(self.rows))
+        elif ch in ("k", c.KEY_UP):
+            self.move(-1, len(self.rows))
+        elif ch == "R":
+            self.load()
+        elif ch == "c":
+            con.on_terminal(lambda: manage(con.ctx, ["createsuperuser"], interactive=True).code)
+            self.load()
+        elif ch == "/":
+            def done(name):
+                if name:
+                    con.run("user", lambda: cmd_users(con.ctx, argparse.Namespace(action="show", username=name)))
+            con.ask("username:", done)
+        elif u and ch == "p":
+            con.on_terminal(lambda: manage(con.ctx, ["changepassword", u["username"]], interactive=True).code)
+        elif u and ch == "m":
+            con.typed(f"clear the authenticator enrolment for {u['username']}", u["username"],
+                      lambda: con.run("clear-mfa", lambda: cmd_users(
+                          con.ctx, argparse.Namespace(action="clear-mfa", username=u["username"])),
+                          after=self.load))
+        elif u and ch == "u":
+            con.confirm(f"unlock {u['username']}?", lambda: con.run("unlock", lambda: cmd_users(
+                con.ctx, argparse.Namespace(action="unlock", username=u["username"])), after=self.load))
+        else:
+            return False
+        return True
+
+
+# -- maintenance and diagnostics ------------------------------------------------
+
+JOB_TIMERS = {"reindex": "danbyte-search-reindex", "prune": "danbyte-prune",
+              "prune-changelog": "danbyte-prune"}
+#: What the tab lists: the rebuild first, then the scheduled jobs on demand.
+CONSOLE_JOBS = {"rebuild": "deps, migrate, frontend build, restart what runs",
+                **{k: v[1] for k, v in MAINTENANCE_JOBS.items()}}
+
+
+class Maintenance(Screen):
+    name = "maintenance"
+    keys = [("enter", "run"), ("j/k", "move")]
+
+    def start(self, name: str) -> None:
+        """Run one job in the worker; its output lands in this tab's pane."""
+        con = self.con
+        if name == "rebuild":
+            con.run("rebuild", lambda: cmd_rebuild(con.ctx, argparse.Namespace(
+                skip_deps=False, skip_frontend=False, force=False)),
+                after=lambda: con.facts.kick("units"))
+        else:
+            con.run(name, lambda: cmd_maintenance(con.ctx, argparse.Namespace(action=name)),
+                    after=lambda: con.facts.kick("units"))
+
+    def draw(self, y0: int, y1: int) -> None:
+        con, A, c = self.con, self.con.A, self.con.curses
+        y = con.panel(y0, 0, con.cols, "jobs  on demand")
+        con.put(y, 2, f"{'JOB':<18}{'WHAT':<45}{'TIMER':<17}{'LAST RUN':<18}RESULT", A[DIMA])
+        y += 1
+        timers = (con.facts.get("units") or {}).get("timers") or {}
+        jobs = list(CONSOLE_JOBS)
+        for i, name in enumerate(jobs):
+            what = CONSOLE_JOBS[name]
+            sel = i == self.cursor
+            con.put(y + i, 0, ">" if sel else " ", c.A_REVERSE if sel else 0)
+            con.put(y + i, 2, f"{name:<18}", c.A_REVERSE if sel else 0)
+            con.put(y + i, 20, f"{what[:44]:<45}")
+            t = JOB_TIMERS.get(name)
+            tm = timers.get(t) if t else None
+            if not t:
+                con.put(y + i, 65, "-", A[DIMA])
+            elif not tm:
+                con.put(y + i, 65, f"{_short(t):<17}not installed", A[DIMA])
+            else:
+                con.put(y + i, 65, f"{_short(t):<17}")
+                if tm.get("exit"):
+                    con.put(y + i, 82, time.strftime("%Y-%m-%d %H:%M", time.localtime(tm["exit"])))
+                res = tm.get("result") or "-"
+                con.put(y + i, 100, res, A[GOOD] if res == "success" else A[BAD] if res != "-" else 0)
+        y += len(jobs) + 1
+        busy = con.worker.label in jobs
+        self.pane(y, y1, f"output  {con.worker.label}" if busy else "output",
+                  f"running {_span(time.monotonic() - con.worker.started)}" if busy else "",
+                  A[WARN])
+
+    def key(self, ch) -> bool:
+        con, c = self.con, self.con.curses
+        jobs = list(CONSOLE_JOBS)
+        if ch in ("j", c.KEY_DOWN):
+            self.move(1, len(jobs))
+        elif ch in ("k", c.KEY_UP):
+            self.move(-1, len(jobs))
+        elif ch in (10, 13, "\n", "\r", c.KEY_ENTER):
+            name = jobs[self.cursor]
+            if name.startswith("prune"):
+                con.confirm(f"{name} deletes history. run it?", lambda: self.start(name))
+            elif name == "rebuild":
+                con.confirm("rebuild: deps, migrate, frontend build, restart what runs?",
+                            lambda: self.start(name))
+            else:
+                self.start(name)
+        else:
+            return False
+        return True
+
+
+class Diagnostics(Screen):
+    name = "diagnostics"
+    keys = [("enter", "re-run"), ("D", "deploy checks"), ("/", "guard url")]
+
+    def __init__(self, con):
+        super().__init__(con)
+        self.ran = ""
+    def enter(self) -> None:
+        self.con.facts.kick("ports")
+        self.run_checks(False)
+
+    def run_checks(self, deploy: bool, url: str = "") -> None:
+        con = self.con
+
+        def go():
+            self.out.clear()
+            cmd_diagnostics(con.ctx, argparse.Namespace(deploy=deploy, url=url))
+            self.ran = time.strftime("%H:%M:%S")
+        con.run("diagnostics", go)
+
+    def draw(self, y0: int, y1: int) -> None:
+        con, A = self.con, self.con.A
+        probes = con.facts.get("ports") or {}
+        y = con.panel(y0, 0, con.cols, "checks", f"ran {self.ran}" if self.ran else
+                      ("running" if con.worker.busy else ""), A[DIMA])
+        h = (con.facts.get("health") or {}).get("health")
+        where = (con.facts.get("health") or {}).get("where", "")
+        row = []
+        if h:
+            row += [(h.get("status", "?"), A[GOOD] if h.get("status") == "ok" else A[WARN]),
+                    ("   db ", 0), ("up" if h.get("database") else "down", A[GOOD] if h.get("database") else A[BAD]),
+                    (f"   version {h.get('version', '?')}   {where}", A[DIMA])]
+        else:
+            row.append((f"unreachable {where[:60]}", A[BAD]))
+        con.kv(y, 0, "health", row)
+        y += 1
+        con.kv(y, 0, "sudo", [(con.sudo.removeprefix("sudo "), 0 if con.sudo == "sudo ok" else A[WARN])])
+        y += 1
+        if probes.get("nginx_t") is not None:
+            con.kv(y, 0, "nginx -t", [("ok", A[GOOD]) if probes["nginx_t"] else ("fails", A[BAD])])
+            y += 1
+        row = []
+        for label, open_ in (probes.get("ports") or {}).items():
+            row += [(f"{label} ", 0), ("open" if open_ else "closed", A[GOOD] if open_ else A[DIMA]), ("   ", 0)]
+        con.kv(y, 0, "ports", row)
+        y += 2
+        self.pane(y, y1)
+
+    def key(self, ch) -> bool:
+        con, c = self.con, self.con.curses
+        if ch in (10, 13, "\n", "\r", c.KEY_ENTER):
+            self.run_checks(False)
+        elif ch == "D":
+            self.run_checks(True)
+        elif ch == "/":
+            con.ask("url:", lambda v: self.run_checks(False, v) if v else None)
+        else:
+            return False
+        return True
+
+
+def console(ctx: Ctx) -> int:
+    import curses
+
+    def go(stdscr):
+        return Console(stdscr, ctx).loop()
+    global CONSOLE_OWNS_TTY, SINK
+    CONSOLE_OWNS_TTY = True
+    try:
+        return curses.wrapper(go)
+    finally:
+        CONSOLE_OWNS_TTY = False
+        SINK = None
+
+
 # ── cli ─────────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="danbyte-admin",
-        description="Host-side administration for Danbyte. Run bare for a menu.")
+        description="Host-side administration for Danbyte. Run bare for the console.")
+    p.add_argument("--plain", action="store_true",
+                   help="the numbered menu instead of the full-screen console")
     sub = p.add_subparsers(dest="cmd")
 
     sub.add_parser("status", help="units, database, Redis, version, drift, disk")
@@ -1146,6 +4703,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("units", nargs="*", help="unit names; blank means all")
     s.add_argument("-n", "--lines", type=int, default=200)
     s.add_argument("-f", "--follow", action="store_true")
+    s.add_argument("--active", action="store_true",
+                   help="with no units: only the ones running now (never starts a stopped one)")
+
+    rb = sub.add_parser("rebuild", help="deps, migrate, frontend build, restart - on the code here")
+    rb.add_argument("--skip-deps", action="store_true", help="leave the Python dependencies alone")
+    rb.add_argument("--skip-frontend", action="store_true", help="do not rebuild the frontend")
+    rb.add_argument("--force", action="store_true", help="ignore a held upgrade lock")
 
     u = sub.add_parser("upgrade", help="online, or from an uploaded bundle")
     u.add_argument("action", choices=["online", "bundle"])
@@ -1164,8 +4728,12 @@ def build_parser() -> argparse.ArgumentParser:
     t = sub.add_parser("tls", help="show, install a cert and key, reload nginx")
     t.add_argument("action",
                    choices=["show", "install", "self-signed", "renew", "reload"])
+    t.add_argument("source", nargs="?",
+                   help="for install: a Let's Encrypt live/ directory, a directory with one "
+                        "certificate and one key, or one PEM holding both")
     t.add_argument("--cert")
     t.add_argument("--key")
+    t.add_argument("--chain", help="intermediate certificate(s) to append to --cert")
     t.add_argument("--host", help="name for a self-signed certificate")
 
     us = sub.add_parser("users", help="superuser, password, MFA, unlock")
@@ -1190,19 +4758,23 @@ def main(argv: list[str]) -> int:
             f"Set DANBYTE_DIR.")
 
     if args.cmd is None:
-        return menu(ctx)
+        return console(ctx) if want_console(args) else menu(ctx)
     if args.cmd == "users" and args.action != "create" and not args.username:
         die(f"users {args.action} needs a username")
     if args.cmd == "backup" and args.action in {"restore", "path"} and not args.backup_id:
         die(f"backup {args.action} needs a backup id")
     if args.cmd == "upgrade" and args.action == "bundle" and not args.bundle:
         die("upgrade bundle needs a path to the bundle")
-    if args.cmd == "tls" and args.action == "install" and not (args.cert and args.key):
-        die("tls install needs --cert and --key")
+    if args.cmd == "tls" and args.action == "install" and not (
+            args.source or (args.cert and args.key)):
+        die("tls install needs --cert and --key, or a directory / combined PEM")
+    if args.cmd == "tls" and args.source and (args.action != "install" or args.cert or args.key):
+        die(f"tls {args.action} does not take a positional argument"
+            + (" - use --host NAME" if args.action == "self-signed" else ""))
 
     return {
         "status": cmd_status, "services": cmd_services, "upgrade": cmd_upgrade,
-        "backup": cmd_backup, "tls": cmd_tls, "users": cmd_users,
+        "backup": cmd_backup, "tls": cmd_tls, "users": cmd_users, "rebuild": cmd_rebuild,
         "maintenance": cmd_maintenance, "diagnostics": cmd_diagnostics,
     }[args.cmd](ctx, args)
 
