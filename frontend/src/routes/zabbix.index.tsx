@@ -13,6 +13,7 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { useUrlTab } from "@/lib/use-url-tab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,6 +38,12 @@ import { ZabbixAdoptionRules } from "@/components/zabbix/adoption-rules"
 
 export const Route = createFileRoute("/zabbix/")({ component: ZabbixPage })
 
+// The page's tabs: the connection and its queue is what somebody comes back
+// to; rules, hosts and windows are set up and then left alone. Split so the
+// queue is not below three tables of configuration.
+const TABS = ["overview", "rules", "hosts", "maintenance"] as const
+type ZabbixTab = (typeof TABS)[number]
+
 /**
  * The Zabbix integration's own page (#162).
  *
@@ -54,6 +61,7 @@ function ZabbixPage() {
   const [adding, setAdding] = useState(false)
   const [deleting, setDeleting] = useState<ZabbixConnection | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [tab, setTab] = useUrlTab<ZabbixTab>("overview", "tab", TABS)
 
   const connections = useQuery({
     queryKey: ["zabbix-connections"],
@@ -159,28 +167,54 @@ function ZabbixPage() {
 
       {conn && (
         <div className="flex flex-col gap-6">
-          <ConnectionCard
-            conn={conn}
-            canManage={canManage}
-            canDelete={canDelete}
-            testing={test.isPending}
-            syncing={sync.isPending}
-            onTest={() => test.mutate(conn.id)}
-            onSync={() => sync.mutate(conn.id)}
-            onEdit={() => setEditing(conn)}
-            onDelete={() => setDeleting(conn)}
+          <SegmentedTabs
+            value={tab}
+            onValueChange={setTab}
+            items={[
+              { value: "overview", label: "Overview" },
+              { value: "rules", label: "Rules" },
+              { value: "hosts", label: "Hosts" },
+              { value: "maintenance", label: "Maintenance" },
+            ]}
           />
-          <ZabbixChanges
-            connection={conn}
-            onEditConnection={canManage ? () => setEditing(conn) : undefined}
-          />
-          <ZabbixProvisionRules connection={conn} canManage={canManage} />
-          {conn.adopt_hosts && (
-            <ZabbixAdoptionRules connection={conn} canManage={canManage} />
+          {tab === "overview" && (
+            <>
+              <ConnectionCard
+                conn={conn}
+                canManage={canManage}
+                canDelete={canDelete}
+                testing={test.isPending}
+                syncing={sync.isPending}
+                onTest={() => test.mutate(conn.id)}
+                onSync={() => sync.mutate(conn.id)}
+                onEdit={() => setEditing(conn)}
+                onDelete={() => setDeleting(conn)}
+              />
+              <ZabbixChanges
+                connection={conn}
+                onEditConnection={
+                  canManage ? () => setEditing(conn) : undefined
+                }
+              />
+            </>
           )}
-          <ZabbixScopeList connection={conn} />
-          <ZabbixLinkedHosts connection={conn} canManage={canManage} />
-          <ZabbixMaintenanceList connection={conn} canManage={canManage} />
+          {tab === "rules" && (
+            <>
+              <ZabbixProvisionRules connection={conn} canManage={canManage} />
+              {conn.adopt_hosts && (
+                <ZabbixAdoptionRules connection={conn} canManage={canManage} />
+              )}
+            </>
+          )}
+          {tab === "hosts" && (
+            <>
+              <ZabbixScopeList connection={conn} />
+              <ZabbixLinkedHosts connection={conn} canManage={canManage} />
+            </>
+          )}
+          {tab === "maintenance" && (
+            <ZabbixMaintenanceList connection={conn} canManage={canManage} />
+          )}
         </div>
       )}
 
