@@ -150,7 +150,97 @@ class LiveFeedTests(TransactionTestCase):
 
             layer.group_send = group_send
             live.publish(
-                [self.state], (), {str(self.state.id): {"status": "up", "latency_ms": 2.5, "at": "x"}}
+                [self.state], (),
+                {str(self.state.id): [
+                    {"status": "up", "latency_ms": 1.5, "at": "w"},
+                    {"status": "up", "latency_ms": 2.5, "at": "x"},
+                ]},
             )
+        # The row moves on the newest; the page's ring gets the whole batch.
         self.assertEqual(layer.sent["payload"]["sample"]["latency_ms"], 2.5)
+        self.assertEqual([p["at"] for p in layer.sent["payload"]["probes"]], ["w", "x"])
         self.assertEqual(layer.sent["type"], "monitoring.update")
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY)
+class ProbeRingTests(TransactionTestCase):
+    """The last minutes of raw probes for a watched fast check - a ring in
+    Redis, newest first, gone when nobody looks."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        prefix = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.4.0.0/24", status=status_for(self.tenant, "container")
+        )
+        self.ip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.4.0.1", prefix=prefix)
+        self.t = CheckTemplate.objects.create(
+            tenant=self.tenant, name="Fast", slug="fast", kind=CheckKind.ICMP, interval_ms=1000
+        )
+        self.state = CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=self.t, kind="icmp", status="up",
+            interval_ms=1000,
+        )
+        self.admin = User.objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(self.admin)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+        # A fake ring: lists in a dict, with the same three calls.
+        self.store: dict[str, list] = {}
+        fake = mock.MagicMock()
+
+        class Pipe:
+            def __init__(inner):
+                inner.ops = []
+
+            def lpush(inner, key, *values):
+                for value in values:
+                    inner.ops.append(("lpush", key, value))
+
+            def ltrim(inner, key, start, stop):
+                inner.ops.append(("ltrim", key, start, stop))
+
+            def expire(inner, key, ttl):
+                pass
+
+            def execute(inner):
+                for op in inner.ops:
+                    if op[0] == "lpush":
+                        self.store.setdefault(op[1], []).insert(0, op[2])
+                    elif op[0] == "ltrim":
+                        self.store[op[1]] = self.store.get(op[1], [])[: op[3] + 1]
+
+        fake.pipeline.side_effect = Pipe
+        fake.lrange.side_effect = lambda key, a, b: self.store.get(key, [])[a : b + 1]
+        mock.patch.object(live, "_redis", return_value=fake).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_push_and_read_newest_first_capped(self):
+        sid = str(self.state.id)
+        for i in range(live.PROBES_KEEP + 5):
+            live.push_probes({sid: [{"status": "up", "latency_ms": float(i), "at": f"t{i}"}]})
+        ring = live.recent_probes(sid)
+        self.assertEqual(len(ring), live.PROBES_KEEP)
+        self.assertEqual(ring[0]["at"], f"t{live.PROBES_KEEP + 4}")
+        # A 200 ms check hands over five per flush; the batch keeps its
+        # order, newest at the head.
+        live.push_probes({sid: [{"status": "up", "latency_ms": 1.0, "at": "b1"},
+                                {"status": "up", "latency_ms": 2.0, "at": "b2"}]})
+        ring = live.recent_probes(sid)
+        self.assertEqual(len(ring), live.PROBES_KEEP)
+        self.assertEqual([p["at"] for p in ring[:2]], ["b2", "b1"])
+        r = self.client.get(f"/api/monitoring/ips/{self.ip.id}/probes/?template={self.t.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["fast"])
+        self.assertEqual(len(r.json()["probes"]), live.PROBES_KEEP)
+
+    def test_a_slow_check_has_no_ring(self):
+        slow = CheckTemplate.objects.create(
+            tenant=self.tenant, name="Slow", slug="slow", kind=CheckKind.ICMP
+        )
+        CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=slow, kind="icmp", status="up"
+        )
+        r = self.client.get(f"/api/monitoring/ips/{self.ip.id}/probes/?template={slow.id}")
+        self.assertEqual(r.json(), {"probes": [], "kept_seconds": live.PROBES_TTL, "fast": False})

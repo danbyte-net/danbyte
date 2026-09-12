@@ -1,6 +1,8 @@
+import { Fragment } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { useDateFormat } from "@/lib/datetime"
 import type { CheckResultRow } from "@/lib/api"
 import { TimeCell } from "@/components/cells/time-ago"
 import { SimpleTable } from "@/components/ui/simple-table"
@@ -40,7 +42,87 @@ export function CheckHistory({
       </p>
     )
 
-  return <SimpleTable columns={COLUMNS} data={rows} getRowKey={(r) => r.id} />
+  return (
+    <SimpleTable
+      columns={COLUMNS}
+      data={rows}
+      getRowKey={(r) => r.id}
+      renderExpanded={(r) => <ResultDetail row={r} />}
+    />
+  )
+}
+
+/**
+ * What one result recorded, in full. A fast-lane row is a window's worth
+ * of probes folded into one line - the probes themselves are not rows,
+ * only their spread and loss are - so it reads as the window's figures; a
+ * plain probe shows what the checker wrote.
+ */
+function ResultDetail({ row }: { row: CheckResultRow }) {
+  const d = row.detail
+  const agg =
+    d.agg && typeof d.agg === "object"
+      ? (d.agg as Record<string, unknown>)
+      : null
+  const { formatDateTime } = useDateFormat()
+  const entries: [string, string][] = []
+  entries.push(["Recorded", formatDateTime(row.timestamp)])
+  if (agg) {
+    const n = Number(agg.samples ?? 0)
+    const w = Number(agg.window_s ?? 0)
+    entries.push(["Window", `${w} s`])
+    entries.push([
+      "Probes",
+      `${n}${n && w ? ` · one every ${(w / n).toFixed(w / n < 1 ? 2 : 1)} s` : ""}`,
+    ])
+    entries.push(["Loss", `${String(agg.loss_pct ?? 0)}%`])
+    entries.push([
+      "Latency",
+      agg.avg_ms != null
+        ? `${String(agg.min_ms)} / ${String(agg.avg_ms)} / ${String(agg.max_ms)} ms (min / avg / max)`
+        : "-",
+    ])
+  } else {
+    for (const [k, v] of Object.entries(d)) {
+      if (v == null || typeof v === "object") continue
+      entries.push([
+        LABELS[k] ?? k,
+        k === "packet_loss" ? `${(Number(v) * 100).toFixed(0)}%` : String(v),
+      ])
+    }
+  }
+  return (
+    <div className="space-y-2 text-xs">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+        {entries.map(([k, v]) => (
+          <Fragment key={k}>
+            <dt className="text-muted-foreground">{k}</dt>
+            <dd className="num">{v}</dd>
+          </Fragment>
+        ))}
+      </dl>
+      {agg && (
+        <p className="text-muted-foreground">
+          The probes inside a window are not stored one by one - a status change
+          is. The last ten minutes of raw probes are under{" "}
+          <span className="text-foreground">Recent probes</span> while this tab
+          is open.
+        </p>
+      )}
+    </div>
+  )
+}
+
+const LABELS: Record<string, string> = {
+  packets_sent: "Packets sent",
+  packets_received: "Packets received",
+  packet_loss: "Loss",
+  avg_rtt: "Round trip (ms)",
+  port: "Port",
+  banner: "Banner",
+  status_code: "HTTP status",
+  error: "Error",
+  ptr: "PTR",
 }
 
 // The shared table primitive, like every other embedded list - a raw

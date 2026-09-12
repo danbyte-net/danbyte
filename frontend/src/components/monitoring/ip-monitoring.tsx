@@ -39,6 +39,7 @@ import { FastBadge } from "./fast-badge"
 import { FlappingPill } from "./flapping-pill"
 import { HistoryPanel } from "./history-panel"
 import { LatencyChart } from "./latency-chart"
+import { RecentProbes } from "./recent-probes"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
 import { InfoTip } from "@/components/ui/info-tip"
@@ -389,6 +390,9 @@ function CheckRow({
             </p>
           )}
           <LatencyChart ipId={ipId} templateId={check.template_id} />
+          {check.interval_ms && (
+            <RecentProbes ipId={ipId} templateId={check.template_id} />
+          )}
           <CheckHistory ipId={ipId} templateId={check.template_id} />
         </div>
       )}

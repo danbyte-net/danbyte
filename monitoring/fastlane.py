@@ -552,10 +552,11 @@ class FastLane:
         if results or transitions:
             self.dirty[str(e.state.id)] = e.state
         # Every probe is a word for a page that is watching, even the ones
-        # that never become a row; the flush decides who is watching.
-        self.samples[str(e.state.id)] = (
-            e.state,
-            {"status": sample.status, "latency_ms": sample.latency_ms, "at": sample.at.isoformat()},
+        # that never become a row; the flush decides who is watching. All of
+        # them, not the last one a second - a 200 ms check makes five.
+        sid = str(e.state.id)
+        self.samples.setdefault(sid, (e.state, []))[1].append(
+            {"status": sample.status, "latency_ms": sample.latency_ms, "at": sample.at.isoformat()}
         )
 
     # -- persistence ----------------------------------------------------------
@@ -572,10 +573,16 @@ class FastLane:
         # message a second per watched address, none for the rest.
         dirty_ids = {str(d.id) for d in dirty}
         quiet = [st for sid, (st, _) in samples.items() if sid not in dirty_ids]
-        if quiet:
-            from .live import publish
+        if samples:
+            from .live import interested, publish, push_probes
 
-            publish(quiet, (), {sid: sm for sid, (_, sm) in samples.items()})
+            watched = interested(st.target_ip_id for st, _ in samples.values())
+            push_probes({
+                sid: sms for sid, (st, sms) in samples.items()
+                if str(st.target_ip_id) in watched
+            })
+        if quiet:
+            publish(quiet, (), {sid: sms for sid, (_, sms) in samples.items()})
         if not (results or transitions or dirty):
             return
         now = timezone.now()

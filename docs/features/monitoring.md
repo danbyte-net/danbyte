@@ -235,10 +235,13 @@ What reaches the database is what matters:
   caused it, the change, and everything a change sets off (alerts,
   notifications, history, flapping) exactly as on the minute beat;
 - everything else is **downsampled**: one aggregated result per **Record
-  every** (default 60 s) carrying the window's min, average and max latency
-  and its packet loss. A one-second ping therefore costs the database what
-  a sixty-second one does, while an outage is seen in *interval × fall* -
-  three seconds for a 1 s check with the default fall of 3.
+  every** (default 60 s, 5 s at the least) carrying the window's min,
+  average and max latency and its packet loss. A one-second ping therefore
+  costs the database what a sixty-second one does, while an outage is seen
+  in *interval × fall* - three seconds for a 1 s check with the default
+  fall of 3. The individual probes are not stored; the IP's Monitoring tab
+  shows the last ten minutes of them while it is open (see [On an
+  IP](#on-an-ip)).
 
 Rise and fall mean what they always meant; they simply add up faster.
 *Stale after N scans* counts scans at the check's normal cadence rather
@@ -427,7 +430,20 @@ Every row opens: the check's **latency over time** (24h / 7d / 30d - the
 average as a line, each bucket's min–max as a band, packet loss as bars on
 its own axis; a fast-lane check's windows carry their own min, max and loss,
 so a one-second ping and a five-minute one draw the same way), the
-per-check overrides, and its recent raw results.
+per-check overrides, and its recent recorded results. A result row opens
+too: a plain one shows what the checker returned, a fast-lane window
+(*N probes · min–max ms*) shows the window's length, how many probes it
+folded and at what pace, its loss and its min / average / max.
+
+What a window does **not** carry is the probes themselves - the lane keeps
+one row per *Record every* by design (see [the fast lane](#fast-lane)), so
+lower *Record every* (five seconds at the least) when a check needs finer
+stored history. The last **ten minutes** of a fast check's raw probes are
+still there to look at: **Recent probes** under the chart lists them,
+newest first with millisecond timestamps, and grows by one line per probe
+while the tab is open. That list lives in Redis, only for addresses
+somebody is watching, and is gone ten minutes after the last look - it is
+a window on the lane, not history.
 
 **History** carries the window (24h / 7d / 30d / 90d) and, for that window:
 the availability figure with incidents, MTTR and time down; **daily
@@ -516,8 +532,12 @@ series alongside the rows, so one call feeds a rail, a chart and a table:
   wins), computed from the same transitions the uptime figure integrates.
   `POST …/timeline/ {states: [...], days}` returns segments for up to 200
   checks at once, for list strips.
-- `…/ips/<id>/history/` pages a check's raw samples backwards with
+- `…/ips/<id>/history/` pages a check's recorded results backwards with
   `before=<id>` (`next_before` in the response).
+- `…/ips/<id>/probes/?template=` - the last ten minutes of a fast-lane
+  check's raw probes, newest first (`probes`, `kept_seconds`, `interval_ms`);
+  `fast: false` and no probes for an ordinary check. Kept in Redis only
+  while the address is being watched.
 - `…/stats/?hours=24|168|720` picks the results-chart window; beyond three
   days the buckets are days. 720 hours is the ceiling because results are
   pruned after thirty days.

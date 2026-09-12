@@ -18,6 +18,7 @@ its cached checks with it and re-reads the history when a change happened.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 
 from asgiref.sync import async_to_sync
@@ -67,6 +68,56 @@ def interested(ip_ids) -> set:
     return {ip_id for ip_id, hit in zip(ids, hits, strict=False) if hit}
 
 
+#: Raw probes are not rows - the fast lane keeps one aggregate per window
+#: in the database - but the last few minutes of them are worth a look
+#: while somebody is looking. A short ring per watched check, in Redis.
+PROBES_KEEP = 600
+PROBES_TTL = 600
+
+
+def _probes_key(state_id) -> str:
+    return f"danbyte:probes:{state_id}"
+
+
+def push_probes(samples: dict) -> None:
+    """``{state_id: [{status, latency_ms, at}, ...]}`` (oldest first) for
+    watched states only - the caller has already checked interest. One
+    pipelined round trip."""
+    if not samples:
+        return
+    try:
+        pipe = _redis().pipeline()
+        for sid, batch in samples.items():
+            if isinstance(batch, dict):
+                batch = [batch]
+            if not batch:
+                continue
+            key = _probes_key(sid)
+            # LPUSH with several values pushes them in order, so the newest
+            # of the batch ends up at the head.
+            pipe.lpush(key, *(json.dumps(sm) for sm in batch))
+            pipe.ltrim(key, 0, PROBES_KEEP - 1)
+            pipe.expire(key, PROBES_TTL)
+        pipe.execute()
+    except Exception:  # noqa: BLE001
+        log.debug("probe ring push failed", exc_info=True)
+
+
+def recent_probes(state_id, limit: int = PROBES_KEEP) -> list[dict]:
+    """Newest first. Empty for a check nobody has watched lately."""
+    try:
+        raw = _redis().lrange(_probes_key(state_id), 0, max(limit, 1) - 1)
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for item in raw:
+        try:
+            out.append(json.loads(item))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def state_payload(state, *, transition=None, sample=None) -> dict:
     """What a page needs to redraw one check row."""
     out = {
@@ -87,7 +138,13 @@ def state_payload(state, *, transition=None, sample=None) -> dict:
             "to_status": transition.to_status,
             "at": transition.at.isoformat(),
         }
-    if sample is not None:
+    if isinstance(sample, list):
+        # A flush's whole batch: the row moves on the newest, the page's
+        # probe ring keeps them all.
+        if sample:
+            out["sample"] = sample[-1]
+            out["probes"] = sample
+    elif sample is not None:
         out["sample"] = sample
     return out
 
@@ -95,8 +152,9 @@ def state_payload(state, *, transition=None, sample=None) -> dict:
 def publish(states, transitions=(), samples=None) -> int:
     """Push the latest word on ``states`` to the pages watching their
     addresses. ``transitions`` are matched to states by (ip, template);
-    ``samples`` is ``{state_id: {status, latency_ms, at}}`` for the probes
-    that did not become a row (the fast lane's) so the page still moves.
+    ``samples`` is ``{state_id: [{status, latency_ms, at}, ...]}`` (oldest
+    first; a lone dict is accepted) for the probes that did not become a row
+    (the fast lane's) so the page still moves.
     Returns how many messages went out."""
     if not states:
         return 0

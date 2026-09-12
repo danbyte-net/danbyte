@@ -24,7 +24,15 @@ export interface LiveUpdate extends Partial<EffectiveCheckState> {
   state_id: string
   template_id: string
   transition?: { from_status: string; to_status: string; at: string }
-  sample?: { status: string; latency_ms: number | null; at: string }
+  sample?: Probe
+  /** The flush's whole batch (oldest first) when it held more than one. */
+  probes?: Probe[]
+}
+
+interface Probe {
+  status: string
+  latency_ms: number | null
+  at: string
 }
 
 export function useLiveMonitoring(ipId: string): { live: boolean } {
@@ -85,6 +93,27 @@ export function useLiveMonitoring(ipId: string): { live: boolean } {
           }),
         }
       })
+      // Raw probes join the check's recent-probes ring, newest first,
+      // capped like the server's.
+      const fresh = u.probes ?? (u.sample ? [u.sample] : [])
+      if (fresh.length) {
+        const seen = new Set(fresh.map((p) => p.at))
+        qc.setQueryData<{
+          probes: Probe[]
+          kept_seconds: number
+          fast: boolean
+        }>(["ip-probes", ipId, u.template_id], (cur) =>
+          cur
+            ? {
+                ...cur,
+                probes: [
+                  ...[...fresh].reverse(),
+                  ...cur.probes.filter((p) => !seen.has(p.at)),
+                ].slice(0, 600),
+              }
+            : cur
+        )
+      }
       if (u.transition) {
         // The picture changed: strips, daily bars, the changes table and
         // the roll-ups elsewhere all read the log this transition joined.

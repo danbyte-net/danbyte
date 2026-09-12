@@ -350,3 +350,30 @@ def ip_latency_view(request, ip_id):
         "since": since, "until": until, "bucket_seconds": bucket,
         "points": latency_series(qs, since, until, bucket),
     })
+
+
+@extend_schema(summary="The last few minutes of raw probes for one fast check", tags=["monitoring"], request=None)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def ip_probes_view(request, ip_id):
+    """``?template=<id>`` → the newest-first ring of probes the fast lane kept
+    for this check while somebody was watching it. Not the database: raw
+    probes are folded into one row per recording window there. Empty for a
+    check on the minute beat, or one nobody has had open for ten minutes."""
+    from .live import PROBES_TTL, recent_probes
+
+    ip, tenant = _get_ip(request, ip_id)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    if ip is None:
+        return Response({"detail": "Not found."}, status=404)
+    template = (request.query_params.get("template") or "").strip()
+    state = CheckState.objects.filter(target_ip=ip, template_id=template or None).first()
+    if state is None or not state.interval_ms:
+        return Response({"probes": [], "kept_seconds": PROBES_TTL, "fast": False})
+    return Response({
+        "probes": recent_probes(state.id),
+        "kept_seconds": PROBES_TTL,
+        "fast": True,
+        "interval_ms": state.interval_ms,
+    })
