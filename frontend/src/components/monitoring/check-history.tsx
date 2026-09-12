@@ -73,15 +73,57 @@ export function CheckHistory({
 }
 
 /** One line for a result's or a change's detail - the error if there was
- * one, else the few fields worth a glance. */
+ * one, else the few fields worth a glance. An external system's payload
+ * reads as its host and its first problem, never as raw JSON. */
 export function detailSummary(detail: Record<string, unknown>): string {
   if (!detail || Object.keys(detail).length === 0) return "-"
   if (typeof detail.error === "string") return detail.error
   const parts: string[] = []
+  const problems: unknown[] = Array.isArray(detail.problems)
+    ? detail.problems
+    : []
+  const first = problems.at(0)
+  if (isNamed(first)) {
+    parts.push(
+      problems.length > 1 ? `${first.name} +${problems.length - 1}` : first.name
+    )
+  }
+  const avail = detail.availability
+  if (avail && typeof avail === "object") {
+    const down = Object.entries(avail as Record<string, unknown>)
+      .filter(([, v]) => isDown(v))
+      .map(([k]) => k.toUpperCase())
+    if (down.length) parts.push(`${down.join(", ")} unreachable`)
+  }
+  if (typeof detail.zabbix_host === "string" && parts.length === 0)
+    parts.push(`host ${detail.zabbix_host}`)
   if (detail.port != null) parts.push(`port ${detail.port}`)
   if (detail.banner != null)
     parts.push(`banner: ${String(detail.banner).slice(0, 40)}`)
   if (detail.packet_loss != null)
     parts.push(`loss ${(Number(detail.packet_loss) * 100).toFixed(0)}%`)
-  return parts.length ? parts.join(" · ") : JSON.stringify(detail).slice(0, 60)
+  if (detail.status_code != null) parts.push(`HTTP ${detail.status_code}`)
+  if (parts.length) return parts.join(" · ")
+  // Nothing recognised: the scalar fields, as words, rather than JSON.
+  return Object.entries(detail)
+    .filter(([, v]) => v == null || typeof v !== "object")
+    .slice(0, 4)
+    .map(([k, v]) => `${k} ${String(v)}`)
+    .join(" · ")
+}
+
+function isNamed(v: unknown): v is { name: string } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { name?: unknown }).name === "string"
+  )
+}
+
+function isDown(v: unknown): boolean {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    (v as { state?: unknown }).state === "down"
+  )
 }

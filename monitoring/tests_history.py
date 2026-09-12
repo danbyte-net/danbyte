@@ -374,3 +374,102 @@ class StatsWindowTests(_Base):
         self.assertEqual(body["series_hours"], 720)
         self.assertEqual(body["series_bucket"], "day")
         self.assertEqual(self.get("/api/monitoring/stats/", hours=5)["series_hours"], 24)
+
+
+class ChecksListTests(_Base):
+    """The Checks list on the same rail: every target dimension, facets that
+    leave their own filter out, server ordering, strips per row."""
+
+    def setUp(self):
+        super().setUp()
+        self.login()
+        self.zabbix = MonitoringEngine.objects.create(
+            tenant=self.tenant, name="db-zabbix", slug="zbx", kind="zabbix"
+        )
+        self.st_a = CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip_a, template=self.ping, kind="icmp",
+            status="down", engine=self.outpost, last_latency_ms=3.0,
+        )
+        self.st_a2 = CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip_a, template=self.https, kind="tcp",
+            status="up", last_latency_ms=9.0,
+        )
+        self.st_b = CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip_b, template=self.ping, kind="icmp",
+            status="up", engine=self.zabbix, last_latency_ms=1.0,
+        )
+        self.tr(self.ip_a, self.ping, "down")
+
+    def checks(self, **params):
+        return self.get("/api/monitoring/checks/", **params)
+
+    def test_rows_carry_site_device_prefix_and_dns(self):
+        body = self.checks(ordering="ip")
+        self.assertEqual(body["count"], 3)
+        row = body["results"][0]
+        self.assertEqual(row["target_ip"]["dns_name"], "asw1.lab")
+        self.assertEqual(row["site"]["name"], "Aarhus")
+        self.assertEqual(row["device"]["name"], "asw1")
+        self.assertEqual(row["prefix"]["cidr"], "10.1.0.0/24")
+        self.assertEqual(body["status_counts"], {"down": 1, "up": 2, "all": 3})
+
+    def test_status_is_a_list_and_the_tab_shape_still_works(self):
+        self.assertEqual(self.checks(status="down")["count"], 1)
+        self.assertEqual(self.checks(status="down,up")["count"], 3)
+        self.assertEqual(self.checks(status="all")["count"], 3)
+
+    def test_target_dimensions(self):
+        self.assertEqual(self.checks(site=str(self.site_b.id))["count"], 1)
+        self.assertEqual(self.checks(region=str(self.north.id))["count"], 2)
+        self.assertEqual(self.checks(device_type=str(self.dtype.id))["count"], 2)
+        self.assertEqual(self.checks(role=str(self.role.id))["count"], 2)
+        self.assertEqual(self.checks(vlan=str(self.vlan.id))["count"], 2)
+        self.assertEqual(self.checks(port="443")["count"], 1)
+        self.assertEqual(self.checks(search="asw1")["count"], 2)
+        self.assertEqual(self.checks(kind="tcp")["count"], 1)
+        self.assertEqual(self.checks(source="outpost")["count"], 1)
+        self.assertEqual(self.checks(source="local,zabbix")["count"], 2)
+        # A ping bound to Zabbix is run locally: it is a *local* row.
+        self.assertEqual(self.checks(engine=str(self.zabbix.id), source="local")["count"], 1)
+
+    def test_facets_leave_their_own_filter_out(self):
+        body = self.checks(status="down")
+        f = {d: {b["value"]: b["count"] for b in body["facets"][d]} for d in body["facets"]}
+        self.assertEqual(f["status"], {"down": 1, "up": 2})
+        self.assertEqual(f["kind"], {"icmp": 1})
+        self.assertEqual(f["source"], {"outpost": 1})
+        self.assertEqual(f["site"], {str(self.site_a.id): 1})
+
+    def test_ordering_by_site_device_and_latency(self):
+        by_site = [r["site"]["name"] for r in self.checks(ordering="-site")["results"]]
+        self.assertEqual(by_site, ["Berlin", "Aarhus", "Aarhus"])
+        by_dev = [r["device"]["name"] for r in self.checks(ordering="device")["results"]]
+        self.assertEqual(by_dev, ["asw1", "asw1", "bsw1"])
+        lat = [r["last_latency_ms"] for r in self.checks(ordering="-latency")["results"]]
+        self.assertEqual(lat, [9.0, 3.0, 1.0])
+
+    def test_strip_adds_segments_per_row(self):
+        body = self.checks(strip=7, ordering="ip")
+        self.assertIn("since", body)
+        segs = {r["template"]["name"]: r["segments"] for r in body["results"][:2]}
+        self.assertEqual(segs["Ping"][-1]["status"], "down")
+        self.assertEqual(segs["HTTPS"][-1]["status"], "unknown")
+        self.assertNotIn("segments", self.checks()["results"][0])
+
+    def test_page_cap(self):
+        self.assertEqual(self.checks(page_size=999)["page_size"], 200)
+
+    def test_site_scoped_viewer_sees_only_their_site(self):
+        viewer = User.objects.create_user("v2", password="x")
+        UserProfile.objects.create(user=viewer, role="custom").tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="a-ip", object_types=["ipaddress"], actions=["view"]
+        )
+        perm.users.add(viewer)
+        perm.tenants.add(self.tenant)
+        perm.sites.add(self.site_a)
+        self.login(viewer)
+        body = self.checks()
+        self.assertEqual(body["count"], 2)
+        self.assertEqual(body["status_counts"]["all"], 2)
+        self.assertEqual({b["value"] for b in body["facets"]["site"]}, {str(self.site_a.id)})

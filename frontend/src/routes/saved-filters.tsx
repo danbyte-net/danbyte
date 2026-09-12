@@ -103,6 +103,12 @@ const LISTS: Record<
     search: { view: "history" },
     api: "/api/monitoring/transitions/",
   },
+  "monitoring-check": {
+    label: "Monitoring checks",
+    to: "/monitoring",
+    search: { view: "checks" },
+    api: "/api/monitoring/checks/",
+  },
   manufacturer: {
     label: "Manufacturers",
     to: "/manufacturers",

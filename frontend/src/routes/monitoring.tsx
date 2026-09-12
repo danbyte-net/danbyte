@@ -161,7 +161,7 @@ const KIND_PALETTE = [
 
 function MonitoringPage() {
   usePageTitle("Monitoring")
-  const { view, status } = Route.useSearch()
+  const { view } = Route.useSearch()
   const labels = useStatusLabels()
   // Same gate the settings page uses - the tab is hidden without it, and the
   // panel is guarded too so a hand-typed ?view=settings shows nothing.
@@ -311,7 +311,7 @@ function MonitoringPage() {
           /prefixes), so the shared padding lives on the other views instead. */}
       <div
         className={
-          view === "configuration" || view === "history"
+          view === "configuration" || view === "history" || view === "checks"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
         }
@@ -320,14 +320,7 @@ function MonitoringPage() {
 
         {view === "history" && <HistoryView />}
 
-        {view === "checks" && (
-          <div className="mx-auto max-w-7xl">
-            <ChecksList
-              status={status}
-              onStatusChange={(s) => go({ status: s })}
-            />
-          </div>
-        )}
+        {view === "checks" && <ChecksList />}
 
         {view === "templates" && (
           <div className="mx-auto max-w-7xl">
@@ -500,15 +493,14 @@ function MonitoringPage() {
                         >
                           <Label content={<TotalLabel total={total} />} />
                         </Pie>
-                        {/* A two-column grid that shrinks to its content.
-                            The legend's own justify-center then centres the
-                            pair of columns under the donut, and each item
-                            sits at the left of its track - so the swatches
-                            line up down both columns instead of each item
-                            centring in its own half. */}
+                        {/* Wrapping flex, every row centred on its own: a
+                            two-column grid read as off-centre because its
+                            right column was as wide as its widest label, so
+                            "Up" trailed white space and the second row sat
+                            left of the first. */}
                         <ChartLegend
                           content={<ChartLegendContent nameKey="status" />}
-                          className="grid -translate-y-2 grid-cols-[auto_auto] gap-x-4 gap-y-1"
+                          className="-translate-y-2 flex-wrap gap-x-4 gap-y-1"
                         />
                       </PieChart>
                     </ChartContainer>
@@ -572,7 +564,7 @@ function MonitoringPage() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>What just happened</CardTitle>
+                  <CardTitle>Recent changes</CardTitle>
                   <CardDescription>
                     The latest status changes, newest first
                   </CardDescription>

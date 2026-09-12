@@ -486,8 +486,8 @@ exactly like an automatic scan.
 - **Overview** - stat cards (total checks, monitored IPs, definitions, alert
   channels), charts (status distribution, checks by type, results over the
   last 24 hours, 7 days or 30 days - hourly up to three days, daily beyond;
-  30 days is the ceiling because results are pruned after that), **What just
-  happened** (the latest status changes grouped by the hour they landed in,
+  30 days is the ceiling because results are pruned after that), **Recent
+  changes** (the latest status changes grouped by the hour they landed in,
   with who answered), a **flapping** card (see below), and the monitoring
   settings.
 - **History** - every status change in the tenant. The rail on the left
@@ -499,9 +499,16 @@ exactly like an automatic scan.
   day by state. Everything lives in the URL, so a view is a link, and saved
   views keep a rail, a window and a search under a name. Export walks every
   page the filters match, up to 5,000 rows.
-- **Checks** - a global list of every check with quick-filter tabs (All / Up /
-  Degraded / Down / Stale / Skipped / Unknown, each with a count), search, and
-  paging. Each row links to its IP.
+- **Checks** - every check in the tenant, on the same rail as History: status,
+  source, type, site, device type, role, platform, check and engine facets
+  with counts, plus region, device, prefix, VRF, VLAN, tag and port. The
+  quick tabs (All / Up / Degraded / Down / …, each with a count) set the
+  status in one click; the rail's Status facet combines several. Columns -
+  status, address with DNS name, device, site, check, type, source, latency,
+  since, last checked - sort on the server, so a click reorders the whole
+  list, not the page in hand. **7 days** adds a status strip per row. Saved
+  views and export work as on History; the dashboard donut's slices land here
+  with the status set.
 - **Templates** - your reusable check library.
 
 ### The Settings tab

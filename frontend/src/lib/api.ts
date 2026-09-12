@@ -4944,7 +4944,7 @@ export interface FlappingRow {
 
 export interface CheckListRow {
   id: string
-  target_ip: { id: string; ip_address: string }
+  target_ip: { id: string; ip_address: string; dns_name: string }
   template: { id: string; name: string }
   kind: CheckKind
   status: CheckStatus
@@ -4955,14 +4955,25 @@ export interface CheckListRow {
   /** Who runs it - the executor, not the binding. */
   source: CheckSource
   engine: EngineRef | null
+  device: { id: string; name: string } | null
+  /** The address's own site, else its prefix's, else its device's. */
+  site: { id: string; name: string } | null
+  prefix: { id: string; cidr: string } | null
+  /** Present when the list was asked for `?strip=<days>`. */
+  segments?: StatusSegment[]
 }
 
 export interface CheckListResponse {
   count: number
   page: number
   page_size: number
+  /** Per status before any filter - the quick tabs and the dashboard donut. */
   status_counts: Partial<Record<CheckStatus | "all", number>>
   source_counts: Partial<Record<CheckSource, number>>
+  facets: Partial<Record<TransitionFacet | "status", FacetBucket[]>>
+  /** The strip window, when `?strip=` was asked for. */
+  since?: string
+  until?: string
   results: CheckListRow[]
 }
 

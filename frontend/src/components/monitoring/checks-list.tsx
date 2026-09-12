@@ -1,21 +1,27 @@
-import { useState } from "react"
-import { Link } from "@tanstack/react-router"
-import { useQuery, keepPreviousData } from "@tanstack/react-query"
-import { Search } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { useSearch } from "@tanstack/react-router"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import type { SortingState } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
 import type { CheckListResponse, CheckListRow, CheckStatus } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { SimpleTable } from "@/components/ui/simple-table"
-import type { SimpleColumn } from "@/components/ui/simple-table"
+import { useUrlPatch } from "@/lib/use-url-state"
+import { DataTable } from "@/components/data-table"
+import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { QueryError } from "@/components/query-error"
-import { CheckStatusBadge } from "./status-badge"
-import { SourceBadge, SourceHeader } from "./source-badge"
+import { Switch } from "@/components/ui/switch"
+import type { FilterSnapshot } from "@/components/table-filters"
+import {
+  CHECK_ORDERING,
+  checkColumns,
+} from "@/components/columns/check-columns"
+import type { CheckColumnId } from "@/components/columns/check-columns"
+import { MonitoringRail, RAIL_KEYS, railActiveCount } from "./monitoring-rail"
+import type { RailFilters } from "./monitoring-rail"
 
-// Quick-filter tabs (ping-monitor parity). "all" first, then the states an
-// operator scans for most.
+// Quick-filter tabs: "all" first, then the states an operator scans for
+// most. One click sets the whole status filter; the rail's Status facet
+// combines several.
 const TABS: { value: CheckStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "up", label: "Up" },
@@ -26,157 +32,208 @@ const TABS: { value: CheckStatus | "all"; label: string }[] = [
   { value: "unknown", label: "Unknown" },
 ]
 
-const COLUMNS: SimpleColumn<CheckListRow>[] = [
-  {
-    id: "status",
-    header: "Status",
-    cell: (r) => <CheckStatusBadge status={r.status} />,
-  },
-  {
-    id: "ip",
-    header: "IP address",
-    cell: (r) => (
-      <Link
-        to="/ips/$id"
-        params={{ id: r.target_ip.id }}
-        className="link font-mono font-medium"
-      >
-        {r.target_ip.ip_address}
-      </Link>
-    ),
-  },
-  { id: "check", header: "Check", flex: true, cell: (r) => r.template.name },
-  {
-    id: "kind",
-    header: "Type",
-    cell: (r) => (
-      <span className="font-mono text-[11px] text-muted-foreground uppercase">
-        {r.kind}
-      </span>
-    ),
-  },
-  {
-    id: "source",
-    header: <SourceHeader />,
-    cell: (r) => <SourceBadge source={r.source} engine={r.engine} />,
-  },
-  {
-    id: "latency",
-    header: "Latency",
-    align: "right",
-    cell: (r) => (
-      <span className="num text-muted-foreground">
-        {r.last_latency_ms != null ? `${r.last_latency_ms.toFixed(1)} ms` : "-"}
-      </span>
-    ),
-  },
-  {
-    id: "last_checked",
-    header: "Last checked",
-    align: "right",
-    cell: (r) => (
-      <span className="num text-[11px] text-muted-foreground">
-        {r.last_checked ? new Date(r.last_checked).toLocaleString() : "never"}
-      </span>
-    ),
-  },
-]
+const PAGE = 50
+const str = (v: unknown): string | undefined =>
+  typeof v === "string" && v !== "" ? v : undefined
 
-export function ChecksList({
-  status,
-  onStatusChange,
-}: {
-  status: CheckStatus | "all"
-  onStatusChange: (s: CheckStatus | "all") => void
-}) {
-  const [search, setSearch] = useState("")
-  const [page, setPage] = useState(1)
+/** `ordering` param ↔ the table's sort state, so a `SortHeader` click asks
+ * the server for a different order. */
+function orderingToSorting(ordering: string): SortingState {
+  const desc = ordering.startsWith("-")
+  const key = desc ? ordering.slice(1) : ordering
+  const id = (Object.keys(CHECK_ORDERING) as CheckColumnId[]).find(
+    (c) => CHECK_ORDERING[c] === key
+  )
+  return id ? [{ id, desc }] : []
+}
+function sortingToOrdering(s: SortingState): string | undefined {
+  const first = s.at(0)
+  if (!first) return undefined
+  const key = CHECK_ORDERING[first.id as CheckColumnId]
+  if (!key) return undefined
+  return `${first.desc ? "-" : ""}${key}`
+}
 
-  const q = useQuery({
-    queryKey: ["monitoring-checks", status, search, page],
-    queryFn: () =>
-      api<CheckListResponse>(
-        `/api/monitoring/checks/?status=${status}&search=${encodeURIComponent(
-          search
-        )}&page=${page}`
-      ),
+/**
+ * `/monitoring?view=checks` - every check in the tenant on the same rail the
+ * History view has, with server paging and sorting. The status quick-tabs
+ * and the dashboard donut both write `?status=`; the rail widens it to a
+ * list. `?strip=7` draws each row's last seven days to scale.
+ */
+export function ChecksList() {
+  const search = useSearch({ strict: false })
+  const patch = useUrlPatch()
+
+  const rail: RailFilters = Object.fromEntries(
+    RAIL_KEYS.map((k) => [k, str(search[k])])
+  )
+  const status = str(search.status) ?? "all"
+  const q = str(search.q) ?? ""
+  const page = Number(str(search.page) ?? "1") || 1
+  const ordering = str(search.ordering) ?? "-last_checked"
+  const strip = str(search.strip) === "1"
+
+  const [draft, setDraft] = useState(q)
+  useEffect(() => setDraft(q), [q])
+  useEffect(() => {
+    if (draft === q) return
+    const t = setTimeout(
+      () =>
+        patch({ q: draft || undefined, page: undefined }, { replace: true }),
+      300
+    )
+    return () => clearTimeout(t)
+  }, [draft])
+
+  const params = useMemo(() => {
+    const p = new URLSearchParams()
+    for (const k of RAIL_KEYS) {
+      const v = rail[k]
+      if (v && k !== "status") p.set(k, v)
+    }
+    if (status !== "all") p.set("status", status)
+    if (q) p.set("search", q)
+    p.set("ordering", ordering)
+    p.set("page", String(page))
+    p.set("page_size", String(PAGE))
+    if (strip) p.set("strip", "7")
+    return p.toString()
+  }, [rail, status, q, ordering, page, strip])
+
+  const query = useQuery({
+    queryKey: ["monitoring-checks", params],
+    queryFn: () => api<CheckListResponse>(`/api/monitoring/checks/?${params}`),
     placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
   })
+  const data = query.data
+  const counts = data?.status_counts ?? {}
+  const rows = data?.results ?? []
+  const total = data?.count ?? 0
+  const pages = Math.max(1, Math.ceil(total / PAGE))
 
-  const counts = q.data?.status_counts ?? {}
-  const rows = q.data?.results ?? []
-  const total = q.data?.count ?? 0
-  const pageSize = q.data?.page_size ?? 50
-  const pages = Math.max(1, Math.ceil(total / pageSize))
+  const columns = useMemo(
+    () =>
+      checkColumns(
+        strip && data?.since && data.until
+          ? { since: data.since, until: data.until }
+          : null
+      ),
+    [strip, data?.since, data?.until]
+  )
+
+  const snapshot = (): FilterSnapshot => {
+    const out: FilterSnapshot = {}
+    for (const k of RAIL_KEYS) if (rail[k] && k !== "status") out[k] = rail[k]!
+    if (status !== "all") out.status = status
+    if (strip) out.strip = "1"
+    return out
+  }
+  const restore = (snap: FilterSnapshot | null | undefined) => {
+    const next: Record<string, string | undefined> = { page: undefined }
+    for (const k of [...RAIL_KEYS, "strip"]) next[k] = undefined
+    next.status = "all"
+    for (const [k, v] of Object.entries(snap ?? {}))
+      if (typeof v === "string") next[k] = v
+      else if (Array.isArray(v)) next[k] = v.join(",")
+    patch(next)
+  }
+
+  const railFilters: RailFilters = {
+    ...rail,
+    status: status === "all" ? undefined : status,
+  }
 
   return (
-    <div className="space-y-3">
-      {/* Filter tabs + search */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SegmentedTabs
-          value={status}
-          onValueChange={(s) => {
-            setPage(1)
-            onStatusChange(s)
-          }}
-          items={TABS.map((t) => ({ ...t, count: counts[t.value] ?? 0 }))}
+    <ListPageShell
+      title="Checks"
+      count={data ? total : undefined}
+      rail={
+        <MonitoringRail
+          facets={data?.facets ?? {}}
+          filters={railFilters}
+          onChange={(p) =>
+            patch({
+              ...p,
+              // The rail writes the same param the tabs do; an empty facet
+              // is "all" in the URL, which the route's default already is.
+              ...("status" in p ? { status: p.status ?? "all" } : {}),
+            })
+          }
+          statusKey="status"
         />
-        <div className="relative ml-auto">
-          <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Filter by IP or check…"
-            value={search}
-            onChange={(e) => {
-              setPage(1)
-              setSearch(e.target.value)
-            }}
-            className="h-8 w-64 pl-8 text-xs"
+      }
+      search={{
+        value: draft,
+        onChange: setDraft,
+        placeholder: "Address, DNS name, device, check…",
+      }}
+      savedViews={{
+        objectType: "monitoring-check",
+        filters: {
+          snapshot,
+          restore,
+          activeCount: railActiveCount(railFilters) + (strip ? 1 : 0),
+        },
+      }}
+      actions={
+        <>
+          <SegmentedTabs
+            value={TABS.some((t) => t.value === status) ? status : "all"}
+            onValueChange={(s) =>
+              patch({ status: s === "all" ? "all" : s, page: undefined })
+            }
+            items={TABS.map((t) => ({ ...t, count: counts[t.value] ?? 0 }))}
           />
-        </div>
-      </div>
-
-      {q.isError && <QueryError error={q.error} />}
-
-      <SimpleTable
-        columns={COLUMNS}
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Switch
+              checked={strip}
+              onCheckedChange={(v) => patch({ strip: v ? "1" : undefined })}
+              aria-label="Show seven days of status per row"
+            />
+            7 days
+          </label>
+        </>
+      }
+      query={query}
+    >
+      <DataTable<CheckListRow>
+        columns={columns}
         data={rows}
-        getRowKey={(r) => r.id}
-        empty={q.isLoading ? "Loading…" : "No checks match this filter."}
+        tableId="monitoring-checks"
+        exportName="monitoring-checks"
+        exportTitle="Checks"
+        flexColumn="check"
+        exportAll={async () => {
+          const out: CheckListRow[] = []
+          for (let p = 1; p <= 25; p++) {
+            const all = new URLSearchParams(params)
+            all.set("page", String(p))
+            all.set("page_size", "200")
+            all.delete("strip")
+            const r = await api<CheckListResponse>(
+              `/api/monitoring/checks/?${all}`
+            )
+            out.push(...r.results)
+            if (out.length >= r.count) break
+          }
+          return out
+        }}
+        serverPagination={{
+          page,
+          pageCount: pages,
+          totalRows: total,
+          onPageChange: (p) => patch({ page: p === 1 ? undefined : String(p) }),
+        }}
+        serverSorting={{
+          sorting: orderingToSorting(ordering),
+          onSortingChange: (s) =>
+            patch({
+              ordering: sortingToOrdering(s) ?? undefined,
+              page: undefined,
+            }),
+        }}
       />
-
-      {/* Footer: count + paging. Same shape as the shared DataTable pager, but
-          the rows are paged by the API (status/search are server filters), so
-          the page index is ours to drive rather than the table's. */}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="num">
-          {total} check{total === 1 ? "" : "s"}
-        </span>
-        {pages > 1 && (
-          <div className="ml-auto flex items-center gap-2">
-            <span className="num">
-              Page {page} of {pages}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs"
-              disabled={page >= pages}
-              onClick={() => setPage((p) => Math.min(pages, p + 1))}
-            >
-              Next
-            </Button>
-          </div>
-        )}
-      </div>
-    </div>
+    </ListPageShell>
   )
 }

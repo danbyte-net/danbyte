@@ -131,7 +131,7 @@ export function transitionColumns(
       accessorFn: (r) => detailSummary(r.detail),
       header: "Detail",
       cell: ({ row }) => (
-        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+        <span className="block truncate text-xs text-muted-foreground">
           {detailSummary(row.original.detail)}
         </span>
       ),

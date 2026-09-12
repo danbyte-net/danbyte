@@ -140,6 +140,14 @@ interface DataTableProps<T> {
     totalRows: number
     onPageChange: (page: number) => void
   }
+  /** Server-sorted lists hand their sort state in, so a `SortHeader` click
+   * asks the server for a different order instead of shuffling the page it
+   * has. The header keeps its arrow and its click; only who does the sorting
+   * changes. Omit for client-side sorting. */
+  serverSorting?: {
+    sorting: SortingState
+    onSortingChange: (sorting: SortingState) => void
+  }
 }
 
 // Headless data table for every list page in Danbyte. Hands the column
@@ -168,8 +176,15 @@ export function DataTable<T>({
   searchable,
   searchPlaceholder,
   serverPagination,
+  serverSorting,
 }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>([])
+  const [localSorting, setLocalSorting] = useState<SortingState>([])
+  const sorting = serverSorting ? serverSorting.sorting : localSorting
+  const setSorting = (updater: Updater<SortingState>) => {
+    const next = typeof updater === "function" ? updater(sorting) : updater
+    if (serverSorting) serverSorting.onSortingChange(next)
+    else setLocalSorting(next)
+  }
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState("")
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
@@ -320,6 +335,7 @@ export function DataTable<T>({
       pagination,
     },
     onSortingChange: setSorting,
+    manualSorting: !!serverSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: onColumnVisibilityChange,
     onColumnOrderChange: setColumnOrder,
@@ -841,17 +857,26 @@ export function SortHeader({
   const sorted = column.getIsSorted()
   // The active direction reads on the header itself - without it a sort
   // that reorders only a few rows looks like a click that did nothing.
-  const Icon = sorted === "asc" ? ArrowUp : sorted === "desc" ? ArrowDown : ArrowUpDown
+  const Icon =
+    sorted === "asc" ? ArrowUp : sorted === "desc" ? ArrowDown : ArrowUpDown
   return (
     <Button
       variant="ghost"
       size="sm"
       className={cn("-ml-3 h-7 px-2 text-xs", sorted && "text-foreground")}
-      aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
+      aria-sort={
+        sorted === "asc"
+          ? "ascending"
+          : sorted === "desc"
+            ? "descending"
+            : undefined
+      }
       onClick={() => column.toggleSorting(sorted === "asc")}
     >
       {label}
-      <Icon className={cn("ml-1 h-3 w-3", sorted ? "opacity-100" : "opacity-60")} />
+      <Icon
+        className={cn("ml-1 h-3 w-3", sorted ? "opacity-100" : "opacity-60")}
+      />
     </Button>
   )
 }

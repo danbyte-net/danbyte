@@ -36,7 +36,8 @@ from api.models import (
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
+from django.db.models.functions import Coalesce
 
 from django.utils import timezone
 
@@ -1686,44 +1687,41 @@ def checks_list_view(request):
     # Site-aware: only the caller's viewable IPs' checks appear in the list AND
     # the per-status counts.
     from .engines import SOURCE_EXPR
-    from .history import paginate
+    from .history import apply_target_filters, facet_counts, paginate
+    from .timeline import segments_for_pairs
 
-    base = _scope_ip_keyed(
-        request, tenant,
-        CheckState.objects.filter(tenant=tenant),
-    ).select_related("target_ip", "template", "engine").annotate(source=SOURCE_EXPR)
+    params = request.query_params
+    base = (
+        _scope_ip_keyed(request, tenant, CheckState.objects.filter(tenant=tenant))
+        .annotate(source=SOURCE_EXPR)
+    )
 
-    # Counts across all statuses (before the status filter) so the tabs are
-    # stable regardless of which one is selected.
+    # Counts across all statuses (before any filter) so the tabs are stable
+    # regardless of which one is selected - the dashboard donut links here.
     status_counts = {
         row["status"]: row["n"]
-        for row in base.values("status").annotate(n=Count("id"))
+        for row in base.values("status").annotate(n=Count("id")).order_by()
     }
     status_counts["all"] = sum(status_counts.values())
 
-    qs = base
-    status = request.query_params.get("status")
-    if status and status != "all":
-        qs = qs.filter(status=status)
-    kind = request.query_params.get("kind")
-    if kind:
-        qs = qs.filter(kind=kind)
-    # Who answers: local | outpost | a driver kind. Comma-separated, like the
-    # facets the rail will send.
-    source = (request.query_params.get("source") or "").strip()
-    if source:
-        qs = qs.filter(source__in=[s for s in source.split(",") if s])
-    engine = (request.query_params.get("engine") or "").strip()
-    if engine:
-        qs = qs.filter(engine_id=engine)
-    search = (request.query_params.get("search") or "").strip()
-    if search:
-        qs = qs.filter(
-            Q(target_ip__ip_address__icontains=search)
-            | Q(template__name__icontains=search)
-        )
+    def apply(qs, p):
+        """Everything the rail sends: the shared target dimensions plus what a
+        check itself carries. Status is a list here, unlike the old tab."""
+        qs = apply_target_filters(qs, p)
+        statuses = [v for v in (p.get("status") or "").split(",") if v and v != "all"]
+        if statuses:
+            qs = qs.filter(status__in=statuses)
+        source = (p.get("source") or "").strip()
+        if source:
+            qs = qs.filter(source__in=[v for v in source.split(",") if v])
+        engine = (p.get("engine") or "").strip()
+        if engine:
+            qs = qs.filter(engine_id__in=[v for v in engine.split(",") if v])
+        return qs
 
-    ordering = request.query_params.get("ordering", "-last_checked")
+    qs = apply(base, params)
+
+    ordering = params.get("ordering", "-last_checked")
     order_map = {
         "ip": ("target_ip__ip_address",),
         "-ip": ("-target_ip__ip_address",),
@@ -1733,42 +1731,112 @@ def checks_list_view(request):
         "-last_checked": ("-last_checked", "target_ip__ip_address"),
         "latency": ("last_latency_ms",),
         "-latency": ("-last_latency_ms",),
+        "since": ("since", "target_ip__ip_address"),
+        "-since": ("-since", "target_ip__ip_address"),
+        "kind": ("kind", "target_ip__ip_address"),
+        "-kind": ("-kind", "target_ip__ip_address"),
+        "source": ("source", "target_ip__ip_address"),
+        "-source": ("-source", "target_ip__ip_address"),
+        "check": ("template__name", "target_ip__ip_address"),
+        "-check": ("-template__name", "target_ip__ip_address"),
+        "device": ("target_ip__assigned_device__name", "target_ip__ip_address"),
+        "-device": ("-target_ip__assigned_device__name", "target_ip__ip_address"),
+        "site": ("_site_name", "target_ip__ip_address"),
+        "-site": ("-_site_name", "target_ip__ip_address"),
     }
+    if ordering.lstrip("-") == "site":
+        qs = qs.annotate(
+            _site_name=Coalesce(
+                F("target_ip__site__name"),
+                F("target_ip__prefix__site__name"),
+                F("target_ip__assigned_device__site__name"),
+            )
+        )
     qs = qs.order_by(*order_map.get(ordering, order_map["-last_checked"]))
-    rows, total, page, page_size = paginate(qs, request.query_params)
+    qs = qs.select_related(
+        "target_ip", "target_ip__site", "target_ip__prefix", "target_ip__prefix__site",
+        "target_ip__assigned_device", "target_ip__assigned_device__site",
+        "template", "engine",
+    )
+    rows, total, page, page_size = paginate(qs, params)
 
-    results = [
-        {
-            "id": str(s.id),
-            "target_ip": {"id": str(s.target_ip_id), "ip_address": s.target_ip.ip_address},
-            "template": {"id": str(s.template_id), "name": s.template.name},
-            "kind": s.kind,
-            "status": s.status,
-            "last_latency_ms": s.last_latency_ms,
-            "last_checked": s.last_checked,
-            "since": s.since,
-            "consecutive_fail": s.consecutive_fail,
-            "source": s.source,
+    # ``strip=<days>`` adds status-over-time segments per row - two queries
+    # for the page, not two per row.
+    strip_days = params.get("strip")
+    segments: dict = {}
+    since = until = None
+    if strip_days and strip_days.isdigit():
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        until = timezone.now()
+        since = until - timedelta(days=max(1, min(int(strip_days), 365)))
+        segments = segments_for_pairs(
+            tenant.id, [(r.target_ip_id, r.template_id) for r in rows], since, until
+        )
+
+    def site_of(ip):
+        site = ip.site if ip.site_id else (
+            ip.prefix.site if ip.prefix_id and ip.prefix.site_id else (
+                ip.assigned_device.site
+                if ip.assigned_device_id and ip.assigned_device.site_id else None
+            )
+        )
+        return {"id": str(site.id), "name": site.name} if site is not None else None
+
+    results = []
+    for st in rows:
+        ip = st.target_ip
+        device = ip.assigned_device if ip.assigned_device_id else None
+        row = {
+            "id": str(st.id),
+            "target_ip": {
+                "id": str(ip.id), "ip_address": ip.ip_address, "dns_name": ip.dns_name,
+            },
+            "template": {"id": str(st.template_id), "name": st.template.name},
+            "kind": st.kind,
+            "status": st.status,
+            "last_latency_ms": st.last_latency_ms,
+            "last_checked": st.last_checked,
+            "since": st.since,
+            "consecutive_fail": st.consecutive_fail,
+            "source": st.source,
             "engine": (
-                {"id": str(s.engine_id), "name": s.engine.name} if s.engine_id else None
+                {"id": str(st.engine_id), "name": st.engine.name} if st.engine_id else None
+            ),
+            "device": {"id": str(device.id), "name": device.name} if device else None,
+            "site": site_of(ip),
+            "prefix": (
+                {"id": str(ip.prefix_id), "cidr": ip.prefix.cidr} if ip.prefix_id else None
             ),
         }
-        for s in rows
-    ]
+        if segments:
+            row["segments"] = segments.get((str(st.target_ip_id), str(st.template_id)), [])
+        results.append(row)
     source_counts = {
         r["source"]: r["n"]
         for r in base.values("source").annotate(n=Count("id")).order_by()
     }
-    return Response(
-        {
-            "count": total,
-            "page": page,
-            "page_size": page_size,
-            "status_counts": status_counts,
-            "source_counts": source_counts,
-            "results": results,
-        }
+    facets = facet_counts(
+        base, params,
+        ("status", "kind", "source", "site", "device_type", "role", "platform",
+         "template", "engine"),
+        apply, status_field="status",
     )
+    body = {
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "status_counts": status_counts,
+        "source_counts": source_counts,
+        "facets": facets,
+        "results": results,
+    }
+    if since is not None:
+        body["since"] = since
+        body["until"] = until
+    return Response(body)
 
 
 @extend_schema(
