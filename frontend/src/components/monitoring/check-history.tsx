@@ -79,6 +79,17 @@ export function detailSummary(detail: Record<string, unknown>): string {
   if (!detail || Object.keys(detail).length === 0) return "-"
   if (typeof detail.error === "string") return detail.error
   const parts: string[] = []
+  // A fast-lane aggregate: the window, not one probe.
+  const agg = detail.agg
+  if (agg && typeof agg === "object") {
+    const a = agg as Record<string, unknown>
+    const bits = [`${String(a.samples)} probes`]
+    if (a.loss_pct != null && Number(a.loss_pct) > 0)
+      bits.push(`loss ${String(a.loss_pct)}%`)
+    if (a.min_ms != null && a.max_ms != null)
+      bits.push(`${String(a.min_ms)}-${String(a.max_ms)} ms`)
+    return bits.join(" · ")
+  }
   const problems: unknown[] = Array.isArray(detail.problems)
     ? detail.problems
     : []

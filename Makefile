@@ -15,7 +15,7 @@ LOG_DIR        ?= /var/log/danbyte
 # doing so left an idle, empty Postgres container on hosts that already had one.
 DEV_SERVICES   := danbyte-mockups danbyte-infra danbyte-backend
 # Units both dev and production run.
-SHARED_SERVICES := danbyte-workers danbyte-docs
+SHARED_SERVICES := danbyte-workers danbyte-fastlane danbyte-docs
 SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 # Timer-driven oneshots (monitoring beat). Each has a .service + a .timer; the
 # timer is what gets enabled. Not part of `up`/`down` (they're not long-running).
@@ -29,6 +29,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         infra-up infra-down infra-restart infra-logs \
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
+        fastlane-up fastlane-down fastlane-restart fastlane-logs \
         migrate makemigrations superuser bootstrap seed-demo shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
@@ -143,6 +144,10 @@ workers-up:       ; systemctl --user start danbyte-workers
 workers-down:     ; systemctl --user stop danbyte-workers
 workers-restart:  ; systemctl --user restart danbyte-workers
 workers-logs:     ; journalctl --user -fu danbyte-workers
+fastlane-up:      ; systemctl --user start danbyte-fastlane
+fastlane-down:    ; systemctl --user stop danbyte-fastlane
+fastlane-restart: ; systemctl --user restart danbyte-fastlane
+fastlane-logs:    ; journalctl --user -fu danbyte-fastlane
 
 docs-up:          ; systemctl --user start danbyte-docs
 docs-down:        ; systemctl --user stop danbyte-docs

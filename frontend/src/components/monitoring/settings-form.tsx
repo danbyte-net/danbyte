@@ -131,6 +131,7 @@ export function MonitoringSettingsForm() {
           escalate_after_minutes: Number(draft.escalate_after_minutes),
           flap_threshold: Number(draft.flap_threshold),
           flap_window_minutes: Number(draft.flap_window_minutes),
+          fast_lane_max_checks: Number(draft.fast_lane_max_checks),
           auto_clear_flapping: draft.auto_clear_flapping,
           auto_clear_flapping_after_minutes: Number(
             draft.auto_clear_flapping_after_minutes
@@ -448,6 +449,26 @@ export function MonitoringSettingsForm() {
               />
             </div>
           )}
+
+          {/* The fast lane */}
+          <div className="space-y-2">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">Fast lane</span>
+              <span className="text-[11px] text-muted-foreground">
+                Checks with an interval under a minute run from a long-lived
+                process instead of the minute beat. This caps how many; the rest
+                run at their fallback interval. 0 turns it off.
+              </span>
+            </div>
+            <div className="max-w-xs">
+              <NumberField
+                label="Sub-minute checks"
+                hint="Per tenant"
+                value={draft.fast_lane_max_checks}
+                onChange={(v) => set("fast_lane_max_checks", v)}
+              />
+            </div>
+          </div>
 
           {/* Flap dampening */}
           <div className="space-y-2">

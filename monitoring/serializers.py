@@ -584,7 +584,8 @@ class CheckTemplateSerializer(serializers.ModelSerializer):
         model = CheckTemplate
         fields = [
             "id", "name", "slug", "kind", "params", "secret_params",
-            "has_secrets", "usage_count", "interval_seconds", "timeout_ms",
+            "has_secrets", "usage_count", "interval_seconds", "interval_ms",
+            "record_every_seconds", "timeout_ms",
             "retries", "rise", "fall", "degraded_enabled", "enabled",
             "created_at", "updated_at",
         ]
@@ -618,6 +619,25 @@ class CheckTemplateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"params": str(e)})
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])[:120] or "check"
+        # The fast lane's floors: a datagram every 200 ms is fine, a TCP
+        # handshake every 200 ms to one host is not. A timeout longer than
+        # the interval would queue probes on each other, so the interval is
+        # also the timeout's ceiling.
+        interval_ms = attrs.get("interval_ms", getattr(self.instance, "interval_ms", None))
+        if interval_ms:
+            from .fastlane import MAX_INTERVAL_MS, min_interval_ms
+
+            floor = min_interval_ms(kind)
+            if interval_ms < floor or interval_ms > MAX_INTERVAL_MS:
+                raise serializers.ValidationError({
+                    "interval_ms": f"{floor}-{MAX_INTERVAL_MS} ms for a {kind} check.",
+                })
+            timeout = attrs.get("timeout_ms", getattr(self.instance, "timeout_ms", 2000))
+            if timeout > interval_ms:
+                attrs["timeout_ms"] = interval_ms
+        record = attrs.get("record_every_seconds")
+        if record is not None and record < 5:
+            raise serializers.ValidationError({"record_every_seconds": "At least 5 seconds."})
         return attrs
 
 
@@ -882,6 +902,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "escalate_enabled", "escalate_after_minutes",
             "flap_threshold", "flap_window_minutes",
             "auto_clear_flapping", "auto_clear_flapping_after_minutes",
+            "fast_lane_max_checks",
             "group_notifications", "group_threshold",
             "discovery_enabled", "discovery_min_prefix_length",
             "discovery_interval_minutes", "discovery_all_prefixes",

@@ -95,6 +95,21 @@ class ResolvedCheck:
         return int(self._ov("interval_seconds", self.template.interval_seconds))
 
     @property
+    def interval_ms(self) -> int | None:
+        """The fast-lane interval, or None for the minute beat. An assignment
+        may set one (or clear the template's with ``0``)."""
+        raw = self._ov("interval_ms", self.template.interval_ms)
+        try:
+            value = int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            value = None
+        return value or None
+
+    @property
+    def record_every_seconds(self) -> int:
+        return max(int(self._ov("record_every_seconds", self.template.record_every_seconds)), 5)
+
+    @property
     def timeout_ms(self) -> int:
         return int(self._ov("timeout_ms", self.template.timeout_ms))
 

@@ -4413,7 +4413,14 @@ export interface CheckTemplate {
   params: Record<string, unknown>
   has_secrets: boolean
   usage_count: number
+  /** The normal cadence - and the fallback when `interval_ms` is set but no
+   * fast lane can run the check (lane down, older Outpost). */
   interval_seconds: number
+  /** Fast lane: probe every this many milliseconds (200-59999); null = the
+   * minute beat. Status changes are recorded at once, the rest once per
+   * `record_every_seconds` as an aggregate. */
+  interval_ms: number | null
+  record_every_seconds: number
   timeout_ms: number
   retries: number
   rise: number
@@ -4511,6 +4518,9 @@ export interface EffectiveCheck {
   /** Null for policy-sourced checks (no per-IP CheckAssignment). */
   assignment_id: string | null
   interval_seconds: number
+  /** Set when the check runs on the fast lane. */
+  interval_ms: number | null
+  record_every_seconds: number
   degraded_enabled: boolean
   params: Record<string, unknown>
   enabled: boolean
@@ -4710,6 +4720,9 @@ export interface MonitoringSettings {
    * fine. On: it clears itself after the settle time of quiet. */
   auto_clear_flapping: boolean
   auto_clear_flapping_after_minutes: number
+  /** Sub-minute checks the fast lane runs for the tenant; 0 = none. Over
+   * the cap they run on the minute beat at their fallback interval. */
+  fast_lane_max_checks: number
   group_notifications: boolean
   group_threshold: number
   discovery_enabled: boolean
@@ -4987,6 +5000,8 @@ export interface CheckListRow {
   /** Set while the check is flagged as flapping - sticky until confirmed. */
   flapping_since: string | null
   flap_count: number
+  /** Set when the check runs on the fast lane. */
+  interval_ms: number | null
   device: { id: string; name: string } | null
   /** The address's own site, else its prefix's, else its device's. */
   site: { id: string; name: string } | null
@@ -5034,6 +5049,13 @@ export interface MonitoringStats {
   series: MonitoringSeriesPoint[]
   series_hours: StatsHours
   series_bucket: "hour" | "day"
+  /** Sub-minute checks in view, and the lane's own pulse. */
+  fast_lane: {
+    fast_checks: number
+    alive: boolean
+    checks: number
+    probes_per_s: number
+  }
   recent_transitions: Array<{
     id: number
     target_ip: { id: string; ip_address: string } | null

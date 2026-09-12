@@ -8,6 +8,7 @@ import { SortHeader } from "@/components/data-table"
 import { SourceBadge, SourceHeader } from "@/components/monitoring/source-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { StatusStrip } from "@/components/monitoring/status-strip"
+import { FastBadge } from "@/components/monitoring/fast-badge"
 
 export type CheckColumnId =
   | "status"
@@ -118,8 +119,13 @@ export function checkColumns(
       accessorFn: (r) => r.kind,
       header: ({ column }) => <SortHeader column={column} label="Type" />,
       cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground uppercase">
-          {row.original.kind}
+        <span className="inline-flex items-center gap-1.5">
+          <span className="font-mono text-[11px] text-muted-foreground uppercase">
+            {row.original.kind}
+          </span>
+          {row.original.interval_ms && (
+            <FastBadge intervalMs={row.original.interval_ms} />
+          )}
         </span>
       ),
     },

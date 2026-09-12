@@ -113,6 +113,9 @@ def materialise_ip(ip: IPAddress, now=None) -> int:
                 "kind": rc.kind,
                 "engine": engine,
                 "interval_seconds": interval_override,
+                # Resolved here so the lane and the beat can select on a
+                # column rather than re-resolving overrides per tick.
+                "interval_ms": rc.interval_ms,
             },
         )
         if created:
@@ -352,7 +355,7 @@ def dispatch(now=None, sync: bool = False) -> dict:
     # Only LOCAL-engine work runs on the core's RQ workers. Remote (Outpost)
     # states are left unclaimed for their Outpost to pull via /api/outpost/work,
     # and driver states were just handled above.
-    due = list(
+    due = (
         CheckState.objects.filter(next_run__lte=now, in_flight=False)
         .filter(
             models.Q(engine__isnull=True)
@@ -360,6 +363,13 @@ def dispatch(now=None, sync: bool = False) -> dict:
         )
         .select_related("template", "assignment")
     )
+    # Sub-minute checks belong to the fast lane while it is alive; when it is
+    # not, they run here at their fallback interval rather than not at all.
+    from .fastlane import lane_alive
+
+    if lane_alive(now):
+        due = due.filter(models.Q(interval_ms__isnull=True) | models.Q(fast_owned=False))
+    due = list(due)
     # Plus the orphans: a target bound to a driver engine still has its other
     # checks, and a driver only answers its own kind. Nobody was claiming an
     # ICMP ping on a Zabbix-bound device, so it simply never ran - which reads

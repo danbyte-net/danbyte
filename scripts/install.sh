@@ -283,7 +283,7 @@ as_user bash -lc "cd '$APP' && make install-prod-services >/dev/null"
 if [ -d /usr/local/bin ]; then
   ln -sfn "$APP/scripts/danbyte-admin" /usr/local/bin/danbyte
 fi
-DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs"
+DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane danbyte-docs"
 # enable = start at boot; restart = pick up freshly-deployed code (a plain
 # `enable --now` is a no-op on already-running units, so a re-install/upgrade
 # would keep serving the OLD code - restart is what makes the update take).

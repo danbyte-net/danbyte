@@ -140,7 +140,25 @@ class CheckTemplate(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
 
     interval_seconds = models.PositiveIntegerField(
-        default=300, help_text="How often the check runs, in seconds."
+        default=300, help_text="How often the check runs, in seconds. With a fast "
+        "interval set this is the fallback cadence when no fast lane can run it.",
+    )
+    # ─── the fast lane ────────────────────────────────────────────────────
+    # Sub-minute checks do not go through the minute beat and the RQ workers;
+    # a long-lived process (or the Outpost's own loop) probes them from an
+    # in-memory schedule and writes only what matters: every status change at
+    # once, and one aggregated sample per ``record_every_seconds``. That is
+    # what keeps a one-second ping from writing 86,400 rows a day.
+    interval_ms = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Fast-lane interval in milliseconds (200-59999). Empty = the "
+        "check runs on the normal minute beat at interval_seconds.",
+    )
+    record_every_seconds = models.PositiveIntegerField(
+        default=60,
+        help_text="Fast lane: how often one aggregated result is recorded "
+        "(min/avg/max latency and loss over the window). Status changes are "
+        "always recorded at once.",
     )
     timeout_ms = models.PositiveIntegerField(
         default=2000, help_text="Per-attempt timeout in milliseconds."
@@ -664,6 +682,18 @@ class CheckState(TimestampedModel):
         "= use the tenant's global default. Assignment-sourced checks ignore "
         "this and follow their own schedule.",
     )
+    #: Resolved fast-lane interval (template or assignment override); null =
+    #: the minute beat. ``fast_owned`` is set by the lane when it takes the
+    #: state within the tenant's cap; a fast state nobody owns, or one whose
+    #: lane has stopped answering, runs on the beat at interval_seconds.
+    interval_ms = models.PositiveIntegerField(null=True, blank=True)
+    fast_owned = models.BooleanField(default=False)
+    #: The downsampling clock: when the lane last wrote an aggregated result.
+    last_recorded_at = models.DateTimeField(null=True, blank=True)
+    #: The open recording window's running totals, for checks an Outpost
+    #: reports in batches - the aggregate must cover the whole window, not
+    #: the last batch.
+    fast_window = models.JSONField(default=dict, blank=True)
 
     status = models.CharField(
         max_length=8, choices=CheckStatus.choices, default=CheckStatus.UNKNOWN
@@ -873,6 +903,15 @@ class MonitoringSettings(TimestampedModel):
     auto_clear_flapping_after_minutes = models.PositiveIntegerField(
         default=30, help_text="Quiet minutes before a flapping state clears itself."
     )
+    # ─── the fast lane ────────────────────────────────────────────────────
+    # A ceiling on sub-minute checks, because a thousand one-second pings is
+    # a decision somebody should make on purpose. Checks over the cap run on
+    # the minute beat at their fallback interval. 0 turns the lane off.
+    fast_lane_max_checks = models.PositiveIntegerField(
+        default=500,
+        help_text="How many sub-minute checks the fast lane runs for this tenant "
+        "(0 = none; the rest run at their fallback interval).",
+    )
     # Grouping: when one batch opens many alerts (e.g. a switch dies), send one
     # digest per channel instead of a storm of individual messages.
     group_notifications = models.BooleanField(
@@ -1069,6 +1108,10 @@ class MonitoringEngine(TimestampedModel):
     poll_interval_seconds = models.PositiveIntegerField(
         default=15, help_text="How often the Outpost polls the core for work."
     )
+    #: The agent said it runs a fast lane of its own (hello ``fast: true``).
+    #: Until it does, its sub-minute checks are handed out on the minute beat
+    #: like everything else - an older agent must keep working unchanged.
+    agent_fast = models.BooleanField(default=False)
     # When on, the agent self-updates to the default ("golden") release whenever
     # its version differs - pull-transport binary Outposts only.
     auto_update = models.BooleanField(default=False)

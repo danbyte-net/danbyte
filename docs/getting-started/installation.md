@@ -233,7 +233,7 @@ The other tabs cover building from source and a local dev checkout.
     .venv/bin/python manage.py bootstrap
     make frontend-install frontend-build collectstatic
     make install-services install-prod-services
-    systemctl --user enable --now danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers
+    systemctl --user enable --now danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane
     ```
 
     **7 · nginx + TLS:**
@@ -255,6 +255,7 @@ The other tabs cover building from source and a local dev checkout.
         | `danbyte-ws` | WebSockets / presence (daphne) on `127.0.0.1:8002` |
         | `danbyte-frontend-prod` | the built SSR frontend (node) on `127.0.0.1:3000` |
         | `danbyte-workers` | background jobs - scans, deploys (RQ) |
+        | `danbyte-fastlane` | sub-minute checks, from an in-memory schedule |
         | `danbyte-*` timers | drift dispatch, cleanup, materialise, … |
 
         gunicorn serves all plain HTTP; daphne serves **only** `/ws/`. Keeping the

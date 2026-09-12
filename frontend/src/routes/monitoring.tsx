@@ -395,6 +395,18 @@ function MonitoringPage() {
                 value={d.by_status.skipped ?? 0}
                 tone="skipped"
               />
+              {d.fast_lane.fast_checks > 0 && (
+                <Kpi
+                  label="Fast lane"
+                  value={d.fast_lane.fast_checks}
+                  tone={d.fast_lane.alive ? undefined : "down"}
+                  badge={
+                    d.fast_lane.alive
+                      ? `${d.fast_lane.probes_per_s}/s`
+                      : "alert"
+                  }
+                />
+              )}
               {flaps.length > 0 && (
                 <Link
                   to="/monitoring"

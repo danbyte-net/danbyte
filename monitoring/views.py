@@ -314,6 +314,8 @@ def ip_checks_view(request, ip_id):
                 "prefix_id": str(rc.prefix.id) if rc.prefix else None,
                 "assignment_id": str(a.id) if a else None,
                 "interval_seconds": rc.interval_seconds,
+                "interval_ms": rc.interval_ms,
+                "record_every_seconds": rc.record_every_seconds,
                 "degraded_enabled": rc.degraded_enabled,
                 "params": rc.params,
                 # Per-assignment override editing (M18) - only meaningful to edit
@@ -988,7 +990,23 @@ def engine_health_view(request):
             tenant=tenant, enabled=True, stale_since__isnull=False
         )
     ]
-    return Response({"stale_engines": stale})
+    # The fast lane is a process, not an engine, but "down while fast checks
+    # exist" is the same kind of news: those checks are on the minute beat
+    # at their fallback interval until it is back.
+    from .fastlane import fast_states, lane_alive, lane_stats
+
+    fast_count = _scope_ip_keyed(request, tenant, fast_states()).filter(tenant=tenant).count()
+    stats = lane_stats()
+    return Response({
+        "stale_engines": stale,
+        "fast_lane": {
+            "alive": lane_alive(now),
+            "checks": stats.get("checks") if stats else 0,
+            "probes_per_s": stats.get("probes_per_s") if stats else 0,
+            "at": stats.get("at") if stats else None,
+            "fast_checks_here": fast_count,
+        },
+    })
 
 
 @extend_schema(
@@ -1197,6 +1215,10 @@ def stats_view(request):
     hours = request.query_params.get("hours")
     hours = int(hours) if hours in SERIES_HOURS else 24
     series, bucket = _result_series(request, tenant, hours)
+    from .fastlane import lane_alive, lane_stats
+
+    fast_checks = states.filter(interval_ms__isnull=False).count()
+    lane = lane_stats() or {}
 
     return Response(
         {
@@ -1210,6 +1232,14 @@ def stats_view(request):
             "series_hours": hours,
             "series_bucket": bucket,
             "recent_transitions": StateTransitionSerializer(recent, many=True).data,
+            # Sub-minute checks in the caller's view, and the lane's own pulse
+            # (deployment-wide - one process runs every tenant's).
+            "fast_lane": {
+                "fast_checks": fast_checks,
+                "alive": lane_alive(),
+                "checks": lane.get("checks", 0),
+                "probes_per_s": lane.get("probes_per_s", 0),
+            },
         }
     )
 
@@ -1907,6 +1937,7 @@ def checks_list_view(request):
             ),
             "flapping_since": st.flapping_since,
             "flap_count": st.flap_count,
+            "interval_ms": st.interval_ms,
             "device": {"id": str(device.id), "name": device.name} if device else None,
             "site": site_of(ip),
             "prefix": (

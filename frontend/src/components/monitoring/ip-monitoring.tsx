@@ -35,6 +35,7 @@ import { AddCheckDialog } from "./add-check-dialog"
 import { NotifyMeButton } from "./notify-me-button"
 import { CheckHistory } from "./check-history"
 import { UptimePanel } from "./uptime-panel"
+import { FastBadge } from "./fast-badge"
 import { FlappingPill } from "./flapping-pill"
 import { HistoryPanel } from "./history-panel"
 import { StatusStrip } from "./status-strip"
@@ -297,6 +298,7 @@ function CheckRow({
               from policy
             </Badge>
           )}
+          {check.interval_ms && <FastBadge intervalMs={check.interval_ms} />}
           {check.state?.flapping_since && <FlappingPill />}
         </button>
         {strip && (

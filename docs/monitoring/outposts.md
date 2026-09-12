@@ -90,6 +90,24 @@ against a freshly-upgraded core. So:
 Full contract: `docs/COMPATIBILITY.md` in the danbyte-outpost repo. **Whenever you
 extend the monitoring engine, check that doc.**
 
+## Sub-minute checks on an Outpost {#fast-lane}
+
+A check with an interval under a minute (see
+[the fast lane](../features/monitoring.md#fast-lane)) bound to an Outpost is
+probed *by* that Outpost, from its own in-memory schedule, alongside its
+ordinary poll loop. The agent says `fast: true` in its hello; from then on
+the core hands sub-minute checks to `GET /api/outpost/fast-work/` (the whole
+set, refreshed every 15 s - nothing is claimed, the Outpost owns them) and
+the agent reports buffered probes to `POST /api/outpost/fast-results/` on
+its poll interval, or at once when a probe's reachability differs from the
+last one it reported. The core folds them through the same rise and fall as
+its own lane, so the status, the history and the alerts are identical
+whichever side did the probing.
+
+Additive, protocol version unchanged: an agent older than 0.8 never says
+`fast`, and its sub-minute checks are handed out on the minute beat at their
+ordinary interval - it keeps working, just not faster.
+
 ## Reverse DNS from an Outpost
 
 PTR is the one lookup whose right answer depends on **where you ask from**. A

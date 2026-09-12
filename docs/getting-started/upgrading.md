@@ -96,7 +96,7 @@ current `/opt` layout.
     make collectstatic frontend-build
 
     # Restart whatever this install runs (prod shown; dev uses danbyte-backend)
-    systemctl --user restart danbyte-web danbyte-ws danbyte-workers danbyte-frontend-prod
+    systemctl --user restart danbyte-web danbyte-ws danbyte-workers danbyte-fastlane danbyte-frontend-prod
     ```
 
     Back up the database first: `pg_dump danbyte > ~/danbyte-$(date +%F).sql`.
@@ -319,7 +319,7 @@ untouched.** Back up first.
 
     # 1. stop services + the user's systemd manager
     asuser /srv/danbyte systemctl --user stop \
-      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs
+      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane danbyte-docs
     loginctl disable-linger "$U"; loginctl terminate-user "$U"; sleep 2
 
     # 2. move the home (contents included) and update the passwd entry
@@ -335,7 +335,7 @@ untouched.** Back up first.
     sudo install -d -o "$U" -g "$U" -m 755 /var/log/danbyte
     asuser /opt/danbyte systemctl --user daemon-reload
     asuser /opt/danbyte systemctl --user start \
-      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs
+      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane danbyte-docs
     ```
 
 ## Turn on /var/log/danbyte logging

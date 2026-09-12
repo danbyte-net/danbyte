@@ -58,6 +58,59 @@ export const INTERVALS = [
   { value: "86400", label: "Daily" },
 ]
 
+/** Fast-lane intervals, encoded as `ms:<n>` so one select holds both
+ * cadences. 200 ms and 500 ms are ICMP only - the server refuses them for a
+ * kind that opens a connection. */
+export const FAST_INTERVALS = [
+  { value: "ms:200", label: "200 ms" },
+  { value: "ms:500", label: "500 ms" },
+  { value: "ms:1000", label: "1 second" },
+  { value: "ms:2000", label: "2 seconds" },
+  { value: "ms:5000", label: "5 seconds" },
+  { value: "ms:10000", label: "10 seconds" },
+  { value: "ms:30000", label: "30 seconds" },
+]
+
+/** The picker for a check's own interval: the fast lane first, then the
+ * minute beat. Policies and the tenant default keep `INTERVALS` alone. */
+export function checkIntervals(kind: string) {
+  const fast =
+    kind === "icmp"
+      ? FAST_INTERVALS
+      : FAST_INTERVALS.filter((o) => Number(o.value.slice(3)) >= 1000)
+  return [...fast, ...INTERVALS]
+}
+
+export const RECORD_EVERY = [
+  { value: "15", label: "15 seconds" },
+  { value: "30", label: "30 seconds" },
+  { value: "60", label: "1 minute" },
+  { value: "300", label: "5 minutes" },
+]
+
+export const isFastInterval = (v: string) => v.startsWith("ms:")
+
+/** The select's value for a template's cadence. */
+export function intervalValue(t: {
+  interval_seconds: number
+  interval_ms?: number | null
+}): string {
+  return t.interval_ms ? `ms:${t.interval_ms}` : String(t.interval_seconds)
+}
+
+/** The payload for a select value. A fast pick keeps `interval_seconds` as
+ * the fallback cadence (one minute when the template had none faster). */
+export function intervalBody(
+  value: string,
+  fallbackSeconds?: number
+): { interval_seconds: number; interval_ms: number | null } {
+  if (isFastInterval(value)) {
+    const fb = fallbackSeconds && fallbackSeconds < 300 ? fallbackSeconds : 60
+    return { interval_seconds: fb, interval_ms: Number(value.slice(3)) }
+  }
+  return { interval_seconds: Number(value), interval_ms: null }
+}
+
 type FieldType =
   | "text"
   | "number"

@@ -46,7 +46,8 @@ from pathlib import Path
 # hand-written copies and locals that the repo's services/ directory does not.
 UNIT_ORDER = [
     "danbyte-web", "danbyte-backend", "danbyte-ws", "danbyte-frontend-prod",
-    "danbyte-frontend", "danbyte-workers", "danbyte-docs", "danbyte-infra",
+    "danbyte-frontend", "danbyte-workers", "danbyte-fastlane", "danbyte-docs",
+    "danbyte-infra",
     "danbyte-mockups",
 ]
 # Dev-only, and dangerous to suggest on a production host: it brings up a

@@ -64,6 +64,27 @@ services:
     volumes:
       - .:/app
 
+  # The fast lane - sub-minute checks; see docker-compose.prod.yml.
+  fastlane:
+    build: .
+    command: python manage.py fastlane
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: danbyte
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - .:/app
+
   # The beat - see the note in docker-compose.prod.yml. Without it a dev stack
   # materialises and dispatches nothing.
   scheduler:

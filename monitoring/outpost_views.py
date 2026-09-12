@@ -55,11 +55,14 @@ def claim_and_build_work(engine, now=None, limit: int = WORK_BATCH) -> list[dict
     from .worker import _resolved_from_state, effective_interval
 
     now = now or timezone.now()
-    due = list(
-        CheckState.objects.filter(
-            engine=engine, next_run__lte=now, in_flight=False
-        ).select_related("target_ip", "template", "assignment")[:limit]
-    )
+    due = CheckState.objects.filter(
+        engine=engine, next_run__lte=now, in_flight=False
+    ).select_related("target_ip", "template", "assignment")
+    # An agent with a lane of its own owns its sub-minute checks from
+    # /fast-work; an older agent gets them here at the fallback interval.
+    if getattr(engine, "agent_fast", False):
+        due = due.filter(interval_ms__isnull=True)
+    due = list(due[:limit])
     checks = []
     for s in due:
         s.in_flight = True
@@ -177,10 +180,13 @@ def outpost_hello_view(request):
     eng.agent_version = str(request.data.get("version", ""))[:40]
     eng.agent_hostname = str(request.data.get("hostname", ""))[:255]
     eng.agent_ip = str(request.data.get("ip", "") or _client_ip(request))[:45]
+    # An agent that runs a fast lane says so; until it does, its sub-minute
+    # checks are handed out on the beat like everything else.
+    eng.agent_fast = bool(request.data.get("fast", False))
     eng.save(
         update_fields=[
             "last_seen_at", "agent_version", "agent_hostname", "agent_ip",
-            "updated_at",
+            "agent_fast", "updated_at",
         ]
     )
     return Response(
@@ -191,6 +197,9 @@ def outpost_hello_view(request):
             # Non-null → the agent should self-update to this version.
             "update_to": _update_target(eng, eng.agent_version),
             "dns": _dns_directive(eng),
+            # This core has the fast-lane endpoints; an agent that also has
+            # a lane pulls its sub-minute set from them.
+            "fast": True,
         }
     )
 
@@ -329,6 +338,101 @@ def outpost_results_view(request):
     n = ingest_results(
         outcome_by_id, engine_id=eng.id, tenant_id=eng.tenant_id
     )
+    return Response({"ingested": n})
+
+
+FAST_REFRESH_SECONDS = 15  # how often an agent re-reads its fast set
+
+
+def build_fast_work(engine) -> list[dict]:
+    """The sub-minute checks this Outpost owns continuously. Not claimed:
+    ownership is the engine binding itself, and the agent keeps probing
+    between refreshes."""
+    from .fastlane import fast_states, min_interval_ms
+    from .worker import _resolved_from_state, effective_interval
+
+    checks = []
+    for s in fast_states(engine):
+        if not effective_interval(s):
+            continue
+        rc = _resolved_from_state(s)
+        checks.append(
+            {
+                "state_id": str(s.id),
+                "kind": rc.kind,
+                "target": s.target_ip.ip_address,
+                "params": rc.params,
+                "secret_params": rc.secret_params,
+                "timeout_ms": rc.timeout_ms,
+                "interval_ms": max(int(s.interval_ms or 1000), min_interval_ms(rc.kind)),
+            }
+        )
+    return checks
+
+
+@extend_schema(
+    summary="The sub-minute checks this Outpost runs on its own lane",
+    tags=["outpost"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="The fast checks, each with its interval, and how often to refresh.",
+    ),
+)
+@api_view(["GET"])
+@authentication_classes([OutpostAuthentication])
+@permission_classes([IsAuthenticated])
+def outpost_fast_work_view(request):
+    eng = request.auth
+    now = timezone.now()
+    eng.last_seen_at = now
+    eng.save(update_fields=["last_seen_at"])
+    checks = build_fast_work(eng)
+    if checks:
+        CheckState.objects.filter(id__in=[c["state_id"] for c in checks]).exclude(
+            fast_owned=True
+        ).update(fast_owned=True)
+    return Response({
+        "checks": checks,
+        "refresh_seconds": FAST_REFRESH_SECONDS,
+        # Buffer probes and report on this cadence - or at once when a
+        # probe's reachability differs from the last one reported.
+        "flush_seconds": eng.poll_interval_seconds,
+    })
+
+
+@extend_schema(
+    summary="Ingest buffered fast-lane probes from an Outpost",
+    tags=["outpost"],
+    request=inline_serializer(
+        name="OutpostFastResultsRequest",
+        fields={
+            "results": serializers.ListField(
+                child=inline_serializer(
+                    name="OutpostFastResultItem",
+                    fields={
+                        "state_id": serializers.CharField(),
+                        "samples": serializers.ListField(child=serializers.DictField()),
+                    },
+                ),
+                required=False,
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT, description="How many probes were folded."
+    ),
+)
+@api_view(["POST"])
+@authentication_classes([OutpostAuthentication])
+@permission_classes([IsAuthenticated])
+def outpost_fast_results_view(request):
+    from .fastlane import ingest_samples
+
+    eng = request.auth
+    eng.last_seen_at = timezone.now()
+    eng.save(update_fields=["last_seen_at"])
+    n = ingest_samples(eng, request.data or {})
     return Response({"ingested": n})
 
 

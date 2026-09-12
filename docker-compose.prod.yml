@@ -127,6 +127,23 @@ services:
       backend:
         condition: service_healthy
 
+  # The fast lane: sub-minute checks probed from an in-memory schedule by one
+  # long-lived process. Same ping_group_range need as the workers. One replica
+  # - two lanes would both claim the same checks.
+  fastlane:
+    <<: *app-build
+    environment: *app-env
+    command: ["python", "manage.py", "fastlane"]
+    sysctls:
+      - net.ipv4.ping_group_range=0 2147483647
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
   # The beat. Bare metal runs each entry in core/schedule.py as its own systemd
   # timer; a container has no init to do that, so one process reads the same
   # table and calls the same commands. Without it nothing is ever *triggered*:

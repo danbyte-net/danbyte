@@ -12,7 +12,11 @@ import {
 import { Field, FormFooter, FormSelect, FormText } from "@/components/forms"
 import {
   CheckFields,
-  INTERVALS,
+  RECORD_EVERY,
+  checkIntervals,
+  intervalBody,
+  intervalValue,
+  isFastInterval,
   useCheckKinds,
   buildParams,
   initialValues,
@@ -40,6 +44,7 @@ export function TemplateEditor({
   const [kind, setKind] = useState<string>("icmp")
   const kinds = useCheckKinds()
   const [interval, setInterval] = useState("300")
+  const [recordEvery, setRecordEvery] = useState("60")
   const [vals, setVals] = useState<Vals>(() => initialValues("icmp"))
 
   // Re-seed when the dialog opens for a different template (or for "new").
@@ -48,12 +53,14 @@ export function TemplateEditor({
     if (template) {
       setName(template.name)
       setKind(template.kind)
-      setInterval(String(template.interval_seconds))
+      setInterval(intervalValue(template))
+      setRecordEvery(String(template.record_every_seconds ?? 60))
       setVals(valuesFromTemplate(template))
     } else {
       setName("")
       setKind("icmp")
       setInterval("300")
+      setRecordEvery("60")
       setVals(initialValues("icmp"))
     }
   }, [open, template])
@@ -67,7 +74,8 @@ export function TemplateEditor({
         name: name.trim(),
         kind,
         params,
-        interval_seconds: Number(interval),
+        ...intervalBody(interval, template?.interval_seconds),
+        record_every_seconds: Number(recordEvery),
         degraded_enabled: true,
       }
       // Only send secrets when the user actually entered some - otherwise a
@@ -136,11 +144,23 @@ export function TemplateEditor({
             )}
             <FormSelect
               label="Interval"
+              info="Under a minute runs on the fast lane: a status change is recorded the moment it happens, everything else once per recording window. If the lane is down, or an older Outpost holds the check, it runs every minute instead."
               value={interval}
               onChange={(v) => setInterval(v ?? "300")}
-              options={INTERVALS}
+              options={checkIntervals(kind)}
             />
           </div>
+          {isFastInterval(interval) && (
+            <div className="max-w-xs">
+              <FormSelect
+                label="Record every"
+                info="How often one aggregated result (min, average, max latency and loss) is stored. Fewer rows, same history: status changes are always stored at once."
+                value={recordEvery}
+                onChange={(v) => setRecordEvery(v ?? "60")}
+                options={RECORD_EVERY}
+              />
+            </div>
+          )}
 
           <FormText
             label="Name"

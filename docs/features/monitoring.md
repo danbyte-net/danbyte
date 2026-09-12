@@ -215,6 +215,49 @@ instantly. Hand-attached checks (the *Add check* flow on an IP or prefix) keep
 their own per-check interval and schedule mode instead - see
 [Per-check overrides](#per-check-overrides).
 
+### Sub-minute checks - the fast lane {#fast-lane}
+
+The minute beat cannot run anything faster than a minute, and every run it
+records is a row. For the handful of things that matter more than that - a
+core switch, an uplink, a firewall pair - a check can run **every 200 ms to
+30 s** instead. Pick a sub-minute interval on the check (the *Interval*
+picker on a check definition or in *Add check*) and it moves to the **fast
+lane**: one long-lived process (`danbyte-fastlane`) that probes from an
+in-memory schedule, on the core for checks the core runs and inside the
+Outpost for checks an Outpost runs.
+
+What reaches the database is what matters:
+
+- a **status change** is recorded the moment it happens - the probe that
+  caused it, the change, and everything a change sets off (alerts,
+  notifications, history, flapping) exactly as on the minute beat;
+- everything else is **downsampled**: one aggregated result per **Record
+  every** (default 60 s) carrying the window's min, average and max latency
+  and its packet loss. A one-second ping therefore costs the database what
+  a sixty-second one does, while an outage is seen in *interval × fall* -
+  three seconds for a 1 s check with the default fall of 3.
+
+Rise and fall mean what they always meant; they simply add up faster.
+*Stale after N scans* counts scans at the check's normal cadence rather
+than probes, so ten failed one-second probes is not "stale" - ten failed
+minutes is.
+
+The floors are 200 ms for ICMP and 1 s for anything that opens a
+connection; a timeout longer than the interval is brought down to it.
+**Sub-minute checks** in the monitoring settings caps how many the lane runs
+for the tenant (500 by default; 0 turns it off) - the rest, and every fast
+check whenever the lane is not running, run on the minute beat at the
+check's ordinary interval, which is why a fast check still carries one. The
+Overview shows the lane's checks and probes per second, and the red strip
+at the top says when the lane is down while fast checks exist.
+
+An Outpost runs the same loop for the fast checks bound to it: it pulls
+its set, probes it locally, and reports buffered probes every poll - or at
+once when a probe's reachability differs from the last one - and the core
+applies the same rise and fall to them it applies to its own. An Outpost
+older than 0.8 does not know the lane; its fast checks simply run at the
+ordinary interval until it is upgraded.
+
 ### Monitoring devices, types, and roles
 
 Checks always run against **IP addresses**, so a device (or every device of a

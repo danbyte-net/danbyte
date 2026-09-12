@@ -2,11 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type CheckTemplate,
-  type Paginated,
-} from "@/lib/api"
+import { api, type CheckTemplate, type Paginated } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -17,7 +13,8 @@ import { FormFooter, FormSelect, FormText } from "@/components/forms"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   CheckFields,
-  INTERVALS,
+  checkIntervals,
+  intervalBody,
   useCheckKinds,
   buildParams,
   initialValues,
@@ -91,7 +88,7 @@ export function AddCheckDialog({
               kind,
               params,
               secret_params,
-              interval_seconds: Number(interval),
+              ...intervalBody(interval),
               degraded_enabled: true,
             }),
           }
@@ -180,9 +177,10 @@ export function AddCheckDialog({
                 />
                 <FormSelect
                   label="Interval"
+                  info="Under a minute runs on the fast lane: status changes recorded at once, the rest as one aggregated result a minute."
                   value={interval}
                   onChange={(v) => setInterval(v ?? "300")}
-                  options={INTERVALS}
+                  options={checkIntervals(kind)}
                 />
               </div>
               <FormText
