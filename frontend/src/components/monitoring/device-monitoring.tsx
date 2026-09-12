@@ -7,6 +7,7 @@ import { ExternalChips } from "./external-chips"
 import { ExternalStatusHover } from "./external-status"
 import { MixedStatusBadge } from "./mixed-status-badge"
 import { NotifyMeButton } from "./notify-me-button"
+import { ZabbixHostPanel } from "./zabbix-host-panel"
 
 // Shared query so the header badge, the Overview summary, and the IPs tab all
 // dedupe onto one fetch.
@@ -79,6 +80,7 @@ export function DeviceMonitoring({ deviceId }: { deviceId: string }) {
         />
       </ExternalStatusHover>
       <ExternalChips entry={{ ...data, ...data.rollup }} />
+      <ZabbixHostPanel scope={{ device: deviceId }} compact />
       <div className="flex items-center gap-x-4 overflow-hidden">
         {shownIps.map((ip) => (
           <Link

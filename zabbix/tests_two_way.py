@@ -298,9 +298,11 @@ class ScheduleTests(_Base):
 
     def test_the_beat_queues_the_reconcile_with_provisioning_off(self):
         self.assertEqual(self.conn.provision_mode, ZabbixConnection.OFF)
+        self.conn.read_host_status = False
+        self.conn.save(update_fields=["read_host_status"])
         with mock.patch("django_rq.get_queue") as gq:
             out = enqueue_due_syncs()
-        self.assertEqual(out, {"queued": 0, "maintenance": 1})
+        self.assertEqual(out, {"queued": 0, "maintenance": 1, "status": 0})
         gq.return_value.enqueue.assert_called_once()
         self.conn.last_maintenance_sync_at = timezone.now()
         self.conn.save(update_fields=["last_maintenance_sync_at"])

@@ -40,37 +40,7 @@ export function ExternalDetailPanel({ detail }: { detail?: ExternalDetail }) {
         </p>
       )}
 
-      {protocols.length > 0 && (
-        <div className="space-y-1">
-          {protocols.map(([proto, info]) => (
-            <div key={proto} className="flex flex-wrap items-start gap-2">
-              <Badge
-                variant={
-                  info.state === "down"
-                    ? "destructive"
-                    : info.state === "up"
-                      ? "success"
-                      : "secondary"
-                }
-                className="uppercase"
-              >
-                {proto}
-              </Badge>
-              {info.error ? (
-                // The remote system's own words. Paraphrasing them would only
-                // lose the OID and the timeout that name the problem.
-                <span className="min-w-0 flex-1 font-mono break-all text-muted-foreground">
-                  {info.error}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">
-                  {info.state === "up" ? "reachable" : "not polled yet"}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {protocols.length > 0 && <AvailabilityList availability={availability} />}
 
       {problems.length > 0 && (
         <ul className="space-y-1">
@@ -82,6 +52,49 @@ export function ExternalDetailPanel({ detail }: { detail?: ExternalDetail }) {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+/** Which protocols the external system can reach the host on, one line
+ * each, with its own words when it cannot. Shared by the check's detail and
+ * the host panel so the two never describe the same interface differently. */
+export function AvailabilityList({
+  availability,
+}: {
+  availability: Record<string, { state: string; error?: string }>
+}) {
+  const protocols = Object.entries(availability)
+  if (protocols.length === 0) return null
+  return (
+    <div className="space-y-1">
+      {protocols.map(([proto, info]) => (
+        <div key={proto} className="flex flex-wrap items-start gap-2">
+          <Badge
+            variant={
+              info.state === "down"
+                ? "destructive"
+                : info.state === "up"
+                  ? "success"
+                  : "secondary"
+            }
+            className="uppercase"
+          >
+            {proto}
+          </Badge>
+          {info.error ? (
+            // The remote system's own words. Paraphrasing them would only
+            // lose the OID and the timeout that name the problem.
+            <span className="min-w-0 flex-1 font-mono break-all text-muted-foreground">
+              {info.error}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {info.state === "up" ? "reachable" : "not polled yet"}
+            </span>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

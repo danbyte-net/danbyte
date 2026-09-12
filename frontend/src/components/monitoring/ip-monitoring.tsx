@@ -37,6 +37,7 @@ import { CheckHistory } from "./check-history"
 import { UptimePanel } from "./uptime-panel"
 import { HistoryPanel } from "./history-panel"
 import { StatusStrip } from "./status-strip"
+import { ZabbixHostPanel } from "./zabbix-host-panel"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export function IpMonitoring({
@@ -182,11 +183,10 @@ export function IpMonitoring({
         ))}
       </div>
 
-      {checks.length > 0 && (
-        <div className="mt-3">
-          <HistoryPanel scope={{ ip: ip.id }} />
-        </div>
-      )}
+      <div className="mt-3 space-y-3 empty:hidden">
+        <ZabbixHostPanel scope={{ ip: ip.id }} />
+        {checks.length > 0 && <HistoryPanel scope={{ ip: ip.id }} />}
+      </div>
 
       <AddCheckDialog
         target={{ kind: "ip", id: ip.id, label: ip.ip_address }}

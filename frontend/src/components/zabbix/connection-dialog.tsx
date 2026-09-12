@@ -119,6 +119,12 @@ function ConnectionForm({
   const [readInventory, setReadInventory] = useState(
     connection?.read_inventory ?? false
   )
+  const [readStatus, setReadStatus] = useState(
+    connection?.read_host_status ?? true
+  )
+  const [statusInterval, setStatusInterval] = useState(
+    String(connection?.status_interval_minutes ?? 5)
+  )
   const [adopt, setAdopt] = useState(connection?.adopt_hosts ?? false)
   const [adoptSite, setAdoptSite] = useState<string | null>(
     connection?.adopt_site ?? null
@@ -220,6 +226,8 @@ function ConnectionForm({
           sync_maintenance: syncMaint,
           write_acknowledgements: writeAcks,
           read_inventory: readInventory,
+          read_host_status: readStatus,
+          status_interval_minutes: Number(statusInterval) || 5,
           adopt_hosts: adopt,
           adopt_site: adopt ? adoptSite : null,
           adopt_role: adopt ? adoptRole : null,
@@ -381,6 +389,25 @@ function ConnectionForm({
               checked={writeAcks}
               onChange={setWriteAcks}
             />
+          </FormSection>
+
+          <FormSection title="Host status" card>
+            <FormCheckbox
+              label="Read host status"
+              info="Every few minutes, reads each linked host's open problems and which protocols Zabbix can reach it on, and shows them on the device and address pages beside Danbyte's own status. Works with provisioning off and without a Zabbix check. Read-only; it never changes a Danbyte status."
+              checked={readStatus}
+              onChange={setReadStatus}
+            />
+            {readStatus && (
+              <FormText
+                label="Every"
+                type="number"
+                hint="minutes"
+                value={statusInterval}
+                onChange={setStatusInterval}
+                error={fieldErrors.status_interval_minutes}
+              />
+            )}
           </FormSection>
 
           <FormSection title="Inventory" card>

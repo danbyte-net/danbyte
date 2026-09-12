@@ -137,12 +137,40 @@ The second is the one worth having. A host with no open problems reads
 perfectly healthy while its SNMP interface polls nothing because the community
 is wrong or absent, and nothing in Danbyte's own view would ever say so.
 
-They appear as **chips beside the roll-up badge** on device and prefix lists -
-a count for problems, a red protocol chip for anything unreachable - and in
-full on an address's **Monitoring** section, where the error text sits next to
-the protocol it belongs to. Chips rather than columns: most targets carry
-neither, and two mostly-empty columns would cost every list page width it has
-better uses for.
+They appear as **chips beside the roll-up badge** on device and prefix lists
+and on the device's Overview and Monitoring tab - a count for problems, a red
+protocol chip for anything unreachable - and in full on an address's
+**Monitoring** section, where the error text sits next to the protocol it
+belongs to. Chips rather than columns: most targets carry neither, and two
+mostly-empty columns would cost every list page width it has better uses for.
+
+These chips come from the Zabbix *check*. A host Zabbix watches but Danbyte
+has no Zabbix check on is covered by the next section.
+
+### What Zabbix says about a device {#host-status}
+
+"If it is in Zabbix, show it." With **Read host status** on - the default -
+each linked host's open problems and reachability are read every few minutes
+(**Every**, 5 by default) on a schedule of their own, so the **Zabbix** panel
+appears on a device's Monitoring tab, on each of its addresses' Monitoring
+tabs, and as a chip row on the device Overview - whether or not a Zabbix
+check exists, and with provisioning off. Two calls per pass, read-only.
+
+The panel shows Danbyte's word for the worst open problem (through the
+connection's severity map), the host and connection, *Disabled* or
+*Maintenance* when Zabbix has it so, a line per protocol Zabbix can or cannot
+reach it on with Zabbix's own error, the first twenty problems with their
+severity and age, when it was last read, and *Open in Zabbix*.
+
+It does **not** change Danbyte's status. A device can be green in Danbyte -
+its ping answers - and carry a High problem here; both are true and both are
+shown. Only a Zabbix check folds Zabbix's view into the status itself. A host
+that has gone from Zabbix keeps its link and shows no problems; nothing is
+removed on Danbyte's side by a read.
+
+The API is `GET /api/zabbix/host-status/?device=<id>` (or `?ip=<id>`,
+resolved through the address's device): one entry per linked host, empty
+when the device is not linked, 404 while the integration is off.
 
 ## What you get for free
 

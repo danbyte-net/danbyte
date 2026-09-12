@@ -11,6 +11,7 @@ import { HistoryPanel } from "./history-panel"
 import { MixedStatusBadge } from "./mixed-status-badge"
 import { NotifyMeButton } from "./notify-me-button"
 import { StatusStrip } from "./status-strip"
+import { ZabbixHostPanel } from "./zabbix-host-panel"
 
 /**
  * A device's Monitoring tab: the roll-up across its addresses with seven days
@@ -38,10 +39,15 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
     return <p className="text-sm text-muted-foreground">Loading…</p>
   if (!data || data.rollup.monitored_ips === 0)
     return (
-      <EmptyState title="No monitored addresses.">
-        Checks attach to an address. Open one of this device&apos;s IPs and add
-        a check, or let a monitoring policy cover it.
-      </EmptyState>
+      <div className="space-y-4">
+        <EmptyState title="No monitored addresses.">
+          Checks attach to an address. Open one of this device&apos;s IPs and
+          add a check, or let a monitoring policy cover it.
+        </EmptyState>
+        {/* A host Zabbix watches is worth showing even before Danbyte
+            monitors any of its addresses itself. */}
+        <ZabbixHostPanel scope={{ device: deviceId }} />
+      </div>
     )
 
   const tl = timeline.data
@@ -127,6 +133,7 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
         )}
       </section>
 
+      <ZabbixHostPanel scope={{ device: deviceId }} />
       <HistoryPanel scope={{ device: deviceId }} />
     </div>
   )

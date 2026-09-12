@@ -449,6 +449,9 @@ class AutoSyncTests(_Base):
         from zabbix import sync_tasks
 
         self.conn.auto_sync = True
+        # The host-status read has its own gate; off here so this test
+        # measures the provisioning pass alone.
+        self.conn.read_host_status = False
         self.conn.save()
         with mock.patch.object(sync_tasks, "django_rq") as rq:
             out = sync_tasks.enqueue_due_syncs()

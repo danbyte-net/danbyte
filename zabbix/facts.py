@@ -80,3 +80,65 @@ def observed_state(device, tenant):
         .order_by("-polled_at")
         .first()
     )
+
+
+#: How many open problems a row keeps by name. The count is exact; the list
+#: is what a panel shows before it says "and N more".
+PROBLEMS_KEPT = 20
+
+
+def record_status(conn, device, host, problems, now=None) -> None:
+    """Store what Zabbix says about the host *now* - open problems and what
+    it can reach it on. Touches only the status fields: the inventory read
+    has its own stamp and the drift loader keys off that one."""
+    now = now or timezone.now()
+    from .interfaces import availability
+
+    open_problems = sorted(
+        (p for p in problems if isinstance(p, dict)),
+        key=lambda p: (-int(p.get("severity") or 0), str(p.get("clock") or "")),
+    )
+    worst = str(open_problems[0].get("severity") or "") if open_problems else ""
+    ZabbixHostFacts.objects.update_or_create(
+        connection=conn,
+        device=device,
+        defaults={
+            "tenant": conn.tenant,
+            "problems": [
+                {
+                    "name": str(p.get("name") or "")[:200],
+                    "severity": str(p.get("severity") or ""),
+                    "since": _clock(p.get("clock")),
+                    "eventid": str(p.get("eventid") or ""),
+                }
+                for p in open_problems[:PROBLEMS_KEPT]
+            ],
+            "problem_count": len(open_problems),
+            "worst_severity": worst,
+            "availability": availability(host),
+            "maintenance": str(host.get("maintenance_status")) == "1",
+            "disabled": str(host.get("status")) == "1",
+            "status_polled_at": now,
+        },
+    )
+
+
+def clear_status(conn, device, now=None) -> None:
+    """The host is gone from Zabbix: nothing is open, nothing is reachable.
+    The link is left alone - that a host vanished is provisioning's business
+    to notice and the operator's to decide about."""
+    ZabbixHostFacts.objects.filter(connection=conn, device=device).update(
+        problems=[], problem_count=0, worst_severity="", availability={},
+        maintenance=False, disabled=False, status_polled_at=now or timezone.now(),
+    )
+
+
+def _clock(value) -> str | None:
+    """Zabbix's ``clock`` is epoch seconds as a string; an ISO stamp is what
+    the page can render with the rest of its times."""
+    from datetime import UTC, datetime
+
+    try:
+        return datetime.fromtimestamp(int(value), tz=UTC).isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return None

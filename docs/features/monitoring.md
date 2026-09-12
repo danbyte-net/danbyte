@@ -399,10 +399,13 @@ you in three places:
   open problems, protocols it cannot reach the host on - shows as chips beside
   the badge, and in the badge's hover, the same way the lists show it.
 - The **Monitoring** tab: the roll-up with seven days of status to scale, one
-  row per monitored address with its own strip and chips, and the **History**
-  panel with the changes behind them over 24h / 7d / 30d / 90d. The tab
-  beside it, **SNMP**, holds what the device itself reports - system facts,
-  interfaces, sensors, drift.
+  row per monitored address with its own strip and chips, a **Zabbix** panel
+  when the device is a Zabbix host (what Zabbix reports - problems,
+  reachability, disabled or in maintenance - beside Danbyte's status, never
+  folded into it; see [What Zabbix says about a device](../monitoring/zabbix.md#host-status)),
+  and the **History** panel with the changes behind them over 24h / 7d / 30d
+  / 90d. The tab beside it, **SNMP**, holds what the device itself reports -
+  system facts, interfaces, sensors, drift.
 
 Because a service's check lives on the service's IP, service monitoring rolls
 up here too. The summary only appears when the device has at least one

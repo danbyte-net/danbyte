@@ -3866,6 +3866,12 @@ export interface ZabbixConnection {
   /** Record what Zabbix's inventory says, so a disagreement shows in the
    * device's drift inbox. Rides the host read the sync already makes. */
   read_inventory: boolean
+  /** Read each linked host's open problems and reachability on its own
+   * cadence, so the device page shows what Zabbix sees with or without a
+   * Zabbix check and with provisioning off. On by default; read-only. */
+  read_host_status: boolean
+  status_interval_minutes: number
+  last_status_sync_at: string | null
   /** Propose a device for every Zabbix host Danbyte has no device for. */
   adopt_hosts: boolean
   adopt_site: string | null
@@ -3885,7 +3891,12 @@ export interface ZabbixDefaults {
   default_map: Record<string, string>
   /** The statuses a severity can map onto, named and coloured by the tenant's
    * own catalog where it has an opinion. */
-  statuses: { value: string; label: string; color: string; text_color: string }[]
+  statuses: {
+    value: string
+    label: string
+    color: string
+    text_color: string
+  }[]
 }
 
 /** A rule saying what a kind of device carries in Zabbix - templates, and the
@@ -5011,6 +5022,36 @@ export interface MonitoringStats {
     engine: EngineRef | null
     source: CheckSource
   }>
+}
+
+/** What Zabbix says about one of a device's hosts - `/api/zabbix/host-status/`.
+ * Beside Danbyte's status, never folded into it unless a Zabbix check exists. */
+export interface ZabbixHostStatus {
+  connection: {
+    id: string
+    name: string
+    url: string
+    read_host_status: boolean
+  }
+  host: { hostid: string; name: string }
+  link: { matched_by: string; created_here: boolean }
+  status: {
+    problems: {
+      name: string
+      severity: string
+      since: string | null
+      eventid: string
+    }[]
+    problem_count: number
+    worst_severity: string
+    /** The worst open problem through the connection's severity map; `up`
+     * when read and clean; null until the first read. */
+    worst_status: CheckStatus | null
+    availability: Record<string, { state: string; error?: string }>
+    maintenance: boolean
+    disabled: boolean
+    polled_at: string | null
+  }
 }
 
 // ─── Status history ──────────────────────────────────────────────────────

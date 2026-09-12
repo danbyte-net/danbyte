@@ -1,3 +1,4 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .viewsets import (
@@ -5,6 +6,7 @@ from .viewsets import (
     ZabbixChangeViewSet,
     ZabbixConnectionViewSet,
     ZabbixHostLinkViewSet,
+    ZabbixHostStatusView,
     ZabbixMaintenanceViewSet,
     ZabbixProvisionRuleViewSet,
 )
@@ -21,4 +23,7 @@ router.register(
     r"template-rules", ZabbixProvisionRuleViewSet, basename="zabbixtemplaterule"
 )
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("host-status/", ZabbixHostStatusView.as_view(), name="zabbix-host-status"),
+    *router.urls,
+]

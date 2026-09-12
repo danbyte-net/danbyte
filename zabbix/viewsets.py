@@ -7,16 +7,22 @@ merely inert.
 from __future__ import annotations
 
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from api.models import Device, IPAddress
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
-from integrations.toggles import IntegrationToggleMixin
+from auth_api import rbac
+from integrations.toggles import IntegrationToggleMixin, integration_enabled
 
 from .models import (
     ZabbixAdoptionRule,
     ZabbixChange,
     ZabbixConnection,
+    ZabbixHostFacts,
     ZabbixHostLink,
     ZabbixMaintenance,
     ZabbixProvisionRule,
@@ -281,3 +287,84 @@ _SCOPE_ENDPOINT = {
     ZabbixProvisionRule.SCOPE_TYPE: "/api/device-types/",
     ZabbixProvisionRule.SCOPE_MANUFACTURER: "/api/manufacturers/",
 }
+
+
+class ZabbixHostStatusView(APIView):
+    """What Zabbix says about a device's hosts - ``?device=<id>`` or
+    ``?ip=<id>`` (resolved through the address's device).
+
+    An empty list means the device is not linked to any host. 404 while the
+    integration is off, like the rest of the surface. Read access is the
+    device's own: a viewer who may see the device may see what Zabbix says
+    about it, and one who may not sees nothing at all.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tenant = _get_active_tenant(request)
+        if tenant is None or not integration_enabled(tenant, "zabbix"):
+            raise NotFound("Integration not enabled.")
+        device_id = (request.query_params.get("device") or "").strip()
+        ip_id = (request.query_params.get("ip") or "").strip()
+        if ip_id and not device_id:
+            ip = rbac.restrict_queryset(
+                IPAddress.objects.filter(tenant=tenant, id=ip_id),
+                request.user, tenant, "ipaddress", "view",
+            ).first()
+            if ip is None or not ip.assigned_device_id:
+                return Response([])
+            device_id = str(ip.assigned_device_id)
+        if not device_id:
+            return Response({"detail": "device or ip is required."}, status=400)
+        device = rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant, id=device_id),
+            request.user, tenant, "device", "view",
+        ).first()
+        if device is None:
+            return Response([])
+        return Response(host_status_for(device))
+
+
+def host_status_for(device) -> list[dict]:
+    """One entry per link, with the facts row's status fields and the
+    connection's severity map applied so the panel can show a pill in
+    Danbyte's words beside Zabbix's own severity."""
+    from .severity import clean_map, worst
+
+    links = (
+        ZabbixHostLink.objects.filter(device=device, connection__enabled=True)
+        .select_related("connection")
+        .order_by("connection__name")
+    )
+    facts_by_conn = {
+        f.connection_id: f
+        for f in ZabbixHostFacts.objects.filter(device=device)
+    }
+    out = []
+    for link in links:
+        conn = link.connection
+        f = facts_by_conn.get(conn.id)
+        mapping = clean_map(conn.severity_map)
+        problems = list(f.problems) if f else []
+        out.append({
+            "connection": {
+                "id": str(conn.id), "name": conn.name, "url": conn.url,
+                "read_host_status": conn.read_host_status,
+            },
+            "host": {"hostid": link.hostid, "name": link.host_name},
+            "link": {"matched_by": link.matched_by, "created_here": link.created_here},
+            "status": {
+                "problems": problems,
+                "problem_count": f.problem_count if f else 0,
+                "worst_severity": f.worst_severity if f else "",
+                "worst_status": worst(
+                    (p.get("severity") for p in problems), mapping
+                ) if problems else ("up" if f and f.status_polled_at else None),
+                "availability": dict(f.availability) if f else {},
+                "maintenance": bool(f and f.maintenance),
+                "disabled": bool(f and f.disabled),
+                "polled_at": f.status_polled_at if f else None,
+            },
+        })
+    return out

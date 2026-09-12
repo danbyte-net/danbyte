@@ -144,6 +144,16 @@ class ZabbixConnection(TimestampedModel):
     #: read the provisioning pass already makes - but it puts rows in front of
     #: an operator, so it is theirs to ask for.
     read_inventory = models.BooleanField(default=False)
+    # ── what Zabbix says about a host (#162 phase 7) ────────────────────
+    #: Read each linked host's open problems and reachability on a cadence
+    #: of its own, so a device page can show what Zabbix sees whether or not
+    #: a Zabbix *check* exists and whether or not provisioning is on. On by
+    #: default: it is read-only, two calls every few minutes, and the ask was
+    #: "if it is in Zabbix, show it".
+    read_host_status = models.BooleanField(default=True)
+    status_interval_minutes = models.PositiveSmallIntegerField(default=5)
+    last_status_sync_at = models.DateTimeField(null=True, blank=True)
+
     #: Where an adopted device lands when no host group names one of the
     #: tenant's sites, and what it is when the inventory does not say. All
     #: three are needed for a proposal to be applicable; a proposal without
@@ -208,6 +218,19 @@ class ZabbixConnection(TimestampedModel):
 
         return now - self.last_maintenance_sync_at >= timedelta(
             minutes=max(self.sync_interval_minutes, 1)
+        )
+
+    def status_due(self, now) -> bool:
+        """Whether the host-status read should run - its own switch, its own
+        stamp, its own cadence; it runs with provisioning off."""
+        if not (self.enabled and self.read_host_status and self.token_set):
+            return False
+        if self.last_status_sync_at is None:
+            return True
+        from datetime import timedelta
+
+        return now - self.last_status_sync_at >= timedelta(
+            minutes=max(self.status_interval_minutes, 1)
         )
 
     def version_tuple(self) -> tuple[int, ...]:
@@ -509,6 +532,22 @@ class ZabbixHostFacts(TimestampedModel):
     #: unknown - the drift engine treats a False as "no observation" rather
     #: than reading every field as changed.
     reachable = models.BooleanField(null=True, blank=True)
+
+    # ── what Zabbix says about the host right now ──────────────────────
+    # Written by the status read, never by the inventory one, and the other
+    # way round: the two share a row but not a schedule, and ``polled_at``
+    # stays the inventory's stamp so the drift loader is untouched.
+    #: The first twenty open, unsuppressed problems: name, severity, since.
+    problems = models.JSONField(default=list, blank=True)
+    problem_count = models.PositiveIntegerField(default=0)
+    #: Zabbix severity (0-5, as a string) of the worst open problem; empty
+    #: when there are none.
+    worst_severity = models.CharField(max_length=2, blank=True, default="")
+    #: Per protocol - ``{"snmp": {"state": "down", "error": "..."}}``.
+    availability = models.JSONField(default=dict, blank=True)
+    maintenance = models.BooleanField(default=False)
+    disabled = models.BooleanField(default=False)
+    status_polled_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-polled_at"]

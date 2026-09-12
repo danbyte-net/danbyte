@@ -155,6 +155,19 @@ class ZabbixClient:
                 out.setdefault(hostid, []).append(problem)
         return out
 
+    def hosts_by_id(self, hostids):
+        """The hosts Danbyte has linked, with what a status read needs: the
+        switches Zabbix applies (disabled, in maintenance) and whether each
+        interface is answering. Chunked by the caller; one call per chunk."""
+        if not hostids:
+            return {}
+        rows = self.call("host.get", {
+            "output": ["hostid", "host", "name", "status", "maintenance_status"],
+            "selectInterfaces": ["type", "ip", "dns", "useip", "available", "error"],
+            "hostids": list(hostids),
+        }) or []
+        return {str(row["hostid"]): row for row in rows if row.get("hostid")}
+
     def all_hosts(self):
         """Every host, with what matching needs: interfaces, inventory, name.
 
