@@ -28,10 +28,7 @@ export function SourceHeader() {
   return (
     <span className="inline-flex items-center gap-1">
       Source
-      <InfoTip>
-        Who ran the check: Danbyte&apos;s own workers, an Outpost, or Zabbix.
-        Results recorded before this was tracked show as Local.
-      </InfoTip>
+      <InfoTip>The engine that ran it: Danbyte, an Outpost, or Zabbix.</InfoTip>
     </span>
   )
 }

@@ -62,6 +62,7 @@ import {
 import type { ConfigTab } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 import { SourceBadge } from "@/components/monitoring/source-badge"
+import { SeriesLegend } from "@/components/monitoring/series-legend"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
@@ -156,6 +157,11 @@ const LATENCY_CONFIG = {
   p50: { label: "Median", color: "var(--chart-1)" },
   p95: { label: "95th percentile", color: "var(--chart-3)" },
 } satisfies ChartConfig
+const LATENCY_SERIES = (["p50", "p95"] as const).map((k) => ({
+  key: k,
+  label: LATENCY_CONFIG[k].label,
+  color: LATENCY_CONFIG[k].color,
+}))
 
 const ALERTS_CONFIG = {
   opened: { label: "Opened", color: "var(--color-red-500)" },
@@ -202,6 +208,9 @@ function MonitoringPage() {
   useEffect(() => setMounted(true), [])
 
   const [hours, setHours] = useState<StatsHours>(24)
+  const [hiddenLatency, setHiddenLatency] = useState<Set<string>>(
+    () => new Set()
+  )
   const stats = useQuery({
     queryKey: ["monitoring-stats", hours],
     queryFn: () =>
@@ -594,6 +603,7 @@ function MonitoringPage() {
                           strokeWidth={2}
                           dot={false}
                           connectNulls
+                          hide={hiddenLatency.has("p95")}
                         />
                         <Line
                           dataKey="p50"
@@ -602,10 +612,18 @@ function MonitoringPage() {
                           strokeWidth={2}
                           dot={false}
                           connectNulls
+                          hide={hiddenLatency.has("p50")}
                         />
-                        <ChartLegend content={<ChartLegendContent />} />
                       </LineChart>
                     </ChartContainer>
+                  )}
+                  {latencyData.length > 0 && (
+                    <SeriesLegend
+                      items={LATENCY_SERIES}
+                      hidden={hiddenLatency}
+                      onChange={setHiddenLatency}
+                      className="mt-2"
+                    />
                   )}
                 </CardContent>
               </Card>

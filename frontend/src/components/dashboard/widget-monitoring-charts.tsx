@@ -8,7 +8,10 @@ import {
   YAxis,
 } from "recharts"
 
+import { useState } from "react"
+
 import type { DashboardData } from "@/lib/api"
+import { SeriesLegend } from "@/components/monitoring/series-legend"
 import {
   ChartContainer,
   ChartLegend,
@@ -86,11 +89,18 @@ export function AlertsPerDay({
   )
 }
 
+const LATENCY_SERIES = (["p50", "p95"] as const).map((k) => ({
+  key: k,
+  label: LATENCY[k].label,
+  color: LATENCY[k].color,
+}))
+
 export function LatencyWeek({
   rows,
 }: {
   rows: DashboardData["latency_series"]
 }) {
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   if (!rows.length) return <Empty hint="No latency recorded this week." />
   const data = rows.map((p) => ({
     ...p,
@@ -100,51 +110,59 @@ export function LatencyWeek({
     }),
   }))
   return (
-    <ChartContainer
-      config={LATENCY}
-      className="aspect-auto h-full min-h-[140px] w-full"
-    >
-      <LineChart
-        accessibilityLayer
-        data={data}
-        margin={{ left: 0, right: 8, top: 4 }}
+    <div className="flex h-full flex-col">
+      <ChartContainer
+        config={LATENCY}
+        className="aspect-auto min-h-[140px] w-full flex-1"
       >
-        <CartesianGrid vertical={false} />
-        <XAxis
-          dataKey="label"
-          tickLine={false}
-          axisLine={false}
-          tickMargin={6}
-          minTickGap={32}
-        />
-        <YAxis
-          tickLine={false}
-          axisLine={false}
-          width={56}
-          tickFormatter={(v: number) => `${v} ms`}
-        />
-        <ChartTooltip
-          cursor={false}
-          content={<ChartTooltipContent indicator="line" />}
-        />
-        <Line
-          dataKey="p95"
-          type="monotone"
-          stroke="var(--color-p95)"
-          strokeWidth={2}
-          dot={false}
-          connectNulls
-        />
-        <Line
-          dataKey="p50"
-          type="monotone"
-          stroke="var(--color-p50)"
-          strokeWidth={2}
-          dot={false}
-          connectNulls
-        />
-        <ChartLegend content={<ChartLegendContent />} />
-      </LineChart>
-    </ChartContainer>
+        <LineChart
+          accessibilityLayer
+          data={data}
+          margin={{ left: 0, right: 8, top: 4 }}
+        >
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={false}
+            tickMargin={6}
+            minTickGap={32}
+          />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            width={56}
+            tickFormatter={(v: number) => `${v} ms`}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={<ChartTooltipContent indicator="line" />}
+          />
+          <Line
+            dataKey="p95"
+            type="monotone"
+            stroke="var(--color-p95)"
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+            hide={hidden.has("p95")}
+          />
+          <Line
+            dataKey="p50"
+            type="monotone"
+            stroke="var(--color-p50)"
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+            hide={hidden.has("p50")}
+          />
+        </LineChart>
+      </ChartContainer>
+      <SeriesLegend
+        items={LATENCY_SERIES}
+        hidden={hidden}
+        onChange={setHidden}
+      />
+    </div>
   )
 }

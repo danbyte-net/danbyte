@@ -15,12 +15,11 @@ import type { LatencyResponse, StatsHours } from "@/lib/api"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { ChartConfig } from "@/components/ui/chart"
+import { SeriesLegend } from "./series-legend"
 
 const WINDOWS: { hours: StatsHours; label: string }[] = [
   { hours: 24, label: "24h" },
@@ -28,11 +27,19 @@ const WINDOWS: { hours: StatsHours; label: string }[] = [
   { hours: 720, label: "30d" },
 ]
 
+// Three colours for three things: the average is the line you read, the
+// band is the spread behind it, loss is the red that should not be there.
 const CONFIG = {
   avg: { label: "Average", color: "var(--chart-1)" },
-  range: { label: "Min–max", color: "var(--chart-1)" },
+  range: { label: "Min–max", color: "var(--chart-2)" },
   loss: { label: "Loss %", color: "var(--color-red-500)" },
 } satisfies ChartConfig
+
+const SERIES = (["avg", "range", "loss"] as const).map((k) => ({
+  key: k,
+  label: CONFIG[k].label,
+  color: CONFIG[k].color,
+}))
 
 /**
  * Latency over time for one check on one address, to scale: the average
@@ -51,6 +58,7 @@ export function LatencyChart({
   className?: string
 }) {
   const [hours, setHours] = useState<StatsHours>(24)
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const q = useQuery({
     queryKey: ["ip-latency", ipId, templateId, hours],
     queryFn: () =>
@@ -79,6 +87,7 @@ export function LatencyChart({
     samples: p.samples,
   }))
   const hasLoss = points.some((p) => p.loss > 0)
+  const legend = hasLoss ? SERIES : SERIES.filter((s) => s.key !== "loss")
 
   return (
     <div className={className}>
@@ -178,9 +187,10 @@ export function LatencyChart({
               dataKey="range"
               type="monotone"
               fill="var(--color-range)"
-              fillOpacity={0.15}
+              fillOpacity={0.25}
               stroke="none"
               isAnimationActive={false}
+              hide={hidden.has("range")}
             />
             <Line
               yAxisId="ms"
@@ -191,20 +201,29 @@ export function LatencyChart({
               dot={false}
               connectNulls
               isAnimationActive={false}
+              hide={hidden.has("avg")}
             />
             {hasLoss && (
               <Bar
                 yAxisId="loss"
                 dataKey="loss"
                 fill="var(--color-loss)"
-                fillOpacity={0.6}
+                fillOpacity={0.5}
                 radius={2}
                 isAnimationActive={false}
+                hide={hidden.has("loss")}
               />
             )}
-            <ChartLegend content={<ChartLegendContent />} />
           </ComposedChart>
         </ChartContainer>
+      )}
+      {data.length > 0 && (
+        <SeriesLegend
+          items={legend}
+          hidden={hidden}
+          onChange={setHidden}
+          className="mt-1"
+        />
       )}
     </div>
   )
