@@ -124,6 +124,11 @@ def proposal(conn, host, *, sites, types, rules=()) -> dict:
     groups = [g.get("name", "") for g in host.get("hostgroups") or host.get("groups") or []]
     placed = placement(host, rules)
 
+    # Which fields came from the connection's defaults, so a later change
+    # to the defaults can be re-applied to a pending proposal without
+    # disturbing what a rule or the host itself decided.
+    defaulted: list[str] = []
+
     site = placed.get("site")
     if site is None:
         # The first host group that names one of this tenant's sites - the
@@ -133,24 +138,26 @@ def proposal(conn, host, *, sites, types, rules=()) -> dict:
             ((sites[g.lower()], g) for g in groups if g.lower() in sites),
             None,
         )
-    if site is None and conn.adopt_site_id:
-        site = (conn.adopt_site_id, conn.adopt_site.name)
+    if site is None:
+        defaulted.append("site")
+        if conn.adopt_site_id:
+            site = (conn.adopt_site_id, conn.adopt_site.name)
 
     model = (inventory.get("model") or "").strip()
     device_type = placed.get("device_type")
     if device_type is None and model and model.lower() in types:
         device_type = (types[model.lower()], model)
-    if device_type is None and conn.adopt_device_type_id:
-        device_type = (conn.adopt_device_type_id, conn.adopt_device_type.model)
+    if device_type is None:
+        defaulted.append("device_type")
+        if conn.adopt_device_type_id:
+            device_type = (conn.adopt_device_type_id, conn.adopt_device_type.model)
 
     role = placed.get("role")
-    if role is None and conn.adopt_role_id:
-        role = (conn.adopt_role_id, conn.adopt_role.name)
+    if role is None:
+        defaulted.append("role")
+        if conn.adopt_role_id:
+            role = (conn.adopt_role_id, conn.adopt_role.name)
 
-    missing = [
-        label for label, value in (("site", site), ("role", role), ("device type", device_type))
-        if value is None
-    ]
     detail = {
         "hostid": host["hostid"],
         "host": host.get("host", ""),
@@ -170,13 +177,69 @@ def proposal(conn, host, *, sites, types, rules=()) -> dict:
         # Which rule placed it, so the queue can say why this site and not
         # the default.
         "rule": placed.get("rule"),
+        "defaulted": defaulted,
     }
+    _reason(detail)
+    return detail
+
+
+_MISSING_LABEL = {"site": "site", "role": "role", "device_type": "device type"}
+
+
+def _reason(detail: dict) -> None:
+    missing = [
+        _MISSING_LABEL[f] for f in ("site", "role", "device_type") if not detail.get(f"{f}_id")
+    ]
     if missing:
         detail["reason"] = (
             "No " + ", ".join(missing) + " to adopt into - set the defaults on "
             "the connection, or name the site in a host group."
         )
-    return detail
+    else:
+        detail.pop("reason", None)
+
+
+def refresh_pending_proposals(conn) -> int:
+    """Re-apply the connection's defaults to the adoptions still waiting.
+
+    A proposal records what it decided at sync time; the defaults are its
+    last resort, so when they change the proposals that leaned on them (or
+    had nothing to lean on) must follow at once - an operator who has just
+    pressed *Set defaults* is looking at the queue, not waiting for the next
+    pass. Fields a rule or the host decided are left alone. Returns how
+    many proposals changed.
+    """
+    defaults = {
+        "site": (conn.adopt_site_id, conn.adopt_site.name) if conn.adopt_site_id else None,
+        "role": (conn.adopt_role_id, conn.adopt_role.name) if conn.adopt_role_id else None,
+        "device_type": (
+            (conn.adopt_device_type_id, conn.adopt_device_type.model)
+            if conn.adopt_device_type_id else None
+        ),
+    }
+    changed = 0
+    for change in ZabbixChange.objects.filter(
+        connection=conn, kind=ZabbixChange.ADOPT, ignored=False, device__isnull=True
+    ):
+        detail = dict(change.detail or {})
+        # Older proposals carry no marker: a field with no value is one the
+        # defaults may fill, which is what the marker would have said.
+        defaulted = set(detail.get("defaulted") or []) | {
+            f for f in ("site", "role", "device_type") if not detail.get(f"{f}_id")
+        }
+        before = {k: detail.get(k) for k in ("site_id", "role_id", "device_type_id", "reason")}
+        for field in defaulted:
+            value = defaults[field]
+            detail[f"{field}_id"] = str(value[0]) if value else None
+            detail[field] = value[1] if value else None
+        detail["defaulted"] = sorted(defaulted)
+        _reason(detail)
+        after = {k: detail.get(k) for k in ("site_id", "role_id", "device_type_id", "reason")}
+        if after != before or "defaulted" not in (change.detail or {}):
+            change.detail = detail
+            change.save(update_fields=["detail"])
+            changed += 1
+    return changed
 
 
 def applicable(detail: dict) -> bool:

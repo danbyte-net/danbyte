@@ -395,7 +395,10 @@ creating something in Danbyte, which is the opposite of what it does. Each row
 says what would be written and why; **Apply** does that one write, **Dismiss** keeps it from
 being raised again. A row that cannot be applied yet says what it is waiting
 for in place of Apply: an adoption with no default site, role or type shows
-**Set defaults**, which opens the connection's form; a *Not applicable* row
+**Set defaults**, which opens the connection's form - and saving the form
+updates the waiting proposals at once, so the row turns into an Apply
+without another sync (a field a rule or the host itself decided is left as
+it was); a *Not applicable* row
 (two hosts on one address, say) is resolved in Zabbix or in Danbyte and the
 proposal is re-made or dropped on the next pass. **Apply all** skips both
 rather than guessing.

@@ -158,10 +158,17 @@ class ZabbixConnectionSerializer(serializers.ModelSerializer):
         # Blank keeps what is stored - the field renders empty, and a save
         # from a form that never showed the secret must not wipe it.
         token = validated_data.pop("token", None)
+        before = (instance.adopt_site_id, instance.adopt_role_id, instance.adopt_device_type_id)
         obj = super().update(instance, validated_data)
         if token:
             obj.credentials = {"token": token}
             obj.save(update_fields=["credentials"])
+        if (obj.adopt_site_id, obj.adopt_role_id, obj.adopt_device_type_id) != before:
+            # The queue is what the operator is looking at when they set
+            # these; its proposals must not wait for the next pass.
+            from .adopt import refresh_pending_proposals
+
+            refresh_pending_proposals(obj)
         return obj
 
     class Meta:

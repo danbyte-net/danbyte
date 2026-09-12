@@ -472,3 +472,53 @@ class PlacementRuleApiTests(_Base):
         [row] = r.json()["results"]
         self.assertEqual(row["site_name"], "Aarhus")
         self.assertEqual(row["scope_display"], "Host name")
+
+
+class DefaultsFollowTests(_Base):
+    """Setting the defaults after a pass must reach the proposals already
+    waiting - the operator pressed *Set defaults* while looking at them."""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth import get_user_model
+
+        self.user = get_user_model().objects.create_superuser("root", "r@x.io", "pw")
+        self.client.force_login(self.user)
+        # No defaults yet: the pass proposes the host but cannot place it.
+        self.conn.adopt_site = self.conn.adopt_role = self.conn.adopt_device_type = None
+        self.conn.save()
+        self.plan([host("50", "sw-new", "10.7.0.50", groups=("Aarhus",))])
+        [self.change] = self.adoptions()
+        d = self.change.detail
+        # The site came from the host group; role and type had nothing.
+        self.assertEqual(d["site"], "Aarhus")
+        self.assertIsNone(d["role_id"])
+        self.assertIn("role, device type", d["reason"])
+        self.assertEqual(sorted(d["defaulted"]), ["device_type", "role"])
+
+    def _patch(self, body):
+        r = self.client.patch(
+            f"/api/zabbix/connections/{self.conn.id}/", body, content_type="application/json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.change.refresh_from_db()
+        return self.change.detail
+
+    def test_setting_the_defaults_makes_the_proposal_applicable_at_once(self):
+        d = self._patch({"adopt_role": str(self.role.id), "adopt_device_type": str(self.dtype.id)})
+        self.assertEqual(d["role"], "Switch")
+        self.assertEqual(d["device_type"], "C9300-24T")
+        self.assertNotIn("reason", d)
+        r = self.client.get(f"/api/zabbix/changes/?connection={self.conn.id}")
+        [row] = [c for c in r.json()["results"] if c["id"] == str(self.change.id)]
+        self.assertTrue(row["applicable"])
+
+    def test_clearing_a_default_takes_it_back_but_not_what_the_host_said(self):
+        self._patch({"adopt_role": str(self.role.id), "adopt_device_type": str(self.dtype.id)})
+        other = Site.objects.create(tenant=self.tenant, name="Odense")
+        d = self._patch({"adopt_role": None, "adopt_site": str(other.id)})
+        self.assertIsNone(d["role_id"])
+        self.assertIn("No role", d["reason"])
+        # The site was the host group's, not the default's: it stays Aarhus.
+        self.assertEqual(d["site"], "Aarhus")
+        self.assertEqual(d["device_type"], "C9300-24T")
