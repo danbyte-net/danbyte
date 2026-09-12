@@ -17,7 +17,7 @@ This page is organised by task. Jump to:
 - [Check types](#check-types) - the protocols and what each measures
 - [Where checks apply (prefixes and inheritance)](#where-checks-apply)
 - [Schedule modes](#schedule-modes) - when checks run
-- [Reading results](#reading-results) - status, sparklines, history, uptime
+- [Reading results](#reading-results) - status, sparklines, history, uptime, the history API
 - [Run a check now](#run-a-check-now)
 - [The Monitoring dashboard](#the-monitoring-dashboard)
 - [Alerts](#alerts) and [Notifications](#notifications)
@@ -407,6 +407,40 @@ doesn't skew the number. Time spent in *unknown* or *skipped* is excluded from t
 calculation and reported separately, so a check that simply wasn't running can't
 read as 100% uptime. The card also shows the number of **incidents** in the window
 and the **mean time to recovery (MTTR)**.
+
+### History
+
+Status changes are kept for a year, results for thirty days. The history API
+reads the changes back filtered by anything an address is - the same
+dimensions the list pages filter on - and returns facet counts and a bucketed
+series alongside the rows, so one call feeds a rail, a chart and a table:
+
+- `GET /api/monitoring/transitions/` - paged (`page`, `page_size` ≤ 200),
+  ordered by `at` or `ip`. Window: `since`/`until` (timezone-aware ISO) or
+  `days` (default 7, up to 365). Filters: `to_status`, `from_status`, `kind`,
+  `template`, `source`, `engine`, `ip`, `site`, `region` (descendants
+  included), `device`, `device_type`, `role`, `platform`, `prefix`, `vrf`,
+  `vlan`, `port`, `tag` (repeatable, every tag must match) and `search`.
+  Lists are comma-separated and mean *any of*. A site matches an address's own
+  site, its prefix's or its device's. A VLAN matches the prefix's VLAN or the
+  interface's.
+- `…/ips/<id>/transitions/`, `…/devices/<id>/transitions/`,
+  `…/prefixes/<id>/transitions/` - the same shape, pinned to one object.
+- `…/ips/<id>/timeline/?days=` and `…/devices/<id>/timeline/` - status over the
+  window as segments `{start, end, status}`, per check and rolled up (worst
+  wins), computed from the same transitions the uptime figure integrates.
+  `POST …/timeline/ {states: [...], days}` returns segments for up to 200
+  checks at once, for list strips.
+- `…/ips/<id>/history/` pages a check's raw samples backwards with
+  `before=<id>` (`next_before` in the response).
+- `…/stats/?hours=24|168|720` picks the results-chart window; beyond three
+  days the buckets are days. 720 hours is the ceiling because results are
+  pruned after thirty days.
+
+Facet counts are computed with every filter applied *except* the facet's own,
+so ticking a second value in one facet never zeroes its neighbours. All of it
+is site-scoped: a viewer limited to one site gets that site's history, counts
+and buckets and nothing else.
 
 ## Run a check now
 

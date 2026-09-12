@@ -410,14 +410,23 @@ def ip_history_view(request, ip_id):
     status_f = request.query_params.get("status")
     if status_f:
         qs = qs.filter(status=status_f)
+    # ``before`` pages backwards through a busy check's samples by id - stable
+    # while new rows keep arriving, which an offset would not be.
+    before = request.query_params.get("before")
+    if before and before.isdigit():
+        qs = qs.filter(id__lt=int(before))
     try:
         limit = min(int(request.query_params.get("limit", 100)), 1000)
     except ValueError:
         limit = 100
-    rows = list(qs[:limit])
-    return Response(
-        {"count": len(rows), "results": CheckResultSerializer(rows, many=True).data}
-    )
+    rows = list(qs[:limit + 1])
+    more = len(rows) > limit
+    rows = rows[:limit]
+    return Response({
+        "count": len(rows),
+        "results": CheckResultSerializer(rows, many=True).data,
+        "next_before": rows[-1].id if more and rows else None,
+    })
 
 
 @extend_schema(
@@ -1165,6 +1174,9 @@ def stats_view(request):
         .select_related("template", "target_ip", "engine")
         .order_by("-at")[:20]
     )
+    hours = request.query_params.get("hours")
+    hours = int(hours) if hours in SERIES_HOURS else 24
+    series, bucket = _result_series(request, tenant, hours)
 
     return Response(
         {
@@ -1174,28 +1186,38 @@ def stats_view(request):
             "monitored_ips": monitored_ips,
             "templates": tenant.check_templates.count(),
             "channels": tenant.notification_channels.filter(enabled=True).count(),
-            "series": _result_series(request, tenant),
+            "series": series,
+            "series_hours": hours,
+            "series_bucket": bucket,
             "recent_transitions": StateTransitionSerializer(recent, many=True).data,
         }
     )
 
 
-def _result_series(request, tenant, hours: int = 24) -> list[dict]:
-    """Hourly counts of check results over the last ``hours``, grouped into
+#: The windows the results chart offers. 720 h is the result-retention
+#: ceiling - anything longer would draw from rows the pruner already removed.
+SERIES_HOURS = ("24", "168", "720")
+
+
+def _result_series(request, tenant, hours: int = 24) -> tuple[list[dict], str]:
+    """Counts of check results over the last ``hours``, grouped into
     reachable / degraded / down buckets - drives the dashboard area chart.
-    Site-aware: only the caller's viewable IPs contribute."""
+    Hour buckets up to three days, day buckets beyond, so a month is thirty
+    bars rather than seven hundred. Site-aware: only the caller's viewable
+    IPs contribute."""
     from datetime import timedelta
 
-    from django.db.models.functions import TruncHour
+    from django.db.models.functions import TruncDay, TruncHour
     from django.utils import timezone
 
     since = timezone.now() - timedelta(hours=hours)
+    hourly = hours <= 72
     rows = (
         _scope_ip_keyed(
             request, tenant,
             CheckResult.objects.filter(tenant=tenant, timestamp__gte=since),
         )
-        .annotate(h=TruncHour("timestamp"))
+        .annotate(h=TruncHour("timestamp") if hourly else TruncDay("timestamp"))
         .values("h", "status")
         .annotate(n=Count("id"))
     )
@@ -1210,7 +1232,7 @@ def _result_series(request, tenant, hours: int = 24) -> list[dict]:
             b["degraded"] += r["n"]
         elif status in ("down", "stale"):
             b["down"] += r["n"]
-    return sorted(buckets.values(), key=lambda x: x["t"])
+    return sorted(buckets.values(), key=lambda x: x["t"]), ("hour" if hourly else "day")
 
 
 @extend_schema(
@@ -1657,6 +1679,7 @@ def checks_list_view(request):
     # Site-aware: only the caller's viewable IPs' checks appear in the list AND
     # the per-status counts.
     from .engines import SOURCE_EXPR
+    from .history import paginate
 
     base = _scope_ip_keyed(
         request, tenant,
@@ -1705,18 +1728,7 @@ def checks_list_view(request):
         "-latency": ("-last_latency_ms",),
     }
     qs = qs.order_by(*order_map.get(ordering, order_map["-last_checked"]))
-
-    try:
-        page = max(int(request.query_params.get("page", 1)), 1)
-    except ValueError:
-        page = 1
-    try:
-        page_size = min(max(int(request.query_params.get("page_size", 50)), 1), 200)
-    except ValueError:
-        page_size = 50
-    total = qs.count()
-    start = (page - 1) * page_size
-    rows = list(qs[start : start + page_size])
+    rows, total, page, page_size = paginate(qs, request.query_params)
 
     results = [
         {

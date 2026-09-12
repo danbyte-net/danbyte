@@ -23,68 +23,20 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from .models import CheckState, StateTransition
+from .models import CheckState
+from .timeline import integrate, segments_for_pairs
 
 _UP = {"up", "degraded"}
 _DOWN = {"down", "stale"}
 # unknown / skipped → excluded from the denominator.
 
 
-def _status_at(tenant_id, ip_id, template_id, when) -> str:
-    """The status in effect at ``when`` - the to_status of the last transition
-    before it, or 'unknown' if the check has no prior history."""
-    tr = (
-        StateTransition.objects.filter(
-            tenant_id=tenant_id,
-            target_ip_id=ip_id,
-            template_id=template_id,
-            at__lt=when,
-        )
-        .order_by("-at")
-        .values_list("to_status", flat=True)
-        .first()
-    )
-    return tr or "unknown"
-
-
-def check_uptime(state: CheckState, since, now) -> dict:
-    """Time-weighted uptime for one CheckState over ``[since, now]``."""
-    start_status = _status_at(state.tenant_id, state.target_ip_id, state.template_id, since)
-    transitions = list(
-        StateTransition.objects.filter(
-            tenant_id=state.tenant_id,
-            target_ip_id=state.target_ip_id,
-            template_id=state.template_id,
-            at__gte=since,
-            at__lte=now,
-        )
-        .order_by("at")
-        .values_list("at", "to_status")
-    )
-
-    up = down = excluded = 0.0
-    incidents = 0
-    cursor, status = since, start_status
-    for at, to_status in transitions:
-        seg = (at - cursor).total_seconds()
-        if status in _UP:
-            up += seg
-        elif status in _DOWN:
-            down += seg
-        else:
-            excluded += seg
-        if to_status in _DOWN and status not in _DOWN:
-            incidents += 1
-        cursor, status = at, to_status
-    # tail segment from the last transition to now
-    seg = (now - cursor).total_seconds()
-    if status in _UP:
-        up += seg
-    elif status in _DOWN:
-        down += seg
-    else:
-        excluded += seg
-
+def _summary(state: CheckState, segments) -> dict:
+    """The figures for one check from its segments - shared by the single-check
+    path and the bulk one so they cannot drift."""
+    totals = integrate(segments, up=_UP, down=_DOWN)
+    up, down, excluded = totals["up"], totals["down"], totals["excluded"]
+    incidents = totals["incidents"]
     measured = up + down
     pct = round(100.0 * up / measured, 3) if measured > 0 else None
     mttr = round(down / incidents, 1) if incidents else None
@@ -102,6 +54,17 @@ def check_uptime(state: CheckState, since, now) -> dict:
     }
 
 
+def check_uptime(state: CheckState, since, now) -> dict:
+    """Time-weighted uptime for one CheckState over ``[since, now]``.
+
+    The segments come from :mod:`timeline`, which is also what draws the
+    status strip - so the percentage and the picture always agree.
+    """
+    key = (str(state.target_ip_id), str(state.template_id))
+    segments = segments_for_pairs(state.tenant_id, [key], since, now).get(key, [])
+    return _summary(state, segments)
+
+
 def ip_uptime(ip, days: int = 30) -> dict:
     """Per-check + aggregate uptime for an IP over the last ``days``."""
     now = timezone.now()
@@ -109,7 +72,14 @@ def ip_uptime(ip, days: int = 30) -> dict:
     states = list(
         CheckState.objects.filter(target_ip=ip).select_related("template")
     )
-    checks = [check_uptime(s, since, now) for s in states]
+    # Two queries for every check on the address, not two per check.
+    by_pair = segments_for_pairs(
+        ip.tenant_id, [(s.target_ip_id, s.template_id) for s in states], since, now
+    )
+    checks = [
+        _summary(s, by_pair.get((str(s.target_ip_id), str(s.template_id)), []))
+        for s in states
+    ]
 
     measured = [c for c in checks if c["uptime_pct"] is not None]
     up = sum(c["up_seconds"] for c in checks)

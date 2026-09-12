@@ -7,6 +7,15 @@ from __future__ import annotations
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .history_views import (
+    device_timeline_view,
+    device_transitions_view,
+    ip_timeline_view,
+    ip_transitions_view,
+    prefix_transitions_view,
+    timeline_batch_view,
+    transitions_view,
+)
 from .maintenance_api import EventImpactViewSet, MaintenanceEventViewSet
 from .viewsets import (
     AcmeOrderViewSet,
@@ -161,9 +170,14 @@ urlpatterns = [
     path("ips/<uuid:ip_id>/checks/", ip_checks_view, name="monitoring-ip-checks"),
     path("ips/<uuid:ip_id>/history/", ip_history_view, name="monitoring-ip-history"),
     path("ips/<uuid:ip_id>/uptime/", ip_uptime_view, name="monitoring-ip-uptime"),
+    path("ips/<uuid:ip_id>/transitions/", ip_transitions_view, name="monitoring-ip-transitions"),
+    path("ips/<uuid:ip_id>/timeline/", ip_timeline_view, name="monitoring-ip-timeline"),
     path("ips/<uuid:ip_id>/check-now/", check_now_view, name="monitoring-check-now"),
     path("prefixes/<uuid:prefix_id>/checks/", prefix_checks_view, name="monitoring-prefix-checks"),
+    path("prefixes/<uuid:prefix_id>/transitions/", prefix_transitions_view, name="monitoring-prefix-transitions"),
     path("devices/<uuid:device_id>/checks/", device_checks_view, name="monitoring-device-checks"),
+    path("devices/<uuid:device_id>/transitions/", device_transitions_view, name="monitoring-device-transitions"),
+    path("devices/<uuid:device_id>/timeline/", device_timeline_view, name="monitoring-device-timeline"),
     path("devices/<uuid:device_id>/snmp/", device_snmp_view, name="monitoring-device-snmp"),
     path("devices/<uuid:device_id>/snmp/utilization/", device_snmp_utilization_view, name="monitoring-device-snmp-util"),
     path("devices/<uuid:device_id>/snmp/drift/", device_snmp_drift_view, name="monitoring-device-snmp-drift"),
@@ -192,6 +206,8 @@ urlpatterns = [
     path("check-runs/<str:run_id>/", check_run_view, name="monitoring-check-run"),
     path("status/", bulk_status_view, name="monitoring-bulk-status"),
     path("checks/", checks_list_view, name="monitoring-checks-list"),
+    path("transitions/", transitions_view, name="monitoring-transitions"),
+    path("timeline/", timeline_batch_view, name="monitoring-timeline-batch"),
     path("flapping/", flapping_view, name="monitoring-flapping"),
     path("alerts/", alerts_view, name="monitoring-alerts"),
     path("alerts/<uuid:alert_id>/ack/", alert_ack_view, name="monitoring-alert-ack"),
