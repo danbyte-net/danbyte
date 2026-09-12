@@ -58,6 +58,7 @@ import {
 } from "@/components/monitoring/configuration"
 import type { ConfigTab } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
+import { SourceBadge } from "@/components/monitoring/source-badge"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
@@ -417,12 +418,15 @@ function MonitoringPage() {
                         >
                           <Label content={<TotalLabel total={total} />} />
                         </Pie>
-                        {/* Two per row. Quarters plus a gap overflowed the
-                            row, so four statuses wrapped as three and one;
-                            halves stay balanced whatever the count. */}
+                        {/* A two-column grid that shrinks to its content.
+                            The legend's own justify-center then centres the
+                            pair of columns under the donut, and each item
+                            sits at the left of its track - so the swatches
+                            line up down both columns instead of each item
+                            centring in its own half. */}
                         <ChartLegend
                           content={<ChartLegendContent nameKey="status" />}
-                          className="-translate-y-2 flex-wrap gap-x-0 gap-y-1 *:basis-1/2 *:justify-center"
+                          className="grid -translate-y-2 grid-cols-[auto_auto] gap-x-4 gap-y-1"
                         />
                       </PieChart>
                     </ChartContainer>
@@ -522,6 +526,7 @@ function MonitoringPage() {
                           <span className="truncate text-muted-foreground">
                             {t.template_name ?? t.kind}
                           </span>
+                          <SourceBadge source={t.source} engine={t.engine} />
                           <span className="num ml-auto shrink-0 text-[11px] text-muted-foreground">
                             {new Date(t.at).toLocaleString()}
                           </span>
