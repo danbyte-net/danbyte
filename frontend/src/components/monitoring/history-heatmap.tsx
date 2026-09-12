@@ -1,4 +1,7 @@
+import { X } from "lucide-react"
+
 import type { HeatCell } from "@/lib/api"
+import { Button } from "@/components/ui/button"
 import { InfoTip } from "@/components/ui/info-tip"
 import {
   Tooltip,
@@ -8,17 +11,28 @@ import {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
+export interface HeatCellPick {
+  dow: number
+  hour: number
+}
+
 /**
- * When things break: status changes by weekday and hour, in the viewer's
- * week. A 03:00 column lit up on every row is a backup window; a Monday
- * row is a boot storm. Plain CSS grid on the accent token - a heatmap is
- * layout, not a chart library's job.
+ * Status changes by weekday and hour, in the viewer's week. A 03:00 column
+ * lit up on every row is a backup window; a Monday row is a boot storm.
+ * Every cell is a filter: click one and the table below narrows to that
+ * hour of that weekday; click it again, or the clear, to widen back. The
+ * grid fills whatever height its card has. Plain CSS grid on the accent
+ * token - a heatmap is layout, not a chart library's job.
  */
 export function HistoryHeatmap({
   cells,
+  selected,
+  onSelect,
   className,
 }: {
   cells: HeatCell[]
+  selected?: HeatCellPick | null
+  onSelect?: (cell: HeatCellPick | null) => void
   className?: string
 }) {
   const grid = new Map<string, number>()
@@ -29,17 +43,31 @@ export function HistoryHeatmap({
   }
   if (max === 0) return null
   return (
-    <div className={className}>
+    <div className={"flex h-full flex-col " + (className ?? "")}>
       <div className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-        When changes land
+        By weekday and hour
         <InfoTip>
           Status changes by weekday and hour, in your timezone, over the current
-          filter.
+          filter. Click a cell to narrow the table to it.
         </InfoTip>
+        {selected && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-6 gap-1 px-1.5 text-[11px] font-normal tracking-normal normal-case"
+            onClick={() => onSelect?.(null)}
+          >
+            {DAYS[selected.dow]} {String(selected.hour).padStart(2, "0")}:00
+            <X className="h-3 w-3" />
+          </Button>
+        )}
       </div>
       <div
-        className="grid gap-px text-[10px] text-muted-foreground"
-        style={{ gridTemplateColumns: "2.25rem repeat(24, minmax(0, 1fr))" }}
+        className="grid min-h-0 flex-1 gap-px text-[10px] text-muted-foreground"
+        style={{
+          gridTemplateColumns: "2.25rem repeat(24, minmax(0, 1fr))",
+          gridTemplateRows: "auto repeat(7, minmax(1rem, 1fr))",
+        }}
       >
         <span />
         {Array.from({ length: 24 }, (_, h) => (
@@ -48,7 +76,15 @@ export function HistoryHeatmap({
           </span>
         ))}
         {DAYS.map((name, dow) => (
-          <Row key={name} name={name} dow={dow} grid={grid} max={max} />
+          <Row
+            key={name}
+            name={name}
+            dow={dow}
+            grid={grid}
+            max={max}
+            selected={selected}
+            onSelect={onSelect}
+          />
         ))}
       </div>
     </div>
@@ -60,20 +96,36 @@ function Row({
   dow,
   grid,
   max,
+  selected,
+  onSelect,
 }: {
   name: string
   dow: number
   grid: Map<string, number>
   max: number
+  selected?: HeatCellPick | null
+  onSelect?: (cell: HeatCellPick | null) => void
 }) {
   return (
     <>
-      <span className="pr-1 text-right leading-4">{name}</span>
+      <span className="self-center pr-1 text-right leading-4">{name}</span>
       {Array.from({ length: 24 }, (_, hour) => {
         const n = grid.get(`${dow}:${hour}`) ?? 0
+        const isSelected = selected?.dow === dow && selected.hour === hour
         const cell = (
-          <span
-            className="block h-4 rounded-[2px] bg-primary"
+          <button
+            type="button"
+            disabled={!n || !onSelect}
+            aria-pressed={isSelected}
+            aria-label={`${name} ${String(hour).padStart(2, "0")}:00, ${n} changes`}
+            onClick={() => onSelect?.(isSelected ? null : { dow, hour })}
+            className={
+              "block h-full w-full rounded-[2px] bg-primary transition-opacity " +
+              (n && onSelect ? "cursor-pointer hover:opacity-100 " : "") +
+              (isSelected
+                ? "ring-2 ring-foreground ring-offset-1 ring-offset-background"
+                : "")
+            }
             style={{ opacity: n ? 0.15 + 0.85 * (n / max) : 0.05 }}
           />
         )

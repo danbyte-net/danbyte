@@ -5211,6 +5211,9 @@ export interface TransitionFilters {
   search?: string
   /** `1` = only the changes behind checks flagged as flapping right now. */
   flapping?: string
+  /** One cell of the viewer's week: weekday (0 = Monday) and hour. */
+  dow?: string
+  hour?: string
   ordering?: "at" | "-at" | "ip" | "-ip"
   page?: number
   page_size?: number

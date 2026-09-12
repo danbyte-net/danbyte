@@ -93,17 +93,23 @@ def _related(qs):
 
 def _transitions_response(request, base, params):
     """The shared body of every transitions list: filter, count, bucket, page."""
-    qs, since, until = apply_transition_filters(base, params)
+    tz = viewer_tz(request, _get_active_tenant(request))
+
+    def apply(b, p):
+        return apply_transition_filters(b, p, tz=tz)
+
+    qs, since, until = apply(base, params)
     ordering = _ORDERING.get(params.get("ordering", "-at"), "-at")
     qs = _related(qs).order_by(ordering, "-id")
     rows, total, page, page_size = paginate(qs, params)
-    facets = facet_counts(
-        base, params, TRANSITION_FACETS,
-        lambda b, p: apply_transition_filters(b, p),
-    )
-    filtered = apply_transition_filters(base, params)[0]
+    facets = facet_counts(base, params, TRANSITION_FACETS, apply)
+    filtered = apply(base, params)[0]
     series, bucket = transition_series(filtered, since, until)
-    tz = viewer_tz(request, _get_active_tenant(request))
+    # The heatmap keeps the whole week while a cell is selected; the top
+    # list follows the cell like the table does.
+    from .history import _without
+
+    whole_week = apply(base, _without(params, ("dow", "hour")))[0]
     return Response({
         "count": total,
         "page": page,
@@ -113,10 +119,8 @@ def _transitions_response(request, base, params):
         "bucket": bucket,
         "facets": facets,
         "series": series,
-        # When changes land (the viewer's week) and who changes most - both
-        # over the same filtered set as the table, so the rail shapes them.
-        "heatmap": transition_heatmap(filtered, tz),
-        "top": transition_top(filtered),
+        "heatmap": transition_heatmap(whole_week, tz),
+        "top": transition_top(filtered, limit=50),
         "results": [_row(t) for t in rows],
     })
 

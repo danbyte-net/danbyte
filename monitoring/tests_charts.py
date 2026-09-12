@@ -190,6 +190,24 @@ class ApiTests(_Base):
         self.assertEqual(r["count"], 1)
         self.assertEqual(r["results"][0]["target_ip"]["ip_address"], "10.8.0.2")
 
+    def test_a_heatmap_cell_filters_the_table_but_not_the_heatmap(self):
+        from auth_api.models import UserProfile
+        from auth_api.user_prefs import set_user
+
+        UserProfile.objects.get_or_create(user=self.admin, defaults={"role": "admin"})
+        set_user(self.admin, "timezone", "Europe/Copenhagen")
+        # Monday 12:00 and Tuesday 12:00, Copenhagen.
+        self.transition(self.t0, "down")
+        self.transition(self.t0 + timedelta(days=1), "down", ip=self.ip2)
+        r = self.client.get("/api/monitoring/transitions/?days=30&dow=0&hour=12").json()
+        self.assertEqual(r["count"], 1)
+        self.assertEqual(r["results"][0]["target_ip"]["ip_address"], "10.8.0.1")
+        self.assertEqual(len(r["top"]), 1)
+        # The picture stays whole so the next cell can be picked.
+        self.assertEqual(sum(c["n"] for c in r["heatmap"]), 2)
+        self.assertEqual(self.client.get("/api/monitoring/transitions/?days=30&dow=1").json()["count"], 1)
+        self.assertEqual(self.client.get("/api/monitoring/transitions/?days=30&hour=12").json()["count"], 2)
+
     def test_stats_and_dashboard_carry_the_new_series(self):
         now = timezone.now()
         self.result(now - timedelta(minutes=5), latency=3.0)

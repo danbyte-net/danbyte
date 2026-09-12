@@ -75,6 +75,12 @@ export function HistoryView() {
     RAIL_KEYS.map((k) => [k, str(search[k])])
   )
   const ip = str(search.ip)
+  const dow = str(search.dow)
+  const hour = str(search.hour)
+  const cell =
+    dow !== undefined && hour !== undefined
+      ? { dow: Number(dow), hour: Number(hour) }
+      : null
   const since = str(search.since)
   const until = str(search.until)
   const custom = !!(since || until)
@@ -99,6 +105,8 @@ export function HistoryView() {
   const filters: TransitionFilters = {
     ...rail,
     ip,
+    dow,
+    hour,
     search: q || undefined,
     ordering,
     page,
@@ -151,6 +159,8 @@ export function HistoryView() {
     const out: FilterSnapshot = {}
     for (const k of RAIL_KEYS) if (rail[k]) out[k] = rail[k]!
     if (ip) out.ip = ip
+    if (dow !== undefined) out.dow = dow
+    if (hour !== undefined) out.hour = hour
     if (custom) {
       if (since) out.since = since
       if (until) out.until = until
@@ -159,7 +169,15 @@ export function HistoryView() {
   }
   const restore = (snap: FilterSnapshot | null | undefined) => {
     const next: Record<string, string | undefined> = { page: undefined }
-    for (const k of [...RAIL_KEYS, "ip", "since", "until", "days"])
+    for (const k of [
+      ...RAIL_KEYS,
+      "ip",
+      "since",
+      "until",
+      "days",
+      "dow",
+      "hour",
+    ])
       next[k] = undefined
     for (const [k, v] of Object.entries(snap ?? {}))
       if (typeof v === "string") next[k] = v
@@ -298,7 +316,17 @@ export function HistoryView() {
       {data && (data.heatmap.length > 0 || data.top.length > 0) && (
         <div className="mb-4 grid gap-4 lg:grid-cols-2">
           <div className="rounded-lg border border-border bg-card p-3">
-            <HistoryHeatmap cells={data.heatmap} />
+            <HistoryHeatmap
+              cells={data.heatmap}
+              selected={cell}
+              onSelect={(c) =>
+                patch({
+                  dow: c ? String(c.dow) : undefined,
+                  hour: c ? String(c.hour) : undefined,
+                  page: undefined,
+                })
+              }
+            />
           </div>
           <div className="rounded-lg border border-border bg-card p-3">
             <TopChanges rows={data.top} />

@@ -565,11 +565,13 @@ exactly like an automatic scan.
   count of what ticking it would leave - and narrows by region, device,
   prefix, VRF, VLAN, tag or port. The window is 24h / 7d / 30d / 90d or a
   custom date range; the chart above the table shows changes per hour or per
-  day by state. Under it, **When changes land** is a weekday × hour heatmap
-  of the same changes in your timezone (a 03:00 column lit on every row is
-  a backup window; a lit Monday row is a boot storm) and **Most changes**
-  lists the ten addresses that changed most, with how many of those changes
-  went bad. Both follow the rail. Everything lives in the URL, so a view is
+  day by state. Under it, **By weekday and hour** is a heatmap of the same
+  changes in your timezone (a 03:00 column lit on every row is a backup
+  window; a lit Monday row is a boot storm) - click a cell and the table and
+  the top list narrow to that hour of that weekday (`?dow=&hour=`; the
+  heatmap itself stays whole so the next cell can be picked) - and **Most
+  changes** lists the addresses that changed most, ten a page, with how many
+  of those changes went bad. Both follow the rail. Everything lives in the URL, so a view is
   a link, and saved views keep a rail, a window and a search under a name.
   Export walks every page the filters match, up to 5,000 rows.
 - **Checks** - every check in the tenant, on the same rail as History: status,

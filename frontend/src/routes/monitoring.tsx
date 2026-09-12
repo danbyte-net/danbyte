@@ -105,6 +105,8 @@ const FILTER_KEYS = [
   "until",
   "strip",
   "flapping",
+  "dow",
+  "hour",
 ] as const
 type FilterKey = (typeof FILTER_KEYS)[number]
 

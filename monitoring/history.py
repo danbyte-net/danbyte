@@ -184,10 +184,26 @@ def window(params, now=None) -> tuple:
     return since, until
 
 
-def apply_transition_filters(qs, params, now=None):
-    """The target filters plus what a transition itself carries."""
+def apply_transition_filters(qs, params, now=None, tz=None):
+    """The target filters plus what a transition itself carries.
+
+    ``dow`` (0 = Monday) and ``hour`` narrow to one cell of the viewer's
+    week - the heatmap's cells are links into the table - and need the
+    viewer's timezone to mean the right hour.
+    """
     qs = qs.annotate(source=STAMPED_SOURCE_EXPR)
     qs = apply_target_filters(qs, params)
+    dow, hour = (params.get("dow") or "").strip(), (params.get("hour") or "").strip()
+    if tz is not None and (dow.isdigit() or hour.isdigit()):
+        from django.db.models.functions import ExtractHour, ExtractWeekDay
+
+        if dow.isdigit():
+            # Django's weekday is 1 = Sunday … 7 = Saturday; ours is 0 = Monday.
+            qs = qs.annotate(_dow=ExtractWeekDay("at", tzinfo=tz)).filter(
+                _dow=(int(dow) + 1) % 7 + 1
+            )
+        if hour.isdigit():
+            qs = qs.annotate(_hour=ExtractHour("at", tzinfo=tz)).filter(_hour=int(hour))
     to_status = _csv(params, "to_status") or _csv(params, "to")
     if to_status:
         qs = qs.filter(to_status__in=to_status)
@@ -229,6 +245,9 @@ _OWN_PARAMS = {
     "template": ("template",),
     "engine": ("engine",),
     "flapping": ("flapping",),
+    # The heatmap is drawn without its own cell selected, or one click
+    # would leave one lit square.
+    "cell": ("dow", "hour"),
 }
 
 
