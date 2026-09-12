@@ -442,6 +442,7 @@ class FastLane:
         self.pending_results: list = []
         self.pending_transitions: list = []
         self.dirty: dict[str, CheckState] = {}
+        self.samples: dict[str, tuple] = {}
         self.probes = 0
         self._probe_window_started = time.monotonic()
         self.probes_per_s = 0.0
@@ -550,6 +551,12 @@ class FastLane:
         self.pending_transitions.extend(transitions)
         if results or transitions:
             self.dirty[str(e.state.id)] = e.state
+        # Every probe is a word for a page that is watching, even the ones
+        # that never become a row; the flush decides who is watching.
+        self.samples[str(e.state.id)] = (
+            e.state,
+            {"status": sample.status, "latency_ms": sample.latency_ms, "at": sample.at.isoformat()},
+        )
 
     # -- persistence ----------------------------------------------------------
 
@@ -560,6 +567,15 @@ class FastLane:
         results, self.pending_results = self.pending_results, []
         transitions, self.pending_transitions = self.pending_transitions, []
         dirty, self.dirty = list(self.dirty.values()), {}
+        samples, self.samples = self.samples, {}
+        # The probes that became nothing still reach an open page - one
+        # message a second per watched address, none for the rest.
+        dirty_ids = {str(d.id) for d in dirty}
+        quiet = [st for sid, (st, _) in samples.items() if sid not in dirty_ids]
+        if quiet:
+            from .live import publish
+
+            publish(quiet, (), {sid: sm for sid, (_, sm) in samples.items()})
         if not (results or transitions or dirty):
             return
         now = timezone.now()

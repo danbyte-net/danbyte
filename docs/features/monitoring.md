@@ -400,6 +400,16 @@ The IP detail page's **Monitoring** tab reads top to bottom as *now → other
 systems → over time*, three sections in the same frame: **Checks**, **Zabbix**
 (only when the address's device is a Zabbix host) and **History**.
 
+The tab is **live**: while it is open, every result the workers or the fast
+lane write for the address is pushed to it over a WebSocket (`/ws/monitoring/`)
+- the pill, latency and *last checked* move on their own, the fast lane's
+probes every second, and a status change re-reads the strips, bars and
+history. A *Live* badge beside the section title says the socket is up;
+without one (no WebSocket process, a proxy that drops it) the tab polls
+every 15 seconds instead. Only addresses somebody is looking at are pushed:
+a page registers interest for its address and the writers check it first,
+so an estate with nobody watching costs nothing.
+
 **Checks** is one row per check: the status pill, the name and kind (with
 *inherited* or *from policy* as muted text when the check is not the
 address's own), a *Fast* badge for a sub-minute check, a *Flapping* pill when

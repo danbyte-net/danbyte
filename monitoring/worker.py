@@ -398,6 +398,10 @@ def _persist(
         from .alerts import process_transitions
 
         process_transitions(transitions, now)
+    # Whoever has the address open hears about it now, not on reload.
+    from .live import publish
+
+    publish(states, transitions)
 
 
 def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> int:

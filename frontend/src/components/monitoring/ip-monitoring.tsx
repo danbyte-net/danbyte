@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronRight, Play, Plus, Trash2 } from "lucide-react"
+import { ChevronRight, Play, Plus, Radio, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { ExternalDetailPanel } from "./external-detail"
@@ -43,6 +43,8 @@ import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
 import { InfoTip } from "@/components/ui/info-tip"
 import { apiErrorToast } from "@/lib/api-toast"
+import { POLL_MS, useLiveMonitoring } from "@/lib/use-live-monitoring"
+import { Badge } from "@/components/ui/badge"
 
 export function IpMonitoring({
   ip,
@@ -81,10 +83,13 @@ export function IpMonitoring({
     },
   })
 
+  // Pushed over a socket while the tab is open; polled when there is none.
+  const { live } = useLiveMonitoring(ip.id)
   const q = useQuery({
     queryKey: ["ip-checks", ip.id],
     queryFn: () =>
       api<IpChecksResponse>(`/api/monitoring/ips/${ip.id}/checks/`),
+    refetchInterval: live ? false : POLL_MS,
   })
 
   // "I looked, it is fine": clears the flapping state and records who said
@@ -150,6 +155,12 @@ export function IpMonitoring({
           <>
             {checks.length > 0 && <MixedStatusBadge counts={counts} />}
             {flapping > 0 && <FlappingPill count={flapping} />}
+            {live && (
+              <Badge variant="outline" className="gap-1">
+                <Radio className="h-3 w-3" />
+                Live
+              </Badge>
+            )}
           </>
         }
         actions={

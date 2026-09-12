@@ -2,6 +2,7 @@
 from django.urls import re_path
 
 from assistant.consumers import ChatConsumer
+from monitoring.live_consumer import MonitoringLiveConsumer
 from monitoring.ssh_terminal_consumer import SshTerminalConsumer
 
 from .presence_consumer import PresenceConsumer
@@ -9,6 +10,8 @@ from .presence_consumer import PresenceConsumer
 websocket_urlpatterns = [
     re_path(r"^ws/presence/$", PresenceConsumer.as_asgi()),
     re_path(r"^ws/chat/$", ChatConsumer.as_asgi()),
+    # One address's checks, pushed as they are written.
+    re_path(r"^ws/monitoring/$", MonitoringLiveConsumer.as_asgi()),
     re_path(
         r"^ws/ssh/(?P<device_id>[0-9a-fA-F-]{36})/$",
         SshTerminalConsumer.as_asgi(),
