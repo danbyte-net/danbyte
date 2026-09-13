@@ -126,7 +126,7 @@ class SearchTagScopeTests(LoginMixin, APITestCase):
         self._login(self.user, self.tenant_a)
         resp = self.client.get("/api/search/", {"q": "secretproj"})
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["groups"]["tags"], [])
+        self.assertEqual([h for h in resp.json()["hits"] if h["type"] == "tag"], [])
 
 
 # ── #7 - tag usage is per-type + site scoped ─────────────────────────────────

@@ -162,8 +162,8 @@ class StandaloneReadRbacTests(_TenantClientMixin, APITestCase):
 
     def test_walled_search_object_groups_empty(self):
         self._client(self.walled, self.t)
-        groups = self.client.get("/api/search/?q=10.9").json()["groups"]
-        self.assertEqual(groups["prefixes"], [])
+        hits = self.client.get("/api/search/?q=10.9").json()["hits"]
+        self.assertEqual([h for h in hits if h["type"] == "prefix"], [])
 
     # ── Read-only member (wildcard view): unaffected ─────────────────────────
     def test_reader_sees_reads(self):
@@ -185,8 +185,8 @@ class StandaloneReadRbacTests(_TenantClientMixin, APITestCase):
         counts = self.client.get("/api/dashboard/").json()["counts"]
         self.assertGreaterEqual(counts["devices"], 1)
         self.assertGreaterEqual(counts["prefixes"], 1)
-        groups = self.client.get("/api/search/?q=10.9").json()["groups"]
-        self.assertGreaterEqual(len(groups["prefixes"]), 1)
+        hits = self.client.get("/api/search/?q=10.9").json()["hits"]
+        self.assertGreaterEqual(len([h for h in hits if h["type"] == "prefix"]), 1)
 
 
 class TagWriteRBACTests(_TenantClientMixin, APITestCase):
