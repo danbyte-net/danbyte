@@ -197,6 +197,7 @@ export function HistoryView() {
           filters={rail}
           onChange={(p) => patch(p)}
           showFrom
+          showFlapping
         />
       }
       search={{

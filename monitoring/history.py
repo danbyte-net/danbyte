@@ -226,18 +226,25 @@ def apply_transition_filters(qs, params, now=None, tz=None):
         qs = qs.filter(engine_id__in=engines)
     if (params.get("flapping") or "").strip() == "1":
         # The changes behind what is flagged right now.
-        from .models import CheckState
-
-        pairs = CheckState.objects.filter(flapping_since__isnull=False).values_list(
-            "target_ip_id", "template_id"
-        )
-        q = Q(pk__in=[])
-        for ip_id, template_id in pairs:
-            q |= Q(target_ip_id=ip_id, template_id=template_id)
-        qs = qs.filter(q)
+        qs = qs.filter(flapping_now())
     since, until = window(params, now)
     qs = qs.filter(at__gte=since, at__lte=until)
     return qs, since, until
+
+
+def flapping_now():
+    """The check behind a transition is flagged as flapping right now - an
+    ``Exists`` on the state, so it annotates and filters alike."""
+    from django.db.models import Exists, OuterRef
+
+    from .models import CheckState
+
+    return Exists(
+        CheckState.objects.filter(
+            target_ip_id=OuterRef("target_ip_id"), template_id=OuterRef("template_id"),
+            flapping_since__isnull=False,
+        )
+    )
 
 
 #: Which params each facet is *its own* filter for - dropped when counting it.

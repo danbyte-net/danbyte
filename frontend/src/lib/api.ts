@@ -5126,6 +5126,8 @@ export interface TransitionRow {
   site: { id: string; name: string } | null
   source: CheckSource
   engine: EngineRef | null
+  /** The check behind it is flagged as flapping right now. */
+  flapping: boolean
 }
 
 export interface FacetBucket {

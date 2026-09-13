@@ -121,6 +121,21 @@ class FilterTests(_Base):
         until = (self.now - timedelta(hours=2, minutes=30)).isoformat()
         self.assertEqual(self.get(days=30, until=until)["count"], 2)
 
+    def test_flapping_rows_are_flagged_filterable_and_counted(self):
+        from .models import CheckState
+
+        CheckState.objects.create(
+            tenant=self.tenant, target_ip=self.ip_a, template=self.ping, kind="icmp",
+            status="down", flapping_since=self.now,
+        )
+        body = self.get(days=30)
+        flagged = {r["target_ip"]["ip_address"] for r in body["results"] if r["flapping"]}
+        self.assertEqual(flagged, {"10.1.0.1"})
+        self.assertEqual(body["facets"]["flapping"], [{"value": "1", "label": "Flapping", "count": 1}])
+        body = self.get(days=30, flapping="1")
+        self.assertEqual(body["count"], 1)
+        self.assertTrue(all(r["flapping"] for r in body["results"]))
+
     def test_hours_win_over_days(self):
         since, until = window({"hours": "12", "days": "30"}, self.now)
         self.assertEqual(since, self.now - timedelta(hours=12))

@@ -6,6 +6,7 @@ import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
 import { detailSummary } from "@/components/monitoring/check-history"
 import { SourceBadge, SourceHeader } from "@/components/monitoring/source-badge"
+import { FlappingPill } from "@/components/monitoring/flapping-pill"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 
 export type TransitionColumnId =
@@ -100,6 +101,7 @@ export function transitionColumns(
           <span className="font-mono text-[10px] text-muted-foreground uppercase">
             {row.original.kind}
           </span>
+          {row.original.flapping && <FlappingPill />}
         </span>
       ),
     },

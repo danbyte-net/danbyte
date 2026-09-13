@@ -25,8 +25,10 @@ from .charts import (
 )
 from .engines import executing_engine, source_of
 from .history import (
+    _without,
     apply_transition_filters,
     facet_counts,
+    flapping_now,
     paginate,
     transition_series,
     window,
@@ -78,6 +80,8 @@ def _row(t) -> dict:
         ),
         "device": {"id": str(device.id), "name": device.name} if device is not None else None,
         "site": site,
+        # The check behind it is flagged as flapping right now.
+        "flapping": bool(getattr(t, "_flapping", False)),
         "source": source_of(t.engine if t.engine_id else None),
         "engine": {"id": str(t.engine_id), "name": t.engine.name} if t.engine_id else None,
     }
@@ -100,15 +104,18 @@ def _transitions_response(request, base, params):
 
     qs, since, until = apply(base, params)
     ordering = _ORDERING.get(params.get("ordering", "-at"), "-at")
-    qs = _related(qs).order_by(ordering, "-id")
+    qs = _related(qs).annotate(_flapping=flapping_now()).order_by(ordering, "-id")
     rows, total, page, page_size = paginate(qs, params)
     facets = facet_counts(base, params, TRANSITION_FACETS, apply)
+    # One bucket, counted like the others (every filter but its own).
+    flapping_count = apply(base, _without(params, ("flapping",)))[0].filter(flapping_now()).count()
+    facets["flapping"] = (
+        [{"value": "1", "label": "Flapping", "count": flapping_count}] if flapping_count else []
+    )
     filtered = apply(base, params)[0]
     series, bucket = transition_series(filtered, since, until)
     # The heatmap keeps the whole week while a cell is selected; the top
     # list follows the cell like the table does.
-    from .history import _without
-
     whole_week = apply(base, _without(params, ("dow", "hour")))[0]
     return Response({
         "count": total,

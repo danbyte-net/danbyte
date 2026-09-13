@@ -528,10 +528,12 @@ series alongside the rows, so one call feeds a rail, a chart and a table:
   `days` (default 7, up to 365). Filters: `to_status`, `from_status`, `kind`,
   `template`, `source`, `engine`, `ip`, `site`, `region` (descendants
   included), `device`, `device_type`, `role`, `platform`, `prefix`, `vrf`,
-  `vlan`, `port`, `tag` (repeatable, every tag must match) and `search`.
-  Lists are comma-separated and mean *any of*. A site matches an address's own
-  site, its prefix's or its device's. A VLAN matches the prefix's VLAN or the
-  interface's.
+  `vlan`, `port`, `tag` (repeatable, every tag must match), `search`, and
+  `flapping=1` for the changes behind checks flagged as flapping right now;
+  every row says whether its check is (`flapping`), and the facets carry a
+  *Flapping* bucket counted like the others. Lists are comma-separated and
+  mean *any of*. A site matches an address's own site, its prefix's or its
+  device's. A VLAN matches the prefix's VLAN or the interface's.
 - `…/ips/<id>/transitions/`, `…/devices/<id>/transitions/`,
   `…/prefixes/<id>/transitions/` - the same shape, pinned to one object.
 - `…/ips/<id>/timeline/?days=` and `…/devices/<id>/timeline/` - status over the
@@ -650,8 +652,10 @@ A check that goes bad **Flap threshold** times (5) within the **Flap window**
 list you have to ask for. The state shows as a **Flapping** pill beside the
 status badge wherever the status is: the prefix, device and VM lists, the
 address's summary and Monitoring tab (one pill per check), the device's
-Overview and Monitoring tab. The pill's hover says how many checks under the
-target are flagged. A flapping alert stops sending reminders, so a bouncing
+Overview and Monitoring tab, every row of the Checks list and every change
+of a flagged check on the History tab - both of which have a **Flapping**
+facet on the rail to keep only those. The pill's hover says how many checks
+under the target are flagged. A flapping alert stops sending reminders, so a bouncing
 host cannot page on a loop.
 
 It is **sticky**. "It stopped bouncing" and "it is fine" are different
