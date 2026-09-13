@@ -125,6 +125,27 @@ def can_grant_superuser(user) -> bool:
     return has_action(user, None, "user", "grant_superuser")
 
 
+def active_tenant(user, session=None):
+    """The tenant a signed-in user is working in, the way every HTTP view
+    resolves it: the session's choice if still allowed, else the profile's
+    home tenant, else the first allowed one. Sockets go through here too, so
+    a fresh login with no tenant switch yet is not turned away."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    allowed = user_tenants(user)
+    tid = session.get("current_tenant_id") if session else None
+    if tid:
+        t = allowed.filter(pk=tid).first()
+        if t is not None:
+            return t
+    home_id = getattr(getattr(user, "profile", None), "current_tenant_id", None)
+    if home_id:
+        t = allowed.filter(pk=home_id).first()
+        if t is not None:
+            return t
+    return allowed.first()
+
+
 def user_tenants(user):
     """QuerySet of Tenants this user is allowed to operate within.
 

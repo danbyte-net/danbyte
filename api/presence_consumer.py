@@ -32,8 +32,12 @@ class PresenceConsumer(JsonWebsocketConsumer):
         if user is None or not getattr(user, "is_authenticated", False):
             self.close(code=4401)
             return
-        session = self.scope.get("session")
-        self.tenant_id = session.get("current_tenant_id") if session else None
+        from auth_api.permissions import active_tenant
+
+        # Resolved like the HTTP views, so a fresh login without a tenant
+        # switch yet still gets presence.
+        tenant = active_tenant(user, self.scope.get("session"))
+        self.tenant_id = str(tenant.id) if tenant else None
         qs = parse_qs(self.scope.get("query_string", b"").decode())
         self.object_type = (qs.get("object_type", [""])[0]).strip()
         self.object_id = (qs.get("object_id", [""])[0]).strip()

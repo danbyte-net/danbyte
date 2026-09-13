@@ -24,18 +24,18 @@ class MonitoringLiveConsumer(JsonWebsocketConsumer):
         if user is None or not getattr(user, "is_authenticated", False):
             self.close(code=4401)
             return
-        session = self.scope.get("session")
-        tenant_id = session.get("current_tenant_id") if session else None
         qs = parse_qs(self.scope.get("query_string", b"").decode())
         ip_id = (qs.get("ip", [""])[0]).strip()
-        if not (tenant_id and ip_id):
+        if not ip_id:
             self.close(code=4400)
             return
         from api.models import IPAddress
         from auth_api import rbac
-        from core.models import Tenant
+        from auth_api.permissions import active_tenant
 
-        tenant = Tenant.objects.filter(pk=tenant_id).first()
+        # The same resolution as the HTTP views - a fresh login has no
+        # tenant in its session yet and must not be turned away here.
+        tenant = active_tenant(user, self.scope.get("session"))
         if tenant is None:
             self.close(code=4400)
             return

@@ -70,7 +70,8 @@ class LiveFeedTests(TransactionTestCase):
         async def run():
             comm = WebsocketCommunicator(MonitoringLiveConsumer.as_asgi(), "/ws/monitoring/")
             comm.scope["user"] = user
-            comm.scope["session"] = {
+            # An empty string is "no tenant chosen yet" - a fresh login.
+            comm.scope["session"] = {} if tenant_id == "" else {
                 "current_tenant_id": tenant_id if tenant_id is not None else str(self.tenant.id)
             }
             comm.scope["query_string"] = f"ip={ip_id}".encode()
@@ -79,6 +80,18 @@ class LiveFeedTests(TransactionTestCase):
             return comm, accepted, code, hello
 
         return run
+
+    def test_fresh_login_without_a_tenant_in_the_session_is_let_in(self):
+        """The HTTP views fall back to the profile's home tenant, then the
+        first allowed one; the socket must not turn the same user away."""
+        async def run():
+            comm, accepted, code, hello = await self._connect(self.admin, self.ip.id, tenant_id="")()
+            await comm.disconnect()
+            return accepted, code, hello
+
+        accepted, code, hello = _run(run())
+        self.assertTrue(accepted, code)
+        self.assertEqual(hello["type"], "hello")
 
     def test_unauthenticated_and_unscoped_are_refused(self):
         async def run():

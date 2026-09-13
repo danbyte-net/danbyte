@@ -68,24 +68,40 @@ export function LatencyChart({
     staleTime: 60_000,
   })
   const points = q.data?.points ?? []
-  const data = points.map((p) => ({
-    t: p.t,
-    label:
-      hours === 24
-        ? new Date(p.t).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : new Date(p.t).toLocaleString([], {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-          }),
-    avg: p.avg,
-    range: p.min != null && p.max != null ? [p.min, p.max] : null,
-    loss: p.loss,
-    samples: p.samples,
-  }))
+  const bucketMs = (q.data?.bucket_seconds ?? 300) * 1000
+  const time = (ms: number) =>
+    new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  const dayTime = (ms: number) =>
+    new Date(ms).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  const data = points.map((p) => {
+    const from = new Date(p.t).getTime()
+    const to = from + bucketMs
+    const sameDay =
+      new Date(from).toDateString() === new Date(to).toDateString()
+    return {
+      t: p.t,
+      label:
+        hours === 24
+          ? time(from)
+          : new Date(from).toLocaleString([], {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+            }),
+      // The bucket as a span, for the tooltip: a point is five minutes, an
+      // hour or six hours of probes, not an instant.
+      span: `${hours === 24 ? time(from) : dayTime(from)} – ${sameDay ? time(to) : dayTime(to)}`,
+      avg: p.avg,
+      range: p.min != null && p.max != null ? [p.min, p.max] : null,
+      loss: p.loss,
+      samples: p.samples,
+    }
+  })
   const hasLoss = points.some((p) => p.loss > 0)
   const legend = hasLoss ? SERIES : SERIES.filter((s) => s.key !== "loss")
 
@@ -153,6 +169,10 @@ export function LatencyChart({
               cursor={false}
               content={
                 <ChartTooltipContent
+                  labelFormatter={(_label, items) =>
+                    (items[0]?.payload as { span?: string } | undefined)
+                      ?.span ?? _label
+                  }
                   formatter={(value, name, item) => {
                     if (name === "range") {
                       const [lo, hi] = value as unknown as [number, number]

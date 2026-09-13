@@ -155,6 +155,7 @@ export function ChartTooltipContent({
   nameKey,
   labelKey,
   formatter,
+  labelFormatter,
 }: {
   active?: boolean
   payload?: ChartItem[]
@@ -175,6 +176,13 @@ export function ChartTooltipContent({
     name: string,
     item: ChartItem
   ) => React.ReactNode
+  /** Render the label row yourself - a bucket as "04:10 – 04:15" rather
+   * than its start. The upstream shadcn prop; receives the resolved label
+   * and the payload. */
+  labelFormatter?: (
+    label: React.ReactNode,
+    payload: ChartItem[]
+  ) => React.ReactNode
 }) {
   const { config } = useChart()
 
@@ -187,9 +195,23 @@ export function ChartTooltipContent({
       !labelKey && typeof label === "string"
         ? config[label]?.label || label
         : itemConfig?.label
+    if (labelFormatter)
+      return (
+        <div className={cn("font-medium", labelClassName)}>
+          {labelFormatter(value, payload)}
+        </div>
+      )
     if (!value) return null
     return <div className={cn("font-medium", labelClassName)}>{value}</div>
-  }, [label, labelKey, payload, hideLabel, labelClassName, config])
+  }, [
+    label,
+    labelKey,
+    payload,
+    hideLabel,
+    labelClassName,
+    config,
+    labelFormatter,
+  ])
 
   if (!active || !payload?.length) return null
 

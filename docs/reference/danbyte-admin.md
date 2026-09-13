@@ -99,7 +99,8 @@ reattaches to a run someone started from the browser. Its output lands in
 bar. **5 tls** shows what nginx serves and, beside it, what `:443` actually
 presents right now - so a reload that did not take is visible - and installs
 a certificate (below). **8 diagnostics** runs the checks and probes the
-ports.
+ports - 443, 8000, 8002, 3000, the database and Redis, and 80, which is
+*optional*: only ACME HTTP-01 for the site's own certificate needs it.
 
 Colour is only ever on the word that carries a state - green, amber, red -
 so a screen with no colour on it is a screen with nothing wrong.

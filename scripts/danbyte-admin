@@ -2110,16 +2110,20 @@ class Facts(threading.Thread):
             return f"{label} {port}" if host in {"127.0.0.1", "localhost", "::1"} \
                 else f"{label} {host}:{port}"
 
-        targets = [("443", "127.0.0.1", 443), ("8000", "127.0.0.1", 8000), ("8002", "127.0.0.1", 8002),
+        # Port 80 only matters for ACME HTTP-01 on the site's own certificate
+        # (Let's Encrypt fetches its token there); closed is not a fault.
+        targets = [("443", "127.0.0.1", 443), ("80 (http-01)", "127.0.0.1", 80),
+                   ("8000", "127.0.0.1", 8000), ("8002", "127.0.0.1", 8002),
                    ("3000", "127.0.0.1", 3000), (name("db", db_host, db_port), db_host, db_port),
                    (name("redis", rd_host, rd_port), rd_host, rd_port)]
+        optional = {"80 (http-01)"}
         res = {}
         for label, host, port in targets:
             try:
                 with socket.create_connection((host, port), timeout=0.3):
-                    res[label] = True
+                    res[label] = "open"
             except OSError:
-                res[label] = False
+                res[label] = "optional" if label in optional else "closed"
         nginx_t = None
         if shutil.which("sudo") and sh(["sudo", "-n", "true"], timeout=5).ok:
             nginx_t = sh(["sudo", "-n", "nginx", "-t"], timeout=10).ok
@@ -4858,8 +4862,11 @@ class Diagnostics(Screen):
             con.kv(y, 0, "nginx -t", [("ok", A[GOOD]) if probes["nginx_t"] else ("fails", A[BAD])])
             y += 1
         row = []
-        for label, open_ in (probes.get("ports") or {}).items():
-            row += [(f"{label} ", 0), ("open" if open_ else "closed", A[GOOD] if open_ else A[DIMA]), ("   ", 0)]
+        for label, state in (probes.get("ports") or {}).items():
+            if state is True or state is False:      # an older snapshot
+                state = "open" if state else "closed"
+            attr = A[GOOD] if state == "open" else A[DIMA] if state == "optional" else A[WARN]
+            row += [(f"{label} ", 0), (state, attr), ("   ", 0)]
         con.kv(y, 0, "ports", row)
         y += 2
         self.pane(y, y1)
