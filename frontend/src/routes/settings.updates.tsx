@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { QueryError } from "@/components/query-error"
+import { Markdown } from "@/components/markdown"
 import { ServicesSection } from "@/components/settings/services-section"
 import { SiteCertificateCard } from "@/components/settings/site-certificate-card"
 import {
@@ -344,91 +345,6 @@ docker compose -f docker-compose.prod.yml up -d`}
               </div>
             </SettingsCard>
           )}
-          {/* Releases + changelog */}
-          <SettingsCard title="Releases" layout="plain">
-            {updates.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : !d?.releases.length ? (
-              <p className="text-sm text-muted-foreground">
-                No releases found in the repo yet.
-              </p>
-            ) : (
-              d.releases.map((r) => (
-                <div
-                  key={r.tag}
-                  className={
-                    "rounded-lg border p-3 " +
-                    (r.is_current
-                      ? "border-primary/50 bg-primary/5"
-                      : "border-border")
-                  }
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono font-medium">{r.tag}</span>
-                    {r.name !== r.tag && (
-                      <span className="text-[13px] text-muted-foreground">
-                        {r.name}
-                      </span>
-                    )}
-                    {r.is_current && (
-                      <Badge variant="secondary" className="text-[10px]">
-                        running
-                      </Badge>
-                    )}
-                    {r.prerelease && (
-                      <Badge variant="outline" className="text-[10px]">
-                        prerelease
-                      </Badge>
-                    )}
-                    {r.published_at && (
-                      <span className="text-[11px] text-muted-foreground">
-                        {new Date(r.published_at).toLocaleDateString()}
-                      </span>
-                    )}
-                    {!r.is_current && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="ml-auto h-7 text-xs"
-                        disabled={
-                          upgrade.isPending || upgrading || selfUpgradeOff
-                        }
-                        onClick={() => doUpgrade(r.tag)}
-                      >
-                        Upgrade to this
-                      </Button>
-                    )}
-                  </div>
-                  {r.body && (
-                    <pre className="mt-2 max-h-52 overflow-auto rounded-md bg-muted/40 p-2 text-[12px] whitespace-pre-wrap">
-                      {r.body}
-                    </pre>
-                  )}
-                </div>
-              ))
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              Upgrading takes a DB backup, applies the release, and restarts
-              Danbyte. Post-migration rollback isn’t automatic - the backup is
-              the net.
-            </p>
-            <div className="flex items-center gap-3 border-t border-border pt-3">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={cancelStuck.isPending}
-                onClick={() => cancelStuck.mutate()}
-              >
-                {cancelStuck.isPending ? "Clearing…" : "Clear a stuck upgrade"}
-              </Button>
-              <p className="text-[11px] text-muted-foreground">
-                Use only if a previous upgrade was interrupted and “An upgrade
-                is already running” blocks new ones. It’s refused while an
-                upgrade is genuinely in progress.
-              </p>
-            </div>
-          </SettingsCard>
           {/* Release repo config */}
           <SettingsCard
             title="Release source"
@@ -585,6 +501,94 @@ docker compose -f docker-compose.prod.yml up -d`}
                 Uploading bundle… the upgrade will start automatically.
               </p>
             )}
+          </SettingsCard>
+          {/* Releases + changelog */}
+          <SettingsCard title="Releases" layout="plain">
+            {updates.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : !d?.releases.length ? (
+              <p className="text-sm text-muted-foreground">
+                No releases found in the repo yet.
+              </p>
+            ) : (
+              d.releases.map((r) => (
+                <div
+                  key={r.tag}
+                  className={
+                    "rounded-lg border p-3 " +
+                    (r.is_current
+                      ? "border-primary/50 bg-primary/5"
+                      : "border-border")
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-medium">{r.tag}</span>
+                    {r.name !== r.tag && (
+                      <span className="text-[13px] text-muted-foreground">
+                        {r.name}
+                      </span>
+                    )}
+                    {r.is_current && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        running
+                      </Badge>
+                    )}
+                    {r.prerelease && (
+                      <Badge variant="outline" className="text-[10px]">
+                        prerelease
+                      </Badge>
+                    )}
+                    {r.published_at && (
+                      <span className="text-[11px] text-muted-foreground">
+                        {new Date(r.published_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    {!r.is_current && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7 text-xs"
+                        disabled={
+                          upgrade.isPending || upgrading || selfUpgradeOff
+                        }
+                        onClick={() => doUpgrade(r.tag)}
+                      >
+                        Upgrade to this
+                      </Button>
+                    )}
+                  </div>
+                  {r.body && (
+                    <div className="mt-2 max-h-72 overflow-auto rounded-md bg-muted/40 p-3">
+                      <Markdown
+                        source={r.body}
+                        issueBase={`${(d.repo_url || "").replace(/\/$/, "")}/issues/`}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Upgrading takes a DB backup, applies the release, and restarts
+              Danbyte. Post-migration rollback isn’t automatic - the backup is
+              the net.
+            </p>
+            <div className="flex items-center gap-3 border-t border-border pt-3">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={cancelStuck.isPending}
+                onClick={() => cancelStuck.mutate()}
+              >
+                {cancelStuck.isPending ? "Clearing…" : "Clear a stuck upgrade"}
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                Use only if a previous upgrade was interrupted and “An upgrade
+                is already running” blocks new ones. It’s refused while an
+                upgrade is genuinely in progress.
+              </p>
+            </div>
           </SettingsCard>
         </div>
         <div className="space-y-4">

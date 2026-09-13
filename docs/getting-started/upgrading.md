@@ -25,8 +25,9 @@ current `/opt` layout.
 !!! info "The Updates page loads instantly"
     **Settings → Updates** is two columns on a wide screen. **Update** holds
     everything that changes the version: the after-upgrade steps, the
-    releases with their notes and the upgrade button, the release source,
-    the bundle upload. **This install** holds the host it runs on: the
+    release source, the bundle upload, and at the bottom the releases with
+    their notes - rendered as GitHub Markdown, `#123` linking to the issue
+    in the release repo - and the upgrade button. **This install** holds the host it runs on: the
     environment table (Python, Django, PostgreSQL, Redis, platform), the
     services and their restart buttons, and the site certificate. The
     running version and the environment come from a local, network-free
