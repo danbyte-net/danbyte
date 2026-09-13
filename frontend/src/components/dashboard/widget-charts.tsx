@@ -59,17 +59,19 @@ export function DistDonut({
     // card. The query has to live on a parent: an element cannot respond to
     // its own width.
     <div className="@container h-full">
-      <div className="flex h-full flex-col items-center gap-2 @md:flex-row">
+      <div className="flex h-full flex-col items-center gap-2 @md:flex-row @md:justify-center @md:gap-6">
         {/* Grows with the tile: height follows the row, width follows via
             aspect-square. Fixed 170px made a 3x3 tile look mostly empty.
             Safe re #42: tile size only changes between gestures - bodies are
             unmounted placeholders while a drag/resize is in flight. */}
         {/* Stacked (a narrow tile): the ring takes what the legend leaves,
             or the legend lands below the body's edge and is never seen.
-            Side by side: the ring takes the height, the legend the rest. */}
+            Side by side: the ring takes the height and the legend only the
+            width its rows need, so a short legend leaves the ring the room
+            and a long one grows into it - up to half the tile. */}
         <ChartContainer
           config={configFor(data)}
-          className="mx-auto aspect-square min-h-[120px] w-auto max-w-full flex-1 @md:h-full @md:max-h-[300px] @md:flex-none"
+          className="mx-auto aspect-square min-h-[120px] w-auto max-w-full flex-1 @md:mx-0 @md:h-full @md:max-h-[300px] @md:flex-none"
         >
           <PieChart>
             <ChartTooltip
@@ -80,7 +82,8 @@ export function DistDonut({
               data={chartData}
               dataKey="count"
               nameKey="name"
-              innerRadius="62%"
+              innerRadius="64%"
+              outerRadius="96%"
               strokeWidth={4}
             >
               <Label
@@ -113,7 +116,10 @@ export function DistDonut({
             </Pie>
           </PieChart>
         </ChartContainer>
-        <ul className="grid w-full min-w-0 shrink-0 grid-cols-1 gap-x-3 gap-y-1 text-[12px] @xs:grid-cols-2 @md:flex-1 @md:grid-cols-1">
+        {/* Stacked: entries flow in a centred row and wrap, so four short
+            ones cost one line and the ring keeps the rest. Side by side: one
+            entry per row, counts aligned at the legend's own right edge. */}
+        <ul className="flex w-full min-w-0 shrink-0 flex-wrap justify-center gap-x-4 gap-y-1 text-[12px] @md:grid @md:w-auto @md:min-w-28 @md:max-w-[50%] @md:grid-cols-[minmax(0,1fr)] @md:gap-x-3">
           {data.slice(0, 6).map((d) => {
             const target = link?.(d)
             const row = (
@@ -129,7 +135,7 @@ export function DistDonut({
               </>
             )
             return (
-              <li key={d.name}>
+              <li key={d.name} className="min-w-0 max-w-full">
                 {target ? (
                   <Link
                     to={target.to}

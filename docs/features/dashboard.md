@@ -40,7 +40,9 @@ The page is a mosaic of tiles:
   widget*; all follow the same site scoping as the monitoring pages.
 
 Colours come from your own statuses and roles where you've set them, so the
-charts speak your network's language.
+charts speak your network's language. A donut fills the tile: in a wide tile
+the legend sits beside the ring and takes only the width its names need; in a
+narrow one the ring sits on top and the legend flows underneath.
 
 Every chart segment is a **deep link**: click a slice or bar (or a legend row)
 and it opens the matching list already filtered - *IPs by status* → the IP list
