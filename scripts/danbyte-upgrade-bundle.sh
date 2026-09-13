@@ -27,7 +27,7 @@ VERSION="$(basename "$TARBALL" | sed -n 's/^danbyte-\(.*\)-linux.*/\1/p')"
 
 # Which Danbyte units this install actually has (dev vs prod).
 SERVICES=""
-for s in danbyte-web danbyte-backend danbyte-workers danbyte-ws danbyte-frontend-prod danbyte-docs; do
+for s in danbyte-web danbyte-backend danbyte-workers danbyte-fastlane danbyte-ws danbyte-frontend-prod danbyte-docs; do
   systemctl --user cat "$s" >/dev/null 2>&1 && SERVICES="$SERVICES $s"
 done
 [ -n "$SERVICES" ] || SERVICES="danbyte-workers"
@@ -106,6 +106,10 @@ status running restart 92
 if command -v make >/dev/null 2>&1; then
   make -C "$CODE_DIR" install-services >/dev/null 2>&1 || true
 fi
+# A service ADDED in this release is linked above but never started: the
+# fast lane (0.16) has to run or every sub-minute check silently falls back
+# to the minute beat. Best-effort, like the linking.
+systemctl --user enable --now danbyte-fastlane >/dev/null 2>&1 || true
 restart_services
 
 status running healthcheck 96
