@@ -100,6 +100,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Enqueue due Windows DHCP/DNS and virtualization syncs",
     ),
     ScheduledTask(
+        unit="danbyte-zabbix-sync",
+        commands=("zabbix_sync",),
+        every=MINUTE,
+        label="Enqueue due Zabbix inventory, provisioning and host-status syncs",
+    ),
+    ScheduledTask(
         unit="danbyte-discover",
         commands=("discover_subnets",),
         every=5 * MINUTE,
