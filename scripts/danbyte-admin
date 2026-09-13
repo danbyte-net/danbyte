@@ -522,10 +522,14 @@ def cmd_services(ctx: Ctx, args) -> int:
         return 0
 
     units = _resolve_units(ctx, args.units)
-    if not args.units and getattr(args, "active", False) and action == "restart":
+    if not args.units and action in {"start", "restart"} and not getattr(args, "all", False):
+        # No names: the units this install runs, never every unit that is
+        # linked. A host links the whole services/ directory, dev units
+        # included, and starting the dev runserver beside gunicorn has two
+        # processes bind :8000. --all is the old, literal behaviour.
         units = active_units(ctx)
         if not units:
-            warn("no unit is running")
+            warn("no unit is running - name the units, or pass --all")
             return 0
     if action == "logs":
         if len(units) != 1 and args.units:
@@ -4922,8 +4926,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("units", nargs="*", help="unit names; blank means all")
     s.add_argument("-n", "--lines", type=int, default=200)
     s.add_argument("-f", "--follow", action="store_true")
-    s.add_argument("--active", action="store_true",
-                   help="with no units: only the ones running now (never starts a stopped one)")
+    s.add_argument("--all", action="store_true",
+                   help="with no units: every linked unit, stopped ones too (the default is "
+                        "the ones running now)")
+    s.add_argument("--active", action="store_true", help=argparse.SUPPRESS)  # the old spelling
 
     rb = sub.add_parser("rebuild", help="deps, migrate, frontend build, restart - on the code here")
     rb.add_argument("--skip-deps", action="store_true", help="leave the Python dependencies alone")

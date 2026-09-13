@@ -74,9 +74,16 @@ admin-link:
 	@sudo ln -sfn $(PROJECT_DIR)/scripts/danbyte-admin /usr/local/bin/danbyte
 	@echo "  danbyte -> $(PROJECT_DIR)/scripts/danbyte-admin"
 
+# A production host (the installer linked danbyte-web) never gets the dev
+# units: the runserver, the compose infra, the mockups. Linking them is how
+# an upgrade's "restart everything" ends with two processes on :8000.
+DEV_ONLY_SERVICES := danbyte-mockups danbyte-infra danbyte-backend danbyte-frontend
 install-services:
 	@mkdir -p $(SYSTEMD_DIR)
 	@for s in $(SERVICES); do \
+		if [ -e $(SYSTEMD_DIR)/danbyte-web.service ] && echo " $(DEV_ONLY_SERVICES) " | grep -q " $$s " ; then \
+			continue ; \
+		fi ; \
 		ln -sfn $(PROJECT_DIR)/services/$$s.service $(SYSTEMD_DIR)/$$s.service ; \
 		echo "  linked $$s.service" ; \
 	done
@@ -269,6 +276,11 @@ install-tls-unit:
 	done
 	@sudo systemctl daemon-reload
 	@sudo systemctl enable --now danbyte-tls.path
+	@# The drop folder has to be the app's: a proxy-install run as root left
+	@# it root-only, and then nothing can be dropped.
+	@sudo mkdir -p $(CERT_DIR)
+	@sudo chown -R $$(stat -c %U:%G $(PROJECT_DIR)) $(CERT_DIR)
+	@sudo chmod 750 $(CERT_DIR)
 	@echo "  danbyte-tls.path watches $(CERT_DIR)/danbyte.apply"
 
 uninstall-tls-unit:

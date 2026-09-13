@@ -152,15 +152,16 @@ status field rather than the HTTP code.
 
 ```bash
 danbyte-admin services list
-danbyte-admin services restart              # every unit this host has
-danbyte-admin services restart --active     # only the ones running now
+danbyte-admin services restart              # the units running now
+danbyte-admin services restart --all        # every linked unit, stopped ones too
 danbyte-admin services restart danbyte-web danbyte-workers
 danbyte-admin services logs danbyte-workers -n 500 -f
 ```
 
-`restart` with no units restarts everything installed, which also starts
-what was stopped; `--active` restarts only what is running, which is what
-"restart all" means on the console.
+`restart` with no units restarts what is running - the same "restart all"
+the console has. `--all` is the literal form: every linked unit, which also
+starts what was stopped; a host links the whole `services/` directory, so
+on a production box that would start the dev runserver beside gunicorn.
 
 The unit list is discovered from the host, never from the repository's
 `services/` directory: a live box carries hand-written copies and units the
