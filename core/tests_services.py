@@ -41,6 +41,32 @@ class ServiceControlApiTests(APITestCase):
     def test_anonymous_denied(self):
         self.assertIn(self.client.get("/api/system/services/").status_code, (401, 403))
 
+    def test_units_not_in_use_are_told_apart_and_left_alone(self):
+        """A dev box links gunicorn but runs the runserver: gunicorn is not a
+        fault, and Restart Danbyte must not start it beside the runserver."""
+        from unittest import mock
+
+        from core import services
+
+        def state(unit):
+            return {
+                "danbyte-web": ("inactive", False),
+                "danbyte-backend": ("active", True),
+                "danbyte-workers": ("active", True),
+                "danbyte-ws": ("failed", True),
+                "danbyte-frontend-prod": ("missing", False),
+            }.get(unit, ("missing", False))
+
+        with mock.patch.object(services, "_unit_state", side_effect=state):
+            rows = {r["key"]: r for r in services.list_services()}
+            self.assertNotIn("frontend", rows)
+            self.assertFalse(rows["web"]["in_use"])
+            self.assertTrue(rows["backend"]["in_use"])
+            self.assertTrue(rows["ws"]["in_use"])       # failed but enabled: a fault
+            with mock.patch.object(services, "restart_services", return_value={}) as rs:
+                services.restart_danbyte()
+            self.assertEqual(rs.call_args.args[0], ["backend", "workers", "ws"])
+
 
 class PluginApplyApiTests(APITestCase):
     def setUp(self):

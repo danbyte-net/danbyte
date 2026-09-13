@@ -229,50 +229,55 @@ export function RadialGauge({
     { name: "remainder", value: 100 - value, fill: "var(--muted)" },
   ]
   return (
-    <ChartContainer
-      config={{ value: { label } }}
-      className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px]"
-    >
-      <PieChart>
-        <Pie
-          data={data}
-          dataKey="value"
-          nameKey="name"
-          innerRadius="62%"
-          strokeWidth={4}
-          startAngle={90}
-          endAngle={-270}
-        >
-          <Label
-            content={({ viewBox }) => {
-              if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
-                return null
-              const { cx, cy } = viewBox as { cx: number; cy: number }
-              return (
-                <text x={cx} y={cy} textAnchor="middle">
-                  <tspan
-                    x={cx}
-                    y={cy - 2}
-                    className="fill-foreground"
-                    style={{ fontSize: 22, fontWeight: 700 }}
-                  >
-                    {value}%
-                  </tspan>
-                  <tspan
-                    x={cx}
-                    y={cy + 16}
-                    className="fill-muted-foreground"
-                    style={{ fontSize: 11 }}
-                  >
-                    {label}
-                  </tspan>
-                </text>
-              )
-            }}
-          />
-        </Pie>
-      </PieChart>
-    </ChartContainer>
+    // The same box as DistDonut's ring: without max-w-full a square that
+    // follows the tile's height overflows a tile narrower than it is tall
+    // and the ring is clipped at the edges.
+    <div className="flex h-full items-center justify-center">
+      <ChartContainer
+        config={{ value: { label } }}
+        className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] w-auto max-w-full shrink-0"
+      >
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            innerRadius="62%"
+            strokeWidth={4}
+            startAngle={90}
+            endAngle={-270}
+          >
+            <Label
+              content={({ viewBox }) => {
+                if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
+                  return null
+                const { cx, cy } = viewBox as { cx: number; cy: number }
+                return (
+                  <text x={cx} y={cy} textAnchor="middle">
+                    <tspan
+                      x={cx}
+                      y={cy - 2}
+                      className="fill-foreground"
+                      style={{ fontSize: 22, fontWeight: 700 }}
+                    >
+                      {value}%
+                    </tspan>
+                    <tspan
+                      x={cx}
+                      y={cy + 16}
+                      className="fill-muted-foreground"
+                      style={{ fontSize: 11 }}
+                    >
+                      {label}
+                    </tspan>
+                  </text>
+                )
+              }}
+            />
+          </Pie>
+        </PieChart>
+      </ChartContainer>
+    </div>
   )
 }
 

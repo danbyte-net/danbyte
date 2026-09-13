@@ -71,6 +71,18 @@ built-in **local** engine plus any **Outposts** - with each one's last
 normally shows **online**. It's the fastest way to confirm a remote site's agent
 is alive and reporting.
 
+## Services
+
+**Settings → Updates → Services** (superusers) lists the systemd user units
+this install has - web or dev runserver, workers, the fast lane, the
+WebSocket process, the frontend, docs - with their live state and a
+**Restart** each; **Restart Danbyte** cycles the core ones together. The
+database is never on the list. A unit that is installed but neither
+running nor enabled reads *not in use here* rather than as a fault, and
+gets no restart: a dev box links the gunicorn and SSR units it never runs,
+a production box the dev runserver, and starting the other one would have
+two processes bind the same port. *Restart Danbyte* skips those too.
+
 ## Worker pool size
 
 The number of RQ worker processes decides how many jobs run in parallel - more

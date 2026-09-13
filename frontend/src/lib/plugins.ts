@@ -140,6 +140,11 @@ export interface ServiceInfo {
   label: string
   core: boolean
   state: string // active | inactive | failed | unknown
+  /** The unit file is enabled on this install. */
+  enabled: boolean
+  /** Running, or meant to run here. A linked-but-disabled unit (gunicorn
+   * on a dev box) is neither, and gets no restart button. */
+  in_use: boolean
 }
 
 export interface WorkerConfig {

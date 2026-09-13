@@ -162,22 +162,50 @@ function ServiceRow({
   disabled: boolean
 }) {
   const ok = service.state === "active"
+  // Installed but neither running nor enabled: this install does not use
+  // it (the dev box links gunicorn, the prod box the runserver). Not a
+  // fault, and nothing to restart.
+  const unused = !service.in_use
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 text-sm">
       <div className="min-w-0 flex-1">
-        <div className="font-medium">{service.label}</div>
+        <div
+          className={
+            unused ? "font-medium text-muted-foreground" : "font-medium"
+          }
+        >
+          {service.label}
+        </div>
         <div className="text-[11px] text-muted-foreground">{service.unit}</div>
       </div>
-      <Badge variant={ok ? "secondary" : "destructive"}>{service.state}</Badge>
-      <ConfirmButton
-        label="Restart"
-        pendingLabel="Restarting…"
-        title={`Restart ${service.label}?`}
-        body="This restarts the service; requests it handles will briefly fail."
-        onConfirm={onRestart}
-        disabled={disabled}
-        small
-      />
+      {unused ? (
+        <Badge variant="outline" className="text-muted-foreground">
+          not in use here
+        </Badge>
+      ) : (
+        <Badge
+          variant={
+            ok
+              ? "secondary"
+              : service.state === "failed"
+                ? "destructive"
+                : "warning"
+          }
+        >
+          {service.state}
+        </Badge>
+      )}
+      {!unused && (
+        <ConfirmButton
+          label="Restart"
+          pendingLabel="Restarting…"
+          title={`Restart ${service.label}?`}
+          body="This restarts the service; requests it handles will briefly fail."
+          onConfirm={onRestart}
+          disabled={disabled}
+          small
+        />
+      )}
     </div>
   )
 }
