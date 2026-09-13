@@ -64,9 +64,12 @@ export function DistDonut({
             aspect-square. Fixed 170px made a 3x3 tile look mostly empty.
             Safe re #42: tile size only changes between gestures - bodies are
             unmounted placeholders while a drag/resize is in flight. */}
+        {/* Stacked (a narrow tile): the ring takes what the legend leaves,
+            or the legend lands below the body's edge and is never seen.
+            Side by side: the ring takes the height, the legend the rest. */}
         <ChartContainer
           config={configFor(data)}
-          className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] w-auto max-w-full shrink-0"
+          className="mx-auto aspect-square min-h-[120px] w-auto max-w-full flex-1 @md:h-full @md:max-h-[300px] @md:flex-none"
         >
           <PieChart>
             <ChartTooltip
@@ -110,7 +113,7 @@ export function DistDonut({
             </Pie>
           </PieChart>
         </ChartContainer>
-        <ul className="grid w-full min-w-0 grid-cols-1 gap-x-3 gap-y-1 text-[12px] @xs:grid-cols-2 @md:flex-1 @md:grid-cols-1">
+        <ul className="grid w-full min-w-0 shrink-0 grid-cols-1 gap-x-3 gap-y-1 text-[12px] @xs:grid-cols-2 @md:flex-1 @md:grid-cols-1">
           {data.slice(0, 6).map((d) => {
             const target = link?.(d)
             const row = (
