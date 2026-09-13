@@ -232,19 +232,26 @@ def drop_pair(cert_pem: str, key_pem: str, *, source: str, reason: str, user=Non
 
 
 def apply_state() -> dict:
-    """What the root unit did with the last drop, and whether it exists."""
+    """What the root unit did with the last drop, whether the unit exists,
+    and whether the app can write the drop folder at all (an installer's
+    umask can leave it root-only - then nothing can be dropped)."""
     d = drop_dir()
     applied: dict = {}
     try:
         applied = json.loads((d / APPLIED).read_text())
     except (OSError, ValueError):
         applied = {}
-    pending = (d / STAMP).exists()
-    unit_installed = UNIT_FILE.exists()
+    try:
+        pending = (d / STAMP).exists()
+    except OSError:
+        pending = False
+    writable = os.access(d, os.W_OK | os.X_OK) if os.path.isdir(d) else os.access(d.parent, os.W_OK)
     return {
-        "unit_installed": unit_installed,
+        "unit_installed": UNIT_FILE.exists(),
         "pending": pending,
         "applied": applied or None,
+        "writable": writable,
+        "drop_dir": str(d),
     }
 
 
@@ -408,7 +415,7 @@ def start_acme(tenant, user, issuer, challenge_type: str, names: list[str]):
 def issue_site_order_job(order_id) -> None:
     """RQ: issue an order for the site - HTTP-01 through the self-served
     publisher, DNS-01 through the issuer's own."""
-    from monitoring.acme_engine import AcmeError, issue, publisher_for
+    from monitoring.acme_engine import AcmeError, issue, publisher_for, register_account
     from monitoring.models import AcmeOrder
 
     order = AcmeOrder.objects.select_related("issuer", "request").filter(id=order_id).first()
@@ -417,6 +424,11 @@ def issue_site_order_job(order_id) -> None:
     publisher = SelfServedHttpPublisher() if order.challenge_type == AcmeOrder.Challenge.HTTP01 \
         else publisher_for(order.issuer)
     try:
+        # One click means the account too: an issuer added a moment ago (or
+        # Let's Encrypt made on first use) has none yet.
+        if not order.issuer.account_uri:
+            register_account(order.issuer)
+            order.issuer.refresh_from_db()
         issue(order, publisher)
     except AcmeError as exc:
         order.refresh_from_db()

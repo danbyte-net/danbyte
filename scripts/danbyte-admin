@@ -1030,8 +1030,15 @@ def cert_facts(path: str | Path) -> dict:
     ``days_left`` is negative once expired and None when the certificate is
     unreadable; ``names`` are SAN entries as ``DNS:x`` / ``IP:y``.
     """
-    r = sh(["openssl", "x509", "-in", str(path), "-noout", "-subject", "-issuer",
-            "-dates", "-ext", "subjectAltName", "-fingerprint", "-sha256"])
+    args = ["openssl", "x509", "-noout", "-subject", "-issuer", "-dates", "-ext",
+            "subjectAltName", "-fingerprint", "-sha256"]
+    if os.access(str(path), os.R_OK):
+        r = sh(args + ["-in", str(path)])
+    else:
+        # A certificate is public, but a root-only directory (an installer's
+        # umask) hides it from the caller: read it through sudo -n instead.
+        text = sudo_read(path)
+        r = sh(args, input=text) if text else Run(1, "", f"{path}: not readable")
     noise = (r.err or r.out).strip().splitlines()
     facts: dict = {"path": str(path), "ok": r.ok,
                    "error": "" if r.ok else (noise[-1][:160] if noise else "unreadable"),

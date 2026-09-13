@@ -58,6 +58,9 @@ export interface SiteCertificateStatus {
   dropped_reason: string
   apply: {
     unit_installed: boolean
+    /** The app can write the drop folder (an installer's umask can leave it root-only). */
+    writable: boolean
+    drop_dir: string
     pending: boolean
     applied: {
       outcome: "applied" | "failed"
@@ -252,7 +255,9 @@ export function SiteCertificateCard() {
             </span>
           )}
           <span className="ml-auto flex items-center gap-2">
-            {!a.unit_installed ? (
+            {!a.writable ? (
+              <Badge variant="destructive">drop folder not writable</Badge>
+            ) : !a.unit_installed ? (
               <Badge variant="warning">apply unit not installed</Badge>
             ) : a.pending ? (
               <Badge variant="warning">waiting for the host</Badge>
@@ -282,6 +287,12 @@ export function SiteCertificateCard() {
                 · host: {applied.detail} at {formatDateTime(applied.at)}
               </>
             )}
+          </p>
+        )}
+        {!a.writable && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            The app cannot write <code>{a.drop_dir}</code>; give it to the
+            service user: <code>chown -R danbyte:danbyte {a.drop_dir}</code>.
           </p>
         )}
         {!a.unit_installed && (

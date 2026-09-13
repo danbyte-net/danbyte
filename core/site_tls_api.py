@@ -69,7 +69,14 @@ def site_certificate_upload(request):
         )
     except site_tls.SiteTlsError as exc:
         return Response({"detail": str(exc)}, status=400)
+    except OSError as exc:
+        return Response({"detail": _not_writable(exc)}, status=400)
     return Response(_facts_json(facts), status=201)
+
+
+def _not_writable(exc: OSError) -> str:
+    return (f"the drop folder is not writable by the app ({exc.strerror}: {exc.filename}) - "
+            f"chown it to the service user")
 
 
 @extend_schema(
@@ -95,6 +102,8 @@ def site_certificate_self_signed(request):
         )
     except site_tls.SiteTlsError as exc:
         return Response({"detail": str(exc)}, status=400)
+    except OSError as exc:
+        return Response({"detail": _not_writable(exc)}, status=400)
     return Response(_facts_json(facts), status=201)
 
 

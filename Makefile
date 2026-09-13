@@ -89,6 +89,10 @@ install-services:
 	@for s in $(TIMERS); do \
 		systemctl --user enable --now $$s.timer ; \
 	done
+	@# A long-running service added after an install is linked above but
+	@# nothing starts it - the upgrader before 0.16 restarts only the units it
+	@# knew. The fast lane runs on every install, so start it here.
+	@systemctl --user enable --now danbyte-fastlane 2>/dev/null || true
 	@echo ""
 	@echo "Installed. Try:"
 	@echo "    make mockups-up        # http://localhost:8080"
@@ -241,6 +245,7 @@ proxy-install: proxy-cert
 	@command -v nginx >/dev/null || { echo "Installing nginx ..."; sudo apt-get update -qq && sudo apt-get install -y nginx; }
 	@echo "Installing cert to /etc/ssl/danbyte ..."
 	@sudo mkdir -p /etc/ssl/danbyte
+	@sudo chmod 755 /etc/ssl/danbyte   # the certificate is public; root's umask must not hide it
 	@sudo install -m 644 $(CERT_DIR)/danbyte.crt $(CERT)
 	@sudo install -m 600 $(CERT_DIR)/danbyte.key $(KEY)
 	@echo "Writing nginx site for host '$(PROXY_HOST)' ..."

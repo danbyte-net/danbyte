@@ -413,6 +413,10 @@ if HTTPS_DEPLOYMENT:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
+    # ACME HTTP-01 for the site's own certificate is fetched over plain HTTP
+    # on purpose; a CA that follows the redirect would then meet the very
+    # certificate it is about to replace. nginx hands the path straight here.
+    SECURE_REDIRECT_EXEMPT = [r"^\.well-known/acme-challenge/"]
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
