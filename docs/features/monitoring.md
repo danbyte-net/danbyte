@@ -619,9 +619,10 @@ exactly like an automatic scan.
   views and export work as on History; the dashboard donut's slices land here
   with the status set.
 - **Flapping** - shown while anything is flagged: the Checks list pinned to
-  flapping checks, with row selection and a bulk **Confirm not flapping**,
-  and **Flaps per hour** over the last day for the flagged set, so you can
-  see whether the bouncing is settling before you confirm.
+  flapping checks, with row selection and a bulk **Confirm not flapping**.
+  Every row carries its **last 24 hours** to scale - the alternation itself
+  is the picture, so you can see whether the bouncing is settling before you
+  confirm; a block opens to its exact times and the alerts it raised.
 - **Templates** - your reusable check library.
 
 ### The Settings tab

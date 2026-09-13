@@ -25,7 +25,6 @@ import {
   checkColumns,
 } from "@/components/columns/check-columns"
 import type { CheckColumnId } from "@/components/columns/check-columns"
-import { FlapChart } from "./flap-chart"
 import { MonitoringRail, RAIL_KEYS, railActiveCount } from "./monitoring-rail"
 import type { RailFilters } from "./monitoring-rail"
 
@@ -89,7 +88,11 @@ export function ChecksList({
   const q = str(search.q) ?? ""
   const page = Number(str(search.page) ?? "1") || 1
   const ordering = str(search.ordering) ?? "-last_checked"
-  const strip = str(search.strip) === "1"
+  // The Flapping view is *about* the bouncing, so its rows always carry the
+  // last day to scale - the alternation is the picture, and a block opens
+  // to its exact times. The Checks list keeps its seven-day switch.
+  const strip = flappingOnly || str(search.strip) === "1"
+  const stripDays = flappingOnly ? 1 : 7
   const flapping = flappingOnly ? "1" : str(search.flapping)
 
   const [draft, setDraft] = useState(q)
@@ -115,10 +118,10 @@ export function ChecksList({
     p.set("ordering", ordering)
     p.set("page", String(page))
     p.set("page_size", String(PAGE))
-    if (strip) p.set("strip", "7")
+    if (strip) p.set("strip", String(stripDays))
     if (flapping) p.set("flapping", flapping)
     return p.toString()
-  }, [rail, status, q, ordering, page, strip, flapping])
+  }, [rail, status, q, ordering, page, strip, stripDays, flapping])
 
   const query = useQuery({
     queryKey: ["monitoring-checks", params],
@@ -135,7 +138,12 @@ export function ChecksList({
   const columns = useMemo(() => {
     const cols = checkColumns(
       strip && data?.since && data.until
-        ? { since: data.since, until: data.until }
+        ? {
+            since: data.since,
+            until: data.until,
+            label: flappingOnly ? "24 hours" : "7 days",
+            wide: flappingOnly,
+          }
         : null
     )
     return flappingOnly ? [selectionColumn<CheckListRow>(), ...cols] : cols
@@ -226,28 +234,27 @@ export function ChecksList({
             }
             items={TABS.map((t) => ({ ...t, count: counts[t.value] ?? 0 }))}
           />
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Switch
-              checked={strip}
-              onCheckedChange={(v) => patch({ strip: v ? "1" : undefined })}
-              aria-label="Show seven days of status per row"
-            />
-            7 days
-          </label>
+          {!flappingOnly && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch
+                checked={strip}
+                onCheckedChange={(v) => patch({ strip: v ? "1" : undefined })}
+                aria-label="Show seven days of status per row"
+              />
+              7 days
+            </label>
+          )}
         </>
       }
       query={query}
     >
-      {flappingOnly && (
-        <FlapChart className="mb-4 rounded-lg border border-border bg-card p-3" />
-      )}
       <DataTable<CheckListRow>
         columns={columns}
         data={rows}
         tableId="monitoring-checks"
         exportName="monitoring-checks"
         exportTitle="Checks"
-        flexColumn="check"
+        flexColumn={flappingOnly ? "strip" : "check"}
         onSelectedRowsChange={flappingOnly ? setSelected : undefined}
         exportAll={async () => {
           const out: CheckListRow[] = []

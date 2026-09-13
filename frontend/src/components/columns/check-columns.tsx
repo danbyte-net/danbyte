@@ -42,7 +42,14 @@ export const CHECK_ORDERING: Partial<Record<CheckColumnId, string>> = {
 /** A monitored check, as a row of the Checks list. `strip` is the window the
  * server drew the segments over; without it the column is left out. */
 export function checkColumns(
-  strip?: { since: string; until: string } | null
+  strip?: {
+    since: string
+    until: string
+    /** The column header - the window's name. */
+    label?: string
+    /** A wide strip, for a view where the run itself is the picture. */
+    wide?: boolean
+  } | null
 ): ColumnDef<CheckListRow>[] {
   const cols: ColumnDef<CheckListRow>[] = [
     {
@@ -156,9 +163,9 @@ export function checkColumns(
     cols.push({
       id: "strip",
       enableSorting: false,
-      header: "7 days",
+      header: strip.label ?? "7 days",
       cell: ({ row }) => (
-        <span className="block w-40">
+        <span className={strip.wide ? "block w-full min-w-64" : "block w-40"}>
           <StatusStrip
             segments={row.original.segments ?? []}
             since={strip.since}
