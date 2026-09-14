@@ -541,14 +541,69 @@
       "keywords": ["service", "restart", "worker", "rq", "daemon", "systemd"]
     },
     {
-      "key": "prefs.display",
-      "label": "Display",
-      "description": "Your own theme, date format, clock and timezone",
+      "key": "prefs.appearance",
+      "label": "Appearance",
+      "description": "Your own theme and link styling",
       "page": "preferences",
-      "keywords": ["theme", "dark mode", "timezone", "clock", "link icons"]
+      "keywords": [
+        "theme",
+        "dark mode",
+        "light mode",
+        "link icons",
+        "link colour"
+      ]
     },
     {
       "key": "prefs.tables",
+      "label": "Tables",
+      "description": "Row density, page size and striped rows",
+      "page": "preferences",
+      "keywords": ["density", "compact", "page size", "rows", "stripes"]
+    },
+    {
+      "key": "prefs.dates",
+      "label": "Dates and times",
+      "description": "Timestamps, date format, clock and timezone",
+      "page": "preferences",
+      "keywords": [
+        "timezone",
+        "clock",
+        "date format",
+        "relative",
+        "absolute",
+        "24-hour"
+      ]
+    },
+    {
+      "key": "prefs.navigation",
+      "label": "Navigation",
+      "description": "Landing page, the sidebar's folding and delete confirmations",
+      "page": "preferences",
+      "keywords": [
+        "landing page",
+        "sidebar",
+        "menu",
+        "one open",
+        "confirm",
+        "delete"
+      ]
+    },
+    {
+      "key": "prefs.task-emails",
+      "label": "Task emails",
+      "description": "Which planning-task mails reach you",
+      "page": "preferences",
+      "keywords": ["email", "tasks", "mentions", "reminder", "assigned"]
+    },
+    {
+      "key": "prefs.space-map",
+      "label": "Space map",
+      "description": "How deep the prefix map draws, per family",
+      "page": "preferences",
+      "keywords": ["space map", "subnet", "depth", "ipv4", "ipv6"]
+    },
+    {
+      "key": "prefs.table-layouts",
       "label": "Table layouts",
       "description": "Your saved column layouts, and resetting one",
       "page": "preferences",

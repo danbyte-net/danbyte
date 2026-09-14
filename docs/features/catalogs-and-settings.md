@@ -123,14 +123,20 @@ in use, Danbyte warns you how many addresses reference it first.
 
 ## Display preferences
 
-Separately, your own **Preferences → Display** page controls how Danbyte looks
-and behaves for you:
+Separately, your own **Preferences** page controls how Danbyte looks and
+behaves for you. It is a set of small cards - *Appearance*, *Tables*, *Dates
+and times*, *Navigation*, *Task emails*, *Space map* - each with its own
+**Save** button; a card shows *Unsaved changes* until you press it. Only
+*Appearance* applies as you change it: theme and link styling live in the
+browser, not on your profile. Below the cards, *Table layouts* lists every
+table grouped by area, with a filter, and a **Reset** per table to drop your
+own column layout back to the tenant default.
 
 | Setting | What it does |
 |---|---|
 | **Theme** | Light or dark - applied immediately. |
 | **Table density** | Comfortable or compact rows. |
-| **Page size** | How many rows per page in tables. |
+| **Page size** | How many rows per page in tables - 10 to 2000. |
 | **Timestamps** | Relative ("3h ago") or absolute in tables - the exact form is always on hover. |
 | **Date format** | How calendar dates render: ISO (`2026-01-31`), `31.01.2026`, `01/31/2026`, `31 Jan 2026`, … |
 | **Clock** | 24-hour (`14:30`) or 12-hour (`2:30 PM`). |
