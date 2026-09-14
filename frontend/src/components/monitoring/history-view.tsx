@@ -256,7 +256,7 @@ export function HistoryView() {
                   })
                 }
                 placeholder="From"
-                className="h-8 text-xs"
+                className="h-8 w-36 text-xs"
               />
               <DatePicker
                 value={isoToDay(until)}
@@ -267,7 +267,7 @@ export function HistoryView() {
                   })
                 }
                 placeholder="Until now"
-                className="h-8 text-xs"
+                className="h-8 w-36 text-xs"
               />
             </>
           )}
