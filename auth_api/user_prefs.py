@@ -50,6 +50,9 @@ DEFAULTS: dict[str, Any] = {
 
     # ─── Navigation ──────────────────────────────────────────────────────
     "landing_page":   "/",         # Page to open on first load after login.
+    "nav_one_open":   False,       # Sidebar: opening a category closes the
+                                   # others (the menu's original behaviour,
+                                   # #166); off = groups stay as you left them.
 
     # ─── Safety / confirmations ──────────────────────────────────────────
     "confirm_destructive": True,   # Two-step Confirm button on bulk delete.

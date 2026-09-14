@@ -122,6 +122,7 @@ function DisplaySection() {
   const timeStyle = String(values.time_style ?? AUTO)
   const timezone = String(values.timezone ?? AUTO)
   const landing = String(values.landing_page ?? "/")
+  const oneOpen = values.nav_one_open === true
   const v4Max = String(values.space_map_v4_max ?? 31)
   const v6Max = String(values.space_map_v6_max ?? 128)
 
@@ -226,6 +227,12 @@ function DisplaySection() {
             { value: "/monitoring", label: "Monitoring" },
             { value: "/alerts", label: "Alerts" },
           ]}
+        />
+        <FormCheckbox
+          label="One menu category open at a time"
+          hint="Opening a category in the sidebar closes the others"
+          checked={oneOpen}
+          onChange={(v) => setPref("nav_one_open", v)}
         />
         <FormSelect
           label="Space map depth - IPv4"

@@ -135,6 +135,8 @@ and behaves for you:
 | **Date format** | How calendar dates render: ISO (`2026-01-31`), `31.01.2026`, `01/31/2026`, `31 Jan 2026`, … |
 | **Clock** | 24-hour (`14:30`) or 12-hour (`2:30 PM`). |
 | **Timezone** | The IANA timezone times render in (e.g. `Europe/Copenhagen`). The list comes from the server's own timezone database, so every offered zone is one it accepts; renamed zones (`Europe/Kiev` → `Europe/Kyiv`) are converted on save. |
+| **Landing page** | Where Danbyte opens right after you log in. |
+| **One menu category open at a time** | Opening a sidebar category (or landing on one of its pages) closes the others, so only the section you are in is unfolded. Off by default: categories stay as you left them, and *Collapse all* / *Expand all* at the top of the menu still work either way. |
 | **Striped rows** | Alternating row shading; on by default. |
 | **Confirm before deleting** | Whether delete actions ask for confirmation. |
 

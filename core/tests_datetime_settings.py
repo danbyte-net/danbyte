@@ -157,6 +157,16 @@ class DatetimeEndpointTests(APITestCase):
         self.assertIn("timezone", body["user_set"])
         self.assertEqual(body["defaults"]["date_format"], "auto")
 
+    def test_nav_one_open_is_a_personal_switch_off_by_default(self):
+        self._login(self._member("m3"))
+        r = self.client.get("/api/me/prefs/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIs(r.json()["values"]["nav_one_open"], False)
+        r = self.client.put("/api/me/prefs/", {"nav_one_open": True}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIs(r.json()["values"]["nav_one_open"], True)
+        self.assertIn("nav_one_open", r.json()["user_set"])
+
     def test_tenant_settings_carry_group_and_validate_tz(self):
         self._login(self._tenant_admin("ta"))
         r = self.client.put(

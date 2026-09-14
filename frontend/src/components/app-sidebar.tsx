@@ -133,6 +133,7 @@ import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
 import { useBookmarks } from "@/lib/use-bookmarks"
 import { usePluginUi } from "@/lib/plugins"
+import { useUserPrefs } from "@/lib/use-user-prefs"
 import { DynamicIcon } from "@/components/dynamic-icon"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -1042,6 +1043,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       }),
     []
   )
+  // "One category open at a time" (#166): the menu's original behaviour,
+  // now a personal preference. Opening a group - by hand or by landing on
+  // one of its pages - closes every other group.
+  const { values: prefs } = useUserPrefs()
+  const oneOpen = prefs.nav_one_open === true
   const pluginUi = usePluginUi()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // The group that owns the current page stays open even if the user collapsed
@@ -1108,6 +1114,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     if (!pluginGroups.has(key)) pluginGroups.set(key, [])
     pluginGroups.get(key)!.push(item)
   }
+  const groupLabels = [
+    ...visibleSections.map((x) => x.label),
+    ...Array.from(pluginGroups.keys()),
+    ...(canManage ? ["Admin"] : []),
+  ]
+  const openGroup = (label: string, open: boolean) =>
+    setGroupsOpen(
+      open && oneOpen
+        ? Object.fromEntries(groupLabels.map((l) => [l, l === label]))
+        : { [label]: open }
+    )
   return (
     <Sidebar collapsible="icon" {...props}>
       {/* Header: tenant switcher.
@@ -1122,11 +1139,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             button: the label names the action that is available. Hidden in
             the icon rail, where groups are always shown. */}
         {(() => {
-          const labels = [
-            ...visibleSections.map((x) => x.label),
-            ...Array.from(pluginGroups.keys()),
-            ...(canManage ? ["Admin"] : []),
-          ]
+          const labels = groupLabels
           const anyOpen = labels.some(
             (l) => openGroups[l] ?? navActiveByLabel(l)
           )
@@ -1156,17 +1169,35 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarGroup>
           )
         })()}
-        {/* Dashboard sits above the grouped sections - single top-level item. */}
         <FavoritesSection />
 
+        {/* Dashboard sits above the grouped sections. It is a single page,
+            not a category, but it wears the same band as the category
+            headers (#166) - same height, weight and you-are-here edge -
+            without a chevron, since there is nothing to fold. The icon
+            rail keeps an ordinary icon button, as bands hide there. */}
         <SidebarGroup className="py-0">
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-0.5">
+          <SidebarGroupLabel
+            asChild
+            className={cn(
+              "h-8 rounded-md bg-sidebar-band px-2.5 text-sm font-semibold text-sidebar-foreground",
+              pathname === "/" && "shadow-[inset_3px_0_0_0_var(--primary)]"
+            )}
+          >
+            <Link
+              to="/"
+              activeOptions={{ exact: true }}
+              className="flex w-full items-center gap-2 hover:text-foreground"
+            >
+              <LayoutDashboard className="size-4 shrink-0 opacity-80" />
+              <span>Dashboard</span>
+            </Link>
+          </SidebarGroupLabel>
+          <SidebarGroupContent className="hidden group-data-[collapsible=icon]:block">
+            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  size="sm"
-                  className="h-6 text-[13px]"
                   tooltip="Dashboard"
                   isActive={pathname === "/"}
                 >
@@ -1187,7 +1218,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             icon={section.icon}
             hasActive={inGroup(sectionUrls(section))}
             open={openGroups[section.label] ?? inGroup(sectionUrls(section))}
-            onOpenChange={(o) => setGroupsOpen({ [section.label]: o })}
+            onOpenChange={(o) => openGroup(section.label, o)}
           >
             {section.clusters.map((cluster, i) => (
               <div key={cluster.label ?? i}>
@@ -1232,7 +1263,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             icon={Puzzle}
             hasActive={inGroup(items.map((i) => i.url))}
             open={openGroups[label] ?? inGroup(items.map((i) => i.url))}
-            onOpenChange={(o) => setGroupsOpen({ [label]: o })}
+            onOpenChange={(o) => openGroup(label, o)}
           >
             <SidebarMenu className="gap-0.5">
               {items.map((item) => (
@@ -1269,7 +1300,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               openGroups["Admin"] ??
               inGroup(["/users", "/groups", "/permissions"])
             }
-            onOpenChange={(o) => setGroupsOpen({ Admin: o })}
+            onOpenChange={(o) => openGroup("Admin", o)}
           >
             <SidebarMenu className="gap-0.5">
               <SidebarMenuItem>
