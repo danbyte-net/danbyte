@@ -18,6 +18,7 @@ import {
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
+  countAxisWidth,
 } from "@/components/ui/chart"
 import type { ChartConfig } from "@/components/ui/chart"
 
@@ -77,7 +78,9 @@ export function AlertsPerDay({
         <YAxis
           tickLine={false}
           axisLine={false}
-          width={26}
+          width={countAxisWidth(
+            data.map((p) => Math.max(p.opened, p.resolved))
+          )}
           allowDecimals={false}
         />
         <ChartTooltip cursor={false} content={<ChartTooltipContent />} />

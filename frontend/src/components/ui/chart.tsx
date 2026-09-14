@@ -132,6 +132,14 @@ ${colorConfig
   )
 }
 
+/** A count axis wide enough for its largest label. A fixed 28px fits two
+ * digits; a busy week of status changes runs to four, and recharts clips
+ * the first digit rather than growing the axis. */
+export function countAxisWidth(values: number[]) {
+  const top = Math.max(0, ...values.filter((v) => Number.isFinite(v)))
+  return Math.max(28, 12 + 7 * String(Math.round(top * 1.1)).length)
+}
+
 export const ChartTooltip = RechartsPrimitive.Tooltip
 
 interface ChartItem {

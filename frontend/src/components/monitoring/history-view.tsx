@@ -21,6 +21,7 @@ import {
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
+  countAxisWidth,
 } from "@/components/ui/chart"
 import type { ChartConfig } from "@/components/ui/chart"
 import type { FilterSnapshot } from "@/components/table-filters"
@@ -296,7 +297,11 @@ export function HistoryView() {
               <YAxis
                 tickLine={false}
                 axisLine={false}
-                width={28}
+                width={countAxisWidth(
+                  seriesData.map((p) =>
+                    present.reduce((n, s) => n + (Number(p[s]) || 0), 0)
+                  )
+                )}
                 allowDecimals={false}
               />
               <ChartTooltip content={<ChartTooltipContent />} />

@@ -43,6 +43,7 @@ import {
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
+  countAxisWidth,
   type ChartConfig,
 } from "@/components/ui/chart"
 import {
@@ -530,7 +531,11 @@ function MonitoringPage() {
                       <YAxis
                         tickLine={false}
                         axisLine={false}
-                        width={32}
+                        width={countAxisWidth(
+                          seriesData.map((p) =>
+                            Math.max(p.up, p.degraded, p.down)
+                          )
+                        )}
                         allowDecimals={false}
                       />
                       <ChartTooltip
@@ -664,7 +669,11 @@ function MonitoringPage() {
                         <YAxis
                           tickLine={false}
                           axisLine={false}
-                          width={28}
+                          width={countAxisWidth(
+                            alertsData.map((p) =>
+                              Math.max(p.opened, p.resolved)
+                            )
+                          )}
                           allowDecimals={false}
                         />
                         <ChartTooltip
