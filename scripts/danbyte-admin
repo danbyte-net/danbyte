@@ -1860,8 +1860,11 @@ def _local(iso: str | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
 # django-redis and RQ use (``:1:`` is django-redis's version prefix).
 
 def _resp(f, sock, *args):
+    # A bulk reply comes back as bytes (a worker's name from SMEMBERS); sent
+    # back as an argument it must go as-is, not as str(b"...").
     payload = b"*%d\r\n" % len(args) + b"".join(
-        b"$%d\r\n%s\r\n" % (len(a), a) for a in (str(x).encode() for x in args))
+        b"$%d\r\n%s\r\n" % (len(a), a)
+        for a in (x if isinstance(x, bytes) else str(x).encode() for x in args))
     sock.sendall(payload)
     return _resp_read(f)
 
