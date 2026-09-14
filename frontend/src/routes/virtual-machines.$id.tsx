@@ -203,7 +203,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         { value: "services", label: "Services", count: vm.service_count },
         { value: "monitoring", label: "Monitoring" },
         { value: "snmp", label: "SNMP" },
-        { value: "certificates", label: "Certificates" },
+        {
+          value: "certificates",
+          label: "Certificates",
+          count: vm.certificate_count,
+        },
         { value: "config", label: "Config" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },

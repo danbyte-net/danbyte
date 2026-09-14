@@ -365,7 +365,7 @@ function Body({ device: d }: { device: Device }) {
               (d.console_count || 0) +
               (d.power_count || 0) || undefined,
         },
-        { value: "images", label: "Images" },
+        { value: "images", label: "Images", count: d.image_count || undefined },
         // Only when the type has a rack-face photo to place markers on.
         ...(d.device_type?.front_image || d.device_type?.rear_image
           ? [{ value: "photo-ports", label: "Photo ports" }]
@@ -387,11 +387,23 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
-        { value: "certificates", label: "Certificates & keys" },
-        { value: "contacts", label: "Contacts" },
+        {
+          value: "certificates",
+          label: "Certificates & keys",
+          count: d.certificate_count || undefined,
+        },
+        {
+          value: "contacts",
+          label: "Contacts",
+          count: d.contact_count || undefined,
+        },
         { value: "access", label: "Access" },
         { value: "config", label: "Config" },
-        { value: "documents", label: "Documents" },
+        {
+          value: "documents",
+          label: "Documents",
+          count: d.document_count || undefined,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

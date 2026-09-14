@@ -6261,8 +6261,11 @@ class ProviderViewSet(TenantScopedViewSet):
         return ProviderSerializer
 
     def get_queryset(self):
+        # Two reverse joins in one query - distinct on each, or every circuit
+        # would be counted once per network and vice versa.
         qs = super().get_queryset().prefetch_related("tags").annotate(
-            circuit_count_annotated=Count("circuits")
+            circuit_count_annotated=Count("circuits", distinct=True),
+            network_count_annotated=Count("networks", distinct=True),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6488,6 +6491,11 @@ class PowerFeedViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("power_panel", "rack")
             .prefetch_related("tags")
+            # The Terminations tab's count: distinct cables among the feed's
+            # terminations, annotated so the list stays one query.
+            .annotate(
+                cable_count_annotated=Count("terminations__cable", distinct=True)
+            )
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()

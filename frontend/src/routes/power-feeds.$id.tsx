@@ -132,7 +132,7 @@ function Body({ feed: f }: { feed: PowerFeed }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "terminations", label: "Terminations" },
+        { value: "terminations", label: "Terminations", count: f.cable_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

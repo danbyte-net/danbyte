@@ -338,7 +338,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         },
         { value: "map", label: "Map" },
         { value: "monitoring", label: "Monitoring" },
-        ...(dnsEnabled ? [{ value: "dns", label: "DNS" }] : []),
+        ...(dnsEnabled
+          ? [{ value: "dns", label: "DNS", count: p.dns_record_count }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

@@ -792,6 +792,8 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     rack_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
     circuit_count = serializers.SerializerMethodField()
+    location_count = serializers.SerializerMethodField()
+    document_count = serializers.SerializerMethodField()
 
     def get_prefix_count(self, obj) -> int:
         return obj.prefixes.count()
@@ -819,6 +821,17 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         # Distinct circuits landing here, not raw terminations - a circuit with
         # both ends at one site still counts once.
         return obj.circuit_terminations.values("circuit").distinct().count()
+
+    def get_location_count(self, obj) -> int:
+        # Every location at the site, whatever its depth in the tree.
+        return obj.locations.count()
+
+    def get_document_count(self, obj) -> int:
+        # Document binds by "app.model" label + object_id, like contacts.
+        # Own rows only - a superseded version is still a row on the tab.
+        return Document.objects.filter(
+            object_type="api.site", object_id=obj.id
+        ).count()
 
     def validate_time_zone(self, value):
         if not value:
@@ -849,7 +862,7 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
             "tags", "tag_ids",
             "prefix_count", "vlan_count",
             "device_count", "vm_count", "rack_count", "contact_count",
-            "circuit_count",
+            "circuit_count", "location_count", "document_count",
             "custom_fields",
             "created_at", "updated_at",
         ]
@@ -868,6 +881,7 @@ class RouteTargetSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixi
     cf_model = "routetarget"
     import_vrf_count = serializers.SerializerMethodField()
     export_vrf_count = serializers.SerializerMethodField()
+    vrf_count = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
@@ -880,12 +894,22 @@ class RouteTargetSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixi
     def get_export_vrf_count(self, obj) -> int:
         return obj.exporting_vrfs.count()
 
+    def get_vrf_count(self, obj) -> int:
+        # Distinct VRFs importing OR exporting this target - the VRFs tab's
+        # ``?rt=`` filter. A VRF doing both counts once, so the two counts
+        # above can't simply be summed. Read through the viewset's prefetch
+        # so the list costs no extra query per row.
+        return len(
+            {v.pk for v in obj.importing_vrfs.all()}
+            | {v.pk for v in obj.exporting_vrfs.all()}
+        )
+
     class Meta:
         model = RouteTarget
         fields = [
             "owning_site", "owning_site_id", "permissions",
             "id", "name", "description",
-            "import_vrf_count", "export_vrf_count",
+            "import_vrf_count", "export_vrf_count", "vrf_count",
             "tags", "tag_ids",
             "custom_fields",
             "created_at", "updated_at",
@@ -988,6 +1012,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     has_descendants = serializers.SerializerMethodField()
     monitoring_engine = serializers.SerializerMethodField()
     dhcp = serializers.SerializerMethodField()
+    dns_record_count = serializers.SerializerMethodField()
 
     def validate_cidr(self, value):
         """A prefix must be real CIDR - the model field is a plain CharField,
@@ -1052,6 +1077,18 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "name": engine.name,
             "is_local": engine.is_local,
         }
+
+    def get_dns_record_count(self, obj) -> int:
+        # DNS records whose address sits in this prefix - the DNS tab's
+        # ``?prefix=`` filter. Detail page only (a single instance): the
+        # list never renders it, and this is a cross-app join per row.
+        # ``integrations`` imports ``api``, never the reverse, so the import
+        # stays local.
+        if not isinstance(self.instance, Prefix):
+            return 0
+        from integrations.models import DnsRecord
+
+        return DnsRecord.objects.filter(ip_address__prefix=obj).count()
 
     def _descendant_count(self, obj) -> int:
         # Cached per-instance so child_count + has_descendants share the work.
@@ -1171,6 +1208,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "id", "numid", "cidr", "status", "status_id",
             "family", "utilisation_pct", "is_enumerable",
             "ip_count", "child_count", "has_descendants", "dhcp",
+            "dns_record_count",
             "site", "vlan", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
@@ -1282,6 +1320,19 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     is_secondary_for_device = serializers.SerializerMethodField()
     is_oob_for_device = serializers.SerializerMethodField()
     scope = serializers.SerializerMethodField()
+    # Detail-only tab count. The IP list is the largest table in the product
+    # and is also serialised many=True from device/prefix/interface actions,
+    # so the gate is "one instance", not the view action.
+    certificate_count = serializers.SerializerMethodField()
+
+    def get_certificate_count(self, obj) -> int:
+        if not isinstance(self.instance, IPAddress):
+            return 0
+        from monitoring.models import CertificateAssignment
+
+        return CertificateAssignment.objects.filter(
+            object_type="api.ipaddress", object_id=str(obj.id)
+        ).count()
 
     # Write-side ids - same pattern as PrefixSerializer.
     status_id = TenantScopedPrimaryKeyRelatedField(
@@ -1473,6 +1524,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             "is_secondary_for_device",
             "is_oob_for_device",
             "scope",
+            "certificate_count",
             "description", "reservation_note",
             "custom_fields",
             "tags", "tag_ids",
@@ -1770,6 +1822,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     device_count = serializers.SerializerMethodField()
     component_count = serializers.SerializerMethodField()
     component_counts = serializers.SerializerMethodField()
+    sensor_count = serializers.SerializerMethodField()
+    document_count = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
 
@@ -1781,6 +1835,25 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     def get_device_count(self, obj) -> int:
         v = getattr(obj, "device_count_annotated", None)
         return v if v is not None else obj.device_set.count()
+
+    def _is_list(self) -> bool:
+        view = self.context.get("view")
+        return view is not None and getattr(view, "action", None) == "list"
+
+    def get_sensor_count(self, obj) -> int:
+        # SNMP sensors bound to this type only (the Sensors tab's
+        # ``device_type_only`` filter; all-types sensors are not its rows).
+        # Detail page only, like component_count.
+        if self._is_list():
+            return 0
+        return obj.snmp_sensors.count()
+
+    def get_document_count(self, obj) -> int:
+        if self._is_list():
+            return 0
+        return Document.objects.filter(
+            object_type="api.devicetype", object_id=obj.id
+        ).count()
 
     #: Overview-card breakdown: keys are the Components tab's sub-tab slugs,
     #: so each row can deep-link straight to its section.
@@ -1993,8 +2066,10 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
                   "tags", "tag_ids", "device_count", "component_count", "component_counts",
+                  "sensor_count", "document_count",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "component_count",
+                  "sensor_count", "document_count",
                   "front_image", "rear_image",
                             "lifecycle_state", "created_at", "updated_at"]
 
@@ -2179,6 +2254,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     console_count = serializers.SerializerMethodField()
     power_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
+    image_count = serializers.SerializerMethodField()
+    certificate_count = serializers.SerializerMethodField()
+    contact_count = serializers.SerializerMethodField()
+    document_count = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -2536,6 +2615,50 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             return 0
         return obj.services.count()
 
+    def get_image_count(self, obj) -> int:
+        # ImageAttachment is a real GenericFK (content_type + object_id) with
+        # no reverse accessor on Device.
+        if not self._detail_only():
+            return 0
+        from django.contrib.contenttypes.models import ContentType
+
+        return ImageAttachment.objects.filter(
+            content_type=ContentType.objects.get_for_model(Device),
+            object_id=obj.pk,
+        ).count()
+
+    def get_certificate_count(self, obj) -> int:
+        # Everything on the "Certificates & keys" tab: certificate
+        # assignments plus the device's SSH host keys. ``monitoring`` imports
+        # ``api``, never the reverse, so the import stays local.
+        if not self._detail_only():
+            return 0
+        from monitoring.models import CertificateAssignment
+
+        return (
+            CertificateAssignment.objects.filter(
+                object_type="api.device", object_id=str(obj.id)
+            ).count()
+            + obj.ssh_host_keys.count()
+        )
+
+    def get_contact_count(self, obj) -> int:
+        # Same label-keyed lookup as SiteSerializer.get_contact_count.
+        if not self._detail_only():
+            return 0
+        return ContactAssignment.objects.filter(
+            object_type="api.device", object_id=str(obj.id)
+        ).count()
+
+    def get_document_count(self, obj) -> int:
+        # Own rows only; the documents inherited from the device type are
+        # listed read-only under their own heading on the tab.
+        if not self._detail_only():
+            return 0
+        return Document.objects.filter(
+            object_type="api.device", object_id=obj.id
+        ).count()
+
     class Meta:
         model = Device
         fields = ["id", "numid", "name", "device_type", "device_type_id", "site", "site_id",
@@ -2559,7 +2682,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "tags", "tag_ids", "custom_fields",
                   "interface_count", "ip_count",
                   "hardware_count", "console_count", "power_count",
-                  "service_count", "permissions",
+                  "service_count", "image_count", "certificate_count",
+                  "contact_count", "document_count", "permissions",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
                             "created_at", "updated_at"]
@@ -4361,6 +4485,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     interface_count = serializers.SerializerMethodField()
     disk_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
+    certificate_count = serializers.SerializerMethodField()
 
     def _detail(self) -> bool:
         return isinstance(self.instance, VirtualMachine)
@@ -4373,6 +4498,15 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
 
     def get_service_count(self, obj) -> int:
         return obj.services.count() if self._detail() else 0
+
+    def get_certificate_count(self, obj) -> int:
+        if not self._detail():
+            return 0
+        from monitoring.models import CertificateAssignment
+
+        return CertificateAssignment.objects.filter(
+            object_type="api.virtualmachine", object_id=str(obj.id)
+        ).count()
     cluster_id = TenantScopedPrimaryKeyRelatedField(
         source="cluster", queryset=Cluster.objects.all(), write_only=True
     )
@@ -4440,6 +4574,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "synced_from", "synced_from_id", "drift_count",
                   "vcpus", "memory_mb", "disk_gb", "disks",
                   "interface_count", "disk_count", "service_count",
+                  "certificate_count",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
@@ -4683,6 +4818,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     )
     device_count = serializers.SerializerMethodField()
     used_units = serializers.SerializerMethodField()
+    document_count = serializers.SerializerMethodField()
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
@@ -4772,6 +4908,11 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     def get_device_count(self, obj) -> int:
         return obj.devices.count()
 
+    def get_document_count(self, obj) -> int:
+        return Document.objects.filter(
+            object_type="api.rack", object_id=obj.id
+        ).count()
+
     def get_used_units(self, obj) -> int:
         # Distinct units occupied by any device - two half-width devices
         # sharing a U count it once.
@@ -4849,10 +4990,10 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                   "max_weight", "max_weight_unit",
                   "total_weight_kg", "max_weight_kg", "power",
                   "starting_unit", "desc_units", "description",
-                  "device_count", "used_units",
+                  "device_count", "used_units", "document_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "device_count", "used_units",
-                            "created_at", "updated_at"]
+                            "document_count", "created_at", "updated_at"]
 
 
 # ─── Device roles + platforms ────────────────────────────────────────────────
@@ -5841,6 +5982,7 @@ class ProviderSerializer(
         write_only=True, required=False, many=True,
     )
     circuit_count = serializers.SerializerMethodField()
+    network_count = serializers.SerializerMethodField()
     account_manager = ContactMiniSerializer(read_only=True)
     account_manager_id = TenantScopedPrimaryKeyRelatedField(
         source="account_manager", queryset=Contact.objects.all(),
@@ -5851,6 +5993,10 @@ class ProviderSerializer(
         v = getattr(obj, "circuit_count_annotated", None)
         return v if v is not None else obj.circuits.count()
 
+    def get_network_count(self, obj) -> int:
+        v = getattr(obj, "network_count_annotated", None)
+        return v if v is not None else obj.networks.count()
+
     class Meta:
         model = Provider
         fields = ["id", "name", "slug", "account", "portal_url", "noc_email",
@@ -5858,9 +6004,11 @@ class ProviderSerializer(
                   "account_manager", "account_manager_id",
                   "account_manager_name",
                   *BusinessHoursSerializerMixin.BUSINESS_HOURS_FIELDS,
-                  "comments", "circuit_count", "tags", "tag_ids",
+                  "comments", "circuit_count", "network_count",
+                  "tags", "tag_ids",
                   "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "circuit_count", "business_hours_display",
+        read_only_fields = ["id", "circuit_count", "network_count",
+                            "business_hours_display",
                             "open_now", "created_at", "updated_at"]
 
 
@@ -6062,6 +6210,16 @@ class PowerFeedSerializer(StatusSerializerMixin,
     supply_display = serializers.CharField(source="get_supply_display", read_only=True)
     phase_display = serializers.CharField(source="get_phase_display", read_only=True)
     tags = TagSerializer(many=True, read_only=True)
+    cable_count = serializers.SerializerMethodField()
+
+    def get_cable_count(self, obj) -> int:
+        # Distinct cables landing on this feed - what the Terminations tab
+        # lists (``/api/cables/?power_feed=``). Served from the viewset's
+        # annotation; the fallback is for a serializer built by hand.
+        v = getattr(obj, "cable_count_annotated", None)
+        if v is not None:
+            return v
+        return obj.terminations.values("cable").distinct().count()
 
     power_panel_id = TenantScopedPrimaryKeyRelatedField(
         source="power_panel", queryset=PowerPanel.objects.all(), write_only=True,
@@ -6081,9 +6239,10 @@ class PowerFeedSerializer(StatusSerializerMixin,
                   "status", "status_id",  "type", "type_display",
                   "supply", "supply_display", "phase", "phase_display",
                   "voltage", "amperage", "max_utilization", "comments",
+                  "cable_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id",  "type_display",
-                            "supply_display", "phase_display",
+                            "supply_display", "phase_display", "cable_count",
                             "created_at", "updated_at"]
 
 
@@ -6398,6 +6557,7 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     child_count = serializers.SerializerMethodField()
     device_count = serializers.SerializerMethodField()
     rack_count = serializers.SerializerMethodField()
+    document_count = serializers.SerializerMethodField()
 
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True,
@@ -6417,6 +6577,11 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     def get_rack_count(self, obj) -> int:
         v = getattr(obj, "rack_count_annotated", None)
         return v if v is not None else obj.racks.count()
+
+    def get_document_count(self, obj) -> int:
+        return Document.objects.filter(
+            object_type="api.location", object_id=obj.id
+        ).count()
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -6438,9 +6603,9 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "slug", "site", "site_id", "parent", "parent_id",
                   "status", "status_id", "color", "icon", "description",
                   "child_count",
-                  "device_count", "rack_count",
+                  "device_count", "rack_count", "document_count",
                   "created_at", "updated_at"]
-        read_only_fields = ["id",  "child_count",
+        read_only_fields = ["id",  "child_count", "document_count",
                             "created_at", "updated_at"]
 
 

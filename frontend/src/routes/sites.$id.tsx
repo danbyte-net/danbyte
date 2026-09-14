@@ -156,7 +156,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "locations", label: "Locations" },
+        { value: "locations", label: "Locations", count: s.location_count },
         { value: "devices", label: "Devices", count: s.device_count },
         { value: "vms", label: "Virtual machines", count: s.vm_count },
         { value: "prefixes", label: "Prefixes", count: s.prefix_count },
@@ -164,7 +164,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         { value: "circuits", label: "Circuits", count: s.circuit_count },
         { value: "contacts", label: "Contacts", count: s.contact_count },
         ...(showAccess ? [{ value: "access", label: "Access" }] : []),
-        { value: "documents", label: "Documents" },
+        { value: "documents", label: "Documents", count: s.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

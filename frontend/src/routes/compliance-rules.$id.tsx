@@ -65,6 +65,9 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
   const [tab, setTab] = useUrlTab<
     "overview" | "affected" | "journal" | "history"
   >("overview")
+  // Fetched up front so the Affected objects tab wears its count; the panel
+  // reads the same query rather than running the engine a second time.
+  const violations = useRuleViolations(r.id)
 
   return (
     <DetailShell
@@ -109,7 +112,11 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "affected", label: "Affected objects" },
+        {
+          value: "affected",
+          label: "Affected objects",
+          count: violations.data?.total,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -130,7 +137,7 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
           </div>
         )}
         <AffectedObjects
-          ruleId={r.id}
+          violations={violations}
           ruleName={r.name}
           objectType={r.object_type}
           enabled={r.enabled}
@@ -194,18 +201,10 @@ function RuleOverview({ rule: r }: { rule: ComplianceRule }) {
   )
 }
 
-function AffectedObjects({
-  ruleId,
-  ruleName,
-  objectType,
-  enabled,
-}: {
-  ruleId: string
-  ruleName: string
-  objectType: string
-  enabled: boolean
-}) {
-  const q = useQuery({
+/** Live evaluation of the rule against its tenant - {violations, objects,
+ * total}. Owned by the detail page so the tab and the panel share one run. */
+function useRuleViolations(ruleId: string) {
+  return useQuery({
     queryKey: ["compliance-rule-violations", ruleId],
     queryFn: () =>
       api<ComplianceRuleViolations>(
@@ -213,7 +212,19 @@ function AffectedObjects({
       ),
     refetchOnWindowFocus: false,
   })
+}
 
+function AffectedObjects({
+  violations: q,
+  ruleName,
+  objectType,
+  enabled,
+}: {
+  violations: ReturnType<typeof useRuleViolations>
+  ruleName: string
+  objectType: string
+  enabled: boolean
+}) {
   // The genuine per-type table (prefix/IP/device/…) when we have a factory for
   // this object type; otherwise a generic object + type fallback.
   const realColumns = useMemo(

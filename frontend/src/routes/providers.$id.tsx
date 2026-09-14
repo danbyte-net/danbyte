@@ -108,7 +108,7 @@ function Body({ provider: p }: { provider: Provider }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "circuits", label: "Circuits", count: p.circuit_count },
-        { value: "networks", label: "Networks" },
+        { value: "networks", label: "Networks", count: p.network_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

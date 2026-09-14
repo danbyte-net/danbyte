@@ -92,7 +92,7 @@ function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "vrfs", label: "VRFs" },
+        { value: "vrfs", label: "VRFs", count: r.vrf_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

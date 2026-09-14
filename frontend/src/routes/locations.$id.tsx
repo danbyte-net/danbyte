@@ -156,7 +156,7 @@ function Body({ location: l }: { location: Location }) {
         { value: "devices", label: "Devices", count: l.device_count },
         { value: "racks", label: "Racks", count: l.rack_count },
         { value: "prefixes", label: "Prefix ranges", count: rows.length },
-        { value: "documents", label: "Documents" },
+        { value: "documents", label: "Documents", count: l.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

@@ -165,7 +165,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: r.device_count },
-        { value: "documents", label: "Documents" },
+        { value: "documents", label: "Documents", count: r.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

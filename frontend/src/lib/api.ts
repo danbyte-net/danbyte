@@ -205,6 +205,8 @@ export interface Prefix {
   is_enumerable: boolean
   ip_count: number
   child_count: number
+  /** DNS records whose address is in the prefix - detail responses only. */
+  dns_record_count?: number
   has_descendants: boolean
   site: { id: string; name: string } | null
   location: { id: string; name: string } | null
@@ -832,6 +834,8 @@ export interface IPAddress {
   is_primary_for_vm?: boolean
   is_secondary_for_device?: boolean
   is_oob_for_device?: boolean
+  /** Certificate assignments on the address - detail responses only. */
+  certificate_count?: number
   description: string
   reservation_note: string
   custom_fields: Record<string, unknown>
@@ -1211,6 +1215,10 @@ export interface DeviceType extends LifecycleInfo {
   component_count: number
   /** Per-kind template counts, keyed by the Components tab's sub slugs. */
   component_counts?: Record<string, number>
+  /** SNMP sensors bound to this type - detail responses only (0 on list). */
+  sensor_count: number
+  /** Documents attached to the type - detail responses only (0 on list). */
+  document_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string
@@ -1382,6 +1390,12 @@ export interface Device {
   console_count: number
   power_count: number
   service_count: number
+  /** Per-tab counts served on the detail payload only. */
+  image_count?: number
+  /** Certificate assignments plus SSH host keys - the Certificates & keys tab. */
+  certificate_count?: number
+  contact_count?: number
+  document_count?: number
   // ─── Rack placement (DCIM racks) ─────────────────────────────────────
   /** Lowest rack unit the device occupies, or null if unplaced. */
   position: number | null
@@ -1740,6 +1754,7 @@ export interface Rack {
   outer_depth_mm: number | null
   description: string
   device_count: number
+  document_count: number
   used_units: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -3380,6 +3395,8 @@ export interface RouteTarget {
   description: string
   import_vrf_count: number
   export_vrf_count: number
+  /** Distinct VRFs importing or exporting this target. */
+  vrf_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   owning_site?: { id: string; name: string } | null
@@ -3466,8 +3483,11 @@ export interface Site {
   /** VMs whose own site is this one (a cluster's site isn't inherited). */
   vm_count: number
   rack_count: number
+  /** Locations in the site, every level of the tree. */
+  location_count: number
   contact_count: number
   circuit_count: number
+  document_count: number
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -3553,6 +3573,7 @@ export interface Location {
   child_count: number
   device_count: number
   rack_count: number
+  document_count: number
   created_at: string
   updated_at: string
 }
@@ -3684,6 +3705,7 @@ export interface VirtualMachine {
   interface_count?: number
   disk_count?: number
   service_count?: number
+  certificate_count?: number
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
@@ -6702,6 +6724,7 @@ export interface Provider extends BusinessHoursReads {
   account_manager_name: string
   comments: string
   circuit_count: number
+  network_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
@@ -6910,6 +6933,8 @@ export interface PowerFeed {
   voltage: number | null
   amperage: number | null
   max_utilization: number
+  /** Distinct cables terminating on this feed. */
+  cable_count: number
   comments: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -8239,6 +8264,10 @@ export interface WindowsConnection {
   last_sync_at: string | null
   last_sync_status: string
   last_sync_error: string
+  /** DHCP leases across the connection's scopes. */
+  lease_count: number
+  /** DNS zones on the connection. */
+  zone_count: number
   created_at: string
   updated_at: string
 }

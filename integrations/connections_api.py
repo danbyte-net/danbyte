@@ -8,6 +8,7 @@ tenant-admin-only and always reachable - it's how you turn things on.
 """
 from __future__ import annotations
 
+from django.db.models import Count
 from rest_framework import serializers
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -18,7 +19,12 @@ from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
 from auth_api.permissions import can_manage_admin
 
-from .models import IntegrationSettings, VirtualizationSource, WindowsServerConnection
+from .models import (
+    DhcpLease,
+    IntegrationSettings,
+    VirtualizationSource,
+    WindowsServerConnection,
+)
 from .toggles import KEYS as TOGGLE_KEYS
 from .toggles import IntegrationToggleMixin
 
@@ -109,9 +115,23 @@ class WindowsServerConnectionSerializer(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     password_set = serializers.SerializerMethodField()
+    # Detail-tab counts, served from the viewset's annotations so the list
+    # stays one query; the fallback covers a serializer built by hand.
+    lease_count = serializers.SerializerMethodField()
+    zone_count = serializers.SerializerMethodField()
 
     def get_password_set(self, obj) -> bool:
         return bool((obj.credentials or {}).get("password"))
+
+    def get_lease_count(self, obj) -> int:
+        v = getattr(obj, "lease_count_annotated", None)
+        if v is not None:
+            return v
+        return DhcpLease.objects.filter(scope__connection=obj).count()
+
+    def get_zone_count(self, obj) -> int:
+        v = getattr(obj, "zone_count_annotated", None)
+        return v if v is not None else obj.dns_zones.count()
 
     def validate(self, attrs):
         pw = attrs.pop("password", None)
@@ -129,9 +149,11 @@ class WindowsServerConnectionSerializer(
                   "dhcp_enabled", "dns_enabled", "poll_interval_minutes",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
                   "enabled", "last_sync_at", "last_sync_status",
-                  "last_sync_error", "created_at", "updated_at"]
+                  "last_sync_error", "lease_count", "zone_count",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "password_set", "last_sync_at",
                             "last_sync_status", "last_sync_error",
+                            "lease_count", "zone_count",
                             "created_at", "updated_at",
                             *AddressPlacementSerializerMixin.PLACEMENT_READ_ONLY]
 
@@ -142,7 +164,12 @@ class WindowsServerConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet
     serializer_class = WindowsServerConnectionSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # Leases across the connection's scopes + its zones - two reverse
+        # joins, so distinct on each or they multiply.
+        qs = super().get_queryset().annotate(
+            lease_count_annotated=Count("dhcp_scopes__leases", distinct=True),
+            zone_count_annotated=Count("dns_zones", distinct=True),
+        )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
