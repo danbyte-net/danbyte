@@ -31,6 +31,11 @@ from .models import (
     Community,
     CommunityList,
     CommunityListRule,
+    ISISInstance,
+    ISISInterface,
+    OSPFArea,
+    OSPFInstance,
+    OSPFInterface,
     PrefixList,
     PrefixListRule,
     Redistribution,
@@ -53,6 +58,12 @@ from .serializers import (
     CommunityListSerializer,
     CommunityMiniSerializer,
     CommunitySerializer,
+    ISISInstanceSerializer,
+    ISISInterfaceSerializer,
+    OSPFAreaMiniSerializer,
+    OSPFAreaSerializer,
+    OSPFInstanceSerializer,
+    OSPFInterfaceSerializer,
     PrefixListMiniSerializer,
     PrefixListRuleSerializer,
     PrefixListSerializer,
@@ -373,7 +384,9 @@ class RedistributionViewSet(TenantScopedViewSet):
     """Redistribution rows. Filter with ``?bgp_af=``."""
 
     tenant_field = None
-    queryset = Redistribution.objects.select_related("bgp_af", "policy").order_by("source")
+    queryset = Redistribution.objects.select_related(
+        "bgp_af", "ospf_instance", "isis_instance", "policy"
+    ).order_by("source")
     serializer_class = RedistributionSerializer
     pagination_class = StandardPagination
 
@@ -381,20 +394,31 @@ class RedistributionViewSet(TenantScopedViewSet):
         tenant = _get_active_tenant(self.request)
         if tenant is None:
             return self.queryset.none()
-        qs = self.queryset.filter(bgp_af__instance__tenant=tenant)
+        qs = self.queryset.filter(
+            Q(bgp_af__instance__tenant=tenant) | Q(ospf_instance__tenant=tenant)
+            | Q(isis_instance__tenant=tenant)
+        )
         if self.request:
-            af = self.request.query_params.get("bgp_af")
-            if af:
-                qs = qs.filter(bgp_af_id=af)
+            for key in ("bgp_af", "ospf_instance", "isis_instance"):
+                v = self.request.query_params.get(key)
+                if v:
+                    qs = qs.filter(**{f"{key}_id": v})
         return qs
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()
-        af = serializer.validated_data.get("bgp_af") or (
-            serializer.instance.bgp_af if serializer.instance else None
-        )
-        if af is None or af.instance.tenant_id != tenant.id:
-            raise ValidationError({"bgp_af_id": "Pick an address family in the current tenant."})
+        vd = serializer.validated_data
+        parents = [
+            vd.get(k) or (getattr(serializer.instance, k) if serializer.instance else None)
+            for k in ("bgp_af", "ospf_instance", "isis_instance")
+        ]
+        present = [p for p in parents if p is not None]
+        if len(present) != 1:
+            raise ValidationError({"detail": "A redistribution has exactly one parent."})
+        parent = present[0]
+        owner = parent.instance.tenant_id if hasattr(parent, "instance") else parent.tenant_id
+        if owner != tenant.id:
+            raise ValidationError({"detail": "Pick a parent in the current tenant."})
 
     def perform_create(self, serializer):
         self._check(serializer)
@@ -537,3 +561,120 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
             s.save(update_fields=["peer_session"])
         return Response(BGPSessionSerializer(mirror, context={"request": request}).data,
                         status=201)
+
+
+# ─── OSPF / IS-IS ────────────────────────────────────────────────────────────
+
+class OSPFAreaViewSet(_CatalogViewSet):
+    queryset = OSPFArea.objects.all().order_by(NATURAL_NAME)
+    serializer_class = OSPFAreaSerializer
+    mini_serializer_class = OSPFAreaMiniSerializer
+    clone_fields = ("kind", "description")
+
+    def _search(self, qs, s):
+        return super()._search(qs, s) | qs.filter(area_id__icontains=s)
+
+    def get_queryset(self):
+        return super().get_queryset().annotate(
+            interface_count_annotated=Count("interfaces", distinct=True)
+        )
+
+
+class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """Filter with ``?device=``, ``?vrf=`` (``global``), ``?site=``, ``?status=``."""
+
+    editable_str_fields = ("description",)
+    editable_bool_fields = ("bfd",)
+    pagination_class = StandardPagination
+    search_fields: tuple = ()
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device", "vrf", "status")
+            .prefetch_related("tags", "redistributions__policy")
+            .annotate(interface_count_annotated=Count("interfaces", distinct=True))
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            q = Q(device__name__icontains=s) | Q(description__icontains=s) | cf_text_q(qs.model, s)
+            for f in self.search_fields:
+                q |= Q(**{f"{f}__icontains": s})
+            qs = qs.filter(q)
+        for key, field in (
+            ("device", "device_id"), ("status", "status_id"), ("site", "device__site_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        vrf = p.get("vrf")
+        if vrf == "global":
+            qs = qs.filter(vrf__isnull=True)
+        elif vrf:
+            qs = qs.filter(vrf_id=vrf)
+        return qs.distinct()
+
+
+class OSPFInstanceViewSet(_IGPInstanceViewSet):
+    queryset = OSPFInstance.objects.all().prefetch_related(
+        "interfaces__interface__device", "interfaces__area", "interfaces__keychain"
+    )
+    serializer_class = OSPFInstanceSerializer
+    search_fields = ("process_id", "router_id", "vrf__name")
+    editable_str_fields = ("description", "router_id", "process_id")
+    editable_bool_fields = ("bfd", "passive_by_default", "default_originate")
+    clone_fields = ("vrf", "process_id", "version", "reference_bandwidth",
+                    "passive_by_default", "default_originate", "bfd", "status")
+
+
+class ISISInstanceViewSet(_IGPInstanceViewSet):
+    queryset = ISISInstance.objects.all().select_related("keychain").prefetch_related(
+        "interfaces__interface__device", "interfaces__keychain"
+    )
+    serializer_class = ISISInstanceSerializer
+    search_fields = ("process", "net")
+    editable_str_fields = ("description", "process", "net")
+    clone_fields = ("vrf", "process", "level", "metric_style", "bfd",
+                    "authentication", "keychain", "status")
+
+
+class OSPFInterfaceViewSet(_RuleViewSet):
+    """Interfaces enrolled in an OSPF instance. Filter with ``?instance=``,
+    ``?interface=``, ``?area=``."""
+
+    parent = "instance"
+    queryset = OSPFInterface.objects.select_related(
+        "instance__device", "interface__device", "area", "keychain"
+    ).order_by("interface__name")
+    serializer_class = OSPFInterfaceSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            for key in ("interface", "area"):
+                v = self.request.query_params.get(key)
+                if v:
+                    qs = qs.filter(**{f"{key}_id": v})
+        return qs
+
+
+class ISISInterfaceViewSet(_RuleViewSet):
+    """Interfaces enrolled in an IS-IS instance. Filter with ``?instance=``,
+    ``?interface=``."""
+
+    parent = "instance"
+    queryset = ISISInterface.objects.select_related(
+        "instance__device", "interface__device", "keychain"
+    ).order_by("interface__name")
+    serializer_class = ISISInterfaceSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            v = self.request.query_params.get("interface")
+            if v:
+                qs = qs.filter(interface_id=v)
+        return qs

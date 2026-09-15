@@ -60,8 +60,11 @@ SITE_PATHS: dict[str, str] = {
     "staticroute": "device__site",
     "bgpinstance": "device__site",
     "bgpaddressfamily": "instance__device__site",
-    "redistribution": "bgp_af__instance__device__site",
     "bgpsession": "instance__device__site",
+    "ospfinstance": "device__site",
+    "ospfinterface": "instance__device__site",
+    "isisinstance": "device__site",
+    "isisinterface": "instance__device__site",
 }
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global

@@ -2625,6 +2625,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return (
             obj.static_routes.count() + obj.bgpinstances.count()
             + sum(i.sessions.count() for i in obj.bgpinstances.all())
+            + obj.ospfinstances.count() + obj.isisinstances.count()
         )
 
     def get_image_count(self, obj) -> int:

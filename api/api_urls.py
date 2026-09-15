@@ -117,6 +117,11 @@ from routing.viewsets import (
     CommunityListRuleViewSet,
     CommunityListViewSet,
     CommunityViewSet,
+    ISISInstanceViewSet,
+    ISISInterfaceViewSet,
+    OSPFAreaViewSet,
+    OSPFInstanceViewSet,
+    OSPFInterfaceViewSet,
     PrefixListRuleViewSet,
     PrefixListViewSet,
     RedistributionViewSet,
@@ -366,6 +371,11 @@ router.register(r"routing/redistributions", RedistributionViewSet,
                 basename="redistribution")
 router.register(r"routing/bgp-peer-groups", BGPPeerGroupViewSet, basename="bgppeergroup")
 router.register(r"routing/bgp-sessions", BGPSessionViewSet, basename="bgpsession")
+router.register(r"routing/ospf-areas", OSPFAreaViewSet, basename="ospfarea")
+router.register(r"routing/ospf-instances", OSPFInstanceViewSet, basename="ospfinstance")
+router.register(r"routing/ospf-interfaces", OSPFInterfaceViewSet, basename="ospfinterface")
+router.register(r"routing/isis-instances", ISISInstanceViewSet, basename="isisinstance")
+router.register(r"routing/isis-interfaces", ISISInterfaceViewSet, basename="isisinterface")
 router.register(r"services",      ServiceViewSet,     basename="service")
 router.register(r"service-templates", ServiceTemplateViewSet, basename="service-template")
 router.register(r"device-types",  DeviceTypeViewSet,  basename="device-type")

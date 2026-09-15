@@ -10,6 +10,7 @@ site-scoped through the device.
 from __future__ import annotations
 
 import ipaddress
+import re
 import uuid
 
 from django.core.exceptions import ValidationError
@@ -590,6 +591,14 @@ class Redistribution(models.Model):
         BGPAddressFamily, on_delete=models.CASCADE, null=True, blank=True,
         related_name="redistributions",
     )
+    ospf_instance = models.ForeignKey(
+        "OSPFInstance", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="redistributions",
+    )
+    isis_instance = models.ForeignKey(
+        "ISISInstance", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="redistributions",
+    )
     source = models.CharField(max_length=12, choices=REDISTRIBUTE_SOURCE_CHOICES)
     policy = models.ForeignKey(
         RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
@@ -602,7 +611,11 @@ class Redistribution(models.Model):
         ordering = ["source"]
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(bgp_af__isnull=False),
+                condition=(
+                    models.Q(bgp_af__isnull=False, ospf_instance__isnull=True, isis_instance__isnull=True)
+                    | models.Q(bgp_af__isnull=True, ospf_instance__isnull=False, isis_instance__isnull=True)
+                    | models.Q(bgp_af__isnull=True, ospf_instance__isnull=True, isis_instance__isnull=False)
+                ),
                 name="redistribution_one_parent",
             ),
         ]
@@ -828,6 +841,237 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
             else (group.update_source if group is not None else "")
         )
         return out
+
+
+# ─── OSPF ────────────────────────────────────────────────────────────────────
+
+NET_RE = re.compile(r"^[0-9a-fA-F]{2}(\.[0-9a-fA-F]{4}){3,9}\.00$")
+
+
+def normalize_area_id(value: str) -> str:
+    """``0`` and ``0.0.0.0`` are the same area; keep the dotted form the box
+    prints unless the user wrote a plain number, which stays a number."""
+    v = (value or "").strip()
+    if v.isdigit():
+        return str(int(v))
+    try:
+        return str(ipaddress.IPv4Address(v))
+    except ValueError as exc:
+        raise ValidationError({"area_id": "An area is a number or a dotted quad."}) from exc
+
+
+class OSPFArea(_Catalog):
+    KIND_CHOICES = [
+        ("normal", "Normal"),
+        ("stub", "Stub"),
+        ("totally-stub", "Totally stubby"),
+        ("nssa", "NSSA"),
+        ("totally-nssa", "Totally NSSA"),
+    ]
+
+    area_id = models.CharField(max_length=15, help_text="0 or 0.0.0.0")
+    kind = models.CharField(max_length=13, choices=KIND_CHOICES, default="normal")
+
+    class Meta(_Catalog.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_ospfarea_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.area_id})"
+
+    def clean(self):
+        self.area_id = normalize_area_id(self.area_id)
+
+
+class OSPFInstance(_DeviceInstance):
+    """``router ospf <process>`` on a device, in one table."""
+
+    VERSION_CHOICES = [(2, "OSPFv2"), (3, "OSPFv3")]
+
+    #: A number on IOS, a name on NX-OS and FRR - text carries both.
+    process_id = models.CharField(max_length=32, blank=True, default="")
+    version = models.PositiveSmallIntegerField(choices=VERSION_CHOICES, default=2)
+    reference_bandwidth = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Mbit/s"
+    )
+    passive_by_default = models.BooleanField(default=False)
+    default_originate = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["device__name", "vrf__name", "process_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device", "vrf", "version", "process_id"],
+                name="uniq_ospfinstance_process", nulls_distinct=False,
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device.name} · OSPF{'v3' if self.version == 3 else ''} {self.process_id}".rstrip()
+
+
+class _IGPInterface(models.Model):
+    """An interface enrolled in an IGP instance."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.CASCADE, related_name="%(class)ss"
+    )
+    #: Null = the instance's ``passive_by_default``.
+    passive = models.BooleanField(null=True, blank=True)
+    bfd = models.BooleanField(default=False)
+    keychain = models.ForeignKey(
+        RoutingKeychain, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="%(class)ss",
+    )
+    extra = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        abstract = True
+
+    def __str__(self) -> str:
+        return self.interface.name
+
+    def _check_device(self):
+        if (
+            self.interface_id and self.instance_id
+            and self.interface.device_id != self.instance.device_id
+        ):
+            raise ValidationError({"interface": "That interface is on another device."})
+
+
+class OSPFInterface(_IGPInterface):
+    NETWORK_TYPE_CHOICES = [
+        ("broadcast", "Broadcast"),
+        ("point-to-point", "Point-to-point"),
+        ("nbma", "NBMA"),
+        ("point-to-multipoint", "Point-to-multipoint"),
+    ]
+    AUTH_CHOICES = [
+        ("none", "None"),
+        ("simple", "Simple"),
+        ("md5", "MD5"),
+        ("sha", "SHA"),
+    ]
+
+    instance = models.ForeignKey(
+        OSPFInstance, on_delete=models.CASCADE, related_name="interfaces"
+    )
+    area = models.ForeignKey(OSPFArea, on_delete=models.PROTECT, related_name="interfaces")
+    cost = models.PositiveIntegerField(null=True, blank=True)
+    network_type = models.CharField(
+        max_length=20, choices=NETWORK_TYPE_CHOICES, blank=True, default=""
+    )
+    priority = models.PositiveSmallIntegerField(null=True, blank=True)
+    hello = models.PositiveSmallIntegerField(null=True, blank=True)
+    dead = models.PositiveSmallIntegerField(null=True, blank=True)
+    mtu_ignore = models.BooleanField(default=False)
+    authentication = models.CharField(max_length=6, choices=AUTH_CHOICES, default="none")
+
+    class Meta:
+        ordering = ["interface__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["instance", "interface"], name="uniq_ospfinterface_instance_iface"
+            )
+        ]
+
+    def clean(self):
+        self._check_device()
+        if self.authentication != "none" and not self.keychain_id:
+            raise ValidationError({"keychain": "Authentication needs a keychain."})
+
+
+# ─── IS-IS ───────────────────────────────────────────────────────────────────
+
+class ISISInstance(_DeviceInstance):
+    """``router isis <process>`` on a device."""
+
+    LEVEL_CHOICES = [("1", "Level 1"), ("2", "Level 2"), ("1-2", "Level 1-2")]
+    METRIC_STYLE_CHOICES = [
+        ("wide", "Wide"),
+        ("narrow", "Narrow"),
+        ("transition", "Transition"),
+    ]
+    AUTH_CHOICES = [("none", "None"), ("text", "Clear text"), ("md5", "MD5")]
+
+    process = models.CharField(max_length=32, blank=True, default="")
+    net = models.CharField(max_length=64, help_text="49.0001.0000.0000.0001.00")
+    level = models.CharField(max_length=3, choices=LEVEL_CHOICES, default="1-2")
+    metric_style = models.CharField(max_length=10, choices=METRIC_STYLE_CHOICES, default="wide")
+    #: Area / domain authentication; per-interface hello auth is on the rows.
+    authentication = models.CharField(max_length=4, choices=AUTH_CHOICES, default="none")
+    keychain = models.ForeignKey(
+        RoutingKeychain, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="isis_instances",
+    )
+
+    class Meta:
+        ordering = ["device__name", "process"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device", "process"], name="uniq_isisinstance_device_process"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device.name} · IS-IS {self.process}".rstrip()
+
+    def clean(self):
+        super().clean()
+        self.net = (self.net or "").strip().lower()
+        if not NET_RE.match(self.net):
+            raise ValidationError(
+                {"net": "A NET reads AA.BBBB.…​.SSSS.SSSS.SSSS.00 - "
+                        "e.g. 49.0001.0000.0000.0001.00."}
+            )
+        if self.authentication != "none" and not self.keychain_id:
+            raise ValidationError({"keychain": "Authentication needs a keychain."})
+
+
+class ISISInterface(_IGPInterface):
+    NETWORK_TYPE_CHOICES = [
+        ("point-to-point", "Point-to-point"),
+        ("broadcast", "Broadcast"),
+    ]
+    AUTH_CHOICES = ISISInstance.AUTH_CHOICES
+
+    instance = models.ForeignKey(
+        ISISInstance, on_delete=models.CASCADE, related_name="interfaces"
+    )
+    #: ``["ipv4", "ipv6"]`` - FRR needs ``ip router isis`` per family.
+    families = models.JSONField(default=list, blank=True)
+    level = models.CharField(
+        max_length=3, choices=ISISInstance.LEVEL_CHOICES, blank=True, default=""
+    )
+    metric = models.PositiveIntegerField(null=True, blank=True)
+    metric_l2 = models.PositiveIntegerField(null=True, blank=True)
+    network_type = models.CharField(
+        max_length=14, choices=NETWORK_TYPE_CHOICES, blank=True, default=""
+    )
+    hello_interval = models.PositiveSmallIntegerField(null=True, blank=True)
+    hello_multiplier = models.PositiveSmallIntegerField(null=True, blank=True)
+    authentication = models.CharField(max_length=4, choices=AUTH_CHOICES, default="none")
+
+    class Meta:
+        ordering = ["interface__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["instance", "interface"], name="uniq_isisinterface_instance_iface"
+            )
+        ]
+
+    def clean(self):
+        self._check_device()
+        fams = self.families or []
+        if not isinstance(fams, list) or any(f not in ("ipv4", "ipv6") for f in fams):
+            raise ValidationError({"families": 'Families are "ipv4" and/or "ipv6".'})
+        self.families = list(dict.fromkeys(fams)) or ["ipv4"]
+        if self.authentication != "none" and not self.keychain_id:
+            raise ValidationError({"keychain": "Authentication needs a keychain."})
 
 
 def link_remote_address(session: BGPSession) -> None:

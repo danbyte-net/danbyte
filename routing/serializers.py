@@ -38,6 +38,11 @@ from .models import (
     Community,
     CommunityList,
     CommunityListRule,
+    ISISInstance,
+    ISISInterface,
+    OSPFArea,
+    OSPFInstance,
+    OSPFInterface,
     PrefixList,
     PrefixListRule,
     Redistribution,
@@ -540,7 +545,15 @@ class RedistributionSerializer(_ChildRowSerializer):
     parent_field = "bgp_af"
     bgp_af_id = TenantScopedPrimaryKeyRelatedField(
         source="bgp_af", queryset=BGPAddressFamily.objects.all(),
-        write_only=True, required=False,
+        write_only=True, required=False, allow_null=True,
+    )
+    ospf_instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="ospf_instance", queryset=OSPFInstance.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    isis_instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="isis_instance", queryset=ISISInstance.objects.all(),
+        write_only=True, required=False, allow_null=True,
     )
     policy = RoutingPolicyMiniSerializer(read_only=True)
     policy_id = TenantScopedPrimaryKeyRelatedField(
@@ -550,7 +563,8 @@ class RedistributionSerializer(_ChildRowSerializer):
 
     class Meta:
         model = Redistribution
-        fields = ["id", "bgp_af_id", "source", "policy", "policy_id", "metric", "extra"]
+        fields = ["id", "bgp_af_id", "ospf_instance_id", "isis_instance_id",
+                  "source", "policy", "policy_id", "metric", "extra"]
         read_only_fields = ["id"]
 
 
@@ -849,4 +863,226 @@ class BGPSessionSerializer(
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "remote_address_obj", "created_at", "updated_at"]
+        validators = []
+
+
+# ─── OSPF / IS-IS ────────────────────────────────────────────────────────────
+
+class OSPFAreaSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    cf_model = "ospfarea"
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    interface_count = serializers.SerializerMethodField()
+
+    def get_interface_count(self, obj) -> int:
+        annotated = getattr(obj, "interface_count_annotated", None)
+        return annotated if annotated is not None else obj.interfaces.count()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if "area_id" in attrs:
+            probe = OSPFArea(area_id=attrs["area_id"])
+            _run_clean(probe)
+            attrs["area_id"] = probe.area_id
+        return attrs
+
+    class Meta:
+        model = OSPFArea
+        fields = ["id", "numid", "name", "area_id", "kind", "kind_display", "description",
+                  "interface_count", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+
+
+class OSPFAreaMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = OSPFArea
+        fields = ["id", "name", "area_id", "kind"]
+
+
+class _RedistributingInstanceSerializer(
+    CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin, NumIdModelSerializer
+):
+    """An IGP instance: nested read of its interfaces and redistributions,
+    a ``redistributions`` list on write that replaces the set."""
+
+    parent_key = ""
+
+    device = DeviceMiniSerializer(read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    vrf = VRFMiniSerializer(read_only=True)
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    redistributions = RedistributionSerializer(many=True, read_only=True)
+    interface_count = serializers.SerializerMethodField()
+
+    def get_interface_count(self, obj) -> int:
+        annotated = getattr(obj, "interface_count_annotated", None)
+        return annotated if annotated is not None else obj.interfaces.count()
+
+    def _probe(self, attrs):
+        model = self.Meta.model
+        probe = model(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in model._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in model._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        return probe
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = self._probe(attrs)
+        _run_clean(probe)
+        for f in ("router_id", "net"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        rows = self.initial_data.get("redistributions") if isinstance(self.initial_data, dict) else None
+        if rows is not None:
+            if not isinstance(rows, list):
+                raise serializers.ValidationError({"redistributions": "Expected a list."})
+            cleaned = []
+            for i, row in enumerate(rows):
+                ser = RedistributionSerializer(data=row, context=self.context)
+                if not ser.is_valid():
+                    raise serializers.ValidationError(
+                        {"redistributions": [f"Row {i + 1}: {ser.errors}"]}
+                    )
+                cleaned.append(ser.validated_data)
+            self._redistributions = cleaned
+        return attrs
+
+    def _sync(self, inst):
+        rows = getattr(self, "_redistributions", None)
+        if rows is None:
+            return
+        inst.redistributions.all().delete()
+        for data in rows:
+            data = dict(data)
+            for k in ("bgp_af", "ospf_instance", "isis_instance"):
+                data.pop(k, None)
+            Redistribution.objects.create(**{self.parent_key: inst}, **data)
+
+    def create(self, validated_data):
+        with transaction.atomic():
+            inst = super().create(validated_data)
+            self._sync(inst)
+        return inst
+
+    def update(self, instance, validated_data):
+        with transaction.atomic():
+            inst = super().update(instance, validated_data)
+            self._sync(inst)
+        return inst
+
+
+class OSPFInterfaceSerializer(_ChildRowSerializer):
+    parent_field = "instance"
+    instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="instance", queryset=OSPFInstance.objects.all(),
+        write_only=True, required=False,
+    )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(), write_only=True,
+    )
+    area = OSPFAreaMiniSerializer(read_only=True)
+    area_id = TenantScopedPrimaryKeyRelatedField(
+        source="area", queryset=OSPFArea.objects.all(), write_only=True,
+    )
+    keychain = RoutingKeychainMiniSerializer(read_only=True)
+    keychain_id = TenantScopedPrimaryKeyRelatedField(
+        source="keychain", queryset=RoutingKeychain.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    class Meta:
+        model = OSPFInterface
+        fields = ["id", "instance_id", "interface", "interface_id", "area", "area_id",
+                  "cost", "network_type", "passive", "priority", "hello", "dead",
+                  "bfd", "mtu_ignore", "authentication", "keychain", "keychain_id", "extra"]
+        read_only_fields = ["id"]
+        validators = []
+
+
+class OSPFInstanceSerializer(_RedistributingInstanceSerializer):
+    cf_model = "ospfinstance"
+    parent_key = "ospf_instance"
+    interfaces = OSPFInterfaceSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = OSPFInstance
+        fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id",
+                  "process_id", "version", "router_id", "reference_bandwidth",
+                  "passive_by_default", "default_originate", "bfd",
+                  "redistributions", "interfaces", "interface_count",
+                  "status", "status_id", "description", "extra",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        validators = []
+
+
+class ISISInterfaceSerializer(_ChildRowSerializer):
+    parent_field = "instance"
+    instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="instance", queryset=ISISInstance.objects.all(),
+        write_only=True, required=False,
+    )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(), write_only=True,
+    )
+    keychain = RoutingKeychainMiniSerializer(read_only=True)
+    keychain_id = TenantScopedPrimaryKeyRelatedField(
+        source="keychain", queryset=RoutingKeychain.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    families = serializers.ListField(
+        child=serializers.ChoiceField(choices=[("ipv4", "IPv4"), ("ipv6", "IPv6")]),
+        required=False,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # clean() fills an empty list with ipv4 - keep that on a create that
+        # never mentioned families.
+        probe = self._probe(attrs)
+        _run_clean(probe)
+        attrs["families"] = probe.families
+        return attrs
+
+    class Meta:
+        model = ISISInterface
+        fields = ["id", "instance_id", "interface", "interface_id", "families",
+                  "level", "metric", "metric_l2", "network_type", "passive",
+                  "hello_interval", "hello_multiplier", "bfd",
+                  "authentication", "keychain", "keychain_id", "extra"]
+        read_only_fields = ["id"]
+        validators = []
+
+
+class ISISInstanceSerializer(_RedistributingInstanceSerializer):
+    cf_model = "isisinstance"
+    parent_key = "isis_instance"
+    interfaces = ISISInterfaceSerializer(many=True, read_only=True)
+    keychain = RoutingKeychainMiniSerializer(read_only=True)
+    keychain_id = TenantScopedPrimaryKeyRelatedField(
+        source="keychain", queryset=RoutingKeychain.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    class Meta:
+        model = ISISInstance
+        fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id",
+                  "process", "net", "level", "metric_style", "bfd",
+                  "authentication", "keychain", "keychain_id",
+                  "redistributions", "interfaces", "interface_count",
+                  "status", "status_id", "description", "extra",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
         validators = []

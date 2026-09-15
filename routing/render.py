@@ -15,6 +15,8 @@ from .models import (
     BGPInstance,
     Community,
     CommunityList,
+    ISISInstance,
+    OSPFInstance,
     PrefixList,
     RoutingKeychain,
     RoutingPolicy,
@@ -267,6 +269,94 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
     }
 
 
+def _redistribute(rows, policies: set[str]) -> list[dict]:
+    out = []
+    for r in rows:
+        if r.policy_id:
+            policies.add(r.policy.name)
+        out.append({
+            "source": r.source,
+            "policy": r.policy.name if r.policy_id else None,
+            "metric": r.metric,
+            **(r.extra or {}),
+        })
+    return out
+
+
+def ospf_dict(inst: OSPFInstance, policies: set[str]) -> dict:
+    areas = {}
+    ifaces = []
+    for row in inst.interfaces.all():
+        areas.setdefault(row.area.area_id, {"area_id": row.area.area_id,
+                                            "name": row.area.name, "kind": row.area.kind})
+        ifaces.append({
+            "interface": row.interface.name,
+            "area": row.area.area_id,
+            "cost": row.cost,
+            "network_type": row.network_type or None,
+            "passive": inst.passive_by_default if row.passive is None else row.passive,
+            "priority": row.priority,
+            "hello": row.hello,
+            "dead": row.dead,
+            "bfd": row.bfd,
+            "mtu_ignore": row.mtu_ignore,
+            "authentication": row.authentication if row.authentication != "none" else None,
+            "keychain": row.keychain.name if row.keychain_id else None,
+            "extra": row.extra or {},
+        })
+    return {
+        "id": str(inst.id),
+        "vrf": _vrf_name(inst.vrf),
+        "process_id": inst.process_id or None,
+        "version": inst.version,
+        "router_id": inst.router_id or None,
+        "reference_bandwidth": inst.reference_bandwidth,
+        "passive_by_default": inst.passive_by_default,
+        "default_originate": inst.default_originate,
+        "bfd": inst.bfd,
+        "redistribute": _redistribute(inst.redistributions.all(), policies),
+        "areas": [areas[k] for k in sorted(areas)],
+        "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
+        "description": inst.description or "",
+        "extra": inst.extra or {},
+    }
+
+
+def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
+    ifaces = []
+    for row in inst.interfaces.all():
+        ifaces.append({
+            "interface": row.interface.name,
+            "families": list(row.families or ["ipv4"]),
+            "level": row.level or inst.level,
+            "metric": row.metric,
+            "metric_l2": row.metric_l2,
+            "network_type": row.network_type or None,
+            "passive": bool(row.passive),
+            "hello_interval": row.hello_interval,
+            "hello_multiplier": row.hello_multiplier,
+            "bfd": row.bfd,
+            "authentication": row.authentication if row.authentication != "none" else None,
+            "keychain": row.keychain.name if row.keychain_id else None,
+            "extra": row.extra or {},
+        })
+    return {
+        "id": str(inst.id),
+        "vrf": _vrf_name(inst.vrf),
+        "process": inst.process or None,
+        "net": inst.net,
+        "level": inst.level,
+        "metric_style": inst.metric_style,
+        "bfd": inst.bfd,
+        "authentication": inst.authentication if inst.authentication != "none" else None,
+        "keychain": inst.keychain.name if inst.keychain_id else None,
+        "redistribute": _redistribute(inst.redistributions.all(), policies),
+        "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
+        "description": inst.description or "",
+        "extra": inst.extra or {},
+    }
+
+
 def _policies_closure(tenant_id, names: set[str]) -> dict:
     """The policies a device references, plus every list those policies
     match on - so a template prints only what the box needs."""
@@ -348,14 +438,51 @@ def routing_context(device) -> dict:
         .order_by(F("vrf__name").asc(nulls_first=True))
     )
     bgp = [bgp_dict(i, referenced_policies) for i in instances]
-    for inst in instances:
+    ospf_instances = (
+        OSPFInstance.objects.filter(device=device)
+        .select_related("vrf")
+        .prefetch_related("redistributions__policy", "interfaces__interface",
+                          "interfaces__area", "interfaces__keychain")
+        .order_by(F("vrf__name").asc(nulls_first=True), "process_id")
+    )
+    ospf = [ospf_dict(i, referenced_policies) for i in ospf_instances]
+    isis_instances = (
+        ISISInstance.objects.filter(device=device)
+        .select_related("vrf", "keychain")
+        .prefetch_related("redistributions__policy", "interfaces__interface",
+                          "interfaces__keychain")
+        .order_by("process")
+    )
+    isis = [isis_dict(i, referenced_policies) for i in isis_instances]
+    for inst in (*instances, *ospf_instances, *isis_instances):
         if inst.vrf_id:
             vrfs[inst.vrf.name] = inst.vrf
+
+    # What an interfaces loop needs without a nested search: the IGP rows
+    # keyed by port name.
+    by_interface: dict[str, dict] = {}
+    for iface in device.interfaces.all():
+        by_interface[iface.name] = {
+            "vrf": iface.vrf.name if iface.vrf_id else None, "ospf": None, "isis": None,
+        }
+    for o in ospf:
+        for row in o["interfaces"]:
+            by_interface.setdefault(row["interface"], {"vrf": None, "ospf": None, "isis": None})
+            by_interface[row["interface"]]["ospf"] = {
+                "process_id": o["process_id"], "version": o["version"], **row,
+            }
+    for i in isis:
+        for row in i["interfaces"]:
+            by_interface.setdefault(row["interface"], {"vrf": None, "ospf": None, "isis": None})
+            by_interface[row["interface"]]["isis"] = {"process": i["process"], **row}
 
     out = {
         "vrfs": [vrf_dict(v) for _, v in sorted(vrfs.items())],
         "static_routes": [static_route_dict(r) for r in static_routes],
         "bgp": bgp,
+        "ospf": ospf,
+        "isis": isis,
+        "by_interface": dict(sorted(by_interface.items())),
         **_policies_closure(device.tenant_id, referenced_policies),
         "communities": [
             {"id": str(c.id), "value": c.value, "kind": c.kind, "name": c.name}

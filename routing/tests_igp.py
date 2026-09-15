@@ -1,0 +1,181 @@
+"""OSPF and IS-IS: an instance per device (per table and process for OSPF),
+areas as a tenant catalog, interfaces enrolled one per instance with their
+own knobs, a NET that has to read like one, and the IGP rows a template
+reaches by port name.
+"""
+from __future__ import annotations
+
+from django.contrib.auth import get_user_model
+from rest_framework.test import APITestCase
+
+from api.models import VRF, Device, DeviceType, Interface, Manufacturer, Site
+from api.status_registry import seed_builtin_statuses
+from core.models import Organization, Tenant
+
+from .models import ISISInstance, OSPFArea, OSPFInstance, RoutingKeychain, RoutingPolicy
+from .render import routing_context
+
+User = get_user_model()
+
+
+class _Base(APITestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        seed_builtin_statuses(self.tenant)
+        site = Site.objects.create(tenant=self.tenant, name="DC1")
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="C", slug="c")
+        dt = DeviceType.objects.create(tenant=self.tenant, manufacturer=mfr, model="X")
+        self.leaf = Device.objects.create(tenant=self.tenant, name="leaf1", device_type=dt, site=site)
+        self.spine = Device.objects.create(tenant=self.tenant, name="spine1", device_type=dt, site=site)
+        self.swp1 = Interface.objects.create(device=self.leaf, name="swp1")
+        self.swp2 = Interface.objects.create(device=self.leaf, name="swp2")
+        self.lo = Interface.objects.create(device=self.leaf, name="lo0")
+        self.far = Interface.objects.create(device=self.spine, name="swp1")
+        self.vrf = VRF.objects.create(tenant=self.tenant, name="CUST")
+        self.area0 = OSPFArea.objects.create(tenant=self.tenant, name="backbone", area_id="0")
+        self.policy = RoutingPolicy.objects.create(tenant=self.tenant, name="CONN-OUT")
+        self.key = RoutingKeychain.objects.create(tenant=self.tenant, name="ISIS-KEY")
+        admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _post(self, url, body):
+        return self.client.post(url, body, format="json")
+
+
+class OSPFTests(_Base):
+    def test_area_ids_normalise(self):
+        r = self._post("/api/routing/ospf-areas/", {"name": "dc", "area_id": "0.0.0.1"})
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["area_id"], "0.0.0.1")
+        r = self._post("/api/routing/ospf-areas/", {"name": "x", "area_id": "010"})
+        self.assertEqual(r.json()["area_id"], "10")
+        r = self._post("/api/routing/ospf-areas/", {"name": "y", "area_id": "nope"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_instance_with_redistribution_and_interfaces(self):
+        r = self._post("/api/routing/ospf-instances/", {
+            "device_id": str(self.leaf.id), "process_id": "UNDERLAY", "router_id": "10.0.0.11",
+            "reference_bandwidth": 100000, "passive_by_default": True,
+            "redistributions": [{"source": "connected", "policy_id": str(self.policy.id)}],
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        inst = r.json()
+        self.assertEqual(inst["redistributions"][0]["policy"]["name"], "CONN-OUT")
+        # Same process again in the same table: refused; a v3 one is fine.
+        r = self._post("/api/routing/ospf-instances/", {
+            "device_id": str(self.leaf.id), "process_id": "UNDERLAY",
+        })
+        self.assertEqual(r.status_code, 409)
+        r = self._post("/api/routing/ospf-instances/", {
+            "device_id": str(self.leaf.id), "process_id": "UNDERLAY", "version": 3,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        # Enrol two interfaces; one on another device is refused.
+        r = self._post("/api/routing/ospf-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp1.id),
+            "area_id": str(self.area0.id), "network_type": "point-to-point", "passive": False,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        r = self._post("/api/routing/ospf-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.lo.id),
+            "area_id": str(self.area0.id), "cost": 1,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        r = self._post("/api/routing/ospf-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.far.id),
+            "area_id": str(self.area0.id),
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("interface", r.json())
+        r = self._post("/api/routing/ospf-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp1.id),
+            "area_id": str(self.area0.id),
+        })
+        self.assertEqual(r.status_code, 409)
+        # Authentication needs a keychain.
+        r = self._post("/api/routing/ospf-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp2.id),
+            "area_id": str(self.area0.id), "authentication": "md5",
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("keychain", r.json())
+        body = self.client.get(f"/api/routing/ospf-instances/{inst['id']}/").json()
+        self.assertEqual(body["interface_count"], 2)
+        self.assertEqual([i["interface"]["name"] for i in body["interfaces"]], ["lo0", "swp1"])
+        rows = self.client.get(f"/api/routing/ospf-interfaces/?interface={self.swp1.id}").json()
+        self.assertEqual(rows["count"], 1)
+        area = self.client.get(f"/api/routing/ospf-areas/{self.area0.id}/").json()
+        self.assertEqual(area["interface_count"], 2)
+
+
+class ISISTests(_Base):
+    def test_net_is_checked_and_families_default(self):
+        r = self._post("/api/routing/isis-instances/", {
+            "device_id": str(self.leaf.id), "process": "UNDERLAY", "net": "49.0001.0000.0000.0011",
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("net", r.json())
+        r = self._post("/api/routing/isis-instances/", {
+            "device_id": str(self.leaf.id), "process": "UNDERLAY",
+            "net": " 49.0001.0000.0000.0011.00 ", "level": "2",
+            "authentication": "md5", "keychain_id": str(self.key.id),
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        inst = r.json()
+        self.assertEqual(inst["net"], "49.0001.0000.0000.0011.00")
+        r = self._post("/api/routing/isis-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp1.id),
+            "network_type": "point-to-point", "metric": 10,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["families"], ["ipv4"])
+        r = self._post("/api/routing/isis-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.lo.id),
+            "families": ["ipv6", "ipv4", "ipv4"], "passive": True,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["families"], ["ipv6", "ipv4"])
+        r = self._post("/api/routing/isis-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp2.id), "families": ["ipx"],
+        })
+        self.assertEqual(r.status_code, 400)
+        r = self._post("/api/routing/isis-instances/", {
+            "device_id": str(self.leaf.id), "process": "UNDERLAY", "net": "49.0001.0000.0000.0012.00",
+        })
+        self.assertEqual(r.status_code, 409)
+
+
+class RenderTests(_Base):
+    def test_igp_blocks_and_by_interface(self):
+        ospf = OSPFInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process_id="1", router_id="10.0.0.11",
+            passive_by_default=True,
+        )
+        ospf.interfaces.create(interface=self.swp1, area=self.area0, network_type="point-to-point",
+                               passive=False, cost=10)
+        ospf.interfaces.create(interface=self.lo, area=self.area0)
+        ospf.redistributions.create(source="connected", policy=self.policy)
+        isis = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="CORE", net="49.0001.0000.0000.0011.00",
+        )
+        isis.interfaces.create(interface=self.swp2, families=["ipv4", "ipv6"], metric=20)
+        ctx = routing_context(self.leaf)
+        o = ctx["ospf"][0]
+        self.assertEqual(o["process_id"], "1")
+        self.assertEqual(o["areas"], [{"area_id": "0", "name": "backbone", "kind": "normal"}])
+        self.assertEqual([i["interface"] for i in o["interfaces"]], ["lo0", "swp1"])
+        self.assertTrue(o["interfaces"][0]["passive"])   # instance default
+        self.assertFalse(o["interfaces"][1]["passive"])  # own value
+        self.assertEqual(o["redistribute"], [{"source": "connected", "policy": "CONN-OUT", "metric": None}])
+        i = ctx["isis"][0]
+        self.assertEqual(i["net"], "49.0001.0000.0000.0011.00")
+        self.assertEqual(i["interfaces"][0]["families"], ["ipv4", "ipv6"])
+        self.assertEqual(i["interfaces"][0]["level"], "1-2")  # instance's
+        self.assertEqual(ctx["by_interface"]["swp1"]["ospf"]["area"], "0")
+        self.assertIsNone(ctx["by_interface"]["swp1"]["isis"])
+        self.assertEqual(ctx["by_interface"]["swp2"]["isis"]["process"], "CORE")
+        self.assertEqual(list(ctx["policies"]), ["CONN-OUT"])
