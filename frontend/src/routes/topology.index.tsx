@@ -65,7 +65,10 @@ import {
   type TopoHidden,
 } from "@/components/topology/hidden"
 import { HiddenChip } from "@/components/hidden-chip"
-import { setHidden as withHidden } from "@/components/hidden-objects"
+import {
+  setHidden as withHidden,
+  useHideKeys,
+} from "@/components/hidden-objects"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
@@ -910,6 +913,31 @@ function TopologyPage() {
         .map((n) => n.id)
     )
   }, [search, graph])
+
+  // H hides the selected card (or, when grouped, the selected site or
+  // location) as its eye would; Shift+H shows all.
+  const selNodeId = selNode?.device_id ? `dev:${selNode.device_id}` : null
+  useHideKeys(
+    !logical && selNodeId
+      ? () => {
+          setHiddenNodes(withHidden(hidden, "devices", selNodeId, true))
+          clearSel()
+        }
+      : !logical && selGroup
+        ? () => {
+            setHiddenNodes(
+              withHidden(
+                hidden,
+                selGroup.kind === "site" ? "sites" : "locations",
+                selGroup.name,
+                true
+              )
+            )
+            clearSel()
+          }
+        : null,
+    () => setHiddenNodes(NO_TOPO_HIDDEN)
+  )
 
   // Monitoring roll-up for the sidebar's chips - the graph payload carries
   // none, and the api app stays decoupled from the monitoring app.
@@ -1831,9 +1859,7 @@ function TopologyPage() {
                     onClick={() => {
                       const id = menu.nodeId!
                       setMenu(null)
-                      setHiddenNodes(
-                        withHidden<keyof TopoHidden>(hidden, "devices", id, true)
-                      )
+                      setHiddenNodes(withHidden(hidden, "devices", id, true))
                     }}
                   >
                     Remove from view

@@ -36,7 +36,7 @@ export function isHidden<TKey extends string>(
  * old one untouched, so it slots into a state setter. */
 export function setHidden<TKey extends string>(
   h: HiddenSet<TKey>,
-  key: TKey,
+  key: NoInfer<TKey>,
   value: string,
   hidden: boolean
 ): HiddenSet<TKey> {
@@ -96,4 +96,35 @@ export function useStoredHidden<TKey extends string>(
   }, [storageKey, hidden])
   const set = useCallback((next: HiddenSet<TKey>) => setHiddenState(next), [])
   return [hidden, set]
+}
+
+/** `H` hides what is selected, `Shift+H` shows everything - the same two
+ * keys on every map. `hide` is null while nothing hideable is selected.
+ * Skipped while typing in a field, and left alone with a modifier held so
+ * browser shortcuts keep working. */
+export function useHideKeys(hide: (() => void) | null, showAll: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "h" && e.key !== "H") return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const el = e.target as HTMLElement | null
+      const tag = el?.tagName
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el?.isContentEditable
+      )
+        return
+      if (e.shiftKey) {
+        e.preventDefault()
+        showAll()
+      } else if (hide) {
+        e.preventDefault()
+        hide()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [hide, showAll])
 }

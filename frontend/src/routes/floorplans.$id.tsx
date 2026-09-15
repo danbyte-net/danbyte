@@ -132,11 +132,12 @@ import {
 import { ObjectsSidebar } from "@/components/floorplan/objects-sidebar"
 import {
   type FloorHidden,
+  NO_FLOOR_HIDDEN,
   readFloorHidden,
   visibleTiles as pickVisibleTiles,
 } from "@/components/floorplan/hidden"
 import { HiddenChip } from "@/components/hidden-chip"
-import { hiddenCount } from "@/components/hidden-objects"
+import { hiddenCount, useHideKeys } from "@/components/hidden-objects"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { RackElevation } from "@/components/rack-elevation"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -992,6 +993,24 @@ function FloorPlanPage() {
       return null
     })
   }, [mode, createWall.mutate])
+
+  // H hides the selected tile(s) as their eyes would; Shift+H shows all.
+  const hideKeyIds = [...(selectedId ? [selectedId] : []), ...multiSel].filter(
+    (id) => !hiddenTileIds.has(id)
+  )
+  useHideKeys(
+    hideKeyIds.length && !view3d
+      ? () => {
+          setHiddenPref({
+            ...hidden,
+            tiles: [...new Set([...hidden.tiles, ...hideKeyIds])],
+          })
+          setSelectedId(null)
+          setMultiSel(new Set())
+        }
+      : null,
+    () => setHiddenPref(NO_FLOOR_HIDDEN)
+  )
 
   // Keyboard: Delete removes the selection, Escape disarms/deselects,
   // arrows nudge. Skipped while typing in a field.

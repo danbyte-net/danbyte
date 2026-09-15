@@ -199,6 +199,10 @@ The hidden set saves with the view, and the default map remembers it per
 browser. Views saved before the eyes existed hold their removed cards under
 the same model.
 
+Keyboard: ++h++ hides the selected card (or, on a grouped map, the selected
+site or location); ++shift+h++ shows everything again. The same two keys
+work on the site map and the floor plans.
+
 (In a custom map, *Remove from map* is the different thing next to *Remove
 from view*: it takes the device out of the hand-picked set the map is built
 from.)

@@ -95,7 +95,8 @@ The page is a clone of the floor-plan editor's shell:
     and the choice is remembered per browser. This is finer-grained than
     **View**, which switches whole kinds on and off. The
     [floor plans](floor-plans.md) and the [topology map](topology.md) have
-    the same eyes.
+    the same eyes. Keyboard: ++h++ hides the selected site, or the selected
+    device's role; ++shift+h++ shows all.
 
 Placed markers are fully editable from the inspector: rename, describe,
 link/unlink a device, tune FOV, or delete (or press Delete in Edit mode).

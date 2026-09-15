@@ -573,7 +573,8 @@ cable runs, just the trays, or both.
   until it is shown again. What is hidden is part of the plan (saved with its
   other view settings by anyone who can edit it), because "the plan without
   the old rack row" is part of how a plan is shaped for its readers; hiding
-  never changes the plan's contents.
+  never changes the plan's contents. Keyboard: ++h++ hides the selected
+  tile(s); ++shift+h++ shows all.
 - **Show on floor plan** - the Rack and Device detail pages carry a button
   that opens the plan zoomed onto the tile; placed on several plans (its own
   tile and its rack's, or a cloned what-if plan), the button becomes a menu

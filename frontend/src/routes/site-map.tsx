@@ -69,10 +69,15 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   MAP_HIDDEN_KEYS,
   MapObjectsSidebar,
+  NO_HIDDEN,
   type MapSelected,
   type MarkerTypeOption,
 } from "@/components/site-map/map-sidebar"
-import { useStoredHidden } from "@/components/hidden-objects"
+import {
+  setHidden as withHidden,
+  useHideKeys,
+  useStoredHidden,
+} from "@/components/hidden-objects"
 import {
   ConnectionInspector,
   DeviceInspector,
@@ -1281,6 +1286,25 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     return () => window.removeEventListener("keydown", onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, selMarker, drawWaypoints, routeEditMode])
+
+  // H hides the selection the way its eye would - a site, or a device's
+  // role (devices hide by role here); Shift+H shows all.
+  useHideKeys(
+    selSite
+      ? () => setHidden(withHidden(hidden, "sites", selSite.id, true))
+      : selDevice
+        ? () =>
+            setHidden(
+              withHidden(
+                hidden,
+                "roles",
+                selDevice.role?.name ?? "No role",
+                true
+              )
+            )
+        : null,
+    () => setHidden(NO_HIDDEN)
+  )
 
   // Project the selected object into container coordinates for the popover.
   useEffect(() => {
