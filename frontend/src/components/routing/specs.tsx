@@ -5,6 +5,7 @@ import type {
   Community,
   CommunityList,
   CommunityListRule,
+  OSPFArea,
   PrefixList,
   PrefixListRule,
   RoutingKeychain,
@@ -18,6 +19,7 @@ import {
   buildBGPPeerGroupColumns,
   buildCommunityColumns,
   buildCommunityListColumns,
+  buildOSPFAreaColumns,
   buildPrefixListColumns,
   buildRoutingKeychainColumns,
   buildRoutingPolicyColumns,
@@ -406,5 +408,55 @@ export const peerGroupDetail: RoutingDetailSpec<BGPPeerGroup> = {
       value: <span className="num">{r.session_count}</span>,
     },
     ...knobRows(r, "Default"),
+  ],
+}
+
+export const ospfAreaList: RoutingListSpec<OSPFArea> = {
+  title: "OSPF areas",
+  objectType: "ospfarea",
+  endpoint: "/api/routing/ospf-areas/",
+  queryKey: "ospf-areas",
+  tableId: "ospf-areas",
+  newTo: "/ospf-areas/new",
+  addLabel: "Add area",
+  searchPlaceholder: "Filter areas…",
+  searchText: (r) => `${r.name} ${r.area_id} ${r.description}`,
+  flexColumn: "description",
+  label: (r) => r.name,
+  columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
+    buildOSPFAreaColumns({
+      humanIds,
+      actions: {
+        editTo: "/ospf-areas/$id/edit",
+        editParams: (r) => ({ id: r.id }),
+        canEdit: () => canEdit,
+        onDelete,
+        canDelete: () => canDelete,
+      },
+    }),
+}
+
+export const ospfAreaDetail: RoutingDetailSpec<OSPFArea> = {
+  objectType: "ospfarea",
+  appLabel: "routing.ospfarea",
+  endpoint: "/api/routing/ospf-areas/",
+  queryKey: "ospf-area",
+  backTo: "/ospf-areas",
+  backLabel: "OSPF areas",
+  editTo: "/ospf-areas/$id/edit",
+  title: (r) => r.name,
+  subtitle: (r) =>
+    `area ${r.area_id} · ${r.kind_display} · ${r.interface_count} interfaces`,
+  overview: (r) => [
+    {
+      label: "Area ID",
+      value: <span className="num font-mono">{r.area_id}</span>,
+      copy: r.area_id,
+    },
+    { label: "Kind", value: r.kind_display },
+    {
+      label: "Interfaces",
+      value: <span className="num">{r.interface_count}</span>,
+    },
   ],
 }

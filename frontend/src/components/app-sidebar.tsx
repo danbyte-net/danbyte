@@ -451,6 +451,12 @@ const sections: NavSection[] = [
             objectType: "bgppeergroup",
           },
           {
+            title: "OSPF areas",
+            url: "/ospf-areas",
+            icon: Network,
+            objectType: "ospfarea",
+          },
+          {
             title: "Static routes",
             url: "/static-routes",
             icon: RouteIcon,

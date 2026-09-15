@@ -4360,6 +4360,92 @@ export interface BGPSession extends BGPPeerKnobs {
   updated_at: string
 }
 
+export interface OSPFArea extends RoutingCatalogBase {
+  area_id: string
+  kind: "normal" | "stub" | "totally-stub" | "nssa" | "totally-nssa"
+  kind_display: string
+  interface_count: number
+}
+
+export interface OSPFAreaMini {
+  id: string
+  name: string
+  area_id: string
+  kind: OSPFArea["kind"]
+}
+
+export interface OSPFInterface {
+  id: string
+  interface: { id: string; name: string; device: DeviceMini }
+  area: OSPFAreaMini
+  cost: number | null
+  network_type: "" | "broadcast" | "point-to-point" | "nbma" | "point-to-multipoint"
+  /** Null = the instance's passive_by_default. */
+  passive: boolean | null
+  priority: number | null
+  hello: number | null
+  dead: number | null
+  bfd: boolean
+  mtu_ignore: boolean
+  authentication: "none" | "simple" | "md5" | "sha"
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+}
+
+interface IGPInstanceBase {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  bfd: boolean
+  redistributions: Redistribution[]
+  interface_count: number
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface OSPFInstance extends IGPInstanceBase {
+  process_id: string
+  version: 2 | 3
+  router_id: string
+  reference_bandwidth: number | null
+  passive_by_default: boolean
+  default_originate: boolean
+  interfaces: OSPFInterface[]
+}
+
+export interface ISISInterface {
+  id: string
+  interface: { id: string; name: string; device: DeviceMini }
+  families: ("ipv4" | "ipv6")[]
+  level: "" | "1" | "2" | "1-2"
+  metric: number | null
+  metric_l2: number | null
+  network_type: "" | "point-to-point" | "broadcast"
+  passive: boolean | null
+  hello_interval: number | null
+  hello_multiplier: number | null
+  bfd: boolean
+  authentication: "none" | "text" | "md5"
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+}
+
+export interface ISISInstance extends IGPInstanceBase {
+  process: string
+  net: string
+  level: "1" | "2" | "1-2"
+  metric_style: "wide" | "narrow" | "transition"
+  authentication: "none" | "text" | "md5"
+  keychain: { id: string; name: string; algorithm: string } | null
+  interfaces: ISISInterface[]
+}
+
 export interface StaticRoute {
   id: string
   numid: number | null

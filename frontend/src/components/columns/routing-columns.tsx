@@ -7,6 +7,7 @@ import type {
   BGPSession,
   Community,
   CommunityList,
+  OSPFArea,
   PrefixList,
   RoutingKeychain,
   RoutingPolicy,
@@ -960,6 +961,75 @@ export function buildBGPSessionColumns<T extends BGPSession = BGPSession>(
             }),
           },
         },
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── OSPF areas ──────────────────────────────────────────────────────────────
+
+export type OSPFAreaColumnId =
+  | "numid"
+  | "name"
+  | "area_id"
+  | "kind"
+  | "interface_count"
+  | "description"
+  | "tags"
+const OSPF_AREA_ORDER: OSPFAreaColumnId[] = [
+  "numid",
+  "name",
+  "area_id",
+  "kind",
+  "interface_count",
+  "description",
+  "tags",
+]
+
+export function buildOSPFAreaColumns<T extends OSPFArea = OSPFArea>(
+  opts: CommonOpts<T, OSPFAreaColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, OSPFAreaColumnId>(
+    OSPF_AREA_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      name: () => nameColumn<T>("/ospf-areas/$id", "routing.ospfarea"),
+      area_id: () => ({
+        id: "area_id",
+        accessorKey: "area_id",
+        header: ({ column }) => <SortHeader column={column} label="Area" />,
+        cell: ({ row }) => (
+          <span className="num font-mono text-xs">{row.original.area_id}</span>
+        ),
+      }),
+      kind: () => ({
+        id: "kind",
+        accessorKey: "kind",
+        header: "Kind",
+        cell: ({ row }) => (
+          <span className="text-xs">{row.original.kind_display}</span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Kind",
+            get: (r: T) => r.kind,
+            formatValue: (_v, sample) => ({ label: sample.kind_display }),
+          },
+        },
+      }),
+      interface_count: () => ({
+        id: "interface_count",
+        accessorKey: "interface_count",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Interfaces" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.interface_count}</span>
+        ),
       }),
       description: () => descriptionColumn<T>(),
       tags: tags<T>(opts),

@@ -80,6 +80,7 @@ export const TABLES: TableMeta[] = [
   { id: "bgp-sessions", label: "BGP sessions", area: "Routing", ioType: "bgpsession" },
   { id: "bgp-peer-groups", label: "BGP peer groups", area: "Routing", ioType: "bgppeergroup" },
   { id: "device-bgp-sessions", label: "BGP sessions (device)", area: "Routing" },
+  { id: "ospf-areas", label: "OSPF areas", area: "Routing", ioType: "ospfarea" },
   { id: "sites", label: "Sites", area: "Organization", ioType: "site" },
   { id: "tenants", label: "Tenants", area: "Organization" },
   {

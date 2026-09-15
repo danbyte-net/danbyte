@@ -64,6 +64,19 @@ The shared knobs (`_PeerKnobs`): `address_families` JSON list, `import_policy`,
 instance (`bfd`), merges `extra`, and derives `update_source` from the local
 address's interface.
 
+## OSPF and IS-IS
+
+| Model | Fields | Unique |
+|---|---|---|
+| `OSPFArea` | catalog; `area_id` (normalised: a number stays a number, a quad is a quad), `kind` | `(tenant, name)` |
+| `OSPFInstance` | `device`, `vrf`, `process_id` text, `version` 2/3, `router_id`, `reference_bandwidth`, `passive_by_default`, `default_originate`, `bfd`, `status` (`routinginstance`), `description`, `extra`; redistribution rows | `(device, vrf, version, process_id)` |
+| `OSPFInterface` | `instance`, `interface` (same device), `area` FK, `cost`, `network_type`, `passive` (null = instance default), `priority`, `hello`, `dead`, `bfd`, `mtu_ignore`, `authentication` + `keychain` | `(instance, interface)` |
+| `ISISInstance` | `device`, `vrf`, `process`, `net` (checked), `level`, `metric_style`, `bfd`, `authentication` + `keychain`, `status`, `description`, `extra`; redistribution rows | `(device, process)` |
+| `ISISInterface` | `instance`, `interface`, `families` JSON (`ipv4`/`ipv6`, defaults to ipv4), `level`, `metric`, `metric_l2`, `network_type`, `passive`, `hello_interval`, `hello_multiplier`, `bfd`, `authentication` + `keychain` | `(instance, interface)` |
+
+`Redistribution` has exactly one parent - `bgp_af`, `ospf_instance` or
+`isis_instance` (CheckConstraint).
+
 ## Rendering
 
 `routing/render.py:routing_context(device)` builds the `routing` block the

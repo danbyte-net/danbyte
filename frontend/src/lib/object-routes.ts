@@ -36,6 +36,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "routing.staticroute": "/static-routes/$id",
   "routing.bgpsession": "/bgp-sessions/$id",
   "routing.bgppeergroup": "/bgp-peer-groups/$id",
+  "routing.ospfarea": "/ospf-areas/$id",
   // Renamed model: rows written as api.IPStatus predate api.Status.
   "api.ipstatus": "/statuses/$id",
   "api.l2vpn": "/l2vpns/$id",

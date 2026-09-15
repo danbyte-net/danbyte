@@ -53,6 +53,7 @@ import {
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
+import { InterfaceRoutingCard } from "@/components/routing/interface-routing-card"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/interfaces/$id")({
@@ -704,6 +705,7 @@ function InterfaceOverview({
           {bundle && <KvCard title="Bundle" rows={bundle} />}
           <KvCard title="Switching" rows={switching} />
           <KvCard title="Relationships" rows={relationships} />
+          <InterfaceRoutingCard interfaceId={i.id} deviceId={i.device.id} />
           {i.ip_addresses.length > 0 && (
             // The addresses at a glance - the IP tab stays where they're
             // assigned and removed.

@@ -45,6 +45,7 @@ import { Route as PowerPanelsRouteImport } from './routes/power-panels'
 import { Route as PowerFeedsRouteImport } from './routes/power-feeds'
 import { Route as PortUtilizationRouteImport } from './routes/port-utilization'
 import { Route as PermissionsRouteImport } from './routes/permissions'
+import { Route as OspfAreasRouteImport } from './routes/ospf-areas'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MonitoringEnginesRouteImport } from './routes/monitoring-engines'
 import { Route as MonitoringRouteImport } from './routes/monitoring'
@@ -141,6 +142,7 @@ import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
 import { Route as PlanningIndexRouteImport } from './routes/planning.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
+import { Route as OspfAreasIndexRouteImport } from './routes/ospf-areas.index'
 import { Route as NatRulesIndexRouteImport } from './routes/nat-rules.index'
 import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
 import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
@@ -298,6 +300,8 @@ import { Route as PlatformGroupsIdRouteImport } from './routes/platform-groups.$
 import { Route as PlanningCalendarRouteImport } from './routes/planning.calendar'
 import { Route as PlanningBoardIdRouteImport } from './routes/planning.$boardId'
 import { Route as PermissionsNewRouteImport } from './routes/permissions.new'
+import { Route as OspfAreasNewRouteImport } from './routes/ospf-areas.new'
+import { Route as OspfAreasIdRouteImport } from './routes/ospf-areas.$id'
 import { Route as NatRulesIdRouteImport } from './routes/nat-rules.$id'
 import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
 import { Route as ModuleTypesIdRouteImport } from './routes/module-types.$id'
@@ -428,6 +432,7 @@ import { Route as PlatformsIdEditRouteImport } from './routes/platforms.$id_.edi
 import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-groups.$id_.edit'
 import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
 import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
+import { Route as OspfAreasIdEditRouteImport } from './routes/ospf-areas.$id_.edit'
 import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
 import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
 import { Route as MaintenanceIdEditRouteImport } from './routes/maintenance.$id_.edit'
@@ -650,6 +655,11 @@ const PortUtilizationRoute = PortUtilizationRouteImport.update({
 const PermissionsRoute = PermissionsRouteImport.update({
   id: '/permissions',
   path: '/permissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OspfAreasRoute = OspfAreasRouteImport.update({
+  id: '/ospf-areas',
+  path: '/ospf-areas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotificationsRoute = NotificationsRouteImport.update({
@@ -1132,6 +1142,11 @@ const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PermissionsRoute,
+} as any)
+const OspfAreasIndexRoute = OspfAreasIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OspfAreasRoute,
 } as any)
 const NatRulesIndexRoute = NatRulesIndexRouteImport.update({
   id: '/nat-rules/',
@@ -1920,6 +1935,16 @@ const PermissionsNewRoute = PermissionsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => PermissionsRoute,
 } as any)
+const OspfAreasNewRoute = OspfAreasNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => OspfAreasRoute,
+} as any)
+const OspfAreasIdRoute = OspfAreasIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => OspfAreasRoute,
+} as any)
 const NatRulesIdRoute = NatRulesIdRouteImport.update({
   id: '/nat-rules/$id',
   path: '/nat-rules/$id',
@@ -2570,6 +2595,11 @@ const PSlugSplatRoute = PSlugSplatRouteImport.update({
   path: '/p/$slug/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OspfAreasIdEditRoute = OspfAreasIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => OspfAreasRoute,
+} as any)
 const ModuleTypesIdEditRoute = ModuleTypesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2837,6 +2867,7 @@ export interface FileRoutesByFullPath {
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
   '/notifications': typeof NotificationsRoute
+  '/ospf-areas': typeof OspfAreasRouteWithChildren
   '/permissions': typeof PermissionsRouteWithChildren
   '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
@@ -2965,6 +2996,8 @@ export interface FileRoutesByFullPath {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/nat-rules/$id': typeof NatRulesIdRoute
+  '/ospf-areas/$id': typeof OspfAreasIdRoute
+  '/ospf-areas/new': typeof OspfAreasNewRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRoute
   '/planning/calendar': typeof PlanningCalendarRoute
@@ -3122,6 +3155,7 @@ export interface FileRoutesByFullPath {
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/nat-rules/': typeof NatRulesIndexRoute
+  '/ospf-areas/': typeof OspfAreasIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -3210,6 +3244,7 @@ export interface FileRoutesByFullPath {
   '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
+  '/ospf-areas/$id/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
@@ -3364,6 +3399,8 @@ export interface FileRoutesByTo {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/nat-rules/$id': typeof NatRulesIdRoute
+  '/ospf-areas/$id': typeof OspfAreasIdRoute
+  '/ospf-areas/new': typeof OspfAreasNewRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRoute
   '/planning/calendar': typeof PlanningCalendarRoute
@@ -3521,6 +3558,7 @@ export interface FileRoutesByTo {
   '/manufacturers': typeof ManufacturersIndexRoute
   '/module-types': typeof ModuleTypesIndexRoute
   '/nat-rules': typeof NatRulesIndexRoute
+  '/ospf-areas': typeof OspfAreasIndexRoute
   '/permissions': typeof PermissionsIndexRoute
   '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
@@ -3609,6 +3647,7 @@ export interface FileRoutesByTo {
   '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
+  '/ospf-areas/$id/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id/edit': typeof PlatformGroupsIdEditRoute
@@ -3701,6 +3740,7 @@ export interface FileRoutesById {
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
   '/notifications': typeof NotificationsRoute
+  '/ospf-areas': typeof OspfAreasRouteWithChildren
   '/permissions': typeof PermissionsRouteWithChildren
   '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
@@ -3829,6 +3869,8 @@ export interface FileRoutesById {
   '/module-types/$id': typeof ModuleTypesIdRoute
   '/module-types/new': typeof ModuleTypesNewRoute
   '/nat-rules/$id': typeof NatRulesIdRoute
+  '/ospf-areas/$id': typeof OspfAreasIdRoute
+  '/ospf-areas/new': typeof OspfAreasNewRoute
   '/permissions/new': typeof PermissionsNewRoute
   '/planning/$boardId': typeof PlanningBoardIdRoute
   '/planning/calendar': typeof PlanningCalendarRoute
@@ -3986,6 +4028,7 @@ export interface FileRoutesById {
   '/manufacturers/': typeof ManufacturersIndexRoute
   '/module-types/': typeof ModuleTypesIndexRoute
   '/nat-rules/': typeof NatRulesIndexRoute
+  '/ospf-areas/': typeof OspfAreasIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -4074,6 +4117,7 @@ export interface FileRoutesById {
   '/maintenance/$id_/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id_/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id_/edit': typeof ModuleTypesIdEditRoute
+  '/ospf-areas/$id_/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id_/edit': typeof PermissionsIdEditRoute
   '/platform-groups/$id_/edit': typeof PlatformGroupsIdEditRoute
@@ -4167,6 +4211,7 @@ export interface FileRouteTypes {
     | '/monitoring'
     | '/monitoring-engines'
     | '/notifications'
+    | '/ospf-areas'
     | '/permissions'
     | '/port-utilization'
     | '/power-feeds'
@@ -4295,6 +4340,8 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/nat-rules/$id'
+    | '/ospf-areas/$id'
+    | '/ospf-areas/new'
     | '/permissions/new'
     | '/planning/$boardId'
     | '/planning/calendar'
@@ -4452,6 +4499,7 @@ export interface FileRouteTypes {
     | '/manufacturers/'
     | '/module-types/'
     | '/nat-rules/'
+    | '/ospf-areas/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -4540,6 +4588,7 @@ export interface FileRouteTypes {
     | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
+    | '/ospf-areas/$id/edit'
     | '/p/$slug/$'
     | '/permissions/$id/edit'
     | '/platform-groups/$id/edit'
@@ -4694,6 +4743,8 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/nat-rules/$id'
+    | '/ospf-areas/$id'
+    | '/ospf-areas/new'
     | '/permissions/new'
     | '/planning/$boardId'
     | '/planning/calendar'
@@ -4851,6 +4902,7 @@ export interface FileRouteTypes {
     | '/manufacturers'
     | '/module-types'
     | '/nat-rules'
+    | '/ospf-areas'
     | '/permissions'
     | '/planning'
     | '/platform-groups'
@@ -4939,6 +4991,7 @@ export interface FileRouteTypes {
     | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
+    | '/ospf-areas/$id/edit'
     | '/p/$slug/$'
     | '/permissions/$id/edit'
     | '/platform-groups/$id/edit'
@@ -5030,6 +5083,7 @@ export interface FileRouteTypes {
     | '/monitoring'
     | '/monitoring-engines'
     | '/notifications'
+    | '/ospf-areas'
     | '/permissions'
     | '/port-utilization'
     | '/power-feeds'
@@ -5158,6 +5212,8 @@ export interface FileRouteTypes {
     | '/module-types/$id'
     | '/module-types/new'
     | '/nat-rules/$id'
+    | '/ospf-areas/$id'
+    | '/ospf-areas/new'
     | '/permissions/new'
     | '/planning/$boardId'
     | '/planning/calendar'
@@ -5315,6 +5371,7 @@ export interface FileRouteTypes {
     | '/manufacturers/'
     | '/module-types/'
     | '/nat-rules/'
+    | '/ospf-areas/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -5403,6 +5460,7 @@ export interface FileRouteTypes {
     | '/maintenance/$id_/edit'
     | '/manufacturers/$id_/edit'
     | '/module-types/$id_/edit'
+    | '/ospf-areas/$id_/edit'
     | '/p/$slug/$'
     | '/permissions/$id_/edit'
     | '/platform-groups/$id_/edit'
@@ -5495,6 +5553,7 @@ export interface RootRouteChildren {
   MonitoringRoute: typeof MonitoringRoute
   MonitoringEnginesRoute: typeof MonitoringEnginesRoute
   NotificationsRoute: typeof NotificationsRoute
+  OspfAreasRoute: typeof OspfAreasRouteWithChildren
   PermissionsRoute: typeof PermissionsRouteWithChildren
   PortUtilizationRoute: typeof PortUtilizationRoute
   PowerFeedsRoute: typeof PowerFeedsRouteWithChildren
@@ -5884,6 +5943,13 @@ declare module '@tanstack/react-router' {
       path: '/permissions'
       fullPath: '/permissions'
       preLoaderRoute: typeof PermissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ospf-areas': {
+      id: '/ospf-areas'
+      path: '/ospf-areas'
+      fullPath: '/ospf-areas'
+      preLoaderRoute: typeof OspfAreasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notifications': {
@@ -6557,6 +6623,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/permissions/'
       preLoaderRoute: typeof PermissionsIndexRouteImport
       parentRoute: typeof PermissionsRoute
+    }
+    '/ospf-areas/': {
+      id: '/ospf-areas/'
+      path: '/'
+      fullPath: '/ospf-areas/'
+      preLoaderRoute: typeof OspfAreasIndexRouteImport
+      parentRoute: typeof OspfAreasRoute
     }
     '/nat-rules/': {
       id: '/nat-rules/'
@@ -7657,6 +7730,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PermissionsNewRouteImport
       parentRoute: typeof PermissionsRoute
     }
+    '/ospf-areas/new': {
+      id: '/ospf-areas/new'
+      path: '/new'
+      fullPath: '/ospf-areas/new'
+      preLoaderRoute: typeof OspfAreasNewRouteImport
+      parentRoute: typeof OspfAreasRoute
+    }
+    '/ospf-areas/$id': {
+      id: '/ospf-areas/$id'
+      path: '/$id'
+      fullPath: '/ospf-areas/$id'
+      preLoaderRoute: typeof OspfAreasIdRouteImport
+      parentRoute: typeof OspfAreasRoute
+    }
     '/nat-rules/$id': {
       id: '/nat-rules/$id'
       path: '/nat-rules/$id'
@@ -8567,6 +8654,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PSlugSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ospf-areas/$id_/edit': {
+      id: '/ospf-areas/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ospf-areas/$id/edit'
+      preLoaderRoute: typeof OspfAreasIdEditRouteImport
+      parentRoute: typeof OspfAreasRoute
+    }
     '/module-types/$id_/edit': {
       id: '/module-types/$id_/edit'
       path: '/$id/edit'
@@ -9465,6 +9559,24 @@ const ModuleTypesRouteWithChildren = ModuleTypesRoute._addFileChildren(
   ModuleTypesRouteChildren,
 )
 
+interface OspfAreasRouteChildren {
+  OspfAreasIdRoute: typeof OspfAreasIdRoute
+  OspfAreasNewRoute: typeof OspfAreasNewRoute
+  OspfAreasIndexRoute: typeof OspfAreasIndexRoute
+  OspfAreasIdEditRoute: typeof OspfAreasIdEditRoute
+}
+
+const OspfAreasRouteChildren: OspfAreasRouteChildren = {
+  OspfAreasIdRoute: OspfAreasIdRoute,
+  OspfAreasNewRoute: OspfAreasNewRoute,
+  OspfAreasIndexRoute: OspfAreasIndexRoute,
+  OspfAreasIdEditRoute: OspfAreasIdEditRoute,
+}
+
+const OspfAreasRouteWithChildren = OspfAreasRoute._addFileChildren(
+  OspfAreasRouteChildren,
+)
+
 interface PermissionsRouteChildren {
   PermissionsNewRoute: typeof PermissionsNewRoute
   PermissionsIndexRoute: typeof PermissionsIndexRoute
@@ -10095,6 +10207,7 @@ const rootRouteChildren: RootRouteChildren = {
   MonitoringRoute: MonitoringRoute,
   MonitoringEnginesRoute: MonitoringEnginesRoute,
   NotificationsRoute: NotificationsRoute,
+  OspfAreasRoute: OspfAreasRouteWithChildren,
   PermissionsRoute: PermissionsRouteWithChildren,
   PortUtilizationRoute: PortUtilizationRoute,
   PowerFeedsRoute: PowerFeedsRouteWithChildren,

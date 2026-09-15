@@ -38,6 +38,7 @@ import {
   BGPSessionForm,
 } from "./bgp-forms"
 import { RoutingDeleteDialog } from "./catalog-page"
+import { ISISSection, OSPFSection } from "./device-igp-section"
 import { StaticRouteForm } from "./object-forms"
 
 // A device's Routing tab: what the box routes with. Static routes today;
@@ -113,6 +114,8 @@ export function DeviceRoutingPanel({
   return (
     <div className="grid gap-8">
       <BGPSection device={device} />
+      <OSPFSection device={device} />
+      <ISISSection device={device} />
       <Section
         title="Static routes"
         count={rows.length}
@@ -419,7 +422,7 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-6 w-6"
+                              className="h-7 w-7"
                               onClick={() =>
                                 setDialog({
                                   kind: "af",
@@ -429,20 +432,20 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
                               }
                               aria-label="Edit address family"
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
                           {canDo("bgpaddressfamily", "delete") && (
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
                               onClick={() =>
                                 setDeleting({ kind: "af", item: af })
                               }
                               aria-label="Delete address family"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
                         </span>

@@ -94,6 +94,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/routing-keychains": "features/routing/",
   "/bgp-sessions": "features/routing/",
   "/bgp-peer-groups": "features/routing/",
+  "/ospf-areas": "features/routing/",
   "/monitoring": "features/monitoring/",
   "/monitoring-engines": "features/monitoring/",
   "/watched-endpoints": "features/monitoring/",

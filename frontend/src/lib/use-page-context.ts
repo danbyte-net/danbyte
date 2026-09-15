@@ -37,6 +37,7 @@ const ROUTE_TYPES: Record<string, string> = {
   "routing-keychains": "routing keychain",
   "bgp-sessions": "BGP session",
   "bgp-peer-groups": "BGP peer group",
+  "ospf-areas": "OSPF area",
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

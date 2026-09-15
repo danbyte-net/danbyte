@@ -37,6 +37,11 @@ export const ROUTING_OBJECT_TYPES = {
   bgpaddressfamily: "routing.bgpaddressfamily",
   bgppeergroup: "routing.bgppeergroup",
   bgpsession: "routing.bgpsession",
+  ospfarea: "routing.ospfarea",
+  ospfinstance: "routing.ospfinstance",
+  ospfinterface: "routing.ospfinterface",
+  isisinstance: "routing.isisinstance",
+  isisinterface: "routing.isisinterface",
 } as const
 
 /** Save a routing object through the plan-aware helper; invalidates the

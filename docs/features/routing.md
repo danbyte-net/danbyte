@@ -160,6 +160,39 @@ effective settings copied - and links the two, so an iBGP pair is two
 clicks. It needs the peer device, this side's local address and a far
 address IPAM has on that device.
 
+## OSPF
+
+**OSPF areas** (Routing → OSPF areas) are a tenant catalog: the backbone and
+the areas behind it, each with an ID (`0` or `0.0.0.0` - a plain number
+stays a number, a dotted quad is normalised) and a kind (normal, stub,
+totally stubby, NSSA, totally NSSA).
+
+An **OSPF instance** lives on a device's Routing tab: the process (a number
+on IOS, a name on NX-OS and FRR), the version (v2/v3), the VRF, router ID,
+reference bandwidth, *passive by default*, default-originate, BFD, and what
+it redistributes. One instance per device, table, version and process.
+
+Interfaces **enrol** in an instance from its card - one row per port, with
+the area, cost, network type, passive (blank = the instance's default),
+priority, hello/dead timers, BFD, MTU-ignore, and authentication with a
+keychain. A port enrols in an instance once; a port on another device is
+refused.
+
+## IS-IS
+
+An **IS-IS instance** has a process name, the **NET** (checked to read like
+one - `49.0001.0000.0000.0011.00`), the level (1, 2, 1-2), metric style,
+BFD, area authentication with a keychain, and redistribution. One per
+device and process.
+
+Interfaces enrol with their **families** (`ipv4`, `ipv6` - FRR needs `ip
+router isis` per family), a level override, metric (and an L2 metric when
+the levels differ), network type, passive, hello interval and multiplier,
+BFD, and hello authentication.
+
+An interface's own page shows the OSPF and IS-IS rows it sits in, and any
+unnumbered BGP session on it, under **Routing**.
+
 ## Rendering a config
 
 Every device's render context carries a `routing` block, alongside `device`,
@@ -180,6 +213,17 @@ routing:
                                ebgp_multihop, update_source, next_hop_self, route_reflector_client,
                                send_community, keepalive, hold_time, keychain, extra}],
                    peer_groups: [{name, ...}]}]      # only the groups this instance's sessions use
+  ospf:          [{vrf, process_id, version, router_id, reference_bandwidth, passive_by_default,
+                   default_originate, bfd, redistribute: [...],
+                   areas: [{area_id, name, kind}],
+                   interfaces: [{interface, area, cost, network_type, passive, priority, hello, dead,
+                                 bfd, mtu_ignore, authentication, keychain}]}]
+  isis:          [{vrf, process, net, level, metric_style, bfd, authentication, keychain,
+                   redistribute: [...],
+                   interfaces: [{interface, families, level, metric, metric_l2, network_type, passive,
+                                 hello_interval, hello_multiplier, bfd, authentication, keychain}]}]
+  by_interface:  {NAME: {vrf, ospf: {process_id, version, area, cost, ...} | null,
+                         isis: {process, families, level, metric, ...} | null}}
   policies:      {NAME: {rules: [{sequence, action, match: {...}, set: {...}, continue}]}}
   prefix_lists:  {NAME: {family, rules: [{sequence, action, prefix, ge, le}]}}
   community_lists: {NAME: {kind, rules: [...]}}
@@ -208,6 +252,57 @@ and FRR:
 ```jinja
 {% for r in routing.static_routes %}
 ip route {{ r.prefix }} {{ r.next_hop or r.next_hop_interface }}{% if r.vrf %} vrf {{ r.vrf }}{% endif %}{% if r.distance %} {{ r.distance }}{% endif %}
+{% endfor %}
+```
+
+`by_interface` is what an interfaces loop reaches for - the IGP rows keyed
+by port name, so `interface swp1` prints its `ip ospf area` line without a
+nested search. An interface's `passive` is already resolved against the
+instance default; an IS-IS row's `level` is the instance's when the row
+left it blank.
+
+An interfaces loop with the IGP lines, FRR-style:
+
+```jinja
+{% for i in interfaces %}
+{% set r = routing.by_interface[i.name] %}
+interface {{ i.name }}
+{% for ip in ip_addresses if ip.assigned_interface_id == i.id %}
+ ip address {{ ip | cidr }}
+{% endfor %}
+{% if r and r.ospf %}
+ ip ospf area {{ r.ospf.area }}
+{% if r.ospf.network_type %}
+ ip ospf network {{ r.ospf.network_type }}
+{% endif %}
+{% if r.ospf.cost %}
+ ip ospf cost {{ r.ospf.cost }}
+{% endif %}
+{% endif %}
+{% if r and r.isis %}
+{% for fam in r.isis.families %}
+ {{ 'ip' if fam == 'ipv4' else 'ipv6' }} router isis {{ r.isis.process }}
+{% endfor %}
+{% if r.isis.network_type == 'point-to-point' %}
+ isis network point-to-point
+{% endif %}
+{% endif %}
+{% endfor %}
+{% for o in routing.ospf %}
+router ospf{% if o.vrf %} vrf {{ o.vrf }}{% endif %}
+
+{% if o.router_id %}
+ ospf router-id {{ o.router_id }}
+{% endif %}
+{% for iface in o.interfaces if iface.passive %}
+ passive-interface {{ iface.interface }}
+{% endfor %}
+{% endfor %}
+{% for s in routing.isis %}
+router isis {{ s.process }}
+ net {{ s.net }}
+ is-type level-{{ s.level }}
+ metric-style {{ s.metric_style }}
 {% endfor %}
 ```
 
@@ -264,6 +359,9 @@ it.
 | `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`); an address family accepts `redistributions: [...]`. |
 | `/api/routing/bgp-peer-groups/` | Peer groups. |
 | `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `instance`, `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
+| `/api/routing/ospf-areas/` | Areas. |
+| `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `vrf`, `site`, `status`. |
+| `/api/routing/ospf-interfaces/`, `…/isis-interfaces/` | Enrolled interfaces (`?instance=`, `?interface=`, `?area=`). |
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
 supports CSV import/export and bulk delete like the rest of Danbyte.
