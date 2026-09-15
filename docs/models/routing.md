@@ -35,7 +35,7 @@ Shared shape: `tenant` FK, `name` char(128), `description` text, unique
 | `vrf` | FK → `VRF` | null = global table |
 | `prefix` | char(64) | normalised with `ip_network(strict=True)` |
 | `prefix_obj` | FK → `Prefix` | optional, SET_NULL |
-| `kind` | `nexthop` / `blackhole` / `reject` | |
+| `kind` | `nexthop` / `interface` / `blackhole` / `reject` | an interface route needs `next_hop_interface` and no address |
 | `next_hop` | char(64) | normalised address; blank for a blackhole/reject |
 | `next_hop_interface` | FK → `Interface` | must be on `device` |
 | `next_hop_vrf` | FK → `VRF` | route leaking |

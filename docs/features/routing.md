@@ -103,8 +103,8 @@ path on one device:
 | **VRF** | The table the route sits in; blank is the global table. |
 | **Prefix** | The destination, in CIDR, normalised the way the box prints it. |
 | **IPAM prefix** | Optionally, the prefix object this route names, so the prefix's page can show who routes it. |
-| **Kind** | Next hop, blackhole or reject. |
-| **Next hop** / **Interface** | An address, an interface on the same device, or both (`ip route 0.0.0.0/0 10.1.1.1 eth0`). |
+| **Kind** | Next hop, interface, blackhole or reject. |
+| **Next hop** / **Interface** | For a next-hop route: an address, an interface on the same device, or both (`ip route 0.0.0.0/0 10.1.1.1 eth0`). An **interface** route points out of a port with no address - the point-to-point shape some platforms write (`ip route 10.30.0.0/16 Serial0/0`). |
 | **Next hop VRF** | Route leaking - the table the next hop is looked up in. |
 | **Distance**, **Metric**, **Tag**, **BFD** | As on the box; blank means the platform default. |
 | **Status** | Your own status catalog; the built-ins are active, planned and disabled. |

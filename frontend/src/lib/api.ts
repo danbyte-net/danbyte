@@ -4224,7 +4224,7 @@ export interface StaticRoute {
   vrf: { id: string; name: string; rd: string; color: string } | null
   prefix: string
   prefix_obj: PrefixMini | null
-  kind: "nexthop" | "blackhole" | "reject"
+  kind: "nexthop" | "interface" | "blackhole" | "reject"
   kind_display: string
   next_hop: string
   next_hop_interface: { id: string; name: string; device: DeviceMini } | null

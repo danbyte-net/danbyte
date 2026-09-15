@@ -53,9 +53,9 @@ function Body({ r }: { r: StaticRoute }) {
   const goBack = useCallback(() => nav({ to: "/static-routes" }), [nav])
 
   const via =
-    r.kind !== "nexthop"
-      ? r.kind_display
-      : [r.next_hop, r.next_hop_interface?.name].filter(Boolean).join(" via ")
+    r.kind === "nexthop" || r.kind === "interface"
+      ? [r.next_hop, r.next_hop_interface?.name].filter(Boolean).join(" via ")
+      : r.kind_display
 
   const details: KvRow[] = [
     ...(humanIds && r.numid != null

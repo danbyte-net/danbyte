@@ -242,6 +242,7 @@ export function RoutingKeychainForm({
 
 const KINDS = [
   { value: "nexthop", label: "Next hop" },
+  { value: "interface", label: "Interface" },
   { value: "blackhole", label: "Blackhole" },
   { value: "reject", label: "Reject" },
 ]
@@ -323,6 +324,11 @@ export function StaticRouteForm({
     color: v.color,
   }))
   const viaHop = kind === "nexthop"
+  const viaIface = kind === "interface"
+  const ifaceOptions = (interfaces.data?.results ?? []).map((i) => ({
+    value: i.id,
+    label: i.name,
+  }))
 
   const { mutation, fieldErrors } = useRoutingSave<StaticRoute>({
     objectType: ROUTING_OBJECT_TYPES.staticroute,
@@ -344,8 +350,8 @@ export function StaticRouteForm({
           prefix_obj_id: prefixObjId,
           kind,
           next_hop: viaHop ? nextHop.trim() : "",
-          next_hop_interface_id: viaHop ? nextHopIfaceId : null,
-          next_hop_vrf_id: viaHop ? nextHopVrfId : null,
+          next_hop_interface_id: viaHop || viaIface ? nextHopIfaceId : null,
+          next_hop_vrf_id: viaHop || viaIface ? nextHopVrfId : null,
           distance: numOrNull(distance),
           metric: numOrNull(metric),
           tag: numOrNull(tag),
@@ -422,46 +428,58 @@ export function StaticRouteForm({
           error={fieldErrors.kind}
         />
         {viaHop && (
-          <>
-            <div className="grid gap-3 @md:grid-cols-2">
-              <FormText
-                label="Next hop"
-                mono
-                value={nextHop}
-                onChange={setNextHop}
-                placeholder="10.0.0.1"
-                hint="an address, an interface, or both"
-                error={fieldErrors.next_hop}
-              />
-              <FormCombobox
-                label="Interface"
-                value={nextHopIfaceId}
-                onChange={setNextHopIfaceId}
-                options={(interfaces.data?.results ?? []).map((i) => ({
-                  value: i.id,
-                  label: i.name,
-                }))}
-                noneLabel="None"
-                placeholder={deviceId ? "None" : "Pick a device first"}
-                disabled={!deviceId}
-                searchPlaceholder="Search interfaces…"
-                emptyText="No interfaces."
-                error={fieldErrors.next_hop_interface_id}
-              />
-            </div>
-            <FormCombobox
-              label="Next hop VRF"
-              hint="route leaking - the table the next hop is looked up in"
-              value={nextHopVrfId}
-              onChange={setNextHopVrfId}
-              options={vrfOptions}
-              noneLabel="Same table"
-              placeholder="Same table"
-              searchPlaceholder="Search VRFs…"
-              emptyText="No VRFs."
-              error={fieldErrors.next_hop_vrf_id}
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormText
+              label="Next hop"
+              mono
+              value={nextHop}
+              onChange={setNextHop}
+              placeholder="10.0.0.1"
+              info="An address, an interface, or both - `ip route 0.0.0.0/0 10.1.1.1 eth0`."
+              error={fieldErrors.next_hop}
             />
-          </>
+            <FormCombobox
+              label="Interface"
+              value={nextHopIfaceId}
+              onChange={setNextHopIfaceId}
+              options={ifaceOptions}
+              noneLabel="None"
+              placeholder={deviceId ? "None" : "Pick a device first"}
+              disabled={!deviceId}
+              searchPlaceholder="Search interfaces…"
+              emptyText="No interfaces."
+              error={fieldErrors.next_hop_interface_id}
+            />
+          </div>
+        )}
+        {viaIface && (
+          <FormCombobox
+            label="Interface"
+            required
+            value={nextHopIfaceId}
+            onChange={setNextHopIfaceId}
+            options={ifaceOptions}
+            placeholder={deviceId ? "Pick an interface" : "Pick a device first"}
+            disabled={!deviceId}
+            searchPlaceholder="Search interfaces…"
+            emptyText="No interfaces."
+            info="The route points out of this port with no next-hop address - the point-to-point shape some platforms write."
+            error={fieldErrors.next_hop_interface_id}
+          />
+        )}
+        {(viaHop || viaIface) && (
+          <FormCombobox
+            label="Next hop VRF"
+            hint="route leaking - the table the next hop is looked up in"
+            value={nextHopVrfId}
+            onChange={setNextHopVrfId}
+            options={vrfOptions}
+            noneLabel="Same table"
+            placeholder="Same table"
+            searchPlaceholder="Search VRFs…"
+            emptyText="No VRFs."
+            error={fieldErrors.next_hop_vrf_id}
+          />
         )}
         <div className="grid gap-3 @md:grid-cols-3">
           <FormText

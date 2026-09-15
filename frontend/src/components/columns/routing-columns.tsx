@@ -550,6 +550,18 @@ export function buildStaticRouteColumns<T extends StaticRoute = StaticRoute>(
         header: "Next hop",
         cell: ({ row }) => {
           const r = row.original
+          if (r.kind === "interface")
+            return (
+              <span className="font-mono text-xs">
+                {r.next_hop_interface?.name ?? dash}
+                {r.next_hop_vrf && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    in {r.next_hop_vrf.name}
+                  </span>
+                )}
+              </span>
+            )
           if (r.kind !== "nexthop")
             return (
               <span className="text-xs text-muted-foreground">

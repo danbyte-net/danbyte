@@ -342,6 +342,7 @@ class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
 
     KIND_CHOICES = [
         ("nexthop", "Next hop"),
+        ("interface", "Interface"),
         ("blackhole", "Blackhole"),
         ("reject", "Reject"),
     ]
@@ -408,7 +409,18 @@ class StaticRoute(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
             raise ValidationError(
                 {"next_hop": "A next-hop route needs an address or an interface."}
             )
-        if self.kind != "nexthop" and (self.next_hop or self.next_hop_interface_id):
+        # An interface route points out of a port with no address - the
+        # point-to-point and dial-up shape some platforms want written that way.
+        if self.kind == "interface":
+            if not self.next_hop_interface_id:
+                raise ValidationError(
+                    {"next_hop_interface": "An interface route needs an interface."}
+                )
+            if self.next_hop:
+                raise ValidationError(
+                    {"next_hop": "An interface route has no next-hop address."}
+                )
+        if self.kind in ("blackhole", "reject") and (self.next_hop or self.next_hop_interface_id):
             raise ValidationError(
                 {"kind": f"A {self.kind} route has no next hop."}
             )

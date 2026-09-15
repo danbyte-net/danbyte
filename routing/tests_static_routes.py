@@ -75,6 +75,17 @@ class StaticRouteTests(_Base):
         self.assertIn("kind", r.json())
         r = self._post(kind="blackhole", next_hop="")
         self.assertEqual(r.status_code, 201, r.content)
+        # An interface route: out of a port, no address.
+        r = self._post(kind="interface", next_hop="", prefix="10.30.0.0/16")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("next_hop_interface", r.json())
+        r = self._post(kind="interface", next_hop="", prefix="10.30.0.0/16",
+                       next_hop_interface_id=str(self.eth0.id))
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["kind_display"], "Interface")
+        r = self._post(kind="interface", prefix="10.31.0.0/16",
+                       next_hop_interface_id=str(self.eth0.id))
+        self.assertEqual(r.status_code, 400)
 
     def test_next_hop_interface_must_be_on_the_device(self):
         r = self._post(next_hop="", next_hop_interface_id=str(self.far.id))
