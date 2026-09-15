@@ -4219,6 +4219,147 @@ export interface RoutingKeychain extends RoutingCatalogBase {
   psk_set: boolean
 }
 
+export type AfiSafi =
+  | "ipv4-unicast"
+  | "ipv6-unicast"
+  | "vpnv4-unicast"
+  | "vpnv6-unicast"
+  | "l2vpn-evpn"
+  | "ipv4-labeled-unicast"
+
+export type RemoteAsnMode = "asn" | "external" | "internal"
+export type SendCommunity = "" | "none" | "standard" | "extended" | "both" | "large"
+
+export interface ASNMini {
+  id: string
+  asn: number
+}
+
+/** The neighbour settings a session and a peer group share. Null on a
+ * session means "as the group says"; on a group, the platform default. */
+export interface BGPPeerKnobs {
+  address_families: AfiSafi[]
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  bfd: boolean | null
+  ebgp_multihop: number | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  send_community: SendCommunity
+  keepalive: number | null
+  hold_time: number | null
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+}
+
+export interface Redistribution {
+  id: string
+  source: "connected" | "static" | "bgp" | "ospf" | "isis" | "kernel"
+  policy: { id: string; name: string } | null
+  metric: number | null
+  extra: Record<string, unknown>
+}
+
+export interface BGPAddressFamily {
+  id: string
+  afi_safi: AfiSafi
+  afi_safi_display: string
+  networks: string[]
+  maximum_paths: number | null
+  maximum_paths_ibgp: number | null
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  redistributions: Redistribution[]
+  extra: Record<string, unknown>
+}
+
+export interface BGPInstance {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  asn: ASNMini
+  router_id: string
+  cluster_id: string
+  graceful_restart: boolean
+  bfd: boolean
+  address_families: BGPAddressFamily[]
+  session_count: number
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface BGPInstanceMini {
+  id: string
+  device: DeviceMini
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  asn: ASNMini
+}
+
+export interface BGPPeerGroup extends RoutingCatalogBase, BGPPeerKnobs {
+  remote_asn: number | null
+  remote_asn_mode: RemoteAsnMode
+  local_asn: ASNMini | null
+  update_source: string
+  session_count: number
+}
+
+export interface BGPPeerGroupMini {
+  id: string
+  name: string
+  remote_asn: number | null
+  remote_asn_mode: RemoteAsnMode
+}
+
+export interface BGPSessionEffective {
+  address_families: AfiSafi[]
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  bfd: boolean
+  ebgp_multihop: number | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  send_community: SendCommunity
+  keepalive: number | null
+  hold_time: number | null
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+  remote_asn_mode: RemoteAsnMode
+  remote_asn: number | null
+  local_asn: number
+  update_source: string
+}
+
+export interface BGPSession extends BGPPeerKnobs {
+  id: string
+  numid: number | null
+  instance: BGPInstanceMini
+  name: string
+  peer_group: BGPPeerGroupMini | null
+  remote_asn: number | null
+  remote_asn_mode: "" | RemoteAsnMode
+  local_asn: ASNMini | null
+  local_address: { id: string; ip_address: string; dns_name: string } | null
+  /** The far end: an address, or an interface for unnumbered peering. */
+  remote_address: string
+  interface: { id: string; name: string; device: DeviceMini } | null
+  remote_address_obj: { id: string; ip_address: string; dns_name: string } | null
+  peer_device: DeviceMini | null
+  peer_session: { id: string; device: DeviceMini } | null
+  effective: BGPSessionEffective
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface StaticRoute {
   id: string
   numid: number | null

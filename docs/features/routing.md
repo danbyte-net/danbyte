@@ -112,6 +112,54 @@ path on one device:
 The same prefix through two next hops is two rows (ECMP); the same path twice
 is refused. A next-hop interface on another device is refused too.
 
+## BGP
+
+BGP is three objects: the **instance** (`router bgp` on a device, one per
+table), its **address families**, and the **sessions** (neighbours), with
+**peer groups** as the tenant-wide catalog a session inherits from.
+
+### Instances and address families
+
+A device's **Routing** tab → **Add instance**: the AS (from [ASNs](ipam-objects.md#asns)),
+the VRF (blank = the global table), router ID, cluster ID, graceful
+restart, and BFD as the default for its neighbours. Each instance carries
+its **address families** - `ipv4-unicast`, `ipv6-unicast`, `vpnv4-unicast`,
+`vpnv6-unicast`, `l2vpn-evpn`, `ipv4-labeled-unicast` - each with the
+networks it originates, maximum paths, an import and export policy, and
+what it **redistributes** (connected, static, OSPF, …, each through a
+policy).
+
+### Peer groups
+
+**Routing → BGP peer groups.** The neighbour settings named once - remote AS
+(a number, or *external* / *internal* for unnumbered fabrics), a local AS
+override, an *update source* hint, address families, policies, BFD, eBGP
+multihop TTL, next-hop self, route-reflector client, send-community,
+timers, and the keychain. A group is not bound to a device: the same
+`SPINES` group applies on every leaf.
+
+### Sessions
+
+**Routing → BGP sessions**, or the instance's **Add session**. A session
+names its far end as an **address** or as an **interface** (unnumbered
+peering - `neighbor swp1 interface remote-as external`), its local address
+(whose interface is the update source), and optionally the peer device.
+When the far address is in IPAM, the row is linked and the peer device is
+filled in.
+
+Every neighbour setting a session leaves on **Inherit** comes from its peer
+group; what neither sets falls to the instance (BFD) or the platform
+default. The session's page shows both: **Effective settings** - what the
+box ends up with - and **Own values**. The API returns the same as
+`effective`, and the render context carries only effective values, so a
+template never repeats the resolution.
+
+**Create the far end** on a session's page writes the mirror session on the
+peer device - its instance in the same table, addresses swapped, the
+effective settings copied - and links the two, so an iBGP pair is two
+clicks. It needs the peer device, this side's local address and a far
+address IPAM has on that device.
+
 ## Rendering a config
 
 Every device's render context carries a `routing` block, alongside `device`,
@@ -123,6 +171,15 @@ routing:
   vrfs:          [{name, rd, import_targets, export_targets, l3vni, description}]
   static_routes: [{vrf, prefix, kind, next_hop, next_hop_interface, next_hop_vrf,
                    distance, metric, tag, bfd, description}]
+  bgp:           [{vrf, asn, router_id, cluster_id, graceful_restart, bfd,
+                   address_families: [{afi_safi, networks, maximum_paths, maximum_paths_ibgp,
+                                       import_policy, export_policy, redistribute: [{source, policy, metric}]}],
+                   sessions: [{name, peer_group, remote_asn, remote_asn_mode, local_asn,
+                               local_address: {address, cidr, interface}, remote_address, interface,
+                               peer_device, address_families, import_policy, export_policy, bfd,
+                               ebgp_multihop, update_source, next_hop_self, route_reflector_client,
+                               send_community, keepalive, hold_time, keychain, extra}],
+                   peer_groups: [{name, ...}]}]      # only the groups this instance's sessions use
   policies:      {NAME: {rules: [{sequence, action, match: {...}, set: {...}, continue}]}}
   prefix_lists:  {NAME: {family, rules: [{sequence, action, prefix, ge, le}]}}
   community_lists: {NAME: {kind, rules: [...]}}
@@ -131,10 +188,11 @@ routing:
   keychains:     [{name, algorithm, key_set}]
 ```
 
-`vrfs` is every table the device has to define - the VRFs its interfaces
-and routes sit in. `policies` and the three list kinds hold only what the
-device's protocols reference (nothing yet references them until BGP lands),
-so a template prints what the box needs and no more. Every row carries its
+`vrfs` is every table the device has to define - the VRFs its interfaces,
+routes and instances sit in. `policies` and the three list kinds hold only
+what the device's address families, sessions and peer groups reference, so
+a template prints what the box needs and no more. Session values are the
+effective ones; `remote_asn_mode` is `asn`, `external` or `internal`. Every row carries its
 `id`; `vrf` is a name, `null` for the global table.
 
 A static-routes fragment, IOS-style:
@@ -153,6 +211,41 @@ ip route {{ r.prefix }} {{ r.next_hop or r.next_hop_interface }}{% if r.vrf %} v
 {% endfor %}
 ```
 
+A BGP block, FRR-style, with the neighbours' effective values:
+
+```jinja
+{% for b in routing.bgp %}
+router bgp {{ b.asn }}{% if b.vrf %} vrf {{ b.vrf }}{% endif %}
+
+{% if b.router_id %}
+ bgp router-id {{ b.router_id }}
+{% endif %}
+{% for s in b.sessions %}
+{% set n = s.remote_address or s.interface %}
+ neighbor {{ n }} {% if s.interface %}interface {% endif %}remote-as {{ s.remote_asn if s.remote_asn_mode == 'asn' else s.remote_asn_mode }}
+{% if s.update_source %}
+ neighbor {{ n }} update-source {{ s.update_source }}
+{% endif %}
+{% if s.bfd %}
+ neighbor {{ n }} bfd
+{% endif %}
+{% endfor %}
+{% for af in b.address_families %}
+ address-family {{ af.afi_safi.replace('-', ' ') }}
+{% for net in af.networks %}
+  network {{ net }}
+{% endfor %}
+{% for s in b.sessions if af.afi_safi in s.address_families %}
+  neighbor {{ s.remote_address or s.interface }} activate
+{% if s.route_reflector_client %}
+  neighbor {{ s.remote_address or s.interface }} route-reflector-client
+{% endif %}
+{% endfor %}
+ exit-address-family
+{% endfor %}
+{% endfor %}
+```
+
 The same block rides the Ansible inventory as `danbyte.routing` - always on
 a single host (`GET /api/devices/<id>/inventory/`), on the fleet export when
 asked (`GET /api/inventory/ansible/?routing=1`), since most plays never read
@@ -167,6 +260,10 @@ it.
 | `/api/routing/communities/` | Communities. |
 | `/api/routing/keychains/` | Keychains; `psk` is write-only, `reveal-psk` is the audited read. |
 | `/api/routing/static-routes/` | Static routes; filter by `device`, `vrf` (`global` for the global table), `kind`, `status`, `site`, `prefix_obj`. |
+| `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `vrf`, `asn`, `site`, `status`. |
+| `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`); an address family accepts `redistributions: [...]`. |
+| `/api/routing/bgp-peer-groups/` | Peer groups. |
+| `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `instance`, `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
 supports CSV import/export and bulk delete like the rest of Danbyte.

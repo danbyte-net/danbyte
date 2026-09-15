@@ -13,6 +13,7 @@ import type {
   Paginated,
   PowerFeed,
   Rack,
+  BGPSession,
   Tunnel,
   WirelessLAN,
 } from "@/lib/api"
@@ -28,6 +29,8 @@ import { buildIpColumns } from "@/components/columns/ip-columns"
 import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
 import type { PowerFeedColumnId } from "@/components/columns/power-feed-columns"
 import { buildRackColumns } from "@/components/columns/rack-columns"
+import { buildBGPSessionColumns } from "@/components/columns/routing-columns"
+import type { BGPSessionColumnId } from "@/components/columns/routing-columns"
 import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
 import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
@@ -426,6 +429,53 @@ export function EmbeddedContactTable({
       columns={columns}
       flexColumn="title"
       tableId="embedded-contacts"
+    />
+  )
+}
+
+/** BGP sessions scoped by the local instance's AS, peer group or device -
+ * the one session column factory, so a row reads as it does on
+ * /bgp-sessions. */
+export function EmbeddedBGPSessionTable({
+  filter,
+  omit = [],
+  emptyText = "No BGP sessions.",
+}: {
+  filter: Record<string, string>
+  omit?: BGPSessionColumnId[]
+  emptyText?: string
+}) {
+  const q = useEmbed<BGPSession>(
+    "embedded-bgp-sessions",
+    "/api/routing/bgp-sessions/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<BGPSession>[]>(
+    () =>
+      buildBGPSessionColumns({
+        include: [
+          "neighbor",
+          "device",
+          "vrf",
+          "local_asn",
+          "remote_asn",
+          "peer_group",
+          "peer_device",
+          "address_families",
+          "status",
+          "description",
+        ],
+        omit,
+      }),
+    [omit]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-bgp-sessions"
     />
   )
 }

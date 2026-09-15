@@ -559,13 +559,11 @@ interface PolicyRuleDraft {
 }
 
 const ORIGINS = [
-  { value: "", label: "-" },
   { value: "igp", label: "IGP" },
   { value: "egp", label: "EGP" },
   { value: "incomplete", label: "Incomplete" },
 ]
 const METRIC_TYPES = [
-  { value: "", label: "-" },
   { value: "1", label: "Type 1" },
   { value: "2", label: "Type 2" },
 ]
@@ -840,15 +838,17 @@ export function RoutingPolicyForm({
               <div className="grid gap-3 @md:grid-cols-3">
                 <FormSelect
                   label="Origin"
-                  value={r.setOrigin}
+                  value={r.setOrigin || null}
                   onChange={(v) => update(i, { setOrigin: v ?? "" })}
                   options={ORIGINS}
+                  noneLabel="Unchanged"
                 />
                 <FormSelect
                   label="Metric type"
-                  value={r.setMetricType}
+                  value={r.setMetricType || null}
                   onChange={(v) => update(i, { setMetricType: v ?? "" })}
                   options={METRIC_TYPES}
+                  noneLabel="Unchanged"
                 />
                 <FormText
                   label="Continue"

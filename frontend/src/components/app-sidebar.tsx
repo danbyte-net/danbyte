@@ -436,8 +436,20 @@ const sections: NavSection[] = [
     icon: RouteIcon,
     clusters: [
       {
-        label: "Routes",
+        label: "Protocols",
         items: [
+          {
+            title: "BGP sessions",
+            url: "/bgp-sessions",
+            icon: ArrowLeftRight,
+            objectType: "bgpsession",
+          },
+          {
+            title: "BGP peer groups",
+            url: "/bgp-peer-groups",
+            icon: UsersRound,
+            objectType: "bgppeergroup",
+          },
           {
             title: "Static routes",
             url: "/static-routes",

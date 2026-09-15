@@ -1,6 +1,7 @@
 import type {
   ASPathList,
   ASPathListRule,
+  BGPPeerGroup,
   Community,
   CommunityList,
   CommunityListRule,
@@ -14,6 +15,7 @@ import { useMe } from "@/lib/use-me"
 import { RevealPskButton } from "@/components/reveal-psk-button"
 import {
   buildASPathListColumns,
+  buildBGPPeerGroupColumns,
   buildCommunityColumns,
   buildCommunityListColumns,
   buildPrefixListColumns,
@@ -22,6 +24,7 @@ import {
 } from "@/components/columns/routing-columns"
 
 import type { RoutingDetailSpec } from "./catalog-detail"
+import { knobRows, remoteAsnText } from "./bgp-bits"
 import type { RoutingListSpec } from "./catalog-page"
 import {
   asPathListRuleColumns,
@@ -338,5 +341,70 @@ export const keychainDetail: RoutingDetailSpec<RoutingKeychain> = {
       value: <span className="font-mono">{r.algorithm.toUpperCase()}</span>,
     },
     { label: "Key", value: <KeyRow keychain={r} /> },
+  ],
+}
+
+export const peerGroupList: RoutingListSpec<BGPPeerGroup> = {
+  title: "BGP peer groups",
+  objectType: "bgppeergroup",
+  endpoint: "/api/routing/bgp-peer-groups/",
+  queryKey: "bgp-peer-groups",
+  tableId: "bgp-peer-groups",
+  newTo: "/bgp-peer-groups/new",
+  addLabel: "Add peer group",
+  searchPlaceholder: "Filter peer groups…",
+  searchText: (r) => `${r.name} ${r.description} ${r.remote_asn ?? ""}`,
+  flexColumn: "description",
+  label: (r) => r.name,
+  columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
+    buildBGPPeerGroupColumns({
+      humanIds,
+      actions: {
+        editTo: "/bgp-peer-groups/$id/edit",
+        editParams: (r) => ({ id: r.id }),
+        canEdit: () => canEdit,
+        onDelete,
+        canDelete: () => canDelete,
+      },
+    }),
+}
+
+export const peerGroupDetail: RoutingDetailSpec<BGPPeerGroup> = {
+  objectType: "bgppeergroup",
+  appLabel: "routing.bgppeergroup",
+  endpoint: "/api/routing/bgp-peer-groups/",
+  queryKey: "bgp-peer-group",
+  backTo: "/bgp-peer-groups",
+  backLabel: "BGP peer groups",
+  editTo: "/bgp-peer-groups/$id/edit",
+  title: (r) => r.name,
+  subtitle: (r) =>
+    `remote AS ${remoteAsnText(r) || "-"} · ${r.session_count} sessions`,
+  overview: (r) => [
+    {
+      label: "Remote AS",
+      value: <span className="num font-mono">{remoteAsnText(r) || "-"}</span>,
+    },
+    {
+      label: "Local AS",
+      value: r.local_asn ? (
+        <span className="num font-mono">{r.local_asn.asn}</span>
+      ) : (
+        <span className="text-muted-foreground">Instance's</span>
+      ),
+    },
+    {
+      label: "Update source",
+      value: r.update_source ? (
+        <span className="font-mono">{r.update_source}</span>
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      ),
+    },
+    {
+      label: "Sessions",
+      value: <span className="num">{r.session_count}</span>,
+    },
+    ...knobRows(r, "Default"),
   ],
 }

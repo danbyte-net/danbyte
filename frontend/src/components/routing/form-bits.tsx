@@ -33,6 +33,10 @@ export const ROUTING_OBJECT_TYPES = {
   routingpolicy: "routing.routingpolicy",
   routingkeychain: "routing.routingkeychain",
   staticroute: "routing.staticroute",
+  bgpinstance: "routing.bgpinstance",
+  bgpaddressfamily: "routing.bgpaddressfamily",
+  bgppeergroup: "routing.bgppeergroup",
+  bgpsession: "routing.bgpsession",
 } as const
 
 /** Save a routing object through the plan-aware helper; invalidates the

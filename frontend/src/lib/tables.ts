@@ -77,6 +77,9 @@ export const TABLES: TableMeta[] = [
     area: "Routing",
     ioType: "routingkeychain",
   },
+  { id: "bgp-sessions", label: "BGP sessions", area: "Routing", ioType: "bgpsession" },
+  { id: "bgp-peer-groups", label: "BGP peer groups", area: "Routing", ioType: "bgppeergroup" },
+  { id: "device-bgp-sessions", label: "BGP sessions (device)", area: "Routing" },
   { id: "sites", label: "Sites", area: "Organization", ioType: "site" },
   { id: "tenants", label: "Tenants", area: "Organization" },
   {

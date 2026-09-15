@@ -3,6 +3,8 @@ import { Link } from "@tanstack/react-router"
 
 import type {
   ASPathList,
+  BGPPeerGroup,
+  BGPSession,
   Community,
   CommunityList,
   PrefixList,
@@ -624,6 +626,323 @@ export function buildStaticRouteColumns<T extends StaticRoute = StaticRoute>(
           ) : (
             dash
           ),
+      }),
+      status: () => ({
+        id: "status",
+        accessorFn: (r) => r.status?.name ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Status",
+            get: (r: T) => r.status?.id ?? "__none__",
+            formatValue: (_v, r) => ({
+              label: r.status?.name ?? "No status",
+              color: r.status?.color,
+            }),
+          },
+        },
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── BGP peer groups ─────────────────────────────────────────────────────────
+
+export type BGPPeerGroupColumnId =
+  | "numid"
+  | "name"
+  | "remote_asn"
+  | "address_families"
+  | "session_count"
+  | "description"
+  | "tags"
+const PEER_GROUP_ORDER: BGPPeerGroupColumnId[] = [
+  "numid",
+  "name",
+  "remote_asn",
+  "address_families",
+  "session_count",
+  "description",
+  "tags",
+]
+
+export function remoteAsnLabel(r: {
+  remote_asn: number | null
+  remote_asn_mode: string
+}): string {
+  if (r.remote_asn_mode === "external") return "external"
+  if (r.remote_asn_mode === "internal") return "internal"
+  return r.remote_asn != null ? String(r.remote_asn) : ""
+}
+
+export function buildBGPPeerGroupColumns<T extends BGPPeerGroup = BGPPeerGroup>(
+  opts: CommonOpts<T, BGPPeerGroupColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, BGPPeerGroupColumnId>(
+    PEER_GROUP_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      name: () => nameColumn<T>("/bgp-peer-groups/$id", "routing.bgppeergroup"),
+      remote_asn: () => ({
+        id: "remote_asn",
+        accessorFn: (r) => remoteAsnLabel(r),
+        header: ({ column }) => (
+          <SortHeader column={column} label="Remote AS" />
+        ),
+        cell: ({ row }) => (
+          <span className="num font-mono text-xs">
+            {remoteAsnLabel(row.original) || dash}
+          </span>
+        ),
+      }),
+      address_families: () => ({
+        id: "address_families",
+        accessorFn: (r) => r.address_families.join(" "),
+        header: "Address families",
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {row.original.address_families.join(", ") || dash}
+          </span>
+        ),
+      }),
+      session_count: () => ({
+        id: "session_count",
+        accessorKey: "session_count",
+        header: ({ column }) => <SortHeader column={column} label="Sessions" />,
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.session_count}</span>
+        ),
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── BGP sessions ────────────────────────────────────────────────────────────
+
+export type BGPSessionColumnId =
+  | "numid"
+  | "neighbor"
+  | "device"
+  | "vrf"
+  | "local_asn"
+  | "remote_asn"
+  | "peer_group"
+  | "peer_device"
+  | "address_families"
+  | "status"
+  | "description"
+  | "tags"
+const SESSION_ORDER: BGPSessionColumnId[] = [
+  "numid",
+  "neighbor",
+  "device",
+  "vrf",
+  "local_asn",
+  "remote_asn",
+  "peer_group",
+  "peer_device",
+  "address_families",
+  "status",
+  "description",
+  "tags",
+]
+
+export function sessionNeighbor(s: BGPSession): string {
+  return s.remote_address || s.interface?.name || s.name || "?"
+}
+
+export function buildBGPSessionColumns<T extends BGPSession = BGPSession>(
+  opts: CommonOpts<T, BGPSessionColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, BGPSessionColumnId>(
+    SESSION_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      neighbor: () => ({
+        id: "neighbor",
+        accessorFn: (r) => sessionNeighbor(r),
+        header: ({ column }) => <SortHeader column={column} label="Neighbor" />,
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-1.5">
+            <Link
+              to="/bgp-sessions/$id"
+              params={{ id: row.original.id }}
+              className="link font-mono font-medium"
+            >
+              {sessionNeighbor(row.original)}
+            </Link>
+            {row.original.interface && (
+              <span className="text-[10px] text-muted-foreground">
+                unnumbered
+              </span>
+            )}
+            <PlannedChangeMarker
+              objectType="routing.bgpsession"
+              objectId={row.original.id}
+            />
+          </span>
+        ),
+      }),
+      device: () => ({
+        id: "device",
+        accessorFn: (r) => r.instance.device.name,
+        header: ({ column }) => <SortHeader column={column} label="Device" />,
+        cell: ({ row }) => (
+          <Link
+            to="/devices/$id"
+            params={{ id: row.original.instance.device.id }}
+            search={{ tab: "routing" }}
+            className="link text-xs"
+          >
+            {row.original.instance.device.name}
+          </Link>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Device",
+            get: (r: T) => r.instance.device.id,
+            formatValue: (_v, sample) => ({
+              label: sample.instance.device.name,
+            }),
+          },
+        },
+      }),
+      vrf: () => ({
+        id: "vrf",
+        accessorFn: (r) => r.instance.vrf?.name ?? "",
+        header: "VRF",
+        cell: ({ row }) =>
+          row.original.instance.vrf ? (
+            <ColorBadge
+              name={row.original.instance.vrf.name}
+              color={row.original.instance.vrf.color}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground">Global</span>
+          ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "VRF",
+            get: (r: T) => r.instance.vrf?.id ?? "__none__",
+            formatValue: (_v, sample) => ({
+              label: sample.instance.vrf?.name ?? "Global",
+              color: sample.instance.vrf?.color,
+            }),
+          },
+        },
+      }),
+      local_asn: () => ({
+        id: "local_asn",
+        accessorFn: (r) => r.effective.local_asn,
+        header: ({ column }) => <SortHeader column={column} label="Local AS" />,
+        cell: ({ row }) => (
+          <span className="num font-mono text-xs">
+            {row.original.effective.local_asn}
+          </span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Local AS",
+            get: (r: T) => String(r.effective.local_asn),
+            formatValue: (v) => ({ label: String(v) }),
+          },
+        },
+      }),
+      remote_asn: () => ({
+        id: "remote_asn",
+        accessorFn: (r) => remoteAsnLabel(r.effective),
+        header: ({ column }) => (
+          <SortHeader column={column} label="Remote AS" />
+        ),
+        cell: ({ row }) => (
+          <span className="num font-mono text-xs">
+            {remoteAsnLabel(row.original.effective) || dash}
+          </span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Remote AS",
+            get: (r: T) => remoteAsnLabel(r.effective) || "__none__",
+            formatValue: (v) => ({ label: v === "__none__" ? "-" : String(v) }),
+          },
+        },
+      }),
+      peer_group: () => ({
+        id: "peer_group",
+        accessorFn: (r) => r.peer_group?.name ?? "",
+        header: "Peer group",
+        cell: ({ row }) =>
+          row.original.peer_group ? (
+            <Link
+              to="/bgp-peer-groups/$id"
+              params={{ id: row.original.peer_group.id }}
+              className="link font-mono text-xs"
+            >
+              {row.original.peer_group.name}
+            </Link>
+          ) : (
+            dash
+          ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Peer group",
+            get: (r: T) => r.peer_group?.id ?? "__none__",
+            formatValue: (_v, sample) => ({
+              label: sample.peer_group?.name ?? "No group",
+            }),
+          },
+        },
+      }),
+      peer_device: () => ({
+        id: "peer_device",
+        accessorFn: (r) => r.peer_device?.name ?? "",
+        header: "Peer device",
+        cell: ({ row }) =>
+          row.original.peer_device ? (
+            <Link
+              to="/devices/$id"
+              params={{ id: row.original.peer_device.id }}
+              search={{ tab: "routing" }}
+              className="link text-xs"
+            >
+              {row.original.peer_device.name}
+            </Link>
+          ) : (
+            dash
+          ),
+      }),
+      address_families: () => ({
+        id: "address_families",
+        accessorFn: (r) => r.effective.address_families.join(" "),
+        header: "Address families",
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {row.original.effective.address_families.join(", ") || dash}
+          </span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Address family",
+            get: (r: T) => r.effective.address_families[0] ?? "__none__",
+            formatValue: (v) => ({
+              label: v === "__none__" ? "None" : String(v),
+            }),
+          },
+        },
       }),
       status: () => ({
         id: "status",

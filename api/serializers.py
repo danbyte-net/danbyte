@@ -2622,7 +2622,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         relations it hangs on Device."""
         if not self._detail_only():
             return 0
-        return obj.static_routes.count()
+        return (
+            obj.static_routes.count() + obj.bgpinstances.count()
+            + sum(i.sessions.count() for i in obj.bgpinstances.all())
+        )
 
     def get_image_count(self, obj) -> int:
         # ImageAttachment is a real GenericFK (content_type + object_id) with

@@ -47,6 +47,23 @@ Unique `(device, vrf, prefix, next_hop, next_hop_interface)` with
 `nulls_distinct=False`, so the same path twice is refused while the same
 prefix through another next hop (ECMP) is not.
 
+## BGP
+
+| Model | Fields | Unique |
+|---|---|---|
+| `BGPInstance` | `device`, `vrf` (null = global), `asn` FK → `ASN`, `router_id`, `cluster_id`, `graceful_restart`, `bfd`, `status` (scope `routinginstance`), `description`, `extra` JSON | `(device, vrf)`, nulls not distinct |
+| `BGPAddressFamily` | `instance`, `afi_safi`, `networks` JSON [CIDR], `maximum_paths`, `maximum_paths_ibgp`, `import_policy`, `export_policy`, `extra` | `(instance, afi_safi)` |
+| `Redistribution` | one parent (`bgp_af`; OSPF/IS-IS instances follow), `source`, `policy`, `metric`, `extra` | - |
+| `BGPPeerGroup` | catalog + the shared knobs; `remote_asn` int, `remote_asn_mode` (`asn`/`external`/`internal`), `local_asn` FK, `update_source` text | `(tenant, name)` |
+| `BGPSession` | `instance`, `name`, `peer_group`, `remote_asn` (+ mode), `local_asn`, `local_address` FK → `IPAddress`, `remote_address` text **xor** `interface` FK, `remote_address_obj` (auto-linked), `peer_device`, `peer_session` one-to-one, the shared knobs (all nullable = inherit), `status` (scope `bgpsession`), `description` | `(instance, remote_address)` / `(instance, interface)` conditional |
+
+The shared knobs (`_PeerKnobs`): `address_families` JSON list, `import_policy`,
+`export_policy`, `bfd`, `ebgp_multihop`, `next_hop_self`,
+`route_reflector_client`, `send_community`, `keepalive`, `hold_time`,
+`keychain`, `extra`. `BGPSession.effective()` resolves session → group →
+instance (`bfd`), merges `extra`, and derives `update_source` from the local
+address's interface.
+
 ## Rendering
 
 `routing/render.py:routing_context(device)` builds the `routing` block the

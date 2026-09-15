@@ -84,6 +84,8 @@ import { Route as CircuitsRouteImport } from './routes/circuits'
 import { Route as CircuitTypesRouteImport } from './routes/circuit-types'
 import { Route as ChangeLogRouteImport } from './routes/change-log'
 import { Route as CablesRouteImport } from './routes/cables'
+import { Route as BgpSessionsRouteImport } from './routes/bgp-sessions'
+import { Route as BgpPeerGroupsRouteImport } from './routes/bgp-peer-groups'
 import { Route as AutomationTargetsRouteImport } from './routes/automation-targets'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as AsnsRouteImport } from './routes/asns'
@@ -184,6 +186,8 @@ import { Route as CertificatesIndexRouteImport } from './routes/certificates.ind
 import { Route as CertificateRequestsIndexRouteImport } from './routes/certificate-requests.index'
 import { Route as CertificateIssuersIndexRouteImport } from './routes/certificate-issuers.index'
 import { Route as CablesIndexRouteImport } from './routes/cables.index'
+import { Route as BgpSessionsIndexRouteImport } from './routes/bgp-sessions.index'
+import { Route as BgpPeerGroupsIndexRouteImport } from './routes/bgp-peer-groups.index'
 import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
 import { Route as AsnsIndexRouteImport } from './routes/asns.index'
 import { Route as AsPathListsIndexRouteImport } from './routes/as-path-lists.index'
@@ -371,6 +375,10 @@ import { Route as CertificatesIdRouteImport } from './routes/certificates.$id'
 import { Route as CertificateRequestsIdRouteImport } from './routes/certificate-requests.$id'
 import { Route as CablesNewRouteImport } from './routes/cables.new'
 import { Route as CablesIdRouteImport } from './routes/cables.$id'
+import { Route as BgpSessionsNewRouteImport } from './routes/bgp-sessions.new'
+import { Route as BgpSessionsIdRouteImport } from './routes/bgp-sessions.$id'
+import { Route as BgpPeerGroupsNewRouteImport } from './routes/bgp-peer-groups.new'
+import { Route as BgpPeerGroupsIdRouteImport } from './routes/bgp-peer-groups.$id'
 import { Route as AutomationTargetsSetupRouteImport } from './routes/automation-targets.setup'
 import { Route as AutomationTargetsNewRouteImport } from './routes/automation-targets.new'
 import { Route as AutomationTargetsIdRouteImport } from './routes/automation-targets.$id'
@@ -454,6 +462,8 @@ import { Route as CircuitsIdEditRouteImport } from './routes/circuits.$id_.edit'
 import { Route as CircuitTypesIdEditRouteImport } from './routes/circuit-types.$id_.edit'
 import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id_.edit'
 import { Route as CablesIdEditRouteImport } from './routes/cables.$id_.edit'
+import { Route as BgpSessionsIdEditRouteImport } from './routes/bgp-sessions.$id_.edit'
+import { Route as BgpPeerGroupsIdEditRouteImport } from './routes/bgp-peer-groups.$id_.edit'
 import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation-targets.$id_.edit'
 import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
 import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$id_.edit'
@@ -835,6 +845,16 @@ const ChangeLogRoute = ChangeLogRouteImport.update({
 const CablesRoute = CablesRouteImport.update({
   id: '/cables',
   path: '/cables',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BgpSessionsRoute = BgpSessionsRouteImport.update({
+  id: '/bgp-sessions',
+  path: '/bgp-sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BgpPeerGroupsRoute = BgpPeerGroupsRouteImport.update({
+  id: '/bgp-peer-groups',
+  path: '/bgp-peer-groups',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutomationTargetsRoute = AutomationTargetsRouteImport.update({
@@ -1338,6 +1358,16 @@ const CablesIndexRoute = CablesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => CablesRoute,
+} as any)
+const BgpSessionsIndexRoute = BgpSessionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const BgpPeerGroupsIndexRoute = BgpPeerGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BgpPeerGroupsRoute,
 } as any)
 const AutomationTargetsIndexRoute = AutomationTargetsIndexRouteImport.update({
   id: '/',
@@ -2275,6 +2305,26 @@ const CablesIdRoute = CablesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => CablesRoute,
 } as any)
+const BgpSessionsNewRoute = BgpSessionsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const BgpSessionsIdRoute = BgpSessionsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const BgpPeerGroupsNewRoute = BgpPeerGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
+const BgpPeerGroupsIdRoute = BgpPeerGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
 const AutomationTargetsSetupRoute = AutomationTargetsSetupRouteImport.update({
   id: '/setup',
   path: '/setup',
@@ -2690,6 +2740,16 @@ const CablesIdEditRoute = CablesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => CablesRoute,
 } as any)
+const BgpSessionsIdEditRoute = BgpSessionsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const BgpPeerGroupsIdEditRoute = BgpPeerGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
 const AutomationTargetsIdEditRoute = AutomationTargetsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2736,6 +2796,8 @@ export interface FileRoutesByFullPath {
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
+  '/bgp-peer-groups': typeof BgpPeerGroupsRouteWithChildren
+  '/bgp-sessions': typeof BgpSessionsRouteWithChildren
   '/cables': typeof CablesRouteWithChildren
   '/change-log': typeof ChangeLogRoute
   '/circuit-types': typeof CircuitTypesRouteWithChildren
@@ -2822,6 +2884,10 @@ export interface FileRoutesByFullPath {
   '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
+  '/bgp-peer-groups/$id': typeof BgpPeerGroupsIdRoute
+  '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
+  '/bgp-sessions/$id': typeof BgpSessionsIdRoute
+  '/bgp-sessions/new': typeof BgpSessionsNewRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
@@ -3009,6 +3075,8 @@ export interface FileRoutesByFullPath {
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
+  '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
+  '/bgp-sessions/': typeof BgpSessionsIndexRoute
   '/cables/': typeof CablesIndexRoute
   '/certificate-issuers/': typeof CertificateIssuersIndexRoute
   '/certificate-requests/': typeof CertificateRequestsIndexRoute
@@ -3106,6 +3174,8 @@ export interface FileRoutesByFullPath {
   '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
+  '/bgp-peer-groups/$id/edit': typeof BgpPeerGroupsIdEditRoute
+  '/bgp-sessions/$id/edit': typeof BgpSessionsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
   '/channels/$id/edit': typeof ChannelsIdEditRoute
   '/circuit-types/$id/edit': typeof CircuitTypesIdEditRoute
@@ -3213,6 +3283,10 @@ export interface FileRoutesByTo {
   '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
+  '/bgp-peer-groups/$id': typeof BgpPeerGroupsIdRoute
+  '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
+  '/bgp-sessions/$id': typeof BgpSessionsIdRoute
+  '/bgp-sessions/new': typeof BgpSessionsNewRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
@@ -3400,6 +3474,8 @@ export interface FileRoutesByTo {
   '/as-path-lists': typeof AsPathListsIndexRoute
   '/asns': typeof AsnsIndexRoute
   '/automation-targets': typeof AutomationTargetsIndexRoute
+  '/bgp-peer-groups': typeof BgpPeerGroupsIndexRoute
+  '/bgp-sessions': typeof BgpSessionsIndexRoute
   '/cables': typeof CablesIndexRoute
   '/certificate-issuers': typeof CertificateIssuersIndexRoute
   '/certificate-requests': typeof CertificateRequestsIndexRoute
@@ -3497,6 +3573,8 @@ export interface FileRoutesByTo {
   '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
+  '/bgp-peer-groups/$id/edit': typeof BgpPeerGroupsIdEditRoute
+  '/bgp-sessions/$id/edit': typeof BgpSessionsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
   '/channels/$id/edit': typeof ChannelsIdEditRoute
   '/circuit-types/$id/edit': typeof CircuitTypesIdEditRoute
@@ -3582,6 +3660,8 @@ export interface FileRoutesById {
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
+  '/bgp-peer-groups': typeof BgpPeerGroupsRouteWithChildren
+  '/bgp-sessions': typeof BgpSessionsRouteWithChildren
   '/cables': typeof CablesRouteWithChildren
   '/change-log': typeof ChangeLogRoute
   '/circuit-types': typeof CircuitTypesRouteWithChildren
@@ -3668,6 +3748,10 @@ export interface FileRoutesById {
   '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
+  '/bgp-peer-groups/$id': typeof BgpPeerGroupsIdRoute
+  '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
+  '/bgp-sessions/$id': typeof BgpSessionsIdRoute
+  '/bgp-sessions/new': typeof BgpSessionsNewRoute
   '/cables/$id': typeof CablesIdRoute
   '/cables/new': typeof CablesNewRoute
   '/certificate-requests/$id': typeof CertificateRequestsIdRoute
@@ -3855,6 +3939,8 @@ export interface FileRoutesById {
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
+  '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
+  '/bgp-sessions/': typeof BgpSessionsIndexRoute
   '/cables/': typeof CablesIndexRoute
   '/certificate-issuers/': typeof CertificateIssuersIndexRoute
   '/certificate-requests/': typeof CertificateRequestsIndexRoute
@@ -3952,6 +4038,8 @@ export interface FileRoutesById {
   '/as-path-lists/$id_/edit': typeof AsPathListsIdEditRoute
   '/asns/$id_/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id_/edit': typeof AutomationTargetsIdEditRoute
+  '/bgp-peer-groups/$id_/edit': typeof BgpPeerGroupsIdEditRoute
+  '/bgp-sessions/$id_/edit': typeof BgpSessionsIdEditRoute
   '/cables/$id_/edit': typeof CablesIdEditRoute
   '/channels/$id_/edit': typeof ChannelsIdEditRoute
   '/circuit-types/$id_/edit': typeof CircuitTypesIdEditRoute
@@ -4038,6 +4126,8 @@ export interface FileRouteTypes {
     | '/asns'
     | '/audit-log'
     | '/automation-targets'
+    | '/bgp-peer-groups'
+    | '/bgp-sessions'
     | '/cables'
     | '/change-log'
     | '/circuit-types'
@@ -4124,6 +4214,10 @@ export interface FileRouteTypes {
     | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
+    | '/bgp-peer-groups/$id'
+    | '/bgp-peer-groups/new'
+    | '/bgp-sessions/$id'
+    | '/bgp-sessions/new'
     | '/cables/$id'
     | '/cables/new'
     | '/certificate-requests/$id'
@@ -4311,6 +4405,8 @@ export interface FileRouteTypes {
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
+    | '/bgp-peer-groups/'
+    | '/bgp-sessions/'
     | '/cables/'
     | '/certificate-issuers/'
     | '/certificate-requests/'
@@ -4408,6 +4504,8 @@ export interface FileRouteTypes {
     | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
+    | '/bgp-peer-groups/$id/edit'
+    | '/bgp-sessions/$id/edit'
     | '/cables/$id/edit'
     | '/channels/$id/edit'
     | '/circuit-types/$id/edit'
@@ -4515,6 +4613,10 @@ export interface FileRouteTypes {
     | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
+    | '/bgp-peer-groups/$id'
+    | '/bgp-peer-groups/new'
+    | '/bgp-sessions/$id'
+    | '/bgp-sessions/new'
     | '/cables/$id'
     | '/cables/new'
     | '/certificate-requests/$id'
@@ -4702,6 +4804,8 @@ export interface FileRouteTypes {
     | '/as-path-lists'
     | '/asns'
     | '/automation-targets'
+    | '/bgp-peer-groups'
+    | '/bgp-sessions'
     | '/cables'
     | '/certificate-issuers'
     | '/certificate-requests'
@@ -4799,6 +4903,8 @@ export interface FileRouteTypes {
     | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
+    | '/bgp-peer-groups/$id/edit'
+    | '/bgp-sessions/$id/edit'
     | '/cables/$id/edit'
     | '/channels/$id/edit'
     | '/circuit-types/$id/edit'
@@ -4883,6 +4989,8 @@ export interface FileRouteTypes {
     | '/asns'
     | '/audit-log'
     | '/automation-targets'
+    | '/bgp-peer-groups'
+    | '/bgp-sessions'
     | '/cables'
     | '/change-log'
     | '/circuit-types'
@@ -4969,6 +5077,10 @@ export interface FileRouteTypes {
     | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
+    | '/bgp-peer-groups/$id'
+    | '/bgp-peer-groups/new'
+    | '/bgp-sessions/$id'
+    | '/bgp-sessions/new'
     | '/cables/$id'
     | '/cables/new'
     | '/certificate-requests/$id'
@@ -5156,6 +5268,8 @@ export interface FileRouteTypes {
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
+    | '/bgp-peer-groups/'
+    | '/bgp-sessions/'
     | '/cables/'
     | '/certificate-issuers/'
     | '/certificate-requests/'
@@ -5253,6 +5367,8 @@ export interface FileRouteTypes {
     | '/as-path-lists/$id_/edit'
     | '/asns/$id_/edit'
     | '/automation-targets/$id_/edit'
+    | '/bgp-peer-groups/$id_/edit'
+    | '/bgp-sessions/$id_/edit'
     | '/cables/$id_/edit'
     | '/channels/$id_/edit'
     | '/circuit-types/$id_/edit'
@@ -5338,6 +5454,8 @@ export interface RootRouteChildren {
   AsnsRoute: typeof AsnsRouteWithChildren
   AuditLogRoute: typeof AuditLogRoute
   AutomationTargetsRoute: typeof AutomationTargetsRouteWithChildren
+  BgpPeerGroupsRoute: typeof BgpPeerGroupsRouteWithChildren
+  BgpSessionsRoute: typeof BgpSessionsRouteWithChildren
   CablesRoute: typeof CablesRouteWithChildren
   ChangeLogRoute: typeof ChangeLogRoute
   CircuitTypesRoute: typeof CircuitTypesRouteWithChildren
@@ -6041,6 +6159,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CablesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bgp-sessions': {
+      id: '/bgp-sessions'
+      path: '/bgp-sessions'
+      fullPath: '/bgp-sessions'
+      preLoaderRoute: typeof BgpSessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bgp-peer-groups': {
+      id: '/bgp-peer-groups'
+      path: '/bgp-peer-groups'
+      fullPath: '/bgp-peer-groups'
+      preLoaderRoute: typeof BgpPeerGroupsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/automation-targets': {
       id: '/automation-targets'
       path: '/automation-targets'
@@ -6740,6 +6872,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/cables/'
       preLoaderRoute: typeof CablesIndexRouteImport
       parentRoute: typeof CablesRoute
+    }
+    '/bgp-sessions/': {
+      id: '/bgp-sessions/'
+      path: '/'
+      fullPath: '/bgp-sessions/'
+      preLoaderRoute: typeof BgpSessionsIndexRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/bgp-peer-groups/': {
+      id: '/bgp-peer-groups/'
+      path: '/'
+      fullPath: '/bgp-peer-groups/'
+      preLoaderRoute: typeof BgpPeerGroupsIndexRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
     }
     '/automation-targets/': {
       id: '/automation-targets/'
@@ -8050,6 +8196,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CablesIdRouteImport
       parentRoute: typeof CablesRoute
     }
+    '/bgp-sessions/new': {
+      id: '/bgp-sessions/new'
+      path: '/new'
+      fullPath: '/bgp-sessions/new'
+      preLoaderRoute: typeof BgpSessionsNewRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/bgp-sessions/$id': {
+      id: '/bgp-sessions/$id'
+      path: '/$id'
+      fullPath: '/bgp-sessions/$id'
+      preLoaderRoute: typeof BgpSessionsIdRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/bgp-peer-groups/new': {
+      id: '/bgp-peer-groups/new'
+      path: '/new'
+      fullPath: '/bgp-peer-groups/new'
+      preLoaderRoute: typeof BgpPeerGroupsNewRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
+    }
+    '/bgp-peer-groups/$id': {
+      id: '/bgp-peer-groups/$id'
+      path: '/$id'
+      fullPath: '/bgp-peer-groups/$id'
+      preLoaderRoute: typeof BgpPeerGroupsIdRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
+    }
     '/automation-targets/setup': {
       id: '/automation-targets/setup'
       path: '/setup'
@@ -8631,6 +8805,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CablesIdEditRouteImport
       parentRoute: typeof CablesRoute
     }
+    '/bgp-sessions/$id_/edit': {
+      id: '/bgp-sessions/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/bgp-sessions/$id/edit'
+      preLoaderRoute: typeof BgpSessionsIdEditRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/bgp-peer-groups/$id_/edit': {
+      id: '/bgp-peer-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/bgp-peer-groups/$id/edit'
+      preLoaderRoute: typeof BgpPeerGroupsIdEditRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
+    }
     '/automation-targets/$id_/edit': {
       id: '/automation-targets/$id_/edit'
       path: '/$id/edit'
@@ -8753,6 +8941,42 @@ const AutomationTargetsRouteChildren: AutomationTargetsRouteChildren = {
 
 const AutomationTargetsRouteWithChildren =
   AutomationTargetsRoute._addFileChildren(AutomationTargetsRouteChildren)
+
+interface BgpPeerGroupsRouteChildren {
+  BgpPeerGroupsIdRoute: typeof BgpPeerGroupsIdRoute
+  BgpPeerGroupsNewRoute: typeof BgpPeerGroupsNewRoute
+  BgpPeerGroupsIndexRoute: typeof BgpPeerGroupsIndexRoute
+  BgpPeerGroupsIdEditRoute: typeof BgpPeerGroupsIdEditRoute
+}
+
+const BgpPeerGroupsRouteChildren: BgpPeerGroupsRouteChildren = {
+  BgpPeerGroupsIdRoute: BgpPeerGroupsIdRoute,
+  BgpPeerGroupsNewRoute: BgpPeerGroupsNewRoute,
+  BgpPeerGroupsIndexRoute: BgpPeerGroupsIndexRoute,
+  BgpPeerGroupsIdEditRoute: BgpPeerGroupsIdEditRoute,
+}
+
+const BgpPeerGroupsRouteWithChildren = BgpPeerGroupsRoute._addFileChildren(
+  BgpPeerGroupsRouteChildren,
+)
+
+interface BgpSessionsRouteChildren {
+  BgpSessionsIdRoute: typeof BgpSessionsIdRoute
+  BgpSessionsNewRoute: typeof BgpSessionsNewRoute
+  BgpSessionsIndexRoute: typeof BgpSessionsIndexRoute
+  BgpSessionsIdEditRoute: typeof BgpSessionsIdEditRoute
+}
+
+const BgpSessionsRouteChildren: BgpSessionsRouteChildren = {
+  BgpSessionsIdRoute: BgpSessionsIdRoute,
+  BgpSessionsNewRoute: BgpSessionsNewRoute,
+  BgpSessionsIndexRoute: BgpSessionsIndexRoute,
+  BgpSessionsIdEditRoute: BgpSessionsIdEditRoute,
+}
+
+const BgpSessionsRouteWithChildren = BgpSessionsRoute._addFileChildren(
+  BgpSessionsRouteChildren,
+)
 
 interface CablesRouteChildren {
   CablesIdRoute: typeof CablesIdRoute
@@ -9830,6 +10054,8 @@ const rootRouteChildren: RootRouteChildren = {
   AsnsRoute: AsnsRouteWithChildren,
   AuditLogRoute: AuditLogRoute,
   AutomationTargetsRoute: AutomationTargetsRouteWithChildren,
+  BgpPeerGroupsRoute: BgpPeerGroupsRouteWithChildren,
+  BgpSessionsRoute: BgpSessionsRouteWithChildren,
   CablesRoute: CablesRouteWithChildren,
   ChangeLogRoute: ChangeLogRoute,
   CircuitTypesRoute: CircuitTypesRouteWithChildren,
