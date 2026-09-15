@@ -162,3 +162,20 @@ class RenderTests(_Base):
         self.assertEqual([(r["name"], r["l3vni"]) for r in ctx["vrfs"]], [("TENANT-A", 5000)])
         # A leaf with no VTEP has none.
         self.assertIsNone(routing_context(self.other)["vtep"])
+
+    def test_anycast_gateway_reaches_the_interface_loop(self):
+        from api.models import FHRPGroup, FHRPGroupAssignment
+
+        svi = Interface.objects.create(device=self.leaf, name="Vlan100", type="virtual", vrf=self.vrf)
+        net = Prefix.objects.create(tenant=self.tenant, cidr="10.100.0.0/24", vrf=self.vrf)
+        vip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.100.0.1", prefix=net, vrf=self.vrf)
+        group = FHRPGroup.objects.create(
+            tenant=self.tenant, name="anycast-100", protocol="anycast", group_id=100, virtual_ip=vip,
+        )
+        FHRPGroupAssignment.objects.create(fhrp_group=group, interface=svi, priority=100)
+        row = routing_context(self.leaf)["by_interface"]["Vlan100"]
+        self.assertEqual(row["gateway"], "10.100.0.1/24")
+        self.assertEqual(row["vrf"], "TENANT-A")
+        self.assertEqual(row["fhrp"][0]["protocol"], "anycast")
+        self.assertEqual(row["fhrp"][0]["group_id"], 100)
+        self.assertIsNone(routing_context(self.leaf)["by_interface"]["lo0"]["gateway"])

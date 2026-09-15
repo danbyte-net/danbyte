@@ -2783,6 +2783,13 @@ export interface TopoEdge {
     target_device?: string
     local_port?: string
     remote_port?: string
+    /** BGP edges: the sessions between the two devices (both directions). */
+    sessions?: string[]
+    kind?: "ibgp" | "ebgp" | null
+    vrf?: string | null
+    address_families?: string[]
+    a_asn?: number | null
+    b_asn?: number | null
   }
 }
 
@@ -4289,6 +4296,12 @@ export interface BGPPeerKnobs {
   keepalive: number | null
   hold_time: number | null
   keychain: { id: string; name: string; algorithm: string } | null
+  default_originate: boolean | null
+  maximum_prefix: number | null
+  allowas_in: number | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  soft_reconfiguration: boolean | null
   extra: Record<string, unknown>
 }
 
@@ -4371,6 +4384,12 @@ export interface BGPSessionEffective {
   keepalive: number | null
   hold_time: number | null
   keychain: { id: string; name: string; algorithm: string } | null
+  default_originate: boolean | null
+  maximum_prefix: number | null
+  allowas_in: number | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  soft_reconfiguration: boolean | null
   extra: Record<string, unknown>
   remote_asn_mode: RemoteAsnMode
   remote_asn: number | null

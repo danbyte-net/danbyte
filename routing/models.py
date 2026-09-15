@@ -694,6 +694,16 @@ class _PeerKnobs(models.Model):
     )
     keepalive = models.PositiveSmallIntegerField(null=True, blank=True)
     hold_time = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: ``neighbor X default-originate``.
+    default_originate = models.BooleanField(null=True, blank=True)
+    #: ``neighbor X maximum-prefix N`` - the session drops past it.
+    maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
+    #: ``neighbor X allowas-in N`` - times the local AS may appear in a path.
+    allowas_in = models.PositiveSmallIntegerField(null=True, blank=True)
+    as_override = models.BooleanField(null=True, blank=True)
+    remove_private_as = models.BooleanField(null=True, blank=True)
+    #: ``soft-reconfiguration inbound``.
+    soft_reconfiguration = models.BooleanField(null=True, blank=True)
     keychain = models.ForeignKey(
         RoutingKeychain, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="%(class)ss",
@@ -710,7 +720,8 @@ class _PeerKnobs(models.Model):
 PEER_KNOBS = (
     "address_families", "import_policy", "export_policy", "bfd", "bfd_profile",
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
-    "keepalive", "hold_time", "keychain",
+    "keepalive", "hold_time", "keychain", "default_originate", "maximum_prefix",
+    "allowas_in", "as_override", "remove_private_as", "soft_reconfiguration",
 )
 
 

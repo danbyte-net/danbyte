@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from django.db.models import F
 
+from api.models import FHRPGroupAssignment
+
 from .models import (
     VTEP,
     ASPathList,
@@ -245,6 +247,12 @@ def session_dict(s, policies: set[str]) -> dict:
         "keepalive": eff["keepalive"],
         "hold_time": eff["hold_time"],
         "keychain": _name(eff["keychain"]),
+        "default_originate": bool(eff["default_originate"]),
+        "maximum_prefix": eff["maximum_prefix"],
+        "allowas_in": eff["allowas_in"],
+        "as_override": bool(eff["as_override"]),
+        "remove_private_as": bool(eff["remove_private_as"]),
+        "soft_reconfiguration": bool(eff["soft_reconfiguration"]),
         "description": s.description or "",
         "extra": eff["extra"],
     }
@@ -306,6 +314,12 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
                 "keepalive": g.keepalive,
                 "hold_time": g.hold_time,
                 "keychain": _name(g.keychain) if g.keychain_id else None,
+                "default_originate": bool(g.default_originate),
+                "maximum_prefix": g.maximum_prefix,
+                "allowas_in": g.allowas_in,
+                "as_override": bool(g.as_override),
+                "remove_private_as": bool(g.remove_private_as),
+                "soft_reconfiguration": bool(g.soft_reconfiguration),
                 "extra": g.extra or {},
             }
     return {
@@ -589,13 +603,44 @@ def routing_context(device) -> dict:
 
     # What an interfaces loop needs without a nested search: the IGP rows
     # keyed by port name.
+    # First-hop groups on the device's ports, the EVPN anycast gateway among
+    # them - so an SVI loop prints the shared address without walking the
+    # FHRP tables in a template.
+    fhrp: dict[str, list] = {}
+    for a in (
+        FHRPGroupAssignment.objects.filter(interface__device=device)
+        .select_related("interface", "fhrp_group__virtual_ip__prefix")
+        .order_by("interface__name", "fhrp_group__group_id")
+    ):
+        g = a.fhrp_group
+        vip = g.virtual_ip if g.virtual_ip_id else None
+        fhrp.setdefault(a.interface.name, []).append({
+            "protocol": g.protocol,
+            "group_id": g.group_id,
+            "name": g.name or None,
+            "virtual_ip": vip.ip_address if vip is not None else None,
+            "cidr": (
+                f"{vip.ip_address}/{str(vip.prefix.cidr).split('/')[-1]}"
+                if vip is not None and vip.prefix_id else None
+            ),
+            "priority": a.priority,
+        })
+
+    def _gateway(rows):
+        for r in rows:
+            if r["protocol"] == "anycast" and r["cidr"]:
+                return r["cidr"]
+        return None
+
     by_interface: dict[str, dict] = {}
     for iface in device.interfaces.all():
+        rows = fhrp.get(iface.name, [])
         by_interface[iface.name] = {
             "vrf": iface.vrf.name if iface.vrf_id else None,
             "ospf": None, "isis": None, "eigrp": None,
+            "fhrp": rows, "gateway": _gateway(rows),
         }
-    blank = {"vrf": None, "ospf": None, "isis": None, "eigrp": None}
+    blank = {"vrf": None, "ospf": None, "isis": None, "eigrp": None, "fhrp": [], "gateway": None}
     for o in ospf:
         for row in o["interfaces"]:
             by_interface.setdefault(row["interface"], dict(blank))

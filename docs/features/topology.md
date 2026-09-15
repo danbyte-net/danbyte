@@ -258,7 +258,10 @@ map.
   the group header, remembered per browser - with the monitoring chip on
   each row. When the map is grouped by site or location, the groups are
   listed instead; double-click one to open it.
-- **Links** by media type, with LLDP-discovered links as their own family;
+- **Links** by media type, with LLDP-discovered links and **BGP sessions**
+  (a dotted line per peering device pair and table, labelled with the two
+  AS numbers, iBGP or eBGP and the VRF; click it to open the session) as
+  their own families;
   each row names its two ends and the cable label.
 - **Zones** on this view style: click to fit the box, double-click to
   rename.

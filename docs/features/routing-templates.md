@@ -136,6 +136,10 @@ interface {{ i.name }}
   ip address {{ ip | host }}/{{ ip | prefixlen }}
 {% endfor %}
 {% set r = routing.by_interface.get(i.name) %}
+{% if r and r.gateway %}
+  ip address {{ r.gateway }}
+  fabric forwarding mode anycast-gateway
+{% endif %}
 {% if r and r.isis %}
   ip router isis {{ r.isis.process }}
 {% if r.isis.network_type == "point-to-point" %}
@@ -236,6 +240,21 @@ router bgp {{ inst.asn }}
 {% if s.send_community in ("both", "extended") %}
       send-community extended
 {% endif %}
+{% if s.default_originate %}
+      default-originate
+{% endif %}
+{% if s.maximum_prefix %}
+      maximum-prefix {{ s.maximum_prefix }}
+{% endif %}
+{% if s.allowas_in %}
+      allowas-in {{ s.allowas_in }}
+{% endif %}
+{% if s.as_override %}
+      as-override
+{% endif %}
+{% if s.soft_reconfiguration %}
+      soft-reconfiguration inbound
+{% endif %}
 {% endfor %}
 {% endfor %}
 {% for vinst in routing.bgp if vinst.vrf %}
@@ -299,6 +318,9 @@ interface {{ i.name }}{% if i.vrf %} vrf {{ i.vrf.name }}{% endif %}
  ip address {{ ip | cidr }}
 {% endfor %}
 {% set r = routing.by_interface.get(i.name) %}
+{% if r and r.gateway %}
+ ip address {{ r.gateway }}
+{% endif %}
 {% if r and r.isis %}
 {% for fam in r.isis.families %}
  {{ "ip" if fam == "ipv4" else "ipv6" }} router isis {{ r.isis.process }}
@@ -426,6 +448,24 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% endif %}
 {% if af.import_policy %}
   neighbor {{ who }} route-map {{ af.import_policy }} in
+{% endif %}
+{% if s.default_originate %}
+  neighbor {{ who }} default-originate
+{% endif %}
+{% if s.maximum_prefix %}
+  neighbor {{ who }} maximum-prefix {{ s.maximum_prefix }}
+{% endif %}
+{% if s.allowas_in %}
+  neighbor {{ who }} allowas-in {{ s.allowas_in }}
+{% endif %}
+{% if s.as_override %}
+  neighbor {{ who }} as-override
+{% endif %}
+{% if s.remove_private_as %}
+  neighbor {{ who }} remove-private-AS
+{% endif %}
+{% if s.soft_reconfiguration %}
+  neighbor {{ who }} soft-reconfiguration inbound
 {% endif %}
 {% endfor %}
 {% if af.afi_safi == "l2vpn-evpn" and routing.vtep and not inst.vrf %}

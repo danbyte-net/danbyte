@@ -506,6 +506,34 @@ function build(
       continue
     }
 
+    // A BGP session between the two cards - a dotted overlay line, one per
+    // device pair and table. Clicking opens the session.
+    if (e.type === "bgp") {
+      const d = e.data ?? {}
+      const ep = d.pairs?.[0]
+      const kind = d.kind === "ibgp" ? "iBGP" : d.kind === "ebgp" ? "eBGP" : ""
+      allEdges.push({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: "smoothstep",
+        pathOptions: { borderRadius: 10 },
+        label: [ep ? `${ep.a} ⇄ ${ep.b}` : "BGP", kind, d.vrf ?? ""]
+          .filter(Boolean)
+          .join(" · "),
+        data: { sem: "bgp", bgp: e.data },
+        style: {
+          strokeWidth: 1.5,
+          stroke: "var(--primary)",
+          strokeDasharray: "2 4",
+          opacity: 0.9,
+        },
+        labelStyle: { fontSize: 9 },
+        labelBgStyle: { fill: "var(--card)" },
+      } as Edge)
+      continue
+    }
+
     // LLDP "ghost" link - SNMP-adjacent, no cable. Clicking offers to
     // materialise it.
     if (e.type === "ghost") {
@@ -1083,6 +1111,8 @@ export interface TopologyCanvasProps {
    * coordinates, so a zone can be created where the click landed. */
   onPaneContext?: (x: number, y: number, fx: number, fy: number) => void
   onGhostEdge?: (ghost: GhostEdgeData) => void
+  /** A BGP overlay line was clicked - its sessions, both directions. */
+  onBgpEdge?: (bgp: NonNullable<TopoEdge["data"]>) => void
   onCanvasClick?: () => void
   /** Fired after a node drag settles - the parent can persist positions(). */
   onDragEnd?: () => void
@@ -1119,6 +1149,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onNodeContext,
     onPaneContext,
     onGhostEdge,
+    onBgpEdge,
     onCanvasClick,
     onDragEnd,
   },
@@ -1581,12 +1612,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         | {
             sem?: string
             ghost?: GhostEdgeData
+            bgp?: NonNullable<TopoEdge["data"]>
             raw?: TopoEdge["data"]
             cables?: BundleMember[]
             group?: GroupEdgeInfo
           }
         | undefined
       if (data?.sem === "ghost" && data.ghost) onGhostEdge?.(data.ghost)
+      if (data?.sem === "bgp" && data.bgp) onBgpEdge?.(data.bgp)
       else if (
         (data?.sem === "bundle" || data?.sem === "lagbundle") &&
         data.cables
@@ -1596,7 +1629,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         onSelectGroupEdge?.(data.group, edge.id)
       else if (data?.raw) onSelectEdge?.(data.raw, edge.id)
     },
-    [onGhostEdge, onSelectEdge, onSelectBundle, onSelectGroupEdge]
+    [onGhostEdge, onBgpEdge, onSelectEdge, onSelectBundle, onSelectGroupEdge]
   )
 
   // Dragging a card changes which side of it faces each neighbour - re-snap

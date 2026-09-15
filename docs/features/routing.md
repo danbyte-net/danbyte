@@ -168,11 +168,21 @@ ends is internal, anything else external (an unnumbered *internal* /
 filters the sessions list, and reaches a template as `session.kind`.
 
 Every neighbour setting a session leaves on **Inherit** comes from its peer
-group; what neither sets falls to the instance (BFD) or the platform
-default. The session's page shows both: **Effective settings** - what the
+group; what neither sets falls to the instance (BFD, the BFD profile) or
+the platform default. The settings are the address families, import and
+export policy, BFD and its profile, eBGP multihop, next-hop self, route
+reflector client, send community, keepalive and hold time, the keychain,
+and the day-one neighbour knobs: **default originate**, **maximum
+prefix**, **allowas-in**, **AS override**, **remove private AS** and
+**soft reconfiguration**. The session's page shows both: **Effective settings** - what the
 box ends up with - and **Own values**. The API returns the same as
 `effective`, and the render context carries only effective values, so a
 template never repeats the resolution.
+
+Sessions whose far end is a device Danbyte knows draw on the
+[topology map](topology.md) as their own link family - a dotted line per
+device pair and table, hidden with the eyes like any other family, with
+the session a click away.
 
 **Create the far end** on a session's page writes the mirror session on the
 peer device - its instance in the same table, addresses swapped, the
@@ -309,7 +319,9 @@ routing:
                                local_address: {address, cidr, interface}, remote_address, interface,
                                peer_device, address_families, import_policy, export_policy, bfd,
                                ebgp_multihop, update_source, next_hop_self, route_reflector_client,
-                               send_community, keepalive, hold_time, keychain, extra}],
+                               send_community, keepalive, hold_time, keychain, default_originate,
+                               maximum_prefix, allowas_in, as_override, remove_private_as,
+                               soft_reconfiguration, extra}],
                    peer_groups: [{name, ...}]}]      # only the groups this instance's sessions use
   ospf:          [{vrf, process_id, version, router_id, reference_bandwidth, passive_by_default,
                    default_originate, bfd, redistribute: [...],
@@ -326,7 +338,9 @@ routing:
                                  split_horizon, summary_addresses, bfd, authentication, keychain}]}]
   by_interface:  {NAME: {vrf, ospf: {process_id, version, area, cost, ...} | null,
                          isis: {process, families, level, metric, ...} | null,
-                         eigrp: {asn, name, passive, summary_addresses, ...} | null}}
+                         eigrp: {asn, name, passive, summary_addresses, ...} | null,
+                         fhrp: [{protocol, group_id, name, virtual_ip, cidr, priority}],
+                         gateway: "10.100.0.1/24" | null}}
   vtep:          {source_interface, source_ip, anycast_ip, anycast_gateway_mac, arp_suppression,
                   vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, rd, import_targets,
                           export_targets, ingress_replication, mcast_group, extra}]} | null
@@ -340,7 +354,11 @@ routing:
 ```
 
 Wherever a block carries `bfd`, it carries `bfd_profile` beside it - the
-resolved profile's name, or `null` for the platform default.
+resolved profile's name, or `null` for the platform default. `by_interface`
+also carries the port's first-hop groups (`fhrp`) and, as `gateway`, the
+EVPN anycast gateway's address with its mask - so an SVI loop prints
+`ip address 10.100.0.1/24` and `fabric forwarding mode anycast-gateway`
+without a template walking the FHRP tables.
 
 `vrfs` is every table the device has to define - the VRFs its interfaces,
 routes and instances sit in, and the VRFs of the L3VNIs its VTEP carries,

@@ -79,6 +79,15 @@ export function knobRows(
       value: nameOr(k.bfd_profile, unset, "/bfd-profiles/$id"),
     },
     { label: "eBGP multihop", value: numOr(k.ebgp_multihop, unset) },
+    { label: "Default originate", value: onOff(k.default_originate, unset) },
+    { label: "Maximum prefix", value: numOr(k.maximum_prefix, unset) },
+    { label: "Allowas-in", value: numOr(k.allowas_in, unset) },
+    { label: "AS override", value: onOff(k.as_override, unset) },
+    { label: "Remove private AS", value: onOff(k.remove_private_as, unset) },
+    {
+      label: "Soft reconfiguration",
+      value: onOff(k.soft_reconfiguration, unset),
+    },
     { label: "Next-hop self", value: onOff(k.next_hop_self, unset) },
     {
       label: "Route reflector client",

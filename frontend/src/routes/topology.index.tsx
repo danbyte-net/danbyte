@@ -868,16 +868,28 @@ function TopologyPage() {
       ),
   })
 
-  /** Everything the query returned plus the LLDP ghosts between those
-   * cards - what the sidebar lists, hidden or not. */
+  const bgp = useQuery({
+    queryKey: ["topology-bgp", filters.site],
+    enabled: !logical,
+    queryFn: () =>
+      api<{ edges: TopoEdge[] }>(
+        `/api/routing/topology/bgp/${
+          filters.site !== "all" ? `?site=${filters.site}` : ""
+        }`
+      ),
+  })
+
+  /** Everything the query returned plus the LLDP ghosts and BGP sessions
+   * between those cards - what the sidebar lists, hidden or not. */
   const fullGraph = useMemo<TopologyGraph | undefined>(() => {
     if (!q.data) return undefined
     const present = new Set(q.data.nodes.map((n) => n.id))
-    const ghostEdges = (ghosts.data?.edges ?? []).filter(
-      (e) => present.has(e.source) && present.has(e.target)
-    )
-    return { ...q.data, edges: [...q.data.edges, ...ghostEdges] }
-  }, [q.data, ghosts.data])
+    const between = (e: TopoEdge) =>
+      present.has(e.source) && present.has(e.target)
+    const ghostEdges = (ghosts.data?.edges ?? []).filter(between)
+    const bgpEdges = (bgp.data?.edges ?? []).filter(between)
+    return { ...q.data, edges: [...q.data.edges, ...ghostEdges, ...bgpEdges] }
+  }, [q.data, ghosts.data, bgp.data])
   /** What the canvas draws. How many cards hiding took off THIS map is the
    * chip's count - a view saved against one filter can carry names the
    * current query never returns, and offering to restore those would be a
@@ -1581,6 +1593,10 @@ function TopologyPage() {
               matchedIds={matchedIds}
               selectedEdgeId={selEdgeId}
               onGhostEdge={setGhost}
+              onBgpEdge={(d) => {
+                const id = d.sessions?.[0]
+                if (id) nav({ to: "/bgp-sessions/$id", params: { id } })
+              }}
               onSelectNode={(d) => {
                 clearSel()
                 setSelNode(d)

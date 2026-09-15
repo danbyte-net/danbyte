@@ -795,6 +795,8 @@ _KNOB_FIELDS = [
     "export_policy", "export_policy_id", "bfd", "bfd_profile", "bfd_profile_id",
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
     "keepalive", "hold_time", "keychain", "keychain_id", "extra",
+    "default_originate", "maximum_prefix", "allowas_in", "as_override",
+    "remove_private_as", "soft_reconfiguration",
 ]
 
 

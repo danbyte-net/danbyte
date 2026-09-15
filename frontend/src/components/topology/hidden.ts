@@ -27,12 +27,15 @@ export const NO_LOCATION = "No location"
 export const NO_ROLE = "No role"
 /** The link family LLDP ghosts are listed and hidden under. */
 export const DISCOVERED = "Discovered"
+/** The link family BGP sessions are listed and hidden under. */
+export const BGP_SESSIONS = "BGP sessions"
 
 /** The family a link is listed and hidden under - cables by media type,
  * LLDP ghosts as their own; null for the aggregates and pass-through
  * strands, which are how the canvas draws, not objects. */
 export function linkFamily(e: TopoEdge): string | null {
   if (e.type === "ghost") return DISCOVERED
+  if (e.type === "bgp") return BGP_SESSIONS
   if (e.type === "cable" || !e.type) return e.data?.cable_type || "Untyped"
   return null
 }

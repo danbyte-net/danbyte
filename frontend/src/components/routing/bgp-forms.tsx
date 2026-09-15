@@ -128,6 +128,12 @@ interface KnobState {
   keepalive: string
   holdTime: string
   keychainId: string | null
+  defaultOriginate: string | null
+  maximumPrefix: string
+  allowasIn: string
+  asOverride: string | null
+  removePrivateAs: string | null
+  softReconfiguration: string | null
 }
 
 function knobsFrom(k?: Partial<BGPPeerGroup> | Partial<BGPSession>): KnobState {
@@ -144,6 +150,12 @@ function knobsFrom(k?: Partial<BGPPeerGroup> | Partial<BGPSession>): KnobState {
     keepalive: numText(k?.keepalive),
     holdTime: numText(k?.hold_time),
     keychainId: k?.keychain?.id ?? null,
+    defaultOriginate: triFrom(k?.default_originate),
+    maximumPrefix: numText(k?.maximum_prefix),
+    allowasIn: numText(k?.allowas_in),
+    asOverride: triFrom(k?.as_override),
+    removePrivateAs: triFrom(k?.remove_private_as),
+    softReconfiguration: triFrom(k?.soft_reconfiguration),
   }
 }
 
@@ -161,6 +173,12 @@ function knobsPayload(k: KnobState) {
     keepalive: numOrNull(k.keepalive),
     hold_time: numOrNull(k.holdTime),
     keychain_id: k.keychainId,
+    default_originate: triTo(k.defaultOriginate),
+    maximum_prefix: numOrNull(k.maximumPrefix),
+    allowas_in: numOrNull(k.allowasIn),
+    as_override: triTo(k.asOverride),
+    remove_private_as: triTo(k.removePrivateAs),
+    soft_reconfiguration: triTo(k.softReconfiguration),
   }
 }
 
@@ -269,6 +287,54 @@ function KnobFields({
           value={k.holdTime}
           onChange={(v) => set({ holdTime: v })}
           error={errors.hold_time}
+        />
+      </div>
+      <div className="grid gap-3 @md:grid-cols-3">
+        <FormSelect
+          label="Default originate"
+          value={k.defaultOriginate}
+          onChange={(v) => set({ defaultOriginate: v })}
+          options={TRI}
+          noneLabel={none}
+        />
+        <FormText
+          label="Maximum prefix"
+          type="number"
+          value={k.maximumPrefix}
+          onChange={(v) => set({ maximumPrefix: v })}
+          info="The session is torn down past this many received prefixes."
+          error={errors.maximum_prefix}
+        />
+        <FormText
+          label="Allowas-in"
+          type="number"
+          value={k.allowasIn}
+          onChange={(v) => set({ allowasIn: v })}
+          info="Times the local AS may appear in a received path."
+          error={errors.allowas_in}
+        />
+      </div>
+      <div className="grid gap-3 @md:grid-cols-3">
+        <FormSelect
+          label="AS override"
+          value={k.asOverride}
+          onChange={(v) => set({ asOverride: v })}
+          options={TRI}
+          noneLabel={none}
+        />
+        <FormSelect
+          label="Remove private AS"
+          value={k.removePrivateAs}
+          onChange={(v) => set({ removePrivateAs: v })}
+          options={TRI}
+          noneLabel={none}
+        />
+        <FormSelect
+          label="Soft reconfiguration"
+          value={k.softReconfiguration}
+          onChange={(v) => set({ softReconfiguration: v })}
+          options={TRI}
+          noneLabel={none}
         />
       </div>
       <BFDFields

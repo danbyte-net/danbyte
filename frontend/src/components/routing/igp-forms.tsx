@@ -478,15 +478,18 @@ export function OSPFInterfaceForm({
   instance,
   onSaved,
   onCancel,
+  initialInterfaceId,
 }: {
   item?: OSPFInterface | null
   instance: OSPFInstance
   onSaved: (v: OSPFInterface) => void
   onCancel: () => void
+  /** Preselect the port - the interface page's Enrol action. */
+  initialInterfaceId?: string
 }) {
   const isEdit = !!item
   const [interfaceId, setInterfaceId] = useState<string | null>(
-    item?.interface.id ?? null
+    item?.interface.id ?? initialInterfaceId ?? null
   )
   const [areaId, setAreaId] = useState<string | null>(item?.area.id ?? null)
   const [cost, setCost] = useState(numText(item?.cost))
@@ -907,15 +910,18 @@ export function ISISInterfaceForm({
   instance,
   onSaved,
   onCancel,
+  initialInterfaceId,
 }: {
   item?: ISISInterface | null
   instance: ISISInstance
   onSaved: (v: ISISInterface) => void
   onCancel: () => void
+  /** Preselect the port - the interface page's Enrol action. */
+  initialInterfaceId?: string
 }) {
   const isEdit = !!item
   const [interfaceId, setInterfaceId] = useState<string | null>(
-    item?.interface.id ?? null
+    item?.interface.id ?? initialInterfaceId ?? null
   )
   const [families, setFamilies] = useState<string[]>(item?.families ?? ["ipv4"])
   const [level, setLevel] = useState<string | null>(item?.level || null)
@@ -1318,15 +1324,18 @@ export function EIGRPInterfaceForm({
   instance,
   onSaved,
   onCancel,
+  initialInterfaceId,
 }: {
   item?: EIGRPInterface | null
   instance: EIGRPInstance
   onSaved: (v: EIGRPInterface) => void
   onCancel: () => void
+  /** Preselect the port - the interface page's Enrol action. */
+  initialInterfaceId?: string
 }) {
   const isEdit = !!item
   const [interfaceId, setInterfaceId] = useState<string | null>(
-    item?.interface.id ?? null
+    item?.interface.id ?? initialInterfaceId ?? null
   )
   const [passive, setPassive] = useState<string | null>(triFrom(item?.passive))
   const [splitHorizon, setSplitHorizon] = useState<string | null>(

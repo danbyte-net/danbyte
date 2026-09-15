@@ -113,6 +113,7 @@ from integrations.virt_api import (
     VirtNetworkViewSet,
     VirtPlacementRuleViewSet,
 )
+from routing.topology import bgp_topology_view
 from routing.viewsets import (
     ASPathListRuleViewSet,
     ASPathListViewSet,
@@ -516,6 +517,7 @@ urlpatterns = [
     # Content-Security-Policy report-uri set at the nginx edge).
     path("csp-report/", csp_report, name="csp-report"),
     path("topology/", topology_view, name="topology"),
+    path("routing/topology/bgp/", bgp_topology_view, name="routing-topology-bgp"),
     path("topology/logical/", topology_logical_view, name="topology-logical"),
     path("topology/summary/", topology_summary_view, name="topology-summary"),
     path("customization/meta/", customization_meta, name="customization-meta"),

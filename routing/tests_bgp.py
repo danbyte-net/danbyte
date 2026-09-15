@@ -128,10 +128,14 @@ class SessionTests(_Base):
         )
 
     def test_inherits_from_the_group_and_overrides(self):
+        self.group.maximum_prefix = 1000
+        self.group.allowas_in = 1
+        self.group.soft_reconfiguration = True
+        self.group.save()
         r = self._post("/api/routing/bgp-sessions/", {
             "instance_id": str(self.inst.id), "peer_group_id": str(self.group.id),
             "remote_address": "10.0.0.1", "local_address_id": str(self.ip_leaf.id),
-            "hold_time": 30,
+            "hold_time": 30, "as_override": True,
         })
         self.assertEqual(r.status_code, 201, r.content)
         body = r.json()
@@ -141,6 +145,10 @@ class SessionTests(_Base):
         self.assertTrue(eff["bfd"])
         self.assertEqual(eff["keepalive"], 3)
         self.assertEqual(eff["hold_time"], 30)  # own value wins
+        self.assertEqual((eff["maximum_prefix"], eff["allowas_in"]), (1000, 1))
+        self.assertTrue(eff["soft_reconfiguration"])
+        self.assertTrue(eff["as_override"])  # own
+        self.assertIsNone(eff["default_originate"])
         self.assertEqual(eff["import_policy"]["name"], "SPINES-IN")
         self.assertEqual(eff["local_asn"], 65001)  # from the instance
         self.assertEqual(eff["kind"], "ebgp")  # 65001 → 65000
@@ -236,6 +244,35 @@ class SessionTests(_Base):
         r = self.client.post(f"/api/routing/bgp-sessions/{sid}/create-peer/")
         self.assertEqual(r.status_code, 400)
         self.assertEqual(BGPSession.objects.filter(instance=far).count(), 1)
+
+    def test_sessions_draw_on_the_topology_map(self):
+        # The far end runs its own AS, so the mirror lands in an instance there.
+        BGPInstance.objects.create(
+            tenant=self.tenant, device=self.spine,
+            asn=ASN.objects.create(tenant=self.tenant, asn=65000),
+        )
+        r = self._post("/api/routing/bgp-sessions/", {
+            "instance_id": str(self.inst.id), "peer_group_id": str(self.group.id),
+            "remote_address": "10.0.0.1", "local_address_id": str(self.ip_leaf.id),
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        sid = r.json()["id"]
+        r = self.client.post(f"/api/routing/bgp-sessions/{sid}/create-peer/")
+        self.assertEqual(r.status_code, 201, r.content)
+        edges = self.client.get("/api/routing/topology/bgp/").json()["edges"]
+        self.assertEqual(len(edges), 1)  # both directions, one line
+        e = edges[0]
+        self.assertEqual({e["source"], e["target"]}, {f"dev:{self.leaf.id}", f"dev:{self.spine.id}"})
+        self.assertEqual(e["type"], "bgp")
+        self.assertEqual(len(e["data"]["sessions"]), 2)
+        self.assertEqual(e["data"]["kind"], "ebgp")
+        self.assertEqual(sorted(p for pair in e["data"]["pairs"] for p in pair.values()),
+                         ["AS65000", "AS65001"])
+        self.assertIn("ipv4-unicast", e["data"]["address_families"])
+        other = Site.objects.create(tenant=self.tenant, name="Elsewhere")
+        self.assertEqual(
+            self.client.get(f"/api/routing/topology/bgp/?site={other.id}").json()["edges"], []
+        )
 
     def test_filters_and_tenant_isolation(self):
         BGPSession.objects.create(
