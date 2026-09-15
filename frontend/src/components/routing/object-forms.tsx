@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type {
+  BFDProfile,
   Community,
   InterfaceOption,
   Paginated,
@@ -32,6 +33,123 @@ import {
   numText,
   useRoutingSave,
 } from "./form-bits"
+
+// ─── BFD profile ─────────────────────────────────────────────────────────────
+
+export function BFDProfileForm({
+  item,
+  onSaved,
+  onCancel,
+}: {
+  item?: BFDProfile
+  onSaved: (v: BFDProfile) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const [name, setName] = useState(item?.name ?? "")
+  const [minTx, setMinTx] = useState(numText(item?.min_tx ?? 300))
+  const [minRx, setMinRx] = useState(numText(item?.min_rx ?? 300))
+  const [multiplier, setMultiplier] = useState(numText(item?.multiplier ?? 3))
+  const [echo, setEcho] = useState(item?.echo ?? false)
+  const [description, setDescription] = useState(item?.description ?? "")
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(
+    item?.custom_fields ?? {}
+  )
+  const { mutation, fieldErrors } = useRoutingSave<BFDProfile>({
+    objectType: ROUTING_OBJECT_TYPES.bfdprofile,
+    endpoint: "/api/routing/bfd-profiles/",
+    queryKey: "bfd-profiles",
+    id: item?.id,
+    label: (v) => v.name,
+    onSaved,
+  })
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate({
+          name: name.trim(),
+          min_tx: numOrNull(minTx),
+          min_rx: numOrNull(minRx),
+          multiplier: numOrNull(multiplier),
+          echo,
+          description: description.trim(),
+          tag_ids: tagIds,
+          custom_fields: customFields,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="Profile" card>
+        <FormText
+          label="Name"
+          required
+          mono
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="FAST"
+          error={fieldErrors.name}
+        />
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="Min TX"
+            required
+            type="number"
+            hint="ms"
+            value={minTx}
+            onChange={setMinTx}
+            error={fieldErrors.min_tx}
+          />
+          <FormText
+            label="Min RX"
+            required
+            type="number"
+            hint="ms"
+            value={minRx}
+            onChange={setMinRx}
+            error={fieldErrors.min_rx}
+          />
+          <FormText
+            label="Multiplier"
+            required
+            type="number"
+            value={multiplier}
+            onChange={setMultiplier}
+            info="Missed packets before the session is down."
+            error={fieldErrors.multiplier}
+          />
+        </div>
+        <FormCheckbox
+          label="Echo mode"
+          checked={echo}
+          onChange={setEcho}
+          info="Echo packets are looped back by the peer's forwarding plane, so the timers can be faster than its control plane."
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTags value={tagIds} onChange={setTagIds} label="Tags" />
+        <CustomFieldInputs
+          model="bfdprofile"
+          value={customFields}
+          onChange={setCustomFields}
+        />
+      </FormSection>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create profile"}
+      />
+    </form>
+  )
+}
 
 // ─── Community ───────────────────────────────────────────────────────────────
 

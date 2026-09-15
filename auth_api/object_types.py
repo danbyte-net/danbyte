@@ -111,6 +111,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.RoutingPolicy", "Routing policies", "Routing"),
     ("routing.RoutingPolicyRule", "Routing policy rules", "Routing"),
     ("routing.RoutingKeychain", "Routing keychains", "Routing"),
+    ("routing.BFDProfile", "BFD profiles", "Routing"),
     ("routing.StaticRoute", "Static routes", "Routing"),
     ("routing.BGPInstance", "BGP instances", "Routing"),
     ("routing.BGPAddressFamily", "BGP address families", "Routing"),

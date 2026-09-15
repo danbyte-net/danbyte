@@ -1,5 +1,6 @@
 import type {
   ASPathList,
+  BFDProfile,
   ASPathListRule,
   BGPPeerGroup,
   Community,
@@ -15,6 +16,7 @@ import type {
 import { useMe } from "@/lib/use-me"
 import { RevealPskButton } from "@/components/reveal-psk-button"
 import {
+  buildBFDProfileColumns,
   familyLabel,
   buildASPathListColumns,
   buildBGPPeerGroupColumns,
@@ -94,6 +96,56 @@ export const prefixListDetail: RoutingDetailSpec<PrefixList, PrefixListRule> = {
     tableId: "prefix-list-rules",
     emptyText: "No rules yet - edit the list to add some.",
   },
+}
+
+export const bfdProfileList: RoutingListSpec<BFDProfile> = {
+  title: "BFD profiles",
+  objectType: "bfdprofile",
+  endpoint: "/api/routing/bfd-profiles/",
+  queryKey: "bfd-profiles",
+  tableId: "bfd-profiles",
+  newTo: "/bfd-profiles/new",
+  addLabel: "Add profile",
+  searchPlaceholder: "Filter profiles…",
+  searchText: (r) => `${r.name} ${r.description}`,
+  flexColumn: "description",
+  label: (r) => r.name,
+  columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
+    buildBFDProfileColumns({
+      humanIds,
+      actions: {
+        editTo: "/bfd-profiles/$id/edit",
+        editParams: (r) => ({ id: r.id }),
+        canEdit: () => canEdit,
+        onDelete,
+        canDelete: () => canDelete,
+      },
+    }),
+}
+
+export const bfdProfileDetail: RoutingDetailSpec<BFDProfile> = {
+  objectType: "bfdprofile",
+  appLabel: "routing.bfdprofile",
+  endpoint: "/api/routing/bfd-profiles/",
+  queryKey: "bfd-profile",
+  backTo: "/bfd-profiles",
+  backLabel: "BFD profiles",
+  editTo: "/bfd-profiles/$id/edit",
+  title: (r) => r.name,
+  subtitle: (r) =>
+    `${r.min_tx} / ${r.min_rx} ms × ${r.multiplier}${r.echo ? " · echo" : ""}`,
+  overview: (r) => [
+    {
+      label: "Min TX",
+      value: <span className="num">{r.min_tx} ms</span>,
+    },
+    {
+      label: "Min RX",
+      value: <span className="num">{r.min_rx} ms</span>,
+    },
+    { label: "Multiplier", value: <span className="num">{r.multiplier}</span> },
+    { label: "Echo mode", value: r.echo ? "On" : "Off" },
+  ],
 }
 
 export const communityList: RoutingListSpec<Community> = {

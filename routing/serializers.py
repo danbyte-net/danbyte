@@ -36,6 +36,7 @@ from .models import (
     VTEP,
     ASPathList,
     ASPathListRule,
+    BFDProfile,
     BGPAddressFamily,
     BGPInstance,
     BGPPeerGroup,
@@ -226,6 +227,45 @@ class RoutingKeychainMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = RoutingKeychain
         fields = ["id", "name", "algorithm"]
+
+
+class BFDProfileMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = BFDProfile
+        fields = ["id", "name", "min_tx", "min_rx", "multiplier"]
+
+
+class BFDProfileSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    cf_model = "bfdprofile"
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = BFDProfile(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in BFDProfile._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in BFDProfile._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        return attrs
+
+    class Meta:
+        model = BFDProfile
+        fields = ["id", "numid", "name", "min_tx", "min_rx", "multiplier", "echo",
+                  "description", "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+
+
+class _BFDProfileFields(serializers.Serializer):
+    """``bfd_profile`` read nested, ``bfd_profile_id`` on write."""
+
+    bfd_profile = BFDProfileMiniSerializer(read_only=True)
+    bfd_profile_id = TenantScopedPrimaryKeyRelatedField(
+        source="bfd_profile", queryset=BFDProfile.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
 
 class RoutingPolicyRuleSerializer(_RuleSerializer):
@@ -654,7 +694,8 @@ class BGPAddressFamilySerializer(_ChildRowSerializer):
 
 
 class BGPInstanceSerializer(
-    CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin, NumIdModelSerializer
+    _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
 ):
     cf_model = "bgpinstance"
 
@@ -698,7 +739,7 @@ class BGPInstanceSerializer(
         model = BGPInstance
         fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id", "asn", "asn_id",
                   "router_id", "cluster_id", "graceful_restart", "bfd",
-                  "address_families", "session_count",
+                  "bfd_profile", "bfd_profile_id", "address_families", "session_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
@@ -736,6 +777,11 @@ class _PeerKnobFields(serializers.Serializer):
         source="keychain", queryset=RoutingKeychain.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    bfd_profile = BFDProfileMiniSerializer(read_only=True)
+    bfd_profile_id = TenantScopedPrimaryKeyRelatedField(
+        source="bfd_profile", queryset=BFDProfile.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     def validate_address_families(self, value):
         try:
@@ -746,8 +792,8 @@ class _PeerKnobFields(serializers.Serializer):
 
 _KNOB_FIELDS = [
     "address_families", "import_policy", "import_policy_id",
-    "export_policy", "export_policy_id", "bfd", "ebgp_multihop",
-    "next_hop_self", "route_reflector_client", "send_community",
+    "export_policy", "export_policy_id", "bfd", "bfd_profile", "bfd_profile_id",
+    "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
     "keepalive", "hold_time", "keychain", "keychain_id", "extra",
 ]
 
@@ -833,7 +879,10 @@ class BGPSessionSerializer(
     def get_effective(self, obj) -> dict:
         eff = obj.effective()
         return {
-            **{k: v for k, v in eff.items() if k not in ("import_policy", "export_policy", "keychain")},
+            **{k: v for k, v in eff.items()
+               if k not in ("import_policy", "export_policy", "keychain", "bfd_profile")},
+            "bfd_profile": BFDProfileMiniSerializer(eff["bfd_profile"]).data
+            if eff["bfd_profile"] else None,
             "import_policy": RoutingPolicyMiniSerializer(eff["import_policy"]).data
             if eff["import_policy"] else None,
             "export_policy": RoutingPolicyMiniSerializer(eff["export_policy"]).data
@@ -916,7 +965,8 @@ class OSPFAreaMiniSerializer(NumIdModelSerializer):
 
 
 class _RedistributingInstanceSerializer(
-    CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin, NumIdModelSerializer
+    _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
 ):
     """An IGP instance: nested read of its interfaces and redistributions,
     a ``redistributions`` list on write that replaces the set."""
@@ -998,7 +1048,7 @@ class _RedistributingInstanceSerializer(
         return inst
 
 
-class OSPFInterfaceSerializer(_ChildRowSerializer):
+class OSPFInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
     parent_field = "instance"
     instance_id = TenantScopedPrimaryKeyRelatedField(
         source="instance", queryset=OSPFInstance.objects.all(),
@@ -1022,7 +1072,8 @@ class OSPFInterfaceSerializer(_ChildRowSerializer):
         model = OSPFInterface
         fields = ["id", "instance_id", "interface", "interface_id", "area", "area_id",
                   "cost", "network_type", "passive", "priority", "hello", "dead",
-                  "bfd", "mtu_ignore", "authentication", "keychain", "keychain_id", "extra"]
+                  "bfd", "bfd_profile", "bfd_profile_id", "mtu_ignore",
+                  "authentication", "keychain", "keychain_id", "extra"]
         read_only_fields = ["id"]
         validators = []
 
@@ -1037,6 +1088,7 @@ class OSPFInstanceSerializer(_RedistributingInstanceSerializer):
         fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
                   "process_id", "version", "router_id", "reference_bandwidth",
                   "passive_by_default", "default_originate", "bfd",
+                  "bfd_profile", "bfd_profile_id",
                   "redistributions", "interfaces", "interface_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
@@ -1044,7 +1096,7 @@ class OSPFInstanceSerializer(_RedistributingInstanceSerializer):
         validators = []
 
 
-class ISISInterfaceSerializer(_ChildRowSerializer):
+class ISISInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
     parent_field = "instance"
     instance_id = TenantScopedPrimaryKeyRelatedField(
         source="instance", queryset=ISISInstance.objects.all(),
@@ -1077,7 +1129,7 @@ class ISISInterfaceSerializer(_ChildRowSerializer):
         model = ISISInterface
         fields = ["id", "instance_id", "interface", "interface_id", "families",
                   "level", "metric", "metric_l2", "network_type", "passive",
-                  "hello_interval", "hello_multiplier", "bfd",
+                  "hello_interval", "hello_multiplier", "bfd", "bfd_profile", "bfd_profile_id",
                   "authentication", "keychain", "keychain_id", "extra"]
         read_only_fields = ["id"]
         validators = []
@@ -1097,7 +1149,7 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
         model = ISISInstance
         fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
                   "process", "net", "router_id", "level", "metric_style", "bfd",
-                  "authentication", "keychain", "keychain_id",
+                  "bfd_profile", "bfd_profile_id", "authentication", "keychain", "keychain_id",
                   "redistributions", "interfaces", "interface_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
@@ -1107,7 +1159,7 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
 
 # ─── Overlay: VTEPs ──────────────────────────────────────────────────────────
 
-class EIGRPInterfaceSerializer(_ChildRowSerializer):
+class EIGRPInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
     parent_field = "instance"
     instance_id = TenantScopedPrimaryKeyRelatedField(
         source="instance", queryset=EIGRPInstance.objects.all(),
@@ -1129,6 +1181,7 @@ class EIGRPInterfaceSerializer(_ChildRowSerializer):
     class Meta:
         model = EIGRPInterface
         fields = ["id", "instance_id", "interface", "interface_id", "passive", "bfd",
+                  "bfd_profile", "bfd_profile_id",
                   "hello_interval", "hold_time", "bandwidth_percent", "split_horizon",
                   "summary_addresses", "authentication", "keychain", "keychain_id", "extra"]
         read_only_fields = ["id"]
@@ -1144,7 +1197,7 @@ class EIGRPInstanceSerializer(_RedistributingInstanceSerializer):
         model = EIGRPInstance
         fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
                   "asn", "name", "router_id", "k_values", "variance", "maximum_paths",
-                  "passive_by_default", "stub", "bfd",
+                  "passive_by_default", "stub", "bfd", "bfd_profile", "bfd_profile_id",
                   "redistributions", "interfaces", "interface_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]

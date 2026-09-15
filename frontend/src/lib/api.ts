@@ -4258,11 +4258,30 @@ export interface ASNMini {
 
 /** The neighbour settings a session and a peer group share. Null on a
  * session means "as the group says"; on a group, the platform default. */
+export interface BFDProfileMini {
+  id: string
+  name: string
+  min_tx: number
+  min_rx: number
+  multiplier: number
+}
+
+export interface BFDProfile extends BFDProfileMini {
+  numid: number | null
+  echo: boolean
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface BGPPeerKnobs {
   address_families: AfiSafi[]
   import_policy: { id: string; name: string } | null
   export_policy: { id: string; name: string } | null
   bfd: boolean | null
+  bfd_profile: BFDProfileMini | null
   ebgp_multihop: number | null
   next_hop_self: boolean | null
   route_reflector_client: boolean | null
@@ -4305,6 +4324,7 @@ export interface BGPInstance {
   cluster_id: string
   graceful_restart: boolean
   bfd: boolean
+  bfd_profile: BFDProfileMini | null
   address_families: BGPAddressFamily[]
   session_count: number
   status: StatusMini | null
@@ -4343,6 +4363,7 @@ export interface BGPSessionEffective {
   import_policy: { id: string; name: string } | null
   export_policy: { id: string; name: string } | null
   bfd: boolean
+  bfd_profile: BFDProfileMini | null
   ebgp_multihop: number | null
   next_hop_self: boolean | null
   route_reflector_client: boolean | null
@@ -4419,6 +4440,7 @@ export interface OSPFInterface {
   hello: number | null
   dead: number | null
   bfd: boolean
+  bfd_profile: BFDProfileMini | null
   mtu_ignore: boolean
   authentication: "none" | "simple" | "md5" | "sha"
   keychain: { id: string; name: string; algorithm: string } | null
@@ -4432,6 +4454,7 @@ interface IGPInstanceBase {
   site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   bfd: boolean
+  bfd_profile: BFDProfileMini | null
   redistributions: Redistribution[]
   interface_count: number
   status: StatusMini | null
@@ -4465,6 +4488,7 @@ export interface ISISInterface {
   hello_interval: number | null
   hello_multiplier: number | null
   bfd: boolean
+  bfd_profile: BFDProfileMini | null
   authentication: "none" | "text" | "md5"
   keychain: { id: string; name: string; algorithm: string } | null
   extra: Record<string, unknown>
@@ -4529,6 +4553,7 @@ export interface EIGRPInterface {
   /** Null = the instance's passive_by_default. */
   passive: boolean | null
   bfd: boolean
+  bfd_profile: BFDProfileMini | null
   hello_interval: number | null
   hold_time: number | null
   bandwidth_percent: number | null

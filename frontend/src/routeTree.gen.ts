@@ -87,6 +87,7 @@ import { Route as ChangeLogRouteImport } from './routes/change-log'
 import { Route as CablesRouteImport } from './routes/cables'
 import { Route as BgpSessionsRouteImport } from './routes/bgp-sessions'
 import { Route as BgpPeerGroupsRouteImport } from './routes/bgp-peer-groups'
+import { Route as BfdProfilesRouteImport } from './routes/bfd-profiles'
 import { Route as AutomationTargetsRouteImport } from './routes/automation-targets'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as AsnsRouteImport } from './routes/asns'
@@ -195,6 +196,7 @@ import { Route as CablesIndexRouteImport } from './routes/cables.index'
 import { Route as BgpSessionsIndexRouteImport } from './routes/bgp-sessions.index'
 import { Route as BgpPeerGroupsIndexRouteImport } from './routes/bgp-peer-groups.index'
 import { Route as BgpInstancesIndexRouteImport } from './routes/bgp-instances.index'
+import { Route as BfdProfilesIndexRouteImport } from './routes/bfd-profiles.index'
 import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
 import { Route as AsnsIndexRouteImport } from './routes/asns.index'
 import { Route as AsPathListsIndexRouteImport } from './routes/as-path-lists.index'
@@ -388,6 +390,8 @@ import { Route as BgpSessionsNewRouteImport } from './routes/bgp-sessions.new'
 import { Route as BgpSessionsIdRouteImport } from './routes/bgp-sessions.$id'
 import { Route as BgpPeerGroupsNewRouteImport } from './routes/bgp-peer-groups.new'
 import { Route as BgpPeerGroupsIdRouteImport } from './routes/bgp-peer-groups.$id'
+import { Route as BfdProfilesNewRouteImport } from './routes/bfd-profiles.new'
+import { Route as BfdProfilesIdRouteImport } from './routes/bfd-profiles.$id'
 import { Route as AutomationTargetsSetupRouteImport } from './routes/automation-targets.setup'
 import { Route as AutomationTargetsNewRouteImport } from './routes/automation-targets.new'
 import { Route as AutomationTargetsIdRouteImport } from './routes/automation-targets.$id'
@@ -474,6 +478,7 @@ import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id_.edit'
 import { Route as CablesIdEditRouteImport } from './routes/cables.$id_.edit'
 import { Route as BgpSessionsIdEditRouteImport } from './routes/bgp-sessions.$id_.edit'
 import { Route as BgpPeerGroupsIdEditRouteImport } from './routes/bgp-peer-groups.$id_.edit'
+import { Route as BfdProfilesIdEditRouteImport } from './routes/bfd-profiles.$id_.edit'
 import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation-targets.$id_.edit'
 import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
 import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$id_.edit'
@@ -870,6 +875,11 @@ const BgpSessionsRoute = BgpSessionsRouteImport.update({
 const BgpPeerGroupsRoute = BgpPeerGroupsRouteImport.update({
   id: '/bgp-peer-groups',
   path: '/bgp-peer-groups',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BfdProfilesRoute = BfdProfilesRouteImport.update({
+  id: '/bfd-profiles',
+  path: '/bfd-profiles',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutomationTargetsRoute = AutomationTargetsRouteImport.update({
@@ -1413,6 +1423,11 @@ const BgpInstancesIndexRoute = BgpInstancesIndexRouteImport.update({
   id: '/bgp-instances/',
   path: '/bgp-instances/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const BfdProfilesIndexRoute = BfdProfilesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BfdProfilesRoute,
 } as any)
 const AutomationTargetsIndexRoute = AutomationTargetsIndexRouteImport.update({
   id: '/',
@@ -2380,6 +2395,16 @@ const BgpPeerGroupsIdRoute = BgpPeerGroupsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => BgpPeerGroupsRoute,
 } as any)
+const BfdProfilesNewRoute = BfdProfilesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => BfdProfilesRoute,
+} as any)
+const BfdProfilesIdRoute = BfdProfilesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => BfdProfilesRoute,
+} as any)
 const AutomationTargetsSetupRoute = AutomationTargetsSetupRouteImport.update({
   id: '/setup',
   path: '/setup',
@@ -2810,6 +2835,11 @@ const BgpPeerGroupsIdEditRoute = BgpPeerGroupsIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => BgpPeerGroupsRoute,
 } as any)
+const BfdProfilesIdEditRoute = BfdProfilesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => BfdProfilesRoute,
+} as any)
 const AutomationTargetsIdEditRoute = AutomationTargetsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2856,6 +2886,7 @@ export interface FileRoutesByFullPath {
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
+  '/bfd-profiles': typeof BfdProfilesRouteWithChildren
   '/bgp-peer-groups': typeof BgpPeerGroupsRouteWithChildren
   '/bgp-sessions': typeof BgpSessionsRouteWithChildren
   '/cables': typeof CablesRouteWithChildren
@@ -2945,6 +2976,8 @@ export interface FileRoutesByFullPath {
   '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
+  '/bfd-profiles/$id': typeof BfdProfilesIdRoute
+  '/bfd-profiles/new': typeof BfdProfilesNewRoute
   '/bgp-peer-groups/$id': typeof BgpPeerGroupsIdRoute
   '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
   '/bgp-sessions/$id': typeof BgpSessionsIdRoute
@@ -3138,6 +3171,7 @@ export interface FileRoutesByFullPath {
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
+  '/bfd-profiles/': typeof BfdProfilesIndexRoute
   '/bgp-instances/': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions/': typeof BgpSessionsIndexRoute
@@ -3243,6 +3277,7 @@ export interface FileRoutesByFullPath {
   '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
+  '/bfd-profiles/$id/edit': typeof BfdProfilesIdEditRoute
   '/bgp-peer-groups/$id/edit': typeof BgpPeerGroupsIdEditRoute
   '/bgp-sessions/$id/edit': typeof BgpSessionsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
@@ -3353,6 +3388,8 @@ export interface FileRoutesByTo {
   '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
+  '/bfd-profiles/$id': typeof BfdProfilesIdRoute
+  '/bfd-profiles/new': typeof BfdProfilesNewRoute
   '/bgp-peer-groups/$id': typeof BgpPeerGroupsIdRoute
   '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
   '/bgp-sessions/$id': typeof BgpSessionsIdRoute
@@ -3546,6 +3583,7 @@ export interface FileRoutesByTo {
   '/as-path-lists': typeof AsPathListsIndexRoute
   '/asns': typeof AsnsIndexRoute
   '/automation-targets': typeof AutomationTargetsIndexRoute
+  '/bfd-profiles': typeof BfdProfilesIndexRoute
   '/bgp-instances': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions': typeof BgpSessionsIndexRoute
@@ -3651,6 +3689,7 @@ export interface FileRoutesByTo {
   '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
+  '/bfd-profiles/$id/edit': typeof BfdProfilesIdEditRoute
   '/bgp-peer-groups/$id/edit': typeof BgpPeerGroupsIdEditRoute
   '/bgp-sessions/$id/edit': typeof BgpSessionsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
@@ -3739,6 +3778,7 @@ export interface FileRoutesById {
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
+  '/bfd-profiles': typeof BfdProfilesRouteWithChildren
   '/bgp-peer-groups': typeof BgpPeerGroupsRouteWithChildren
   '/bgp-sessions': typeof BgpSessionsRouteWithChildren
   '/cables': typeof CablesRouteWithChildren
@@ -3828,6 +3868,8 @@ export interface FileRoutesById {
   '/automation-targets/$id': typeof AutomationTargetsIdRoute
   '/automation-targets/new': typeof AutomationTargetsNewRoute
   '/automation-targets/setup': typeof AutomationTargetsSetupRoute
+  '/bfd-profiles/$id': typeof BfdProfilesIdRoute
+  '/bfd-profiles/new': typeof BfdProfilesNewRoute
   '/bgp-peer-groups/$id': typeof BgpPeerGroupsIdRoute
   '/bgp-peer-groups/new': typeof BgpPeerGroupsNewRoute
   '/bgp-sessions/$id': typeof BgpSessionsIdRoute
@@ -4021,6 +4063,7 @@ export interface FileRoutesById {
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
+  '/bfd-profiles/': typeof BfdProfilesIndexRoute
   '/bgp-instances/': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions/': typeof BgpSessionsIndexRoute
@@ -4126,6 +4169,7 @@ export interface FileRoutesById {
   '/as-path-lists/$id_/edit': typeof AsPathListsIdEditRoute
   '/asns/$id_/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id_/edit': typeof AutomationTargetsIdEditRoute
+  '/bfd-profiles/$id_/edit': typeof BfdProfilesIdEditRoute
   '/bgp-peer-groups/$id_/edit': typeof BgpPeerGroupsIdEditRoute
   '/bgp-sessions/$id_/edit': typeof BgpSessionsIdEditRoute
   '/cables/$id_/edit': typeof CablesIdEditRoute
@@ -4215,6 +4259,7 @@ export interface FileRouteTypes {
     | '/asns'
     | '/audit-log'
     | '/automation-targets'
+    | '/bfd-profiles'
     | '/bgp-peer-groups'
     | '/bgp-sessions'
     | '/cables'
@@ -4304,6 +4349,8 @@ export interface FileRouteTypes {
     | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
+    | '/bfd-profiles/$id'
+    | '/bfd-profiles/new'
     | '/bgp-peer-groups/$id'
     | '/bgp-peer-groups/new'
     | '/bgp-sessions/$id'
@@ -4497,6 +4544,7 @@ export interface FileRouteTypes {
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
+    | '/bfd-profiles/'
     | '/bgp-instances/'
     | '/bgp-peer-groups/'
     | '/bgp-sessions/'
@@ -4602,6 +4650,7 @@ export interface FileRouteTypes {
     | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
+    | '/bfd-profiles/$id/edit'
     | '/bgp-peer-groups/$id/edit'
     | '/bgp-sessions/$id/edit'
     | '/cables/$id/edit'
@@ -4712,6 +4761,8 @@ export interface FileRouteTypes {
     | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
+    | '/bfd-profiles/$id'
+    | '/bfd-profiles/new'
     | '/bgp-peer-groups/$id'
     | '/bgp-peer-groups/new'
     | '/bgp-sessions/$id'
@@ -4905,6 +4956,7 @@ export interface FileRouteTypes {
     | '/as-path-lists'
     | '/asns'
     | '/automation-targets'
+    | '/bfd-profiles'
     | '/bgp-instances'
     | '/bgp-peer-groups'
     | '/bgp-sessions'
@@ -5010,6 +5062,7 @@ export interface FileRouteTypes {
     | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
+    | '/bfd-profiles/$id/edit'
     | '/bgp-peer-groups/$id/edit'
     | '/bgp-sessions/$id/edit'
     | '/cables/$id/edit'
@@ -5097,6 +5150,7 @@ export interface FileRouteTypes {
     | '/asns'
     | '/audit-log'
     | '/automation-targets'
+    | '/bfd-profiles'
     | '/bgp-peer-groups'
     | '/bgp-sessions'
     | '/cables'
@@ -5186,6 +5240,8 @@ export interface FileRouteTypes {
     | '/automation-targets/$id'
     | '/automation-targets/new'
     | '/automation-targets/setup'
+    | '/bfd-profiles/$id'
+    | '/bfd-profiles/new'
     | '/bgp-peer-groups/$id'
     | '/bgp-peer-groups/new'
     | '/bgp-sessions/$id'
@@ -5379,6 +5435,7 @@ export interface FileRouteTypes {
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
+    | '/bfd-profiles/'
     | '/bgp-instances/'
     | '/bgp-peer-groups/'
     | '/bgp-sessions/'
@@ -5484,6 +5541,7 @@ export interface FileRouteTypes {
     | '/as-path-lists/$id_/edit'
     | '/asns/$id_/edit'
     | '/automation-targets/$id_/edit'
+    | '/bfd-profiles/$id_/edit'
     | '/bgp-peer-groups/$id_/edit'
     | '/bgp-sessions/$id_/edit'
     | '/cables/$id_/edit'
@@ -5572,6 +5630,7 @@ export interface RootRouteChildren {
   AsnsRoute: typeof AsnsRouteWithChildren
   AuditLogRoute: typeof AuditLogRoute
   AutomationTargetsRoute: typeof AutomationTargetsRouteWithChildren
+  BfdProfilesRoute: typeof BfdProfilesRouteWithChildren
   BgpPeerGroupsRoute: typeof BgpPeerGroupsRouteWithChildren
   BgpSessionsRoute: typeof BgpSessionsRouteWithChildren
   CablesRoute: typeof CablesRouteWithChildren
@@ -6302,6 +6361,13 @@ declare module '@tanstack/react-router' {
       path: '/bgp-peer-groups'
       fullPath: '/bgp-peer-groups'
       preLoaderRoute: typeof BgpPeerGroupsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bfd-profiles': {
+      id: '/bfd-profiles'
+      path: '/bfd-profiles'
+      fullPath: '/bfd-profiles'
+      preLoaderRoute: typeof BfdProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/automation-targets': {
@@ -7059,6 +7125,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/bgp-instances/'
       preLoaderRoute: typeof BgpInstancesIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/bfd-profiles/': {
+      id: '/bfd-profiles/'
+      path: '/'
+      fullPath: '/bfd-profiles/'
+      preLoaderRoute: typeof BfdProfilesIndexRouteImport
+      parentRoute: typeof BfdProfilesRoute
     }
     '/automation-targets/': {
       id: '/automation-targets/'
@@ -8411,6 +8484,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BgpPeerGroupsIdRouteImport
       parentRoute: typeof BgpPeerGroupsRoute
     }
+    '/bfd-profiles/new': {
+      id: '/bfd-profiles/new'
+      path: '/new'
+      fullPath: '/bfd-profiles/new'
+      preLoaderRoute: typeof BfdProfilesNewRouteImport
+      parentRoute: typeof BfdProfilesRoute
+    }
+    '/bfd-profiles/$id': {
+      id: '/bfd-profiles/$id'
+      path: '/$id'
+      fullPath: '/bfd-profiles/$id'
+      preLoaderRoute: typeof BfdProfilesIdRouteImport
+      parentRoute: typeof BfdProfilesRoute
+    }
     '/automation-targets/setup': {
       id: '/automation-targets/setup'
       path: '/setup'
@@ -9013,6 +9100,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BgpPeerGroupsIdEditRouteImport
       parentRoute: typeof BgpPeerGroupsRoute
     }
+    '/bfd-profiles/$id_/edit': {
+      id: '/bfd-profiles/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/bfd-profiles/$id/edit'
+      preLoaderRoute: typeof BfdProfilesIdEditRouteImport
+      parentRoute: typeof BfdProfilesRoute
+    }
     '/automation-targets/$id_/edit': {
       id: '/automation-targets/$id_/edit'
       path: '/$id/edit'
@@ -9135,6 +9229,24 @@ const AutomationTargetsRouteChildren: AutomationTargetsRouteChildren = {
 
 const AutomationTargetsRouteWithChildren =
   AutomationTargetsRoute._addFileChildren(AutomationTargetsRouteChildren)
+
+interface BfdProfilesRouteChildren {
+  BfdProfilesIdRoute: typeof BfdProfilesIdRoute
+  BfdProfilesNewRoute: typeof BfdProfilesNewRoute
+  BfdProfilesIndexRoute: typeof BfdProfilesIndexRoute
+  BfdProfilesIdEditRoute: typeof BfdProfilesIdEditRoute
+}
+
+const BfdProfilesRouteChildren: BfdProfilesRouteChildren = {
+  BfdProfilesIdRoute: BfdProfilesIdRoute,
+  BfdProfilesNewRoute: BfdProfilesNewRoute,
+  BfdProfilesIndexRoute: BfdProfilesIndexRoute,
+  BfdProfilesIdEditRoute: BfdProfilesIdEditRoute,
+}
+
+const BfdProfilesRouteWithChildren = BfdProfilesRoute._addFileChildren(
+  BfdProfilesRouteChildren,
+)
 
 interface BgpPeerGroupsRouteChildren {
   BgpPeerGroupsIdRoute: typeof BgpPeerGroupsIdRoute
@@ -10266,6 +10378,7 @@ const rootRouteChildren: RootRouteChildren = {
   AsnsRoute: AsnsRouteWithChildren,
   AuditLogRoute: AuditLogRoute,
   AutomationTargetsRoute: AutomationTargetsRouteWithChildren,
+  BfdProfilesRoute: BfdProfilesRouteWithChildren,
   BgpPeerGroupsRoute: BgpPeerGroupsRouteWithChildren,
   BgpSessionsRoute: BgpSessionsRouteWithChildren,
   CablesRoute: CablesRouteWithChildren,

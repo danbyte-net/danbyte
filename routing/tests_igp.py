@@ -13,6 +13,10 @@ from api.status_registry import seed_builtin_statuses
 from core.models import Organization, Tenant
 
 from .models import (
+    BFDProfile,
+    BGPInstance,
+    BGPPeerGroup,
+    BGPSession,
     EIGRPInstance,
     ISISInstance,
     OSPFArea,
@@ -241,6 +245,69 @@ class EIGRPTests(_Base):
         self.assertEqual(ctx["by_interface"]["swp1"]["eigrp"]["asn"], 100)
         self.assertIsNone(ctx["by_interface"]["swp2"]["eigrp"])
         self.assertEqual([v["name"] for v in ctx["vrfs"]], ["CUST"])
+
+
+class BFDTests(_Base):
+    def test_profile_is_checked_and_applied_down_the_chain(self):
+        r = self._post("/api/routing/bfd-profiles/", {"name": "FAST", "min_tx": 0})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("min_tx", r.json())
+        r = self._post("/api/routing/bfd-profiles/", {
+            "name": "FAST", "min_tx": 100, "min_rx": 100, "multiplier": 3,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        fast = r.json()["id"]
+        r = self._post("/api/routing/bfd-profiles/", {"name": "FAST"})
+        self.assertEqual(r.status_code, 409)
+        slow = BFDProfile.objects.create(tenant=self.tenant, name="SLOW", min_tx=1000, min_rx=1000)
+        # An instance carries the default; an interface row can override it.
+        r = self._post("/api/routing/ospf-instances/", {
+            "device_id": str(self.leaf.id), "process_id": "1", "bfd": True, "bfd_profile_id": fast,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        inst = r.json()
+        self.assertEqual(inst["bfd_profile"]["name"], "FAST")
+        self._post("/api/routing/ospf-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp1.id),
+            "area_id": str(self.area0.id), "bfd": True,
+        })
+        self._post("/api/routing/ospf-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp2.id),
+            "area_id": str(self.area0.id), "bfd": True, "bfd_profile_id": str(slow.id),
+        })
+        # A session inherits the group's profile, then the instance's.
+        asn = self.tenant.asns.create(asn=65000)
+        bgp = BGPInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, asn=asn, bfd=True, bfd_profile=slow,
+        )
+        group = BGPPeerGroup.objects.create(
+            tenant=self.tenant, name="SPINES", bfd_profile_id=fast,
+        )
+        s1 = BGPSession.objects.create(
+            tenant=self.tenant, instance=bgp, remote_address="10.0.0.1", remote_asn=65000,
+            peer_group=group,
+        )
+        BGPSession.objects.create(
+            tenant=self.tenant, instance=bgp, remote_address="10.0.0.2", remote_asn=65000,
+        )
+        body = self.client.get(f"/api/routing/bgp-sessions/{s1.id}/").json()
+        self.assertEqual(body["effective"]["bfd_profile"]["name"], "FAST")
+        self.assertIsNone(body["bfd_profile"])
+        ctx = routing_context(self.leaf)
+        o = ctx["ospf"][0]
+        self.assertEqual(o["bfd_profile"], "FAST")
+        self.assertEqual([i["bfd_profile"] for i in o["interfaces"]], ["FAST", "SLOW"])
+        sessions = {s["remote_address"]: s for s in ctx["bgp"][0]["sessions"]}
+        self.assertEqual(sessions["10.0.0.1"]["bfd_profile"], "FAST")
+        self.assertEqual(sessions["10.0.0.2"]["bfd_profile"], "SLOW")
+        self.assertEqual(ctx["bgp"][0]["peer_groups"][0]["bfd_profile"], "FAST")
+        self.assertEqual(
+            [(p["name"], p["min_tx"], p["multiplier"]) for p in ctx["bfd_profiles"]],
+            [("FAST", 100, 3), ("SLOW", 1000, 3)],
+        )
+        # Deleting a profile leaves the rows, BFD still on, timers default.
+        self.assertEqual(self.client.delete(f"/api/routing/bfd-profiles/{fast}/").status_code, 204)
+        self.assertIsNone(routing_context(self.leaf)["ospf"][0]["bfd_profile"])
 
 
 class RenderTests(_Base):

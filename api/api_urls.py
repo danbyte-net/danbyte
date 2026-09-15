@@ -116,6 +116,7 @@ from integrations.virt_api import (
 from routing.viewsets import (
     ASPathListRuleViewSet,
     ASPathListViewSet,
+    BFDProfileViewSet,
     BGPAddressFamilyViewSet,
     BGPInstanceViewSet,
     BGPPeerGroupViewSet,
@@ -366,6 +367,7 @@ router.register(r"routing/policy-rules", RoutingPolicyRuleViewSet,
                 basename="routingpolicyrule")
 router.register(r"routing/keychains", RoutingKeychainViewSet,
                 basename="routingkeychain")
+router.register(r"routing/bfd-profiles", BFDProfileViewSet, basename="bfdprofile")
 router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
 router.register(r"routing/bgp-instances", BGPInstanceViewSet, basename="bgpinstance")
 router.register(r"routing/bgp-address-families", BGPAddressFamilyViewSet,

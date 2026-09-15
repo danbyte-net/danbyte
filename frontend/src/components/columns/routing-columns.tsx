@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type {
   ASPathList,
+  BFDProfile,
   BGPInstance,
   BGPPeerGroup,
   BGPSession,
@@ -1726,6 +1727,76 @@ export function buildEIGRPInstanceColumns<
         ),
       }),
       status: () => instanceStatusColumn<T>(),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── BFD profiles ────────────────────────────────────────────────────────────
+
+export type BFDProfileColumnId =
+  | "numid"
+  | "name"
+  | "min_tx"
+  | "min_rx"
+  | "multiplier"
+  | "echo"
+  | "description"
+  | "tags"
+const BFD_PROFILE_ORDER: BFDProfileColumnId[] = [
+  "numid",
+  "name",
+  "min_tx",
+  "min_rx",
+  "multiplier",
+  "echo",
+  "description",
+  "tags",
+]
+
+export function buildBFDProfileColumns<T extends BFDProfile = BFDProfile>(
+  opts: CommonOpts<T, BFDProfileColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  const ms = (
+    id: "min_tx" | "min_rx",
+    label: string
+  ): ColumnDef<T, unknown> => ({
+    id,
+    accessorKey: id,
+    header: ({ column }) => <SortHeader column={column} label={label} />,
+    cell: ({ row }) => (
+      <span className="num text-xs">
+        {row.original[id]}
+        <span className="text-muted-foreground"> ms</span>
+      </span>
+    ),
+  })
+  return assemble<T, BFDProfileColumnId>(
+    BFD_PROFILE_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      name: () => nameColumn<T>("/bfd-profiles/$id", "routing.bfdprofile"),
+      min_tx: () => ms("min_tx", "Min TX"),
+      min_rx: () => ms("min_rx", "Min RX"),
+      multiplier: () => ({
+        id: "multiplier",
+        accessorKey: "multiplier",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Multiplier" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.multiplier}</span>
+        ),
+      }),
+      echo: () => ({
+        id: "echo",
+        accessorKey: "echo",
+        header: "Echo",
+        cell: ({ row }) =>
+          row.original.echo ? <Badge variant="secondary">echo</Badge> : dash,
+      }),
       description: () => descriptionColumn<T>(),
       tags: tags<T>(opts),
     },

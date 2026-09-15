@@ -13,6 +13,7 @@ from django.db.models import F
 from .models import (
     VTEP,
     ASPathList,
+    BFDProfile,
     BGPInstance,
     Community,
     CommunityList,
@@ -183,6 +184,18 @@ def policy_dict(p: RoutingPolicy) -> dict:
     }
 
 
+def bfd_profile_dict(p: BFDProfile) -> dict:
+    return {
+        "id": str(p.id),
+        "name": p.name,
+        "min_tx": p.min_tx,
+        "min_rx": p.min_rx,
+        "multiplier": p.multiplier,
+        "echo": p.echo,
+        "description": p.description or "",
+    }
+
+
 def keychain_dict(k: RoutingKeychain) -> dict:
     return {
         "id": str(k.id),
@@ -223,6 +236,7 @@ def session_dict(s, policies: set[str]) -> dict:
         "import_policy": _name(eff["import_policy"]),
         "export_policy": _name(eff["export_policy"]),
         "bfd": bool(eff["bfd"]),
+        "bfd_profile": _name(eff["bfd_profile"]) if eff["bfd_profile"] else None,
         "ebgp_multihop": eff["ebgp_multihop"],
         "update_source": eff["update_source"] or None,
         "next_hop_self": bool(eff["next_hop_self"]),
@@ -283,6 +297,8 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
                 "import_policy": _name(g.import_policy) if g.import_policy_id else None,
                 "export_policy": _name(g.export_policy) if g.export_policy_id else None,
                 "bfd": inst.bfd if g.bfd is None else g.bfd,
+                "bfd_profile": _name(g.bfd_profile or inst.bfd_profile)
+                if (g.bfd_profile_id or inst.bfd_profile_id) else None,
                 "ebgp_multihop": g.ebgp_multihop,
                 "next_hop_self": bool(g.next_hop_self),
                 "route_reflector_client": bool(g.route_reflector_client),
@@ -300,6 +316,7 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
         "cluster_id": inst.cluster_id or None,
         "graceful_restart": inst.graceful_restart,
         "bfd": inst.bfd,
+        "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "address_families": afs,
         "sessions": sessions,
         "peer_groups": [groups[k] for k in sorted(groups)],
@@ -338,6 +355,8 @@ def ospf_dict(inst: OSPFInstance, policies: set[str]) -> dict:
             "hello": row.hello,
             "dead": row.dead,
             "bfd": row.bfd,
+            "bfd_profile": _name(row.bfd_profile or inst.bfd_profile)
+            if (row.bfd_profile_id or inst.bfd_profile_id) else None,
             "mtu_ignore": row.mtu_ignore,
             "authentication": row.authentication if row.authentication != "none" else None,
             "keychain": row.keychain.name if row.keychain_id else None,
@@ -353,6 +372,7 @@ def ospf_dict(inst: OSPFInstance, policies: set[str]) -> dict:
         "passive_by_default": inst.passive_by_default,
         "default_originate": inst.default_originate,
         "bfd": inst.bfd,
+        "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "redistribute": _redistribute(inst.redistributions.all(), policies),
         "areas": [areas[k] for k in sorted(areas)],
         "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
@@ -375,6 +395,8 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
             "hello_interval": row.hello_interval,
             "hello_multiplier": row.hello_multiplier,
             "bfd": row.bfd,
+            "bfd_profile": _name(row.bfd_profile or inst.bfd_profile)
+            if (row.bfd_profile_id or inst.bfd_profile_id) else None,
             "authentication": row.authentication if row.authentication != "none" else None,
             "keychain": row.keychain.name if row.keychain_id else None,
             "extra": row.extra or {},
@@ -388,6 +410,7 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
         "level": inst.level,
         "metric_style": inst.metric_style,
         "bfd": inst.bfd,
+        "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "authentication": inst.authentication if inst.authentication != "none" else None,
         "keychain": inst.keychain.name if inst.keychain_id else None,
         "redistribute": _redistribute(inst.redistributions.all(), policies),
@@ -409,6 +432,8 @@ def eigrp_dict(inst: EIGRPInstance, policies: set[str]) -> dict:
             "split_horizon": row.split_horizon,
             "summary_addresses": list(row.summary_addresses or []),
             "bfd": row.bfd,
+            "bfd_profile": _name(row.bfd_profile or inst.bfd_profile)
+            if (row.bfd_profile_id or inst.bfd_profile_id) else None,
             "authentication": row.authentication if row.authentication != "none" else None,
             "keychain": row.keychain.name if row.keychain_id else None,
             "extra": row.extra or {},
@@ -425,6 +450,7 @@ def eigrp_dict(inst: EIGRPInstance, policies: set[str]) -> dict:
         "passive_by_default": inst.passive_by_default,
         "stub": inst.stub,
         "bfd": inst.bfd,
+        "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "redistribute": _redistribute(inst.redistributions.all(), policies),
         "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
         "description": inst.description or "",
@@ -515,25 +541,26 @@ def routing_context(device) -> dict:
     bgp = [bgp_dict(i, referenced_policies) for i in instances]
     ospf_instances = (
         OSPFInstance.objects.filter(device=device)
-        .select_related("vrf")
+        .select_related("vrf", "bfd_profile")
         .prefetch_related("redistributions__policy", "interfaces__interface",
-                          "interfaces__area", "interfaces__keychain")
+                          "interfaces__area", "interfaces__keychain",
+                          "interfaces__bfd_profile")
         .order_by(F("vrf__name").asc(nulls_first=True), "process_id")
     )
     ospf = [ospf_dict(i, referenced_policies) for i in ospf_instances]
     isis_instances = (
         ISISInstance.objects.filter(device=device)
-        .select_related("vrf", "keychain")
+        .select_related("vrf", "keychain", "bfd_profile")
         .prefetch_related("redistributions__policy", "interfaces__interface",
-                          "interfaces__keychain")
+                          "interfaces__keychain", "interfaces__bfd_profile")
         .order_by("process")
     )
     isis = [isis_dict(i, referenced_policies) for i in isis_instances]
     eigrp_instances = (
         EIGRPInstance.objects.filter(device=device)
-        .select_related("vrf")
+        .select_related("vrf", "bfd_profile")
         .prefetch_related("redistributions__policy", "interfaces__interface",
-                          "interfaces__keychain")
+                          "interfaces__keychain", "interfaces__bfd_profile")
         .order_by(F("vrf__name").asc(nulls_first=True), "asn")
     )
     eigrp = [eigrp_dict(i, referenced_policies) for i in eigrp_instances]
@@ -601,6 +628,10 @@ def routing_context(device) -> dict:
         "keychains": [
             keychain_dict(k)
             for k in RoutingKeychain.objects.filter(tenant_id=device.tenant_id).order_by("name")
+        ],
+        "bfd_profiles": [
+            bfd_profile_dict(p)
+            for p in BFDProfile.objects.filter(tenant_id=device.tenant_id).order_by("name")
         ],
     }
     return out

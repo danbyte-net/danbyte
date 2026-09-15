@@ -92,6 +92,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/as-path-lists": "features/routing/",
   "/communities": "features/routing/",
   "/routing-keychains": "features/routing/",
+  "/bfd-profiles": "features/routing/",
   "/bgp-sessions": "features/routing/",
   "/bgp-peer-groups": "features/routing/",
   "/ospf-areas": "features/routing/",

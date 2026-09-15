@@ -32,6 +32,7 @@ import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { MultiPick } from "./multi-pick"
 import {
   ROUTING_OBJECT_TYPES,
+  BFDFields,
   CellInput,
   CellSelect,
   RulesTable,
@@ -308,7 +309,10 @@ export function OSPFInstanceForm({
   const [defaultOriginate, setDefaultOriginate] = useState(
     item?.default_originate ?? false
   )
-  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
   const [statusId, setStatusId] = useState<string | null>(
     item?.status?.id ?? null
   )
@@ -352,7 +356,8 @@ export function OSPFInstanceForm({
           reference_bandwidth: numOrNull(refBw),
           passive_by_default: passive,
           default_originate: defaultOriginate,
-          bfd,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           status_id: statusId,
           description: description.trim(),
           redistributions: redistPayload(redist),
@@ -431,8 +436,14 @@ export function OSPFInstanceForm({
             checked={defaultOriginate}
             onChange={setDefaultOriginate}
           />
-          <FormCheckbox label="BFD" checked={bfd} onChange={setBfd} />
         </div>
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          errors={fieldErrors}
+        />
         <FormTextarea
           label="Description"
           value={description}
@@ -486,7 +497,10 @@ export function OSPFInterfaceForm({
   const [priority, setPriority] = useState(numText(item?.priority))
   const [hello, setHello] = useState(numText(item?.hello))
   const [dead, setDead] = useState(numText(item?.dead))
-  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
   const [mtuIgnore, setMtuIgnore] = useState(item?.mtu_ignore ?? false)
   const [auth, setAuth] = useState<string | null>(
     item?.authentication ?? "none"
@@ -528,7 +542,8 @@ export function OSPFInterfaceForm({
           priority: numOrNull(priority),
           hello: numOrNull(hello),
           dead: numOrNull(dead),
-          bfd,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           mtu_ignore: mtuIgnore,
           authentication: auth,
           keychain_id: auth === "none" ? null : keychainId,
@@ -637,14 +652,19 @@ export function OSPFInterfaceForm({
             />
           )}
         </div>
-        <div className="grid gap-3 @md:grid-cols-3">
-          <FormCheckbox label="BFD" checked={bfd} onChange={setBfd} />
-          <FormCheckbox
-            label="MTU ignore"
-            checked={mtuIgnore}
-            onChange={setMtuIgnore}
-          />
-        </div>
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          profileNoneLabel="Instance's"
+          errors={fieldErrors}
+        />
+        <FormCheckbox
+          label="MTU ignore"
+          checked={mtuIgnore}
+          onChange={setMtuIgnore}
+        />
       </FormSection>
       <FormFooter
         onCancel={onCancel}
@@ -694,7 +714,10 @@ export function ISISInstanceForm({
   const [keychainId, setKeychainId] = useState<string | null>(
     item?.keychain?.id ?? null
   )
-  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
   const [statusId, setStatusId] = useState<string | null>(
     item?.status?.id ?? null
   )
@@ -744,7 +767,8 @@ export function ISISInstanceForm({
           metric_style: metricStyle,
           authentication: auth,
           keychain_id: auth === "none" ? null : keychainId,
-          bfd,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           status_id: statusId,
           description: description.trim(),
           redistributions: redistPayload(redist),
@@ -842,7 +866,13 @@ export function ISISInstanceForm({
             error={fieldErrors.status_id}
           />
         </div>
-        <FormCheckbox label="BFD" checked={bfd} onChange={setBfd} />
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          errors={fieldErrors}
+        />
         <FormTextarea
           label="Description"
           value={description}
@@ -901,7 +931,10 @@ export function ISISInterfaceForm({
   const [helloMultiplier, setHelloMultiplier] = useState(
     numText(item?.hello_multiplier)
   )
-  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
   const [auth, setAuth] = useState<string | null>(
     item?.authentication ?? "none"
   )
@@ -938,7 +971,8 @@ export function ISISInterfaceForm({
           passive: triTo(passive),
           hello_interval: numOrNull(helloInterval),
           hello_multiplier: numOrNull(helloMultiplier),
-          bfd,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           authentication: auth,
           keychain_id: auth === "none" ? null : keychainId,
         })
@@ -1051,8 +1085,15 @@ export function ISISInterfaceForm({
               error={fieldErrors.keychain}
             />
           )}
-          <FormCheckbox label="BFD" checked={bfd} onChange={setBfd} />
         </div>
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          profileNoneLabel="Instance's"
+          errors={fieldErrors}
+        />
       </FormSection>
       <FormFooter
         onCancel={onCancel}
@@ -1086,7 +1127,10 @@ export function EIGRPInstanceForm({
   const [maxPaths, setMaxPaths] = useState(numText(item?.maximum_paths))
   const [passive, setPassive] = useState(item?.passive_by_default ?? false)
   const [stub, setStub] = useState(item?.stub ?? false)
-  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
   const [statusId, setStatusId] = useState<string | null>(
     item?.status?.id ?? null
   )
@@ -1132,7 +1176,8 @@ export function EIGRPInstanceForm({
           maximum_paths: numOrNull(maxPaths),
           passive_by_default: passive,
           stub,
-          bfd,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           status_id: statusId,
           description: description.trim(),
           redistributions: redistPayload(redist),
@@ -1225,8 +1270,14 @@ export function EIGRPInstanceForm({
             onChange={setPassive}
           />
           <FormCheckbox label="Stub" checked={stub} onChange={setStub} />
-          <FormCheckbox label="BFD" checked={bfd} onChange={setBfd} />
         </div>
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          errors={fieldErrors}
+        />
         <FormTextarea
           label="Description"
           value={description}
@@ -1287,7 +1338,10 @@ export function EIGRPInterfaceForm({
   const [summaries, setSummaries] = useState(
     (item?.summary_addresses ?? []).join(", ")
   )
-  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
   const [auth, setAuth] = useState<string | null>(
     item?.authentication ?? "none"
   )
@@ -1325,7 +1379,8 @@ export function EIGRPInterfaceForm({
             .split(/[\s,]+/)
             .map((v) => v.trim())
             .filter(Boolean),
-          bfd,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           authentication: auth,
           keychain_id: auth === "none" ? null : keychainId,
         })
@@ -1416,13 +1471,15 @@ export function EIGRPInterfaceForm({
               error={fieldErrors.keychain}
             />
           )}
-          <FormCheckbox
-            label="BFD"
-            checked={bfd}
-            onChange={setBfd}
-            className="self-end"
-          />
         </div>
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          profileNoneLabel="Instance's"
+          errors={fieldErrors}
+        />
       </FormSection>
       <FormFooter
         onCancel={onCancel}

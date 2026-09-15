@@ -305,7 +305,11 @@ export function OSPFSection({
               {onOff(row.passive, inst.passive_by_default) && (
                 <Badge variant="secondary">passive</Badge>
               )}
-              {row.bfd && <Badge variant="secondary">bfd</Badge>}
+              {row.bfd && (
+                <Badge variant="secondary">
+                  bfd{row.bfd_profile ? ` · ${row.bfd_profile.name}` : ""}
+                </Badge>
+              )}
               {row.authentication !== "none" && (
                 <span className="text-muted-foreground">
                   {row.authentication} · {row.keychain?.name}
@@ -520,7 +524,11 @@ export function ISISSection({
                 </span>
               )}
               {row.passive && <Badge variant="secondary">passive</Badge>}
-              {row.bfd && <Badge variant="secondary">bfd</Badge>}
+              {row.bfd && (
+                <Badge variant="secondary">
+                  bfd{row.bfd_profile ? ` · ${row.bfd_profile.name}` : ""}
+                </Badge>
+              )}
               <IconButtons
                 editLabel="Edit interface"
                 deleteLabel="Remove interface"
@@ -737,7 +745,11 @@ export function EIGRPSection({
               {row.split_horizon === false && (
                 <Badge variant="secondary">no split-horizon</Badge>
               )}
-              {row.bfd && <Badge variant="secondary">bfd</Badge>}
+              {row.bfd && (
+                <Badge variant="secondary">
+                  bfd{row.bfd_profile ? ` · ${row.bfd_profile.name}` : ""}
+                </Badge>
+              )}
               {row.authentication !== "none" && (
                 <span className="text-muted-foreground">
                   {row.authentication} · {row.keychain?.name}

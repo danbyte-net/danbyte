@@ -29,6 +29,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.ipsecprofile": "/ipsec-profiles/$id",
   "routing.prefixlist": "/prefix-lists/$id",
   "routing.community": "/communities/$id",
+  "routing.bfdprofile": "/bfd-profiles/$id",
   "routing.communitylist": "/community-lists/$id",
   "routing.aspathlist": "/as-path-lists/$id",
   "routing.routingpolicy": "/routing-policies/$id",

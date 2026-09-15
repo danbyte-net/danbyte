@@ -78,6 +78,12 @@ export const TABLES: TableMeta[] = [
     ioType: "routingkeychain",
   },
   {
+    id: "bfd-profiles",
+    label: "BFD profiles",
+    area: "Routing",
+    ioType: "bfdprofile",
+  },
+  {
     id: "bgp-sessions",
     label: "BGP sessions",
     area: "Routing",

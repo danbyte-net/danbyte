@@ -94,6 +94,19 @@ behind the `reveal` grant on keychains) or **Not set**; the rendered config
 never carries the key - it says `key_set` and the runner fetches the key
 through `POST /api/routing/keychains/<id>/reveal-psk/`.
 
+## BFD
+
+BFD is switched on where it applies - an instance (every neighbour or
+interface of the process), one enrolled interface, a peer group or one
+session - and every one of those places can name a **BFD profile**: the
+timers BFD runs with, named once under **Routing → BFD profiles** (min TX,
+min RX in milliseconds, the detect multiplier, echo mode), the shape FRR's
+`bfd profile` and NX-OS's `bfd-template` have. A profile is optional; none
+means the platform's default timers. Resolution runs down the chain the
+way the other settings do: an interface row's profile, else its
+instance's; a session's, else its peer group's, else its instance's.
+Deleting a profile leaves BFD on and the timers at the default.
+
 ## Static routes
 
 **Routing → Static routes**, or a device's **Routing** tab. One row is one
@@ -323,7 +336,11 @@ routing:
   as_path_lists: {NAME: {rules: [{sequence, action, regex}]}}
   communities:   [{value, kind, name}]
   keychains:     [{name, algorithm, key_set}]
+  bfd_profiles:  [{name, min_tx, min_rx, multiplier, echo}]
 ```
+
+Wherever a block carries `bfd`, it carries `bfd_profile` beside it - the
+resolved profile's name, or `null` for the platform default.
 
 `vrfs` is every table the device has to define - the VRFs its interfaces,
 routes and instances sit in, and the VRFs of the L3VNIs its VTEP carries,
@@ -468,6 +485,7 @@ it.
 | `…/prefix-list-rules/`, `…/community-list-rules/`, `…/as-path-list-rules/`, `…/policy-rules/` | Rule rows on their own, filtered by their list (`?prefix_list=`, `?policy=`, …). |
 | `/api/routing/communities/` | Communities. |
 | `/api/routing/keychains/` | Keychains; `psk` is write-only, `reveal-psk` is the audited read. |
+| `/api/routing/bfd-profiles/` | BFD profiles; every instance, enrolled interface, session and peer group takes `bfd_profile_id`. |
 | `/api/routing/static-routes/` | Static routes; filter by `device`, `vrf` (`global` for the global table), `kind`, `status`, `site`, `prefix_obj`. |
 | `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `vrf`, `asn`, `site`, `status`. |
 | `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`, `?ospf_instance=`, `?isis_instance=`, `?eigrp_instance=`); an address family or IGP instance accepts `redistributions: [...]`. |
@@ -495,10 +513,11 @@ tab, a peer group's **Sessions** tab, a VRF's **BGP sessions** and **Static
 routes** tabs, a prefix's **Static routes** tab (routes with that prefix as
 their destination), an L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
 
-The **Routing** menu lists everything fleet-wide: BGP instances, sessions
-and peer groups, OSPF instances and areas, IS-IS and EIGRP instances, VTEPs
-and static routes under *Protocols*; policies, prefix lists, communities,
-community lists, AS-path lists and keychains under *Policy*. An instance
+The **Routing** menu is grouped by protocol: **BGP** (instances, sessions,
+peer groups), **OSPF** (instances, areas), **IS-IS**, **EIGRP**, **EVPN /
+VXLAN** (VTEPs), **Static** (static routes), **Policy** (routing policies,
+prefix lists, communities, community lists, AS-path lists) and
+**Profiles** (keychains, BFD profiles). An instance
 or a VTEP is added and edited on its device's Routing tab - the fleet list
 is where you find which boxes run what, and its pencil takes you there.
 A list's rules (prefix lists, community lists, AS-path lists, policies) are

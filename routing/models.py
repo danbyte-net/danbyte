@@ -57,6 +57,39 @@ class _Catalog(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.name
 
 
+# ─── BFD profiles ────────────────────────────────────────────────────────────
+
+class BFDProfile(_Catalog):
+    """BFD timers named once and applied wherever BFD is on - a session, a
+    peer group, an instance or an enrolled interface. The same shape FRR's
+    ``bfd profile`` and NX-OS's ``bfd-template`` have."""
+
+    min_tx = models.PositiveIntegerField(default=300, help_text="ms")
+    min_rx = models.PositiveIntegerField(default=300, help_text="ms")
+    multiplier = models.PositiveSmallIntegerField(default=3)
+    echo = models.BooleanField(default=False)
+
+    class Meta(_Catalog.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_bfdprofile_tenant_name"
+            )
+        ]
+
+    def clean(self):
+        if not self.min_tx or not self.min_rx:
+            raise ValidationError({"min_tx": "Intervals are milliseconds, at least 1."})
+        if not self.multiplier:
+            raise ValidationError({"multiplier": "The detect multiplier is at least 1."})
+
+
+def _bfd_profile_field():
+    return models.ForeignKey(
+        BFDProfile, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="%(class)ss",
+    )
+
+
 # ─── Prefix lists ────────────────────────────────────────────────────────────
 
 class PrefixList(_Catalog):
@@ -504,6 +537,8 @@ class _DeviceInstance(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
     )
     router_id = models.CharField(max_length=64, blank=True, default="")
     bfd = models.BooleanField(default=False)
+    #: The timers BFD runs with when on; null = the platform default.
+    bfd_profile = _bfd_profile_field()
     status = models.ForeignKey(
         "api.Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="%(class)ss",
@@ -649,6 +684,7 @@ class _PeerKnobs(models.Model):
         related_name="%(class)s_exports",
     )
     bfd = models.BooleanField(null=True, blank=True)
+    bfd_profile = _bfd_profile_field()
     #: TTL; null = off.
     ebgp_multihop = models.PositiveSmallIntegerField(null=True, blank=True)
     next_hop_self = models.BooleanField(null=True, blank=True)
@@ -672,9 +708,9 @@ class _PeerKnobs(models.Model):
 
 
 PEER_KNOBS = (
-    "address_families", "import_policy", "export_policy", "bfd", "ebgp_multihop",
-    "next_hop_self", "route_reflector_client", "send_community", "keepalive",
-    "hold_time", "keychain",
+    "address_families", "import_policy", "export_policy", "bfd", "bfd_profile",
+    "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
+    "keepalive", "hold_time", "keychain",
 )
 
 
@@ -832,6 +868,8 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
             val = gv if unset else own
             if f == "bfd" and val is None:
                 val = self.instance.bfd
+            if f == "bfd_profile" and val is None:
+                val = self.instance.bfd_profile
             out[f] = val
         extra = dict(group.extra or {}) if group is not None else {}
         extra.update(self.extra or {})
@@ -944,6 +982,8 @@ class _IGPInterface(models.Model):
     #: Null = the instance's ``passive_by_default``.
     passive = models.BooleanField(null=True, blank=True)
     bfd = models.BooleanField(default=False)
+    #: Null = the instance's profile, else the platform default.
+    bfd_profile = _bfd_profile_field()
     keychain = models.ForeignKey(
         RoutingKeychain, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="%(class)ss",

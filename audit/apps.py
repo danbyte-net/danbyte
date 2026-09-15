@@ -112,6 +112,7 @@ AUDITED_MODELS = [
     "routing.RoutingPolicy",
     "routing.RoutingPolicyRule",
     "routing.RoutingKeychain",
+    "routing.BFDProfile",
     "routing.StaticRoute",
     "routing.BGPInstance",
     "routing.BGPAddressFamily",

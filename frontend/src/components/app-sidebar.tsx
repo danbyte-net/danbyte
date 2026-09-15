@@ -436,56 +436,81 @@ const sections: NavSection[] = [
     icon: RouteIcon,
     clusters: [
       {
-        label: "Protocols",
+        label: "BGP",
         items: [
           {
-            title: "BGP instances",
+            title: "Instances",
             url: "/bgp-instances",
             icon: Server,
             objectType: "bgpinstance",
           },
           {
-            title: "BGP sessions",
+            title: "Sessions",
             url: "/bgp-sessions",
             icon: ArrowLeftRight,
             objectType: "bgpsession",
           },
           {
-            title: "BGP peer groups",
+            title: "Peer groups",
             url: "/bgp-peer-groups",
             icon: UsersRound,
             objectType: "bgppeergroup",
           },
+        ],
+      },
+      {
+        label: "OSPF",
+        items: [
           {
-            title: "OSPF instances",
+            title: "Instances",
             url: "/ospf-instances",
             icon: Workflow,
             objectType: "ospfinstance",
           },
           {
-            title: "OSPF areas",
+            title: "Areas",
             url: "/ospf-areas",
             icon: Network,
             objectType: "ospfarea",
           },
+        ],
+      },
+      {
+        label: "IS-IS",
+        items: [
           {
-            title: "IS-IS instances",
+            title: "Instances",
             url: "/isis-instances",
             icon: SquareStack,
             objectType: "isisinstance",
           },
+        ],
+      },
+      {
+        label: "EIGRP",
+        items: [
           {
-            title: "EIGRP instances",
+            title: "Instances",
             url: "/eigrp-instances",
             icon: Locate,
             objectType: "eigrpinstance",
           },
+        ],
+      },
+      {
+        label: "EVPN / VXLAN",
+        items: [
           {
             title: "VTEPs",
             url: "/vteps",
             icon: Waypoints,
             objectType: "vtep",
           },
+        ],
+      },
+      {
+        label: "Static",
+        items: [
           {
             title: "Static routes",
             url: "/static-routes",
@@ -527,11 +552,22 @@ const sections: NavSection[] = [
             icon: GitBranch,
             objectType: "aspathlist",
           },
+        ],
+      },
+      {
+        label: "Profiles",
+        items: [
           {
             title: "Keychains",
             url: "/routing-keychains",
             icon: KeyRound,
             objectType: "routingkeychain",
+          },
+          {
+            title: "BFD profiles",
+            url: "/bfd-profiles",
+            icon: Zap,
+            objectType: "bfdprofile",
           },
         ],
       },

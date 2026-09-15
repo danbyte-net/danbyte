@@ -74,6 +74,10 @@ export function knobRows(
       value: nameOr(k.export_policy, unset, "/routing-policies/$id"),
     },
     { label: "BFD", value: onOff(k.bfd, unset) },
+    {
+      label: "BFD profile",
+      value: nameOr(k.bfd_profile, unset, "/bfd-profiles/$id"),
+    },
     { label: "eBGP multihop", value: numOr(k.ebgp_multihop, unset) },
     { label: "Next-hop self", value: onOff(k.next_hop_self, unset) },
     {

@@ -22,6 +22,7 @@ Shared shape: `tenant` FK, `name` char(128), `description` text, unique
 | `CommunityList` | `kind` (`standard`/`expanded`/`large`/`extended`) | `CommunityListRule`: `sequence`, `action`, `communities` M2M, `regex`, `description` |
 | `ASPathList` | - | `ASPathListRule`: `sequence`, `action`, `regex`, `description` |
 | `RoutingPolicy` | - | `RoutingPolicyRule`: `sequence`, `action`, `description`; match: `match_prefix_lists`, `match_community_lists`, `match_as_path_lists` M2M, `match_next_hop` FK → `PrefixList`, `match_extra` JSON; set: `set_local_pref`, `set_med`, `set_weight`, `set_origin`, `set_next_hop`, `set_as_path_prepend`, `set_communities` M2M, `set_communities_additive`, `set_metric_type`, `set_extra` JSON; `continue_seq` |
+| `BFDProfile` | catalog; `min_tx`, `min_rx` (ms, ≥ 1), `multiplier` (≥ 1), `echo` | `(tenant, name)` |
 | `RoutingKeychain` | `algorithm` (`md5`/`sha1`/`sha256`/`hmac-sha-256`); `SecretBackedPSK` - `psk_secret_provider`, `psk_secret_path` reference the key in the secret store | - |
 
 ## Static routes
@@ -76,6 +77,10 @@ address's interface.
 
 | `EIGRPInstance` | `device`, `vrf`, `asn` (1-65535), `name` (named mode), `router_id`, `k_values` (five 0-255, normalised), `variance`, `maximum_paths`, `passive_by_default`, `stub`, `bfd`, `status`, `description`, `extra`; redistribution rows | `(device, vrf, asn)` |
 | `EIGRPInterface` | `instance`, `interface` (same device), `passive`, `split_horizon` (null = default), `hello_interval`, `hold_time`, `bandwidth_percent`, `summary_addresses` JSON (checked networks), `bfd`, `authentication` + `keychain` | `(instance, interface)` |
+
+Every `_DeviceInstance`, `_IGPInterface` row and `_PeerKnobs` carrier has
+`bfd_profile` (SET_NULL) beside `bfd`; `BGPSession.effective()` resolves it
+session → group → instance.
 
 `Redistribution` has exactly one parent - `bgp_af`, `ospf_instance`,
 `isis_instance` or `eigrp_instance` (CheckConstraint); `source` gains

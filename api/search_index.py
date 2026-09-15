@@ -137,6 +137,8 @@ SPECS: dict[str, IndexSpec] = {
                            site=None, title="value", subtitle="name", body=("name",)),
     "routingkeychain": IndexSpec("routing.RoutingKeychain", "/routing-keychains/{id}",
                                  weight=4, site=None, subtitle="description"),
+    "bfdprofile": IndexSpec("routing.BFDProfile", "/bfd-profiles/{id}", weight=5, site=None,
+                            subtitle="description", body=("description",)),
     "service": IndexSpec("api.Service", "/services/{id}", weight=6, site="device.site",
                          subtitle="device.name", body=("device.name",)),
     "servicetemplate": IndexSpec("api.ServiceTemplate", "/service-templates/{id}", weight=4, site=None),

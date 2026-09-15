@@ -25,6 +25,7 @@ from .models import (
     VTEP,
     ASPathList,
     ASPathListRule,
+    BFDProfile,
     BGPAddressFamily,
     BGPInstance,
     BGPPeerGroup,
@@ -52,6 +53,8 @@ from .serializers import (
     ASPathListMiniSerializer,
     ASPathListRuleSerializer,
     ASPathListSerializer,
+    BFDProfileMiniSerializer,
+    BFDProfileSerializer,
     BGPAddressFamilySerializer,
     BGPInstanceSerializer,
     BGPPeerGroupMiniSerializer,
@@ -577,6 +580,13 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
 
 
 # ─── OSPF / IS-IS ────────────────────────────────────────────────────────────
+
+class BFDProfileViewSet(_CatalogViewSet):
+    queryset = BFDProfile.objects.all().order_by(NATURAL_NAME)
+    serializer_class = BFDProfileSerializer
+    mini_serializer_class = BFDProfileMiniSerializer
+    clone_fields = ("min_tx", "min_rx", "multiplier", "echo", "description")
+
 
 class OSPFAreaViewSet(_CatalogViewSet):
     queryset = OSPFArea.objects.all().order_by(NATURAL_NAME)

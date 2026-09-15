@@ -31,6 +31,7 @@ import { DevicePicker } from "@/components/device-picker"
 
 import { MultiPick } from "./multi-pick"
 import {
+  BFDFields,
   ROUTING_OBJECT_TYPES,
   CellInput,
   CellSelect,
@@ -119,6 +120,7 @@ interface KnobState {
   importPolicyId: string | null
   exportPolicyId: string | null
   bfd: string | null
+  bfdProfileId: string | null
   ebgpMultihop: string
   nextHopSelf: string | null
   rrClient: string | null
@@ -134,6 +136,7 @@ function knobsFrom(k?: Partial<BGPPeerGroup> | Partial<BGPSession>): KnobState {
     importPolicyId: k?.import_policy?.id ?? null,
     exportPolicyId: k?.export_policy?.id ?? null,
     bfd: triFrom(k?.bfd),
+    bfdProfileId: k?.bfd_profile?.id ?? null,
     ebgpMultihop: numText(k?.ebgp_multihop),
     nextHopSelf: triFrom(k?.next_hop_self),
     rrClient: triFrom(k?.route_reflector_client),
@@ -150,6 +153,7 @@ function knobsPayload(k: KnobState) {
     import_policy_id: k.importPolicyId,
     export_policy_id: k.exportPolicyId,
     bfd: triTo(k.bfd),
+    bfd_profile_id: k.bfd === "off" ? null : k.bfdProfileId,
     ebgp_multihop: numOrNull(k.ebgpMultihop),
     next_hop_self: triTo(k.nextHopSelf),
     route_reflector_client: triTo(k.rrClient),
@@ -222,13 +226,6 @@ function KnobFields({
       </div>
       <div className="grid gap-3 @md:grid-cols-3">
         <FormSelect
-          label="BFD"
-          value={k.bfd}
-          onChange={(v) => set({ bfd: v })}
-          options={TRI}
-          noneLabel={none}
-        />
-        <FormSelect
           label="Next-hop self"
           value={k.nextHopSelf}
           onChange={(v) => set({ nextHopSelf: v })}
@@ -242,8 +239,6 @@ function KnobFields({
           options={TRI}
           noneLabel={none}
         />
-      </div>
-      <div className="grid gap-3 @md:grid-cols-4">
         <FormSelect
           label="Send community"
           value={k.sendCommunity}
@@ -251,6 +246,8 @@ function KnobFields({
           options={SEND_COMMUNITY}
           noneLabel={none}
         />
+      </div>
+      <div className="grid gap-3 @md:grid-cols-3">
         <FormText
           label="eBGP multihop"
           type="number"
@@ -274,6 +271,16 @@ function KnobFields({
           error={errors.hold_time}
         />
       </div>
+      <BFDFields
+        tri
+        inheritLabel={none}
+        on={k.bfd}
+        onChange={(v) => set({ bfd: v })}
+        profileId={k.bfdProfileId}
+        onProfileChange={(v) => set({ bfdProfileId: v })}
+        profileNoneLabel={none}
+        errors={errors}
+      />
       <FormCombobox
         label="Keychain"
         value={k.keychainId}
@@ -451,7 +458,10 @@ export function BGPInstanceForm({
   const [routerId, setRouterId] = useState(item?.router_id ?? "")
   const [clusterId, setClusterId] = useState(item?.cluster_id ?? "")
   const [gr, setGr] = useState(item?.graceful_restart ?? false)
-  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
   const [statusId, setStatusId] = useState<string | null>(
     item?.status?.id ?? null
   )
@@ -494,7 +504,8 @@ export function BGPInstanceForm({
           router_id: routerId.trim(),
           cluster_id: clusterId.trim(),
           graceful_restart: gr,
-          bfd,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           status_id: statusId,
           description: description.trim(),
           tag_ids: tagIds,
@@ -572,13 +583,14 @@ export function BGPInstanceForm({
             checked={gr}
             onChange={setGr}
           />
-          <FormCheckbox
-            label="BFD"
-            checked={bfd}
-            onChange={setBfd}
-            hint="default for neighbours"
-          />
         </div>
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          errors={fieldErrors}
+        />
         <FormTextarea
           label="Description"
           value={description}

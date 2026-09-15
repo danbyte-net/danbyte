@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useFieldErrors } from "@/components/forms"
+import { FormCombobox, FormSelect, useFieldErrors } from "@/components/forms"
 import { cn } from "@/lib/utils"
 
 // The pieces every routing form shares: the save mutation (plan-aware, like
@@ -32,6 +32,7 @@ export const ROUTING_OBJECT_TYPES = {
   aspathlist: "routing.aspathlist",
   routingpolicy: "routing.routingpolicy",
   routingkeychain: "routing.routingkeychain",
+  bfdprofile: "routing.bfdprofile",
   staticroute: "routing.staticroute",
   bgpinstance: "routing.bgpinstance",
   bgpaddressfamily: "routing.bgpaddressfamily",
@@ -238,6 +239,62 @@ export function RulesTable<TRow extends { sequence: number }>({
 }
 
 /** Compact option lists for the pickers inside a rule. */
+/** The BFD pair every protocol form draws: on/off beside the timers it
+ * runs with. `tri` gives an Inherit row (sessions, peer groups). */
+export function BFDFields({
+  on,
+  onChange,
+  profileId,
+  onProfileChange,
+  tri,
+  inheritLabel = "Inherit",
+  profileNoneLabel = "Platform default",
+  errors,
+}: {
+  on: string | null
+  onChange: (v: string | null) => void
+  profileId: string | null
+  onProfileChange: (v: string | null) => void
+  tri?: boolean
+  inheritLabel?: string
+  profileNoneLabel?: string
+  errors?: Record<string, string | undefined>
+}) {
+  const profiles = usePickList<{ id: string; name: string }>(
+    "bfd-profiles",
+    "/api/routing/bfd-profiles/",
+    (p) => p.name
+  )
+  return (
+    <div className="grid gap-3 @md:grid-cols-3">
+      <FormSelect
+        label="BFD"
+        value={on}
+        onChange={onChange}
+        options={[
+          { value: "on", label: "On" },
+          { value: "off", label: "Off" },
+        ]}
+        noneLabel={tri ? inheritLabel : undefined}
+        error={errors?.bfd}
+      />
+      {on !== "off" && (
+        <FormCombobox
+          label="BFD profile"
+          value={profileId}
+          onChange={onProfileChange}
+          options={profiles.map((p) => ({ value: p.id, label: p.label }))}
+          noneLabel={profileNoneLabel}
+          placeholder={profileNoneLabel}
+          emptyText="No profiles - add one under Routing → BFD profiles."
+          info="The timers BFD runs with; a profile is named once under Routing → BFD profiles."
+          error={errors?.bfd_profile_id}
+        />
+      )}
+    </div>
+  )
+}
+
 export function usePickList<T extends { id: string }>(
   key: string,
   endpoint: string,
