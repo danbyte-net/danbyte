@@ -100,6 +100,17 @@ SPECS: dict[str, IndexSpec] = {
                              site="device.site", subtitle="device.name",
                              body=("prefix", "next_hop", "vrf.name", "description"),
                              facets=("status", "device", "vrf")),
+    "bgpsession": IndexSpec("routing.BGPSession", "/bgp-sessions/{id}", weight=7,
+                            site="instance.device.site", subtitle="instance.device.name",
+                            body=("remote_address", "interface.name", "remote_asn",
+                                  "peer_group.name", "description", "instance.asn.asn"),
+                            facets=("status", "instance.device", "peer_group")),
+    "bgppeergroup": IndexSpec("routing.BGPPeerGroup", "/bgp-peer-groups/{id}",
+                              weight=5, site=None, subtitle="description",
+                              body=("remote_asn",)),
+    "bgpinstance": IndexSpec("routing.BGPInstance", "/devices/{device_id}?tab=routing",
+                             weight=5, site="device.site", subtitle="device.name",
+                             body=("asn.asn", "router_id", "vrf.name")),
     "routingpolicy": IndexSpec("routing.RoutingPolicy", "/routing-policies/{id}",
                                weight=5, site=None, subtitle="description"),
     "prefixlist": IndexSpec("routing.PrefixList", "/prefix-lists/{id}", weight=5,
@@ -404,7 +415,12 @@ def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
         "body": _body(obj, spec),
         "facets": _facets(obj, spec),
         "context": _context(obj, spec),
-        "url": spec.url.format(id=obj.pk, mac_address=getattr(obj, "mac_address", "")),
+        "url": spec.url.format(
+            id=obj.pk, mac_address=getattr(obj, "mac_address", ""),
+            # Rows that live on another object's page (a BGP instance on its
+            # device's Routing tab) link there.
+            device_id=getattr(obj, "device_id", ""),
+        ),
         "weight": spec.weight,
     }
 

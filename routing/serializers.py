@@ -10,11 +10,12 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 
-from api.models import VRF, Device, Interface, Prefix
+from api.models import ASN, VRF, Device, Interface, IPAddress, Prefix
 from api.serializers import (
     CustomFieldsSerializerMixin,
     DeviceMiniSerializer,
     InterfaceMiniSerializer,
+    IPMiniSerializer,
     NumIdModelSerializer,
     PrefixMiniSerializer,
     SecretPSKSerializerMixin,
@@ -27,17 +28,25 @@ from api.serializers import (
 from core.models import Tag
 
 from .models import (
+    AFI_SAFI_CHOICES,
     ASPathList,
     ASPathListRule,
+    BGPAddressFamily,
+    BGPInstance,
+    BGPPeerGroup,
+    BGPSession,
     Community,
     CommunityList,
     CommunityListRule,
     PrefixList,
     PrefixListRule,
+    Redistribution,
     RoutingKeychain,
     RoutingPolicy,
     RoutingPolicyRule,
     StaticRoute,
+    link_remote_address,
+    validate_address_families,
 )
 
 
@@ -488,3 +497,356 @@ class StaticRouteSerializer(
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
+
+
+# ─── BGP ─────────────────────────────────────────────────────────────────────
+
+
+class ASNMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = ASN
+        fields = ["id", "asn"]
+
+
+class _ChildRowSerializer(NumIdModelSerializer):
+    """A row written nested under its parent (the parent FK is set by the
+    parent's serializer) or on its own (the ``*_id`` field)."""
+
+    parent_field = ""
+
+    def _probe(self, attrs):
+        model = self.Meta.model
+        probe = model(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in model._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in model._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        return probe
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = self._probe(attrs)
+        _run_clean(probe)
+        for f in ("networks", "address_families", "remote_address", "router_id"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        return attrs
+
+
+class RedistributionSerializer(_ChildRowSerializer):
+    parent_field = "bgp_af"
+    bgp_af_id = TenantScopedPrimaryKeyRelatedField(
+        source="bgp_af", queryset=BGPAddressFamily.objects.all(),
+        write_only=True, required=False,
+    )
+    policy = RoutingPolicyMiniSerializer(read_only=True)
+    policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    class Meta:
+        model = Redistribution
+        fields = ["id", "bgp_af_id", "source", "policy", "policy_id", "metric", "extra"]
+        read_only_fields = ["id"]
+
+
+class BGPAddressFamilySerializer(_ChildRowSerializer):
+    parent_field = "instance"
+    instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="instance", queryset=BGPInstance.objects.all(),
+        write_only=True, required=False,
+    )
+    afi_safi_display = serializers.CharField(source="get_afi_safi_display", read_only=True)
+    import_policy = RoutingPolicyMiniSerializer(read_only=True)
+    import_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="import_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    export_policy = RoutingPolicyMiniSerializer(read_only=True)
+    export_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="export_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    redistributions = RedistributionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = BGPAddressFamily
+        fields = ["id", "instance_id", "afi_safi", "afi_safi_display", "networks",
+                  "maximum_paths", "maximum_paths_ibgp",
+                  "import_policy", "import_policy_id", "export_policy", "export_policy_id",
+                  "redistributions", "extra"]
+        read_only_fields = ["id"]
+        validators = []
+
+    def _rows(self):
+        return self.initial_data.get("redistributions") if isinstance(self.initial_data, dict) else None
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        rows = self._rows()
+        if rows is not None:
+            if not isinstance(rows, list):
+                raise serializers.ValidationError({"redistributions": "Expected a list."})
+            cleaned = []
+            for i, row in enumerate(rows):
+                ser = RedistributionSerializer(data=row, context=self.context)
+                if not ser.is_valid():
+                    raise serializers.ValidationError(
+                        {"redistributions": [f"Row {i + 1}: {ser.errors}"]}
+                    )
+                cleaned.append(ser.validated_data)
+            self._redistributions = cleaned
+        return attrs
+
+    def _sync(self, af):
+        rows = getattr(self, "_redistributions", None)
+        if rows is None:
+            return
+        af.redistributions.all().delete()
+        for data in rows:
+            data = dict(data)
+            data.pop("bgp_af", None)
+            Redistribution.objects.create(bgp_af=af, **data)
+
+    def create(self, validated_data):
+        with transaction.atomic():
+            af = super().create(validated_data)
+            self._sync(af)
+        return af
+
+    def update(self, instance, validated_data):
+        with transaction.atomic():
+            af = super().update(instance, validated_data)
+            self._sync(af)
+        return af
+
+
+class BGPInstanceSerializer(
+    CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin, NumIdModelSerializer
+):
+    cf_model = "bgpinstance"
+
+    device = DeviceMiniSerializer(read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    vrf = VRFMiniSerializer(read_only=True)
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    asn = ASNMiniSerializer(read_only=True)
+    asn_id = TenantScopedPrimaryKeyRelatedField(
+        source="asn", queryset=ASN.objects.all(), write_only=True,
+    )
+    address_families = BGPAddressFamilySerializer(many=True, read_only=True)
+    session_count = serializers.SerializerMethodField()
+
+    def get_session_count(self, obj) -> int:
+        annotated = getattr(obj, "session_count_annotated", None)
+        return annotated if annotated is not None else obj.sessions.count()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = BGPInstance(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in BGPInstance._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in BGPInstance._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        if "router_id" in attrs:
+            attrs["router_id"] = probe.router_id
+        return attrs
+
+    class Meta:
+        model = BGPInstance
+        fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id", "asn", "asn_id",
+                  "router_id", "cluster_id", "graceful_restart", "bfd",
+                  "address_families", "session_count",
+                  "status", "status_id", "description", "extra",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        validators = []
+
+
+class BGPInstanceMiniSerializer(NumIdModelSerializer):
+    device = DeviceMiniSerializer(read_only=True)
+    vrf = VRFMiniSerializer(read_only=True)
+    asn = ASNMiniSerializer(read_only=True)
+
+    class Meta:
+        model = BGPInstance
+        fields = ["id", "device", "vrf", "asn"]
+
+
+class _PeerKnobFields(serializers.Serializer):
+    """The shared neighbour settings, on a session and on a peer group."""
+
+    address_families = serializers.ListField(
+        child=serializers.ChoiceField(choices=AFI_SAFI_CHOICES), required=False,
+    )
+    import_policy = RoutingPolicyMiniSerializer(read_only=True)
+    import_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="import_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    export_policy = RoutingPolicyMiniSerializer(read_only=True)
+    export_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="export_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    keychain = RoutingKeychainMiniSerializer(read_only=True)
+    keychain_id = TenantScopedPrimaryKeyRelatedField(
+        source="keychain", queryset=RoutingKeychain.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def validate_address_families(self, value):
+        try:
+            return validate_address_families(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages) from exc
+
+
+_KNOB_FIELDS = [
+    "address_families", "import_policy", "import_policy_id",
+    "export_policy", "export_policy_id", "bfd", "ebgp_multihop",
+    "next_hop_self", "route_reflector_client", "send_community",
+    "keepalive", "hold_time", "keychain", "keychain_id", "extra",
+]
+
+
+class BGPPeerGroupSerializer(
+    _PeerKnobFields, CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer
+):
+    cf_model = "bgppeergroup"
+
+    local_asn = ASNMiniSerializer(read_only=True)
+    local_asn_id = TenantScopedPrimaryKeyRelatedField(
+        source="local_asn", queryset=ASN.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    session_count = serializers.SerializerMethodField()
+
+    def get_session_count(self, obj) -> int:
+        annotated = getattr(obj, "session_count_annotated", None)
+        return annotated if annotated is not None else obj.sessions.count()
+
+    class Meta:
+        model = BGPPeerGroup
+        fields = ["id", "numid", "name", "description",
+                  "remote_asn", "remote_asn_mode", "local_asn", "local_asn_id",
+                  "update_source", *_KNOB_FIELDS, "session_count",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+
+
+class BGPPeerGroupMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = BGPPeerGroup
+        fields = ["id", "name", "remote_asn", "remote_asn_mode"]
+
+
+class BGPSessionSerializer(
+    _PeerKnobFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
+):
+    cf_model = "bgpsession"
+
+    instance = BGPInstanceMiniSerializer(read_only=True)
+    instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="instance", queryset=BGPInstance.objects.all(), write_only=True,
+    )
+    peer_group = BGPPeerGroupMiniSerializer(read_only=True)
+    peer_group_id = TenantScopedPrimaryKeyRelatedField(
+        source="peer_group", queryset=BGPPeerGroup.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    local_asn = ASNMiniSerializer(read_only=True)
+    local_asn_id = TenantScopedPrimaryKeyRelatedField(
+        source="local_asn", queryset=ASN.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    local_address = IPMiniSerializer(read_only=True)
+    local_address_id = TenantScopedPrimaryKeyRelatedField(
+        source="local_address", queryset=IPAddress.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    remote_address_obj = IPMiniSerializer(read_only=True)
+    peer_device = DeviceMiniSerializer(read_only=True)
+    peer_device_id = TenantScopedPrimaryKeyRelatedField(
+        source="peer_device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    peer_session = serializers.SerializerMethodField()
+    effective = serializers.SerializerMethodField()
+
+    def get_peer_session(self, obj):
+        p = obj.peer_session if obj.peer_session_id else None
+        if p is None:
+            return None
+        return {"id": str(p.id), "device": {"id": str(p.instance.device_id),
+                                            "name": p.instance.device.name}}
+
+    def get_effective(self, obj) -> dict:
+        eff = obj.effective()
+        return {
+            **{k: v for k, v in eff.items() if k not in ("import_policy", "export_policy", "keychain")},
+            "import_policy": RoutingPolicyMiniSerializer(eff["import_policy"]).data
+            if eff["import_policy"] else None,
+            "export_policy": RoutingPolicyMiniSerializer(eff["export_policy"]).data
+            if eff["export_policy"] else None,
+            "keychain": RoutingKeychainMiniSerializer(eff["keychain"]).data
+            if eff["keychain"] else None,
+        }
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = BGPSession(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in BGPSession._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in BGPSession._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        if "remote_address" in attrs:
+            attrs["remote_address"] = probe.remote_address
+        return attrs
+
+    def create(self, validated_data):
+        obj = super().create(validated_data)
+        link_remote_address(obj)
+        return obj
+
+    def update(self, instance, validated_data):
+        obj = super().update(instance, validated_data)
+        link_remote_address(obj)
+        return obj
+
+    class Meta:
+        model = BGPSession
+        fields = ["id", "numid", "instance", "instance_id", "name",
+                  "peer_group", "peer_group_id",
+                  "remote_asn", "remote_asn_mode", "local_asn", "local_asn_id",
+                  "local_address", "local_address_id",
+                  "remote_address", "interface", "interface_id", "remote_address_obj",
+                  "peer_device", "peer_device_id", "peer_session",
+                  *_KNOB_FIELDS, "effective",
+                  "status", "status_id", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "remote_address_obj", "created_at", "updated_at"]
+        validators = []

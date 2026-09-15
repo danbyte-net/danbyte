@@ -12,6 +12,7 @@ from django.db.models import F
 
 from .models import (
     ASPathList,
+    BGPInstance,
     Community,
     CommunityList,
     PrefixList,
@@ -151,6 +152,121 @@ def keychain_dict(k: RoutingKeychain) -> dict:
     }
 
 
+def _name(obj) -> str | None:
+    return obj.name if obj is not None else None
+
+
+def session_dict(s, policies: set[str]) -> dict:
+    """One neighbour with every knob resolved (session → group → instance)."""
+    eff = s.effective()
+    for key in ("import_policy", "export_policy"):
+        if eff[key] is not None:
+            policies.add(eff[key].name)
+    local = s.local_address if s.local_address_id else None
+    return {
+        "id": str(s.id),
+        "name": s.name or None,
+        "peer_group": s.peer_group.name if s.peer_group_id else None,
+        "remote_asn": eff["remote_asn"],
+        "remote_asn_mode": eff["remote_asn_mode"],
+        "local_asn": eff["local_asn"],
+        "local_address": {
+            "address": local.ip_address,
+            "cidr": f"{local.ip_address}/{str(local.prefix.cidr).split('/')[-1]}" if local.prefix_id else None,
+            "interface": local.assigned_interface.name if local.assigned_interface_id else None,
+        } if local is not None else None,
+        "remote_address": s.remote_address or None,
+        "interface": s.interface.name if s.interface_id else None,
+        "peer_device": s.peer_device.name if s.peer_device_id else None,
+        "address_families": list(eff["address_families"] or []),
+        "import_policy": _name(eff["import_policy"]),
+        "export_policy": _name(eff["export_policy"]),
+        "bfd": bool(eff["bfd"]),
+        "ebgp_multihop": eff["ebgp_multihop"],
+        "update_source": eff["update_source"] or None,
+        "next_hop_self": bool(eff["next_hop_self"]),
+        "route_reflector_client": bool(eff["route_reflector_client"]),
+        "send_community": eff["send_community"] or None,
+        "keepalive": eff["keepalive"],
+        "hold_time": eff["hold_time"],
+        "keychain": _name(eff["keychain"]),
+        "description": s.description or "",
+        "extra": eff["extra"],
+    }
+
+
+def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
+    afs = []
+    for af in inst.address_families.all():
+        for key in ("import_policy", "export_policy"):
+            pol = getattr(af, key)
+            if pol is not None:
+                policies.add(pol.name)
+        redist = []
+        for r in af.redistributions.all():
+            if r.policy_id:
+                policies.add(r.policy.name)
+            redist.append({
+                "source": r.source, "policy": _name(r.policy) if r.policy_id else None,
+                "metric": r.metric, **(r.extra or {}),
+            })
+        afs.append({
+            "afi_safi": af.afi_safi,
+            "networks": list(af.networks or []),
+            "maximum_paths": af.maximum_paths,
+            "maximum_paths_ibgp": af.maximum_paths_ibgp,
+            "import_policy": _name(af.import_policy) if af.import_policy_id else None,
+            "export_policy": _name(af.export_policy) if af.export_policy_id else None,
+            "redistribute": redist,
+            "extra": af.extra or {},
+        })
+    # Addressed neighbours first, then unnumbered ones by port - the order a
+    # config lists them, and stable across renders.
+    ordered = sorted(
+        inst.sessions.all(),
+        key=lambda s: (not s.remote_address, s.remote_address,
+                       s.interface.name if s.interface_id else ""),
+    )
+    sessions = [session_dict(s, policies) for s in ordered]
+    groups = {}
+    for s in inst.sessions.all():
+        if s.peer_group_id and s.peer_group.name not in groups:
+            g = s.peer_group
+            groups[g.name] = {
+                "name": g.name,
+                "remote_asn": g.remote_asn,
+                "remote_asn_mode": g.remote_asn_mode,
+                "local_asn": g.local_asn.asn if g.local_asn_id else inst.asn.asn,
+                "update_source": g.update_source or None,
+                "address_families": list(g.address_families or []),
+                "import_policy": _name(g.import_policy) if g.import_policy_id else None,
+                "export_policy": _name(g.export_policy) if g.export_policy_id else None,
+                "bfd": inst.bfd if g.bfd is None else g.bfd,
+                "ebgp_multihop": g.ebgp_multihop,
+                "next_hop_self": bool(g.next_hop_self),
+                "route_reflector_client": bool(g.route_reflector_client),
+                "send_community": g.send_community or None,
+                "keepalive": g.keepalive,
+                "hold_time": g.hold_time,
+                "keychain": _name(g.keychain) if g.keychain_id else None,
+                "extra": g.extra or {},
+            }
+    return {
+        "id": str(inst.id),
+        "vrf": _vrf_name(inst.vrf),
+        "asn": inst.asn.asn,
+        "router_id": inst.router_id or None,
+        "cluster_id": inst.cluster_id or None,
+        "graceful_restart": inst.graceful_restart,
+        "bfd": inst.bfd,
+        "address_families": afs,
+        "sessions": sessions,
+        "peer_groups": [groups[k] for k in sorted(groups)],
+        "description": inst.description or "",
+        "extra": inst.extra or {},
+    }
+
+
 def _policies_closure(tenant_id, names: set[str]) -> dict:
     """The policies a device references, plus every list those policies
     match on - so a template prints only what the box needs."""
@@ -216,9 +332,30 @@ def routing_context(device) -> dict:
                 vrfs[vrf.name] = vrf
 
     referenced_policies: set[str] = set()
+    instances = (
+        BGPInstance.objects.filter(device=device)
+        .select_related("vrf", "asn")
+        .prefetch_related(
+            "address_families__import_policy", "address_families__export_policy",
+            "address_families__redistributions__policy",
+            "sessions__peer_group__import_policy", "sessions__peer_group__export_policy",
+            "sessions__peer_group__keychain", "sessions__peer_group__local_asn",
+            "sessions__local_asn", "sessions__local_address__prefix",
+            "sessions__local_address__assigned_interface", "sessions__interface",
+            "sessions__peer_device", "sessions__import_policy",
+            "sessions__export_policy", "sessions__keychain",
+        )
+        .order_by(F("vrf__name").asc(nulls_first=True))
+    )
+    bgp = [bgp_dict(i, referenced_policies) for i in instances]
+    for inst in instances:
+        if inst.vrf_id:
+            vrfs[inst.vrf.name] = inst.vrf
+
     out = {
         "vrfs": [vrf_dict(v) for _, v in sorted(vrfs.items())],
         "static_routes": [static_route_dict(r) for r in static_routes],
+        "bgp": bgp,
         **_policies_closure(device.tenant_id, referenced_policies),
         "communities": [
             {"id": str(c.id), "value": c.value, "kind": c.kind, "name": c.name}

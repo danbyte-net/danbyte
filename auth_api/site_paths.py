@@ -58,6 +58,10 @@ SITE_PATHS: dict[str, str] = {
     # Routing rows hang off their device; the catalogs they reference
     # (policies, prefix lists, keychains) are tenant-wide.
     "staticroute": "device__site",
+    "bgpinstance": "device__site",
+    "bgpaddressfamily": "instance__device__site",
+    "redistribution": "bgp_af__instance__device__site",
+    "bgpsession": "instance__device__site",
 }
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global

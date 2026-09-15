@@ -29,6 +29,9 @@ STATUSABLE_MODELS = [
     ("maintenanceevent", "Maintenance & outage events"),
     ("natrule", "NAT rules"),
     ("staticroute", "Static routes"),
+    ("bgpsession", "BGP sessions"),
+    # One scope shared by the BGP, OSPF and IS-IS instance models.
+    ("routinginstance", "Routing instances"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
@@ -138,6 +141,8 @@ STATUS_MODEL_VALUES = {
     "natrule": ["active", "planned", "disabled"],
     # Static routes: in the table, on the way, or written down and off.
     "staticroute": ["active", "planned", "disabled"],
+    "bgpsession": ["active", "planned", "disabled"],
+    "routinginstance": ["active", "planned", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.

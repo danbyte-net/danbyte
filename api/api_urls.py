@@ -110,11 +110,16 @@ from integrations.connections_api import (
 from routing.viewsets import (
     ASPathListRuleViewSet,
     ASPathListViewSet,
+    BGPAddressFamilyViewSet,
+    BGPInstanceViewSet,
+    BGPPeerGroupViewSet,
+    BGPSessionViewSet,
     CommunityListRuleViewSet,
     CommunityListViewSet,
     CommunityViewSet,
     PrefixListRuleViewSet,
     PrefixListViewSet,
+    RedistributionViewSet,
     RoutingKeychainViewSet,
     RoutingPolicyRuleViewSet,
     RoutingPolicyViewSet,
@@ -354,6 +359,13 @@ router.register(r"routing/policy-rules", RoutingPolicyRuleViewSet,
 router.register(r"routing/keychains", RoutingKeychainViewSet,
                 basename="routingkeychain")
 router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
+router.register(r"routing/bgp-instances", BGPInstanceViewSet, basename="bgpinstance")
+router.register(r"routing/bgp-address-families", BGPAddressFamilyViewSet,
+                basename="bgpaddressfamily")
+router.register(r"routing/redistributions", RedistributionViewSet,
+                basename="redistribution")
+router.register(r"routing/bgp-peer-groups", BGPPeerGroupViewSet, basename="bgppeergroup")
+router.register(r"routing/bgp-sessions", BGPSessionViewSet, basename="bgpsession")
 router.register(r"services",      ServiceViewSet,     basename="service")
 router.register(r"service-templates", ServiceTemplateViewSet, basename="service-template")
 router.register(r"device-types",  DeviceTypeViewSet,  basename="device-type")

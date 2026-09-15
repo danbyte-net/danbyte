@@ -891,6 +891,8 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "maintenanceevent", label: "Maintenance & outage events" },
   { value: "natrule", label: "NAT rules" },
   { value: "staticroute", label: "Static routes" },
+  { value: "bgpsession", label: "BGP sessions" },
+  { value: "routinginstance", label: "Routing instances" },
 ]
 
 // api/status_registry.MONITORING_STATES - the six states a check can end in.

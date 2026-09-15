@@ -24,11 +24,16 @@ from audit.bulk import log_bulk_delete
 from .models import (
     ASPathList,
     ASPathListRule,
+    BGPAddressFamily,
+    BGPInstance,
+    BGPPeerGroup,
+    BGPSession,
     Community,
     CommunityList,
     CommunityListRule,
     PrefixList,
     PrefixListRule,
+    Redistribution,
     RoutingKeychain,
     RoutingPolicy,
     RoutingPolicyRule,
@@ -38,6 +43,11 @@ from .serializers import (
     ASPathListMiniSerializer,
     ASPathListRuleSerializer,
     ASPathListSerializer,
+    BGPAddressFamilySerializer,
+    BGPInstanceSerializer,
+    BGPPeerGroupMiniSerializer,
+    BGPPeerGroupSerializer,
+    BGPSessionSerializer,
     CommunityListMiniSerializer,
     CommunityListRuleSerializer,
     CommunityListSerializer,
@@ -46,6 +56,7 @@ from .serializers import (
     PrefixListMiniSerializer,
     PrefixListRuleSerializer,
     PrefixListSerializer,
+    RedistributionSerializer,
     RoutingKeychainMiniSerializer,
     RoutingKeychainSerializer,
     RoutingPolicyMiniSerializer,
@@ -296,3 +307,233 @@ class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
         elif vrf:
             qs = qs.filter(vrf_id=vrf)
         return qs.distinct()
+
+
+# ─── BGP ─────────────────────────────────────────────────────────────────────
+
+class BGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """``router bgp`` per device and table. Filter with ``?device=``,
+    ``?vrf=`` (``global``), ``?asn=``, ``?site=``, ``?status=``."""
+
+    editable_str_fields = ("description", "router_id", "cluster_id")
+    editable_bool_fields = ("bfd", "graceful_restart")
+    queryset = BGPInstance.objects.all()
+    serializer_class = BGPInstanceSerializer
+    pagination_class = StandardPagination
+    clone_fields = ("vrf", "asn", "cluster_id", "graceful_restart", "bfd", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device", "vrf", "asn", "status")
+            .prefetch_related(
+                "tags", "address_families__import_policy",
+                "address_families__export_policy",
+                "address_families__redistributions__policy",
+            )
+            .annotate(session_count_annotated=Count("sessions", distinct=True))
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(device__name__icontains=s) | Q(asn__asn__icontains=s)
+                | Q(router_id__icontains=s) | Q(description__icontains=s)
+                | Q(vrf__name__icontains=s) | cf_text_q(qs.model, s)
+            )
+        for key, field in (
+            ("device", "device_id"), ("asn", "asn_id"), ("status", "status_id"),
+            ("site", "device__site_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        vrf = p.get("vrf")
+        if vrf == "global":
+            qs = qs.filter(vrf__isnull=True)
+        elif vrf:
+            qs = qs.filter(vrf_id=vrf)
+        return qs.distinct()
+
+
+class BGPAddressFamilyViewSet(_RuleViewSet):
+    """Address families of an instance. Filter with ``?instance=``."""
+
+    parent = "instance"
+    queryset = (
+        BGPAddressFamily.objects.select_related("instance", "import_policy", "export_policy")
+        .prefetch_related("redistributions__policy").order_by("afi_safi")
+    )
+    serializer_class = BGPAddressFamilySerializer
+
+
+class RedistributionViewSet(TenantScopedViewSet):
+    """Redistribution rows. Filter with ``?bgp_af=``."""
+
+    tenant_field = None
+    queryset = Redistribution.objects.select_related("bgp_af", "policy").order_by("source")
+    serializer_class = RedistributionSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(bgp_af__instance__tenant=tenant)
+        if self.request:
+            af = self.request.query_params.get("bgp_af")
+            if af:
+                qs = qs.filter(bgp_af_id=af)
+        return qs
+
+    def _check(self, serializer):
+        tenant = self._tenant_or_403()
+        af = serializer.validated_data.get("bgp_af") or (
+            serializer.instance.bgp_af if serializer.instance else None
+        )
+        if af is None or af.instance.tenant_id != tenant.id:
+            raise ValidationError({"bgp_af_id": "Pick an address family in the current tenant."})
+
+    def perform_create(self, serializer):
+        self._check(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check(serializer)
+        serializer.save()
+
+
+class BGPPeerGroupViewSet(_CatalogViewSet):
+    queryset = BGPPeerGroup.objects.all().order_by(NATURAL_NAME)
+    serializer_class = BGPPeerGroupSerializer
+    mini_serializer_class = BGPPeerGroupMiniSerializer
+    clone_fields = ("description", "remote_asn", "remote_asn_mode", "local_asn",
+                    "update_source", "address_families", "import_policy",
+                    "export_policy", "bfd", "ebgp_multihop", "next_hop_self",
+                    "route_reflector_client", "send_community", "keepalive",
+                    "hold_time", "keychain", "extra")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("local_asn", "import_policy", "export_policy", "keychain")
+            .annotate(session_count_annotated=Count("sessions", distinct=True))
+        )
+        if self.request:
+            asn = self.request.query_params.get("remote_asn")
+            if asn:
+                qs = qs.filter(remote_asn=asn)
+        return qs
+
+
+class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """Neighbours. Filter with ``?instance=``, ``?device=``, ``?site=``,
+    ``?asn=`` (the local instance's), ``?remote_asn=``, ``?peer_group=``,
+    ``?peer_device=``, ``?status=``, ``?af=``."""
+
+    editable_str_fields = ("description", "name")
+    editable_int_fields = ("remote_asn", "keepalive", "hold_time", "ebgp_multihop")
+    queryset = BGPSession.objects.all()
+    serializer_class = BGPSessionSerializer
+    pagination_class = StandardPagination
+    rbac_action_map = {**_BulkDeleteMixin.rbac_action_map, "create_peer": "add"}
+    clone_fields = ("instance", "peer_group", "remote_asn", "remote_asn_mode",
+                    "local_asn", "local_address", "address_families",
+                    "import_policy", "export_policy", "bfd", "ebgp_multihop",
+                    "next_hop_self", "route_reflector_client", "send_community",
+                    "keepalive", "hold_time", "keychain", "status", "extra")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related(
+                "instance__device", "instance__vrf", "instance__asn",
+                "peer_group__import_policy", "peer_group__export_policy",
+                "peer_group__keychain", "peer_group__local_asn",
+                "local_asn", "local_address__assigned_interface", "interface__device",
+                "remote_address_obj", "peer_device", "peer_session__instance__device",
+                "import_policy", "export_policy", "keychain", "status",
+            )
+            .prefetch_related("tags")
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(name__icontains=s) | Q(remote_address__icontains=s)
+                | Q(interface__name__icontains=s) | Q(description__icontains=s)
+                | Q(instance__device__name__icontains=s)
+                | Q(peer_device__name__icontains=s) | Q(peer_group__name__icontains=s)
+                | cf_text_q(qs.model, s)
+            )
+            if s.isdigit():
+                qs = qs | super().get_queryset().filter(
+                    Q(remote_asn=int(s)) | Q(instance__asn__asn=int(s))
+                )
+        for key, field in (
+            ("instance", "instance_id"), ("device", "instance__device_id"),
+            ("site", "instance__device__site_id"), ("asn", "instance__asn_id"),
+            ("remote_asn", "remote_asn"), ("peer_group", "peer_group_id"),
+            ("peer_device", "peer_device_id"), ("status", "status_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        af = p.get("af")
+        if af:
+            qs = qs.filter(Q(address_families__contains=[af]) | Q(peer_group__address_families__contains=[af]))
+        return qs.distinct()
+
+    @action(detail=True, methods=["post"], url_path="create-peer")
+    def create_peer(self, request, pk=None):
+        """Write the mirror session on the peer device and link both ends.
+        Needs a peer device with an instance in the same table, this side's
+        local address, and a far address Danbyte knows."""
+        from django.db import transaction
+
+        from api.models import IPAddress
+
+        s = self.get_object()
+        if s.peer_session_id:
+            raise ValidationError({"detail": "This session already has its far end."})
+        if not s.peer_device_id:
+            raise ValidationError({"peer_device_id": "Set the peer device first."})
+        if not s.local_address_id:
+            raise ValidationError({"local_address_id": "Set this side's local address first."})
+        far_inst = BGPInstance.objects.filter(device_id=s.peer_device_id, vrf_id=s.instance.vrf_id).first()
+        if far_inst is None:
+            raise ValidationError({"peer_device_id": "The peer device has no BGP instance in this table."})
+        far_ip = s.remote_address_obj
+        if far_ip is None and s.remote_address:
+            far_ip = IPAddress.objects.filter(
+                tenant_id=s.tenant_id, ip_address=s.remote_address, vrf_id=s.instance.vrf_id,
+                assigned_device_id=s.peer_device_id,
+            ).first()
+        if far_ip is None:
+            raise ValidationError({"remote_address": "The far address is not on the peer device in IPAM."})
+        eff = s.effective()
+        with transaction.atomic():
+            mirror = BGPSession(
+                tenant_id=s.tenant_id, instance=far_inst, name=s.name,
+                peer_group=None,
+                remote_asn=s.instance.asn.asn, remote_asn_mode="asn",
+                local_address=far_ip, remote_address=s.local_address.ip_address,
+                remote_address_obj=s.local_address, peer_device=s.instance.device,
+                address_families=list(eff["address_families"] or []),
+                bfd=eff["bfd"], ebgp_multihop=eff["ebgp_multihop"],
+                keepalive=eff["keepalive"], hold_time=eff["hold_time"],
+                send_community=eff["send_community"] or "", keychain=eff["keychain"],
+                status=s.status, description=s.description,
+            )
+            mirror.full_clean()
+            mirror.save()
+            mirror.peer_session = s
+            mirror.save(update_fields=["peer_session"])
+            s.peer_session = mirror
+            s.save(update_fields=["peer_session"])
+        return Response(BGPSessionSerializer(mirror, context={"request": request}).data,
+                        status=201)
