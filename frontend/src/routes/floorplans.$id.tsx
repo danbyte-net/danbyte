@@ -130,6 +130,13 @@ import {
   useTilePopover,
 } from "@/components/floorplan/tile-popover"
 import { ObjectsSidebar } from "@/components/floorplan/objects-sidebar"
+import {
+  type FloorHidden,
+  readFloorHidden,
+  visibleTiles as pickVisibleTiles,
+} from "@/components/floorplan/hidden"
+import { HiddenChip } from "@/components/hidden-chip"
+import { hiddenCount } from "@/components/hidden-objects"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { RackElevation } from "@/components/rack-elevation"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -572,6 +579,32 @@ function FloorPlanPage() {
     showLinksLocal ??
     (plan?.state.show_cable_links as boolean | undefined) ??
     false
+  // The eyes (#hide): a type, a role or one tile off the plan. Lives on the
+  // plan like the other view preferences, with the same session override,
+  // and only ever narrows what is drawn - `tiles` (all of them) keeps
+  // feeding the save path.
+  const [hiddenLocal, setHiddenLocal] = useState<FloorHidden | null>(null)
+  const hidden = hiddenLocal ?? readFloorHidden(plan?.state.hidden)
+  const setHiddenPref = (next: FloorHidden) => {
+    setHiddenLocal(next)
+    if (canEdit && plan)
+      patchPlan.mutate({ state: { ...plan.state, hidden: next } })
+  }
+  const shownTiles = useMemo(
+    () => pickVisibleTiles(tiles, hidden),
+    [tiles, hidden]
+  )
+  const hiddenTileIds = useMemo(
+    () =>
+      new Set(tiles.filter((t) => !shownTiles.includes(t)).map((t) => t.id)),
+    [tiles, shownTiles]
+  )
+  // A tile that just went off the plan cannot stay selected - the keyboard
+  // nudge and delete act on the selection, and nobody should edit what they
+  // cannot see.
+  useEffect(() => {
+    if (selectedId && hiddenTileIds.has(selectedId)) setSelectedId(null)
+  }, [selectedId, hiddenTileIds])
   const showObjects =
     showObjectsLocal ??
     (plan?.state.show_objects as boolean | undefined) ??
@@ -1208,13 +1241,13 @@ function FloorPlanPage() {
       const pts = cableIds
         .map((cid) => cablePaths.find((c) => c.id === cid))
         .filter((cp): cp is FloorPlanCablePath => !!cp)
-        .flatMap((cp) => cableRoutePoints(cp, trays, tiles))
+        .flatMap((cp) => cableRoutePoints(cp, trays, shownTiles))
       if (pts.length >= 2)
         requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
       else if (cableIds.length)
         toast.info("That run isn't routed through a tray on this plan yet.")
     },
-    [cablePaths, trays, tiles]
+    [cablePaths, trays, shownTiles]
   )
 
   if (planQuery.isLoading)
@@ -1740,6 +1773,7 @@ function FloorPlanPage() {
                 <FloorScene3D
                   planId={plan.id}
                   liveState={liveState.data ?? null}
+                  hiddenTileIds={hiddenTileIds}
                   traceCableId={traceParam ?? null}
                   showUNumbers={show3dU}
                   showNames={show3dNames}
@@ -1772,7 +1806,7 @@ function FloorPlanPage() {
             <>
               <FloorCanvas
                 plan={plan}
-                tiles={tiles}
+                tiles={shownTiles}
                 selectedId={selectedId}
                 editable={canEdit}
                 showGrid={showGrid}
@@ -1808,7 +1842,7 @@ function FloorPlanPage() {
                 }}
                 onMarquee={(rect) => {
                   // Non-zone tiles intersecting the sweep join the selection.
-                  const hit = tiles.filter(
+                  const hit = shownTiles.filter(
                     (t) =>
                       !tileIsZone(t) &&
                       t.x < rect.x + rect.w &&
@@ -2120,15 +2154,24 @@ function FloorPlanPage() {
           })()}
         {/* Outermost right aside, so it coexists with whichever inspector is
             open rather than fighting it for the gutter. */}
+        {!showObjects && (
+          <HiddenChip
+            count={hiddenCount(hidden)}
+            onShowAll={() => setHiddenPref(readFloorHidden(undefined))}
+          />
+        )}
         {showObjects && (
           <ObjectsSidebar
             tiles={tiles}
             liveState={liveState.data ?? null}
             selectedId={selectedId}
             onPick={(tile) => {
+              if (hiddenTileIds.has(tile.id)) return
               setSelectedId(tile.id)
               canvasApi.current?.focusTile(tile)
             }}
+            hidden={hidden}
+            onHiddenChange={setHiddenPref}
           />
         )}
       </div>

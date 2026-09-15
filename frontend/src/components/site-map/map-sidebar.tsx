@@ -13,8 +13,8 @@ import {
   emptyHidden,
   hiddenCount,
   setHidden,
-  type HiddenSet,
 } from "@/components/hidden-objects"
+import type { HiddenSet } from "@/components/hidden-objects"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {

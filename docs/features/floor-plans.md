@@ -561,6 +561,18 @@ cable runs, just the trays, or both.
   plan, in foldable groups by **device role** and by **tile type**, each with a
   count and a live health dot. Search it, or click a row to select and zoom to
   that tile. Editors' toggle state is saved with the plan.
+- **Hiding things** - the same eyes the site map has. Every group header in
+  the Objects list (a device role, a tile type) and every tile row carries an
+  eye: click it and that role, that type or that one tile leaves the plan -
+  the 2D canvas, the 3D room and a cable whose end it was all follow, and the
+  PNG export draws the plan as you see it. Hidden rows stay in the list,
+  dimmed, so they can be brought back; a count and **show all** sit at the top
+  of the list, and a chip in the canvas corner says how many are hidden while
+  the list is closed. A hidden tile cannot be selected, nudged or deleted
+  until it is shown again. What is hidden is part of the plan (saved with its
+  other view settings by anyone who can edit it), because "the plan without
+  the old rack row" is part of how a plan is shaped for its readers; hiding
+  never changes the plan's contents.
 - **Show on floor plan** - the Rack and Device detail pages carry a button
   that opens the plan zoomed onto the tile; placed on several plans (its own
   tile and its rack's, or a cloned what-if plan), the button becomes a menu

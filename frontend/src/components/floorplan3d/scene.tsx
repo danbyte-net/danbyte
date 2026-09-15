@@ -75,6 +75,7 @@ import {
 export default function FloorScene3D({
   planId,
   liveState,
+  hiddenTileIds,
   traceCableId,
   showUNumbers = false,
   showNames = false,
@@ -88,6 +89,8 @@ export default function FloorScene3D({
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
+  /** Tiles the plan's eyes have switched off - not drawn here either. */
+  hiddenTileIds?: Set<string>
   traceCableId?: string | null
   /** Overlay toggles - owned by the route's View popover, like the 2D prefs. */
   showUNumbers?: boolean
@@ -356,7 +359,9 @@ export default function FloorScene3D({
   const data = scene.data
   const { plan } = data
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
-  const rackTiles = data.tiles.filter((t) => t.kind === "rack" && t.rack)
+  const rackTiles = data.tiles.filter(
+    (t) => t.kind === "rack" && t.rack && !hiddenTileIds?.has(t.id)
+  )
   const diag = Math.max(w, d)
   // Corners, tees and crossings across every tray - rails trim back to these
   // and a plate bridges each one.
@@ -625,7 +630,10 @@ export default function FloorScene3D({
         {scene.data.tiles
           .filter(
             (t) =>
-              !t.is_zone && !t.rack && (!isolation || isolation.ids.has(t.id))
+              !t.is_zone &&
+              !t.rack &&
+              !hiddenTileIds?.has(t.id) &&
+              (!isolation || isolation.ids.has(t.id))
           )
           .map((t) => (
             <TileGhostMesh key={`ghost-${t.id}`} plan={plan} tile={t} />
