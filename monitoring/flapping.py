@@ -20,10 +20,13 @@ Exclusions keep expected churn out: addresses whose status is in
 """
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from django.db.models import Max, Q
 from django.utils import timezone
+
+log = logging.getLogger("danbyte.monitoring.flapping")
 
 # A "flap" = a transition *into* a bad status. Repeated bad transitions in a
 # short window is the bounce signal (down → up → down …).
@@ -101,6 +104,7 @@ def sweep_flapping(now=None) -> dict:
                 changed_pairs[(state.target_ip_id, state.template_id)] = True
                 flagged += 1
                 flapping += 1
+                _tell(state, "flapping", count=count, window_minutes=ms.flap_window_minutes)
             elif was:
                 if (
                     ms.auto_clear_flapping
@@ -110,6 +114,7 @@ def sweep_flapping(now=None) -> dict:
                     _clear(state, now, None)
                     changed_pairs[(state.target_ip_id, state.template_id)] = False
                     cleared += 1
+                    _tell(state, "settled")
                 else:
                     flapping += 1
                     if state.flap_count != count:
@@ -117,6 +122,17 @@ def sweep_flapping(now=None) -> dict:
                         state.save(update_fields=["flap_count"])
         _mirror(ms.tenant_id, changed_pairs, Alert, AlertStatus)
     return {"flagged": flagged, "cleared": cleared, "flapping": flapping}
+
+
+def _tell(state, event: str, **kw) -> None:
+    """One notice per episode to the status-change channels - the message
+    that stands in for the changes no longer mailed. Never fails the sweep."""
+    from .notify import notify_flapping
+
+    try:
+        notify_flapping(state, event, **kw)
+    except Exception:  # noqa: BLE001 - a delivery error is not a sweep error
+        log.exception("flapping notice for %s failed", state.pk)
 
 
 def _clear(state, now, user) -> None:
@@ -176,6 +192,8 @@ def clear_flapping(states, user, now=None) -> int:
         ))
     ChangeLogEntry.objects.bulk_create(entries)
     flapping_cleared.send(sender=None, states=states, user=user)
+    for state in states:
+        _tell(state, "confirmed", user=user)
     return len(states)
 
 

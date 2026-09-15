@@ -28,6 +28,7 @@ TEMPLATES = [
     ("alert", "Alert notification"),
     ("alert_group", "Grouped alerts"),
     ("status_change", "Status-change notice"),
+    ("flapping", "Flapping notice"),
 ]
 TEMPLATE_KEYS = [k for k, _ in TEMPLATES]
 
@@ -212,6 +213,28 @@ def render_sample(key: str) -> tuple[str, str, str]:
         subject = notify._group_summary(alerts, "firing")
         return (subject, notify._alert_group_email_html(alerts, "firing", url),
                 subject + "\n" + url + "\n")
+
+    if key == "flapping":
+        from monitoring.notify import flapping_email
+
+        now = timezone.now()
+        ip = SimpleNamespace(
+            ip_address="203.0.113.10", dns_name="web01.example.net",
+            assigned_device=SimpleNamespace(name="kbh-srv1"),
+        )
+        state = SimpleNamespace(
+            target_ip=ip, target_ip_id="SAMPLE", template=SimpleNamespace(name="HTTPS"),
+            template_id="SAMPLE", kind="tcp", status="up",
+        )
+        chain = [
+            SimpleNamespace(to_status=st, at=now - timedelta(seconds=sec))
+            for st, sec in (("up", 610), ("down", 540), ("up", 420), ("down", 300),
+                            ("up", 180), ("down", 60))
+        ]
+        return flapping_email(
+            state, "flapping", count=12, window_minutes=30, chain=chain,
+            url="https://danbyte.example.net/ips/SAMPLE?tab=monitoring", name=name,
+        )
 
     if key == "status_change":
         from core import email as ek

@@ -119,8 +119,10 @@ class EmailPreviewApiTests(APITestCase):
         )
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json()["ok"])
-        self.assertEqual(len(r.json()["sent"]), 7)
-        self.assertEqual(len(mail.outbox), 7)
+        from core.email_samples import TEMPLATE_KEYS
+
+        self.assertEqual(len(r.json()["sent"]), len(TEMPLATE_KEYS))
+        self.assertEqual(len(mail.outbox), len(TEMPLATE_KEYS))
         self.assertTrue(all(m.subject.startswith("[Preview]") for m in mail.outbox))
         self.assertTrue(all(m.alternatives for m in mail.outbox))  # multipart HTML
 

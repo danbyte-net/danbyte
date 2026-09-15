@@ -678,6 +678,19 @@ known-noisy address - neither is ever flagged, and either clears a flag
 already raised. That is different from confirming: confirming clears the
 flag once, ignoring stops it being raised at all.
 
+**What gets mailed.** A flapping check is not mailed one change at a time.
+The moment the sweep flags it, every status-change channel in scope of the
+address (instant or batched, email or webhook) gets one **Flapping** notice:
+target, device, check, how many changes in the window, the last few changes
+as a chain, and a link to the address. From then on its changes are left out
+of the instant and batched status-change messages, and the alerts it opens
+and resolves are recorded - flagged from the start - but not announced. One
+more message follows when it is over: **Not flapping** when someone confirms
+it (naming who), or **Settled** when auto-clear cleared it. A webhook channel
+receives the same as an event (`"event": "flapping"`, `"settled"`,
+`"confirmed"`). The alert channels stay quiet the whole time; the flapping
+notice stands in for them.
+
 The Monitoring page's Overview shows a **Flapping now** count that opens the
 **Flapping** tab - the Checks list pinned to flagged checks, where rows can
 be selected and confirmed together. The dashboard has a **Flapping** widget
@@ -906,14 +919,20 @@ setting up any alert rule - for operators who just want "email me when something
 in this subnet goes down". Enable **Send raw status changes** on the channel and
 pick a delivery mode:
 
-- **Instant** - one message per check batch, carrying all of that batch's
-  matching changes (coalesced, so a big flap is one email, not fifty).
+- **Instant** - the first change goes out at once; a channel then never sends
+  more often than once a **minute**. Changes inside that minute are held and
+  delivered together in the next message (the minute beat sends it when no
+  new batch does), so a check on the fast lane that bounces every few seconds
+  costs one email a minute at most - and none once the flap sweep has
+  flagged it (see [Flapping](#flapping)).
 - **Batched** - a periodic **mini-digest** every *N* minutes (default 30),
   summarising the window's changes as the same per-prefix status-badge chains the
   monitoring digest uses. Nothing is sent for an empty window.
 
 Scope it with the channel's existing **On statuses** filter (e.g. only `down`)
-and an optional **subnet** - only IPs inside that prefix notify. This rides the
+and an optional **subnet** - only IPs inside that prefix notify. Changes on a
+check that is currently **flapping** are left out of both modes; the channel
+gets the flapping notice instead. This rides the
 same delivery gates and the same effective SMTP as everything else; instant fires
 from the check batch, batched from the minute beat, so neither needs a new timer.
 
@@ -940,7 +959,7 @@ hanging the request.
 
 **Templates.** A **Templates** card on Settings → Email shows every email
 Danbyte produces - monitoring digest, certificate digest, alert and
-grouped-alert notifications, status changes, the sign-in code, the invite -
+grouped-alert notifications, status changes, the flapping notice, the sign-in code, the invite -
 rendered with example data exactly as a recipient sees it. Pick one to see
 it in the page; **Send this one** (or **Send all**) mails it to an address you
 choose, subject prefixed with `[Preview]`, through the same SMTP config, so
