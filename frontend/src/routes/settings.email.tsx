@@ -155,16 +155,17 @@ function DeploymentEmail() {
           disabled={!data.email_enabled}
           disabledNote="Enable email delivery and save to send a test."
         />
-
-        <PreviewCard enabled={data.email_enabled} />
       </SettingsGrid>
+      {/* Full width: the mail itself is 600px wide and wants the room. */}
+      <TemplatesCard enabled={data.email_enabled} />
     </>
   )
 }
 
-function PreviewCard({ enabled }: { enabled: boolean }) {
+function TemplatesCard({ enabled }: { enabled: boolean }) {
   const [to, setTo] = useState("")
-  const [template, setTemplate] = useState("all")
+  const [key, setKey] = useState<string | null>(null)
+  const [height, setHeight] = useState(480)
 
   const templates = useQuery({
     queryKey: ["email-templates"],
@@ -173,9 +174,11 @@ function PreviewCard({ enabled }: { enabled: boolean }) {
         "/api/deployment/email/templates/"
       ),
   })
+  const list = templates.data?.templates ?? []
+  const current = key ?? list[0]?.key ?? null
 
-  const preview = useMutation({
-    mutationFn: () =>
+  const send = useMutation({
+    mutationFn: (template: string) =>
       api<{ ok: boolean; to?: string; sent?: string[] }>(
         "/api/deployment/email/preview/",
         {
@@ -194,44 +197,68 @@ function PreviewCard({ enabled }: { enabled: boolean }) {
 
   return (
     <SettingsCard
-      title="Preview templates"
-      description="Send a sample of any email - digest, alerts, sign-in code, invite - filled with example data, so you can see it before it goes out for real."
+      title="Templates"
+      description="Every email Danbyte sends, rendered with example data exactly as a recipient sees it. Send one to yourself to check it in a real mail client."
+      layout="plain"
     >
-      <FormSelect
-        label="Template"
-        value={template}
-        onChange={(v) => v && setTemplate(v)}
-        options={[
-          { value: "all", label: "All templates" },
-          ...(templates.data?.templates ?? []).map((t) => ({
-            value: t.key,
-            label: t.label,
-          })),
-        ]}
-      />
-      <div className="flex items-end gap-2">
-        <Field label="Recipient" className="flex-1">
-          <Input
-            type="email"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            placeholder="you@acme.com (defaults to your account email)"
-            className="font-mono text-[13px]"
+      <div className="grid gap-3">
+        {list.length > 0 && current && (
+          <SegmentedTabs
+            value={current}
+            onValueChange={setKey}
+            items={list.map((t) => ({ value: t.key, label: t.label }))}
           />
-        </Field>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => preview.mutate()}
-          disabled={preview.isPending || !enabled}
-        >
-          {preview.isPending ? "Sending…" : "Send preview"}
-        </Button>
+        )}
+        {current && (
+          // Same origin, so the frame can report its height; sandboxed with
+          // nothing allowed, since a mail has nothing to run.
+          <iframe
+            key={current}
+            title="Email preview"
+            src={`/api/deployment/email/templates/${current}/`}
+            sandbox=""
+            className="w-full rounded-md border border-border bg-muted/30"
+            style={{ height }}
+            onLoad={(e) => {
+              const doc = e.currentTarget.contentDocument
+              if (doc)
+                setHeight(Math.max(320, doc.documentElement.scrollHeight))
+            }}
+          />
+        )}
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Recipient" className="min-w-64 flex-1">
+            <Input
+              type="email"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="you@acme.com (defaults to your account email)"
+              className="font-mono text-[13px]"
+            />
+          </Field>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => current && send.mutate(current)}
+            disabled={send.isPending || !enabled || !current}
+          >
+            {send.isPending ? "Sending…" : "Send this one"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => send.mutate("all")}
+            disabled={send.isPending || !enabled}
+          >
+            Send all
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Subjects are prefixed with{" "}
+          <span className="font-mono">[Preview]</span>. Uses the relay for the
+          scope you are in.
+        </p>
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        Subjects are prefixed with <span className="font-mono">[Preview]</span>.
-        Uses the relay for the scope you are in.
-      </p>
     </SettingsCard>
   )
 }

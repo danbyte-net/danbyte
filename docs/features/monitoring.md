@@ -938,14 +938,24 @@ or unreachable SMTP host fails fast (a bounded connection timeout,
 `EMAIL_SMTP_TIMEOUT`, default 10s) and returns the SMTP error, rather than
 hanging the request.
 
-**Preview email templates.** A **Preview email templates** card sends a sample
-of any email Danbyte produces - monitoring digest, certificate digest, alert and
-grouped-alert notifications, the sign-in code, and the invite - filled with
-example data, to an address you choose (or **All templates** at once). Subjects
-are prefixed with `[Preview]` and delivery uses the same SMTP config, so you can
-see exactly how each email looks before it goes out for real. Every email shares
-one branded, inline-styled HTML layout (with a plain-text alternative) using
-Danbyte's status palette.
+**Templates.** A **Templates** card on Settings → Email shows every email
+Danbyte produces - monitoring digest, certificate digest, alert and
+grouped-alert notifications, status changes, the sign-in code, the invite -
+rendered with example data exactly as a recipient sees it. Pick one to see
+it in the page; **Send this one** (or **Send all**) mails it to an address you
+choose, subject prefixed with `[Preview]`, through the same SMTP config, so
+you can check it in a real mail client before it goes out for real.
+
+Every email shares one layout: a document, not a marketing card. White,
+black ink, hairlines, bold for emphasis, and colour only where something
+needs acting on - a red critical count, a red *Down*; a warning is bold, an
+*Up* is plain. The header carries the deployment's logo: the **login logo**
+uploaded under Settings → Branding & identity when there is one, else
+Danbyte's own. It is embedded in the mail itself as an inline image (not a
+`data:` URI, which Gmail and Outlook strip), so it shows on a laptop with no
+access to the site. SVG logos are skipped - mail clients do not draw them;
+upload a PNG. Everything is table-based inline-styled HTML with a plain-text
+alternative, the only markup every mail client agrees on.
 
 ## Auto-discovery and cleanup
 

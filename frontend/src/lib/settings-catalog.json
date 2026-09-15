@@ -268,8 +268,8 @@
     },
     {
       "key": "email.templates",
-      "label": "Preview templates",
-      "description": "Send a sample of any message Danbyte writes",
+      "label": "Templates",
+      "description": "See every message Danbyte writes, and send yourself a sample",
       "page": "email",
       "keywords": ["template", "preview", "digest", "invite", "sample"]
     },

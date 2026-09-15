@@ -17,6 +17,8 @@ from django.db.models import Count
 from django.utils import timezone
 from django.utils.html import escape
 
+from core import email as ek
+
 logger = logging.getLogger("danbyte.digest")
 
 WINDOW_DAYS = {"daily": 1, "weekly": 7}
@@ -26,26 +28,7 @@ _SEV_RANK = {"critical": 0, "warning": 1, "info": 2}
 # multi-megabyte email; older changes drop off the (time-ordered) tail.
 _MAX_CHAIN_TRANSITIONS = 1500
 
-# Status → email-safe colour, mirroring the app's STATUS_COLOR/STATUS_TEXT
-# (frontend/src/components/monitoring/charts.tsx) so the digest badges read as
-# the same green/red/amber the UI uses. Email clients can't resolve CSS vars,
-# so these are the resolved Tailwind hex values.
-_STATUS_BG = {
-    "up": "#10b981",       # emerald-500
-    "down": "#ef4444",     # red-500
-    "stale": "#991b1b",    # red-800
-    "degraded": "#f59e0b",  # amber-500
-    "unknown": "#a1a1aa",  # zinc-400
-    "skipped": "#d4d4d8",  # zinc-300
-}
-_STATUS_FG = {
-    "up": "#ffffff",
-    "down": "#ffffff",
-    "stale": "#ffffff",
-    "degraded": "#422006",
-    "unknown": "#ffffff",
-    "skipped": "#3f3f46",
-}
+# Status → the word the chain shows for it.
 _STATUS_TEXT = {
     "up": "Up", "down": "Down", "stale": "Stale",
     "degraded": "Degraded", "unknown": "Unknown", "skipped": "Skipped",
@@ -264,21 +247,18 @@ def _stat(label: str, value: str) -> str:
 
 
 def _badge(status: str, at) -> str:
-    """One status pill in a chain: a coloured label with the transition time
-    beneath it (the leading 'entering' segment has no time)."""
-    bg = _STATUS_BG.get(status, _STATUS_BG["unknown"])
-    fg = _STATUS_FG.get(status, "#ffffff")
+    """One status in a chain - the kit's pill (red for down/stale, ink
+    otherwise) with the transition time beneath it (the leading 'entering'
+    segment has no time)."""
     label = _STATUS_TEXT.get(status, status)
     time_html = (
-        f'<div style="font-size:10px;color:#71717a;margin-top:2px;'
+        f'<div style="font-size:10px;color:#71717a;margin-top:3px;'
         f'white-space:nowrap;">{escape(f"{at:%b %d %H:%M}")}</div>'
         if at is not None else ""
     )
     return (
         f'<td style="vertical-align:top;text-align:center;padding:2px 0;">'
-        f'<span style="display:inline-block;background:{bg};color:{fg};'
-        f'font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;'
-        f'white-space:nowrap;">{escape(label)}</span>{time_html}</td>'
+        f'{ek.pill(label, status)}{time_html}</td>'
     )
 
 

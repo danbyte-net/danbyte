@@ -1026,6 +1026,34 @@ def email_templates(request):
 
 
 @extend_schema(
+    summary="Render one email template with sample data",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(response=OpenApiTypes.STR, description="The mail as HTML."),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def email_template_html(request, key: str):
+    """The rendered sample, for the Settings preview frame - the same HTML a
+    recipient gets, with the inline logo made visible to a browser."""
+    from django.http import HttpResponse
+
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from core.email import inline_logo_for_preview
+    from core.email_samples import TEMPLATE_KEYS, render_sample
+
+    if key not in TEMPLATE_KEYS:
+        return Response({"detail": "Unknown template."}, status=404)
+    _subject, html, _text = render_sample(key)
+    resp = HttpResponse(inline_logo_for_preview(html), content_type="text/html; charset=utf-8")
+    # Framed by the settings page only; nothing in it runs.
+    resp["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+    resp["X-Frame-Options"] = "SAMEORIGIN"
+    return resp
+
+
+@extend_schema(
     summary="Send a sample of one (or all) email templates to preview it",
     tags=["deployment"],
     request=inline_serializer(

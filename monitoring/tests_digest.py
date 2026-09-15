@@ -132,10 +132,12 @@ class DigestBuildTests(TestCase):
             [s["status"] for s in chain_list[0]["segments"]],
             ["up", "down", "up"],
         )
-        # Renders: DNS label + a coloured badge in the HTML, chain in text.
+        # Renders: DNS label + the "down" word in the kit's red, chain in text.
+        from core.email import PALETTE
+
         html = render_html(data, "Danbyte")
         self.assertIn("host.example", html)
-        self.assertIn("#ef4444", html)  # red-500 "down" badge
+        self.assertIn(PALETTE["critical"], html)
         self.assertIn("10.0.0.0/24", render_text(data))
 
 

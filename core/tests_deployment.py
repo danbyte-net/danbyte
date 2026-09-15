@@ -95,6 +95,20 @@ class EmailPreviewApiTests(APITestCase):
         self.assertIn("cert_digest", keys)
         self.assertIn("monitoring_digest", keys)
 
+    def test_renders_one_template_for_the_page(self):
+        self.client.force_login(self.admin)
+        r = self.client.get("/api/deployment/email/templates/alert/")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r["Content-Type"].startswith("text/html"))
+        html = r.content.decode()
+        self.assertIn("<!doctype html>", html)
+        self.assertIn("data:image/png;base64,", html)  # the logo, browser-visible
+        self.assertNotIn("cid:logo", html)
+        self.assertEqual(self.client.get("/api/deployment/email/templates/nope/").status_code, 404)
+        reader = get_user_model().objects.create_user("reader2", "r2@acme.com", "pw")
+        self.client.force_login(reader)
+        self.assertEqual(self.client.get("/api/deployment/email/templates/alert/").status_code, 403)
+
     def test_preview_all_sends_every_template(self):
         from django.core import mail
 

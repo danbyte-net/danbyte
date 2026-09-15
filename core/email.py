@@ -1,10 +1,11 @@
-"""HTML email - the shared, good-looking way Danbyte sends a formatted email.
+"""HTML email - the shared way Danbyte sends a formatted email.
 
 Every email Danbyte sends (monitoring digest, certificate digest, alert
-notifications, sign-in codes, invites, connectivity tests) is built from the
-small component kit in this module so they all share one restrained, email-
-client-safe design: a branded header, generous spacing, the app's zinc/blue
-palette, and the same status colours the UI uses.
+notifications, sign-in codes, invites, task mail, connectivity tests) is built
+from the small component kit in this module, so they share one identity:
+a document, not a marketing card. White paper, black ink, hairlines, bold
+for emphasis - and colour only where something needs acting on (a red
+critical count, a red "Down"). The deployment's logo heads every mail.
 
 Design constraints (why it looks the way it does):
 
@@ -12,9 +13,12 @@ Design constraints (why it looks the way it does):
   blocks, flexbox, and CSS variables, so every rule is inline and layout is
   table-based - the lowest common denominator that renders everywhere.
 * **A hidden preheader.** The one line an inbox shows next to the subject.
-* **One palette.** :data:`PALETTE` and :data:`STATUS_BG` mirror the SPA tokens
-  (``frontend/src/styles.css`` + the monitoring charts) so an email reads as the
-  same product, resolved to hex because clients can't evaluate CSS variables.
+* **One ink.** :data:`PALETTE` is zinc; :data:`STATUS_BG` / :data:`STATUS_TEXT`
+  resolve every state to ink except the ones that mean trouble, which are
+  red. A warning is bold, not orange; an "up" is plain, not green.
+* **The logo is embedded.** :func:`email_logo` finds the uploaded branding
+  logo (or Danbyte's own) and :func:`send_html_email` attaches it inline
+  under ``cid:logo`` - a ``data:`` URI would be stripped by Gmail.
 
 Build a body from the component helpers (:func:`section`, :func:`stat_grid`,
 :func:`pill`, :func:`kv_table`, :func:`callout`, :func:`email_button`, …), wrap
@@ -24,61 +28,51 @@ values passed to the helpers are escaped here - callers pass plain strings.
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
+from pathlib import Path
 
 from django.conf import settings
 from django.utils.html import escape
 
 logger = logging.getLogger("danbyte.email")
 
-# ── palette (resolved from the SPA's zinc/blue design tokens in styles.css) ───
-# White ground, zinc structure, one restrained blue accent - the app's actual
-# look, not a coloured-hero email template.
+# ── palette ──────────────────────────────────────────────────────────────────
+# Zinc, and one red. "brand" stays for callers that ask for an accent; it is
+# ink now, so a count that used to be blue reads as a bold black figure.
 PALETTE = {
-    "brand": "#2563c9",       # --primary (medium, desaturated blue)
-    "brand_dark": "#1e50a8",
-    "ink": "#18181b",         # zinc-900 - body text
-    "muted": "#71717a",       # zinc-500 - secondary text
+    "brand": "#18181b",
+    "brand_dark": "#09090b",
+    "ink": "#18181b",         # zinc-900 - headings, figures
+    "text": "#27272a",        # zinc-800 - body copy
+    "muted": "#71717a",       # zinc-500 - labels, secondary text
     "faint": "#a1a1aa",       # zinc-400
+    "rule": "#d4d4d8",        # zinc-300 - the strong hairline
     "line": "#e4e4e7",        # zinc-200 - borders
     "hair": "#f1f1f3",        # zinc-100 - row separators
-    "panel": "#fafafa",       # zinc-50 - footer / stat fill
+    "panel": "#fafafa",       # zinc-50
     "page": "#f4f4f5",        # zinc-100 page backdrop
     "card": "#ffffff",
+    "critical": "#b91c1c",    # red-700 - the one colour
+    "critical_soft": "#fdecec",
 }
 
-# Danbyte badges are TINTED, not solid - a ~15%-opacity status colour behind
-# darker text (the app's Badge success/warning/info families + destructive).
-# These hexes are those tints flattened over white, so they render the same in
-# every email client. STATUS_BG is the *strong* status colour, used only for a
-# meaningful accent (a red number, a callout rule) - never a saturated fill.
-STATUS_TINT = {
-    "up": "#e8f8f1", "ok": "#e8f8f1", "success": "#e8f8f1",
-    "down": "#fdecec", "critical": "#fdecec", "expired": "#fdecec",
-    "stale": "#fbe3e3",
-    "degraded": "#fdf3e3", "warning": "#fdf3e3", "expiring": "#fdf3e3",
-    "info": "#e7f1fb",
-    "unknown": "#efeff1", "skipped": "#f4f4f5",
-}
-STATUS_TEXT = {
-    "up": "#047857", "ok": "#047857", "success": "#047857",
-    "down": "#b91c1c", "critical": "#b91c1c", "expired": "#b91c1c",
-    "stale": "#7f1d1d",
-    "degraded": "#92400e", "warning": "#92400e", "expiring": "#92400e",
-    "info": "#1d4ed8",
-    "unknown": "#3f3f46", "skipped": "#52525b",
-}
-# Strong status colour for meaningful accents (a nonzero down/expired count).
-STATUS_BG = {
-    "up": "#059669", "ok": "#059669", "success": "#059669",
-    "down": "#dc2626", "critical": "#dc2626", "expired": "#dc2626",
-    "stale": "#991b1b",
-    "degraded": "#d97706", "warning": "#d97706", "expiring": "#d97706",
-    "info": "#2563c9",
-    "unknown": "#71717a", "skipped": "#a1a1aa",
-}
+_RED = {"down", "critical", "expired", "stale", "expiring_critical"}
+# What a status is drawn with. Trouble is red; everything else is ink, and
+# the shipped kinds keep their names so callers need not change.
+STATUS_TEXT = {k: PALETTE["critical"] for k in _RED}
+STATUS_TEXT.update({
+    "up": PALETTE["ink"], "ok": PALETTE["ink"], "success": PALETTE["ink"],
+    "degraded": PALETTE["ink"], "warning": PALETTE["ink"], "expiring": PALETTE["ink"],
+    "expiring_warning": PALETTE["ink"],
+    "info": PALETTE["ink"], "unknown": PALETTE["muted"], "skipped": PALETTE["muted"],
+})
+STATUS_BG = dict(STATUS_TEXT)  # a figure's accent: red for trouble, ink otherwise
+STATUS_TINT = {k: (PALETTE["critical_soft"] if k in _RED else PALETTE["card"])
+               for k in STATUS_TEXT}
 
 _FONT = ("-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,"
          "sans-serif")
+_MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
 
 
 # ── component kit ────────────────────────────────────────────────────────────
@@ -86,10 +80,11 @@ _FONT = ("-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,"
 # fragments, then pass the result to render_layout().
 
 def section(title: str) -> str:
-    """A section heading - a small, tracked-out label above a block."""
+    """A section heading: a small tracked label with a rule under it."""
     return (
-        f'<h2 style="margin:26px 0 10px;font-size:13px;font-weight:600;'
-        f'letter-spacing:.04em;text-transform:uppercase;color:{PALETTE["muted"]};">'
+        f'<h2 style="margin:28px 0 12px;padding:0 0 6px;font-size:11px;'
+        f'font-weight:700;letter-spacing:.08em;text-transform:uppercase;'
+        f'color:{PALETTE["ink"]};border-bottom:1px solid {PALETTE["rule"]};">'
         f'{escape(title)}</h2>'
     )
 
@@ -98,14 +93,14 @@ def lead(text: str) -> str:
     """The intro paragraph under the title."""
     return (
         f'<p style="margin:0 0 18px;font-size:15px;line-height:1.55;'
-        f'color:{PALETTE["ink"]};">{escape(text)}</p>'
+        f'color:{PALETTE["text"]};">{escape(text)}</p>'
     )
 
 
 def paragraph(text: str) -> str:
     return (
         f'<p style="margin:0 0 14px;font-size:14px;line-height:1.55;'
-        f'color:{PALETTE["ink"]};">{escape(text)}</p>'
+        f'color:{PALETTE["text"]};">{escape(text)}</p>'
     )
 
 
@@ -117,23 +112,24 @@ def muted(text: str) -> str:
 
 
 def pill(text: str, kind: str = "unknown") -> str:
-    """A status badge matching the app's StatusBadge: a tinted background with
-    darker text and the app's ~5px radius - never a solid or fully-round pill."""
-    bg = STATUS_TINT.get(kind, STATUS_TINT["unknown"])
-    fg = STATUS_TEXT.get(kind, STATUS_TEXT["unknown"])
+    """A status, as a word: bold, uppercase, hairline-boxed - red when the
+    state means trouble, ink otherwise. Never a coloured fill."""
+    fg = STATUS_TEXT.get(kind, PALETTE["muted"])
+    border = PALETTE["critical"] if kind in _RED else PALETTE["rule"]
     return (
-        f'<span style="display:inline-block;background:{bg};color:{fg};'
-        f'font-size:11.5px;font-weight:600;line-height:1.35;padding:2px 8px;'
-        f'border-radius:5px;white-space:nowrap;">{escape(text)}</span>'
+        f'<span style="display:inline-block;color:{fg};border:1px solid {border};'
+        f'font-size:10.5px;font-weight:700;letter-spacing:.06em;'
+        f'text-transform:uppercase;line-height:1.3;padding:2px 6px;'
+        f'border-radius:3px;white-space:nowrap;">{escape(text)}</span>'
     )
 
 
 def stat_grid(cells: list) -> str:
-    """A single metric strip - one rounded card, values divided by hairlines.
+    """A row of figures ruled above and below, like a statement line: a big
+    bold number over a small tracked label, hairlines between.
 
-    ``cells`` = ``[(value, label)]`` or ``[(value, label, accent_hex)]``. Reads
-    like the app's summary bars: a big tabular number over a small tracked label,
-    no boxy per-tile borders.
+    ``cells`` = ``[(value, label)]`` or ``[(value, label, accent_hex)]``. Pass
+    :data:`STATUS_BG` reds only for a count that needs acting on.
     """
     if not cells:
         return ""
@@ -142,14 +138,13 @@ def stat_grid(cells: list) -> str:
     for i, cell in enumerate(cells):
         value, label = cell[0], cell[1]
         accent = cell[2] if len(cell) > 2 else PALETTE["ink"]
-        divider = (
-            f"border-left:1px solid {PALETTE['line']};" if i else ""
-        )
+        divider = f"border-left:1px solid {PALETTE['line']};" if i else ""
         tds.append(
-            f'<td style="width:{100 // n}%;padding:16px 18px;{divider}'
+            f'<td style="width:{100 // n}%;padding:14px 14px 12px;{divider}'
             f'vertical-align:top;text-align:left;">'
             f'<div style="font-size:26px;font-weight:700;line-height:1;'
-            f'letter-spacing:-.01em;color:{accent};">{escape(str(value))}</div>'
+            f'letter-spacing:-.02em;color:{accent};'
+            f'font-variant-numeric:tabular-nums;">{escape(str(value))}</div>'
             f'<div style="margin-top:6px;font-size:10.5px;font-weight:600;'
             f'letter-spacing:.06em;text-transform:uppercase;'
             f'color:{PALETTE["muted"]};">{escape(str(label))}</div>'
@@ -157,21 +152,17 @@ def stat_grid(cells: list) -> str:
         )
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:4px 0 18px;table-layout:fixed;border:1px solid '
-        f'{PALETTE["line"]};border-radius:10px;background:{PALETTE["card"]};'
-        f'border-collapse:separate;overflow:hidden;"><tr>'
-        + "".join(tds) + "</tr></table>"
+        f'style="margin:4px 0 18px;table-layout:fixed;'
+        f'border-top:1px solid {PALETTE["rule"]};border-bottom:1px solid {PALETTE["rule"]};">'
+        '<tr>' + "".join(tds) + "</tr></table>"
     )
 
 
 def progress_bar(pct: int, label: str = "", *, accent: str = "") -> str:
     """A slim track with a filled portion - for a single headline ratio
-    (reachability, coverage). ``pct`` is 0–100; ``accent`` overrides the fill."""
+    (reachability, coverage). Ink fill; red once it is below 60 %."""
     pct = max(0, min(100, int(pct)))
-    fill = accent or (
-        STATUS_BG["up"] if pct >= 90 else
-        STATUS_BG["warning"] if pct >= 60 else STATUS_BG["down"]
-    )
+    fill = accent or (PALETTE["ink"] if pct >= 60 else PALETTE["critical"])
     head = (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="margin:0 0 8px;"><tr>'
@@ -183,11 +174,11 @@ def progress_bar(pct: int, label: str = "", *, accent: str = "") -> str:
     return (
         f'<div style="margin:0 0 18px;">{head}'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="background:{PALETTE["hair"]};border-radius:999px;">'
-        f'<tr><td style="height:8px;line-height:8px;font-size:0;">'
+        f'style="background:{PALETTE["line"]};">'
+        f'<tr><td style="height:6px;line-height:6px;font-size:0;">'
         f'<table role="presentation" width="{pct}%" cellpadding="0" cellspacing="0" '
-        f'style="min-width:8px;"><tr><td style="height:8px;line-height:8px;'
-        f'font-size:0;background:{fill};border-radius:999px;">&nbsp;</td></tr>'
+        f'style="min-width:6px;"><tr><td style="height:6px;line-height:6px;'
+        f'font-size:0;background:{fill};">&nbsp;</td></tr>'
         f'</table></td></tr></table></div>'
     )
 
@@ -200,33 +191,33 @@ def kv_table(rows: list) -> str:
         return ""
     trs = "".join(
         f'<tr>'
-        f'<td style="padding:7px 12px 7px 0;font-size:13px;color:{PALETTE["muted"]};'
-        f'white-space:nowrap;vertical-align:top;border-bottom:1px solid {PALETTE["hair"]};">'
-        f'{escape(str(label))}</td>'
-        f'<td style="padding:7px 0;font-size:13px;color:{PALETTE["ink"]};'
+        f'<td style="padding:8px 16px 8px 0;font-size:13px;color:{PALETTE["muted"]};'
+        f'white-space:nowrap;vertical-align:top;border-bottom:1px solid {PALETTE["hair"]};'
+        f'width:1%;">{escape(str(label))}</td>'
+        f'<td style="padding:8px 0;font-size:13px;color:{PALETTE["ink"]};'
         f'vertical-align:top;border-bottom:1px solid {PALETTE["hair"]};">{value}</td>'
         f'</tr>'
         for label, value in rows
     )
     return (
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-        f'{trs}</table>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="margin:0 0 6px;">{trs}</table>'
     )
 
 
 def data_table(headers: list, rows: list) -> str:
-    """A bordered data table. ``headers`` = ``[str]``; ``rows`` =
+    """A ruled data table. ``headers`` = ``[str]``; ``rows`` =
     ``[[cell_html, …]]`` - cells are pre-built HTML, headers escaped."""
     ths = "".join(
-        f'<th style="text-align:left;padding:10px 14px;font-size:10.5px;'
-        f'font-weight:600;letter-spacing:.06em;text-transform:uppercase;'
-        f'color:{PALETTE["faint"]};border-bottom:1px solid {PALETTE["line"]};">'
+        f'<th style="text-align:left;padding:0 12px 8px 0;font-size:10.5px;'
+        f'font-weight:700;letter-spacing:.06em;text-transform:uppercase;'
+        f'color:{PALETTE["muted"]};border-bottom:1px solid {PALETTE["rule"]};">'
         f'{escape(str(h))}</th>'
         for h in headers
     )
     trs = "".join(
         "<tr>" + "".join(
-            f'<td style="padding:11px 14px;font-size:13px;color:{PALETTE["ink"]};'
+            f'<td style="padding:9px 12px 9px 0;font-size:13px;color:{PALETTE["ink"]};'
             f'border-bottom:1px solid {PALETTE["hair"]};vertical-align:middle;">{c}</td>'
             for c in row
         ) + "</tr>"
@@ -234,52 +225,48 @@ def data_table(headers: list, rows: list) -> str:
     )
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:0 0 6px;border:1px solid {PALETTE["line"]};border-radius:10px;'
-        f'border-collapse:separate;overflow:hidden;">'
+        f'style="margin:0 0 10px;">'
         f'<tr>{ths}</tr>{trs}</table>'
     )
 
 
 _CALLOUT = {
-    # (background tint, text colour, dot/rule colour, small label)
-    "info": (STATUS_TINT["info"], "#1e40af", STATUS_BG["info"], "Note"),
-    "success": (STATUS_TINT["up"], "#065f46", STATUS_BG["up"], "Healthy"),
-    "warning": (STATUS_TINT["warning"], "#92400e", STATUS_BG["warning"], "Warning"),
-    "critical": (STATUS_TINT["critical"], "#991b1b", STATUS_BG["down"], "Attention"),
+    # (rule colour, label)
+    "info": (PALETTE["ink"], "Note"),
+    "success": (PALETTE["ink"], "Healthy"),
+    "warning": (PALETTE["ink"], "Warning"),
+    "critical": (PALETTE["critical"], "Attention"),
 }
 
 
 def callout(text: str, kind: str = "info", *, label: str = "") -> str:
-    """A tinted panel with a small coloured label - the headline fact.
-
-    Softer than a heavy left-rule box: a rounded tinted card with a tiny
-    uppercase status label above the message.
-    """
-    bg, fg, dot, default_label = _CALLOUT.get(kind, _CALLOUT["info"])
+    """The headline fact: a rule down the left and a bold label. Red rule and
+    label for critical; ink for everything else - no tinted panels."""
+    rule, default_label = _CALLOUT.get(kind, _CALLOUT["info"])
     lbl = label or default_label
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'style="margin:0 0 18px;background:{bg};border-radius:10px;">'
-        f'<tr><td style="padding:14px 16px;">'
-        f'<div style="margin:0 0 4px;font-size:10.5px;font-weight:700;'
-        f'letter-spacing:.06em;text-transform:uppercase;color:{dot};">'
+        f'style="margin:0 0 18px;">'
+        f'<tr><td style="padding:2px 0 2px 14px;border-left:3px solid {rule};">'
+        f'<div style="margin:0 0 3px;font-size:10.5px;font-weight:700;'
+        f'letter-spacing:.06em;text-transform:uppercase;color:{rule};">'
         f'{escape(lbl)}</div>'
-        f'<div style="font-size:14px;line-height:1.5;color:{fg};font-weight:500;">'
-        f'{escape(text)}</div>'
+        f'<div style="font-size:14px;line-height:1.5;color:{PALETTE["ink"]};'
+        f'font-weight:500;">{escape(text)}</div>'
         f'</td></tr></table>'
     )
 
 
 def email_button(url: str, label: str) -> str:
-    """A solid brand button (bulletproof VML-free table button)."""
+    """A solid ink button (bulletproof VML-free table button)."""
     safe_url = escape(url)  # django's escape() always escapes quotes
     return (
         f'<table role="presentation" cellpadding="0" cellspacing="0" '
-        f'style="margin:6px 0 18px;"><tr><td style="border-radius:8px;'
-        f'background:{PALETTE["brand"]};">'
-        f'<a href="{safe_url}" style="display:inline-block;padding:11px 20px;'
-        f'font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;'
-        f'border-radius:8px;">{escape(label)}</a></td></tr></table>'
+        f'style="margin:6px 0 20px;"><tr><td style="border-radius:4px;'
+        f'background:{PALETTE["ink"]};">'
+        f'<a href="{safe_url}" style="display:inline-block;padding:10px 18px;'
+        f'font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;'
+        f'border-radius:4px;">{escape(label)}</a></td></tr></table>'
     )
 
 
@@ -288,7 +275,7 @@ def bullet_list(items: list) -> str:
         return ""
     lis = "".join(
         f'<li style="margin:0 0 6px;font-size:14px;line-height:1.5;'
-        f'color:{PALETTE["ink"]};">{escape(str(i))}</li>'
+        f'color:{PALETTE["text"]};">{escape(str(i))}</li>'
         for i in items
     )
     return f'<ul style="margin:0 0 14px;padding-left:20px;">{lis}</ul>'
@@ -304,12 +291,81 @@ def divider() -> str:
 def code_line(text: str) -> str:
     """A monospace value block - for a one-time code or a fingerprint."""
     return (
-        f'<div style="display:inline-block;font-family:ui-monospace,SFMono-Regular,'
-        f'Menlo,Consolas,monospace;font-size:22px;font-weight:700;letter-spacing:.18em;'
-        f'color:{PALETTE["ink"]};background:{PALETTE["panel"]};'
-        f'border:1px solid {PALETTE["line"]};border-radius:8px;padding:12px 18px;'
+        f'<div style="display:inline-block;font-family:{_MONO};'
+        f'font-size:24px;font-weight:700;letter-spacing:.2em;'
+        f'color:{PALETTE["ink"]};border:1px solid {PALETTE["rule"]};'
+        f'border-radius:4px;padding:12px 18px 12px 22px;'
         f'margin:2px 0 18px;">{escape(text)}</div>'
     )
+
+
+# ── the logo ─────────────────────────────────────────────────────────────────
+
+LOGO_CID = "logo"
+_LOGO_HEIGHT = 24   # CSS px in the header; the file is served at 2x or more
+
+_BUNDLED_LOGO = (
+    Path(settings.BASE_DIR) / "frontend" / "dist" / "branding" / "logo-full.png",
+    Path(settings.BASE_DIR) / "frontend" / "public" / "branding" / "logo-full.png",
+)
+
+
+def email_logo() -> tuple[bytes, str] | None:
+    """The image that heads every mail: the uploaded login logo when the
+    install has one, else Danbyte's own. ``(bytes, mime)`` or None when
+    neither can be read - the layout then shows the deployment name in bold.
+    An SVG upload is skipped: mail clients do not draw SVG."""
+    from core.models import DeploymentSettings
+
+    try:
+        dep = DeploymentSettings.load()
+        if dep.login_logo:
+            name = dep.login_logo.name.lower()
+            mime = ("image/png" if name.endswith(".png") else
+                    "image/jpeg" if name.endswith((".jpg", ".jpeg")) else
+                    "image/gif" if name.endswith(".gif") else "")
+            if mime:
+                with dep.login_logo.open("rb") as fh:
+                    return fh.read(), mime
+    except Exception as exc:  # noqa: BLE001 - a bad upload must not block mail
+        logger.warning("email logo: uploaded logo unreadable: %s", exc)
+    return _bundled_logo()
+
+
+@lru_cache(maxsize=1)
+def _bundled_logo() -> tuple[bytes, str] | None:
+    for path in _BUNDLED_LOGO:
+        if path.is_file():
+            return path.read_bytes(), "image/png"
+    return None
+
+
+def logo_size(data: bytes, mime: str) -> tuple[int, int]:
+    """The header ``<img>`` size for this logo, height fixed, width to scale -
+    a mail client needs both or it reflows when the image lands."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        w, h = Image.open(BytesIO(data)).size
+        return max(1, round(w * _LOGO_HEIGHT / h)), _LOGO_HEIGHT
+    except Exception:  # noqa: BLE001 - PIL missing or an odd file
+        return 120, _LOGO_HEIGHT
+
+
+def inline_logo_for_preview(html: str) -> str:
+    """A rendered mail with its ``cid:logo`` swapped for a ``data:`` URI, so a
+    browser (the Settings preview) draws the logo the way a mail client
+    will from the inline part."""
+    import base64
+
+    logo = email_logo()
+    if not logo:
+        return html
+    data, mime = logo
+    uri = f"data:{mime};base64,{base64.b64encode(data).decode()}"
+    return html.replace(f"cid:{LOGO_CID}", uri)
 
 
 # ── layout shell ─────────────────────────────────────────────────────────────
@@ -322,65 +378,74 @@ def render_layout(
     footer_html: str = "",
     preheader: str = "",
     kicker: str = "",
+    logo_src: str = f"cid:{LOGO_CID}",
 ) -> str:
-    """Wrap ``body_html`` in the branded, inline-styled email shell.
+    """Wrap ``body_html`` in the email shell: the logo, a kicker on the right,
+    the title, the body, a hairline footer.
 
     ``body_html`` is trusted (built by callers from escaped data via the helpers
     above); ``title`` / ``deployment_name`` / ``preheader`` / ``kicker`` are
-    escaped here. ``preheader`` is the hidden inbox-preview line; ``kicker`` is a
-    small label above the title (e.g. "Monitoring digest").
+    escaped here. ``preheader`` is the hidden inbox-preview line; ``kicker`` is
+    the small label beside the logo (e.g. "Monitoring digest"). ``logo_src``
+    is ``cid:logo`` for a sent mail - :func:`send_html_email` attaches the
+    image - or a ``data:`` URI for an in-app preview.
     """
     name = escape(deployment_name or "Danbyte")
-    monogram = name[:1].upper() or "D"
     heading = escape(title)
     pre = escape(preheader) if preheader else ""
     preheader_html = (
         f'<div style="display:none;max-height:0;overflow:hidden;opacity:0;'
         f'color:transparent;height:0;width:0;">{pre}</div>' if pre else ""
     )
+    logo = email_logo()
+    if logo:
+        w, h = logo_size(*logo)
+        brand_html = (
+            f'<img src="{escape(logo_src)}" width="{w}" height="{h}" alt="{name}" '
+            f'style="display:block;width:{w}px;height:{h}px;border:0;">'
+        )
+    else:
+        brand_html = (
+            f'<span style="font-size:16px;font-weight:700;letter-spacing:-.01em;'
+            f'color:{PALETTE["ink"]};">{name}</span>'
+        )
     kicker_html = (
-        f'<div style="margin:0 0 4px;font-size:12px;font-weight:600;'
-        f'letter-spacing:.05em;text-transform:uppercase;color:{PALETTE["brand"]};">'
-        f'{escape(kicker)}</div>' if kicker else ""
+        f'<td style="text-align:right;vertical-align:middle;font-size:11px;'
+        f'font-weight:600;letter-spacing:.06em;text-transform:uppercase;'
+        f'color:{PALETTE["muted"]};">{escape(kicker)}</td>' if kicker else ""
     )
     footer = footer_html or (
         f'<p style="margin:0;color:{PALETTE["muted"]};font-size:12px;line-height:1.5;">'
-        f'Sent by {name}. You are receiving this because you are on its '
-        f'notification list.</p>'
+        f'Sent by <span style="font-weight:600;color:{PALETTE["ink"]};">{name}</span>. '
+        f'You are receiving this because you are on its notification list.</p>'
     )
     return f"""\
 <!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light only"></head>
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light"></head>
 <body style="margin:0;padding:0;background:{PALETTE['page']};
- font-family:{_FONT};color:{PALETTE['ink']};-webkit-font-smoothing:antialiased;">
+ font-family:{_FONT};color:{PALETTE['text']};-webkit-font-smoothing:antialiased;">
 {preheader_html}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PALETTE['page']};padding:32px 0;">
 <tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"
- style="width:600px;max-width:100%;background:{PALETTE['card']};border:1px solid {PALETTE['line']};border-top:3px solid {PALETTE['brand']};border-radius:12px;overflow:hidden;">
-  <tr><td style="padding:22px 32px;border-bottom:1px solid {PALETTE['line']};">
-    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-      <td style="width:30px;height:30px;background:{PALETTE['brand']};border-radius:8px;
-        text-align:center;vertical-align:middle;color:#ffffff;font-size:15px;
-        font-weight:700;line-height:30px;">{monogram}</td>
-      <td style="padding-left:11px;color:{PALETTE['ink']};font-size:16px;
-        font-weight:700;letter-spacing:-.01em;vertical-align:middle;">{name}</td>
+ style="width:600px;max-width:100%;background:{PALETTE['card']};border:1px solid {PALETTE['line']};">
+  <tr><td style="padding:22px 36px 18px;border-bottom:1px solid {PALETTE['rule']};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="vertical-align:middle;">{brand_html}</td>
+      {kicker_html}
     </tr></table>
   </td></tr>
-  <tr><td style="padding:34px 32px 36px;">
-    {kicker_html}
-    <h1 style="margin:0 0 20px;font-size:22px;font-weight:700;line-height:1.25;letter-spacing:-.02em;color:{PALETTE['ink']};">{heading}</h1>
+  <tr><td style="padding:30px 36px 34px;">
+    <h1 style="margin:0 0 18px;font-size:21px;font-weight:700;line-height:1.3;letter-spacing:-.015em;color:{PALETTE['ink']};">{heading}</h1>
     {body_html}
   </td></tr>
-  <tr><td style="padding:20px 32px;border-top:1px solid {PALETTE['line']};background:{PALETTE['panel']};">
+  <tr><td style="padding:16px 36px 18px;border-top:1px solid {PALETTE['line']};">
     {footer}
   </td></tr>
 </table>
-<div style="max-width:600px;margin:16px auto 0;color:{PALETTE['faint']};font-size:11px;text-align:center;">
-  {name}
-</div>
 </td></tr></table>
 </body></html>"""
 
@@ -404,6 +469,8 @@ def send_html_email(
     the connection falls back to Django's configured backend when no SMTP host
     is set (console in dev, locmem in tests).
     """
+    from email.mime.image import MIMEImage
+
     from django.core.mail import EmailMultiAlternatives
 
     from core.effective_settings import effective_email
@@ -421,6 +488,16 @@ def send_html_email(
             subject, text_body, from_email, recipients, connection=conn
         )
         msg.attach_alternative(html_body, "text/html")
+        # The header's logo rides along as an inline part the HTML refers to
+        # by Content-ID; a data: URI would be stripped by Gmail and Outlook.
+        logo = email_logo() if f"cid:{LOGO_CID}" in html_body else None
+        if logo:
+            data, mime = logo
+            part = MIMEImage(data, _subtype=mime.split("/", 1)[1])
+            part.add_header("Content-ID", f"<{LOGO_CID}>")
+            part.add_header("Content-Disposition", "inline", filename="logo")
+            msg.mixed_subtype = "related"
+            msg.attach(part)
         msg.send(fail_silently=False)
         return True
     except Exception as exc:  # noqa: BLE001 - best-effort by default

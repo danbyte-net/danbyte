@@ -531,6 +531,8 @@ urlpatterns = [
     # an entered address using Danbyte's SMTP config.
     path("deployment/email/templates/", deployment.email_templates,
          name="deployment-email-templates"),
+    path("deployment/email/templates/<slug:key>/", deployment.email_template_html,
+         name="deployment-email-template-html"),
     path("deployment/email/preview/", deployment.email_send_preview,
          name="deployment-email-preview"),
     # Emergency "sign everyone out" - deletes all sessions (users.manage).
