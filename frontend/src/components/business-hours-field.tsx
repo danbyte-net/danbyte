@@ -16,7 +16,9 @@ type Span = [string, string]
 const DEFAULT_SPAN: Span = ["08:00", "17:00"]
 
 const preset = (days: number[], spans: Span[]): BusinessHours =>
-  Object.fromEntries(days.map((d) => [String(d), spans.map((s) => [...s] as Span)]))
+  Object.fromEntries(
+    days.map((d) => [String(d), spans.map((s) => [...s] as Span)])
+  )
 
 /** The spans for one day, tolerating the legacy flat pair (`["08:00","17:00"]`
  * instead of `[["08:00","17:00"]]`). The API still accepts that shape on write,
@@ -136,7 +138,9 @@ export function BusinessHoursField({
                           onChange={(e) => editSpan(day, i, 0, e.target.value)}
                           className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         />
-                        <span className="text-xs text-muted-foreground">to</span>
+                        <span className="text-xs text-muted-foreground">
+                          to
+                        </span>
                         <input
                           type="time"
                           // The API's end-of-day sentinel has no clock face.
@@ -221,9 +225,11 @@ export function BusinessHoursSummary({
         <Clock className="h-3.5 w-3.5 text-muted-foreground" />
         {display}
       </span>
+      {/* "Available", not "open": the same summary sits on a person's
+          contact card and on a provider's support desk. */}
       {openNow !== null && (
         <Badge variant={openNow ? "success" : "secondary"}>
-          {openNow ? "Open now" : "Outside hours"}
+          {openNow ? "Available now" : "Outside hours"}
         </Badge>
       )}
     </span>

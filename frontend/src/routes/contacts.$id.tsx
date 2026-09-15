@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildContactAssignmentColumns } from "@/components/columns/contact-assignment-columns"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
-import { KvCard, mono, dash, type KvRow } from "@/components/kv-card"
+import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { BusinessHoursSummary } from "@/components/business-hours-field"
+import { PhoneLink } from "@/components/cells/phone-link"
 import { QueryError } from "@/components/query-error"
 import { ContactDeleteDialog } from "@/components/contact-delete-dialog"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -76,7 +77,7 @@ function Body({ contact: c }: { contact: Contact }) {
         dash
       ),
     },
-    { label: "Phone", value: mono(c.phone) },
+    { label: "Phone", value: c.phone ? <PhoneLink phone={c.phone} /> : dash },
     {
       label: "Link",
       value: c.link ? (

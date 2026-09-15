@@ -33,7 +33,7 @@ than in somebody's mailbox:
 - **Support phone** - the line you call, when it differs from the NOC number.
 - **Support hours** - a weekly schedule plus the time zone it is stated in,
   the same control [contacts use](contacts.md#working-hours). The provider page
-  shows it as one line with an **Open now** / **Outside hours** badge, so you
+  shows it as one line with an **Available now** / **Outside hours** badge, so you
   can see whether it's worth calling before you dial.
 - **Account manager** - pick an existing **contact** where one exists, so their
   own phone, email and hours come along; type a **name** instead for a vendor
