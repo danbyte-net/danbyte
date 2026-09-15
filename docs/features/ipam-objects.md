@@ -190,7 +190,8 @@ tags, and search matches the number or description.
 ## FHRP groups
 
 An **FHRP group** models a First-Hop Redundancy Protocol group - VRRP, HSRP,
-GLBP, or CARP. It carries a group ID (0–255), optional authentication, an
+GLBP, CARP, or an **EVPN anycast gateway** (the same address answered by
+every leaf, see [the overlay](routing.md#overlay-evpn-and-vxlan)). It carries a group ID (0–255), optional authentication, an
 optional virtual IP, plus a description, tags, and custom fields.
 
 Members are added as **assignments**: each binds the group to exactly one device

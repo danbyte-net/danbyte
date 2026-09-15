@@ -42,6 +42,8 @@ export const ROUTING_OBJECT_TYPES = {
   ospfinterface: "routing.ospfinterface",
   isisinstance: "routing.isisinstance",
   isisinterface: "routing.isisinterface",
+  vtep: "routing.vtep",
+  vtepmembership: "routing.vtepmembership",
 } as const
 
 /** Save a routing object through the plan-aware helper; invalidates the

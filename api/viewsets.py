@@ -6830,7 +6830,7 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
 class L2VPNViewSet(TenantScopedViewSet):
     queryset = (
         L2VPN.objects
-        .select_related("status")
+        .select_related("status", "vrf")
         .prefetch_related(
             "import_targets", "export_targets", "tags",
             "terminations__vlan", "terminations__interface__device",
@@ -6852,7 +6852,16 @@ class L2VPNViewSet(TenantScopedViewSet):
             t = self.request.query_params.get("type")
             if t:
                 qs = qs.filter(type=t)
-        return qs
+            # A device's Add-VNI picker: the overlays a VTEP can carry.
+            if self.request.query_params.get("vxlan") in ("1", "true"):
+                qs = qs.filter(type__in=L2VPN.VXLAN_TYPES)
+            v = self.request.query_params.get("vrf")
+            if v:
+                qs = qs.filter(vrf_id=v)
+            vl = self.request.query_params.get("vlan")
+            if vl:
+                qs = qs.filter(terminations__vlan_id=vl)
+        return qs.annotate(vtep_count_annotated=Count("vtep_memberships", distinct=True))
 
 
 class L2VPNTerminationViewSet(TenantScopedViewSet):

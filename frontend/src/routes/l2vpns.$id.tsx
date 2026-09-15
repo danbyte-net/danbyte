@@ -42,6 +42,8 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { VlanBadge } from "@/components/cells/vlan-badge"
+import { ColorBadge } from "@/components/cells/color-badge"
+import { EmbeddedVTEPTable } from "@/components/embedded-tables"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -70,7 +72,7 @@ function L2vpnDetail() {
 
 function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "terminations" | "journal" | "history"
+    "overview" | "terminations" | "vteps" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo } = useMe()
@@ -124,6 +126,20 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
                     )
                   }
                 />
+                {v.vrf && (
+                  <DetailStat
+                    label="L3VNI for"
+                    value={
+                      <Link
+                        to="/vrfs/$id"
+                        params={{ id: v.vrf.id }}
+                        className="inline-flex"
+                      >
+                        <ColorBadge name={v.vrf.name} color={v.vrf.color} />
+                      </Link>
+                    }
+                  />
+                )}
               </>
             }
           />
@@ -138,6 +154,7 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
           label: "Terminations",
           count: v.terminations.length,
         },
+        { value: "vteps", label: "VTEPs", count: v.vtep_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -149,6 +166,12 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
       </DetailTab>
       <DetailTab value="terminations">
         <TerminationsTab l2vpn={v} canEdit={canDo("l2vpn", "change")} />
+      </DetailTab>
+      <DetailTab value="vteps">
+        <EmbeddedVTEPTable
+          filter={{ l2vpn: v.id }}
+          emptyText="No VTEP carries this VNI yet - add it from a device's Routing tab."
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.l2vpn" objectId={v.id} />
@@ -206,6 +229,16 @@ function L2vpnOverview({ l2vpn: v }: { l2vpn: L2VPN }) {
         ),
     },
     { label: "Status", value: <StatusBadge status={v.status} /> },
+    {
+      label: "VRF",
+      value: v.vrf ? (
+        <Link to="/vrfs/$id" params={{ id: v.vrf.id }} className="inline-flex">
+          <ColorBadge name={v.vrf.name} color={v.vrf.color} />
+        </Link>
+      ) : (
+        dash
+      ),
+    },
     {
       label: "Slug",
       value: <span className="font-mono text-[13px]">{v.slug}</span>,

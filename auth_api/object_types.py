@@ -122,6 +122,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.OSPFInterface", "OSPF interfaces", "Routing"),
     ("routing.ISISInstance", "IS-IS instances", "Routing"),
     ("routing.ISISInterface", "IS-IS interfaces", "Routing"),
+    ("routing.VTEP", "VTEPs", "Routing"),
+    ("routing.VTEPMembership", "VTEP memberships", "Routing"),
     ("zabbix.ZabbixConnection", "Zabbix connections", "Monitoring"),
     ("zabbix.ZabbixHostLink", "Zabbix host links", "Monitoring"),
     ("zabbix.ZabbixChange", "Zabbix pending changes", "Monitoring"),

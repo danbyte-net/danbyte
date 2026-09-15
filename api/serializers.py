@@ -613,6 +613,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     group = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     prefix_count = serializers.SerializerMethodField()
+    l2vpn_count = serializers.SerializerMethodField()
 
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(),
@@ -634,6 +635,13 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
 
     def get_prefix_count(self, obj) -> int:
         return obj.prefixes.count()
+
+    def get_l2vpn_count(self, obj) -> int:
+        """L2VPNs terminating on this VLAN - the detail page's tab count."""
+        view = self.context.get("view")
+        if view is not None and getattr(view, "action", None) == "list":
+            return 0
+        return obj.l2vpn_terminations.count()
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_group(self, obj):
@@ -713,7 +721,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
             "zone", "zone_id",
             "description",
             "tags", "tag_ids",
-            "prefix_count",
+            "prefix_count", "l2vpn_count",
             "custom_fields",
             "created_at", "updated_at",
         ]
@@ -2617,15 +2625,16 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return obj.services.count()
 
     def get_routing_count(self, obj) -> int:
-        """The Routing tab's count: static routes today, protocol instances
-        as they land. The routing app owns the rows; this reads the reverse
-        relations it hangs on Device."""
+        """The Routing tab's count: static routes, protocol instances and
+        sessions, the VTEP. The routing app owns the rows; this reads the
+        reverse relations it hangs on Device."""
         if not self._detail_only():
             return 0
         return (
             obj.static_routes.count() + obj.bgpinstances.count()
             + sum(i.sessions.count() for i in obj.bgpinstances.all())
             + obj.ospfinstances.count() + obj.isisinstances.count()
+            + (1 if hasattr(obj, "vtep") else 0)
         )
 
     def get_image_count(self, obj) -> int:
@@ -6982,12 +6991,33 @@ class L2VPNSerializer(StatusSerializerMixin,
         write_only=True, required=False, many=True,
     )
 
+    vrf = VRFMiniSerializer(read_only=True)
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vtep_count = serializers.SerializerMethodField()
+
     def get_termination_count(self, obj) -> int:
         return obj.terminations.count()
+
+    def get_vtep_count(self, obj) -> int:
+        annotated = getattr(obj, "vtep_count_annotated", None)
+        return annotated if annotated is not None else obj.vtep_memberships.count()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        get = lambda f: attrs.get(f, getattr(self.instance, f, None))  # noqa: E731
+        if get("vrf") is not None and get("type") not in L2VPN.EVPN_TYPES:
+            raise serializers.ValidationError(
+                {"vrf_id": "Only an EVPN overlay carries a table (an L3VNI)."}
+            )
+        return attrs
 
     class Meta:
         model = L2VPN
         fields = ["id", "name", "slug", "type", "type_display", "identifier",
+                  "vrf", "vrf_id", "vtep_count",
                   "status", "status_id", "import_targets", "import_target_ids",
                   "export_targets", "export_target_ids",
                   "terminations", "termination_count",

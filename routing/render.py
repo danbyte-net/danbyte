@@ -11,6 +11,7 @@ from __future__ import annotations
 from django.db.models import F
 
 from .models import (
+    VTEP,
     ASPathList,
     BGPInstance,
     Community,
@@ -21,6 +22,7 @@ from .models import (
     RoutingKeychain,
     RoutingPolicy,
     StaticRoute,
+    resolve_membership_vlan,
 )
 
 
@@ -32,15 +34,50 @@ def _rt_names(qs) -> list[str]:
     return sorted(rt.name for rt in qs.all())
 
 
-def vrf_dict(vrf) -> dict:
+def vrf_dict(vrf, l3vni: int | None = None) -> dict:
     return {
         "id": str(vrf.id),
         "name": vrf.name,
         "rd": vrf.rd or None,
         "import_targets": _rt_names(vrf.import_targets),
         "export_targets": _rt_names(vrf.export_targets),
-        "l3vni": None,
+        "l3vni": l3vni,
         "description": vrf.description or "",
+    }
+
+
+def vtep_dict(vtep: VTEP) -> dict:
+    vnis = []
+    for m in vtep.memberships.all():
+        l2 = m.l2vpn
+        vlan = resolve_membership_vlan(m)
+        vnis.append({
+            "id": str(m.id),
+            "vni": l2.identifier,
+            "name": l2.name,
+            "kind": "l3" if l2.vrf_id else "l2",
+            "vlan": vlan.vlan_id if vlan is not None else None,
+            "vlan_name": vlan.name if vlan is not None else None,
+            "vrf": l2.vrf.name if l2.vrf_id else None,
+            "rd": m.rd or None,
+            "import_targets": _rt_names(l2.import_targets),
+            "export_targets": _rt_names(l2.export_targets),
+            "ingress_replication": m.ingress_replication,
+            "mcast_group": m.mcast_group or None,
+            "extra": m.extra or {},
+        })
+    src = vtep.source_ip if vtep.source_ip_id else None
+    any_ip = vtep.anycast_ip if vtep.anycast_ip_id else None
+    return {
+        "id": str(vtep.id),
+        "source_interface": vtep.source_interface.name if vtep.source_interface_id else None,
+        "source_ip": src.ip_address if src is not None else None,
+        "anycast_ip": any_ip.ip_address if any_ip is not None else None,
+        "anycast_gateway_mac": vtep.anycast_gateway_mac or None,
+        "arp_suppression": vtep.arp_suppression,
+        "vnis": sorted(vnis, key=lambda v: (v["kind"], v["vni"] or 0)),
+        "description": vtep.description or "",
+        "extra": vtep.extra or {},
     }
 
 
@@ -459,6 +496,25 @@ def routing_context(device) -> dict:
         if inst.vrf_id:
             vrfs[inst.vrf.name] = inst.vrf
 
+    vtep_row = (
+        VTEP.objects.filter(device=device)
+        .select_related("source_interface", "source_ip", "anycast_ip")
+        .prefetch_related(
+            "memberships__l2vpn__vrf", "memberships__l2vpn__import_targets",
+            "memberships__l2vpn__export_targets", "memberships__vlan",
+            "memberships__l2vpn__terminations__vlan",
+        )
+        .first()
+    )
+    vtep = vtep_dict(vtep_row) if vtep_row is not None else None
+    # A VRF an L3VNI carries has to be defined on the leaf too.
+    l3vnis: dict[str, int | None] = {}
+    if vtep_row is not None:
+        for m in vtep_row.memberships.all():
+            if m.l2vpn.vrf_id:
+                vrfs[m.l2vpn.vrf.name] = m.l2vpn.vrf
+                l3vnis[m.l2vpn.vrf.name] = m.l2vpn.identifier
+
     # What an interfaces loop needs without a nested search: the IGP rows
     # keyed by port name.
     by_interface: dict[str, dict] = {}
@@ -478,12 +534,13 @@ def routing_context(device) -> dict:
             by_interface[row["interface"]]["isis"] = {"process": i["process"], **row}
 
     out = {
-        "vrfs": [vrf_dict(v) for _, v in sorted(vrfs.items())],
+        "vrfs": [vrf_dict(v, l3vnis.get(name)) for name, v in sorted(vrfs.items())],
         "static_routes": [static_route_dict(r) for r in static_routes],
         "bgp": bgp,
         "ospf": ospf,
         "isis": isis,
         "by_interface": dict(sorted(by_interface.items())),
+        "vtep": vtep,
         **_policies_closure(device.tenant_id, referenced_policies),
         "communities": [
             {"id": str(c.id), "value": c.value, "kind": c.kind, "name": c.name}

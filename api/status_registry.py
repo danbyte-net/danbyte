@@ -24,6 +24,7 @@ STATUSABLE_MODELS = [
     ("powerfeed", "Power feeds"),
     ("wirelesslan", "Wireless LANs"),
     ("tunnel", "Tunnels"),
+    ("l2vpn", "L2VPNs"),
     ("location", "Locations"),
     ("inventoryitem", "Inventory items"),
     ("maintenanceevent", "Maintenance & outage events"),
@@ -32,6 +33,7 @@ STATUSABLE_MODELS = [
     ("bgpsession", "BGP sessions"),
     # One scope shared by the BGP, OSPF and IS-IS instance models.
     ("routinginstance", "Routing instances"),
+    ("vtep", "VTEPs"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
@@ -135,6 +137,7 @@ STATUS_MODEL_VALUES = {
     "powerfeed": ["planned", "active", "offline", "failed"],
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
     "tunnel": ["planned", "active", "disabled"],
+    "l2vpn": ["planned", "active", "disabled"],
     # NAT rules (#151): a mapping is on, on its way, or written down but not
     # in force. Nothing here means "broken" - a rule that stopped working is
     # a device problem, not a state of the record.
@@ -143,6 +146,7 @@ STATUS_MODEL_VALUES = {
     "staticroute": ["active", "planned", "disabled"],
     "bgpsession": ["active", "planned", "disabled"],
     "routinginstance": ["active", "planned", "disabled"],
+    "vtep": ["active", "planned", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.

@@ -77,6 +77,20 @@ address's interface.
 `Redistribution` has exactly one parent - `bgp_af`, `ospf_instance` or
 `isis_instance` (CheckConstraint).
 
+## Overlay
+
+| Model | Fields | Unique |
+|---|---|---|
+| `api.L2VPN` (extended) | `vrf` FK, allowed on `EVPN_TYPES` only (`clean()`); `vtep_memberships` reverse | `(tenant, identifier)` for `type in VXLAN_TYPES` (`uniq_l2vpn_vxlan_vni`) |
+| `VTEP` | `device` OneToOne, `source_interface` (same device), `source_ip`, `anycast_ip` (assigned to the device), `anycast_gateway_mac` (normalised lower-case), `arp_suppression`, `status` (`vtep`), `description`, `extra` | `device` |
+| `VTEPMembership` | `vtep`, `l2vpn` (VXLAN type), `vlan` (at the device's site), `rd`, `ingress_replication`, `mcast_group`, `extra` | `(vtep, l2vpn)` |
+
+`resolve_membership_vlan(m)` is the leaf's VLAN for a VNI: own `vlan`, else
+the L2VPN's termination at the device's site, else its sole VLAN
+termination. `FHRPGroup` gains the `anycast` protocol for the shared SVI
+address. Migrations `api/0165` (L2VPN.vrf, VNI uniqueness, `l2vpn`
+statuses) and `routing/0006`.
+
 ## Rendering
 
 `routing/render.py:routing_context(device)` builds the `routing` block the
@@ -89,5 +103,7 @@ row with its `id`, never a secret. It is registered through
 
 `auth_api/object_types.py` (group *Routing*; `routingkeychain` honours
 `reveal`), `audit/apps.py`, `api/search_index.py`, `api/status_registry.py`
-(`staticroute`), `auth_api/site_paths.py` (`staticroute` → `device__site`),
+(`staticroute`, `bgpsession`, `routinginstance`, `l2vpn`, `vtep`),
+`auth_api/site_paths.py` (device-bound rows → `device__site`, instance rows
+→ `instance__device__site`, `vtepmembership` → `vtep__device__site`),
 the router in `api/api_urls.py` under `routing/`.

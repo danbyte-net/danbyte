@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 
-from api.models import ASN, VRF, Device, Interface, IPAddress, Prefix
+from api.models import ASN, L2VPN, VLAN, VRF, Device, Interface, IPAddress, Prefix
 from api.serializers import (
     CustomFieldsSerializerMixin,
     DeviceMiniSerializer,
@@ -19,16 +19,19 @@ from api.serializers import (
     NumIdModelSerializer,
     PrefixMiniSerializer,
     SecretPSKSerializerMixin,
+    SiteMiniSerializer,
     StatusSerializerMixin,
     TaggableSerializerMixin,
     TagSerializer,
     TenantScopedPrimaryKeyRelatedField,
+    VLANMiniSerializer,
     VRFMiniSerializer,
 )
 from core.models import Tag
 
 from .models import (
     AFI_SAFI_CHOICES,
+    VTEP,
     ASPathList,
     ASPathListRule,
     BGPAddressFamily,
@@ -50,7 +53,9 @@ from .models import (
     RoutingPolicy,
     RoutingPolicyRule,
     StaticRoute,
+    VTEPMembership,
     link_remote_address,
+    resolve_membership_vlan,
     validate_address_families,
 )
 
@@ -1083,6 +1088,98 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
                   "authentication", "keychain", "keychain_id",
                   "redistributions", "interfaces", "interface_count",
                   "status", "status_id", "description", "extra",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        validators = []
+
+
+# ─── Overlay: VTEPs ──────────────────────────────────────────────────────────
+
+class L2VPNBriefSerializer(NumIdModelSerializer):
+    vrf = VRFMiniSerializer(read_only=True)
+
+    class Meta:
+        model = L2VPN
+        fields = ["id", "name", "slug", "type", "identifier", "vrf"]
+
+
+class VTEPMembershipSerializer(_ChildRowSerializer):
+    parent_field = "vtep"
+    vtep_id = TenantScopedPrimaryKeyRelatedField(
+        source="vtep", queryset=VTEP.objects.all(), write_only=True, required=False,
+    )
+    l2vpn = L2VPNBriefSerializer(read_only=True)
+    l2vpn_id = TenantScopedPrimaryKeyRelatedField(
+        source="l2vpn", queryset=L2VPN.objects.all(), write_only=True,
+    )
+    vlan = VLANMiniSerializer(read_only=True)
+    vlan_id = TenantScopedPrimaryKeyRelatedField(
+        source="vlan", queryset=VLAN.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    #: The VLAN the render resolves for this leaf (own, else the site's).
+    resolved_vlan = serializers.SerializerMethodField()
+
+    def get_resolved_vlan(self, obj):
+        v = resolve_membership_vlan(obj)
+        return VLANMiniSerializer(v).data if v is not None else None
+
+    class Meta:
+        model = VTEPMembership
+        fields = ["id", "vtep_id", "l2vpn", "l2vpn_id", "vlan", "vlan_id", "resolved_vlan",
+                  "rd", "ingress_replication", "mcast_group", "extra"]
+        read_only_fields = ["id"]
+        validators = []
+
+
+class VTEPSerializer(
+    CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin, NumIdModelSerializer
+):
+    cf_model = "vtep"
+
+    device = DeviceMiniSerializer(read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    source_interface = InterfaceMiniSerializer(read_only=True)
+    source_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="source_interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    source_ip = IPMiniSerializer(read_only=True)
+    source_ip_id = TenantScopedPrimaryKeyRelatedField(
+        source="source_ip", queryset=IPAddress.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    anycast_ip = IPMiniSerializer(read_only=True)
+    anycast_ip_id = TenantScopedPrimaryKeyRelatedField(
+        source="anycast_ip", queryset=IPAddress.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    site = SiteMiniSerializer(source="device.site", read_only=True)
+    memberships = VTEPMembershipSerializer(many=True, read_only=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = VTEP(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in VTEP._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in VTEP._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        if "anycast_gateway_mac" in attrs:
+            attrs["anycast_gateway_mac"] = probe.anycast_gateway_mac
+        return attrs
+
+    class Meta:
+        model = VTEP
+        fields = ["id", "numid", "device", "device_id", "site",
+                  "source_interface", "source_interface_id", "source_ip", "source_ip_id",
+                  "anycast_ip", "anycast_ip_id", "anycast_gateway_mac", "arp_suppression",
+                  "memberships", "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
         validators = []

@@ -12,6 +12,7 @@ import type {
   RoutingKeychain,
   RoutingPolicy,
   StaticRoute,
+  VTEP,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
@@ -1056,6 +1057,168 @@ export function buildOSPFAreaColumns<T extends OSPFArea = OSPFArea>(
         cell: ({ row }) => (
           <span className="num text-xs">{row.original.interface_count}</span>
         ),
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── VTEPs ───────────────────────────────────────────────────────────────────
+
+export type VTEPColumnId =
+  | "numid"
+  | "device"
+  | "site"
+  | "source_interface"
+  | "source_ip"
+  | "anycast_ip"
+  | "vni_count"
+  | "status"
+  | "description"
+  | "tags"
+const VTEP_ORDER: VTEPColumnId[] = [
+  "numid",
+  "device",
+  "site",
+  "source_interface",
+  "source_ip",
+  "anycast_ip",
+  "vni_count",
+  "status",
+  "description",
+  "tags",
+]
+
+/** A VTEP has no page of its own - the row links to the device's Routing
+ * tab, where it is edited. */
+export function buildVTEPColumns<T extends VTEP = VTEP>(
+  opts: CommonOpts<T, VTEPColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, VTEPColumnId>(
+    VTEP_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      device: () => ({
+        id: "device",
+        accessorFn: (r) => r.device.name,
+        header: ({ column }) => <SortHeader column={column} label="Device" />,
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-1.5">
+            <Link
+              to="/devices/$id"
+              params={{ id: row.original.device.id }}
+              search={{ tab: "routing" }}
+              className="link font-medium"
+            >
+              {row.original.device.name}
+            </Link>
+            <PlannedChangeMarker
+              objectType="routing.vtep"
+              objectId={row.original.id}
+            />
+          </span>
+        ),
+      }),
+      site: () => ({
+        id: "site",
+        accessorFn: (r) => r.site?.name ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Site" />,
+        cell: ({ row }) =>
+          row.original.site ? (
+            <Link
+              to="/sites/$id"
+              params={{ id: row.original.site.id }}
+              className="link text-xs"
+            >
+              {row.original.site.name}
+            </Link>
+          ) : (
+            dash
+          ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Site",
+            get: (r: T) => r.site?.id ?? "__none__",
+            formatValue: (_v, sample) => ({
+              label: sample.site?.name ?? "No site",
+            }),
+          },
+        },
+      }),
+      source_interface: () => ({
+        id: "source_interface",
+        accessorFn: (r) => r.source_interface?.name ?? "",
+        header: "Source",
+        cell: ({ row }) =>
+          row.original.source_interface ? (
+            <Link
+              to="/interfaces/$id"
+              params={{ id: row.original.source_interface.id }}
+              className="link font-mono text-xs"
+            >
+              {row.original.source_interface.name}
+            </Link>
+          ) : (
+            dash
+          ),
+      }),
+      source_ip: () => ({
+        id: "source_ip",
+        accessorFn: (r) => r.source_ip?.ip_address ?? "",
+        header: "Source IP",
+        cell: ({ row }) =>
+          row.original.source_ip ? (
+            <Link
+              to="/ips/$id"
+              params={{ id: row.original.source_ip.id }}
+              className="link font-mono text-xs"
+            >
+              {row.original.source_ip.ip_address}
+            </Link>
+          ) : (
+            dash
+          ),
+      }),
+      anycast_ip: () => ({
+        id: "anycast_ip",
+        accessorFn: (r) => r.anycast_ip?.ip_address ?? "",
+        header: "Anycast",
+        cell: ({ row }) =>
+          row.original.anycast_ip ? (
+            <span className="font-mono text-xs">
+              {row.original.anycast_ip.ip_address}
+            </span>
+          ) : (
+            dash
+          ),
+      }),
+      vni_count: () => ({
+        id: "vni_count",
+        accessorFn: (r) => r.memberships.length,
+        header: ({ column }) => <SortHeader column={column} label="VNIs" />,
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.memberships.length}</span>
+        ),
+      }),
+      status: () => ({
+        id: "status",
+        accessorFn: (r) => r.status?.name ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Status",
+            get: (r: T) => r.status?.id ?? "__none__",
+            formatValue: (_v, r) => ({
+              label: r.status?.name ?? "No status",
+              color: r.status?.color,
+            }),
+          },
+        },
       }),
       description: () => descriptionColumn<T>(),
       tags: tags<T>(opts),

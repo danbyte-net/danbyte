@@ -66,7 +66,7 @@ with a richer context:
 | `config_context` | The merged [config context](config-contexts.md) for the device. |
 | `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … |
 | `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
-| `routing` | What the device routes with - VRFs, static routes, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
+| `routing` | What the device routes with - VRFs, static routes, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
 
 Virtual machines render the same way (`vm` and `device` both name the VM;
 `routing` is empty).

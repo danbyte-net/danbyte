@@ -5423,6 +5423,9 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         ("hsrp", "HSRP"),
         ("glbp", "GLBP"),
         ("carp", "CARP"),
+        # The EVPN distributed anycast gateway: the same address on every
+        # leaf's SVI, no election.
+        ("anycast", "EVPN anycast gateway"),
     ]
     AUTH_CHOICES = [
         ("", "None"),
@@ -6335,6 +6338,12 @@ class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     identifier = models.BigIntegerField(
         null=True, blank=True, help_text="Overlay identifier - VNI / VC-ID."
     )
+    #: An EVPN overlay carrying a table - the VRF's L3VNI. Only on the EVPN
+    #: types; a VXLAN L2VPN with terminations to VLANs is an L2VNI.
+    vrf = models.ForeignKey(
+        "VRF", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="l3vnis",
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="l2vpns",
@@ -6354,11 +6363,30 @@ class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "slug"], name="uniq_l2vpn_tenant_slug"
-            )
+            ),
+            # Two VXLAN overlays cannot claim one VNI; VC-IDs on the other
+            # types are per circuit and may repeat.
+            models.UniqueConstraint(
+                fields=["tenant", "identifier"],
+                condition=models.Q(type__in=["vxlan", "vxlan-evpn"], identifier__isnull=False),
+                name="uniq_l2vpn_vxlan_vni",
+            ),
         ]
+
+    #: Types where a VRF makes the overlay an L3VNI.
+    EVPN_TYPES = ("vxlan-evpn", "mpls-evpn")
+    VXLAN_TYPES = ("vxlan", "vxlan-evpn")
 
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.vrf_id and self.type not in self.EVPN_TYPES:
+            raise ValidationError(
+                {"vrf": "Only an EVPN overlay carries a table (an L3VNI)."}
+            )
 
 
 class L2VPNTermination(TimestampedModel):

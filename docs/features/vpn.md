@@ -173,7 +173,8 @@ itself; **terminations** attach it to the VLANs and interfaces that carry it.
 |---|---|
 | **Name** and **slug** | A label and a URL-friendly identifier (slug unique per tenant). |
 | **Type** | The overlay technology - VXLAN, VXLAN-EVPN, MPLS-EVPN, PBB-EVPN, VPWS, VPLS, EPL, EVPL, SPB, or TRILL. |
-| **Identifier** | The overlay identifier - a VNI or VC-ID (optional). |
+| **Identifier** | The overlay identifier - a VNI or VC-ID (optional). A VNI is unique per tenant across the VXLAN types. |
+| **VRF** | EVPN types only. Set it and this VNI is that VRF's **L3VNI** - see [the overlay](routing.md#overlay-evpn-and-vxlan). |
 | **Status** | Your own status catalog, same as elsewhere. |
 | **Import / export route targets** | BGP route targets, picked from your existing [route targets](ipam-objects.md). |
 
@@ -188,6 +189,10 @@ interface**, or a **VM interface** - from the L2VPN's detail page.
 - An endpoint can terminate **at most one L2VPN** - Danbyte blocks a second.
 - Point-to-point types (VPWS, EPL, EVPL) typically get two terminations;
   multipoint types (VPLS, the EVPN family) get as many as the overlay spans.
+- A VLAN's page lists the L2VPNs terminating on it under **L2VPNs**.
+
+Which leaves carry a VXLAN VNI is a different question - that is the
+**VTEPs** tab, fed by each device's [VTEP](routing.md#overlay-evpn-and-vxlan).
 
 ## Tags & custom fields
 

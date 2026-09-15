@@ -22,6 +22,7 @@ from api.viewsets import (
 from audit.bulk import log_bulk_delete
 
 from .models import (
+    VTEP,
     ASPathList,
     ASPathListRule,
     BGPAddressFamily,
@@ -43,6 +44,7 @@ from .models import (
     RoutingPolicy,
     RoutingPolicyRule,
     StaticRoute,
+    VTEPMembership,
 )
 from .serializers import (
     ASPathListMiniSerializer,
@@ -74,6 +76,8 @@ from .serializers import (
     RoutingPolicyRuleSerializer,
     RoutingPolicySerializer,
     StaticRouteSerializer,
+    VTEPMembershipSerializer,
+    VTEPSerializer,
 )
 
 
@@ -677,4 +681,64 @@ class ISISInterfaceViewSet(_RuleViewSet):
             v = self.request.query_params.get("interface")
             if v:
                 qs = qs.filter(interface_id=v)
+        return qs
+
+
+# ─── Overlay: VTEPs ──────────────────────────────────────────────────────────
+
+class VTEPViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """One per device. Filter with ``?device=``, ``?site=``, ``?l2vpn=``
+    (VTEPs carrying that overlay), ``?status=``."""
+
+    editable_str_fields = ("description", "anycast_gateway_mac")
+    editable_bool_fields = ("arp_suppression",)
+    queryset = VTEP.objects.all()
+    serializer_class = VTEPSerializer
+    pagination_class = StandardPagination
+    clone_fields = ("anycast_gateway_mac", "arp_suppression", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device__site", "source_interface__device", "source_ip",
+                            "anycast_ip", "status")
+            .prefetch_related(
+                "tags", "memberships__l2vpn__vrf", "memberships__vlan",
+                "memberships__l2vpn__terminations__vlan",
+            )
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(device__name__icontains=s) | Q(description__icontains=s)
+                | Q(source_ip__ip_address__icontains=s) | cf_text_q(qs.model, s)
+            )
+        for key, field in (
+            ("device", "device_id"), ("site", "device__site_id"),
+            ("status", "status_id"), ("l2vpn", "memberships__l2vpn_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        return qs.distinct()
+
+
+class VTEPMembershipViewSet(_RuleViewSet):
+    """The VNIs a VTEP serves. Filter with ``?vtep=``, ``?l2vpn=``."""
+
+    parent = "vtep"
+    queryset = VTEPMembership.objects.select_related(
+        "vtep__device", "l2vpn__vrf", "vlan"
+    ).prefetch_related("l2vpn__terminations__vlan")
+    serializer_class = VTEPMembershipSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            v = self.request.query_params.get("l2vpn")
+            if v:
+                qs = qs.filter(l2vpn_id=v)
         return qs

@@ -1110,3 +1110,109 @@ def link_remote_address(session: BGPSession) -> None:
         changed.append("peer_device")
     if changed:
         session.save(update_fields=changed)
+
+
+# ─── Overlay: VTEPs ──────────────────────────────────────────────────────────
+
+class VTEP(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """The VXLAN tunnel endpoint on one device: the loopback it sources
+    from, the anycast gateway values, and - through memberships - the VNIs
+    it serves. One per device."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="vteps")
+    device = models.OneToOneField(
+        "api.Device", on_delete=models.CASCADE, related_name="vtep"
+    )
+    source_interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="vteps",
+    )
+    source_ip = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="vteps",
+    )
+    #: The shared VTEP address of an MLAG pair.
+    anycast_ip = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="anycast_vteps",
+    )
+    #: The fabric-wide gateway MAC - repeated on every leaf, as the boxes have it.
+    anycast_gateway_mac = models.CharField(max_length=17, blank=True, default="")
+    arp_suppression = models.BooleanField(default=True)
+    status = models.ForeignKey(
+        "api.Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="vteps",
+    )
+    description = models.CharField(max_length=255, blank=True, default="")
+    extra = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["device__name"]
+
+    def __str__(self) -> str:
+        return f"VTEP {self.device.name}"
+
+    def clean(self):
+        if self.source_interface_id and self.source_interface.device_id != self.device_id:
+            raise ValidationError({"source_interface": "That interface is on another device."})
+        for f in ("source_ip", "anycast_ip"):
+            ip = getattr(self, f) if getattr(self, f"{f}_id") else None
+            if ip is not None and ip.assigned_device_id not in (None, self.device_id):
+                raise ValidationError({f: "That address is on another device."})
+        mac = (self.anycast_gateway_mac or "").strip().lower()
+        if mac and not re.match(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$", mac):
+            raise ValidationError({"anycast_gateway_mac": "A MAC reads aa:bb:cc:dd:ee:ff."})
+        self.anycast_gateway_mac = mac
+
+
+class VTEPMembership(models.Model):
+    """"This leaf serves VNI 10100" - a VTEP carrying one overlay, with the
+    device-side choices the fabric-wide L2VPN cannot make."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vtep = models.ForeignKey(VTEP, on_delete=models.CASCADE, related_name="memberships")
+    l2vpn = models.ForeignKey(
+        "api.L2VPN", on_delete=models.CASCADE, related_name="vtep_memberships"
+    )
+    #: The device-local VLAN the VNI maps to (NX-OS needs one for an L3VNI;
+    #: a VNI stretched across sites has a termination VLAN per site).
+    vlan = models.ForeignKey(
+        "api.VLAN", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="vtep_memberships",
+    )
+    rd = models.CharField(max_length=32, blank=True, default="", help_text="Per-device RD override")
+    ingress_replication = models.BooleanField(default=True)
+    mcast_group = models.CharField(max_length=64, blank=True, default="")
+    extra = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["l2vpn__identifier", "l2vpn__name"]
+        constraints = [
+            models.UniqueConstraint(fields=["vtep", "l2vpn"], name="uniq_vtepmembership_vtep_l2vpn")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vtep.device.name} · {self.l2vpn.name}"
+
+    def clean(self):
+        if self.l2vpn_id and self.l2vpn.type not in self.l2vpn.VXLAN_TYPES:
+            raise ValidationError({"l2vpn": "A VTEP carries VXLAN overlays only."})
+        if self.mcast_group:
+            self.mcast_group = normalize_address(self.mcast_group, "mcast_group")
+
+
+def resolve_membership_vlan(m: VTEPMembership):
+    """The VLAN this leaf maps the VNI to: the membership's own choice, else
+    the single termination VLAN at the device's site, else the sole
+    termination anywhere, else none."""
+    if m.vlan_id:
+        return m.vlan
+    terms = [t for t in m.l2vpn.terminations.all() if t.vlan_id]
+    site_id = m.vtep.device.site_id
+    local = [t.vlan for t in terms if t.vlan.site_id == site_id]
+    if len(local) == 1:
+        return local[0]
+    if len(terms) == 1:
+        return terms[0].vlan
+    return None

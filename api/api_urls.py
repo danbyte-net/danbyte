@@ -129,6 +129,8 @@ from routing.viewsets import (
     RoutingPolicyRuleViewSet,
     RoutingPolicyViewSet,
     StaticRouteViewSet,
+    VTEPMembershipViewSet,
+    VTEPViewSet,
 )
 from integrations.netbox_api import (
     netbox_import_detail,
@@ -376,6 +378,8 @@ router.register(r"routing/ospf-instances", OSPFInstanceViewSet, basename="ospfin
 router.register(r"routing/ospf-interfaces", OSPFInterfaceViewSet, basename="ospfinterface")
 router.register(r"routing/isis-instances", ISISInstanceViewSet, basename="isisinstance")
 router.register(r"routing/isis-interfaces", ISISInterfaceViewSet, basename="isisinterface")
+router.register(r"routing/vteps", VTEPViewSet, basename="vtep")
+router.register(r"routing/vtep-memberships", VTEPMembershipViewSet, basename="vtepmembership")
 router.register(r"services",      ServiceViewSet,     basename="service")
 router.register(r"service-templates", ServiceTemplateViewSet, basename="service-template")
 router.register(r"device-types",  DeviceTypeViewSet,  basename="device-type")

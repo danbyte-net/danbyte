@@ -198,6 +198,40 @@ BFD, and hello authentication.
 An interface's own page shows the OSPF and IS-IS rows it sits in, and any
 unnumbered BGP session on it, under **Routing**.
 
+## Overlay: EVPN and VXLAN
+
+The overlay builds on the [L2VPN](vpn.md#l2vpn-overlays) you already have:
+an L2VPN of a VXLAN type *is* the VNI, its terminations say which VLAN
+carries it at each site, its route targets are the EVPN import/export
+targets. Two things are added for it:
+
+- An EVPN L2VPN (`vxlan-evpn`, `mpls-evpn`) can name a **VRF**. That makes
+  it the VRF's **L3VNI** - the symmetric-IRB VNI that routes between the
+  VRF's subnets on every leaf. Other types refuse a VRF; a VNI is unique
+  per tenant across the VXLAN types, so two overlays cannot claim 10100.
+- A device gets a **VTEP** - one per device, on the Routing tab - with its
+  source interface (the loopback tunnels come from), source IP, an optional
+  anycast IP for an MLAG pair, the anycast gateway MAC and ARP suppression.
+  The VNIs the leaf carries are rows on the VTEP: pick the L2VPN, and
+  optionally a device-local VLAN, a per-leaf RD, ingress replication or a
+  multicast group.
+
+A VNI's VLAN on a given leaf resolves in this order: the membership's own
+VLAN → the L2VPN's termination on a VLAN at the device's site → the L2VPN's
+sole VLAN termination → none. A VNI stretched across sites therefore needs
+one termination per site and nothing on the leaves; an L3VNI, which no
+termination names, gets its VLAN on the membership when the platform wants
+one (NX-OS does, FRR does not).
+
+The anycast gateway itself is an ordinary SVI: a virtual interface in the
+VRF, with the shared address assigned through an [FHRP group](ipam-objects.md#fhrp-groups) of
+protocol **EVPN anycast gateway**.
+
+An L2VPN's page lists the VTEPs carrying it; a VLAN's page lists the
+L2VPNs terminating on it. The `l2vpn-evpn` address family on the BGP
+instance and its sessions is what carries the overlay's routes - nothing
+else is needed on the BGP side.
+
 ## Rendering a config
 
 Every device's render context carries a `routing` block, alongside `device`,
@@ -229,6 +263,9 @@ routing:
                                  hello_interval, hello_multiplier, bfd, authentication, keychain}]}]
   by_interface:  {NAME: {vrf, ospf: {process_id, version, area, cost, ...} | null,
                          isis: {process, families, level, metric, ...} | null}}
+  vtep:          {source_interface, source_ip, anycast_ip, anycast_gateway_mac, arp_suppression,
+                  vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, rd, import_targets,
+                          export_targets, ingress_replication, mcast_group, extra}]} | null
   policies:      {NAME: {rules: [{sequence, action, match: {...}, set: {...}, continue}]}}
   prefix_lists:  {NAME: {family, rules: [{sequence, action, prefix, ge, le}]}}
   community_lists: {NAME: {kind, rules: [...]}}
@@ -238,7 +275,9 @@ routing:
 ```
 
 `vrfs` is every table the device has to define - the VRFs its interfaces,
-routes and instances sit in. `policies` and the three list kinds hold only
+routes and instances sit in, and the VRFs of the L3VNIs its VTEP carries,
+each with its `l3vni`. `vtep.vnis` is sorted L2 first, then by VNI, with
+the VLAN resolved for this leaf. `policies` and the three list kinds hold only
 what the device's address families, sessions and peer groups reference, so
 a template prints what the box needs and no more. Session values are the
 effective ones; `remote_asn_mode` is `asn`, `external` or `internal`. Every row carries its
@@ -346,6 +385,25 @@ router bgp {{ b.asn }}{% if b.vrf %} vrf {{ b.vrf }}{% endif %}
 {% endfor %}
 ```
 
+An NX-OS-style VTEP fragment:
+
+```jinja
+{% if routing.vtep %}
+interface nve1
+  source-interface {{ routing.vtep.source_interface }}
+  host-reachability protocol bgp
+{% for v in routing.vtep.vnis %}
+  member vni {{ v.vni }}{% if v.kind == "l3" %} associate-vrf{% elif v.ingress_replication %}
+    ingress-replication protocol bgp{% else %}
+    mcast-group {{ v.mcast_group }}{% endif %}
+{% endfor %}
+{% for v in routing.vtep.vnis if v.vlan %}
+vlan {{ v.vlan }}
+  vn-segment {{ v.vni }}
+{% endfor %}
+{% endif %}
+```
+
 The same block rides the Ansible inventory as `danbyte.routing` - always on
 a single host (`GET /api/devices/<id>/inventory/`), on the fleet export when
 asked (`GET /api/inventory/ansible/?routing=1`), since most plays never read
@@ -367,6 +425,9 @@ it.
 | `/api/routing/ospf-areas/` | Areas. |
 | `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `vrf`, `site`, `status`. |
 | `/api/routing/ospf-interfaces/`, `…/isis-interfaces/` | Enrolled interfaces (`?instance=`, `?interface=`, `?area=`). |
+| `/api/routing/vteps/` | One per device, VNI memberships nested; filter by `device`, `site`, `status`, `l2vpn`. |
+| `/api/routing/vtep-memberships/` | The VNI rows on their own (`?vtep=`, `?l2vpn=`). |
+| `/api/l2vpns/` | Gains `vrf`/`vrf_id` and `vtep_count`; `?vxlan=1` keeps the VXLAN types, `?vrf=` the L3VNIs of a VRF, `?vlan=` those terminating on a VLAN. |
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
 supports CSV import/export and bulk delete like the rest of Danbyte.

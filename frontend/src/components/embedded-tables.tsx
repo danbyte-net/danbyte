@@ -10,11 +10,13 @@ import type {
   Contact,
   ContactGroup,
   IPAddress,
+  L2VPN,
   Paginated,
   PowerFeed,
   Rack,
   BGPSession,
   Tunnel,
+  VTEP,
   WirelessLAN,
 } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
@@ -26,11 +28,19 @@ import { buildContactColumns } from "@/components/columns/contact-columns"
 import type { ContactColumnId } from "@/components/columns/contact-columns"
 import { buildContactGroupColumns } from "@/components/columns/contact-group-columns"
 import { buildIpColumns } from "@/components/columns/ip-columns"
+import { buildL2VPNColumns } from "@/components/columns/l2vpn-columns"
+import type { L2VPNColumnId } from "@/components/columns/l2vpn-columns"
 import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
 import type { PowerFeedColumnId } from "@/components/columns/power-feed-columns"
 import { buildRackColumns } from "@/components/columns/rack-columns"
-import { buildBGPSessionColumns } from "@/components/columns/routing-columns"
-import type { BGPSessionColumnId } from "@/components/columns/routing-columns"
+import {
+  buildBGPSessionColumns,
+  buildVTEPColumns,
+} from "@/components/columns/routing-columns"
+import type {
+  BGPSessionColumnId,
+  VTEPColumnId,
+} from "@/components/columns/routing-columns"
 import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
 import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
@@ -477,6 +487,83 @@ export function EmbeddedBGPSessionTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-bgp-sessions"
+    />
+  )
+}
+
+/** L2VPNs terminating on a VLAN (`?vlan=`), or any L2VPN filter. */
+export function EmbeddedL2VPNTable({
+  filter,
+  omit = [],
+  emptyText = "No L2VPNs.",
+}: {
+  filter: Record<string, string>
+  omit?: L2VPNColumnId[]
+  emptyText?: string
+}) {
+  const q = useEmbed<L2VPN>("embedded-l2vpns", "/api/l2vpns/", filter)
+  const columns = useMemo<ColumnDef<L2VPN>[]>(
+    () =>
+      buildL2VPNColumns({
+        include: [
+          "name",
+          "type",
+          "identifier",
+          "vrf",
+          "status",
+          "terminations",
+          "vteps",
+          "description",
+        ],
+        omit,
+      }),
+    [omit]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-l2vpns"
+    />
+  )
+}
+
+/** The VTEPs carrying an L2VPN (`?l2vpn=`), or any VTEP filter. */
+export function EmbeddedVTEPTable({
+  filter,
+  omit = [],
+  emptyText = "No VTEPs.",
+}: {
+  filter: Record<string, string>
+  omit?: VTEPColumnId[]
+  emptyText?: string
+}) {
+  const q = useEmbed<VTEP>("embedded-vteps", "/api/routing/vteps/", filter)
+  const columns = useMemo<ColumnDef<VTEP>[]>(
+    () =>
+      buildVTEPColumns({
+        include: [
+          "device",
+          "site",
+          "source_interface",
+          "source_ip",
+          "vni_count",
+          "status",
+          "description",
+        ],
+        omit,
+      }),
+    [omit]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-vteps"
     />
   )
 }

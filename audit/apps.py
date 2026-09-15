@@ -123,6 +123,8 @@ AUDITED_MODELS = [
     "routing.OSPFInterface",
     "routing.ISISInstance",
     "routing.ISISInterface",
+    "routing.VTEP",
+    "routing.VTEPMembership",
     "zabbix.ZabbixConnection",
     "zabbix.ZabbixProvisionRule",
     "zabbix.ZabbixAdoptionRule",

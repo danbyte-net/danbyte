@@ -39,12 +39,13 @@ import {
 } from "./bgp-forms"
 import { RoutingDeleteDialog } from "./catalog-page"
 import { ISISSection, OSPFSection } from "./device-igp-section"
+import { VTEPSection } from "./device-vtep-section"
 import { StaticRouteForm } from "./object-forms"
 
-// A device's Routing tab: what the box routes with. Static routes today;
-// the BGP / OSPF / IS-IS instance cards and the VTEP land beside them as
-// each protocol arrives. Rows are edited in place through a dialog, the
-// device pre-set, so the tab is where a router's routing is written down.
+// A device's Routing tab: what the box routes with - static routes, the
+// BGP / OSPF / IS-IS instance cards and the VTEP. Rows are edited in place
+// through a dialog, the device pre-set, so the tab is where a router's
+// routing is written down.
 
 function Section({
   title,
@@ -116,6 +117,7 @@ export function DeviceRoutingPanel({
       <BGPSection device={device} />
       <OSPFSection device={device} />
       <ISISSection device={device} />
+      <VTEPSection device={device} />
       <Section
         title="Static routes"
         count={rows.length}

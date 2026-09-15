@@ -890,9 +890,11 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "inventoryitem", label: "Inventory items" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
   { value: "natrule", label: "NAT rules" },
+  { value: "l2vpn", label: "L2VPNs" },
   { value: "staticroute", label: "Static routes" },
   { value: "bgpsession", label: "BGP sessions" },
   { value: "routinginstance", label: "Routing instances" },
+  { value: "vtep", label: "VTEPs" },
 ]
 
 // api/status_registry.MONITORING_STATES - the six states a check can end in.
@@ -3111,6 +3113,8 @@ export interface VLAN {
   description: string
   tags: Tag[]
   prefix_count: number
+  /** L2VPNs terminating on this VLAN; 0 on list responses. */
+  l2vpn_count: number
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -3203,7 +3207,13 @@ export interface ZoneOption {
 
 // ─── FHRP groups ───────────────────────────────────────────────────────────
 
-export type FHRPProtocol = "vrrp2" | "vrrp3" | "hsrp" | "glbp" | "carp"
+export type FHRPProtocol =
+  | "vrrp2"
+  | "vrrp3"
+  | "hsrp"
+  | "glbp"
+  | "carp"
+  | "anycast"
 
 export interface FHRPGroupAssignment {
   id: string
@@ -4228,7 +4238,13 @@ export type AfiSafi =
   | "ipv4-labeled-unicast"
 
 export type RemoteAsnMode = "asn" | "external" | "internal"
-export type SendCommunity = "" | "none" | "standard" | "extended" | "both" | "large"
+export type SendCommunity =
+  | ""
+  | "none"
+  | "standard"
+  | "extended"
+  | "both"
+  | "large"
 
 export interface ASNMini {
   id: string
@@ -4350,7 +4366,11 @@ export interface BGPSession extends BGPPeerKnobs {
   /** The far end: an address, or an interface for unnumbered peering. */
   remote_address: string
   interface: { id: string; name: string; device: DeviceMini } | null
-  remote_address_obj: { id: string; ip_address: string; dns_name: string } | null
+  remote_address_obj: {
+    id: string
+    ip_address: string
+    dns_name: string
+  } | null
   peer_device: DeviceMini | null
   peer_session: { id: string; device: DeviceMini } | null
   effective: BGPSessionEffective
@@ -4381,7 +4401,12 @@ export interface OSPFInterface {
   interface: { id: string; name: string; device: DeviceMini }
   area: OSPFAreaMini
   cost: number | null
-  network_type: "" | "broadcast" | "point-to-point" | "nbma" | "point-to-multipoint"
+  network_type:
+    | ""
+    | "broadcast"
+    | "point-to-point"
+    | "nbma"
+    | "point-to-multipoint"
   /** Null = the instance's passive_by_default. */
   passive: boolean | null
   priority: number | null
@@ -4446,6 +4471,48 @@ export interface ISISInstance extends IGPInstanceBase {
   authentication: "none" | "text" | "md5"
   keychain: { id: string; name: string; algorithm: string } | null
   interfaces: ISISInterface[]
+}
+
+/** The L2VPN as a VTEP membership carries it: enough to name the VNI. */
+export interface L2VPNBrief {
+  id: string
+  name: string
+  slug: string
+  type: L2VPNType
+  identifier: number | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+}
+
+export interface VTEPMembership {
+  id: string
+  l2vpn: L2VPNBrief
+  vlan: VLANMini | null
+  /** The VLAN the render resolves for this leaf (own, else the site's). */
+  resolved_vlan: VLANMini | null
+  rd: string
+  ingress_replication: boolean
+  mcast_group: string
+  extra: Record<string, unknown>
+}
+
+export interface VTEP {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  site: { id: string; name: string } | null
+  source_interface: { id: string; name: string; device: DeviceMini } | null
+  source_ip: { id: string; ip_address: string; dns_name: string } | null
+  anycast_ip: { id: string; ip_address: string; dns_name: string } | null
+  anycast_gateway_mac: string
+  arp_suppression: boolean
+  memberships: VTEPMembership[]
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }
 
 export interface StaticRoute {
@@ -8165,11 +8232,14 @@ export interface L2VPN {
   type: L2VPNType
   type_display: string
   identifier: number | null
+  /** Set on an EVPN overlay: this L2VPN is that VRF's L3VNI. */
+  vrf: { id: string; name: string; rd: string; color: string } | null
   status: StatusMini | null
   import_targets: { id: string; name: string }[]
   export_targets: { id: string; name: string }[]
   terminations: L2VPNTermination[]
   termination_count: number
+  vtep_count: number
   description: string
   comments: string
   tags: Tag[]
@@ -8183,6 +8253,7 @@ export interface L2VPNWritePayload {
   slug?: string
   type: L2VPNType
   identifier?: number | null
+  vrf_id?: string | null
   status_id?: string | null
   import_target_ids?: string[]
   export_target_ids?: string[]
