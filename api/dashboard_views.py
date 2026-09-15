@@ -33,6 +33,7 @@ from .models import (
 )
 from .views import _get_active_tenant
 from auth_api import rbac
+from routing.models import BGPSession, StaticRoute
 
 # A neutral palette for distributions whose categories have no catalog colour
 # (device status, protocols, …). Sky-family to match the brand chart tokens.
@@ -204,6 +205,8 @@ def dashboard_view(request):
         "vrfs": _scoped(VRF, "vrf", tenant=tenant).count(),
         "cables": _scoped(Cable, "cable", tenant=tenant).count(),
         "interfaces": _scoped(Interface, "interface", device__tenant=tenant).count(),
+        "bgp_sessions": _scoped(BGPSession, "bgpsession", tenant=tenant).count(),
+        "static_routes": _scoped(StaticRoute, "staticroute", tenant=tenant).count(),
     }
 
     # ── IPAM ────────────────────────────────────────────────────────────

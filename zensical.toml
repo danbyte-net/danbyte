@@ -75,6 +75,7 @@ nav = [
   ] },
   { "Routing" = [
     { "Routing"           = "features/routing.md" },
+    { "Routing templates" = "features/routing-templates.md" },
   ] },
   { "Virtualization" = [
     { "Virtual machines"  = "features/virtual-machines.md" },

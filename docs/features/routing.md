@@ -8,8 +8,9 @@ Routing is where you write down **how a device forwards** - the static routes
 it carries, and the policy objects every routing protocol shares: prefix
 lists, communities, community lists, AS-path lists, routing policies (route
 maps) and the keychains sessions authenticate with. BGP, OSPF, IS-IS and the
-EVPN/VXLAN overlay build on these and land in their own sections as they
-ship.
+EVPN/VXLAN overlay build on these; two complete templates, NX-OS style and
+FRR, rendered from an opt-in demo fabric, are on
+[Routing templates](routing-templates.md).
 
 Two ideas run through the whole module:
 
@@ -20,7 +21,8 @@ Two ideas run through the whole module:
 - **Danbyte renders what is modelled; the template is yours.** Everything
   here reaches a device's [config template](export-templates.md#rendering-one-device)
   as a `routing` block, so one template renders the whole box - in whatever
-  vendor's syntax you write it in.
+  vendor's syntax you write it in. `make seed-fabric` gives you a leaf/spine
+  fabric to render against.
 
 ## Prefix lists
 

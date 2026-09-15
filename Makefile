@@ -30,7 +30,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
         fastlane-up fastlane-down fastlane-restart fastlane-logs \
-        migrate makemigrations superuser bootstrap seed-demo shell test check \
+        migrate makemigrations superuser bootstrap seed-demo seed-fabric shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
         linger service-user
@@ -339,6 +339,10 @@ bootstrap:
 seed-demo:
 	@$(PY) manage.py seed_demo
 	@$(PY) manage.py seed_demo_172
+
+# Opt-in demo leaf/spine EVPN fabric for the routing pages. Idempotent.
+seed-fabric:
+	@$(PY) manage.py seed_fabric
 
 shell:
 	@$(PY) manage.py shell

@@ -50,3 +50,5 @@ These use the project venv automatically.
 | `make shell` | `python manage.py shell` |
 | `make test` | `python manage.py test` |
 | `make check` | `python manage.py check` |
+| `make seed-demo` | Opt-in demo IPAM data (`seed_demo`, `seed_demo_172`); idempotent |
+| `make seed-fabric` | Opt-in leaf/spine EVPN fabric for the routing pages (`seed_fabric`); idempotent |

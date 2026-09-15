@@ -22,6 +22,7 @@ from api.models import (
 from core.models import Organization, Tenant
 
 from .models import (
+    BGPSession,
     Community,
     PrefixList,
     PrefixListRule,
@@ -29,6 +30,7 @@ from .models import (
     RoutingPolicy,
     RoutingPolicyRule,
     StaticRoute,
+    VTEPMembership,
 )
 from .render import routing_context
 
@@ -186,3 +188,101 @@ class RoutingContextTests(_Base):
         r = self.client.get(f"/api/virtual-machines/{vm.id}/render/?template={t.id}")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["output"].strip(), "0")
+
+
+class FabricTemplateTests(APITestCase):
+    """The two complete templates in ``docs/features/routing-templates.md``,
+    rendered for a leaf of the demo fabric. They are read from the docs so
+    the page and the test cannot drift apart."""
+
+    @classmethod
+    def templates(cls) -> dict[str, str]:
+        import re
+        from pathlib import Path
+
+        doc = (Path(__file__).resolve().parent.parent / "docs/features/routing-templates.md").read_text()
+        out = {}
+        for block in re.findall(r"```jinja\n(.*?)```", doc, re.S):
+            m = re.match(r"\{# template: (\w+) #\}\n", block)
+            if m:
+                out[m.group(1)] = block[m.end():]
+        return out
+
+    def setUp(self):
+        from django.core.management import call_command
+
+        call_command("seed_fabric", verbosity=0)
+        self.tenant = Tenant.objects.get(slug="acme")
+        self.leaf = Device.objects.get(tenant=self.tenant, name="leaf1")
+        self.spine = Device.objects.get(tenant=self.tenant, name="spine1")
+        admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _render(self, kind, device):
+        t, _ = ExportTemplate.objects.get_or_create(
+            tenant=self.tenant, name=kind, object_type="device",
+            defaults={"template_code": self.templates()[kind]},
+        )
+        r = self.client.get(f"/api/devices/{device.id}/render/?template={t.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()["output"]
+
+    def test_seeder_is_idempotent(self):
+        from django.core.management import call_command
+
+        before = (Device.objects.count(), BGPSession.objects.count(),
+                  VTEPMembership.objects.count(), Interface.objects.count())
+        call_command("seed_fabric", verbosity=0)
+        after = (Device.objects.count(), BGPSession.objects.count(),
+                 VTEPMembership.objects.count(), Interface.objects.count())
+        self.assertEqual(before, after)
+        self.assertEqual(BGPSession.objects.filter(peer_session__isnull=True).count(), 0)
+
+    def test_nxos_template_renders_a_leaf(self):
+        out = self._render("nxos", self.leaf)
+        for line in (
+            "hostname leaf1",
+            "vrf context TENANT-A\n  rd 65100:5000\n  vni 5000",
+            "vlan 100\n  name servers\n  vn-segment 10100",
+            "interface nve1",
+            "  member vni 5000 associate-vrf",
+            "  member vni 10100\n    ingress-replication protocol bgp\n    suppress-arp",
+            "fabric forwarding anycast-gateway-mac 00:00:5e:00:01:01",
+            "interface Loopback0\n  ip address 10.255.0.11/32\n  ip router isis UNDERLAY",
+            "interface Vlan100\n  description servers gateway\n  vrf member TENANT-A",
+            "router isis UNDERLAY\n  net 49.0001.0000.0011.0000.00",
+            "router bgp 65100\n  router-id 10.255.0.11",
+            "  template peer SPINES\n    remote-as 65100\n    update-source Loopback0\n    bfd",
+            "  neighbor 10.255.0.1\n    inherit peer SPINES\n    description to spine1\n    password 0 <FABRIC>",
+            "  vrf TENANT-A\n    address-family ipv4 unicast\n      redistribute connected",
+            "vrf context TENANT-A\n  ip route 0.0.0.0/0 10.100.0.254",
+            "ip prefix-list LOOPBACKS seq 10 permit 10.255.0.0/24 ge 32 le 32",
+            "route-map EVPN-EXPORT permit 10\n  match ip address prefix-list LOOPBACKS",
+        ):
+            self.assertIn(line, out, out)
+        self.assertNotIn("psk", out.lower())
+
+    def test_frr_template_renders_a_leaf_and_a_spine(self):
+        out = self._render("frr", self.leaf)
+        for line in (
+            "frr defaults datacenter\nhostname leaf1",
+            "vrf TENANT-A\n vni 5000\nexit-vrf",
+            "interface Ethernet1/49\n description to spine1\n ip address 10.0.1.1/31\n ip router isis UNDERLAY\n isis network point-to-point\n isis bfd",
+            "interface Loopback0\n ip address 10.255.0.11/32\n ip router isis UNDERLAY\n isis passive",
+            "interface Vlan100 vrf TENANT-A",
+            "router isis UNDERLAY\n net 49.0001.0000.0011.0000.00\n is-type level-2\n metric-style wide\n area-password md5 <FABRIC>",
+            "router bgp 65100\n bgp router-id 10.255.0.11\n neighbor SPINES peer-group\n neighbor SPINES remote-as internal\n neighbor SPINES update-source Loopback0\n neighbor SPINES bfd\n neighbor SPINES password <FABRIC>\n neighbor 10.255.0.1 peer-group SPINES",
+            " address-family l2vpn evpn\n  neighbor SPINES activate\n  neighbor 10.255.0.1 activate\n  neighbor 10.255.0.1 route-map EVPN-EXPORT out",
+            "  advertise-all-vni\n  vni 10100\n   route-target import 65100:10100\n   route-target export 65100:10100\n  exit-vni",
+            "router bgp 65100 vrf TENANT-A\n bgp router-id 10.255.0.11\n address-family ipv4 unicast\n  redistribute connected\n  redistribute static\n exit-address-family\n address-family l2vpn evpn\n  advertise ipv4 unicast",
+            "ip route 0.0.0.0/0 10.100.0.254 vrf TENANT-A",
+        ):
+            self.assertIn(line, out, out)
+        spine = self._render("frr", self.spine)
+        self.assertIn(" bgp cluster-id 10.255.0.0", spine)
+        self.assertIn(" neighbor 10.255.0.11 remote-as internal", spine)
+        self.assertIn("  neighbor 10.255.0.11 route-reflector-client", spine)
+        self.assertNotIn("vni", spine.split("router bgp")[1].split("exit")[0])

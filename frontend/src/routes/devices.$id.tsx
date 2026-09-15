@@ -704,7 +704,7 @@ function DeviceOverview({
   onTab,
 }: {
   device: Device
-  onTab: (tab: "ips" | "components") => void
+  onTab: (tab: "ips" | "components" | "routing") => void
 }) {
   const { humanIds } = useMe()
   const nav = useNavigate({ from: "/devices/$id" })
@@ -1044,6 +1044,22 @@ function DeviceOverview({
         </button>
       ),
     },
+    ...(d.routing_count
+      ? [
+          {
+            label: "Routing",
+            value: (
+              <button
+                type="button"
+                onClick={() => onTab("routing")}
+                className="num link"
+              >
+                {d.routing_count}
+              </button>
+            ),
+          },
+        ]
+      : []),
   ]
   // The Panel (photo / rendered / bare) is pinned top-right and kept in view
   // The Panel shows when the device has ports or its type carries a rack-face

@@ -299,6 +299,7 @@ The other tabs cover building from source and a local dev checkout.
         ```bash
         .venv/bin/python manage.py seed_demo       # Acme demo (IPAM)
         .venv/bin/python manage.py seed_demo_172   # 172.16 net + devices + monitoring
+        .venv/bin/python manage.py seed_fabric     # leaf/spine EVPN fabric (routing)
         ```
 
 ---

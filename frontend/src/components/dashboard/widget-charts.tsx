@@ -334,6 +334,8 @@ const COUNT_ROWS: { key: string; label: string; to?: string }[] = [
   { key: "devices", label: "Devices", to: "/devices" },
   { key: "interfaces", label: "Interfaces", to: "/interfaces" },
   { key: "cables", label: "Cables", to: "/cables" },
+  { key: "bgp_sessions", label: "BGP sessions", to: "/bgp-sessions" },
+  { key: "static_routes", label: "Static routes", to: "/static-routes" },
 ]
 
 export function ObjectCounts({ counts }: { counts: Record<string, number> }) {
