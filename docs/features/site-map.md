@@ -93,7 +93,9 @@ The page is a clone of the floor-plan editor's shell:
     and Cable routes lists, and a device's cable count. A **"n hidden · Show
     all"** line appears at the top of the sidebar whenever anything is off,
     and the choice is remembered per browser. This is finer-grained than
-    **View**, which switches whole kinds on and off.
+    **View**, which switches whole kinds on and off. The
+    [floor plans](floor-plans.md) and the [topology map](topology.md) have
+    the same eyes.
 
 Placed markers are fully editable from the inspector: rename, describe,
 link/unlink a device, tune FOV, or delete (or press Delete in Edit mode).

@@ -2835,7 +2835,8 @@ export interface TopologyViewState {
   positions?: Record<string, [number, number]>
   /** Labelled backdrop boxes, per view style - same reason as positions. */
   zones_by_style?: Record<string, unknown>
-  /** Node ids taken off the map by hand ("Remove from view"). */
+  /** What the eyes switched off - `components/topology/hidden.ts`'s
+   * TopoHidden; a flat list of node ids in views saved before it. */
   hidden?: unknown
 }
 

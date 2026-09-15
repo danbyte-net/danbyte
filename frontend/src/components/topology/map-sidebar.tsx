@@ -13,8 +13,21 @@ import {
   CheckChip,
   CheckCountChip,
   FoldableGroup,
+  VisibilityToggle,
 } from "@/components/foldable-group"
+import { hiddenCount, setHidden } from "@/components/hidden-objects"
 import type { TopoGroupData } from "./group-node"
+import {
+  DISCOVERED,
+  NO_LOCATION,
+  NO_ROLE,
+  NO_SITE,
+  NO_TOPO_HIDDEN,
+  edgeHidden,
+  linkFamily,
+  nodeHidden,
+} from "./hidden"
+import type { TopoHidden } from "./hidden"
 import { typeColor } from "./topology-canvas"
 import type { Zone } from "./view-positions"
 
@@ -23,7 +36,10 @@ import type { Zone } from "./view-positions"
 // site/location aggregates when the map is grouped, the links by media
 // type, and the zones drawn behind the cards. Click flies to and selects,
 // like clicking the card; a zone row pans to the box and renames it on
-// double-click, like the box itself.
+// double-click, like the box itself. The eyes are the site map's: a group
+// header hides its key (the role, the site, the media type), a row hides
+// that one card. Hidden objects stay listed, dimmed, so "where did my core
+// switch go" answers itself.
 
 export type GroupMode = "role" | "site" | "location"
 const GROUP_MODES: [GroupMode, string][] = [
@@ -59,29 +75,27 @@ interface DeviceRow {
   name: string
   check: string | null
   data: TopoNode["data"]
+  node: TopoNode
 }
 
 function groupTitle(d: TopoNode["data"], mode: GroupMode): string {
-  if (mode === "site") return d.site ?? "No site"
-  if (mode === "location") return d.location ?? "No location"
-  return d.role?.name ?? "No role"
+  if (mode === "site") return d.site ?? NO_SITE
+  if (mode === "location") return d.location ?? NO_LOCATION
+  return d.role?.name ?? NO_ROLE
 }
-
-/** Every link on the map that is a thing in its own right - cables by media
- * type, LLDP ghosts as their own family. Aggregates and pass-through
- * strands are how the canvas draws, not objects to list. */
-function linkFamily(e: TopoEdge): string | null {
-  if (e.type === "ghost") return "Discovered"
-  if (e.type === "cable" || !e.type) return e.data?.cable_type || "Untyped"
-  return null
+/** The hidden-set key a device grouping's eyes write. */
+const GROUP_KEY: Record<GroupMode, keyof TopoHidden> = {
+  role: "roles",
+  site: "sites",
+  location: "locations",
 }
 
 export function TopologyObjectsSidebar({
   graph,
   checks,
   zones,
-  removed,
-  onShowAll,
+  hidden,
+  onHiddenChange,
   selectedDeviceId,
   selectedGroupId,
   selectedEdgeId,
@@ -92,14 +106,13 @@ export function TopologyObjectsSidebar({
   onFocusZone,
   onRenameZone,
 }: {
-  /** The graph as drawn - removed nodes are already gone from it. */
+  /** The whole graph, hidden objects included - they are listed dimmed. */
   graph: TopologyGraph
   /** Monitoring roll-up per device id, for the chips. */
   checks: Record<string, BulkStatusEntry>
   zones: Zone[] | undefined
-  /** Nodes taken off the map with "Remove from view". */
-  removed: number
-  onShowAll: () => void
+  hidden: TopoHidden
+  onHiddenChange: (next: TopoHidden) => void
   selectedDeviceId: string | null
   selectedGroupId: string | null
   selectedEdgeId: string | null
@@ -133,6 +146,9 @@ export function TopologyObjectsSidebar({
     !status || check === status
 
   const grouped = graph.nodes.some((n) => n.type === "group")
+  const toggle = (key: keyof TopoHidden, value: string, shown: boolean) =>
+    onHiddenChange(setHidden(hidden, key, value, !shown))
+  const shown = (n: TopoNode) => !nodeHidden(n, hidden)
 
   // The lists are rebuilt on every render - a few hundred nodes at most, and
   // the search and status filters are render-time inputs anyway.
@@ -164,6 +180,7 @@ export function TopologyObjectsSidebar({
         name: n.data.name,
         check,
         data: n.data,
+        node: n,
       })
       map.set(key, g)
     }
@@ -194,6 +211,8 @@ export function TopologyObjectsSidebar({
     ? []
     : deviceGroups
         .flatMap((g) => g.rows)
+        // Hidden objects are off the map, so they are not this map's problems.
+        .filter((d) => shown(d.node))
         .filter((d) => d.check === "down" || d.check === "degraded")
         .sort((a, b) => checkRank(a.check) - checkRank(b.check) || byName(a, b))
 
@@ -214,7 +233,7 @@ export function TopologyObjectsSidebar({
       map.set(fam, [...(map.get(fam) ?? []), e])
     }
     return [...map.entries()].sort(([a], [b]) =>
-      a === "Discovered" ? 1 : b === "Discovered" ? -1 : a.localeCompare(b)
+      a === DISCOVERED ? 1 : b === DISCOVERED ? -1 : a.localeCompare(b)
     )
   })()
 
@@ -231,6 +250,13 @@ export function TopologyObjectsSidebar({
       : linkGroups.reduce((n, [, rows]) => n + rows.length, 0) +
         shownZones.length)
 
+  /** A link is off the map when its family is, or either end is. */
+  const edgeDim = (e: TopoEdge) => {
+    if (edgeHidden(e, hidden)) return true
+    const a = nodeById.get(e.source)
+    const b = nodeById.get(e.target)
+    return (!!a && !shown(a)) || (!!b && !shown(b))
+  }
   const edgeEnds = (e: TopoEdge) =>
     `${nodeById.get(e.source)?.data.name ?? "?"} ↔ ${
       nodeById.get(e.target)?.data.name ?? "?"
@@ -287,14 +313,14 @@ export function TopologyObjectsSidebar({
         ))}
       </div>
 
-      {removed > 0 && (
+      {hiddenCount(hidden) > 0 && (
         <button
           type="button"
-          onClick={onShowAll}
+          onClick={() => onHiddenChange(NO_TOPO_HIDDEN)}
           className="mb-3 flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
         >
           <EyeOff className="size-3 shrink-0" />
-          <span className="num">{removed}</span> removed
+          <span className="num">{hiddenCount(hidden)}</span> hidden
           <span className="ml-auto underline underline-offset-2">Show all</span>
         </button>
       )}
@@ -340,6 +366,7 @@ export function TopologyObjectsSidebar({
           </p>
           {groupRows.map((n) => {
             const g = n.data as unknown as TopoGroupData
+            const key = g.kind === "site" ? "sites" : "locations"
             return (
               <button
                 key={n.id}
@@ -348,14 +375,24 @@ export function TopologyObjectsSidebar({
                 onDoubleClick={() => onDrillGroup(g)}
                 className={cn(
                   "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
+                  !shown(n) && "text-muted-foreground/60",
                   selectedGroupId === g.group_id
                     ? "bg-muted font-medium"
                     : "hover:bg-muted/60"
                 )}
               >
                 <span className="min-w-0 truncate">{g.name}</span>
-                <span className="num ml-auto shrink-0 text-[11px] text-muted-foreground/70">
-                  {g.device_count}
+                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                  <VisibilityToggle
+                    vis={{
+                      shown: shown(n),
+                      onChange: (v) => toggle(key, g.name, v),
+                      what: g.name,
+                    }}
+                  />
+                  <span className="num text-[11px] text-muted-foreground/70">
+                    {g.device_count}
+                  </span>
                 </span>
               </button>
             )
@@ -401,6 +438,11 @@ export function TopologyObjectsSidebar({
                 ) : undefined
               }
               storageId={FOLDS}
+              visibility={{
+                shown: !hidden[GROUP_KEY[mode]].includes(g.title),
+                onChange: (v) => toggle(GROUP_KEY[mode], g.title, v),
+                what: `${g.title} devices`,
+              }}
               extra={
                 <>
                   <CheckCountChip check="down" n={g.down} />
@@ -412,9 +454,10 @@ export function TopologyObjectsSidebar({
                 <button
                   key={d.id}
                   type="button"
-                  onClick={() => onPickNode(nodeById.get(d.id)!)}
+                  onClick={() => onPickNode(d.node)}
                   className={cn(
                     "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left font-mono text-[12px]",
+                    !shown(d.node) && "text-muted-foreground/60",
                     selectedDeviceId === d.device_id
                       ? "bg-muted font-medium"
                       : "hover:bg-muted/60"
@@ -435,7 +478,14 @@ export function TopologyObjectsSidebar({
                       {d.data.device_type}
                     </span>
                   )}
-                  <span className="ml-auto shrink-0">
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    <VisibilityToggle
+                      vis={{
+                        shown: !hidden.devices.includes(d.id),
+                        onChange: (v) => toggle("devices", d.id, v),
+                        what: d.name,
+                      }}
+                    />
                     <CheckChip check={d.check} />
                   </span>
                 </button>
@@ -461,11 +511,15 @@ export function TopologyObjectsSidebar({
                 <span
                   className="size-2.5 shrink-0 rounded-full"
                   style={{
-                    background:
-                      fam === "Discovered" ? "#71717a" : typeColor(fam),
+                    background: fam === DISCOVERED ? "#71717a" : typeColor(fam),
                   }}
                 />
               }
+              visibility={{
+                shown: !hidden.kinds.includes(fam),
+                onChange: (v) => toggle("kinds", fam, v),
+                what: `${fam} links`,
+              }}
             >
               {rows.map((e) => (
                 <button
@@ -474,6 +528,7 @@ export function TopologyObjectsSidebar({
                   onClick={() => onPickEdge(e)}
                   className={cn(
                     "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[12px]",
+                    edgeDim(e) && "text-muted-foreground/60",
                     selectedEdgeId === e.id
                       ? "bg-muted font-medium"
                       : "hover:bg-muted/60"

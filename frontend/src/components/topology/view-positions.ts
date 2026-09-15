@@ -84,13 +84,6 @@ export const ZONE_COLORS = [
 export const ZONE_W = 420
 export const ZONE_H = 260
 
-/** Ids that no longer exist in the graph are dropped, so a view saved when a
- * device was on the map does not keep hiding a device that came back under a
- * different id. */
-export function prunedHidden(hidden: string[], present: Set<string>): string[] {
-  return hidden.filter((id) => present.has(id))
-}
-
 /** A saved view's zones, tolerating a view written before zones existed. */
 export function viewZones(raw: unknown): ZonesByStyle {
   if (!raw || typeof raw !== "object") return {}
@@ -100,9 +93,4 @@ export function viewZones(raw: unknown): ZonesByStyle {
     if (Array.isArray(list)) out[style] = list
   }
   return out
-}
-
-/** A saved view's hidden node ids. */
-export function viewHidden(raw: unknown): string[] {
-  return Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : []
 }

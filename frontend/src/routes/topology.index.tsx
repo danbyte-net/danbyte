@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Camera,
   Crosshair,
-  EyeOff,
   Filter,
   LayoutGrid,
   Link2 as LinkIcon,
@@ -58,6 +57,15 @@ import { LevelOrganiser } from "@/components/topology/level-organiser"
 import { CanvasLegend } from "@/components/topology/legend"
 import { LogicalTopologyView } from "@/components/topology/logical-view"
 import { TopologyObjectsSidebar } from "@/components/topology/map-sidebar"
+import {
+  NO_TOPO_HIDDEN,
+  applyHidden,
+  hiddenOnMap,
+  readTopoHidden,
+  type TopoHidden,
+} from "@/components/topology/hidden"
+import { HiddenChip } from "@/components/hidden-chip"
+import { setHidden as withHidden } from "@/components/hidden-objects"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
@@ -93,8 +101,6 @@ import {
 } from "@/components/topology/levels-param"
 import {
   migratePositions,
-  prunedHidden,
-  viewHidden,
   viewPositions,
   viewZones,
   ZONE_COLORS,
@@ -304,16 +310,16 @@ type Zone = NonNullable<ZonesByStyle["stencil"]>[number]
 const HIDDEN_KEY = "danbyte-topology-hidden"
 const ZONES_KEY = "danbyte-topology-zones"
 
-function readStoredHidden(): string[] {
+function readStoredHidden(): TopoHidden {
   try {
-    return viewHidden(JSON.parse(localStorage.getItem(HIDDEN_KEY)!))
+    return readTopoHidden(JSON.parse(localStorage.getItem(HIDDEN_KEY)!))
   } catch {
-    return []
+    return NO_TOPO_HIDDEN
   }
 }
-function writeStoredHidden(ids: string[]) {
+function writeStoredHidden(h: TopoHidden) {
   try {
-    localStorage.setItem(HIDDEN_KEY, JSON.stringify(ids))
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(h))
   } catch {
     /* quota / private mode - non-fatal */
   }
@@ -573,13 +579,14 @@ function TopologyPage() {
     viewId !== "none" ? `view:${viewId}` : builder ? "custom" : "default"
   const ownScratch = mapKey === "default"
 
-  // Cards taken off this map by hand ("Remove from view"). Not a filter: a
-  // filter says what kind of thing belongs, this says "not that one" - the
-  // last mile of a diagram you are shaping for someone to read.
-  const [hidden, setHidden] = useState<string[]>(() =>
-    urlSearch.view || urlSearch.devices ? [] : readStoredHidden()
+  // What is switched off on this map - by site, location, role, link family
+  // (the sidebar's eyes) or one card by hand ("Remove from view"). Not a
+  // filter: a filter says what kind of thing belongs, this says "not that
+  // one" - the last mile of a diagram you are shaping for someone to read.
+  const [hidden, setHidden] = useState<TopoHidden>(() =>
+    urlSearch.view || urlSearch.devices ? NO_TOPO_HIDDEN : readStoredHidden()
   )
-  const setHiddenNodes = (next: string[]) => {
+  const setHiddenNodes = (next: TopoHidden) => {
     setHidden(next)
     if (ownScratch) writeStoredHidden(next)
   }
@@ -628,7 +635,7 @@ function TopologyPage() {
     prevMapKey.current = mapKey
     if (mapKey === "custom") {
       setZonesByStyle({})
-      setHidden([])
+      setHidden(NO_TOPO_HIDDEN)
     } else if (mapKey === "default") {
       setZonesByStyle(readStoredZones())
       setHidden(readStoredHidden())
@@ -858,30 +865,25 @@ function TopologyPage() {
       ),
   })
 
-  /** How many of the hidden ids are actually on this map - a view saved
-   * against one filter can carry ids the current query never returns, and
-   * offering to restore those would be a lie. */
-  const hiddenHere = useMemo(
-    () =>
-      q.data ? prunedHidden(hidden, new Set(q.data.nodes.map((n) => n.id))) : [],
-    [q.data, hidden]
-  )
-
-  const graph = useMemo<TopologyGraph | undefined>(() => {
+  /** Everything the query returned plus the LLDP ghosts between those
+   * cards - what the sidebar lists, hidden or not. */
+  const fullGraph = useMemo<TopologyGraph | undefined>(() => {
     if (!q.data) return undefined
-    const gone = new Set(hiddenHere)
-    // A cable to a card that is not drawn has nowhere to land, so it goes
-    // with the card - the same rule the site map follows for a hidden site.
-    const nodes = q.data.nodes.filter((n) => !gone.has(n.id))
-    const present = new Set(nodes.map((n) => n.id))
-    const edges = q.data.edges.filter(
-      (e) => present.has(e.source) && present.has(e.target)
-    )
+    const present = new Set(q.data.nodes.map((n) => n.id))
     const ghostEdges = (ghosts.data?.edges ?? []).filter(
       (e) => present.has(e.source) && present.has(e.target)
     )
-    return { ...q.data, nodes, edges: [...edges, ...ghostEdges] }
-  }, [q.data, ghosts.data, hiddenHere])
+    return { ...q.data, edges: [...q.data.edges, ...ghostEdges] }
+  }, [q.data, ghosts.data])
+  /** What the canvas draws. How many cards hiding took off THIS map is the
+   * chip's count - a view saved against one filter can carry names the
+   * current query never returns, and offering to restore those would be a
+   * lie. */
+  const graph = useMemo(
+    () => (fullGraph ? applyHidden(fullGraph, hidden) : undefined),
+    [fullGraph, hidden]
+  )
+  const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
 
   // Media types on the map - the legend swatches them in type color mode.
   const presentTypes = useMemo(() => {
@@ -961,7 +963,7 @@ function TopologyPage() {
     restoredView.current = key
     setPosByStyle(viewPositions(appliedView, sanitizeViewStyle))
     setZonesByStyle(viewZones(appliedView.state.zones_by_style))
-    setHidden(viewHidden(appliedView.state.hidden))
+    setHidden(readTopoHidden(appliedView.state.hidden))
     setLayoutTick((t) => t + 1)
   }, [appliedView])
 
@@ -1607,21 +1609,11 @@ function TopologyPage() {
           </Suspense>
         )}
 
-        {hiddenHere.length > 0 && !showObjects && (
-          <div className="absolute right-3 bottom-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
-            <EyeOff className="size-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground">
-              <span className="num">{hiddenHere.length}</span> removed
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-[11px]"
-              onClick={() => setHiddenNodes([])}
-            >
-              Show all
-            </Button>
-          </div>
+        {!showObjects && (
+          <HiddenChip
+            count={hiddenHere}
+            onShowAll={() => setHiddenNodes(NO_TOPO_HIDDEN)}
+          />
         )}
 
         {graph && viewStyle === "hierarchy" && count > 60 && !hintDismissed && (
@@ -1712,11 +1704,11 @@ function TopologyPage() {
 
       {showObjects && !logical && graph && (
         <TopologyObjectsSidebar
-          graph={graph}
+          graph={fullGraph!}
           checks={checks}
           zones={zones}
-          removed={hiddenHere.length}
-          onShowAll={() => setHiddenNodes([])}
+          hidden={hidden}
+          onHiddenChange={setHiddenNodes}
           selectedDeviceId={selNode?.device_id ?? null}
           selectedGroupId={selGroup?.group_id ?? null}
           selectedEdgeId={selEdgeId}
@@ -1839,7 +1831,9 @@ function TopologyPage() {
                     onClick={() => {
                       const id = menu.nodeId!
                       setMenu(null)
-                      setHiddenNodes([...hidden, id])
+                      setHiddenNodes(
+                        withHidden<keyof TopoHidden>(hidden, "devices", id, true)
+                      )
                     }}
                   >
                     Remove from view

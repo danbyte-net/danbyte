@@ -561,7 +561,8 @@ cable runs, just the trays, or both.
   plan, in foldable groups by **device role** and by **tile type**, each with a
   count and a live health dot. Search it, or click a row to select and zoom to
   that tile. Editors' toggle state is saved with the plan.
-- **Hiding things** - the same eyes the site map has. Every group header in
+- **Hiding things** - the same eyes the [site map](site-map.md) and the
+  [topology map](topology.md) have. Every group header in
   the Objects list (a device role, a tile type) and every tile row carries an
   eye: click it and that role, that type or that one tile leaves the plan -
   the 2D canvas, the 3D room and a cable whose end it was all follow, and the

@@ -174,17 +174,34 @@ with a [saved view](#saved-views), so a curated diagram ("core row",
 "customer X hand-off") is one select away. Right-click also offers *Open
 device* and *Focus here* in any mode.
 
-### Removing a card from the map
+### Hiding things - the eyes
 
-*Remove from view* takes one card off **any** map, not just a custom one -
-the last mile of a diagram you are shaping for someone else to read, where a
-filter says what kind of thing belongs and this says "not that one". Its
-cables go with it: a cable to a card that is not drawn has nowhere to land.
-A **"n removed · Show all"** chip in the corner puts them back. The list
-saves with the view, and the default map remembers it per browser.
+The map has the same eyes as the [site map](site-map.md) and the
+[floor plans](floor-plans.md). In the **Objects** sidebar, every group
+header has one - a **role**, a **site** or a **location** (whichever the
+Devices list is grouped by), a **link family** (a cable media type, or the
+LLDP-discovered links) - and so does every device row. Right-click a card →
+**Remove from view** is the same thing for one card, from the canvas.
 
-(In a custom map, *Remove from map* is the different thing next to it: it
-takes the device out of the hand-picked set the map is built from.)
+Hiding is not a filter: a filter says what kind of thing belongs on the map,
+this says "not that one" - the last mile of a diagram you are shaping for
+someone else to read. What is hidden is kept by *group*, so a role hidden
+today hides the switch that gets that role tomorrow. A hidden card takes its
+cables with it (a cable to a card that is not drawn has nowhere to land); a
+hidden link family goes without touching the cards. Positions are kept -
+hiding never re-runs the layout, and re-layout ignores hidden cards so they
+do not hold empty space. Hidden objects stay in the sidebar, dimmed, with the
+eye lit, so "where did my core switch go" answers itself; **Show all** at the
+top of the sidebar - or the **"n hidden · Show all"** chip in the corner when
+the sidebar is closed - puts everything back.
+
+The hidden set saves with the view, and the default map remembers it per
+browser. Views saved before the eyes existed hold their removed cards under
+the same model.
+
+(In a custom map, *Remove from map* is the different thing next to *Remove
+from view*: it takes the device out of the hand-picked set the map is built
+from.)
 
 ### Zones - boxes to group things by eye
 
@@ -208,7 +225,7 @@ still reads as a cable.
 Like the arrangement, zones are kept **per view style**: a box that frames
 four Flat chips would frame half a card in Wiring.
 
-Zones and removed cards belong to the map you drew them on. A saved view
+Zones and hidden objects belong to the map you drew them on. A saved view
 carries its own, the default map keeps its own in this browser, and a
 **custom map is a scratch map** - what you draw there stays there until you
 save it as a view, and exiting the custom map does not carry it back to the
@@ -243,10 +260,9 @@ map.
   rename.
 
 A click on any row flies to the object and selects it, so its inspector
-opens as if you had clicked the card. The sidebar's "n removed · Show all"
-row is the same control as the chip in the corner; the chip shows when the
-sidebar is closed. The sidebar is a per-browser preference, like the site
-map's.
+opens as if you had clicked the card. The eyes on the headers and rows are
+[hiding](#hiding-things-the-eyes). The sidebar is a per-browser preference,
+like the site map's.
 
 ## Layout: side-to-side or tree
 
