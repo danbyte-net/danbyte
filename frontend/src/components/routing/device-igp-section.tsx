@@ -454,11 +454,16 @@ export function ISISSection({
               )}
               <StatusBadge status={inst.status} />
               <span className="font-mono text-xs text-muted-foreground">
-                {inst.net}
+                net {inst.net}
               </span>
-              <Badge variant="secondary">L{inst.level}</Badge>
+              {inst.router_id && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  router-id {inst.router_id}
+                </span>
+              )}
+              <Badge variant="secondary">level {inst.level}</Badge>
               <span className="text-xs text-muted-foreground">
-                {inst.metric_style}
+                metric {inst.metric_style}
               </span>
               {inst.authentication !== "none" && (
                 <span className="text-xs text-muted-foreground">

@@ -933,6 +933,8 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
     export_targets = RouteTargetMiniSerializer(many=True, read_only=True)
     prefix_count = serializers.SerializerMethodField()
     ip_count = serializers.SerializerMethodField()
+    static_route_count = serializers.SerializerMethodField()
+    bgp_session_count = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
 
     import_target_ids = TenantScopedPrimaryKeyRelatedField(
@@ -954,6 +956,20 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
     def get_ip_count(self, obj) -> int:
         return obj.ip_addresses.count()
 
+    def _one(self) -> bool:
+        # The routing tab counts are for the VRF's own page; the list never
+        # renders them and they are a query per row.
+        view = self.context.get("view")
+        return view is None or getattr(view, "action", None) != "list"
+
+    def get_static_route_count(self, obj) -> int:
+        return obj.static_routes.count() if self._one() else 0
+
+    def get_bgp_session_count(self, obj) -> int:
+        if not self._one():
+            return 0
+        return sum(i.sessions.count() for i in obj.bgpinstances.all())
+
     class Meta:
         model = VRF
         fields = [
@@ -962,7 +978,7 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
             "import_targets", "import_target_ids",
             "export_targets", "export_target_ids",
             "tags", "tag_ids",
-            "prefix_count", "ip_count",
+            "prefix_count", "ip_count", "static_route_count", "bgp_session_count",
             "custom_fields",
             "created_at", "updated_at",
         ]
@@ -1021,6 +1037,14 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     monitoring_engine = serializers.SerializerMethodField()
     dhcp = serializers.SerializerMethodField()
     dns_record_count = serializers.SerializerMethodField()
+    static_route_count = serializers.SerializerMethodField()
+
+    def get_static_route_count(self, obj) -> int:
+        # Static routes whose destination is this prefix - the page's tab.
+        # Detail only, like the DNS count.
+        if not isinstance(self.instance, Prefix):
+            return 0
+        return obj.static_routes.count()
 
     def validate_cidr(self, value):
         """A prefix must be real CIDR - the model field is a plain CharField,
@@ -1216,7 +1240,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "id", "numid", "cidr", "status", "status_id",
             "family", "utilisation_pct", "is_enumerable",
             "ip_count", "child_count", "has_descendants", "dhcp",
-            "dns_record_count",
+            "dns_record_count", "static_route_count",
             "site", "vlan", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",

@@ -258,13 +258,15 @@ class Command(BaseCommand):
             net = f"{AREA}.{int(sysid[2]):04d}.{int(sysid[3]):04d}.0000.00"
             inst, _ = ISISInstance.objects.update_or_create(
                 tenant=self.t, device=d, process="UNDERLAY",
-                defaults={"net": net, "level": "2", "metric_style": "wide", "bfd": True,
+                defaults={"net": net, "router_id": LOOPBACK[name], "level": "2",
+                          "metric_style": "wide", "bfd": True,
                           "authentication": "md5", "keychain": self.keychain,
                           "status": self._status("routinginstance")},
             )
             self.isis[name] = inst
             ISISInterface.objects.update_or_create(
-                instance=inst, interface=self.lo[name], defaults={"passive": True},
+                instance=inst, interface=self.lo[name],
+                defaults={"families": ["ipv4"], "passive": True},
             )
         for si, spine in enumerate(SPINES):
             for li, leaf in enumerate(LEAVES):
@@ -283,7 +285,8 @@ class Command(BaseCommand):
                 for name, iface in ((spine, s_if), (leaf, l_if)):
                     ISISInterface.objects.update_or_create(
                         instance=self.isis[name], interface=iface,
-                        defaults={"network_type": "point-to-point", "bfd": True},
+                        defaults={"families": ["ipv4"], "network_type": "point-to-point",
+                                  "bfd": True},
                     )
 
     def _overlay_objects(self):

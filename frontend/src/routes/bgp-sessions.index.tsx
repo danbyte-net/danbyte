@@ -19,7 +19,9 @@ const spec: RoutingListSpec<BGPSession> = {
   searchPlaceholder: "Filter sessions…",
   searchText: (r) =>
     `${sessionNeighbor(r)} ${r.name} ${r.instance.device.name} ${r.peer_device?.name ?? ""} ${r.peer_group?.name ?? ""} ${r.effective.remote_asn ?? ""} ${r.description}`,
-  flexColumn: "description",
+  // No elastic column: with this many columns it would swallow the
+  // description; the table scrolls sideways instead.
+  flexColumn: "",
   label: (r) => `${sessionNeighbor(r)} on ${r.instance.device.name}`,
   columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
     buildBGPSessionColumns({

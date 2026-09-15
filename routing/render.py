@@ -383,6 +383,7 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
         "vrf": _vrf_name(inst.vrf),
         "process": inst.process or None,
         "net": inst.net,
+        "router_id": inst.router_id or None,
         "level": inst.level,
         "metric_style": inst.metric_style,
         "bfd": inst.bfd,

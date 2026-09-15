@@ -188,9 +188,13 @@ refused.
 ## IS-IS
 
 An **IS-IS instance** has a process name, the **NET** (checked to read like
-one - `49.0001.0000.0000.0011.00`), the level (1, 2, 1-2), metric style,
-BFD, area authentication with a keychain, and redistribution. One per
-device and process.
+one - `49.0001.0000.0000.0011.00`), an optional router ID, the level (1, 2,
+1-2), metric style, BFD, area authentication with a keychain, and
+redistribution. One per device and process. All of it sits on the
+instance card of the device's Routing tab (`net …`, `router-id …`, `level
+…`) and in its edit dialog; knobs Danbyte does not name - overload bit,
+SPF timers, multi-topology - go in the instance's `extra` and reach the
+template as `inst.extra.<key>`.
 
 Interfaces enrol with their **families** (`ipv4`, `ipv6` - FRR needs `ip
 router isis` per family), a level override, metric (and an L2 metric when
@@ -259,7 +263,7 @@ routing:
                    areas: [{area_id, name, kind}],
                    interfaces: [{interface, area, cost, network_type, passive, priority, hello, dead,
                                  bfd, mtu_ignore, authentication, keychain}]}]
-  isis:          [{vrf, process, net, level, metric_style, bfd, authentication, keychain,
+  isis:          [{vrf, process, net, router_id, level, metric_style, bfd, authentication, keychain,
                    redistribute: [...],
                    interfaces: [{interface, families, level, metric, metric_l2, network_type, passive,
                                  hello_interval, hello_multiplier, bfd, authentication, keychain}]}]
@@ -423,7 +427,7 @@ it.
 | `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `vrf`, `asn`, `site`, `status`. |
 | `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`); an address family accepts `redistributions: [...]`. |
 | `/api/routing/bgp-peer-groups/` | Peer groups. |
-| `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `instance`, `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
+| `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
 | `/api/routing/ospf-areas/` | Areas. |
 | `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `vrf`, `site`, `status`. |
 | `/api/routing/ospf-interfaces/`, `…/isis-interfaces/` | Enrolled interfaces (`?instance=`, `?interface=`, `?area=`). |
@@ -432,7 +436,18 @@ it.
 | `/api/l2vpns/` | Gains `vrf`/`vrf_id` and `vtep_count`; `?vxlan=1` keeps the VXLAN types, `?vrf=` the L3VNIs of a VRF, `?vlan=` those terminating on a VLAN. |
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
-supports CSV import/export and bulk delete like the rest of Danbyte.
+supports CSV import/export and bulk delete like the rest of Danbyte. A CSV
+row without an `id` is matched on what makes it unique - a static route by
+device, prefix and next hop, a BGP instance by device and VRF, a session by
+instance and remote address, an OSPF or IS-IS instance by device and
+process, a VTEP by its device; catalogs by name. An ASN is written as its
+number.
+
+The routing that touches an object shows on that object's page: a device's
+**Routing** tab, an interface's **Routing** card, an ASN's **BGP sessions**
+tab, a VRF's **BGP sessions** and **Static routes** tabs, a prefix's
+**Static routes** tab (routes with that prefix as their destination), an
+L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
 
 ## Permissions and audit
 

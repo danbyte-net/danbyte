@@ -207,6 +207,8 @@ export interface Prefix {
   child_count: number
   /** DNS records whose address is in the prefix - detail responses only. */
   dns_record_count?: number
+  /** Static routes with this prefix as their destination; detail only. */
+  static_route_count?: number
   has_descendants: boolean
   site: { id: string; name: string } | null
   location: { id: string; name: string } | null
@@ -3438,6 +3440,9 @@ export interface VRF {
   tags: Tag[]
   prefix_count: number
   ip_count: number
+  /** Detail only; 0 on list responses. */
+  static_route_count: number
+  bgp_session_count: number
   custom_fields: Record<string, unknown>
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
@@ -4466,6 +4471,7 @@ export interface ISISInterface {
 export interface ISISInstance extends IGPInstanceBase {
   process: string
   net: string
+  router_id: string
   level: "1" | "2" | "1-2"
   metric_style: "wide" | "narrow" | "transition"
   authentication: "none" | "text" | "md5"

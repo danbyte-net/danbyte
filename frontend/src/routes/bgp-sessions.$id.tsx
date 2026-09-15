@@ -280,8 +280,14 @@ function Body({ s }: { s: BGPSession }) {
           }
           subtitle={
             <span className="font-mono">
-              {s.instance.device.name} · AS{eff.local_asn} → AS
-              {remoteAsnText(eff) || "?"}
+              {s.instance.device.name} · AS{eff.local_asn} →{" "}
+              {eff.remote_asn_mode === "internal"
+                ? `AS${eff.local_asn}`
+                : eff.remote_asn_mode === "external"
+                  ? "an external AS"
+                  : eff.remote_asn != null
+                    ? `AS${eff.remote_asn}`
+                    : "?"}
               {s.peer_group ? ` · ${s.peer_group.name}` : ""}
             </span>
           }

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.models import ASN, L2VPN, VLAN, VRF, Device, Interface, IPAddress, Prefix
@@ -812,6 +814,7 @@ class BGPSessionSerializer(
     peer_session = serializers.SerializerMethodField()
     effective = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_peer_session(self, obj):
         p = obj.peer_session if obj.peer_session_id else None
         if p is None:
@@ -1084,7 +1087,7 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
     class Meta:
         model = ISISInstance
         fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id",
-                  "process", "net", "level", "metric_style", "bfd",
+                  "process", "net", "router_id", "level", "metric_style", "bfd",
                   "authentication", "keychain", "keychain_id",
                   "redistributions", "interfaces", "interface_count",
                   "status", "status_id", "description", "extra",
@@ -1120,6 +1123,7 @@ class VTEPMembershipSerializer(_ChildRowSerializer):
     #: The VLAN the render resolves for this leaf (own, else the site's).
     resolved_vlan = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_resolved_vlan(self, obj):
         v = resolve_membership_vlan(obj)
         return VLANMiniSerializer(v).data if v is not None else None

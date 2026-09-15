@@ -15,6 +15,7 @@ import type {
   PowerFeed,
   Rack,
   BGPSession,
+  StaticRoute,
   Tunnel,
   VTEP,
   WirelessLAN,
@@ -35,10 +36,12 @@ import type { PowerFeedColumnId } from "@/components/columns/power-feed-columns"
 import { buildRackColumns } from "@/components/columns/rack-columns"
 import {
   buildBGPSessionColumns,
+  buildStaticRouteColumns,
   buildVTEPColumns,
 } from "@/components/columns/routing-columns"
 import type {
   BGPSessionColumnId,
+  StaticRouteColumnId,
   VTEPColumnId,
 } from "@/components/columns/routing-columns"
 import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
@@ -564,6 +567,50 @@ export function EmbeddedVTEPTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-vteps"
+    />
+  )
+}
+
+/** Static routes by VRF (`?vrf=`), destination prefix (`?prefix_obj=`) or
+ * device. */
+export function EmbeddedStaticRouteTable({
+  filter,
+  omit = [],
+  emptyText = "No static routes.",
+}: {
+  filter: Record<string, string>
+  omit?: StaticRouteColumnId[]
+  emptyText?: string
+}) {
+  const q = useEmbed<StaticRoute>(
+    "embedded-static-routes",
+    "/api/routing/static-routes/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<StaticRoute>[]>(
+    () =>
+      buildStaticRouteColumns({
+        include: [
+          "prefix",
+          "device",
+          "vrf",
+          "next_hop",
+          "kind",
+          "distance",
+          "status",
+          "description",
+        ],
+        omit,
+      }),
+    [omit]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-static-routes"
     />
   )
 }

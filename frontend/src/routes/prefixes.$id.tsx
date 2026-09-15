@@ -25,6 +25,7 @@ import {
 } from "@/lib/prefix-tree"
 import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
+import { EmbeddedStaticRouteTable } from "@/components/embedded-tables"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
@@ -116,6 +117,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
     | "map"
     | "monitoring"
     | "dns"
+    | "static-routes"
     | "journal"
     | "history"
   >("overview")
@@ -341,6 +343,11 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         ...(dnsEnabled
           ? [{ value: "dns", label: "DNS", count: p.dns_record_count }]
           : []),
+        {
+          value: "static-routes",
+          label: "Static routes",
+          count: p.static_route_count,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -415,6 +422,14 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           params={`prefix=${p.id}`}
           queryKey={["dns-records", "prefix", p.id]}
           empty="No DNS records point into this prefix."
+        />
+      </DetailTab>
+
+      <DetailTab value="static-routes">
+        <EmbeddedStaticRouteTable
+          filter={{ prefix_obj: p.id }}
+          omit={["prefix"]}
+          emptyText="No static route has this prefix as its destination."
         />
       </DetailTab>
 

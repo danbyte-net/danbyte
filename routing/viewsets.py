@@ -511,6 +511,11 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
             v = p.get(key)
             if v:
                 qs = qs.filter(**{field: v})
+        vrf = p.get("vrf")
+        if vrf == "global":
+            qs = qs.filter(instance__vrf__isnull=True)
+        elif vrf:
+            qs = qs.filter(instance__vrf_id=vrf)
         af = p.get("af")
         if af:
             qs = qs.filter(Q(address_families__contains=[af]) | Q(peer_group__address_families__contains=[af]))

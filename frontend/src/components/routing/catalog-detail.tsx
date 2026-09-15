@@ -60,6 +60,13 @@ export interface RoutingDetailSpec<T extends CatalogRow, TRule = never> {
     tableId: string
     emptyText: string
   }
+  /** Tabs for what uses the object - a peer group's sessions, say. */
+  related?: {
+    value: string
+    label: string
+    count?: (row: T) => number
+    render: (row: T) => ReactNode
+  }[]
 }
 
 export function RoutingCatalogDetail<T extends CatalogRow, TRule = never>({
@@ -92,9 +99,7 @@ function Body<T extends CatalogRow, TRule>({
   row: T
   spec: RoutingDetailSpec<T, TRule>
 }) {
-  const [tab, setTab] = useUrlTab<"overview" | "rules" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<string>("overview")
   const nav = useNavigate()
   const { canDo, humanIds } = useMe()
   const [deleting, setDeleting] = useState<T | null>(null)
@@ -173,6 +178,11 @@ function Body<T extends CatalogRow, TRule>({
               },
             ]
           : []),
+        ...(spec.related ?? []).map((t) => ({
+          value: t.value,
+          label: t.label,
+          count: t.count ? t.count(row) || undefined : undefined,
+        })),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -206,6 +216,11 @@ function Body<T extends CatalogRow, TRule>({
           )}
         </DetailTab>
       )}
+      {(spec.related ?? []).map((t) => (
+        <DetailTab key={t.value} value={t.value}>
+          {t.render(row)}
+        </DetailTab>
+      ))}
       <DetailTab value="journal">
         <JournalPanel objectType={spec.appLabel} objectId={row.id} />
       </DetailTab>

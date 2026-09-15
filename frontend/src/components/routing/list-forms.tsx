@@ -69,16 +69,18 @@ function CatalogFields({
   s,
   errors,
   isEdit,
+  title = "List",
   children,
 }: {
   cfModel: string
   s: ReturnType<typeof useCatalogState>
   errors: Record<string, string | undefined>
   isEdit: boolean
+  title?: string
   children?: React.ReactNode
 }) {
   return (
-    <FormSection title="List" card>
+    <FormSection title={title} card>
       <div className="grid gap-3 @md:grid-cols-2">
         <FormText
           label="Name"
@@ -690,6 +692,7 @@ export function RoutingPolicyForm({
     >
       <CatalogFields
         cfModel="routingpolicy"
+        title="Policy"
         s={s}
         errors={fieldErrors}
         isEdit={isEdit}

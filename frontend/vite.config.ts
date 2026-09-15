@@ -30,9 +30,9 @@ const config = defineConfig({
       "/api": { target: django, changeOrigin: true },
       "/auth": { target: django, changeOrigin: true },
       "/admin": { target: django, changeOrigin: true },
-      "/static": { target: django, changeOrigin: true },
-      "/media": { target: django, changeOrigin: true },
-      "/django-rq": { target: django, changeOrigin: true },
+      "/static/": { target: django, changeOrigin: true },
+      "/media/": { target: django, changeOrigin: true },
+      "/django-rq/": { target: django, changeOrigin: true },
       // Channels presence WebSocket. `ws: true` forwards the upgrade to Django.
       "/ws": { target: djangoWs, ws: true, changeOrigin: true },
     },

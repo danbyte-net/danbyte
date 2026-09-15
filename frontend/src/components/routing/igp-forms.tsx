@@ -677,6 +677,7 @@ export function ISISInstanceForm({
   const [vrfId, setVrfId] = useState<string | null>(item?.vrf?.id ?? null)
   const [process, setProcess] = useState(item?.process ?? "")
   const [net, setNet] = useState(item?.net ?? "")
+  const [isisRouterId, setIsisRouterId] = useState(item?.router_id ?? "")
   const [level, setLevel] = useState<string | null>(item?.level ?? "1-2")
   const [metricStyle, setMetricStyle] = useState<string | null>(
     item?.metric_style ?? "wide"
@@ -732,6 +733,7 @@ export function ISISInstanceForm({
           vrf_id: vrfId,
           process: process.trim(),
           net: net.trim(),
+          router_id: isisRouterId.trim(),
           level,
           metric_style: metricStyle,
           authentication: auth,
@@ -786,6 +788,17 @@ export function ISISInstanceForm({
               { value: "transition", label: "Transition" },
             ]}
           />
+          <FormText
+            label="Router ID"
+            mono
+            value={isisRouterId}
+            onChange={setIsisRouterId}
+            placeholder="10.255.0.11"
+            info="Blank leaves it to the template - the loopback, as a rule."
+            error={fieldErrors.router_id}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
           <FormCombobox
             label="VRF"
             value={vrfId}
@@ -799,8 +812,6 @@ export function ISISInstanceForm({
             placeholder="Global"
             error={fieldErrors.vrf_id}
           />
-        </div>
-        <div className="grid gap-3 @md:grid-cols-3">
           <FormSelect
             label="Authentication"
             value={auth}

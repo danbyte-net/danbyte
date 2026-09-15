@@ -29,6 +29,11 @@ import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 // the embedded panes (a device's Routing tab, a prefix's Static routes tab)
 // and the pickers' tables draw the same row.
 
+/** "ipv4" the way it is written: IPv4. */
+export function familyLabel(v: string): string {
+  return v === "ipv4" ? "IPv4" : v === "ipv6" ? "IPv6" : v
+}
+
 interface CommonOpts<T, TId extends string> {
   omit?: TId[]
   include?: TId[]
@@ -160,14 +165,14 @@ export function buildPrefixListColumns<T extends PrefixList = PrefixList>(
         accessorKey: "family",
         header: "Family",
         cell: ({ row }) => (
-          <span className="text-xs uppercase">{row.original.family}</span>
+          <span className="text-xs">{familyLabel(row.original.family)}</span>
         ),
         meta: {
           facet: {
             kind: "enum",
             label: "Family",
             get: (r: T) => r.family,
-            formatValue: (v) => ({ label: String(v).toUpperCase() }),
+            formatValue: (v) => ({ label: familyLabel(String(v)) }),
           },
         },
       }),

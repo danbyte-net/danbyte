@@ -15,6 +15,7 @@ import type {
 import { useMe } from "@/lib/use-me"
 import { RevealPskButton } from "@/components/reveal-psk-button"
 import {
+  familyLabel,
   buildASPathListColumns,
   buildBGPPeerGroupColumns,
   buildCommunityColumns,
@@ -26,6 +27,8 @@ import {
 } from "@/components/columns/routing-columns"
 
 import type { RoutingDetailSpec } from "./catalog-detail"
+import { EmbeddedBGPSessionTable } from "@/components/embedded-tables"
+
 import { knobRows, remoteAsnText } from "./bgp-bits"
 import type { RoutingListSpec } from "./catalog-page"
 import {
@@ -79,9 +82,9 @@ export const prefixListDetail: RoutingDetailSpec<PrefixList, PrefixListRule> = {
   backLabel: "Prefix lists",
   editTo: "/prefix-lists/$id/edit",
   title: (r) => r.name,
-  subtitle: (r) => `${r.family.toUpperCase()} · ${r.rules.length} rules`,
+  subtitle: (r) => `${familyLabel(r.family)} · ${r.rules.length} rules`,
   overview: (r) => [
-    { label: "Family", value: r.family.toUpperCase() },
+    { label: "Family", value: familyLabel(r.family) },
     { label: "Rules", value: <span className="num">{r.rules.length}</span> },
   ],
   rules: {
@@ -382,6 +385,20 @@ export const peerGroupDetail: RoutingDetailSpec<BGPPeerGroup> = {
   title: (r) => r.name,
   subtitle: (r) =>
     `remote AS ${remoteAsnText(r) || "-"} · ${r.session_count} sessions`,
+  related: [
+    {
+      value: "sessions",
+      label: "Sessions",
+      count: (r) => r.session_count,
+      render: (r) => (
+        <EmbeddedBGPSessionTable
+          filter={{ peer_group: r.id }}
+          omit={["peer_group"]}
+          emptyText="No session joins this group yet."
+        />
+      ),
+    },
+  ],
   overview: (r) => [
     {
       label: "Remote AS",
