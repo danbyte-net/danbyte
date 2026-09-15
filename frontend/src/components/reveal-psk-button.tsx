@@ -15,16 +15,23 @@ import {
 } from "@/components/ui/alert-dialog"
 import { CopyButton } from "@/components/kv-card"
 
-/** Fetch an SSID's pre-shared key on demand (#68).
+/** Fetch a pre-shared key on demand - an SSID's (#68) or an IPsec
+ * profile's (#168); `endpoint` is the object's collection.
  *
  * The key is never part of the page payload: it lives in the deployment's
  * secret store and each reveal is its own audited request, so the change log
  * records who looked and when. */
-export function RevealPskButton({ id }: { id: string }) {
+export function RevealPskButton({
+  id,
+  endpoint = "/api/wireless-lans",
+}: {
+  id: string
+  endpoint?: string
+}) {
   const [value, setValue] = useState<string | null>(null)
   const reveal = useMutation({
     mutationFn: () =>
-      api<{ psk: string }>(`/api/wireless-lans/${id}/reveal-psk/`, {
+      api<{ psk: string }>(`${endpoint}/${id}/reveal-psk/`, {
         method: "POST",
       }),
     onSuccess: (r) => setValue(r.psk),

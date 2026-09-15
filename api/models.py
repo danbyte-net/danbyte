@@ -5995,48 +5995,18 @@ class WirelessLANGroup(NumIdMixin, TimestampedModel):
         return self.name
 
 
-class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A wireless network (SSID), optionally grouped and bridged to a VLAN."""
+class SecretBackedPSK(models.Model):
+    """A pre-shared key that lives in the deployment's secret store, never in
+    the row (#68, #168). The model holds only a reference; ``store_psk`` /
+    ``resolve_psk`` / ``clear_psk`` move the value in and out, and the reveal
+    is an audited action on the viewset. A key is a credential, and
+    credentials do not sit in a documentation database in plaintext - the
+    same arrangement DeviceCredential uses. Subclasses set ``psk_secret_prefix``
+    (the folder the key is filed under in the store).
+    """
 
-    AUTH_TYPE_CHOICES = [
-        ("open", "Open"),
-        ("wep", "WEP"),
-        ("wpa-personal", "WPA Personal (PSK)"),
-        ("wpa-enterprise", "WPA Enterprise"),
-    ]
-    AUTH_CIPHER_CHOICES = [
-        ("auto", "Auto"),
-        ("tkip", "TKIP"),
-        ("aes", "AES"),
-    ]
+    psk_secret_prefix = ""
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="wireless_lans"
-    )
-    ssid = models.CharField(max_length=64)
-    group = models.ForeignKey(
-        WirelessLANGroup, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="wireless_lans",
-    )
-    status = models.ForeignKey(
-        "Status", on_delete=models.PROTECT, null=True, blank=True,
-        related_name="wireless_lans",
-    )
-    vlan = models.ForeignKey(
-        VLAN, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="wireless_lans",
-    )
-    auth_type = models.CharField(
-        max_length=16, choices=AUTH_TYPE_CHOICES, blank=True, default=""
-    )
-    auth_cipher = models.CharField(
-        max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
-    )
-    # The PSK itself is deliberately NOT a field here (#68). Danbyte holds only
-    # a reference; the key lives in the deployment's secret store, the same
-    # arrangement DeviceCredential uses. A wireless key is a credential, and
-    # credentials do not sit in a documentation database in plaintext.
     psk_secret_provider = models.CharField(
         max_length=8, blank=True, default="",
         help_text="Which secret store holds the PSK, stamped at write-time.",
@@ -6045,30 +6015,25 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
         max_length=255, blank=True, default="",
         help_text="Reference to the PSK inside that store. Empty: no PSK set.",
     )
-    description = models.CharField(max_length=255, blank=True, default="")
-    comments = models.TextField(blank=True, default="")
 
     class Meta:
-        ordering = ["ssid"]
-
-    def __str__(self) -> str:
-        return self.ssid
+        abstract = True
 
     @property
     def psk_set(self) -> bool:
         return bool(self.psk_secret_path)
 
     def store_psk(self, value: str) -> None:
-        """Write the PSK into the active store under ``wireless-lans/<id>``,
+        """Write the PSK into the active store under ``<prefix>/<id>``,
         stamping which provider took it. Fail-closed: raises
         :class:`SecretStoreDisabled` when no store is configured, because the
-        alternative is a wireless key sitting in the database in the clear."""
+        alternative is a key sitting in the database in the clear."""
         from core.models import DeploymentSettings
         from monitoring.secret_store import require_secret_store
 
         store = require_secret_store()
         if not self.psk_secret_path:
-            self.psk_secret_path = f"wireless-lans/{self.id}"
+            self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
         self.psk_secret_provider = (
             DeploymentSettings.load().secrets_provider or ""
         ).strip()
@@ -6080,7 +6045,7 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
         from monitoring.secret_store import SecretStoreError, require_secret_store
 
         if not self.psk_secret_path:
-            raise SecretStoreError("No PSK is set for this SSID.")
+            raise SecretStoreError("No PSK is set.")
         store = require_secret_store()
         value = store.get(self.tenant_id, self.psk_secret_path)
         if value is None:
@@ -6111,6 +6076,56 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
             pass
 
 
+class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A wireless network (SSID), optionally grouped and bridged to a VLAN."""
+
+    AUTH_TYPE_CHOICES = [
+        ("open", "Open"),
+        ("wep", "WEP"),
+        ("wpa-personal", "WPA Personal (PSK)"),
+        ("wpa-enterprise", "WPA Enterprise"),
+    ]
+    AUTH_CIPHER_CHOICES = [
+        ("auto", "Auto"),
+        ("tkip", "TKIP"),
+        ("aes", "AES"),
+    ]
+
+    psk_secret_prefix = "wireless-lans"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="wireless_lans"
+    )
+    ssid = models.CharField(max_length=64)
+    group = models.ForeignKey(
+        WirelessLANGroup, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="wireless_lans",
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="wireless_lans",
+    )
+    vlan = models.ForeignKey(
+        VLAN, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="wireless_lans",
+    )
+    auth_type = models.CharField(
+        max_length=16, choices=AUTH_TYPE_CHOICES, blank=True, default=""
+    )
+    auth_cipher = models.CharField(
+        max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
+    )
+    description = models.CharField(max_length=255, blank=True, default="")
+    comments = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["ssid"]
+
+    def __str__(self) -> str:
+        return self.ssid
+
+
 # ─── VPN ─────────────────────────────────────────────────────────────────────
 class TunnelGroup(NumIdMixin, TimestampedModel):
     """An organisational grouping of VPN tunnels. Zero pre-filled data."""
@@ -6135,9 +6150,12 @@ class TunnelGroup(NumIdMixin, TimestampedModel):
         return self.name
 
 
-class IPSecProfile(NumIdMixin, TimestampedModel):
+class IPSecProfile(SecretBackedPSK, NumIdMixin, TimestampedModel):
     """A reusable IKE/IPSec crypto profile that tunnels reference - flattens the
-    common IKE + IPSec policy parameters into one named record."""
+    common IKE + IPSec policy parameters into one named record. Its pre-shared
+    key (#168) lives in the secret store, like an SSID's."""
+
+    psk_secret_prefix = "ipsec-profiles"
 
     IKE_VERSION_CHOICES = [(1, "IKEv1"), (2, "IKEv2")]
     ENCRYPTION_CHOICES = [

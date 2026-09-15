@@ -6268,32 +6268,12 @@ class WirelessLANGroupSerializer(NumIdModelSerializer):
         read_only_fields = ["id", "wlan_count", "created_at", "updated_at"]
 
 
-class WirelessLANSerializer(StatusSerializerMixin, 
-    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
-):
-    cf_model = "wirelesslan"
-    group = WirelessLANGroupMiniSerializer(read_only=True)
-    vlan = VLANMiniSerializer(read_only=True)
-    auth_type_display = serializers.CharField(
-        source="get_auth_type_display", read_only=True
-    )
-    tags = TagSerializer(many=True, read_only=True)
+class SecretPSKSerializerMixin(serializers.Serializer):
+    """The API side of :class:`api.models.SecretBackedPSK` (#68, #168). ``psk``
+    is write-only and never echoed back: blank on edit keeps the stored key,
+    null clears it. The read side says only whether one exists - the value
+    itself comes from the store via the viewset's ``reveal-psk`` action."""
 
-    group_id = TenantScopedPrimaryKeyRelatedField(
-        source="group", queryset=WirelessLANGroup.objects.all(),
-        write_only=True, required=False, allow_null=True,
-    )
-    vlan_id = TenantScopedPrimaryKeyRelatedField(
-        source="vlan", queryset=VLAN.objects.all(),
-        write_only=True, required=False, allow_null=True,
-    )
-    tag_ids = TenantScopedPrimaryKeyRelatedField(
-        source="tags", queryset=Tag.objects.all(),
-        write_only=True, required=False, many=True,
-    )
-    # Write-only, and never echoed back (#68). Blank on edit keeps the stored
-    # key; null clears it. The read side says only whether one exists - the
-    # value itself comes from the store via the `reveal-psk` action.
     psk = serializers.CharField(
         write_only=True, required=False, allow_blank=True, allow_null=True,
         style={"input_type": "password"},
@@ -6316,6 +6296,30 @@ class WirelessLANSerializer(StatusSerializerMixin,
             )
         return value
 
+
+class WirelessLANSerializer(SecretPSKSerializerMixin, StatusSerializerMixin, 
+    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+):
+    cf_model = "wirelesslan"
+    group = WirelessLANGroupMiniSerializer(read_only=True)
+    vlan = VLANMiniSerializer(read_only=True)
+    auth_type_display = serializers.CharField(
+        source="get_auth_type_display", read_only=True
+    )
+    tags = TagSerializer(many=True, read_only=True)
+
+    group_id = TenantScopedPrimaryKeyRelatedField(
+        source="group", queryset=WirelessLANGroup.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vlan_id = TenantScopedPrimaryKeyRelatedField(
+        source="vlan", queryset=VLAN.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
     class Meta:
         model = WirelessLAN
         fields = ["id", "ssid", "group", "group_id", "status", "status_id", 
@@ -6354,7 +6358,7 @@ class IPSecProfileMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name"]
 
 
-class IPSecProfileSerializer(NumIdModelSerializer):
+class IPSecProfileSerializer(SecretPSKSerializerMixin, NumIdModelSerializer):
     ike_version_display = serializers.CharField(
         source="get_ike_version_display", read_only=True
     )
@@ -6375,10 +6379,10 @@ class IPSecProfileSerializer(NumIdModelSerializer):
         fields = ["id", "name", "ike_version", "ike_version_display",
                   "encryption", "encryption_display", "authentication",
                   "authentication_display", "dh_group", "pfs_group",
-                  "sa_lifetime", "description", "tunnel_count",
-                  "created_at", "updated_at"]
+                  "sa_lifetime", "psk", "psk_set", "description",
+                  "tunnel_count", "created_at", "updated_at"]
         read_only_fields = ["id", "ike_version_display", "encryption_display",
-                            "authentication_display", "tunnel_count",
+                            "authentication_display", "psk_set", "tunnel_count",
                             "created_at", "updated_at"]
 
 

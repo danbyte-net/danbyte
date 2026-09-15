@@ -75,6 +75,9 @@ export function IPSecProfileForm({
     item?.sa_lifetime != null ? String(item.sa_lifetime) : ""
   )
   const [description, setDescription] = useState(item?.description ?? "")
+  // Write-only (#168): never pre-filled from the record, blank leaves the
+  // stored key alone.
+  const [psk, setPsk] = useState("")
 
   useEffect(() => {
     if (!item) return
@@ -100,6 +103,7 @@ export function IPSecProfileForm({
         pfs_group: pfsGroup ? Number(pfsGroup) : null,
         sa_lifetime: saLifetime ? Number(saLifetime) : null,
         description: description.trim(),
+        ...(psk ? { psk } : {}),
       }
       return saveObject<IPSecProfile>({
         objectType: "api.ipsecprofile",
@@ -194,6 +198,17 @@ export function IPSecProfileForm({
             error={fieldErrors.sa_lifetime}
           />
         </div>
+        <FormText
+          label="Pre-shared key"
+          type="password"
+          autoComplete="new-password"
+          value={psk}
+          onChange={setPsk}
+          placeholder={item?.psk_set ? "Stored - type to replace" : "Not set"}
+          hint={item?.psk_set ? "blank keeps the stored key" : "optional"}
+          info="The key is written to the deployment's secret store, never to this record. An administrator must enable a store under Settings → Security first."
+          error={fieldErrors.psk}
+        />
       </FormSection>
 
       <FormFooter

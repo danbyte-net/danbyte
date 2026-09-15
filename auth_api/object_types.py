@@ -35,8 +35,10 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     # Execute a script, and mark one trusted (trusted scripts reach the
     # database directly, so that verb is its own grant).
     "script": ["run", "trust"],
-    # An SSID's PSK is a credential, so revealing it is its own grant (#68).
+    # An SSID's PSK is a credential, so revealing it is its own grant (#68);
+    # an IPsec profile's pre-shared key the same (#168).
     "wirelesslan": ["reveal"],
+    "ipsecprofile": ["reveal"],
     "device": ["connect"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],

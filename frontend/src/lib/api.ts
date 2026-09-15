@@ -7089,6 +7089,9 @@ export interface IPSecProfile {
   dh_group: number
   pfs_group: number | null
   sa_lifetime: number | null
+  /** Whether a pre-shared key is stored (#168). The key itself never rides
+   * along: fetch it from `POST /api/ipsec-profiles/{id}/reveal-psk/`. */
+  psk_set: boolean
   description: string
   tunnel_count: number
   created_at: string
@@ -7103,6 +7106,9 @@ export interface IPSecProfileWritePayload {
   dh_group?: number
   pfs_group?: number | null
   sa_lifetime?: number | null
+  /** Write-only: a value stores the key, `null` clears it, omitting or
+   * blank keeps what is stored. */
+  psk?: string | null
   description?: string
 }
 

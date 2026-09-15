@@ -38,8 +38,27 @@ every tunnel that shares that policy - no retyping the same parameters.
 | **DH group** | the Diffie-Hellman group for key exchange. |
 | **PFS group** | the Perfect Forward Secrecy group (optional). |
 | **SA lifetime** | how long a security association stays valid. |
+| **Pre-shared key** | the IKE pre-shared key - stored in the secret store, never in this record (see below). |
 
 4. Save.
+
+### The pre-shared key
+
+A pre-shared key is a credential, so Danbyte treats it exactly as it treats
+an SSID's passphrase (see [Wireless](wireless.md#the-pre-shared-key)): the
+profile holds only a **reference**, and the key itself is written to the
+deployment's [secret store](../architecture/tenant-settings.md).
+
+- Type the key into **Pre-shared key** on the profile form. On an existing
+  profile the box is always empty: leaving it blank keeps the stored key, and
+  typing a new one rotates it.
+- The profile page shows `••••••••` when a key is set, with an **eye** button
+  to reveal it. Revealing is a separate request, needs the **reveal**
+  permission on IPSec profiles, and is written to the change log.
+- Deleting the profile, or clearing the field, removes the key from the store.
+- Without a secret store, saving a key is **refused** with a message pointing
+  at **Settings → Security → Secret store**; the rest of the profile still
+  saves. Danbyte never keeps a key in the database in the clear.
 
 !!! note "Nothing is pre-filled"
     Danbyte ships no sample groups, profiles, or tunnels - you create exactly the
@@ -126,7 +145,8 @@ detail page - the pencil in the header edits it.
 - A **tunnel group** page shows its name, slug and description, with a
   **Tunnels** tab listing every tunnel in the group.
 - An **IPSec profile** page puts the crypto parameters - IKE version,
-  encryption, authentication, DH and PFS groups, SA lifetime - on its Overview,
+  encryption, authentication, DH and PFS groups, SA lifetime, and whether a
+  pre-shared key is stored - on its Overview,
   with a **Tunnels** tab listing every tunnel that inherits them. Read that tab
   before changing a profile: the edit lands on all of them at once.
 

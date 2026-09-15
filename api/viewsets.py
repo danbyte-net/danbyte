@@ -6546,13 +6546,13 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class WirelessLANViewSet(TenantScopedViewSet):
-    """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
-    store - this viewset moves it in and out, never through a read."""
+class SecretPSKViewSetMixin:
+    """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
+    store around create/update/destroy, and reveals it through an audited
+    action gated by the ``reveal`` verb (#68, #168). ``psk_object_label`` is
+    what the change log calls the object."""
 
-    queryset = WirelessLAN.objects.all().order_by("ssid")
-    serializer_class = WirelessLANSerializer
-    pagination_class = StandardPagination
+    psk_object_label = ""
     rbac_action_map = {"reveal_psk": "reveal"}
 
     def _pop_psk(self, serializer):
@@ -6560,7 +6560,7 @@ class WirelessLANViewSet(TenantScopedViewSet):
         the model has no column for it, only a reference."""
         return serializer.validated_data.pop("psk", "")
 
-    def _apply_psk(self, lan, value) -> None:
+    def _apply_psk(self, obj, value) -> None:
         """None clears; a value stores; blank leaves the stored key alone."""
         from monitoring.secret_store import SecretStoreError
 
@@ -6568,12 +6568,12 @@ class WirelessLANViewSet(TenantScopedViewSet):
             return
         try:
             if value is None:
-                lan.clear_psk()
+                obj.clear_psk()
             else:
-                lan.store_psk(value)
+                obj.store_psk(value)
         except SecretStoreError as exc:
             raise ValidationError({"psk": str(exc)}) from exc
-        lan.save(update_fields=["psk_secret_path", "psk_secret_provider"])
+        obj.save(update_fields=["psk_secret_path", "psk_secret_provider"])
 
     def perform_create(self, serializer):
         from django.db import transaction
@@ -6592,8 +6592,8 @@ class WirelessLANViewSet(TenantScopedViewSet):
             self._apply_psk(serializer.instance, value)
 
     def perform_destroy(self, instance):
-        # Take the key with the record: an SSID nobody documents any more has
-        # no business leaving its passphrase in the store.
+        # Take the key with the record: a profile nobody documents any more
+        # has no business leaving its key in the store.
         instance.clear_psk()
         super().perform_destroy(instance)
 
@@ -6603,15 +6603,15 @@ class WirelessLANViewSet(TenantScopedViewSet):
         is audited, and fails closed when no secret store is enabled."""
         from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
 
-        lan = self.get_object()
+        obj = self.get_object()
         try:
-            psk = lan.resolve_psk()
+            psk = obj.resolve_psk()
         except (SecretStoreDisabled, SecretStoreError) as exc:
             raise ValidationError({"detail": str(exc)}) from exc
-        self._audit_reveal(lan)
+        self._audit_reveal(obj)
         return Response({"psk": psk})
 
-    def _audit_reveal(self, lan):
+    def _audit_reveal(self, obj):
         """Revealing writes no model change, so nothing else would log it -
         same trail the device-credential reveal leaves."""
         from audit.context import current_request_id, current_via
@@ -6621,19 +6621,30 @@ class WirelessLANViewSet(TenantScopedViewSet):
         u = getattr(self.request, "user", None)
         authed = bool(u and u.is_authenticated)
         ChangeLogEntry.objects.create(
-            tenant_id=getattr(lan, "tenant_id", None),
+            tenant_id=getattr(obj, "tenant_id", None),
             user=u if authed else None,
             user_name=(u.get_username() if authed else ""),
             action=ChangeAction.REVEAL,
-            object_type=lan._meta.label_lower,
-            object_label="Wireless LAN",
-            object_id=str(lan.pk),
-            object_repr=str(lan),
-            object_site_id=entry_site_id(lan),
+            object_type=obj._meta.label_lower,
+            object_label=self.psk_object_label or obj._meta.verbose_name.title(),
+            object_id=str(obj.pk),
+            object_repr=str(obj),
+            object_site_id=entry_site_id(obj),
             changes={"revealed": "psk"},
             request_id=current_request_id(),
             via=current_via() or "system",
         )
+
+
+class WirelessLANViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+    """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
+    store - the mixin moves it in and out, never through a read."""
+
+    psk_object_label = "Wireless LAN"
+
+    queryset = WirelessLAN.objects.all().order_by("ssid")
+    serializer_class = WirelessLANSerializer
+    pagination_class = StandardPagination
 
     def get_queryset(self):
         qs = (
@@ -6691,7 +6702,11 @@ class TunnelGroupViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class IPSecProfileViewSet(TenantScopedViewSet):
+class IPSecProfileViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+    """Crypto profiles. The pre-shared key (#168) is write-only and lives in
+    the secret store; the mixin moves it and reveals it under audit."""
+
+    psk_object_label = "IPsec profile"
     queryset = IPSecProfile.objects.all().order_by(NATURAL_NAME)
     serializer_class = IPSecProfileSerializer
     pagination_class = StandardPagination
