@@ -12,7 +12,14 @@ from api.models import VRF, Device, DeviceType, Interface, Manufacturer, Site
 from api.status_registry import seed_builtin_statuses
 from core.models import Organization, Tenant
 
-from .models import ISISInstance, OSPFArea, OSPFInstance, RoutingKeychain, RoutingPolicy
+from .models import (
+    EIGRPInstance,
+    ISISInstance,
+    OSPFArea,
+    OSPFInstance,
+    RoutingKeychain,
+    RoutingPolicy,
+)
 from .render import routing_context
 
 User = get_user_model()
@@ -147,6 +154,93 @@ class ISISTests(_Base):
             "device_id": str(self.leaf.id), "process": "UNDERLAY", "net": "49.0001.0000.0000.0012.00",
         })
         self.assertEqual(r.status_code, 409)
+
+
+class EIGRPTests(_Base):
+    def test_instance_checks_its_numbers_and_enrols_interfaces(self):
+        r = self._post("/api/routing/eigrp-instances/", {
+            "device_id": str(self.leaf.id), "asn": 70000,
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("asn", r.json())
+        r = self._post("/api/routing/eigrp-instances/", {
+            "device_id": str(self.leaf.id), "asn": 100, "k_values": "1 0 1",
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("k_values", r.json())
+        r = self._post("/api/routing/eigrp-instances/", {
+            "device_id": str(self.leaf.id), "asn": 100, "name": "CORE", "k_values": " 1 0  1 0 0 ",
+            "router_id": "10.0.0.11", "passive_by_default": True, "stub": True,
+            "redistributions": [{"source": "static", "policy_id": str(self.policy.id)}],
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        inst = r.json()
+        self.assertEqual(inst["k_values"], "1 0 1 0 0")
+        self.assertEqual(inst["redistributions"][0]["source"], "static")
+        # Same AS in the same table again: refused.
+        r = self._post("/api/routing/eigrp-instances/", {
+            "device_id": str(self.leaf.id), "asn": 100,
+        })
+        self.assertEqual(r.status_code, 409)
+        r = self._post("/api/routing/eigrp-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp1.id),
+            "summary_addresses": ["10.1.0.0/16"], "passive": False, "bandwidth_percent": 50,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["summary_addresses"], ["10.1.0.0/16"])
+        r = self._post("/api/routing/eigrp-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp2.id),
+            "summary_addresses": ["10.1.1.1/16"],
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("summary_addresses", r.json())
+        r = self._post("/api/routing/eigrp-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.far.id),
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("interface", r.json())
+        r = self._post("/api/routing/eigrp-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp2.id), "authentication": "md5",
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("keychain", r.json())
+        r = self._post("/api/routing/eigrp-interfaces/", {
+            "instance_id": inst["id"], "interface_id": str(self.swp2.id),
+            "authentication": "hmac-sha-256", "keychain_id": str(self.key.id),
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        body = self.client.get(f"/api/routing/eigrp-instances/{inst['id']}/").json()
+        self.assertEqual(body["interface_count"], 2)
+        self.assertEqual(
+            self.client.get(f"/api/routing/eigrp-interfaces/?interface={self.swp1.id}").json()["count"], 1
+        )
+        # A redistribution row on its own names the EIGRP parent.
+        r = self._post("/api/routing/redistributions/", {
+            "eigrp_instance_id": inst["id"], "source": "connected",
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(
+            self.client.get(f"/api/routing/redistributions/?eigrp_instance={inst['id']}").json()["count"], 2
+        )
+        self.assertEqual(self.client.get(f"/api/devices/{self.leaf.id}/").json()["routing_count"], 1)
+
+    def test_render(self):
+        inst = EIGRPInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, asn=100, vrf=self.vrf, passive_by_default=True,
+        )
+        inst.interfaces.create(interface=self.swp1, passive=False, summary_addresses=["10.1.0.0/16"])
+        inst.interfaces.create(interface=self.lo)
+        inst.redistributions.create(source="bgp", policy=self.policy)
+        ctx = routing_context(self.leaf)
+        e = ctx["eigrp"][0]
+        self.assertEqual((e["asn"], e["vrf"], e["stub"]), (100, "CUST", False))
+        self.assertEqual([i["interface"] for i in e["interfaces"]], ["lo0", "swp1"])
+        self.assertTrue(e["interfaces"][0]["passive"])
+        self.assertEqual(e["interfaces"][1]["summary_addresses"], ["10.1.0.0/16"])
+        self.assertEqual(e["redistribute"][0]["policy"], "CONN-OUT")
+        self.assertEqual(ctx["by_interface"]["swp1"]["eigrp"]["asn"], 100)
+        self.assertIsNone(ctx["by_interface"]["swp2"]["eigrp"])
+        self.assertEqual([v["name"] for v in ctx["vrfs"]], ["CUST"])
 
 
 class RenderTests(_Base):

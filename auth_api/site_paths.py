@@ -65,6 +65,8 @@ SITE_PATHS: dict[str, str] = {
     "ospfinterface": "instance__device__site",
     "isisinstance": "device__site",
     "isisinterface": "instance__device__site",
+    "eigrpinstance": "device__site",
+    "eigrpinterface": "instance__device__site",
     "vtep": "device__site",
     "vtepmembership": "vtep__device__site",
 }

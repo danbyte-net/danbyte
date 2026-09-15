@@ -464,6 +464,7 @@ REDISTRIBUTE_SOURCE_CHOICES = [
     ("bgp", "BGP"),
     ("ospf", "OSPF"),
     ("isis", "IS-IS"),
+    ("eigrp", "EIGRP"),
     ("kernel", "Kernel"),
 ]
 
@@ -599,6 +600,10 @@ class Redistribution(models.Model):
         "ISISInstance", on_delete=models.CASCADE, null=True, blank=True,
         related_name="redistributions",
     )
+    eigrp_instance = models.ForeignKey(
+        "EIGRPInstance", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="redistributions",
+    )
     source = models.CharField(max_length=12, choices=REDISTRIBUTE_SOURCE_CHOICES)
     policy = models.ForeignKey(
         RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
@@ -612,9 +617,14 @@ class Redistribution(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    models.Q(bgp_af__isnull=False, ospf_instance__isnull=True, isis_instance__isnull=True)
-                    | models.Q(bgp_af__isnull=True, ospf_instance__isnull=False, isis_instance__isnull=True)
-                    | models.Q(bgp_af__isnull=True, ospf_instance__isnull=True, isis_instance__isnull=False)
+                    models.Q(bgp_af__isnull=False, ospf_instance__isnull=True,
+                             isis_instance__isnull=True, eigrp_instance__isnull=True)
+                    | models.Q(bgp_af__isnull=True, ospf_instance__isnull=False,
+                               isis_instance__isnull=True, eigrp_instance__isnull=True)
+                    | models.Q(bgp_af__isnull=True, ospf_instance__isnull=True,
+                               isis_instance__isnull=False, eigrp_instance__isnull=True)
+                    | models.Q(bgp_af__isnull=True, ospf_instance__isnull=True,
+                               isis_instance__isnull=True, eigrp_instance__isnull=False)
                 ),
                 name="redistribution_one_parent",
             ),
@@ -1083,6 +1093,84 @@ class ISISInterface(_IGPInterface):
         self.families = list(dict.fromkeys(fams)) or ["ipv4"]
         if self.authentication != "none" and not self.keychain_id:
             raise ValidationError({"keychain": "Authentication needs a keychain."})
+
+
+# ─── EIGRP ───────────────────────────────────────────────────────────────────
+
+class EIGRPInstance(_DeviceInstance):
+    """``router eigrp <asn>`` on a device - classic mode by AS number, named
+    mode when ``name`` is set (``router eigrp NAME`` with the AS under its
+    address family)."""
+
+    asn = models.PositiveIntegerField(help_text="1…65535")
+    name = models.CharField(max_length=64, blank=True, default="", help_text="Named mode")
+    #: ``K1 K2 K3 K4 K5`` - blank is the platform default (1 0 1 0 0).
+    k_values = models.CharField(max_length=32, blank=True, default="")
+    variance = models.PositiveSmallIntegerField(null=True, blank=True)
+    maximum_paths = models.PositiveSmallIntegerField(null=True, blank=True)
+    passive_by_default = models.BooleanField(default=False)
+    stub = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["device__name", "vrf__name", "asn"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device", "vrf", "asn"],
+                name="uniq_eigrpinstance_asn", nulls_distinct=False,
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device.name} · EIGRP {self.asn}"
+
+    def clean(self):
+        super().clean()
+        if not 1 <= (self.asn or 0) <= 65535:
+            raise ValidationError({"asn": "An EIGRP AS number is 1 to 65535."})
+        k = (self.k_values or "").split()
+        if k:
+            if len(k) != 5 or any(not v.isdigit() or int(v) > 255 for v in k):
+                raise ValidationError(
+                    {"k_values": "Five values 0-255, K1 to K5 - for example 1 0 1 0 0."}
+                )
+            self.k_values = " ".join(str(int(v)) for v in k)
+
+
+class EIGRPInterface(_IGPInterface):
+    AUTH_CHOICES = [
+        ("none", "None"),
+        ("md5", "MD5"),
+        ("hmac-sha-256", "HMAC-SHA-256"),
+    ]
+
+    instance = models.ForeignKey(
+        EIGRPInstance, on_delete=models.CASCADE, related_name="interfaces"
+    )
+    hello_interval = models.PositiveSmallIntegerField(null=True, blank=True)
+    hold_time = models.PositiveSmallIntegerField(null=True, blank=True)
+    bandwidth_percent = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: Null = the platform default (on).
+    split_horizon = models.BooleanField(null=True, blank=True)
+    #: ``ip summary-address eigrp`` networks announced out of this port.
+    summary_addresses = models.JSONField(default=list, blank=True)
+    authentication = models.CharField(max_length=12, choices=AUTH_CHOICES, default="none")
+
+    class Meta:
+        ordering = ["interface__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["instance", "interface"], name="uniq_eigrpinterface_instance_iface"
+            )
+        ]
+
+    def clean(self):
+        self._check_device()
+        if self.authentication != "none" and not self.keychain_id:
+            raise ValidationError({"keychain": "Authentication needs a keychain."})
+        nets = self.summary_addresses or []
+        if not isinstance(nets, list) or any(not isinstance(n, str) for n in nets):
+            raise ValidationError({"summary_addresses": "Expected a list of networks."})
+        self.summary_addresses = [normalize_network(n, "summary_addresses") for n in nets]
 
 
 def link_remote_address(session: BGPSession) -> None:

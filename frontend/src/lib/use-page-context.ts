@@ -41,6 +41,7 @@ const ROUTE_TYPES: Record<string, string> = {
   "bgp-instances": "BGP instance",
   "ospf-instances": "OSPF instance",
   "isis-instances": "IS-IS instance",
+  "eigrp-instances": "EIGRP instance",
   vteps: "VTEP",
 }
 

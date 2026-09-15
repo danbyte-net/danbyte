@@ -74,8 +74,12 @@ address's interface.
 | `ISISInstance` | `device`, `vrf`, `process`, `net` (checked), `level`, `metric_style`, `bfd`, `authentication` + `keychain`, `status`, `description`, `extra`; redistribution rows | `(device, process)` |
 | `ISISInterface` | `instance`, `interface`, `families` JSON (`ipv4`/`ipv6`, defaults to ipv4), `level`, `metric`, `metric_l2`, `network_type`, `passive`, `hello_interval`, `hello_multiplier`, `bfd`, `authentication` + `keychain` | `(instance, interface)` |
 
-`Redistribution` has exactly one parent - `bgp_af`, `ospf_instance` or
-`isis_instance` (CheckConstraint).
+| `EIGRPInstance` | `device`, `vrf`, `asn` (1-65535), `name` (named mode), `router_id`, `k_values` (five 0-255, normalised), `variance`, `maximum_paths`, `passive_by_default`, `stub`, `bfd`, `status`, `description`, `extra`; redistribution rows | `(device, vrf, asn)` |
+| `EIGRPInterface` | `instance`, `interface` (same device), `passive`, `split_horizon` (null = default), `hello_interval`, `hold_time`, `bandwidth_percent`, `summary_addresses` JSON (checked networks), `bfd`, `authentication` + `keychain` | `(instance, interface)` |
+
+`Redistribution` has exactly one parent - `bgp_af`, `ospf_instance`,
+`isis_instance` or `eigrp_instance` (CheckConstraint); `source` gains
+`eigrp`.
 
 ## Overlay
 

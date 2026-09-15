@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { api } from "@/lib/api"
 import type {
   BGPSession,
+  EIGRPInstance,
   ISISInstance,
   OSPFInstance,
   Paginated,
@@ -39,6 +40,13 @@ export function InterfaceRoutingCard({
         `/api/routing/isis-instances/?device=${deviceId}`
       ),
   })
+  const eigrp = useQuery({
+    queryKey: ["eigrp-instances", "device", deviceId],
+    queryFn: () =>
+      api<Paginated<EIGRPInstance>>(
+        `/api/routing/eigrp-instances/?device=${deviceId}`
+      ),
+  })
   const bgp = useQuery({
     queryKey: ["bgp-sessions", "iface", interfaceId, deviceId],
     queryFn: () =>
@@ -56,10 +64,15 @@ export function InterfaceRoutingCard({
       .filter((row) => row.interface.id === interfaceId)
       .map((row) => ({ inst, row }))
   )
+  const e = (eigrp.data?.results ?? []).flatMap((inst) =>
+    inst.interfaces
+      .filter((row) => row.interface.id === interfaceId)
+      .map((row) => ({ inst, row }))
+  )
   const b = (bgp.data?.results ?? []).filter(
     (s) => s.interface?.id === interfaceId
   )
-  if (o.length + i.length + b.length === 0) return null
+  if (o.length + i.length + e.length + b.length === 0) return null
 
   const rows: KvRow[] = [
     ...o.map<KvRow>(({ inst, row }) => ({
@@ -120,6 +133,30 @@ export function InterfaceRoutingCard({
             <span className="text-muted-foreground">{row.network_type}</span>
           )}
           {row.passive && <Badge variant="secondary">passive</Badge>}
+        </span>
+      ),
+    })),
+    ...e.map<KvRow>(({ inst, row }) => ({
+      label: "EIGRP",
+      value: (
+        <span className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/devices/$id"
+            params={{ id: deviceId }}
+            search={{ tab: "routing" }}
+            className="link font-mono"
+          >
+            EIGRP {inst.name ? `${inst.name} · ` : ""}AS {inst.asn}
+          </Link>
+          {row.summary_addresses.length > 0 && (
+            <span className="font-mono text-muted-foreground">
+              summary {row.summary_addresses.join(", ")}
+            </span>
+          )}
+          {(row.passive ?? inst.passive_by_default) && (
+            <Badge variant="secondary">passive</Badge>
+          )}
+          {row.bfd && <Badge variant="secondary">bfd</Badge>}
         </span>
       ),
     })),

@@ -166,6 +166,7 @@ import { Route as FloorplansIndexRouteImport } from './routes/floorplans.index'
 import { Route as FloorTileTypesIndexRouteImport } from './routes/floor-tile-types.index'
 import { Route as FhrpGroupsIndexRouteImport } from './routes/fhrp-groups.index'
 import { Route as ExportTemplatesIndexRouteImport } from './routes/export-templates.index'
+import { Route as EigrpInstancesIndexRouteImport } from './routes/eigrp-instances.index'
 import { Route as DnsZonesIndexRouteImport } from './routes/dns-zones.index'
 import { Route as DnsRecordsIndexRouteImport } from './routes/dns-records.index'
 import { Route as DhcpScopesIndexRouteImport } from './routes/dhcp-scopes.index'
@@ -1266,6 +1267,11 @@ const ExportTemplatesIndexRoute = ExportTemplatesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ExportTemplatesRoute,
+} as any)
+const EigrpInstancesIndexRoute = EigrpInstancesIndexRouteImport.update({
+  id: '/eigrp-instances/',
+  path: '/eigrp-instances/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DnsZonesIndexRoute = DnsZonesIndexRouteImport.update({
   id: '/dns-zones/',
@@ -3160,6 +3166,7 @@ export interface FileRoutesByFullPath {
   '/dhcp-scopes/': typeof DhcpScopesIndexRoute
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
+  '/eigrp-instances/': typeof EigrpInstancesIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -3567,6 +3574,7 @@ export interface FileRoutesByTo {
   '/dhcp-scopes': typeof DhcpScopesIndexRoute
   '/dns-records': typeof DnsRecordsIndexRoute
   '/dns-zones': typeof DnsZonesIndexRoute
+  '/eigrp-instances': typeof EigrpInstancesIndexRoute
   '/export-templates': typeof ExportTemplatesIndexRoute
   '/fhrp-groups': typeof FhrpGroupsIndexRoute
   '/floor-tile-types': typeof FloorTileTypesIndexRoute
@@ -4041,6 +4049,7 @@ export interface FileRoutesById {
   '/dhcp-scopes/': typeof DhcpScopesIndexRoute
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
+  '/eigrp-instances/': typeof EigrpInstancesIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -4516,6 +4525,7 @@ export interface FileRouteTypes {
     | '/dhcp-scopes/'
     | '/dns-records/'
     | '/dns-zones/'
+    | '/eigrp-instances/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -4923,6 +4933,7 @@ export interface FileRouteTypes {
     | '/dhcp-scopes'
     | '/dns-records'
     | '/dns-zones'
+    | '/eigrp-instances'
     | '/export-templates'
     | '/fhrp-groups'
     | '/floor-tile-types'
@@ -5396,6 +5407,7 @@ export interface FileRouteTypes {
     | '/dhcp-scopes/'
     | '/dns-records/'
     | '/dns-zones/'
+    | '/eigrp-instances/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -5697,6 +5709,7 @@ export interface RootRouteChildren {
   DhcpScopesIndexRoute: typeof DhcpScopesIndexRoute
   DnsRecordsIndexRoute: typeof DnsRecordsIndexRoute
   DnsZonesIndexRoute: typeof DnsZonesIndexRoute
+  EigrpInstancesIndexRoute: typeof EigrpInstancesIndexRoute
   IpsIndexRoute: typeof IpsIndexRoute
   IsisInstancesIndexRoute: typeof IsisInstancesIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
@@ -6843,6 +6856,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/export-templates/'
       preLoaderRoute: typeof ExportTemplatesIndexRouteImport
       parentRoute: typeof ExportTemplatesRoute
+    }
+    '/eigrp-instances/': {
+      id: '/eigrp-instances/'
+      path: '/eigrp-instances'
+      fullPath: '/eigrp-instances/'
+      preLoaderRoute: typeof EigrpInstancesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/dns-zones/': {
       id: '/dns-zones/'
@@ -10383,6 +10403,7 @@ const rootRouteChildren: RootRouteChildren = {
   DhcpScopesIndexRoute: DhcpScopesIndexRoute,
   DnsRecordsIndexRoute: DnsRecordsIndexRoute,
   DnsZonesIndexRoute: DnsZonesIndexRoute,
+  EigrpInstancesIndexRoute: EigrpInstancesIndexRoute,
   IpsIndexRoute: IpsIndexRoute,
   IsisInstancesIndexRoute: IsisInstancesIndexRoute,
   JobsIndexRoute: JobsIndexRoute,

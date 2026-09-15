@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type {
+  EIGRPInstance,
+  EIGRPInterface,
   InterfaceOption,
   ISISInstance,
   ISISInterface,
@@ -49,6 +51,7 @@ const SOURCES = [
   { value: "bgp", label: "bgp" },
   { value: "ospf", label: "ospf" },
   { value: "isis", label: "isis" },
+  { value: "eigrp", label: "eigrp" },
   { value: "kernel", label: "kernel" },
 ]
 const TRI = [
@@ -92,6 +95,8 @@ interface RedistDraft {
   metric: string
 }
 
+const NONE = "__none__"
+
 function RedistributeSection({
   rows,
   onChange,
@@ -106,8 +111,9 @@ function RedistributeSection({
     "/api/routing/policies/",
     (p) => p.name
   )
+  // Radix refuses an empty item value, so "no policy" is a sentinel.
   const policyOptions = [
-    { value: "", label: "-" },
+    { value: NONE, label: "-" },
     ...policies.map((p) => ({ value: p.id, label: p.label })),
   ]
   return (
@@ -138,8 +144,8 @@ function RedistributeSection({
           />,
           <CellSelect
             key="pol"
-            value={r.policyId ?? ""}
-            onChange={(v) => update({ policyId: v || null })}
+            value={r.policyId ?? NONE}
+            onChange={(v) => update({ policyId: v === NONE ? null : v })}
             options={policyOptions}
             width="w-48"
           />,
@@ -1046,6 +1052,376 @@ export function ISISInterfaceForm({
             />
           )}
           <FormCheckbox label="BFD" checked={bfd} onChange={setBfd} />
+        </div>
+      </FormSection>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Enrol interface"}
+      />
+    </form>
+  )
+}
+
+// ─── EIGRP instance ──────────────────────────────────────────────────────────
+
+export function EIGRPInstanceForm({
+  item,
+  device,
+  onSaved,
+  onCancel,
+}: {
+  item?: EIGRPInstance | null
+  device: { id: string; name: string }
+  onSaved: (v: EIGRPInstance) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const [vrfId, setVrfId] = useState<string | null>(item?.vrf?.id ?? null)
+  const [asn, setAsn] = useState(numText(item?.asn))
+  const [name, setName] = useState(item?.name ?? "")
+  const [routerId, setRouterId] = useState(item?.router_id ?? "")
+  const [kValues, setKValues] = useState(item?.k_values ?? "")
+  const [variance, setVariance] = useState(numText(item?.variance))
+  const [maxPaths, setMaxPaths] = useState(numText(item?.maximum_paths))
+  const [passive, setPassive] = useState(item?.passive_by_default ?? false)
+  const [stub, setStub] = useState(item?.stub ?? false)
+  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [statusId, setStatusId] = useState<string | null>(
+    item?.status?.id ?? null
+  )
+  const [description, setDescription] = useState(item?.description ?? "")
+  const [redist, setRedist] = useState<RedistDraft[]>(
+    redistFrom(item?.redistributions ?? [])
+  )
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(
+    item?.custom_fields ?? {}
+  )
+  const vrfs = useVrfs()
+  const statuses = useInstanceStatuses()
+  useEffect(() => {
+    if (isEdit || statusId || !statuses.data) return
+    const d = statuses.data.results.find((st) =>
+      st.default_for.includes("routinginstance")
+    )
+    if (d) setStatusId(d.id)
+  }, [isEdit, statusId, statuses.data])
+  const { mutation, fieldErrors } = useRoutingSave<EIGRPInstance>({
+    objectType: ROUTING_OBJECT_TYPES.eigrpinstance,
+    endpoint: "/api/routing/eigrp-instances/",
+    queryKey: "eigrp-instances",
+    id: item?.id,
+    label: (v) => `EIGRP ${v.asn} on ${v.device.name}`,
+    onSaved,
+  })
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate({
+          device_id: device.id,
+          vrf_id: vrfId,
+          asn: numOrNull(asn),
+          name: name.trim(),
+          router_id: routerId.trim(),
+          k_values: kValues.trim(),
+          variance: numOrNull(variance),
+          maximum_paths: numOrNull(maxPaths),
+          passive_by_default: passive,
+          stub,
+          bfd,
+          status_id: statusId,
+          description: description.trim(),
+          redistributions: redistPayload(redist),
+          tag_ids: tagIds,
+          custom_fields: customFields,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="Instance" card>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="AS number"
+            required
+            type="number"
+            autoFocus={!isEdit}
+            value={asn}
+            onChange={setAsn}
+            placeholder="100"
+            error={fieldErrors.asn}
+          />
+          <FormText
+            label="Name"
+            mono
+            value={name}
+            onChange={setName}
+            placeholder="CORE"
+            info="Named mode: router eigrp NAME with the AS under its address family. Blank is classic mode."
+            error={fieldErrors.name}
+          />
+          <FormCombobox
+            label="VRF"
+            value={vrfId}
+            onChange={setVrfId}
+            options={(vrfs.data?.results ?? []).map((v) => ({
+              value: v.id,
+              label: v.rd ? `${v.name} · ${v.rd}` : v.name,
+              color: v.color,
+            }))}
+            noneLabel="Global"
+            placeholder="Global"
+            error={fieldErrors.vrf_id}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="Router ID"
+            mono
+            value={routerId}
+            onChange={setRouterId}
+            placeholder="10.0.0.11"
+            error={fieldErrors.router_id}
+          />
+          <FormText
+            label="K values"
+            mono
+            value={kValues}
+            onChange={setKValues}
+            placeholder="1 0 1 0 0"
+            info="K1 to K5, space-separated. Blank is the platform default."
+            error={fieldErrors.k_values}
+          />
+          <FormStatusSelect
+            value={statusId}
+            onChange={setStatusId}
+            options={statuses.data?.results ?? []}
+            error={fieldErrors.status_id}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="Variance"
+            type="number"
+            value={variance}
+            onChange={setVariance}
+            error={fieldErrors.variance}
+          />
+          <FormText
+            label="Maximum paths"
+            type="number"
+            value={maxPaths}
+            onChange={setMaxPaths}
+            error={fieldErrors.maximum_paths}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormCheckbox
+            label="Passive by default"
+            checked={passive}
+            onChange={setPassive}
+          />
+          <FormCheckbox label="Stub" checked={stub} onChange={setStub} />
+          <FormCheckbox label="BFD" checked={bfd} onChange={setBfd} />
+        </div>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTags value={tagIds} onChange={setTagIds} label="Tags" />
+        <CustomFieldInputs
+          model="eigrpinstance"
+          value={customFields}
+          onChange={setCustomFields}
+        />
+      </FormSection>
+      <RedistributeSection
+        rows={redist}
+        onChange={setRedist}
+        error={fieldErrors.redistributions}
+      />
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create instance"}
+      />
+    </form>
+  )
+}
+
+// ─── EIGRP interface ─────────────────────────────────────────────────────────
+
+const EIGRP_AUTH = [
+  { value: "none", label: "None" },
+  { value: "md5", label: "MD5" },
+  { value: "hmac-sha-256", label: "HMAC-SHA-256" },
+]
+
+export function EIGRPInterfaceForm({
+  item,
+  instance,
+  onSaved,
+  onCancel,
+}: {
+  item?: EIGRPInterface | null
+  instance: EIGRPInstance
+  onSaved: (v: EIGRPInterface) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const [interfaceId, setInterfaceId] = useState<string | null>(
+    item?.interface.id ?? null
+  )
+  const [passive, setPassive] = useState<string | null>(triFrom(item?.passive))
+  const [splitHorizon, setSplitHorizon] = useState<string | null>(
+    triFrom(item?.split_horizon)
+  )
+  const [hello, setHello] = useState(numText(item?.hello_interval))
+  const [hold, setHold] = useState(numText(item?.hold_time))
+  const [bandwidth, setBandwidth] = useState(numText(item?.bandwidth_percent))
+  const [summaries, setSummaries] = useState(
+    (item?.summary_addresses ?? []).join(", ")
+  )
+  const [bfd, setBfd] = useState(item?.bfd ?? false)
+  const [auth, setAuth] = useState<string | null>(
+    item?.authentication ?? "none"
+  )
+  const [keychainId, setKeychainId] = useState<string | null>(
+    item?.keychain?.id ?? null
+  )
+  const interfaces = useDeviceInterfaces(instance.device.id)
+  const keychains = usePickList<{ id: string; name: string }>(
+    "routing-keychains",
+    "/api/routing/keychains/",
+    (k) => k.name
+  )
+  const used = new Set(instance.interfaces.map((i) => i.interface.id))
+  const { mutation, fieldErrors } = useRoutingSave<EIGRPInterface>({
+    objectType: ROUTING_OBJECT_TYPES.eigrpinterface,
+    endpoint: "/api/routing/eigrp-interfaces/",
+    queryKey: "eigrp-instances",
+    id: item?.id,
+    label: (v) => v.interface.name,
+    onSaved,
+  })
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate({
+          instance_id: instance.id,
+          interface_id: interfaceId,
+          passive: triTo(passive),
+          split_horizon: triTo(splitHorizon),
+          hello_interval: numOrNull(hello),
+          hold_time: numOrNull(hold),
+          bandwidth_percent: numOrNull(bandwidth),
+          summary_addresses: summaries
+            .split(/[\s,]+/)
+            .map((v) => v.trim())
+            .filter(Boolean),
+          bfd,
+          authentication: auth,
+          keychain_id: auth === "none" ? null : keychainId,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="Interface" card>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormCombobox
+            label="Interface"
+            required
+            value={interfaceId}
+            onChange={setInterfaceId}
+            options={(interfaces.data?.results ?? [])
+              .filter((i) => isEdit || !used.has(i.id))
+              .map((i) => ({ value: i.id, label: i.name }))}
+            placeholder="Pick an interface"
+            searchPlaceholder="Search interfaces…"
+            emptyText="Every interface is enrolled already."
+            disabled={isEdit}
+            error={fieldErrors.interface_id}
+          />
+          <FormSelect
+            label="Passive"
+            value={passive}
+            onChange={setPassive}
+            options={TRI}
+            noneLabel={`Instance (${instance.passive_by_default ? "on" : "off"})`}
+          />
+          <FormSelect
+            label="Split horizon"
+            value={splitHorizon}
+            onChange={setSplitHorizon}
+            options={TRI}
+            noneLabel="Platform default"
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="Hello"
+            type="number"
+            hint="s"
+            value={hello}
+            onChange={setHello}
+            error={fieldErrors.hello_interval}
+          />
+          <FormText
+            label="Hold time"
+            type="number"
+            hint="s"
+            value={hold}
+            onChange={setHold}
+            error={fieldErrors.hold_time}
+          />
+          <FormText
+            label="Bandwidth"
+            type="number"
+            hint="%"
+            value={bandwidth}
+            onChange={setBandwidth}
+            error={fieldErrors.bandwidth_percent}
+          />
+        </div>
+        <FormText
+          label="Summary addresses"
+          mono
+          value={summaries}
+          onChange={setSummaries}
+          placeholder="10.1.0.0/16, 10.2.0.0/16"
+          info="Networks summarised out of this port - ip summary-address eigrp."
+          error={fieldErrors.summary_addresses}
+        />
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormSelect
+            label="Authentication"
+            value={auth}
+            onChange={setAuth}
+            options={EIGRP_AUTH}
+          />
+          {auth !== "none" && (
+            <FormCombobox
+              label="Keychain"
+              required
+              value={keychainId}
+              onChange={setKeychainId}
+              options={keychains.map((k) => ({ value: k.id, label: k.label }))}
+              placeholder="Pick a keychain"
+              error={fieldErrors.keychain}
+            />
+          )}
+          <FormCheckbox
+            label="BFD"
+            checked={bfd}
+            onChange={setBfd}
+            className="self-end"
+          />
         </div>
       </FormSection>
       <FormFooter

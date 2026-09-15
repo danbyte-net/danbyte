@@ -36,6 +36,7 @@ class RoutingConfig(AppConfig):
         io(m.BGPSession, ["instance", "remote_address"])
         io(m.OSPFInstance, ["device", "process_id"])
         io(m.ISISInstance, ["device", "process"])
+        io(m.EIGRPInstance, ["device", "vrf", "asn"])
         io(m.VTEP, ["device"])
         register_reference_model(
             ReferenceModel(

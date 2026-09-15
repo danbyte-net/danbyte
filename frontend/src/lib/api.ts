@@ -4275,7 +4275,7 @@ export interface BGPPeerKnobs {
 
 export interface Redistribution {
   id: string
-  source: "connected" | "static" | "bgp" | "ospf" | "isis" | "kernel"
+  source: "connected" | "static" | "bgp" | "ospf" | "isis" | "eigrp" | "kernel"
   policy: { id: string; name: string } | null
   metric: number | null
   extra: Record<string, unknown>
@@ -4521,6 +4521,37 @@ export interface VTEP {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export interface EIGRPInterface {
+  id: string
+  interface: { id: string; name: string; device: DeviceMini }
+  /** Null = the instance's passive_by_default. */
+  passive: boolean | null
+  bfd: boolean
+  hello_interval: number | null
+  hold_time: number | null
+  bandwidth_percent: number | null
+  /** Null = the platform default (on). */
+  split_horizon: boolean | null
+  summary_addresses: string[]
+  authentication: "none" | "md5" | "hmac-sha-256"
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+}
+
+export interface EIGRPInstance extends IGPInstanceBase {
+  asn: number
+  /** Named mode when set. */
+  name: string
+  router_id: string
+  /** "K1 K2 K3 K4 K5"; blank = platform default. */
+  k_values: string
+  variance: number | null
+  maximum_paths: number | null
+  passive_by_default: boolean
+  stub: boolean
+  interfaces: EIGRPInterface[]
 }
 
 export interface StaticRoute {

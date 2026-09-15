@@ -16,6 +16,7 @@ from .models import (
     BGPInstance,
     Community,
     CommunityList,
+    EIGRPInstance,
     ISISInstance,
     OSPFInstance,
     PrefixList,
@@ -396,6 +397,41 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
     }
 
 
+def eigrp_dict(inst: EIGRPInstance, policies: set[str]) -> dict:
+    ifaces = []
+    for row in inst.interfaces.all():
+        ifaces.append({
+            "interface": row.interface.name,
+            "passive": inst.passive_by_default if row.passive is None else row.passive,
+            "hello_interval": row.hello_interval,
+            "hold_time": row.hold_time,
+            "bandwidth_percent": row.bandwidth_percent,
+            "split_horizon": row.split_horizon,
+            "summary_addresses": list(row.summary_addresses or []),
+            "bfd": row.bfd,
+            "authentication": row.authentication if row.authentication != "none" else None,
+            "keychain": row.keychain.name if row.keychain_id else None,
+            "extra": row.extra or {},
+        })
+    return {
+        "id": str(inst.id),
+        "vrf": _vrf_name(inst.vrf),
+        "asn": inst.asn,
+        "name": inst.name or None,
+        "router_id": inst.router_id or None,
+        "k_values": inst.k_values or None,
+        "variance": inst.variance,
+        "maximum_paths": inst.maximum_paths,
+        "passive_by_default": inst.passive_by_default,
+        "stub": inst.stub,
+        "bfd": inst.bfd,
+        "redistribute": _redistribute(inst.redistributions.all(), policies),
+        "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
+        "description": inst.description or "",
+        "extra": inst.extra or {},
+    }
+
+
 def _policies_closure(tenant_id, names: set[str]) -> dict:
     """The policies a device references, plus every list those policies
     match on - so a template prints only what the box needs."""
@@ -493,7 +529,15 @@ def routing_context(device) -> dict:
         .order_by("process")
     )
     isis = [isis_dict(i, referenced_policies) for i in isis_instances]
-    for inst in (*instances, *ospf_instances, *isis_instances):
+    eigrp_instances = (
+        EIGRPInstance.objects.filter(device=device)
+        .select_related("vrf")
+        .prefetch_related("redistributions__policy", "interfaces__interface",
+                          "interfaces__keychain")
+        .order_by(F("vrf__name").asc(nulls_first=True), "asn")
+    )
+    eigrp = [eigrp_dict(i, referenced_policies) for i in eigrp_instances]
+    for inst in (*instances, *ospf_instances, *isis_instances, *eigrp_instances):
         if inst.vrf_id:
             vrfs[inst.vrf.name] = inst.vrf
 
@@ -521,18 +565,24 @@ def routing_context(device) -> dict:
     by_interface: dict[str, dict] = {}
     for iface in device.interfaces.all():
         by_interface[iface.name] = {
-            "vrf": iface.vrf.name if iface.vrf_id else None, "ospf": None, "isis": None,
+            "vrf": iface.vrf.name if iface.vrf_id else None,
+            "ospf": None, "isis": None, "eigrp": None,
         }
+    blank = {"vrf": None, "ospf": None, "isis": None, "eigrp": None}
     for o in ospf:
         for row in o["interfaces"]:
-            by_interface.setdefault(row["interface"], {"vrf": None, "ospf": None, "isis": None})
+            by_interface.setdefault(row["interface"], dict(blank))
             by_interface[row["interface"]]["ospf"] = {
                 "process_id": o["process_id"], "version": o["version"], **row,
             }
     for i in isis:
         for row in i["interfaces"]:
-            by_interface.setdefault(row["interface"], {"vrf": None, "ospf": None, "isis": None})
+            by_interface.setdefault(row["interface"], dict(blank))
             by_interface[row["interface"]]["isis"] = {"process": i["process"], **row}
+    for e in eigrp:
+        for row in e["interfaces"]:
+            by_interface.setdefault(row["interface"], dict(blank))
+            by_interface[row["interface"]]["eigrp"] = {"asn": e["asn"], "name": e["name"], **row}
 
     out = {
         "vrfs": [vrf_dict(v, l3vnis.get(name)) for name, v in sorted(vrfs.items())],
@@ -540,6 +590,7 @@ def routing_context(device) -> dict:
         "bgp": bgp,
         "ospf": ospf,
         "isis": isis,
+        "eigrp": eigrp,
         "by_interface": dict(sorted(by_interface.items())),
         "vtep": vtep,
         **_policies_closure(device.tenant_id, referenced_policies),

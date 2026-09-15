@@ -15,6 +15,7 @@ from drf_spectacular.views import (
 )
 from rest_framework.routers import DefaultRouter
 
+from agents.views import mcp as agent_mcp
 from audit.api import ChangeLogViewSet, JournalEntryViewSet
 from auth_api import column_prefs, dashboard_prefs
 from auth_api import views as auth_views
@@ -86,26 +87,31 @@ from integrations.api import (
     DeviceConfigStateViewSet,
     WebhookViewSet,
 )
-from integrations.dns_api import (
-    DnsDriftViewSet,
-    DnsRecordViewSet,
-    DnsZoneViewSet,
-)
-from integrations.virt_api import (
-    VirtChangeViewSet,
-    VirtNetworkViewSet,
-    VirtPlacementRuleViewSet,
+from integrations.connections_api import (
+    VirtualizationSourceViewSet,
+    WindowsServerConnectionViewSet,
+    integration_settings,
+    integrations_enabled,
 )
 from integrations.dhcp_api import (
     DhcpLeaseViewSet,
     DhcpReservationViewSet,
     DhcpScopeViewSet,
 )
-from integrations.connections_api import (
-    VirtualizationSourceViewSet,
-    WindowsServerConnectionViewSet,
-    integration_settings,
-    integrations_enabled,
+from integrations.dns_api import (
+    DnsDriftViewSet,
+    DnsRecordViewSet,
+    DnsZoneViewSet,
+)
+from integrations.netbox_api import (
+    netbox_import_detail,
+    netbox_imports,
+    netbox_test,
+)
+from integrations.virt_api import (
+    VirtChangeViewSet,
+    VirtNetworkViewSet,
+    VirtPlacementRuleViewSet,
 )
 from routing.viewsets import (
     ASPathListRuleViewSet,
@@ -117,6 +123,8 @@ from routing.viewsets import (
     CommunityListRuleViewSet,
     CommunityListViewSet,
     CommunityViewSet,
+    EIGRPInstanceViewSet,
+    EIGRPInterfaceViewSet,
     ISISInstanceViewSet,
     ISISInterfaceViewSet,
     OSPFAreaViewSet,
@@ -131,11 +139,6 @@ from routing.viewsets import (
     StaticRouteViewSet,
     VTEPMembershipViewSet,
     VTEPViewSet,
-)
-from integrations.netbox_api import (
-    netbox_import_detail,
-    netbox_imports,
-    netbox_test,
 )
 
 from .csp_views import csp_report
@@ -156,8 +159,6 @@ from .presence_views import (
     presence_leave,
     presence_list,
 )
-from agents.views import mcp as agent_mcp
-
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
 from .terraform_views import vm_render_view
@@ -167,9 +168,9 @@ from .topology_views import (
     topology_view,
 )
 from .viewsets import (
+    AggregateViewSet,
     AntennaTemplateViewSet,
     AntennaViewSet,
-    AggregateViewSet,
     ASNViewSet,
     AuxPortTemplateViewSet,
     AuxPortViewSet,
@@ -231,6 +232,7 @@ from .viewsets import (
     ModuleInterfaceTemplateViewSet,
     ModuleTypeViewSet,
     ModuleViewSet,
+    NATRuleViewSet,
     PlatformGroupViewSet,
     PlatformViewSet,
     PortReservationViewSet,
@@ -253,7 +255,6 @@ from .viewsets import (
     RIRViewSet,
     RouteTargetViewSet,
     ServiceTemplateViewSet,
-    NATRuleViewSet,
     ServiceViewSet,
     SiteMarkerViewSet,
     SiteViewSet,
@@ -378,6 +379,8 @@ router.register(r"routing/ospf-instances", OSPFInstanceViewSet, basename="ospfin
 router.register(r"routing/ospf-interfaces", OSPFInterfaceViewSet, basename="ospfinterface")
 router.register(r"routing/isis-instances", ISISInstanceViewSet, basename="isisinstance")
 router.register(r"routing/isis-interfaces", ISISInterfaceViewSet, basename="isisinterface")
+router.register(r"routing/eigrp-instances", EIGRPInstanceViewSet, basename="eigrpinstance")
+router.register(r"routing/eigrp-interfaces", EIGRPInterfaceViewSet, basename="eigrpinterface")
 router.register(r"routing/vteps", VTEPViewSet, basename="vtep")
 router.register(r"routing/vtep-memberships", VTEPMembershipViewSet, basename="vtepmembership")
 router.register(r"services",      ServiceViewSet,     basename="service")

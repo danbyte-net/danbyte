@@ -98,6 +98,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/bgp-instances": "features/routing/",
   "/ospf-instances": "features/routing/",
   "/isis-instances": "features/routing/",
+  "/eigrp-instances": "features/routing/",
   "/vteps": "features/routing/",
   "/monitoring": "features/monitoring/",
   "/monitoring-engines": "features/monitoring/",

@@ -8,6 +8,7 @@ import type {
   BGPSession,
   Community,
   CommunityList,
+  EIGRPInstance,
   ISISInstance,
   OSPFArea,
   OSPFInstance,
@@ -1631,6 +1632,88 @@ export function buildISISInstanceColumns<T extends ISISInstance = ISISInstance>(
         cell: ({ row }) => (
           <span className="text-xs">{row.original.metric_style}</span>
         ),
+      }),
+      interface_count: () => ({
+        id: "interface_count",
+        accessorKey: "interface_count",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Interfaces" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.interface_count}</span>
+        ),
+      }),
+      status: () => instanceStatusColumn<T>(),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+export type EIGRPInstanceColumnId =
+  | "numid"
+  | "device"
+  | "site"
+  | "asn"
+  | "name"
+  | "vrf"
+  | "router_id"
+  | "interface_count"
+  | "status"
+  | "description"
+  | "tags"
+const EIGRP_INSTANCE_ORDER: EIGRPInstanceColumnId[] = [
+  "numid",
+  "device",
+  "site",
+  "asn",
+  "name",
+  "vrf",
+  "router_id",
+  "interface_count",
+  "status",
+  "description",
+  "tags",
+]
+
+export function buildEIGRPInstanceColumns<
+  T extends EIGRPInstance = EIGRPInstance,
+>(opts: CommonOpts<T, EIGRPInstanceColumnId> = {}): ColumnDef<T, unknown>[] {
+  return assemble<T, EIGRPInstanceColumnId>(
+    EIGRP_INSTANCE_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      device: () => instanceDeviceColumn<T>("routing.eigrpinstance"),
+      site: () => instanceSiteColumn<T>(),
+      asn: () => ({
+        id: "asn",
+        accessorKey: "asn",
+        header: ({ column }) => <SortHeader column={column} label="AS" />,
+        cell: ({ row }) => (
+          <span className="num font-mono text-xs">{row.original.asn}</span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "AS",
+            get: (r: T) => String(r.asn),
+            formatValue: (v) => ({ label: `AS ${v}` }),
+          },
+        },
+      }),
+      name: () => ({
+        id: "name",
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => mono(row.original.name),
+      }),
+      vrf: () => instanceVrfColumn<T>(),
+      router_id: () => ({
+        id: "router_id",
+        accessorKey: "router_id",
+        header: "Router ID",
+        cell: ({ row }) => mono(row.original.router_id),
       }),
       interface_count: () => ({
         id: "interface_count",

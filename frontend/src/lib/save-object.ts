@@ -126,6 +126,8 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "routing.ospfinterface",
   "routing.isisinstance",
   "routing.isisinterface",
+  "routing.eigrpinstance",
+  "routing.eigrpinterface",
   "auth_api.objectpermission",
   "core.tenant",
   "core.tenantgroup",

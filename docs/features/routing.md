@@ -7,8 +7,8 @@ icon: lucide/route
 Routing is where you write down **how a device forwards** - the static routes
 it carries, and the policy objects every routing protocol shares: prefix
 lists, communities, community lists, AS-path lists, routing policies (route
-maps) and the keychains sessions authenticate with. BGP, OSPF, IS-IS and the
-EVPN/VXLAN overlay build on these; two complete templates, NX-OS style and
+maps) and the keychains sessions authenticate with. BGP, OSPF, IS-IS, EIGRP
+and the EVPN/VXLAN overlay build on these; two complete templates, NX-OS style and
 FRR, rendered from an opt-in demo fabric, are on
 [Routing templates](routing-templates.md).
 
@@ -204,6 +204,46 @@ BFD, and hello authentication.
 An interface's own page shows the OSPF and IS-IS rows it sits in, and any
 unnumbered BGP session on it, under **Routing**.
 
+## EIGRP
+
+An **EIGRP instance** is `router eigrp <AS>` on a device, in one table: the
+**AS number** (1-65535), an optional **name** for named mode (`router eigrp
+NAME` with the AS under its address family), router ID, **K values** (`1 0
+1 0 0`; blank is the platform default), variance, maximum paths, passive by
+default, **stub**, BFD, and redistribution. One per device, VRF and AS.
+
+Interfaces enrol with passive (null = the instance default), split horizon
+(null = the platform default), hello and hold timers, bandwidth percent,
+**summary addresses** (`ip summary-address eigrp`, checked as networks),
+BFD, and MD5 or HMAC-SHA-256 authentication with a keychain.
+
+An IOS fragment:
+
+```jinja
+{% for inst in routing.eigrp %}
+router eigrp {{ inst.name or inst.asn }}
+{% if inst.name %}
+ address-family ipv4 unicast autonomous-system {{ inst.asn }}
+{% endif %}
+{% if inst.router_id %}
+ eigrp router-id {{ inst.router_id }}
+{% endif %}
+{% if inst.k_values %}
+ metric weights 0 {{ inst.k_values }}
+{% endif %}
+{% if inst.stub %}
+ eigrp stub connected summary
+{% endif %}
+{% for r in inst.redistribute %}
+ redistribute {{ r.source }}{% if r.policy %} route-map {{ r.policy }}{% endif %}
+
+{% endfor %}
+{% for i in inst.interfaces if i.passive %}
+ passive-interface {{ i.interface }}
+{% endfor %}
+{% endfor %}
+```
+
 ## Overlay: EVPN and VXLAN
 
 The overlay builds on the [L2VPN](vpn.md#l2vpn-overlays) you already have:
@@ -267,8 +307,13 @@ routing:
                    redistribute: [...],
                    interfaces: [{interface, families, level, metric, metric_l2, network_type, passive,
                                  hello_interval, hello_multiplier, bfd, authentication, keychain}]}]
+  eigrp:         [{vrf, asn, name, router_id, k_values, variance, maximum_paths, passive_by_default,
+                   stub, bfd, redistribute: [...],
+                   interfaces: [{interface, passive, hello_interval, hold_time, bandwidth_percent,
+                                 split_horizon, summary_addresses, bfd, authentication, keychain}]}]
   by_interface:  {NAME: {vrf, ospf: {process_id, version, area, cost, ...} | null,
-                         isis: {process, families, level, metric, ...} | null}}
+                         isis: {process, families, level, metric, ...} | null,
+                         eigrp: {asn, name, passive, summary_addresses, ...} | null}}
   vtep:          {source_interface, source_ip, anycast_ip, anycast_gateway_mac, arp_suppression,
                   vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, rd, import_targets,
                           export_targets, ingress_replication, mcast_group, extra}]} | null
@@ -425,12 +470,13 @@ it.
 | `/api/routing/keychains/` | Keychains; `psk` is write-only, `reveal-psk` is the audited read. |
 | `/api/routing/static-routes/` | Static routes; filter by `device`, `vrf` (`global` for the global table), `kind`, `status`, `site`, `prefix_obj`. |
 | `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `vrf`, `asn`, `site`, `status`. |
-| `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`); an address family accepts `redistributions: [...]`. |
+| `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`, `?ospf_instance=`, `?isis_instance=`, `?eigrp_instance=`); an address family or IGP instance accepts `redistributions: [...]`. |
 | `/api/routing/bgp-peer-groups/` | Peer groups. |
 | `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
 | `/api/routing/ospf-areas/` | Areas. |
 | `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `vrf`, `site`, `status`. |
 | `/api/routing/ospf-interfaces/`, `…/isis-interfaces/` | Enrolled interfaces (`?instance=`, `?interface=`, `?area=`). |
+| `/api/routing/eigrp-instances/`, `…/eigrp-interfaces/` | EIGRP instances (interfaces and redistributions nested; filter by `device`, `vrf`, `site`, `status`) and their enrolled interfaces (`?instance=`, `?interface=`). |
 | `/api/routing/vteps/` | One per device, VNI memberships nested; filter by `device`, `site`, `status`, `l2vpn`. |
 | `/api/routing/vtep-memberships/` | The VNI rows on their own (`?vtep=`, `?l2vpn=`). |
 | `/api/l2vpns/` | Gains `vrf`/`vrf_id` and `vtep_count`; `?vxlan=1` keeps the VXLAN types, `?vrf=` the L3VNIs of a VRF, `?vlan=` those terminating on a VLAN. |
@@ -450,8 +496,8 @@ routes** tabs, a prefix's **Static routes** tab (routes with that prefix as
 their destination), an L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
 
 The **Routing** menu lists everything fleet-wide: BGP instances, sessions
-and peer groups, OSPF instances and areas, IS-IS instances, VTEPs and
-static routes under *Protocols*; policies, prefix lists, communities,
+and peer groups, OSPF instances and areas, IS-IS and EIGRP instances, VTEPs
+and static routes under *Protocols*; policies, prefix lists, communities,
 community lists, AS-path lists and keychains under *Policy*. An instance
 or a VTEP is added and edited on its device's Routing tab - the fleet list
 is where you find which boxes run what, and its pencil takes you there.

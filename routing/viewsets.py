@@ -32,6 +32,8 @@ from .models import (
     Community,
     CommunityList,
     CommunityListRule,
+    EIGRPInstance,
+    EIGRPInterface,
     ISISInstance,
     ISISInterface,
     OSPFArea,
@@ -60,6 +62,8 @@ from .serializers import (
     CommunityListSerializer,
     CommunityMiniSerializer,
     CommunitySerializer,
+    EIGRPInstanceSerializer,
+    EIGRPInterfaceSerializer,
     ISISInstanceSerializer,
     ISISInterfaceSerializer,
     OSPFAreaMiniSerializer,
@@ -389,7 +393,7 @@ class RedistributionViewSet(TenantScopedViewSet):
 
     tenant_field = None
     queryset = Redistribution.objects.select_related(
-        "bgp_af", "ospf_instance", "isis_instance", "policy"
+        "bgp_af", "ospf_instance", "isis_instance", "eigrp_instance", "policy"
     ).order_by("source")
     serializer_class = RedistributionSerializer
     pagination_class = StandardPagination
@@ -400,10 +404,10 @@ class RedistributionViewSet(TenantScopedViewSet):
             return self.queryset.none()
         qs = self.queryset.filter(
             Q(bgp_af__instance__tenant=tenant) | Q(ospf_instance__tenant=tenant)
-            | Q(isis_instance__tenant=tenant)
+            | Q(isis_instance__tenant=tenant) | Q(eigrp_instance__tenant=tenant)
         )
         if self.request:
-            for key in ("bgp_af", "ospf_instance", "isis_instance"):
+            for key in ("bgp_af", "ospf_instance", "isis_instance", "eigrp_instance"):
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{f"{key}_id": v})
@@ -414,7 +418,7 @@ class RedistributionViewSet(TenantScopedViewSet):
         vd = serializer.validated_data
         parents = [
             vd.get(k) or (getattr(serializer.instance, k) if serializer.instance else None)
-            for k in ("bgp_af", "ospf_instance", "isis_instance")
+            for k in ("bgp_af", "ospf_instance", "isis_instance", "eigrp_instance")
         ]
         present = [p for p in parents if p is not None]
         if len(present) != 1:
@@ -679,6 +683,37 @@ class ISISInterfaceViewSet(_RuleViewSet):
         "instance__device", "interface__device", "keychain"
     ).order_by("interface__name")
     serializer_class = ISISInterfaceSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            v = self.request.query_params.get("interface")
+            if v:
+                qs = qs.filter(interface_id=v)
+        return qs
+
+
+class EIGRPInstanceViewSet(_IGPInstanceViewSet):
+    queryset = EIGRPInstance.objects.all().prefetch_related(
+        "interfaces__interface__device", "interfaces__keychain"
+    )
+    serializer_class = EIGRPInstanceSerializer
+    search_fields = ("name", "router_id", "vrf__name")
+    editable_str_fields = ("description", "router_id", "name", "k_values")
+    editable_bool_fields = ("bfd", "passive_by_default", "stub")
+    clone_fields = ("vrf", "asn", "name", "k_values", "variance", "maximum_paths",
+                    "passive_by_default", "stub", "bfd", "status")
+
+
+class EIGRPInterfaceViewSet(_RuleViewSet):
+    """Interfaces enrolled in an EIGRP instance. Filter with ``?instance=``,
+    ``?interface=``."""
+
+    parent = "instance"
+    queryset = EIGRPInterface.objects.select_related(
+        "instance__device", "interface__device", "keychain"
+    ).order_by("interface__name")
+    serializer_class = EIGRPInterfaceSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()

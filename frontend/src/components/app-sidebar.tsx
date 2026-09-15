@@ -475,6 +475,12 @@ const sections: NavSection[] = [
             objectType: "isisinstance",
           },
           {
+            title: "EIGRP instances",
+            url: "/eigrp-instances",
+            icon: Locate,
+            objectType: "eigrpinstance",
+          },
+          {
             title: "VTEPs",
             url: "/vteps",
             icon: Waypoints,

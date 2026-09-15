@@ -56,6 +56,8 @@ export const AFI_SAFI: { id: AfiSafi; label: string }[] = [
 
 // Tri-state knobs: null is "inherit" (session) / "platform default" (group),
 // drawn as the select's none row - the primitive refuses "" as a value.
+
+const NO_POLICY = "__none__"
 const TRI = [
   { value: "on", label: "On" },
   { value: "off", label: "Off" },
@@ -664,8 +666,9 @@ export function BGPAddressFamilyForm({
     label: (v) => v.afi_safi,
     onSaved,
   })
+  // Radix refuses an empty item value, so "no policy" is a sentinel.
   const policyOptions = [
-    { value: "", label: "-" },
+    { value: NO_POLICY, label: "-" },
     ...policies.map((p) => ({ value: p.id, label: p.label })),
   ]
   return (
@@ -772,8 +775,8 @@ export function BGPAddressFamilyForm({
             />,
             <CellSelect
               key="pol"
-              value={r.policyId ?? ""}
-              onChange={(v) => update({ policyId: v || null })}
+              value={r.policyId ?? NO_POLICY}
+              onChange={(v) => update({ policyId: v === NO_POLICY ? null : v })}
               options={policyOptions}
               width="w-48"
             />,

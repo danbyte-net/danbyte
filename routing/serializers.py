@@ -43,6 +43,8 @@ from .models import (
     Community,
     CommunityList,
     CommunityListRule,
+    EIGRPInstance,
+    EIGRPInterface,
     ISISInstance,
     ISISInterface,
     OSPFArea,
@@ -542,7 +544,8 @@ class _ChildRowSerializer(NumIdModelSerializer):
         attrs = super().validate(attrs)
         probe = self._probe(attrs)
         _run_clean(probe)
-        for f in ("networks", "address_families", "remote_address", "router_id"):
+        for f in ("networks", "address_families", "remote_address", "router_id",
+                  "summary_addresses"):
             if f in attrs:
                 attrs[f] = getattr(probe, f)
         return attrs
@@ -562,6 +565,10 @@ class RedistributionSerializer(_ChildRowSerializer):
         source="isis_instance", queryset=ISISInstance.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    eigrp_instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="eigrp_instance", queryset=EIGRPInstance.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     policy = RoutingPolicyMiniSerializer(read_only=True)
     policy_id = TenantScopedPrimaryKeyRelatedField(
         source="policy", queryset=RoutingPolicy.objects.all(),
@@ -570,7 +577,7 @@ class RedistributionSerializer(_ChildRowSerializer):
 
     class Meta:
         model = Redistribution
-        fields = ["id", "bgp_af_id", "ospf_instance_id", "isis_instance_id",
+        fields = ["id", "bgp_af_id", "ospf_instance_id", "isis_instance_id", "eigrp_instance_id",
                   "source", "policy", "policy_id", "metric", "extra"]
         read_only_fields = ["id"]
 
@@ -949,7 +956,7 @@ class _RedistributingInstanceSerializer(
         attrs = super().validate(attrs)
         probe = self._probe(attrs)
         _run_clean(probe)
-        for f in ("router_id", "net"):
+        for f in ("router_id", "net", "k_values"):
             if f in attrs:
                 attrs[f] = getattr(probe, f)
         rows = self.initial_data.get("redistributions") if isinstance(self.initial_data, dict) else None
@@ -974,7 +981,7 @@ class _RedistributingInstanceSerializer(
         inst.redistributions.all().delete()
         for data in rows:
             data = dict(data)
-            for k in ("bgp_af", "ospf_instance", "isis_instance"):
+            for k in ("bgp_af", "ospf_instance", "isis_instance", "eigrp_instance"):
                 data.pop(k, None)
             Redistribution.objects.create(**{self.parent_key: inst}, **data)
 
@@ -1099,6 +1106,51 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
 
 
 # ─── Overlay: VTEPs ──────────────────────────────────────────────────────────
+
+class EIGRPInterfaceSerializer(_ChildRowSerializer):
+    parent_field = "instance"
+    instance_id = TenantScopedPrimaryKeyRelatedField(
+        source="instance", queryset=EIGRPInstance.objects.all(),
+        write_only=True, required=False,
+    )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(), write_only=True,
+    )
+    keychain = RoutingKeychainMiniSerializer(read_only=True)
+    keychain_id = TenantScopedPrimaryKeyRelatedField(
+        source="keychain", queryset=RoutingKeychain.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    summary_addresses = serializers.ListField(
+        child=serializers.CharField(), required=False,
+    )
+
+    class Meta:
+        model = EIGRPInterface
+        fields = ["id", "instance_id", "interface", "interface_id", "passive", "bfd",
+                  "hello_interval", "hold_time", "bandwidth_percent", "split_horizon",
+                  "summary_addresses", "authentication", "keychain", "keychain_id", "extra"]
+        read_only_fields = ["id"]
+        validators = []
+
+
+class EIGRPInstanceSerializer(_RedistributingInstanceSerializer):
+    cf_model = "eigrpinstance"
+    parent_key = "eigrp_instance"
+    interfaces = EIGRPInterfaceSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = EIGRPInstance
+        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
+                  "asn", "name", "router_id", "k_values", "variance", "maximum_paths",
+                  "passive_by_default", "stub", "bfd",
+                  "redistributions", "interfaces", "interface_count",
+                  "status", "status_id", "description", "extra",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        validators = []
+
 
 class L2VPNBriefSerializer(NumIdModelSerializer):
     vrf = VRFMiniSerializer(read_only=True)

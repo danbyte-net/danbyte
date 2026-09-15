@@ -6,6 +6,8 @@ import type { ReactNode } from "react"
 
 import { api } from "@/lib/api"
 import type {
+  EIGRPInstance,
+  EIGRPInterface,
   ISISInstance,
   ISISInterface,
   OSPFInstance,
@@ -27,6 +29,8 @@ import { StatusBadge } from "@/components/status-badge"
 
 import { RoutingDeleteDialog } from "./catalog-page"
 import {
+  EIGRPInstanceForm,
+  EIGRPInterfaceForm,
   ISISInstanceForm,
   ISISInterfaceForm,
   OSPFInstanceForm,
@@ -587,6 +591,228 @@ export function ISISSection({
         item={deleting?.kind === "iface" ? deleting.item : null}
         endpoint="/api/routing/isis-interfaces/"
         queryKey="isis-instances"
+        label={(i) => i.interface.name}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        onDeleted={refresh}
+      />
+    </Section>
+  )
+}
+
+// ─── EIGRP ───────────────────────────────────────────────────────────────────
+
+type EIGRPDialog =
+  | { kind: "instance"; item: EIGRPInstance | null }
+  | { kind: "iface"; instance: EIGRPInstance; item: EIGRPInterface | null }
+  | null
+
+export function EIGRPSection({
+  device,
+}: {
+  device: { id: string; name: string }
+}) {
+  const { canDo } = useMe()
+  const qc = useQueryClient()
+  const [dialog, setDialog] = useState<EIGRPDialog>(null)
+  const [deleting, setDeleting] = useState<
+    | { kind: "instance"; item: EIGRPInstance }
+    | { kind: "iface"; item: EIGRPInterface }
+    | null
+  >(null)
+  const q = useQuery({
+    queryKey: ["eigrp-instances", "device", device.id],
+    queryFn: () =>
+      api<Paginated<EIGRPInstance>>(
+        `/api/routing/eigrp-instances/?device=${device.id}`
+      ),
+  })
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["eigrp-instances"] })
+    qc.invalidateQueries({ queryKey: ["device", device.id] })
+  }
+  const close = () => setDialog(null)
+  const rows = q.data?.results ?? []
+  const title = (inst: EIGRPInstance) =>
+    inst.name ? `EIGRP ${inst.name} · AS ${inst.asn}` : `EIGRP ${inst.asn}`
+  return (
+    <Section
+      title="EIGRP"
+      count={rows.length}
+      action={
+        canDo("eigrpinstance", "add") && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setDialog({ kind: "instance", item: null })}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add instance
+          </Button>
+        )
+      }
+    >
+      {q.isError && <QueryError error={q.error} />}
+      {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {q.data && rows.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No EIGRP on this device.
+        </p>
+      )}
+      {rows.map((inst) => (
+        <Card
+          key={inst.id}
+          title={title(inst)}
+          badges={
+            <>
+              {inst.vrf ? (
+                <ColorBadge name={inst.vrf.name} color={inst.vrf.color} />
+              ) : (
+                <Badge variant="outline">global</Badge>
+              )}
+              <StatusBadge status={inst.status} />
+              {inst.router_id && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  router-id {inst.router_id}
+                </span>
+              )}
+              {inst.k_values && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  k {inst.k_values}
+                </span>
+              )}
+              {inst.stub && <Badge variant="secondary">stub</Badge>}
+              {inst.passive_by_default && (
+                <Badge variant="secondary">passive by default</Badge>
+              )}
+              {inst.redistributions.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  redistribute{" "}
+                  {inst.redistributions.map((r) => r.source).join(", ")}
+                </span>
+              )}
+            </>
+          }
+          onEdit={
+            canDo("eigrpinstance", "change")
+              ? () => setDialog({ kind: "instance", item: inst })
+              : undefined
+          }
+          onDelete={
+            canDo("eigrpinstance", "delete")
+              ? () => setDeleting({ kind: "instance", item: inst })
+              : undefined
+          }
+          addLabel="Enrol interface"
+          onAdd={
+            canDo("eigrpinterface", "add")
+              ? () => setDialog({ kind: "iface", instance: inst, item: null })
+              : undefined
+          }
+          empty="No interfaces enrolled."
+          rows={inst.interfaces.map((row) => (
+            <li
+              key={row.id}
+              className="flex flex-wrap items-center gap-3 px-3 py-1.5 text-xs"
+            >
+              <Link
+                to="/interfaces/$id"
+                params={{ id: row.interface.id }}
+                className="link font-mono font-medium"
+              >
+                {row.interface.name}
+              </Link>
+              {row.summary_addresses.length > 0 && (
+                <span className="font-mono text-muted-foreground">
+                  summary {row.summary_addresses.join(", ")}
+                </span>
+              )}
+              {row.bandwidth_percent != null && (
+                <span className="text-muted-foreground">
+                  bandwidth <span className="num">{row.bandwidth_percent}</span>
+                  %
+                </span>
+              )}
+              {onOff(row.passive, inst.passive_by_default) && (
+                <Badge variant="secondary">passive</Badge>
+              )}
+              {row.split_horizon === false && (
+                <Badge variant="secondary">no split-horizon</Badge>
+              )}
+              {row.bfd && <Badge variant="secondary">bfd</Badge>}
+              {row.authentication !== "none" && (
+                <span className="text-muted-foreground">
+                  {row.authentication} · {row.keychain?.name}
+                </span>
+              )}
+              <IconButtons
+                editLabel="Edit interface"
+                deleteLabel="Remove interface"
+                onEdit={
+                  canDo("eigrpinterface", "change")
+                    ? () =>
+                        setDialog({ kind: "iface", instance: inst, item: row })
+                    : undefined
+                }
+                onDelete={
+                  canDo("eigrpinterface", "delete")
+                    ? () => setDeleting({ kind: "iface", item: row })
+                    : undefined
+                }
+              />
+            </li>
+          ))}
+        />
+      ))}
+      <Dialog open={dialog !== null} onOpenChange={(o) => !o && close()}>
+        <DialogContent size="2xl" className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {dialog?.kind === "instance"
+                ? dialog.item
+                  ? `Edit ${title(dialog.item)}`
+                  : `Add EIGRP instance on ${device.name}`
+                : dialog?.kind === "iface"
+                  ? dialog.item
+                    ? `Edit ${dialog.item.interface.name}`
+                    : `Enrol an interface in ${title(dialog.instance)}`
+                  : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {dialog?.kind === "instance" && (
+            <EIGRPInstanceForm
+              item={dialog.item}
+              device={device}
+              onSaved={() => {
+                refresh()
+                close()
+              }}
+              onCancel={close}
+            />
+          )}
+          {dialog?.kind === "iface" && (
+            <EIGRPInterfaceForm
+              item={dialog.item}
+              instance={dialog.instance}
+              onSaved={() => {
+                refresh()
+                close()
+              }}
+              onCancel={close}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+      <RoutingDeleteDialog
+        item={deleting?.kind === "instance" ? deleting.item : null}
+        endpoint="/api/routing/eigrp-instances/"
+        queryKey="eigrp-instances"
+        label={(i) => `${title(i)} on ${i.device.name}`}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        onDeleted={refresh}
+      />
+      <RoutingDeleteDialog
+        item={deleting?.kind === "iface" ? deleting.item : null}
+        endpoint="/api/routing/eigrp-interfaces/"
+        queryKey="eigrp-instances"
         label={(i) => i.interface.name}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}

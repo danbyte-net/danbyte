@@ -38,7 +38,7 @@ import {
   BGPSessionForm,
 } from "./bgp-forms"
 import { RoutingDeleteDialog } from "./catalog-page"
-import { ISISSection, OSPFSection } from "./device-igp-section"
+import { EIGRPSection, ISISSection, OSPFSection } from "./device-igp-section"
 import { VTEPSection } from "./device-vtep-section"
 import { StaticRouteForm } from "./object-forms"
 
@@ -117,6 +117,7 @@ export function DeviceRoutingPanel({
       <BGPSection device={device} />
       <OSPFSection device={device} />
       <ISISSection device={device} />
+      <EIGRPSection device={device} />
       <VTEPSection device={device} />
       <Section
         title="Static routes"

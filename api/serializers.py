@@ -2658,6 +2658,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             obj.static_routes.count() + obj.bgpinstances.count()
             + sum(i.sessions.count() for i in obj.bgpinstances.all())
             + obj.ospfinstances.count() + obj.isisinstances.count()
+            + obj.eigrpinstances.count()
             + (1 if hasattr(obj, "vtep") else 0)
         )
 

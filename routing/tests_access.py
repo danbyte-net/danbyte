@@ -29,6 +29,7 @@ from .models import (
     BGPInstance,
     BGPPeerGroup,
     BGPSession,
+    EIGRPInstance,
     ISISInstance,
     OSPFArea,
     OSPFInstance,
@@ -53,6 +54,7 @@ LISTS = {
     "/api/routing/bgp-sessions/": BGPSession,
     "/api/routing/ospf-instances/": OSPFInstance,
     "/api/routing/isis-instances/": ISISInstance,
+    "/api/routing/eigrp-instances/": EIGRPInstance,
     "/api/routing/vteps/": VTEP,
 }
 
@@ -89,11 +91,12 @@ def _fill(tenant, device, tag):
     isis = ISISInstance.objects.create(
         tenant=tenant, device=device, process=tag, net="49.0001.0000.0000.0001.00"
     )
+    eigrp = EIGRPInstance.objects.create(tenant=tenant, device=device, asn=100)
     vtep = VTEP.objects.create(tenant=tenant, device=device)
     return {
         PrefixList: pl, RoutingPolicy: pol, RoutingKeychain: kc, BGPPeerGroup: pg,
         OSPFArea: area, StaticRoute: sr, BGPInstance: inst, BGPSession: sess,
-        OSPFInstance: ospf, ISISInstance: isis, VTEP: vtep,
+        OSPFInstance: ospf, ISISInstance: isis, EIGRPInstance: eigrp, VTEP: vtep,
     }
 
 
@@ -191,7 +194,7 @@ class SiteScopeTests(APITestCase):
             name="ams only",
             object_types=[
                 "staticroute", "bgpinstance", "bgpsession", "ospfinstance", "isisinstance",
-                "vtep", "prefixlist", "bgppeergroup",
+                "eigrpinstance", "vtep", "prefixlist", "bgppeergroup",
             ],
             actions=["view"],
         )
