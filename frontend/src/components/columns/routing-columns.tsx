@@ -13,6 +13,7 @@ import type {
   RoutingPolicy,
   StaticRoute,
 } from "@/lib/api"
+import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -731,6 +732,7 @@ export function buildBGPPeerGroupColumns<T extends BGPPeerGroup = BGPPeerGroup>(
 export type BGPSessionColumnId =
   | "numid"
   | "neighbor"
+  | "kind"
   | "device"
   | "vrf"
   | "local_asn"
@@ -744,6 +746,7 @@ export type BGPSessionColumnId =
 const SESSION_ORDER: BGPSessionColumnId[] = [
   "numid",
   "neighbor",
+  "kind",
   "device",
   "vrf",
   "local_asn",
@@ -791,6 +794,29 @@ export function buildBGPSessionColumns<T extends BGPSession = BGPSession>(
             />
           </span>
         ),
+      }),
+      kind: () => ({
+        id: "kind",
+        accessorFn: (r) => r.effective.kind ?? "",
+        header: "Kind",
+        cell: ({ row }) =>
+          row.original.effective.kind ? (
+            <Badge variant="outline">
+              {row.original.effective.kind === "ibgp" ? "iBGP" : "eBGP"}
+            </Badge>
+          ) : (
+            dash
+          ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Kind",
+            get: (r: T) => r.effective.kind ?? "__none__",
+            formatValue: (v) => ({
+              label: v === "ibgp" ? "iBGP" : v === "ebgp" ? "eBGP" : "Unknown",
+            }),
+          },
+        },
       }),
       device: () => ({
         id: "device",

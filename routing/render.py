@@ -171,6 +171,7 @@ def session_dict(s, policies: set[str]) -> dict:
         "peer_group": s.peer_group.name if s.peer_group_id else None,
         "remote_asn": eff["remote_asn"],
         "remote_asn_mode": eff["remote_asn_mode"],
+        "kind": eff["kind"],
         "local_asn": eff["local_asn"],
         "local_address": {
             "address": local.ip_address,

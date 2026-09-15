@@ -840,6 +840,17 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
             if self.local_address_id and self.local_address.assigned_interface_id
             else (group.update_source if group is not None else "")
         )
+        # iBGP or eBGP is a fact of the two AS numbers, not a setting: the
+        # same AS on both ends is internal, anything else external.
+        mode = out["remote_asn_mode"]
+        if mode == "internal":
+            out["kind"] = "ibgp"
+        elif mode == "external":
+            out["kind"] = "ebgp"
+        elif out["remote_asn"] is not None:
+            out["kind"] = "ibgp" if out["remote_asn"] == out["local_asn"] else "ebgp"
+        else:
+            out["kind"] = None
         return out
 
 

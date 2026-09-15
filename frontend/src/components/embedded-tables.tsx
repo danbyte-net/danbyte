@@ -455,6 +455,7 @@ export function EmbeddedBGPSessionTable({
       buildBGPSessionColumns({
         include: [
           "neighbor",
+          "kind",
           "device",
           "vrf",
           "local_asn",

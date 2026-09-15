@@ -9,6 +9,7 @@ import type { BGPSession } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
@@ -267,7 +268,16 @@ function Body({ s }: { s: BGPSession }) {
         <DetailHero
           title={neighbor}
           mono
-          badges={<StatusBadge status={s.status} />}
+          badges={
+            <>
+              <StatusBadge status={s.status} />
+              {eff.kind && (
+                <Badge variant="outline">
+                  {eff.kind === "ibgp" ? "iBGP" : "eBGP"}
+                </Badge>
+              )}
+            </>
+          }
           subtitle={
             <span className="font-mono">
               {s.instance.device.name} · AS{eff.local_asn} → AS

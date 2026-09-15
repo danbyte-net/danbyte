@@ -4333,6 +4333,8 @@ export interface BGPSessionEffective {
   remote_asn: number | null
   local_asn: number
   update_source: string
+  /** Derived from the two AS numbers - never set by hand. */
+  kind: "ibgp" | "ebgp" | null
 }
 
 export interface BGPSession extends BGPPeerKnobs {

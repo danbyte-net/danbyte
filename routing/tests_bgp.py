@@ -143,6 +143,7 @@ class SessionTests(_Base):
         self.assertEqual(eff["hold_time"], 30)  # own value wins
         self.assertEqual(eff["import_policy"]["name"], "SPINES-IN")
         self.assertEqual(eff["local_asn"], 65001)  # from the instance
+        self.assertEqual(eff["kind"], "ebgp")  # 65001 → 65000
         self.assertEqual(eff["update_source"], "lo0")  # from the local address
         # The stored row keeps the nulls, so the group still governs later.
         self.assertIsNone(body["remote_asn"])
@@ -226,6 +227,7 @@ class SessionTests(_Base):
         self.assertEqual(mirror["remote_address"], "10.0.0.11")
         self.assertEqual(mirror["local_address"]["ip_address"], "10.0.0.1")
         self.assertEqual(mirror["remote_asn"], 65001)
+        self.assertEqual(mirror["effective"]["kind"], "ibgp")  # same AS both ends
         self.assertEqual(mirror["effective"]["address_families"], ["ipv4-unicast", "l2vpn-evpn"])
         self.assertEqual(mirror["peer_session"]["device"]["name"], "leaf1")
         near = self.client.get(f"/api/routing/bgp-sessions/{sid}/").json()
@@ -286,6 +288,8 @@ class RenderTests(_Base):
         self.assertEqual(s0["update_source"], "lo0")
         self.assertEqual(bgp["peer_groups"][0]["name"], "SPINES")
         self.assertEqual(bgp["sessions"][1]["remote_asn_mode"], "external")
+        self.assertEqual(bgp["sessions"][1]["kind"], "ebgp")
+        self.assertEqual(bgp["sessions"][0]["kind"], "ebgp")
         # The policy the group references is in the closure; nothing else.
         self.assertEqual(list(ctx["policies"]), ["SPINES-IN"])
         RoutingPolicy.objects.create(tenant=self.tenant, name="UNUSED")

@@ -147,6 +147,11 @@ peering - `neighbor swp1 interface remote-as external`), its local address
 When the far address is in IPAM, the row is linked and the peer device is
 filled in.
 
+Whether a session is **iBGP or eBGP** is never typed in: the same AS on both
+ends is internal, anything else external (an unnumbered *internal* /
+*external* remote AS says so directly). It shows as a badge on the session,
+filters the sessions list, and reaches a template as `session.kind`.
+
 Every neighbour setting a session leaves on **Inherit** comes from its peer
 group; what neither sets falls to the instance (BFD) or the platform
 default. The session's page shows both: **Effective settings** - what the
@@ -207,7 +212,7 @@ routing:
   bgp:           [{vrf, asn, router_id, cluster_id, graceful_restart, bfd,
                    address_families: [{afi_safi, networks, maximum_paths, maximum_paths_ibgp,
                                        import_policy, export_policy, redistribute: [{source, policy, metric}]}],
-                   sessions: [{name, peer_group, remote_asn, remote_asn_mode, local_asn,
+                   sessions: [{name, peer_group, remote_asn, remote_asn_mode, kind, local_asn,
                                local_address: {address, cidr, interface}, remote_address, interface,
                                peer_device, address_families, import_policy, export_policy, bfd,
                                ebgp_multihop, update_source, next_hop_self, route_reflector_client,
