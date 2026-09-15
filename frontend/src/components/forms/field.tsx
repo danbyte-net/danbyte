@@ -53,8 +53,12 @@ export function Field({
       data-field-error={error ? "" : undefined}
       className={cn("grid min-w-0 content-start gap-1.5", className)}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <Label className="flex items-center gap-1 text-xs">
+      {/* The label never wraps: it is the thing the eye reads first, and a
+          "Next" / "hop" tower beside a hint is unreadable. When the two do not
+          fit on one line in a narrow column, the hint - not the label - drops
+          onto the next line (flex-wrap), still above the control. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+        <Label className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap">
           {label}
           {required && (
             // Not `text-destructive`: an untouched required field isn't an
@@ -69,7 +73,7 @@ export function Field({
           <PendingFieldMark label={label} />
         </Label>
         {hint && !hintBelow && (
-          <span className="shrink-0 text-[10px] text-muted-foreground">
+          <span className="ml-auto min-w-0 text-[10px] text-muted-foreground">
             {hint}
           </span>
         )}

@@ -39,6 +39,8 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     # an IPsec profile's pre-shared key the same (#168).
     "wirelesslan": ["reveal"],
     "ipsecprofile": ["reveal"],
+    # A routing keychain holds the BGP / OSPF / IS-IS key.
+    "routingkeychain": ["reveal"],
     "device": ["connect"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
@@ -99,6 +101,17 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FHRPGroupAssignment", "FHRP group assignments", "IPAM"),
     ("api.IPRole", "IP roles", "IPAM"),
     ("api.NATRule", "NAT rules", "IPAM"),
+    ("routing.PrefixList", "Prefix lists", "Routing"),
+    ("routing.PrefixListRule", "Prefix list rules", "Routing"),
+    ("routing.Community", "Communities", "Routing"),
+    ("routing.CommunityList", "Community lists", "Routing"),
+    ("routing.CommunityListRule", "Community list rules", "Routing"),
+    ("routing.ASPathList", "AS-path lists", "Routing"),
+    ("routing.ASPathListRule", "AS-path list rules", "Routing"),
+    ("routing.RoutingPolicy", "Routing policies", "Routing"),
+    ("routing.RoutingPolicyRule", "Routing policy rules", "Routing"),
+    ("routing.RoutingKeychain", "Routing keychains", "Routing"),
+    ("routing.StaticRoute", "Static routes", "Routing"),
     ("zabbix.ZabbixConnection", "Zabbix connections", "Monitoring"),
     ("zabbix.ZabbixHostLink", "Zabbix host links", "Monitoring"),
     ("zabbix.ZabbixChange", "Zabbix pending changes", "Monitoring"),

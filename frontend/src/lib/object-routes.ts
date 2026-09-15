@@ -27,6 +27,13 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.iprange": "/ip-ranges/$id",
   "api.iprole": "/ip-roles/$id",
   "api.ipsecprofile": "/ipsec-profiles/$id",
+  "routing.prefixlist": "/prefix-lists/$id",
+  "routing.community": "/communities/$id",
+  "routing.communitylist": "/community-lists/$id",
+  "routing.aspathlist": "/as-path-lists/$id",
+  "routing.routingpolicy": "/routing-policies/$id",
+  "routing.routingkeychain": "/routing-keychains/$id",
+  "routing.staticroute": "/static-routes/$id",
   // Renamed model: rows written as api.IPStatus predate api.Status.
   "api.ipstatus": "/statuses/$id",
   "api.l2vpn": "/l2vpns/$id",

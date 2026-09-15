@@ -24,12 +24,15 @@ import { Route as TopologyRouteImport } from './routes/topology'
 import { Route as TenantsRouteImport } from './routes/tenants'
 import { Route as TagsRouteImport } from './routes/tags'
 import { Route as StatusesRouteImport } from './routes/statuses'
+import { Route as StaticRoutesRouteImport } from './routes/static-routes'
 import { Route as SitesRouteImport } from './routes/sites'
 import { Route as SiteMapRouteImport } from './routes/site-map'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SetPasswordRouteImport } from './routes/set-password'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SavedFiltersRouteImport } from './routes/saved-filters'
+import { Route as RoutingPoliciesRouteImport } from './routes/routing-policies'
+import { Route as RoutingKeychainsRouteImport } from './routes/routing-keychains'
 import { Route as RouteTargetsRouteImport } from './routes/route-targets'
 import { Route as RirsRouteImport } from './routes/rirs'
 import { Route as RegionsRouteImport } from './routes/regions'
@@ -37,6 +40,7 @@ import { Route as RackTypesRouteImport } from './routes/rack-types'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as ProviderNetworksRouteImport } from './routes/provider-networks'
 import { Route as PrefixesRouteImport } from './routes/prefixes'
+import { Route as PrefixListsRouteImport } from './routes/prefix-lists'
 import { Route as PowerPanelsRouteImport } from './routes/power-panels'
 import { Route as PowerFeedsRouteImport } from './routes/power-feeds'
 import { Route as PortUtilizationRouteImport } from './routes/port-utilization'
@@ -74,6 +78,8 @@ import { Route as ContactGroupsRouteImport } from './routes/contact-groups'
 import { Route as ConfigDriftRouteImport } from './routes/config-drift'
 import { Route as ConfigContextsRouteImport } from './routes/config-contexts'
 import { Route as ComplianceRouteImport } from './routes/compliance'
+import { Route as CommunityListsRouteImport } from './routes/community-lists'
+import { Route as CommunitiesRouteImport } from './routes/communities'
 import { Route as CircuitsRouteImport } from './routes/circuits'
 import { Route as CircuitTypesRouteImport } from './routes/circuit-types'
 import { Route as ChangeLogRouteImport } from './routes/change-log'
@@ -81,6 +87,7 @@ import { Route as CablesRouteImport } from './routes/cables'
 import { Route as AutomationTargetsRouteImport } from './routes/automation-targets'
 import { Route as AuditLogRouteImport } from './routes/audit-log'
 import { Route as AsnsRouteImport } from './routes/asns'
+import { Route as AsPathListsRouteImport } from './routes/as-path-lists'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AggregatesRouteImport } from './routes/aggregates'
 import { Route as AgentAccessRouteImport } from './routes/agent-access'
@@ -107,11 +114,14 @@ import { Route as TopologyIndexRouteImport } from './routes/topology.index'
 import { Route as TenantsIndexRouteImport } from './routes/tenants.index'
 import { Route as TagsIndexRouteImport } from './routes/tags.index'
 import { Route as StatusesIndexRouteImport } from './routes/statuses.index'
+import { Route as StaticRoutesIndexRouteImport } from './routes/static-routes.index'
 import { Route as SitesIndexRouteImport } from './routes/sites.index'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as ServicesIndexRouteImport } from './routes/services.index'
 import { Route as ServiceTemplatesIndexRouteImport } from './routes/service-templates.index'
 import { Route as ScriptsIndexRouteImport } from './routes/scripts.index'
+import { Route as RoutingPoliciesIndexRouteImport } from './routes/routing-policies.index'
+import { Route as RoutingKeychainsIndexRouteImport } from './routes/routing-keychains.index'
 import { Route as RouteTargetsIndexRouteImport } from './routes/route-targets.index'
 import { Route as RirsIndexRouteImport } from './routes/rirs.index'
 import { Route as RegionsIndexRouteImport } from './routes/regions.index'
@@ -121,6 +131,7 @@ import { Route as RackRolesIndexRouteImport } from './routes/rack-roles.index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers.index'
 import { Route as ProviderNetworksIndexRouteImport } from './routes/provider-networks.index'
 import { Route as PrefixesIndexRouteImport } from './routes/prefixes.index'
+import { Route as PrefixListsIndexRouteImport } from './routes/prefix-lists.index'
 import { Route as PowerPanelsIndexRouteImport } from './routes/power-panels.index'
 import { Route as PowerFeedsIndexRouteImport } from './routes/power-feeds.index'
 import { Route as PortReservationsIndexRouteImport } from './routes/port-reservations.index'
@@ -162,6 +173,8 @@ import { Route as ContactsIndexRouteImport } from './routes/contacts.index'
 import { Route as ContactRolesIndexRouteImport } from './routes/contact-roles.index'
 import { Route as ContactGroupsIndexRouteImport } from './routes/contact-groups.index'
 import { Route as ConfigContextsIndexRouteImport } from './routes/config-contexts.index'
+import { Route as CommunityListsIndexRouteImport } from './routes/community-lists.index'
+import { Route as CommunitiesIndexRouteImport } from './routes/communities.index'
 import { Route as ClustersIndexRouteImport } from './routes/clusters.index'
 import { Route as ClusterTypesIndexRouteImport } from './routes/cluster-types.index'
 import { Route as ClusterGroupsIndexRouteImport } from './routes/cluster-groups.index'
@@ -173,6 +186,7 @@ import { Route as CertificateIssuersIndexRouteImport } from './routes/certificat
 import { Route as CablesIndexRouteImport } from './routes/cables.index'
 import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
 import { Route as AsnsIndexRouteImport } from './routes/asns.index'
+import { Route as AsPathListsIndexRouteImport } from './routes/as-path-lists.index'
 import { Route as AggregatesIndexRouteImport } from './routes/aggregates.index'
 import { Route as ZonesNewRouteImport } from './routes/zones.new'
 import { Route as ZonesIdRouteImport } from './routes/zones.$id'
@@ -206,6 +220,8 @@ import { Route as TagsNewRouteImport } from './routes/tags.new'
 import { Route as TagsIdRouteImport } from './routes/tags.$id'
 import { Route as StatusesNewRouteImport } from './routes/statuses.new'
 import { Route as StatusesIdRouteImport } from './routes/statuses.$id'
+import { Route as StaticRoutesNewRouteImport } from './routes/static-routes.new'
+import { Route as StaticRoutesIdRouteImport } from './routes/static-routes.$id'
 import { Route as SitesNewRouteImport } from './routes/sites.new'
 import { Route as SitesBulkEditRouteImport } from './routes/sites.bulk-edit'
 import { Route as SitesIdRouteImport } from './routes/sites.$id'
@@ -241,6 +257,10 @@ import { Route as ServicesIdRouteImport } from './routes/services.$id'
 import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
 import { Route as ServiceTemplatesIdRouteImport } from './routes/service-templates.$id'
 import { Route as ScriptsIdRouteImport } from './routes/scripts.$id'
+import { Route as RoutingPoliciesNewRouteImport } from './routes/routing-policies.new'
+import { Route as RoutingPoliciesIdRouteImport } from './routes/routing-policies.$id'
+import { Route as RoutingKeychainsNewRouteImport } from './routes/routing-keychains.new'
+import { Route as RoutingKeychainsIdRouteImport } from './routes/routing-keychains.$id'
 import { Route as RouteTargetsNewRouteImport } from './routes/route-targets.new'
 import { Route as RouteTargetsIdRouteImport } from './routes/route-targets.$id'
 import { Route as RirsNewRouteImport } from './routes/rirs.new'
@@ -261,6 +281,8 @@ import { Route as ProviderNetworksIdRouteImport } from './routes/provider-networ
 import { Route as PrefixesNewRouteImport } from './routes/prefixes.new'
 import { Route as PrefixesBulkEditRouteImport } from './routes/prefixes.bulk-edit'
 import { Route as PrefixesIdRouteImport } from './routes/prefixes.$id'
+import { Route as PrefixListsNewRouteImport } from './routes/prefix-lists.new'
+import { Route as PrefixListsIdRouteImport } from './routes/prefix-lists.$id'
 import { Route as PowerPanelsNewRouteImport } from './routes/power-panels.new'
 import { Route as PowerPanelsIdRouteImport } from './routes/power-panels.$id'
 import { Route as PowerFeedsNewRouteImport } from './routes/power-feeds.new'
@@ -329,6 +351,10 @@ import { Route as ConfigContextsNewRouteImport } from './routes/config-contexts.
 import { Route as ConfigContextsIdRouteImport } from './routes/config-contexts.$id'
 import { Route as ComplianceRulesNewRouteImport } from './routes/compliance-rules.new'
 import { Route as ComplianceRulesIdRouteImport } from './routes/compliance-rules.$id'
+import { Route as CommunityListsNewRouteImport } from './routes/community-lists.new'
+import { Route as CommunityListsIdRouteImport } from './routes/community-lists.$id'
+import { Route as CommunitiesNewRouteImport } from './routes/communities.new'
+import { Route as CommunitiesIdRouteImport } from './routes/communities.$id'
 import { Route as ClustersNewRouteImport } from './routes/clusters.new'
 import { Route as ClustersIdRouteImport } from './routes/clusters.$id'
 import { Route as ClusterTypesNewRouteImport } from './routes/cluster-types.new'
@@ -351,6 +377,8 @@ import { Route as AutomationTargetsIdRouteImport } from './routes/automation-tar
 import { Route as AuditLogIdRouteImport } from './routes/audit-log_.$id'
 import { Route as AsnsNewRouteImport } from './routes/asns.new'
 import { Route as AsnsIdRouteImport } from './routes/asns.$id'
+import { Route as AsPathListsNewRouteImport } from './routes/as-path-lists.new'
+import { Route as AsPathListsIdRouteImport } from './routes/as-path-lists.$id'
 import { Route as AlertRulesNewRouteImport } from './routes/alert-rules.new'
 import { Route as AggregatesNewRouteImport } from './routes/aggregates.new'
 import { Route as AggregatesIdRouteImport } from './routes/aggregates.$id'
@@ -369,10 +397,13 @@ import { Route as TunnelGroupsIdEditRouteImport } from './routes/tunnel-groups.$
 import { Route as TenantsIdEditRouteImport } from './routes/tenants.$id_.edit'
 import { Route as TagsIdEditRouteImport } from './routes/tags.$id_.edit'
 import { Route as StatusesIdEditRouteImport } from './routes/statuses.$id_.edit'
+import { Route as StaticRoutesIdEditRouteImport } from './routes/static-routes.$id_.edit'
 import { Route as SitesIdEditRouteImport } from './routes/sites.$id_.edit'
 import { Route as SilencesIdEditRouteImport } from './routes/silences.$id_.edit'
 import { Route as ServiceTemplatesIdEditRouteImport } from './routes/service-templates.$id_.edit'
 import { Route as ScriptsRunsRunIdRouteImport } from './routes/scripts.runs.$runId'
+import { Route as RoutingPoliciesIdEditRouteImport } from './routes/routing-policies.$id_.edit'
+import { Route as RoutingKeychainsIdEditRouteImport } from './routes/routing-keychains.$id_.edit'
 import { Route as RouteTargetsIdEditRouteImport } from './routes/route-targets.$id_.edit'
 import { Route as RirsIdEditRouteImport } from './routes/rirs.$id_.edit'
 import { Route as RegionsIdEditRouteImport } from './routes/regions.$id_.edit'
@@ -382,6 +413,7 @@ import { Route as RackRolesIdEditRouteImport } from './routes/rack-roles.$id_.ed
 import { Route as ProvidersIdEditRouteImport } from './routes/providers.$id_.edit'
 import { Route as ProviderNetworksIdEditRouteImport } from './routes/provider-networks.$id_.edit'
 import { Route as PrefixesIdEditRouteImport } from './routes/prefixes.$id_.edit'
+import { Route as PrefixListsIdEditRouteImport } from './routes/prefix-lists.$id_.edit'
 import { Route as PowerPanelsIdEditRouteImport } from './routes/power-panels.$id_.edit'
 import { Route as PowerFeedsIdEditRouteImport } from './routes/power-feeds.$id_.edit'
 import { Route as PlatformsIdEditRouteImport } from './routes/platforms.$id_.edit'
@@ -413,6 +445,8 @@ import { Route as ContactRolesIdEditRouteImport } from './routes/contact-roles.$
 import { Route as ContactGroupsIdEditRouteImport } from './routes/contact-groups.$id_.edit'
 import { Route as ConfigContextsIdEditRouteImport } from './routes/config-contexts.$id_.edit'
 import { Route as ComplianceRulesIdEditRouteImport } from './routes/compliance-rules.$id_.edit'
+import { Route as CommunityListsIdEditRouteImport } from './routes/community-lists.$id_.edit'
+import { Route as CommunitiesIdEditRouteImport } from './routes/communities.$id_.edit'
 import { Route as ClustersIdEditRouteImport } from './routes/clusters.$id_.edit'
 import { Route as ClusterTypesIdEditRouteImport } from './routes/cluster-types.$id_.edit'
 import { Route as ClusterGroupsIdEditRouteImport } from './routes/cluster-groups.$id_.edit'
@@ -422,6 +456,7 @@ import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id_.edit'
 import { Route as CablesIdEditRouteImport } from './routes/cables.$id_.edit'
 import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation-targets.$id_.edit'
 import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
+import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$id_.edit'
 import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
 import { Route as PlanningBoardIdTasksTaskIdRouteImport } from './routes/planning.$boardId_.tasks.$taskId'
@@ -502,6 +537,11 @@ const StatusesRoute = StatusesRouteImport.update({
   path: '/statuses',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StaticRoutesRoute = StaticRoutesRouteImport.update({
+  id: '/static-routes',
+  path: '/static-routes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitesRoute = SitesRouteImport.update({
   id: '/sites',
   path: '/sites',
@@ -530,6 +570,16 @@ const SearchRoute = SearchRouteImport.update({
 const SavedFiltersRoute = SavedFiltersRouteImport.update({
   id: '/saved-filters',
   path: '/saved-filters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutingPoliciesRoute = RoutingPoliciesRouteImport.update({
+  id: '/routing-policies',
+  path: '/routing-policies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutingKeychainsRoute = RoutingKeychainsRouteImport.update({
+  id: '/routing-keychains',
+  path: '/routing-keychains',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RouteTargetsRoute = RouteTargetsRouteImport.update({
@@ -565,6 +615,11 @@ const ProviderNetworksRoute = ProviderNetworksRouteImport.update({
 const PrefixesRoute = PrefixesRouteImport.update({
   id: '/prefixes',
   path: '/prefixes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrefixListsRoute = PrefixListsRouteImport.update({
+  id: '/prefix-lists',
+  path: '/prefix-lists',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PowerPanelsRoute = PowerPanelsRouteImport.update({
@@ -752,6 +807,16 @@ const ComplianceRoute = ComplianceRouteImport.update({
   path: '/compliance',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CommunityListsRoute = CommunityListsRouteImport.update({
+  id: '/community-lists',
+  path: '/community-lists',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CommunitiesRoute = CommunitiesRouteImport.update({
+  id: '/communities',
+  path: '/communities',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CircuitsRoute = CircuitsRouteImport.update({
   id: '/circuits',
   path: '/circuits',
@@ -785,6 +850,11 @@ const AuditLogRoute = AuditLogRouteImport.update({
 const AsnsRoute = AsnsRouteImport.update({
   id: '/asns',
   path: '/asns',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AsPathListsRoute = AsPathListsRouteImport.update({
+  id: '/as-path-lists',
+  path: '/as-path-lists',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsRoute = AlertsRouteImport.update({
@@ -918,6 +988,11 @@ const StatusesIndexRoute = StatusesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => StatusesRoute,
 } as any)
+const StaticRoutesIndexRoute = StaticRoutesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StaticRoutesRoute,
+} as any)
 const SitesIndexRoute = SitesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -942,6 +1017,16 @@ const ScriptsIndexRoute = ScriptsIndexRouteImport.update({
   id: '/scripts/',
   path: '/scripts/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const RoutingPoliciesIndexRoute = RoutingPoliciesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const RoutingKeychainsIndexRoute = RoutingKeychainsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RoutingKeychainsRoute,
 } as any)
 const RouteTargetsIndexRoute = RouteTargetsIndexRouteImport.update({
   id: '/',
@@ -987,6 +1072,11 @@ const PrefixesIndexRoute = PrefixesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PrefixesRoute,
+} as any)
+const PrefixListsIndexRoute = PrefixListsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PrefixListsRoute,
 } as any)
 const PowerPanelsIndexRoute = PowerPanelsIndexRouteImport.update({
   id: '/',
@@ -1193,6 +1283,16 @@ const ConfigContextsIndexRoute = ConfigContextsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ConfigContextsRoute,
 } as any)
+const CommunityListsIndexRoute = CommunityListsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CommunityListsRoute,
+} as any)
+const CommunitiesIndexRoute = CommunitiesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CommunitiesRoute,
+} as any)
 const ClustersIndexRoute = ClustersIndexRouteImport.update({
   id: '/clusters/',
   path: '/clusters/',
@@ -1248,6 +1348,11 @@ const AsnsIndexRoute = AsnsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AsnsRoute,
+} as any)
+const AsPathListsIndexRoute = AsPathListsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AsPathListsRoute,
 } as any)
 const AggregatesIndexRoute = AggregatesIndexRouteImport.update({
   id: '/',
@@ -1413,6 +1518,16 @@ const StatusesIdRoute = StatusesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => StatusesRoute,
+} as any)
+const StaticRoutesNewRoute = StaticRoutesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => StaticRoutesRoute,
+} as any)
+const StaticRoutesIdRoute = StaticRoutesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => StaticRoutesRoute,
 } as any)
 const SitesNewRoute = SitesNewRouteImport.update({
   id: '/new',
@@ -1590,6 +1705,26 @@ const ScriptsIdRoute = ScriptsIdRouteImport.update({
   path: '/scripts/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RoutingPoliciesNewRoute = RoutingPoliciesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const RoutingPoliciesIdRoute = RoutingPoliciesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const RoutingKeychainsNewRoute = RoutingKeychainsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RoutingKeychainsRoute,
+} as any)
+const RoutingKeychainsIdRoute = RoutingKeychainsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RoutingKeychainsRoute,
+} as any)
 const RouteTargetsNewRoute = RouteTargetsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1689,6 +1824,16 @@ const PrefixesIdRoute = PrefixesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => PrefixesRoute,
+} as any)
+const PrefixListsNewRoute = PrefixListsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PrefixListsRoute,
+} as any)
+const PrefixListsIdRoute = PrefixListsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PrefixListsRoute,
 } as any)
 const PowerPanelsNewRoute = PowerPanelsNewRouteImport.update({
   id: '/new',
@@ -2030,6 +2175,26 @@ const ComplianceRulesIdRoute = ComplianceRulesIdRouteImport.update({
   path: '/compliance-rules/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CommunityListsNewRoute = CommunityListsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CommunityListsRoute,
+} as any)
+const CommunityListsIdRoute = CommunityListsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CommunityListsRoute,
+} as any)
+const CommunitiesNewRoute = CommunitiesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CommunitiesRoute,
+} as any)
+const CommunitiesIdRoute = CommunitiesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CommunitiesRoute,
+} as any)
 const ClustersNewRoute = ClustersNewRouteImport.update({
   id: '/clusters/new',
   path: '/clusters/new',
@@ -2140,6 +2305,16 @@ const AsnsIdRoute = AsnsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AsnsRoute,
 } as any)
+const AsPathListsNewRoute = AsPathListsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AsPathListsRoute,
+} as any)
+const AsPathListsIdRoute = AsPathListsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AsPathListsRoute,
+} as any)
 const AlertRulesNewRoute = AlertRulesNewRouteImport.update({
   id: '/alert-rules/new',
   path: '/alert-rules/new',
@@ -2230,6 +2405,11 @@ const StatusesIdEditRoute = StatusesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => StatusesRoute,
 } as any)
+const StaticRoutesIdEditRoute = StaticRoutesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => StaticRoutesRoute,
+} as any)
 const SitesIdEditRoute = SitesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2249,6 +2429,16 @@ const ScriptsRunsRunIdRoute = ScriptsRunsRunIdRouteImport.update({
   id: '/scripts/runs/$runId',
   path: '/scripts/runs/$runId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const RoutingPoliciesIdEditRoute = RoutingPoliciesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const RoutingKeychainsIdEditRoute = RoutingKeychainsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RoutingKeychainsRoute,
 } as any)
 const RouteTargetsIdEditRoute = RouteTargetsIdEditRouteImport.update({
   id: '/$id_/edit',
@@ -2294,6 +2484,11 @@ const PrefixesIdEditRoute = PrefixesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
   getParentRoute: () => PrefixesRoute,
+} as any)
+const PrefixListsIdEditRoute = PrefixListsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => PrefixListsRoute,
 } as any)
 const PowerPanelsIdEditRoute = PowerPanelsIdEditRouteImport.update({
   id: '/$id_/edit',
@@ -2450,6 +2645,16 @@ const ComplianceRulesIdEditRoute = ComplianceRulesIdEditRouteImport.update({
   path: '/compliance-rules/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CommunityListsIdEditRoute = CommunityListsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CommunityListsRoute,
+} as any)
+const CommunitiesIdEditRoute = CommunitiesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CommunitiesRoute,
+} as any)
 const ClustersIdEditRoute = ClustersIdEditRouteImport.update({
   id: '/clusters/$id_/edit',
   path: '/clusters/$id/edit',
@@ -2495,6 +2700,11 @@ const AsnsIdEditRoute = AsnsIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => AsnsRoute,
 } as any)
+const AsPathListsIdEditRoute = AsPathListsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => AsPathListsRoute,
+} as any)
 const AlertRulesIdEditRoute = AlertRulesIdEditRouteImport.update({
   id: '/alert-rules/$id_/edit',
   path: '/alert-rules/$id/edit',
@@ -2522,6 +2732,7 @@ export interface FileRoutesByFullPath {
   '/agent-access': typeof AgentAccessRoute
   '/aggregates': typeof AggregatesRouteWithChildren
   '/alerts': typeof AlertsRoute
+  '/as-path-lists': typeof AsPathListsRouteWithChildren
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
@@ -2529,6 +2740,8 @@ export interface FileRoutesByFullPath {
   '/change-log': typeof ChangeLogRoute
   '/circuit-types': typeof CircuitTypesRouteWithChildren
   '/circuits': typeof CircuitsRouteWithChildren
+  '/communities': typeof CommunitiesRouteWithChildren
+  '/community-lists': typeof CommunityListsRouteWithChildren
   '/compliance': typeof ComplianceRoute
   '/config-contexts': typeof ConfigContextsRouteWithChildren
   '/config-drift': typeof ConfigDriftRoute
@@ -2566,6 +2779,7 @@ export interface FileRoutesByFullPath {
   '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
+  '/prefix-lists': typeof PrefixListsRouteWithChildren
   '/prefixes': typeof PrefixesRouteWithChildren
   '/provider-networks': typeof ProviderNetworksRouteWithChildren
   '/providers': typeof ProvidersRouteWithChildren
@@ -2573,12 +2787,15 @@ export interface FileRoutesByFullPath {
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
+  '/routing-keychains': typeof RoutingKeychainsRouteWithChildren
+  '/routing-policies': typeof RoutingPoliciesRouteWithChildren
   '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
   '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRouteWithChildren
   '/site-map': typeof SiteMapRoute
   '/sites': typeof SitesRouteWithChildren
+  '/static-routes': typeof StaticRoutesRouteWithChildren
   '/statuses': typeof StatusesRouteWithChildren
   '/tags': typeof TagsRouteWithChildren
   '/tenants': typeof TenantsRouteWithChildren
@@ -2597,6 +2814,8 @@ export interface FileRoutesByFullPath {
   '/aggregates/$id': typeof AggregatesIdRoute
   '/aggregates/new': typeof AggregatesNewRoute
   '/alert-rules/new': typeof AlertRulesNewRoute
+  '/as-path-lists/$id': typeof AsPathListsIdRoute
+  '/as-path-lists/new': typeof AsPathListsNewRoute
   '/asns/$id': typeof AsnsIdRoute
   '/asns/new': typeof AsnsNewRoute
   '/audit-log/$id': typeof AuditLogIdRoute
@@ -2619,6 +2838,10 @@ export interface FileRoutesByFullPath {
   '/cluster-types/new': typeof ClusterTypesNewRoute
   '/clusters/$id': typeof ClustersIdRoute
   '/clusters/new': typeof ClustersNewRoute
+  '/communities/$id': typeof CommunitiesIdRoute
+  '/communities/new': typeof CommunitiesNewRoute
+  '/community-lists/$id': typeof CommunityListsIdRoute
+  '/community-lists/new': typeof CommunityListsNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
@@ -2687,6 +2910,8 @@ export interface FileRoutesByFullPath {
   '/power-feeds/new': typeof PowerFeedsNewRoute
   '/power-panels/$id': typeof PowerPanelsIdRoute
   '/power-panels/new': typeof PowerPanelsNewRoute
+  '/prefix-lists/$id': typeof PrefixListsIdRoute
+  '/prefix-lists/new': typeof PrefixListsNewRoute
   '/prefixes/$id': typeof PrefixesIdRoute
   '/prefixes/bulk-edit': typeof PrefixesBulkEditRoute
   '/prefixes/new': typeof PrefixesNewRoute
@@ -2707,6 +2932,10 @@ export interface FileRoutesByFullPath {
   '/rirs/new': typeof RirsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
+  '/routing-keychains/$id': typeof RoutingKeychainsIdRoute
+  '/routing-keychains/new': typeof RoutingKeychainsNewRoute
+  '/routing-policies/$id': typeof RoutingPoliciesIdRoute
+  '/routing-policies/new': typeof RoutingPoliciesNewRoute
   '/scripts/$id': typeof ScriptsIdRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
@@ -2742,6 +2971,8 @@ export interface FileRoutesByFullPath {
   '/sites/$id': typeof SitesIdRoute
   '/sites/bulk-edit': typeof SitesBulkEditRoute
   '/sites/new': typeof SitesNewRoute
+  '/static-routes/$id': typeof StaticRoutesIdRoute
+  '/static-routes/new': typeof StaticRoutesNewRoute
   '/statuses/$id': typeof StatusesIdRoute
   '/statuses/new': typeof StatusesNewRoute
   '/tags/$id': typeof TagsIdRoute
@@ -2775,6 +3006,7 @@ export interface FileRoutesByFullPath {
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
   '/aggregates/': typeof AggregatesIndexRoute
+  '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
   '/cables/': typeof CablesIndexRoute
@@ -2786,6 +3018,8 @@ export interface FileRoutesByFullPath {
   '/cluster-groups/': typeof ClusterGroupsIndexRoute
   '/cluster-types/': typeof ClusterTypesIndexRoute
   '/clusters/': typeof ClustersIndexRoute
+  '/communities/': typeof CommunitiesIndexRoute
+  '/community-lists/': typeof CommunityListsIndexRoute
   '/config-contexts/': typeof ConfigContextsIndexRoute
   '/contact-groups/': typeof ContactGroupsIndexRoute
   '/contact-roles/': typeof ContactRolesIndexRoute
@@ -2827,6 +3061,7 @@ export interface FileRoutesByFullPath {
   '/port-reservations/': typeof PortReservationsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
+  '/prefix-lists/': typeof PrefixListsIndexRoute
   '/prefixes/': typeof PrefixesIndexRoute
   '/provider-networks/': typeof ProviderNetworksIndexRoute
   '/providers/': typeof ProvidersIndexRoute
@@ -2836,11 +3071,14 @@ export interface FileRoutesByFullPath {
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
+  '/routing-keychains/': typeof RoutingKeychainsIndexRoute
+  '/routing-policies/': typeof RoutingPoliciesIndexRoute
   '/scripts/': typeof ScriptsIndexRoute
   '/service-templates/': typeof ServiceTemplatesIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/sites/': typeof SitesIndexRoute
+  '/static-routes/': typeof StaticRoutesIndexRoute
   '/statuses/': typeof StatusesIndexRoute
   '/tags/': typeof TagsIndexRoute
   '/tenants/': typeof TenantsIndexRoute
@@ -2865,6 +3103,7 @@ export interface FileRoutesByFullPath {
   '/zones/': typeof ZonesIndexRoute
   '/aggregates/$id/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id/edit': typeof AlertRulesIdEditRoute
+  '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
@@ -2874,6 +3113,8 @@ export interface FileRoutesByFullPath {
   '/cluster-groups/$id/edit': typeof ClusterGroupsIdEditRoute
   '/cluster-types/$id/edit': typeof ClusterTypesIdEditRoute
   '/clusters/$id/edit': typeof ClustersIdEditRoute
+  '/communities/$id/edit': typeof CommunitiesIdEditRoute
+  '/community-lists/$id/edit': typeof CommunityListsIdEditRoute
   '/compliance-rules/$id/edit': typeof ComplianceRulesIdEditRoute
   '/config-contexts/$id/edit': typeof ConfigContextsIdEditRoute
   '/contact-groups/$id/edit': typeof ContactGroupsIdEditRoute
@@ -2905,6 +3146,7 @@ export interface FileRoutesByFullPath {
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
   '/power-feeds/$id/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id/edit': typeof PowerPanelsIdEditRoute
+  '/prefix-lists/$id/edit': typeof PrefixListsIdEditRoute
   '/prefixes/$id/edit': typeof PrefixesIdEditRoute
   '/provider-networks/$id/edit': typeof ProviderNetworksIdEditRoute
   '/providers/$id/edit': typeof ProvidersIdEditRoute
@@ -2914,10 +3156,13 @@ export interface FileRoutesByFullPath {
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
+  '/routing-keychains/$id/edit': typeof RoutingKeychainsIdEditRoute
+  '/routing-policies/$id/edit': typeof RoutingPoliciesIdEditRoute
   '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
   '/service-templates/$id/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id/edit': typeof SilencesIdEditRoute
   '/sites/$id/edit': typeof SitesIdEditRoute
+  '/static-routes/$id/edit': typeof StaticRoutesIdEditRoute
   '/statuses/$id/edit': typeof StatusesIdEditRoute
   '/tags/$id/edit': typeof TagsIdEditRoute
   '/tenants/$id/edit': typeof TenantsIdEditRoute
@@ -2960,6 +3205,8 @@ export interface FileRoutesByTo {
   '/aggregates/$id': typeof AggregatesIdRoute
   '/aggregates/new': typeof AggregatesNewRoute
   '/alert-rules/new': typeof AlertRulesNewRoute
+  '/as-path-lists/$id': typeof AsPathListsIdRoute
+  '/as-path-lists/new': typeof AsPathListsNewRoute
   '/asns/$id': typeof AsnsIdRoute
   '/asns/new': typeof AsnsNewRoute
   '/audit-log/$id': typeof AuditLogIdRoute
@@ -2982,6 +3229,10 @@ export interface FileRoutesByTo {
   '/cluster-types/new': typeof ClusterTypesNewRoute
   '/clusters/$id': typeof ClustersIdRoute
   '/clusters/new': typeof ClustersNewRoute
+  '/communities/$id': typeof CommunitiesIdRoute
+  '/communities/new': typeof CommunitiesNewRoute
+  '/community-lists/$id': typeof CommunityListsIdRoute
+  '/community-lists/new': typeof CommunityListsNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
@@ -3050,6 +3301,8 @@ export interface FileRoutesByTo {
   '/power-feeds/new': typeof PowerFeedsNewRoute
   '/power-panels/$id': typeof PowerPanelsIdRoute
   '/power-panels/new': typeof PowerPanelsNewRoute
+  '/prefix-lists/$id': typeof PrefixListsIdRoute
+  '/prefix-lists/new': typeof PrefixListsNewRoute
   '/prefixes/$id': typeof PrefixesIdRoute
   '/prefixes/bulk-edit': typeof PrefixesBulkEditRoute
   '/prefixes/new': typeof PrefixesNewRoute
@@ -3070,6 +3323,10 @@ export interface FileRoutesByTo {
   '/rirs/new': typeof RirsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
+  '/routing-keychains/$id': typeof RoutingKeychainsIdRoute
+  '/routing-keychains/new': typeof RoutingKeychainsNewRoute
+  '/routing-policies/$id': typeof RoutingPoliciesIdRoute
+  '/routing-policies/new': typeof RoutingPoliciesNewRoute
   '/scripts/$id': typeof ScriptsIdRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
@@ -3105,6 +3362,8 @@ export interface FileRoutesByTo {
   '/sites/$id': typeof SitesIdRoute
   '/sites/bulk-edit': typeof SitesBulkEditRoute
   '/sites/new': typeof SitesNewRoute
+  '/static-routes/$id': typeof StaticRoutesIdRoute
+  '/static-routes/new': typeof StaticRoutesNewRoute
   '/statuses/$id': typeof StatusesIdRoute
   '/statuses/new': typeof StatusesNewRoute
   '/tags/$id': typeof TagsIdRoute
@@ -3138,6 +3397,7 @@ export interface FileRoutesByTo {
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
   '/aggregates': typeof AggregatesIndexRoute
+  '/as-path-lists': typeof AsPathListsIndexRoute
   '/asns': typeof AsnsIndexRoute
   '/automation-targets': typeof AutomationTargetsIndexRoute
   '/cables': typeof CablesIndexRoute
@@ -3149,6 +3409,8 @@ export interface FileRoutesByTo {
   '/cluster-groups': typeof ClusterGroupsIndexRoute
   '/cluster-types': typeof ClusterTypesIndexRoute
   '/clusters': typeof ClustersIndexRoute
+  '/communities': typeof CommunitiesIndexRoute
+  '/community-lists': typeof CommunityListsIndexRoute
   '/config-contexts': typeof ConfigContextsIndexRoute
   '/contact-groups': typeof ContactGroupsIndexRoute
   '/contact-roles': typeof ContactRolesIndexRoute
@@ -3190,6 +3452,7 @@ export interface FileRoutesByTo {
   '/port-reservations': typeof PortReservationsIndexRoute
   '/power-feeds': typeof PowerFeedsIndexRoute
   '/power-panels': typeof PowerPanelsIndexRoute
+  '/prefix-lists': typeof PrefixListsIndexRoute
   '/prefixes': typeof PrefixesIndexRoute
   '/provider-networks': typeof ProviderNetworksIndexRoute
   '/providers': typeof ProvidersIndexRoute
@@ -3199,11 +3462,14 @@ export interface FileRoutesByTo {
   '/regions': typeof RegionsIndexRoute
   '/rirs': typeof RirsIndexRoute
   '/route-targets': typeof RouteTargetsIndexRoute
+  '/routing-keychains': typeof RoutingKeychainsIndexRoute
+  '/routing-policies': typeof RoutingPoliciesIndexRoute
   '/scripts': typeof ScriptsIndexRoute
   '/service-templates': typeof ServiceTemplatesIndexRoute
   '/services': typeof ServicesIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/sites': typeof SitesIndexRoute
+  '/static-routes': typeof StaticRoutesIndexRoute
   '/statuses': typeof StatusesIndexRoute
   '/tags': typeof TagsIndexRoute
   '/tenants': typeof TenantsIndexRoute
@@ -3228,6 +3494,7 @@ export interface FileRoutesByTo {
   '/zones': typeof ZonesIndexRoute
   '/aggregates/$id/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id/edit': typeof AlertRulesIdEditRoute
+  '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
   '/cables/$id/edit': typeof CablesIdEditRoute
@@ -3237,6 +3504,8 @@ export interface FileRoutesByTo {
   '/cluster-groups/$id/edit': typeof ClusterGroupsIdEditRoute
   '/cluster-types/$id/edit': typeof ClusterTypesIdEditRoute
   '/clusters/$id/edit': typeof ClustersIdEditRoute
+  '/communities/$id/edit': typeof CommunitiesIdEditRoute
+  '/community-lists/$id/edit': typeof CommunityListsIdEditRoute
   '/compliance-rules/$id/edit': typeof ComplianceRulesIdEditRoute
   '/config-contexts/$id/edit': typeof ConfigContextsIdEditRoute
   '/contact-groups/$id/edit': typeof ContactGroupsIdEditRoute
@@ -3268,6 +3537,7 @@ export interface FileRoutesByTo {
   '/platforms/$id/edit': typeof PlatformsIdEditRoute
   '/power-feeds/$id/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id/edit': typeof PowerPanelsIdEditRoute
+  '/prefix-lists/$id/edit': typeof PrefixListsIdEditRoute
   '/prefixes/$id/edit': typeof PrefixesIdEditRoute
   '/provider-networks/$id/edit': typeof ProviderNetworksIdEditRoute
   '/providers/$id/edit': typeof ProvidersIdEditRoute
@@ -3277,10 +3547,13 @@ export interface FileRoutesByTo {
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
+  '/routing-keychains/$id/edit': typeof RoutingKeychainsIdEditRoute
+  '/routing-policies/$id/edit': typeof RoutingPoliciesIdEditRoute
   '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
   '/service-templates/$id/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id/edit': typeof SilencesIdEditRoute
   '/sites/$id/edit': typeof SitesIdEditRoute
+  '/static-routes/$id/edit': typeof StaticRoutesIdEditRoute
   '/statuses/$id/edit': typeof StatusesIdEditRoute
   '/tags/$id/edit': typeof TagsIdEditRoute
   '/tenants/$id/edit': typeof TenantsIdEditRoute
@@ -3305,6 +3578,7 @@ export interface FileRoutesById {
   '/agent-access': typeof AgentAccessRoute
   '/aggregates': typeof AggregatesRouteWithChildren
   '/alerts': typeof AlertsRoute
+  '/as-path-lists': typeof AsPathListsRouteWithChildren
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
   '/automation-targets': typeof AutomationTargetsRouteWithChildren
@@ -3312,6 +3586,8 @@ export interface FileRoutesById {
   '/change-log': typeof ChangeLogRoute
   '/circuit-types': typeof CircuitTypesRouteWithChildren
   '/circuits': typeof CircuitsRouteWithChildren
+  '/communities': typeof CommunitiesRouteWithChildren
+  '/community-lists': typeof CommunityListsRouteWithChildren
   '/compliance': typeof ComplianceRoute
   '/config-contexts': typeof ConfigContextsRouteWithChildren
   '/config-drift': typeof ConfigDriftRoute
@@ -3349,6 +3625,7 @@ export interface FileRoutesById {
   '/port-utilization': typeof PortUtilizationRoute
   '/power-feeds': typeof PowerFeedsRouteWithChildren
   '/power-panels': typeof PowerPanelsRouteWithChildren
+  '/prefix-lists': typeof PrefixListsRouteWithChildren
   '/prefixes': typeof PrefixesRouteWithChildren
   '/provider-networks': typeof ProviderNetworksRouteWithChildren
   '/providers': typeof ProvidersRouteWithChildren
@@ -3356,12 +3633,15 @@ export interface FileRoutesById {
   '/regions': typeof RegionsRouteWithChildren
   '/rirs': typeof RirsRouteWithChildren
   '/route-targets': typeof RouteTargetsRouteWithChildren
+  '/routing-keychains': typeof RoutingKeychainsRouteWithChildren
+  '/routing-policies': typeof RoutingPoliciesRouteWithChildren
   '/saved-filters': typeof SavedFiltersRoute
   '/search': typeof SearchRoute
   '/set-password': typeof SetPasswordRoute
   '/settings': typeof SettingsRouteWithChildren
   '/site-map': typeof SiteMapRoute
   '/sites': typeof SitesRouteWithChildren
+  '/static-routes': typeof StaticRoutesRouteWithChildren
   '/statuses': typeof StatusesRouteWithChildren
   '/tags': typeof TagsRouteWithChildren
   '/tenants': typeof TenantsRouteWithChildren
@@ -3380,6 +3660,8 @@ export interface FileRoutesById {
   '/aggregates/$id': typeof AggregatesIdRoute
   '/aggregates/new': typeof AggregatesNewRoute
   '/alert-rules/new': typeof AlertRulesNewRoute
+  '/as-path-lists/$id': typeof AsPathListsIdRoute
+  '/as-path-lists/new': typeof AsPathListsNewRoute
   '/asns/$id': typeof AsnsIdRoute
   '/asns/new': typeof AsnsNewRoute
   '/audit-log_/$id': typeof AuditLogIdRoute
@@ -3402,6 +3684,10 @@ export interface FileRoutesById {
   '/cluster-types/new': typeof ClusterTypesNewRoute
   '/clusters/$id': typeof ClustersIdRoute
   '/clusters/new': typeof ClustersNewRoute
+  '/communities/$id': typeof CommunitiesIdRoute
+  '/communities/new': typeof CommunitiesNewRoute
+  '/community-lists/$id': typeof CommunityListsIdRoute
+  '/community-lists/new': typeof CommunityListsNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
@@ -3470,6 +3756,8 @@ export interface FileRoutesById {
   '/power-feeds/new': typeof PowerFeedsNewRoute
   '/power-panels/$id': typeof PowerPanelsIdRoute
   '/power-panels/new': typeof PowerPanelsNewRoute
+  '/prefix-lists/$id': typeof PrefixListsIdRoute
+  '/prefix-lists/new': typeof PrefixListsNewRoute
   '/prefixes/$id': typeof PrefixesIdRoute
   '/prefixes/bulk-edit': typeof PrefixesBulkEditRoute
   '/prefixes/new': typeof PrefixesNewRoute
@@ -3490,6 +3778,10 @@ export interface FileRoutesById {
   '/rirs/new': typeof RirsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
+  '/routing-keychains/$id': typeof RoutingKeychainsIdRoute
+  '/routing-keychains/new': typeof RoutingKeychainsNewRoute
+  '/routing-policies/$id': typeof RoutingPoliciesIdRoute
+  '/routing-policies/new': typeof RoutingPoliciesNewRoute
   '/scripts/$id': typeof ScriptsIdRoute
   '/service-templates/$id': typeof ServiceTemplatesIdRoute
   '/service-templates/new': typeof ServiceTemplatesNewRoute
@@ -3525,6 +3817,8 @@ export interface FileRoutesById {
   '/sites/$id': typeof SitesIdRoute
   '/sites/bulk-edit': typeof SitesBulkEditRoute
   '/sites/new': typeof SitesNewRoute
+  '/static-routes/$id': typeof StaticRoutesIdRoute
+  '/static-routes/new': typeof StaticRoutesNewRoute
   '/statuses/$id': typeof StatusesIdRoute
   '/statuses/new': typeof StatusesNewRoute
   '/tags/$id': typeof TagsIdRoute
@@ -3558,6 +3852,7 @@ export interface FileRoutesById {
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
   '/aggregates/': typeof AggregatesIndexRoute
+  '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
   '/cables/': typeof CablesIndexRoute
@@ -3569,6 +3864,8 @@ export interface FileRoutesById {
   '/cluster-groups/': typeof ClusterGroupsIndexRoute
   '/cluster-types/': typeof ClusterTypesIndexRoute
   '/clusters/': typeof ClustersIndexRoute
+  '/communities/': typeof CommunitiesIndexRoute
+  '/community-lists/': typeof CommunityListsIndexRoute
   '/config-contexts/': typeof ConfigContextsIndexRoute
   '/contact-groups/': typeof ContactGroupsIndexRoute
   '/contact-roles/': typeof ContactRolesIndexRoute
@@ -3610,6 +3907,7 @@ export interface FileRoutesById {
   '/port-reservations/': typeof PortReservationsIndexRoute
   '/power-feeds/': typeof PowerFeedsIndexRoute
   '/power-panels/': typeof PowerPanelsIndexRoute
+  '/prefix-lists/': typeof PrefixListsIndexRoute
   '/prefixes/': typeof PrefixesIndexRoute
   '/provider-networks/': typeof ProviderNetworksIndexRoute
   '/providers/': typeof ProvidersIndexRoute
@@ -3619,11 +3917,14 @@ export interface FileRoutesById {
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
+  '/routing-keychains/': typeof RoutingKeychainsIndexRoute
+  '/routing-policies/': typeof RoutingPoliciesIndexRoute
   '/scripts/': typeof ScriptsIndexRoute
   '/service-templates/': typeof ServiceTemplatesIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/sites/': typeof SitesIndexRoute
+  '/static-routes/': typeof StaticRoutesIndexRoute
   '/statuses/': typeof StatusesIndexRoute
   '/tags/': typeof TagsIndexRoute
   '/tenants/': typeof TenantsIndexRoute
@@ -3648,6 +3949,7 @@ export interface FileRoutesById {
   '/zones/': typeof ZonesIndexRoute
   '/aggregates/$id_/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id_/edit': typeof AlertRulesIdEditRoute
+  '/as-path-lists/$id_/edit': typeof AsPathListsIdEditRoute
   '/asns/$id_/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id_/edit': typeof AutomationTargetsIdEditRoute
   '/cables/$id_/edit': typeof CablesIdEditRoute
@@ -3657,6 +3959,8 @@ export interface FileRoutesById {
   '/cluster-groups/$id_/edit': typeof ClusterGroupsIdEditRoute
   '/cluster-types/$id_/edit': typeof ClusterTypesIdEditRoute
   '/clusters/$id_/edit': typeof ClustersIdEditRoute
+  '/communities/$id_/edit': typeof CommunitiesIdEditRoute
+  '/community-lists/$id_/edit': typeof CommunityListsIdEditRoute
   '/compliance-rules/$id_/edit': typeof ComplianceRulesIdEditRoute
   '/config-contexts/$id_/edit': typeof ConfigContextsIdEditRoute
   '/contact-groups/$id_/edit': typeof ContactGroupsIdEditRoute
@@ -3688,6 +3992,7 @@ export interface FileRoutesById {
   '/platforms/$id_/edit': typeof PlatformsIdEditRoute
   '/power-feeds/$id_/edit': typeof PowerFeedsIdEditRoute
   '/power-panels/$id_/edit': typeof PowerPanelsIdEditRoute
+  '/prefix-lists/$id_/edit': typeof PrefixListsIdEditRoute
   '/prefixes/$id_/edit': typeof PrefixesIdEditRoute
   '/provider-networks/$id_/edit': typeof ProviderNetworksIdEditRoute
   '/providers/$id_/edit': typeof ProvidersIdEditRoute
@@ -3697,10 +4002,13 @@ export interface FileRoutesById {
   '/regions/$id_/edit': typeof RegionsIdEditRoute
   '/rirs/$id_/edit': typeof RirsIdEditRoute
   '/route-targets/$id_/edit': typeof RouteTargetsIdEditRoute
+  '/routing-keychains/$id_/edit': typeof RoutingKeychainsIdEditRoute
+  '/routing-policies/$id_/edit': typeof RoutingPoliciesIdEditRoute
   '/scripts/runs/$runId': typeof ScriptsRunsRunIdRoute
   '/service-templates/$id_/edit': typeof ServiceTemplatesIdEditRoute
   '/silences/$id_/edit': typeof SilencesIdEditRoute
   '/sites/$id_/edit': typeof SitesIdEditRoute
+  '/static-routes/$id_/edit': typeof StaticRoutesIdEditRoute
   '/statuses/$id_/edit': typeof StatusesIdEditRoute
   '/tags/$id_/edit': typeof TagsIdEditRoute
   '/tenants/$id_/edit': typeof TenantsIdEditRoute
@@ -3726,6 +4034,7 @@ export interface FileRouteTypes {
     | '/agent-access'
     | '/aggregates'
     | '/alerts'
+    | '/as-path-lists'
     | '/asns'
     | '/audit-log'
     | '/automation-targets'
@@ -3733,6 +4042,8 @@ export interface FileRouteTypes {
     | '/change-log'
     | '/circuit-types'
     | '/circuits'
+    | '/communities'
+    | '/community-lists'
     | '/compliance'
     | '/config-contexts'
     | '/config-drift'
@@ -3770,6 +4081,7 @@ export interface FileRouteTypes {
     | '/port-utilization'
     | '/power-feeds'
     | '/power-panels'
+    | '/prefix-lists'
     | '/prefixes'
     | '/provider-networks'
     | '/providers'
@@ -3777,12 +4089,15 @@ export interface FileRouteTypes {
     | '/regions'
     | '/rirs'
     | '/route-targets'
+    | '/routing-keychains'
+    | '/routing-policies'
     | '/saved-filters'
     | '/search'
     | '/set-password'
     | '/settings'
     | '/site-map'
     | '/sites'
+    | '/static-routes'
     | '/statuses'
     | '/tags'
     | '/tenants'
@@ -3801,6 +4116,8 @@ export interface FileRouteTypes {
     | '/aggregates/$id'
     | '/aggregates/new'
     | '/alert-rules/new'
+    | '/as-path-lists/$id'
+    | '/as-path-lists/new'
     | '/asns/$id'
     | '/asns/new'
     | '/audit-log/$id'
@@ -3823,6 +4140,10 @@ export interface FileRouteTypes {
     | '/cluster-types/new'
     | '/clusters/$id'
     | '/clusters/new'
+    | '/communities/$id'
+    | '/communities/new'
+    | '/community-lists/$id'
+    | '/community-lists/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
     | '/config-contexts/$id'
@@ -3891,6 +4212,8 @@ export interface FileRouteTypes {
     | '/power-feeds/new'
     | '/power-panels/$id'
     | '/power-panels/new'
+    | '/prefix-lists/$id'
+    | '/prefix-lists/new'
     | '/prefixes/$id'
     | '/prefixes/bulk-edit'
     | '/prefixes/new'
@@ -3911,6 +4234,10 @@ export interface FileRouteTypes {
     | '/rirs/new'
     | '/route-targets/$id'
     | '/route-targets/new'
+    | '/routing-keychains/$id'
+    | '/routing-keychains/new'
+    | '/routing-policies/$id'
+    | '/routing-policies/new'
     | '/scripts/$id'
     | '/service-templates/$id'
     | '/service-templates/new'
@@ -3946,6 +4273,8 @@ export interface FileRouteTypes {
     | '/sites/$id'
     | '/sites/bulk-edit'
     | '/sites/new'
+    | '/static-routes/$id'
+    | '/static-routes/new'
     | '/statuses/$id'
     | '/statuses/new'
     | '/tags/$id'
@@ -3979,6 +4308,7 @@ export interface FileRouteTypes {
     | '/zones/$id'
     | '/zones/new'
     | '/aggregates/'
+    | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
     | '/cables/'
@@ -3990,6 +4320,8 @@ export interface FileRouteTypes {
     | '/cluster-groups/'
     | '/cluster-types/'
     | '/clusters/'
+    | '/communities/'
+    | '/community-lists/'
     | '/config-contexts/'
     | '/contact-groups/'
     | '/contact-roles/'
@@ -4031,6 +4363,7 @@ export interface FileRouteTypes {
     | '/port-reservations/'
     | '/power-feeds/'
     | '/power-panels/'
+    | '/prefix-lists/'
     | '/prefixes/'
     | '/provider-networks/'
     | '/providers/'
@@ -4040,11 +4373,14 @@ export interface FileRouteTypes {
     | '/regions/'
     | '/rirs/'
     | '/route-targets/'
+    | '/routing-keychains/'
+    | '/routing-policies/'
     | '/scripts/'
     | '/service-templates/'
     | '/services/'
     | '/settings/'
     | '/sites/'
+    | '/static-routes/'
     | '/statuses/'
     | '/tags/'
     | '/tenants/'
@@ -4069,6 +4405,7 @@ export interface FileRouteTypes {
     | '/zones/'
     | '/aggregates/$id/edit'
     | '/alert-rules/$id/edit'
+    | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
     | '/cables/$id/edit'
@@ -4078,6 +4415,8 @@ export interface FileRouteTypes {
     | '/cluster-groups/$id/edit'
     | '/cluster-types/$id/edit'
     | '/clusters/$id/edit'
+    | '/communities/$id/edit'
+    | '/community-lists/$id/edit'
     | '/compliance-rules/$id/edit'
     | '/config-contexts/$id/edit'
     | '/contact-groups/$id/edit'
@@ -4109,6 +4448,7 @@ export interface FileRouteTypes {
     | '/platforms/$id/edit'
     | '/power-feeds/$id/edit'
     | '/power-panels/$id/edit'
+    | '/prefix-lists/$id/edit'
     | '/prefixes/$id/edit'
     | '/provider-networks/$id/edit'
     | '/providers/$id/edit'
@@ -4118,10 +4458,13 @@ export interface FileRouteTypes {
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
     | '/route-targets/$id/edit'
+    | '/routing-keychains/$id/edit'
+    | '/routing-policies/$id/edit'
     | '/scripts/runs/$runId'
     | '/service-templates/$id/edit'
     | '/silences/$id/edit'
     | '/sites/$id/edit'
+    | '/static-routes/$id/edit'
     | '/statuses/$id/edit'
     | '/tags/$id/edit'
     | '/tenants/$id/edit'
@@ -4164,6 +4507,8 @@ export interface FileRouteTypes {
     | '/aggregates/$id'
     | '/aggregates/new'
     | '/alert-rules/new'
+    | '/as-path-lists/$id'
+    | '/as-path-lists/new'
     | '/asns/$id'
     | '/asns/new'
     | '/audit-log/$id'
@@ -4186,6 +4531,10 @@ export interface FileRouteTypes {
     | '/cluster-types/new'
     | '/clusters/$id'
     | '/clusters/new'
+    | '/communities/$id'
+    | '/communities/new'
+    | '/community-lists/$id'
+    | '/community-lists/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
     | '/config-contexts/$id'
@@ -4254,6 +4603,8 @@ export interface FileRouteTypes {
     | '/power-feeds/new'
     | '/power-panels/$id'
     | '/power-panels/new'
+    | '/prefix-lists/$id'
+    | '/prefix-lists/new'
     | '/prefixes/$id'
     | '/prefixes/bulk-edit'
     | '/prefixes/new'
@@ -4274,6 +4625,10 @@ export interface FileRouteTypes {
     | '/rirs/new'
     | '/route-targets/$id'
     | '/route-targets/new'
+    | '/routing-keychains/$id'
+    | '/routing-keychains/new'
+    | '/routing-policies/$id'
+    | '/routing-policies/new'
     | '/scripts/$id'
     | '/service-templates/$id'
     | '/service-templates/new'
@@ -4309,6 +4664,8 @@ export interface FileRouteTypes {
     | '/sites/$id'
     | '/sites/bulk-edit'
     | '/sites/new'
+    | '/static-routes/$id'
+    | '/static-routes/new'
     | '/statuses/$id'
     | '/statuses/new'
     | '/tags/$id'
@@ -4342,6 +4699,7 @@ export interface FileRouteTypes {
     | '/zones/$id'
     | '/zones/new'
     | '/aggregates'
+    | '/as-path-lists'
     | '/asns'
     | '/automation-targets'
     | '/cables'
@@ -4353,6 +4711,8 @@ export interface FileRouteTypes {
     | '/cluster-groups'
     | '/cluster-types'
     | '/clusters'
+    | '/communities'
+    | '/community-lists'
     | '/config-contexts'
     | '/contact-groups'
     | '/contact-roles'
@@ -4394,6 +4754,7 @@ export interface FileRouteTypes {
     | '/port-reservations'
     | '/power-feeds'
     | '/power-panels'
+    | '/prefix-lists'
     | '/prefixes'
     | '/provider-networks'
     | '/providers'
@@ -4403,11 +4764,14 @@ export interface FileRouteTypes {
     | '/regions'
     | '/rirs'
     | '/route-targets'
+    | '/routing-keychains'
+    | '/routing-policies'
     | '/scripts'
     | '/service-templates'
     | '/services'
     | '/settings'
     | '/sites'
+    | '/static-routes'
     | '/statuses'
     | '/tags'
     | '/tenants'
@@ -4432,6 +4796,7 @@ export interface FileRouteTypes {
     | '/zones'
     | '/aggregates/$id/edit'
     | '/alert-rules/$id/edit'
+    | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
     | '/cables/$id/edit'
@@ -4441,6 +4806,8 @@ export interface FileRouteTypes {
     | '/cluster-groups/$id/edit'
     | '/cluster-types/$id/edit'
     | '/clusters/$id/edit'
+    | '/communities/$id/edit'
+    | '/community-lists/$id/edit'
     | '/compliance-rules/$id/edit'
     | '/config-contexts/$id/edit'
     | '/contact-groups/$id/edit'
@@ -4472,6 +4839,7 @@ export interface FileRouteTypes {
     | '/platforms/$id/edit'
     | '/power-feeds/$id/edit'
     | '/power-panels/$id/edit'
+    | '/prefix-lists/$id/edit'
     | '/prefixes/$id/edit'
     | '/provider-networks/$id/edit'
     | '/providers/$id/edit'
@@ -4481,10 +4849,13 @@ export interface FileRouteTypes {
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
     | '/route-targets/$id/edit'
+    | '/routing-keychains/$id/edit'
+    | '/routing-policies/$id/edit'
     | '/scripts/runs/$runId'
     | '/service-templates/$id/edit'
     | '/silences/$id/edit'
     | '/sites/$id/edit'
+    | '/static-routes/$id/edit'
     | '/statuses/$id/edit'
     | '/tags/$id/edit'
     | '/tenants/$id/edit'
@@ -4508,6 +4879,7 @@ export interface FileRouteTypes {
     | '/agent-access'
     | '/aggregates'
     | '/alerts'
+    | '/as-path-lists'
     | '/asns'
     | '/audit-log'
     | '/automation-targets'
@@ -4515,6 +4887,8 @@ export interface FileRouteTypes {
     | '/change-log'
     | '/circuit-types'
     | '/circuits'
+    | '/communities'
+    | '/community-lists'
     | '/compliance'
     | '/config-contexts'
     | '/config-drift'
@@ -4552,6 +4926,7 @@ export interface FileRouteTypes {
     | '/port-utilization'
     | '/power-feeds'
     | '/power-panels'
+    | '/prefix-lists'
     | '/prefixes'
     | '/provider-networks'
     | '/providers'
@@ -4559,12 +4934,15 @@ export interface FileRouteTypes {
     | '/regions'
     | '/rirs'
     | '/route-targets'
+    | '/routing-keychains'
+    | '/routing-policies'
     | '/saved-filters'
     | '/search'
     | '/set-password'
     | '/settings'
     | '/site-map'
     | '/sites'
+    | '/static-routes'
     | '/statuses'
     | '/tags'
     | '/tenants'
@@ -4583,6 +4961,8 @@ export interface FileRouteTypes {
     | '/aggregates/$id'
     | '/aggregates/new'
     | '/alert-rules/new'
+    | '/as-path-lists/$id'
+    | '/as-path-lists/new'
     | '/asns/$id'
     | '/asns/new'
     | '/audit-log_/$id'
@@ -4605,6 +4985,10 @@ export interface FileRouteTypes {
     | '/cluster-types/new'
     | '/clusters/$id'
     | '/clusters/new'
+    | '/communities/$id'
+    | '/communities/new'
+    | '/community-lists/$id'
+    | '/community-lists/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
     | '/config-contexts/$id'
@@ -4673,6 +5057,8 @@ export interface FileRouteTypes {
     | '/power-feeds/new'
     | '/power-panels/$id'
     | '/power-panels/new'
+    | '/prefix-lists/$id'
+    | '/prefix-lists/new'
     | '/prefixes/$id'
     | '/prefixes/bulk-edit'
     | '/prefixes/new'
@@ -4693,6 +5079,10 @@ export interface FileRouteTypes {
     | '/rirs/new'
     | '/route-targets/$id'
     | '/route-targets/new'
+    | '/routing-keychains/$id'
+    | '/routing-keychains/new'
+    | '/routing-policies/$id'
+    | '/routing-policies/new'
     | '/scripts/$id'
     | '/service-templates/$id'
     | '/service-templates/new'
@@ -4728,6 +5118,8 @@ export interface FileRouteTypes {
     | '/sites/$id'
     | '/sites/bulk-edit'
     | '/sites/new'
+    | '/static-routes/$id'
+    | '/static-routes/new'
     | '/statuses/$id'
     | '/statuses/new'
     | '/tags/$id'
@@ -4761,6 +5153,7 @@ export interface FileRouteTypes {
     | '/zones/$id'
     | '/zones/new'
     | '/aggregates/'
+    | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
     | '/cables/'
@@ -4772,6 +5165,8 @@ export interface FileRouteTypes {
     | '/cluster-groups/'
     | '/cluster-types/'
     | '/clusters/'
+    | '/communities/'
+    | '/community-lists/'
     | '/config-contexts/'
     | '/contact-groups/'
     | '/contact-roles/'
@@ -4813,6 +5208,7 @@ export interface FileRouteTypes {
     | '/port-reservations/'
     | '/power-feeds/'
     | '/power-panels/'
+    | '/prefix-lists/'
     | '/prefixes/'
     | '/provider-networks/'
     | '/providers/'
@@ -4822,11 +5218,14 @@ export interface FileRouteTypes {
     | '/regions/'
     | '/rirs/'
     | '/route-targets/'
+    | '/routing-keychains/'
+    | '/routing-policies/'
     | '/scripts/'
     | '/service-templates/'
     | '/services/'
     | '/settings/'
     | '/sites/'
+    | '/static-routes/'
     | '/statuses/'
     | '/tags/'
     | '/tenants/'
@@ -4851,6 +5250,7 @@ export interface FileRouteTypes {
     | '/zones/'
     | '/aggregates/$id_/edit'
     | '/alert-rules/$id_/edit'
+    | '/as-path-lists/$id_/edit'
     | '/asns/$id_/edit'
     | '/automation-targets/$id_/edit'
     | '/cables/$id_/edit'
@@ -4860,6 +5260,8 @@ export interface FileRouteTypes {
     | '/cluster-groups/$id_/edit'
     | '/cluster-types/$id_/edit'
     | '/clusters/$id_/edit'
+    | '/communities/$id_/edit'
+    | '/community-lists/$id_/edit'
     | '/compliance-rules/$id_/edit'
     | '/config-contexts/$id_/edit'
     | '/contact-groups/$id_/edit'
@@ -4891,6 +5293,7 @@ export interface FileRouteTypes {
     | '/platforms/$id_/edit'
     | '/power-feeds/$id_/edit'
     | '/power-panels/$id_/edit'
+    | '/prefix-lists/$id_/edit'
     | '/prefixes/$id_/edit'
     | '/provider-networks/$id_/edit'
     | '/providers/$id_/edit'
@@ -4900,10 +5303,13 @@ export interface FileRouteTypes {
     | '/regions/$id_/edit'
     | '/rirs/$id_/edit'
     | '/route-targets/$id_/edit'
+    | '/routing-keychains/$id_/edit'
+    | '/routing-policies/$id_/edit'
     | '/scripts/runs/$runId'
     | '/service-templates/$id_/edit'
     | '/silences/$id_/edit'
     | '/sites/$id_/edit'
+    | '/static-routes/$id_/edit'
     | '/statuses/$id_/edit'
     | '/tags/$id_/edit'
     | '/tenants/$id_/edit'
@@ -4928,6 +5334,7 @@ export interface RootRouteChildren {
   AgentAccessRoute: typeof AgentAccessRoute
   AggregatesRoute: typeof AggregatesRouteWithChildren
   AlertsRoute: typeof AlertsRoute
+  AsPathListsRoute: typeof AsPathListsRouteWithChildren
   AsnsRoute: typeof AsnsRouteWithChildren
   AuditLogRoute: typeof AuditLogRoute
   AutomationTargetsRoute: typeof AutomationTargetsRouteWithChildren
@@ -4935,6 +5342,8 @@ export interface RootRouteChildren {
   ChangeLogRoute: typeof ChangeLogRoute
   CircuitTypesRoute: typeof CircuitTypesRouteWithChildren
   CircuitsRoute: typeof CircuitsRouteWithChildren
+  CommunitiesRoute: typeof CommunitiesRouteWithChildren
+  CommunityListsRoute: typeof CommunityListsRouteWithChildren
   ComplianceRoute: typeof ComplianceRoute
   ConfigContextsRoute: typeof ConfigContextsRouteWithChildren
   ConfigDriftRoute: typeof ConfigDriftRoute
@@ -4972,6 +5381,7 @@ export interface RootRouteChildren {
   PortUtilizationRoute: typeof PortUtilizationRoute
   PowerFeedsRoute: typeof PowerFeedsRouteWithChildren
   PowerPanelsRoute: typeof PowerPanelsRouteWithChildren
+  PrefixListsRoute: typeof PrefixListsRouteWithChildren
   PrefixesRoute: typeof PrefixesRouteWithChildren
   ProviderNetworksRoute: typeof ProviderNetworksRouteWithChildren
   ProvidersRoute: typeof ProvidersRouteWithChildren
@@ -4979,12 +5389,15 @@ export interface RootRouteChildren {
   RegionsRoute: typeof RegionsRouteWithChildren
   RirsRoute: typeof RirsRouteWithChildren
   RouteTargetsRoute: typeof RouteTargetsRouteWithChildren
+  RoutingKeychainsRoute: typeof RoutingKeychainsRouteWithChildren
+  RoutingPoliciesRoute: typeof RoutingPoliciesRouteWithChildren
   SavedFiltersRoute: typeof SavedFiltersRoute
   SearchRoute: typeof SearchRoute
   SetPasswordRoute: typeof SetPasswordRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SiteMapRoute: typeof SiteMapRoute
   SitesRoute: typeof SitesRouteWithChildren
+  StaticRoutesRoute: typeof StaticRoutesRouteWithChildren
   StatusesRoute: typeof StatusesRouteWithChildren
   TagsRoute: typeof TagsRouteWithChildren
   TenantsRoute: typeof TenantsRouteWithChildren
@@ -5208,6 +5621,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/static-routes': {
+      id: '/static-routes'
+      path: '/static-routes'
+      fullPath: '/static-routes'
+      preLoaderRoute: typeof StaticRoutesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sites': {
       id: '/sites'
       path: '/sites'
@@ -5248,6 +5668,20 @@ declare module '@tanstack/react-router' {
       path: '/saved-filters'
       fullPath: '/saved-filters'
       preLoaderRoute: typeof SavedFiltersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routing-policies': {
+      id: '/routing-policies'
+      path: '/routing-policies'
+      fullPath: '/routing-policies'
+      preLoaderRoute: typeof RoutingPoliciesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routing-keychains': {
+      id: '/routing-keychains'
+      path: '/routing-keychains'
+      fullPath: '/routing-keychains'
+      preLoaderRoute: typeof RoutingKeychainsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/route-targets': {
@@ -5297,6 +5731,13 @@ declare module '@tanstack/react-router' {
       path: '/prefixes'
       fullPath: '/prefixes'
       preLoaderRoute: typeof PrefixesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prefix-lists': {
+      id: '/prefix-lists'
+      path: '/prefix-lists'
+      fullPath: '/prefix-lists'
+      preLoaderRoute: typeof PrefixListsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/power-panels': {
@@ -5558,6 +5999,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComplianceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/community-lists': {
+      id: '/community-lists'
+      path: '/community-lists'
+      fullPath: '/community-lists'
+      preLoaderRoute: typeof CommunityListsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/communities': {
+      id: '/communities'
+      path: '/communities'
+      fullPath: '/communities'
+      preLoaderRoute: typeof CommunitiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/circuits': {
       id: '/circuits'
       path: '/circuits'
@@ -5605,6 +6060,13 @@ declare module '@tanstack/react-router' {
       path: '/asns'
       fullPath: '/asns'
       preLoaderRoute: typeof AsnsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/as-path-lists': {
+      id: '/as-path-lists'
+      path: '/as-path-lists'
+      fullPath: '/as-path-lists'
+      preLoaderRoute: typeof AsPathListsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts': {
@@ -5789,6 +6251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusesIndexRouteImport
       parentRoute: typeof StatusesRoute
     }
+    '/static-routes/': {
+      id: '/static-routes/'
+      path: '/'
+      fullPath: '/static-routes/'
+      preLoaderRoute: typeof StaticRoutesIndexRouteImport
+      parentRoute: typeof StaticRoutesRoute
+    }
     '/sites/': {
       id: '/sites/'
       path: '/'
@@ -5823,6 +6292,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/scripts/'
       preLoaderRoute: typeof ScriptsIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/routing-policies/': {
+      id: '/routing-policies/'
+      path: '/'
+      fullPath: '/routing-policies/'
+      preLoaderRoute: typeof RoutingPoliciesIndexRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/routing-keychains/': {
+      id: '/routing-keychains/'
+      path: '/'
+      fullPath: '/routing-keychains/'
+      preLoaderRoute: typeof RoutingKeychainsIndexRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
     }
     '/route-targets/': {
       id: '/route-targets/'
@@ -5886,6 +6369,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/prefixes/'
       preLoaderRoute: typeof PrefixesIndexRouteImport
       parentRoute: typeof PrefixesRoute
+    }
+    '/prefix-lists/': {
+      id: '/prefix-lists/'
+      path: '/'
+      fullPath: '/prefix-lists/'
+      preLoaderRoute: typeof PrefixListsIndexRouteImport
+      parentRoute: typeof PrefixListsRoute
     }
     '/power-panels/': {
       id: '/power-panels/'
@@ -6174,6 +6664,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfigContextsIndexRouteImport
       parentRoute: typeof ConfigContextsRoute
     }
+    '/community-lists/': {
+      id: '/community-lists/'
+      path: '/'
+      fullPath: '/community-lists/'
+      preLoaderRoute: typeof CommunityListsIndexRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/communities/': {
+      id: '/communities/'
+      path: '/'
+      fullPath: '/communities/'
+      preLoaderRoute: typeof CommunitiesIndexRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
     '/clusters/': {
       id: '/clusters/'
       path: '/clusters'
@@ -6250,6 +6754,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/asns/'
       preLoaderRoute: typeof AsnsIndexRouteImport
       parentRoute: typeof AsnsRoute
+    }
+    '/as-path-lists/': {
+      id: '/as-path-lists/'
+      path: '/'
+      fullPath: '/as-path-lists/'
+      preLoaderRoute: typeof AsPathListsIndexRouteImport
+      parentRoute: typeof AsPathListsRoute
     }
     '/aggregates/': {
       id: '/aggregates/'
@@ -6481,6 +6992,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/statuses/$id'
       preLoaderRoute: typeof StatusesIdRouteImport
       parentRoute: typeof StatusesRoute
+    }
+    '/static-routes/new': {
+      id: '/static-routes/new'
+      path: '/new'
+      fullPath: '/static-routes/new'
+      preLoaderRoute: typeof StaticRoutesNewRouteImport
+      parentRoute: typeof StaticRoutesRoute
+    }
+    '/static-routes/$id': {
+      id: '/static-routes/$id'
+      path: '/$id'
+      fullPath: '/static-routes/$id'
+      preLoaderRoute: typeof StaticRoutesIdRouteImport
+      parentRoute: typeof StaticRoutesRoute
     }
     '/sites/new': {
       id: '/sites/new'
@@ -6727,6 +7252,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScriptsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/routing-policies/new': {
+      id: '/routing-policies/new'
+      path: '/new'
+      fullPath: '/routing-policies/new'
+      preLoaderRoute: typeof RoutingPoliciesNewRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/routing-policies/$id': {
+      id: '/routing-policies/$id'
+      path: '/$id'
+      fullPath: '/routing-policies/$id'
+      preLoaderRoute: typeof RoutingPoliciesIdRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/routing-keychains/new': {
+      id: '/routing-keychains/new'
+      path: '/new'
+      fullPath: '/routing-keychains/new'
+      preLoaderRoute: typeof RoutingKeychainsNewRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
+    }
+    '/routing-keychains/$id': {
+      id: '/routing-keychains/$id'
+      path: '/$id'
+      fullPath: '/routing-keychains/$id'
+      preLoaderRoute: typeof RoutingKeychainsIdRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
+    }
     '/route-targets/new': {
       id: '/route-targets/new'
       path: '/new'
@@ -6866,6 +7419,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/prefixes/$id'
       preLoaderRoute: typeof PrefixesIdRouteImport
       parentRoute: typeof PrefixesRoute
+    }
+    '/prefix-lists/new': {
+      id: '/prefix-lists/new'
+      path: '/new'
+      fullPath: '/prefix-lists/new'
+      preLoaderRoute: typeof PrefixListsNewRouteImport
+      parentRoute: typeof PrefixListsRoute
+    }
+    '/prefix-lists/$id': {
+      id: '/prefix-lists/$id'
+      path: '/$id'
+      fullPath: '/prefix-lists/$id'
+      preLoaderRoute: typeof PrefixListsIdRouteImport
+      parentRoute: typeof PrefixListsRoute
     }
     '/power-panels/new': {
       id: '/power-panels/new'
@@ -7343,6 +7910,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComplianceRulesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/community-lists/new': {
+      id: '/community-lists/new'
+      path: '/new'
+      fullPath: '/community-lists/new'
+      preLoaderRoute: typeof CommunityListsNewRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/community-lists/$id': {
+      id: '/community-lists/$id'
+      path: '/$id'
+      fullPath: '/community-lists/$id'
+      preLoaderRoute: typeof CommunityListsIdRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/communities/new': {
+      id: '/communities/new'
+      path: '/new'
+      fullPath: '/communities/new'
+      preLoaderRoute: typeof CommunitiesNewRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
+    '/communities/$id': {
+      id: '/communities/$id'
+      path: '/$id'
+      fullPath: '/communities/$id'
+      preLoaderRoute: typeof CommunitiesIdRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
     '/clusters/new': {
       id: '/clusters/new'
       path: '/clusters/new'
@@ -7497,6 +8092,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AsnsIdRouteImport
       parentRoute: typeof AsnsRoute
     }
+    '/as-path-lists/new': {
+      id: '/as-path-lists/new'
+      path: '/new'
+      fullPath: '/as-path-lists/new'
+      preLoaderRoute: typeof AsPathListsNewRouteImport
+      parentRoute: typeof AsPathListsRoute
+    }
+    '/as-path-lists/$id': {
+      id: '/as-path-lists/$id'
+      path: '/$id'
+      fullPath: '/as-path-lists/$id'
+      preLoaderRoute: typeof AsPathListsIdRouteImport
+      parentRoute: typeof AsPathListsRoute
+    }
     '/alert-rules/new': {
       id: '/alert-rules/new'
       path: '/alert-rules/new'
@@ -7623,6 +8232,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusesIdEditRouteImport
       parentRoute: typeof StatusesRoute
     }
+    '/static-routes/$id_/edit': {
+      id: '/static-routes/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/static-routes/$id/edit'
+      preLoaderRoute: typeof StaticRoutesIdEditRouteImport
+      parentRoute: typeof StaticRoutesRoute
+    }
     '/sites/$id_/edit': {
       id: '/sites/$id_/edit'
       path: '/$id/edit'
@@ -7650,6 +8266,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/scripts/runs/$runId'
       preLoaderRoute: typeof ScriptsRunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/routing-policies/$id_/edit': {
+      id: '/routing-policies/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/routing-policies/$id/edit'
+      preLoaderRoute: typeof RoutingPoliciesIdEditRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/routing-keychains/$id_/edit': {
+      id: '/routing-keychains/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/routing-keychains/$id/edit'
+      preLoaderRoute: typeof RoutingKeychainsIdEditRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
     }
     '/route-targets/$id_/edit': {
       id: '/route-targets/$id_/edit'
@@ -7713,6 +8343,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/prefixes/$id/edit'
       preLoaderRoute: typeof PrefixesIdEditRouteImport
       parentRoute: typeof PrefixesRoute
+    }
+    '/prefix-lists/$id_/edit': {
+      id: '/prefix-lists/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/prefix-lists/$id/edit'
+      preLoaderRoute: typeof PrefixListsIdEditRouteImport
+      parentRoute: typeof PrefixListsRoute
     }
     '/power-panels/$id_/edit': {
       id: '/power-panels/$id_/edit'
@@ -7931,6 +8568,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComplianceRulesIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/community-lists/$id_/edit': {
+      id: '/community-lists/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/community-lists/$id/edit'
+      preLoaderRoute: typeof CommunityListsIdEditRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/communities/$id_/edit': {
+      id: '/communities/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/communities/$id/edit'
+      preLoaderRoute: typeof CommunitiesIdEditRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
     '/clusters/$id_/edit': {
       id: '/clusters/$id_/edit'
       path: '/clusters/$id/edit'
@@ -7994,6 +8645,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AsnsIdEditRouteImport
       parentRoute: typeof AsnsRoute
     }
+    '/as-path-lists/$id_/edit': {
+      id: '/as-path-lists/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/as-path-lists/$id/edit'
+      preLoaderRoute: typeof AsPathListsIdEditRouteImport
+      parentRoute: typeof AsPathListsRoute
+    }
     '/alert-rules/$id_/edit': {
       id: '/alert-rules/$id_/edit'
       path: '/alert-rules/$id/edit'
@@ -8041,6 +8699,24 @@ const AggregatesRouteChildren: AggregatesRouteChildren = {
 
 const AggregatesRouteWithChildren = AggregatesRoute._addFileChildren(
   AggregatesRouteChildren,
+)
+
+interface AsPathListsRouteChildren {
+  AsPathListsIdRoute: typeof AsPathListsIdRoute
+  AsPathListsNewRoute: typeof AsPathListsNewRoute
+  AsPathListsIndexRoute: typeof AsPathListsIndexRoute
+  AsPathListsIdEditRoute: typeof AsPathListsIdEditRoute
+}
+
+const AsPathListsRouteChildren: AsPathListsRouteChildren = {
+  AsPathListsIdRoute: AsPathListsIdRoute,
+  AsPathListsNewRoute: AsPathListsNewRoute,
+  AsPathListsIndexRoute: AsPathListsIndexRoute,
+  AsPathListsIdEditRoute: AsPathListsIdEditRoute,
+}
+
+const AsPathListsRouteWithChildren = AsPathListsRoute._addFileChildren(
+  AsPathListsRouteChildren,
 )
 
 interface AsnsRouteChildren {
@@ -8129,6 +8805,42 @@ const CircuitsRouteChildren: CircuitsRouteChildren = {
 
 const CircuitsRouteWithChildren = CircuitsRoute._addFileChildren(
   CircuitsRouteChildren,
+)
+
+interface CommunitiesRouteChildren {
+  CommunitiesIdRoute: typeof CommunitiesIdRoute
+  CommunitiesNewRoute: typeof CommunitiesNewRoute
+  CommunitiesIndexRoute: typeof CommunitiesIndexRoute
+  CommunitiesIdEditRoute: typeof CommunitiesIdEditRoute
+}
+
+const CommunitiesRouteChildren: CommunitiesRouteChildren = {
+  CommunitiesIdRoute: CommunitiesIdRoute,
+  CommunitiesNewRoute: CommunitiesNewRoute,
+  CommunitiesIndexRoute: CommunitiesIndexRoute,
+  CommunitiesIdEditRoute: CommunitiesIdEditRoute,
+}
+
+const CommunitiesRouteWithChildren = CommunitiesRoute._addFileChildren(
+  CommunitiesRouteChildren,
+)
+
+interface CommunityListsRouteChildren {
+  CommunityListsIdRoute: typeof CommunityListsIdRoute
+  CommunityListsNewRoute: typeof CommunityListsNewRoute
+  CommunityListsIndexRoute: typeof CommunityListsIndexRoute
+  CommunityListsIdEditRoute: typeof CommunityListsIdEditRoute
+}
+
+const CommunityListsRouteChildren: CommunityListsRouteChildren = {
+  CommunityListsIdRoute: CommunityListsIdRoute,
+  CommunityListsNewRoute: CommunityListsNewRoute,
+  CommunityListsIndexRoute: CommunityListsIndexRoute,
+  CommunityListsIdEditRoute: CommunityListsIdEditRoute,
+}
+
+const CommunityListsRouteWithChildren = CommunityListsRoute._addFileChildren(
+  CommunityListsRouteChildren,
 )
 
 interface ConfigContextsRouteChildren {
@@ -8581,6 +9293,24 @@ const PowerPanelsRouteWithChildren = PowerPanelsRoute._addFileChildren(
   PowerPanelsRouteChildren,
 )
 
+interface PrefixListsRouteChildren {
+  PrefixListsIdRoute: typeof PrefixListsIdRoute
+  PrefixListsNewRoute: typeof PrefixListsNewRoute
+  PrefixListsIndexRoute: typeof PrefixListsIndexRoute
+  PrefixListsIdEditRoute: typeof PrefixListsIdEditRoute
+}
+
+const PrefixListsRouteChildren: PrefixListsRouteChildren = {
+  PrefixListsIdRoute: PrefixListsIdRoute,
+  PrefixListsNewRoute: PrefixListsNewRoute,
+  PrefixListsIndexRoute: PrefixListsIndexRoute,
+  PrefixListsIdEditRoute: PrefixListsIdEditRoute,
+}
+
+const PrefixListsRouteWithChildren = PrefixListsRoute._addFileChildren(
+  PrefixListsRouteChildren,
+)
+
 interface PrefixesRouteChildren {
   PrefixesIdRoute: typeof PrefixesIdRoute
   PrefixesBulkEditRoute: typeof PrefixesBulkEditRoute
@@ -8705,6 +9435,41 @@ const RouteTargetsRouteWithChildren = RouteTargetsRoute._addFileChildren(
   RouteTargetsRouteChildren,
 )
 
+interface RoutingKeychainsRouteChildren {
+  RoutingKeychainsIdRoute: typeof RoutingKeychainsIdRoute
+  RoutingKeychainsNewRoute: typeof RoutingKeychainsNewRoute
+  RoutingKeychainsIndexRoute: typeof RoutingKeychainsIndexRoute
+  RoutingKeychainsIdEditRoute: typeof RoutingKeychainsIdEditRoute
+}
+
+const RoutingKeychainsRouteChildren: RoutingKeychainsRouteChildren = {
+  RoutingKeychainsIdRoute: RoutingKeychainsIdRoute,
+  RoutingKeychainsNewRoute: RoutingKeychainsNewRoute,
+  RoutingKeychainsIndexRoute: RoutingKeychainsIndexRoute,
+  RoutingKeychainsIdEditRoute: RoutingKeychainsIdEditRoute,
+}
+
+const RoutingKeychainsRouteWithChildren =
+  RoutingKeychainsRoute._addFileChildren(RoutingKeychainsRouteChildren)
+
+interface RoutingPoliciesRouteChildren {
+  RoutingPoliciesIdRoute: typeof RoutingPoliciesIdRoute
+  RoutingPoliciesNewRoute: typeof RoutingPoliciesNewRoute
+  RoutingPoliciesIndexRoute: typeof RoutingPoliciesIndexRoute
+  RoutingPoliciesIdEditRoute: typeof RoutingPoliciesIdEditRoute
+}
+
+const RoutingPoliciesRouteChildren: RoutingPoliciesRouteChildren = {
+  RoutingPoliciesIdRoute: RoutingPoliciesIdRoute,
+  RoutingPoliciesNewRoute: RoutingPoliciesNewRoute,
+  RoutingPoliciesIndexRoute: RoutingPoliciesIndexRoute,
+  RoutingPoliciesIdEditRoute: RoutingPoliciesIdEditRoute,
+}
+
+const RoutingPoliciesRouteWithChildren = RoutingPoliciesRoute._addFileChildren(
+  RoutingPoliciesRouteChildren,
+)
+
 interface SettingsRouteChildren {
   SettingsAdminRoute: typeof SettingsAdminRoute
   SettingsBackupsRoute: typeof SettingsBackupsRoute
@@ -8788,6 +9553,24 @@ const SitesRouteChildren: SitesRouteChildren = {
 }
 
 const SitesRouteWithChildren = SitesRoute._addFileChildren(SitesRouteChildren)
+
+interface StaticRoutesRouteChildren {
+  StaticRoutesIdRoute: typeof StaticRoutesIdRoute
+  StaticRoutesNewRoute: typeof StaticRoutesNewRoute
+  StaticRoutesIndexRoute: typeof StaticRoutesIndexRoute
+  StaticRoutesIdEditRoute: typeof StaticRoutesIdEditRoute
+}
+
+const StaticRoutesRouteChildren: StaticRoutesRouteChildren = {
+  StaticRoutesIdRoute: StaticRoutesIdRoute,
+  StaticRoutesNewRoute: StaticRoutesNewRoute,
+  StaticRoutesIndexRoute: StaticRoutesIndexRoute,
+  StaticRoutesIdEditRoute: StaticRoutesIdEditRoute,
+}
+
+const StaticRoutesRouteWithChildren = StaticRoutesRoute._addFileChildren(
+  StaticRoutesRouteChildren,
+)
 
 interface StatusesRouteChildren {
   StatusesIdRoute: typeof StatusesIdRoute
@@ -9043,6 +9826,7 @@ const rootRouteChildren: RootRouteChildren = {
   AgentAccessRoute: AgentAccessRoute,
   AggregatesRoute: AggregatesRouteWithChildren,
   AlertsRoute: AlertsRoute,
+  AsPathListsRoute: AsPathListsRouteWithChildren,
   AsnsRoute: AsnsRouteWithChildren,
   AuditLogRoute: AuditLogRoute,
   AutomationTargetsRoute: AutomationTargetsRouteWithChildren,
@@ -9050,6 +9834,8 @@ const rootRouteChildren: RootRouteChildren = {
   ChangeLogRoute: ChangeLogRoute,
   CircuitTypesRoute: CircuitTypesRouteWithChildren,
   CircuitsRoute: CircuitsRouteWithChildren,
+  CommunitiesRoute: CommunitiesRouteWithChildren,
+  CommunityListsRoute: CommunityListsRouteWithChildren,
   ComplianceRoute: ComplianceRoute,
   ConfigContextsRoute: ConfigContextsRouteWithChildren,
   ConfigDriftRoute: ConfigDriftRoute,
@@ -9087,6 +9873,7 @@ const rootRouteChildren: RootRouteChildren = {
   PortUtilizationRoute: PortUtilizationRoute,
   PowerFeedsRoute: PowerFeedsRouteWithChildren,
   PowerPanelsRoute: PowerPanelsRouteWithChildren,
+  PrefixListsRoute: PrefixListsRouteWithChildren,
   PrefixesRoute: PrefixesRouteWithChildren,
   ProviderNetworksRoute: ProviderNetworksRouteWithChildren,
   ProvidersRoute: ProvidersRouteWithChildren,
@@ -9094,12 +9881,15 @@ const rootRouteChildren: RootRouteChildren = {
   RegionsRoute: RegionsRouteWithChildren,
   RirsRoute: RirsRouteWithChildren,
   RouteTargetsRoute: RouteTargetsRouteWithChildren,
+  RoutingKeychainsRoute: RoutingKeychainsRouteWithChildren,
+  RoutingPoliciesRoute: RoutingPoliciesRouteWithChildren,
   SavedFiltersRoute: SavedFiltersRoute,
   SearchRoute: SearchRoute,
   SetPasswordRoute: SetPasswordRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SiteMapRoute: SiteMapRoute,
   SitesRoute: SitesRouteWithChildren,
+  StaticRoutesRoute: StaticRoutesRouteWithChildren,
   StatusesRoute: StatusesRouteWithChildren,
   TagsRoute: TagsRouteWithChildren,
   TenantsRoute: TenantsRouteWithChildren,

@@ -54,6 +54,42 @@ Total: {{ count }}
     data and use normal Jinja2 features, but they can't reach into Python
     internals or run arbitrary code. This keeps a shared template library safe.
 
+### Rendering one device
+
+A template bound as a device's [config template](#config-template-bindings)
+renders per device (**Config → Render config**, `GET /api/devices/<id>/render/`)
+with a richer context:
+
+| Variable | What it holds |
+|---|---|
+| `device` | The device itself - `device.name`, `device.site`, `device.platform`, `device.custom_fields`, … |
+| `config_context` | The merged [config context](config-contexts.md) for the device. |
+| `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … |
+| `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
+| `routing` | What the device routes with - VRFs, static routes, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
+
+Virtual machines render the same way (`vm` and `device` both name the VM;
+`routing` is empty).
+
+### Address filters
+
+An address in Danbyte is a bare `10.0.0.5` whose length comes from its
+prefix; a router config needs the pieces. These filters take a string
+(`10.0.0.5/24`, `10.0.0.5`) or an address object, and work on IPv6 too:
+
+| Filter | `10.0.0.5/24` becomes |
+|---|---|
+| `host` | `10.0.0.5` |
+| `cidr` | `10.0.0.5/24` (an address object gets its prefix's length; a bare string is a host) |
+| `prefixlen` | `24` |
+| `netmask` | `255.255.255.0` |
+| `wildcard` | `0.0.0.255` |
+| `network` | `10.0.0.0/24` |
+
+Plus the tests `ipv4` and `ipv6` (`{% if ip is ipv6 %}`). So an IOS line
+reads `ip address {{ ip | host }} {{ ip | netmask }}` and an FRR line
+`ip address {{ ip | cidr }}`.
+
 ## Open a template
 
 Clicking a name in **Customize → Export templates** opens that template's detail

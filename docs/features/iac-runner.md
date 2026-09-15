@@ -139,7 +139,11 @@ interface {{ i.name }}
 ```
 
 Template context: `device`, `config_context` (merged), `interfaces`,
-`ip_addresses`. The device's **Config → Render config** box renders this on
+`ip_addresses`, and `routing` (static routes, policies, keychains - see
+[Routing](routing.md#rendering-a-config)); address filters such as
+`netmask` and `cidr` are listed under
+[export templates](export-templates.md#address-filters). The device's
+**Config → Render config** box renders this on
 demand - and you can [bind the template](export-templates.md#config-template-bindings)
 to the device, its role, or its platform so the box (and
 `GET /api/devices/<id>/render/`) picks it automatically. For `edge-fw-demo` it produces:

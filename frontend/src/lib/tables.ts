@@ -35,6 +35,48 @@ export const TABLES: TableMeta[] = [
   { id: "statuses", label: "Statuses", area: "IPAM", ioType: "ipstatus" },
   { id: "ip-roles", label: "IP roles", area: "IPAM", ioType: "iprole" },
   { id: "services", label: "Services", area: "IPAM", ioType: "service" },
+  {
+    id: "static-routes",
+    label: "Static routes",
+    area: "Routing",
+    ioType: "staticroute",
+  },
+  {
+    id: "routing-policies",
+    label: "Routing policies",
+    area: "Routing",
+    ioType: "routingpolicy",
+  },
+  {
+    id: "prefix-lists",
+    label: "Prefix lists",
+    area: "Routing",
+    ioType: "prefixlist",
+  },
+  {
+    id: "community-lists",
+    label: "Community lists",
+    area: "Routing",
+    ioType: "communitylist",
+  },
+  {
+    id: "as-path-lists",
+    label: "AS-path lists",
+    area: "Routing",
+    ioType: "aspathlist",
+  },
+  {
+    id: "communities",
+    label: "Communities",
+    area: "Routing",
+    ioType: "community",
+  },
+  {
+    id: "routing-keychains",
+    label: "Routing keychains",
+    area: "Routing",
+    ioType: "routingkeychain",
+  },
   { id: "sites", label: "Sites", area: "Organization", ioType: "site" },
   { id: "tenants", label: "Tenants", area: "Organization" },
   {

@@ -28,6 +28,13 @@ const ROUTE_TYPES: Record<string, string> = {
   contacts: "contact",
   platforms: "platform",
   scripts: "script",
+  "static-routes": "static route",
+  "routing-policies": "routing policy",
+  "prefix-lists": "prefix list",
+  "community-lists": "community list",
+  "as-path-lists": "AS-path list",
+  communities: "BGP community",
+  "routing-keychains": "routing keychain",
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

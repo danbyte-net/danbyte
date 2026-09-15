@@ -22,6 +22,7 @@ import {
   Factory,
   FileSignature,
   Fingerprint,
+  Filter,
   Folder,
   Gauge,
   FolderTree,
@@ -31,6 +32,7 @@ import {
   Globe,
   Hash,
   History,
+  KeyRound,
   Landmark,
   Layers,
   LayoutDashboard,
@@ -49,6 +51,7 @@ import {
   Radio,
   RefreshCw,
   Rocket,
+  Route as RouteIcon,
   Rows3,
   Server,
   Settings as SettingsIcon,
@@ -423,6 +426,64 @@ const sections: NavSection[] = [
             url: "/nat-rules",
             icon: ArrowLeftRight,
             objectType: "natrule",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Routing",
+    icon: RouteIcon,
+    clusters: [
+      {
+        label: "Routes",
+        items: [
+          {
+            title: "Static routes",
+            url: "/static-routes",
+            icon: RouteIcon,
+            objectType: "staticroute",
+          },
+        ],
+      },
+      {
+        label: "Policy",
+        items: [
+          {
+            title: "Routing policies",
+            url: "/routing-policies",
+            icon: Filter,
+            objectType: "routingpolicy",
+          },
+          {
+            title: "Prefix lists",
+            url: "/prefix-lists",
+            icon: ListChecks,
+            objectType: "prefixlist",
+          },
+          {
+            title: "Communities",
+            url: "/communities",
+            icon: Tag,
+            objectType: "community",
+          },
+          {
+            title: "Community lists",
+            url: "/community-lists",
+            icon: ListFilter,
+            objectType: "communitylist",
+          },
+          {
+            title: "AS-path lists",
+            url: "/as-path-lists",
+            icon: GitBranch,
+            objectType: "aspathlist",
+          },
+          {
+            title: "Keychains",
+            url: "/routing-keychains",
+            icon: KeyRound,
+            objectType: "routingkeychain",
           },
         ],
       },

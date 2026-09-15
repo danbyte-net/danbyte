@@ -73,6 +73,9 @@ nav = [
     { "Wireless"          = "features/wireless.md" },
     { "VPN tunnels"       = "features/vpn.md" },
   ] },
+  { "Routing" = [
+    { "Routing"           = "features/routing.md" },
+  ] },
   { "Virtualization" = [
     { "Virtual machines"  = "features/virtual-machines.md" },
     { "Clusters, types & groups" = "features/clusters.md" },
@@ -152,6 +155,7 @@ nav = [
       { "Interface"         = "models/interface.md" },
       { "Port reservation"  = "models/port-reservation.md" },
       { "Tag"               = "models/tag.md" },
+      { "Routing"           = "models/routing.md" },
     ] },
   ] },
   { "Reference" = [

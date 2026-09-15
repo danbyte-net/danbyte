@@ -890,6 +890,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "inventoryitem", label: "Inventory items" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
   { value: "natrule", label: "NAT rules" },
+  { value: "staticroute", label: "Static routes" },
 ]
 
 // api/status_registry.MONITORING_STATES - the six states a check can end in.
@@ -1391,6 +1392,7 @@ export interface Device {
   power_count: number
   service_count: number
   /** Per-tab counts served on the detail payload only. */
+  routing_count?: number
   image_count?: number
   /** Certificate assignments plus SSH host keys - the Certificates & keys tab. */
   certificate_count?: number
@@ -4094,6 +4096,143 @@ export interface NATRule {
   /** Optional restriction on who the rule applies to. */
   source_ip: { id: string; ip_address: string; dns_name: string } | null
   source_prefix: { id: string; cidr: string } | null
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+// ─── Routing ────────────────────────────────────────────────────────────────
+
+export type RoutingAction = "permit" | "deny"
+
+interface RoutingCatalogBase {
+  id: string
+  numid: number | null
+  name: string
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface PrefixListRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  prefix: string
+  prefix_obj: PrefixMini | null
+  ge: number | null
+  le: number | null
+  description: string
+}
+
+export interface PrefixList extends RoutingCatalogBase {
+  family: "ipv4" | "ipv6"
+  /** Empty on the list page; the detail carries them. */
+  rules: PrefixListRule[]
+  rule_count: number
+}
+
+export interface PrefixListMini {
+  id: string
+  name: string
+  family: "ipv4" | "ipv6"
+}
+
+export interface Community extends RoutingCatalogBase {
+  value: string
+  kind: "standard" | "large" | "extended"
+}
+
+export interface CommunityMini {
+  id: string
+  name: string
+  value: string
+  kind: Community["kind"]
+}
+
+export interface CommunityListRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  communities: CommunityMini[]
+  regex: string
+  description: string
+}
+
+export interface CommunityList extends RoutingCatalogBase {
+  kind: "standard" | "expanded" | "large" | "extended"
+  rules: CommunityListRule[]
+  rule_count: number
+}
+
+export interface ASPathListRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  regex: string
+  description: string
+}
+
+export interface ASPathList extends RoutingCatalogBase {
+  rules: ASPathListRule[]
+  rule_count: number
+}
+
+export interface RoutingPolicyRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  description: string
+  match_prefix_lists: PrefixListMini[]
+  match_community_lists: { id: string; name: string; kind: string }[]
+  match_as_path_lists: { id: string; name: string }[]
+  match_next_hop: PrefixListMini | null
+  match_extra: Record<string, unknown>
+  set_local_pref: number | null
+  set_med: number | null
+  set_weight: number | null
+  set_origin: "" | "igp" | "egp" | "incomplete"
+  set_next_hop: string
+  set_as_path_prepend: string
+  set_communities: CommunityMini[]
+  set_communities_additive: boolean
+  set_metric_type: 1 | 2 | null
+  set_extra: Record<string, unknown>
+  continue_seq: number | null
+}
+
+export interface RoutingPolicy extends RoutingCatalogBase {
+  rules: RoutingPolicyRule[]
+  rule_count: number
+}
+
+export interface RoutingKeychain extends RoutingCatalogBase {
+  algorithm: "md5" | "sha1" | "sha256" | "hmac-sha-256"
+  /** The key lives in the secret store; only whether one exists is read. */
+  psk_set: boolean
+}
+
+export interface StaticRoute {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  prefix: string
+  prefix_obj: PrefixMini | null
+  kind: "nexthop" | "blackhole" | "reject"
+  kind_display: string
+  next_hop: string
+  next_hop_interface: { id: string; name: string; device: DeviceMini } | null
+  next_hop_vrf: { id: string; name: string; rd: string; color: string } | null
+  distance: number | null
+  metric: number | null
+  tag: number | null
+  bfd: boolean
   status: StatusMini | null
   description: string
   tags: Tag[]

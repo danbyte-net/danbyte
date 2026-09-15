@@ -112,7 +112,7 @@ describe("plan-capable forms", () => {
       // inline (console ports vs console server ports), so also count any
       // app-label literal in a file that routes writes through the helper.
       for (const m of src.matchAll(
-        /"((?:api|core|auth|auth_api|customization|integrations)\.[a-z]+)"/g
+        /"((?:api|core|auth|auth_api|customization|integrations|routing)\.[a-z]+)"/g
       )) {
         migrated.add(m[1])
       }

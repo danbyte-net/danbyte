@@ -28,6 +28,7 @@ STATUSABLE_MODELS = [
     ("inventoryitem", "Inventory items"),
     ("maintenanceevent", "Maintenance & outage events"),
     ("natrule", "NAT rules"),
+    ("staticroute", "Static routes"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
@@ -135,6 +136,8 @@ STATUS_MODEL_VALUES = {
     # in force. Nothing here means "broken" - a rule that stopped working is
     # a device problem, not a state of the record.
     "natrule": ["active", "planned", "disabled"],
+    # Static routes: in the table, on the way, or written down and off.
+    "staticroute": ["active", "planned", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.

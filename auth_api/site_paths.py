@@ -55,6 +55,9 @@ SITE_PATHS: dict[str, str] = {
     # Per-site settings rows - a change grant scoped to sites=[X] makes its
     # holders "site admins" of X (see core.site_settings).
     "sitesettings": "site",
+    # Routing rows hang off their device; the catalogs they reference
+    # (policies, prefix lists, keychains) are tenant-wide.
+    "staticroute": "device__site",
 }
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global

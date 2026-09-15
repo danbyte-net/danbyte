@@ -156,6 +156,7 @@ import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ServicesPane } from "@/components/services-pane"
+import { DeviceRoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
   DeviceMonitoring,
@@ -177,6 +178,7 @@ const DEVICE_TABS = [
   "monitoring",
   "snmp",
   "services",
+  "routing",
   "certificates",
   "contacts",
   "access",
@@ -388,6 +390,11 @@ function Body({ device: d }: { device: Device }) {
           count: d.service_count || undefined,
         },
         {
+          value: "routing",
+          label: "Routing",
+          count: d.routing_count || undefined,
+        },
+        {
           value: "certificates",
           label: "Certificates & keys",
           count: d.certificate_count || undefined,
@@ -490,6 +497,9 @@ function Body({ device: d }: { device: Device }) {
           parent={{ kind: "device", id: d.id }}
           parentHasPrimaryIp={!!d.primary_ip}
         />
+      </DetailTab>
+      <DetailTab value="routing">
+        <DeviceRoutingPanel device={{ id: d.id, name: d.name }} />
       </DetailTab>
       <DetailTab value="certificates">
         <div className="space-y-6">

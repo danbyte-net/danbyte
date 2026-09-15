@@ -107,6 +107,19 @@ from integrations.connections_api import (
     integration_settings,
     integrations_enabled,
 )
+from routing.viewsets import (
+    ASPathListRuleViewSet,
+    ASPathListViewSet,
+    CommunityListRuleViewSet,
+    CommunityListViewSet,
+    CommunityViewSet,
+    PrefixListRuleViewSet,
+    PrefixListViewSet,
+    RoutingKeychainViewSet,
+    RoutingPolicyRuleViewSet,
+    RoutingPolicyViewSet,
+    StaticRouteViewSet,
+)
 from integrations.netbox_api import (
     netbox_import_detail,
     netbox_imports,
@@ -322,6 +335,25 @@ router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
 router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
+# Routing - on this router (not a mounted app router) so bulk edit, planned
+# changes, CSV IO and the assistant's router walk all see the types.
+router.register(r"routing/prefix-lists", PrefixListViewSet, basename="prefixlist")
+router.register(r"routing/prefix-list-rules", PrefixListRuleViewSet,
+                basename="prefixlistrule")
+router.register(r"routing/communities", CommunityViewSet, basename="community")
+router.register(r"routing/community-lists", CommunityListViewSet,
+                basename="communitylist")
+router.register(r"routing/community-list-rules", CommunityListRuleViewSet,
+                basename="communitylistrule")
+router.register(r"routing/as-path-lists", ASPathListViewSet, basename="aspathlist")
+router.register(r"routing/as-path-list-rules", ASPathListRuleViewSet,
+                basename="aspathlistrule")
+router.register(r"routing/policies", RoutingPolicyViewSet, basename="routingpolicy")
+router.register(r"routing/policy-rules", RoutingPolicyRuleViewSet,
+                basename="routingpolicyrule")
+router.register(r"routing/keychains", RoutingKeychainViewSet,
+                basename="routingkeychain")
+router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
 router.register(r"services",      ServiceViewSet,     basename="service")
 router.register(r"service-templates", ServiceTemplateViewSet, basename="service-template")
 router.register(r"device-types",  DeviceTypeViewSet,  basename="device-type")

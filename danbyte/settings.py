@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     "scripting.apps.ScriptingConfig",
     "agents.apps.AgentsConfig",
     "assistant.apps.AssistantConfig",
+    "routing.apps.RoutingConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -316,6 +317,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "sites", "description": "Sites, regions, and locations."},
         {"name": "circuits", "description": "Circuits, providers, and terminations."},
         {"name": "tunnels", "description": "Tunnels, IPSec, and L2VPNs."},
+        {"name": "routing", "description": "Static routes, routing policies, prefix lists, communities, keychains."},
         {"name": "virtual-machines", "description": "VMs, clusters, and VM interfaces."},
         {"name": "power-panels", "description": "Power panels and feeds."},
         {"name": "monitoring", "description": "Checks, status, alerts, and SNMP."},

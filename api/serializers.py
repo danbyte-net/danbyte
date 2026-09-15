@@ -2254,6 +2254,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     console_count = serializers.SerializerMethodField()
     power_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
+    routing_count = serializers.SerializerMethodField()
     image_count = serializers.SerializerMethodField()
     certificate_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
@@ -2615,6 +2616,14 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             return 0
         return obj.services.count()
 
+    def get_routing_count(self, obj) -> int:
+        """The Routing tab's count: static routes today, protocol instances
+        as they land. The routing app owns the rows; this reads the reverse
+        relations it hangs on Device."""
+        if not self._detail_only():
+            return 0
+        return obj.static_routes.count()
+
     def get_image_count(self, obj) -> int:
         # ImageAttachment is a real GenericFK (content_type + object_id) with
         # no reverse accessor on Device.
@@ -2682,7 +2691,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "tags", "tag_ids", "custom_fields",
                   "interface_count", "ip_count",
                   "hardware_count", "console_count", "power_count",
-                  "service_count", "image_count", "certificate_count",
+                  "service_count", "routing_count", "image_count", "certificate_count",
                   "contact_count", "document_count", "permissions",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
@@ -6677,13 +6686,16 @@ class ExportTemplateSerializer(NumIdModelSerializer):
         return value
 
     def validate_template_code(self, value):
-        # Compile-check the template so syntax errors surface on save, not render.
-        from jinja2.sandbox import SandboxedEnvironment
-        from jinja2 import TemplateSyntaxError
+        # Compile-check the template so syntax errors surface on save, not
+        # render - with the renderers' own environment, so a template using
+        # the address filters compiles the way it will run.
+        from jinja2 import TemplateError
+
+        from .export_templates import _env
 
         try:
-            SandboxedEnvironment().from_string(value or "")
-        except TemplateSyntaxError as exc:
+            _env().from_string(value or "")
+        except TemplateError as exc:
             raise serializers.ValidationError(f"Template syntax error: {exc}")
         return value
 
