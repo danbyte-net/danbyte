@@ -67,11 +67,12 @@ import {
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
+  MAP_HIDDEN_KEYS,
   MapObjectsSidebar,
-  NO_HIDDEN,
   type MapSelected,
   type MarkerTypeOption,
 } from "@/components/site-map/map-sidebar"
+import { useStoredHidden } from "@/components/hidden-objects"
 import {
   ConnectionInspector,
   DeviceInspector,
@@ -236,22 +237,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   }, [layers])
   // What the sidebar's eye toggles have taken off the map. Separate from
   // `layers`: that switches whole kinds, this narrows one kind to the roles,
-  // regions and sites you are actually looking at.
-  // `typeof NO_HIDDEN` is the sidebar's MapHidden - taken from the value that
-  // is already imported rather than importing the type as well.
-  const [hidden, setHidden] = useState<typeof NO_HIDDEN>(() => {
-    try {
-      const stored = JSON.parse(
-        localStorage.getItem("site-map:hidden")!
-      ) as Partial<typeof NO_HIDDEN>
-      return { ...NO_HIDDEN, ...stored }
-    } catch {
-      return NO_HIDDEN
-    }
-  })
-  useEffect(() => {
-    localStorage.setItem("site-map:hidden", JSON.stringify(hidden))
-  }, [hidden])
+  // regions and sites you are actually looking at. Per browser.
+  const [hidden, setHidden] = useStoredHidden(
+    "site-map:hidden",
+    MAP_HIDDEN_KEYS
+  )
   // Names, not ids, for roles and regions - a device that gains the role
   // tomorrow is hidden too, which is what picking the group meant. Resolved
   // to site ids once, because everything else (devices, cables, arcs) knows
@@ -543,7 +533,8 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     [routes, hiddenCableIds]
   )
   const shownCables = useMemo(
-    () => (cablesQuery.data?.cables ?? []).filter((c) => !hiddenCableIds.has(c.id)),
+    () =>
+      (cablesQuery.data?.cables ?? []).filter((c) => !hiddenCableIds.has(c.id)),
     [cablesQuery.data, hiddenCableIds]
   )
   const drawnCables = useMemo(

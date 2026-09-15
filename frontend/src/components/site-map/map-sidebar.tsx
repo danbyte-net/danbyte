@@ -9,6 +9,12 @@ import type {
   SiteMapRegion,
   SiteMapSite,
 } from "@/lib/api"
+import {
+  emptyHidden,
+  hiddenCount,
+  setHidden,
+  type HiddenSet,
+} from "@/components/hidden-objects"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
@@ -41,20 +47,12 @@ export type MapSelected =
  * stays hidden too. Sites are the exception - they are the map's top-level
  * objects and few enough to hide one at a time.
  */
-export interface MapHidden {
-  /** Device role names. */
-  roles: string[]
-  /** Region names, as the site groups are titled. */
-  regions: string[]
-  /** Site ids. */
-  sites: string[]
-}
+export const MAP_HIDDEN_KEYS = ["roles", "regions", "sites"] as const
+/** Device role names, region names (as the site groups are titled), site ids. */
+export type MapHidden = HiddenSet<(typeof MAP_HIDDEN_KEYS)[number]>
 
-export const NO_HIDDEN: MapHidden = { roles: [], regions: [], sites: [] }
-
-export function hiddenCount(h: MapHidden): number {
-  return h.roles.length + h.regions.length + h.sites.length
-}
+export const NO_HIDDEN: MapHidden = emptyHidden(MAP_HIDDEN_KEYS)
+export { hiddenCount }
 
 /** A placeable marker type from the palette (FloorTileType or DeviceRole). */
 export interface MarkerTypeOption {
@@ -108,7 +106,9 @@ function SiteRow({
     >
       {/* No color dot: the pin on the map carries the site's color; in the
           list it's noise. Status chips are the only color here. */}
-      <span className={cn("min-w-0 truncate", !shown && "text-muted-foreground/60")}>
+      <span
+        className={cn("min-w-0 truncate", !shown && "text-muted-foreground/60")}
+      >
         {s.name}
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -185,12 +185,7 @@ export function MapObjectsSidebar({
     !hiddenRoles.has(d.role?.name ?? "No role")
 
   const toggle = (key: keyof MapHidden, value: string, shown: boolean) =>
-    onHiddenChange({
-      ...hidden,
-      [key]: shown
-        ? hidden[key].filter((v) => v !== value)
-        : [...hidden[key], value],
-    })
+    onHiddenChange(setHidden(hidden, key, value, !shown))
 
   const placed = useMemo(
     () => sites.filter((s) => s.latitude !== null),
