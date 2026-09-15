@@ -155,6 +155,13 @@ export interface CanvasHandle {
   center: () => { x: number; y: number }
   /** Zoom/center on one node. */
   focusNode: (id: string) => void
+  /** Spotlight one node as a click on it would - the caller reports the
+   * selection to its own panels. */
+  selectNode: (id: string) => void
+  /** Center between the two ends of one edge. */
+  focusEdge: (id: string) => void
+  /** Fit the viewport to one zone's box. */
+  focusZone: (box: { x: number; y: number; w: number; h: number }) => void
   /** Render the graph to a PNG data URL - the whole diagram, or just the
    * visible viewport. */
   exportPng: (viewportOnly?: boolean) => Promise<string | null>
@@ -1426,6 +1433,31 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             zoom: 1.1,
             duration: 500,
           })
+      },
+      selectNode: (id: string) => {
+        setSpotId(id)
+        flow.setNodes((cur) =>
+          cur.map((n) =>
+            n.selected !== (n.id === id) ? { ...n, selected: n.id === id } : n
+          )
+        )
+      },
+      focusEdge: (id: string) => {
+        const e = flow.getEdge(id)
+        const a = e && flow.getNode(e.source)
+        const b = e && flow.getNode(e.target)
+        if (!a || !b) return
+        flow.setCenter(
+          (a.position.x + b.position.x) / 2 + 110,
+          (a.position.y + b.position.y) / 2 + 40,
+          { zoom: 1, duration: 500 }
+        )
+      },
+      focusZone: (box) => {
+        void flow.fitBounds(
+          { x: box.x, y: box.y, width: box.w, height: box.h },
+          { duration: 500, padding: 0.2 }
+        )
       },
       exportPng: async (viewportOnly = false) => {
         const el = wrapper.current?.querySelector<HTMLElement>(

@@ -7,6 +7,7 @@ import {
   Filter,
   LayoutGrid,
   Link2 as LinkIcon,
+  PanelRight,
   Plus,
   Save,
   SlidersHorizontal,
@@ -19,6 +20,7 @@ import { toast } from "sonner"
 
 import {
   api,
+  type BulkStatusResponse,
   type GhostEdgeData,
   type Paginated,
   type Status,
@@ -55,6 +57,7 @@ import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
 import { CanvasLegend } from "@/components/topology/legend"
 import { LogicalTopologyView } from "@/components/topology/logical-view"
+import { TopologyObjectsSidebar } from "@/components/topology/map-sidebar"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
@@ -101,6 +104,7 @@ import {
   type PosMap,
 } from "@/components/topology/view-positions"
 import { usePageTitle } from "@/lib/page-title"
+import { cn } from "@/lib/utils"
 
 const TopologyCanvas = lazy(() =>
   import("@/components/topology/topology-canvas").then((m) => ({
@@ -333,6 +337,8 @@ function writeStoredZones(z: ZonesByStyle) {
 // edge routing) for the DEFAULT topology - like the dragged positions above,
 // they must survive a reload. Saved views persist theirs via Save.
 const DISPLAY_KEY = "danbyte-topology-display"
+const SIDEBAR_KEY = "topology:sidebar"
+const EMPTY_MON: BulkStatusResponse["statuses"] = {}
 interface StoredDisplay {
   colorMode?: EdgeColorMode
   direction?: "LR" | "TB"
@@ -641,6 +647,15 @@ function TopologyPage() {
   const [selGroup, setSelGroup] = useState<TopoGroupData | null>(null)
   const [selGroupEdge, setSelGroupEdge] = useState<GroupEdgeInfo | null>(null)
   const [hintDismissed, setHintDismissed] = useState(false)
+  // The objects sidebar is a per-browser preference, as on the site map.
+  const [showObjects, setShowObjects] = useState(
+    () => localStorage.getItem(SIDEBAR_KEY) !== "closed"
+  )
+  const toggleObjects = () =>
+    setShowObjects((v) => {
+      localStorage.setItem(SIDEBAR_KEY, v ? "closed" : "open")
+      return !v
+    })
 
   const clearSel = () => {
     setSelNode(null)
@@ -893,6 +908,28 @@ function TopologyPage() {
         .map((n) => n.id)
     )
   }, [search, graph])
+
+  // Monitoring roll-up for the sidebar's chips - the graph payload carries
+  // none, and the api app stays decoupled from the monitoring app.
+  const deviceIds = useMemo(
+    () =>
+      (graph?.nodes ?? [])
+        .map((n) => n.data.device_id)
+        .filter((x): x is string => !!x)
+        .sort(),
+    [graph]
+  )
+  const monQuery = useQuery({
+    queryKey: ["device-mon-status", deviceIds],
+    queryFn: () =>
+      api<BulkStatusResponse>("/api/monitoring/status/", {
+        method: "POST",
+        body: JSON.stringify({ devices: deviceIds }),
+      }),
+    enabled: showObjects && !logical && deviceIds.length > 0,
+    staleTime: 30_000,
+  })
+  const checks = monQuery.data?.statuses ?? EMPTY_MON
 
   // ── Saved views ──
   /** Applying a view is one navigation to `?view=<id>`, clearing every other
@@ -1422,6 +1459,18 @@ function TopologyPage() {
           <Button
             variant="outline"
             size="sm"
+            className={cn(
+              "h-7 text-xs",
+              !showObjects && "text-muted-foreground"
+            )}
+            onClick={toggleObjects}
+            title="List everything on this map"
+          >
+            <PanelRight className="h-3 w-3" /> Objects
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             className="h-7 text-xs"
             onClick={() => setAddOpen(true)}
             title="Add a device to the map - starts a custom map you grow by right-clicking nodes"
@@ -1472,6 +1521,7 @@ function TopologyPage() {
 
       )}
 
+      <div className="flex min-h-0 flex-1">
       <div className="relative min-h-0 flex-1">
         {logical && <LogicalTopologyView />}
         {!logical && q.isLoading && (
@@ -1557,7 +1607,7 @@ function TopologyPage() {
           </Suspense>
         )}
 
-        {hiddenHere.length > 0 && (
+        {hiddenHere.length > 0 && !showObjects && (
           <div className="absolute right-3 bottom-3 z-10 flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm">
             <EyeOff className="size-3.5 text-muted-foreground" />
             <span className="text-muted-foreground">
@@ -1658,6 +1708,45 @@ function TopologyPage() {
             onClose={() => setSelGroupEdge(null)}
           />
         )}
+      </div>
+
+      {showObjects && !logical && graph && (
+        <TopologyObjectsSidebar
+          graph={graph}
+          checks={checks}
+          zones={zones}
+          removed={hiddenHere.length}
+          onShowAll={() => setHiddenNodes([])}
+          selectedDeviceId={selNode?.device_id ?? null}
+          selectedGroupId={selGroup?.group_id ?? null}
+          selectedEdgeId={selEdgeId}
+          onPickNode={(n) => {
+            canvas.current?.focusNode(n.id)
+            canvas.current?.selectNode(n.id)
+            clearSel()
+            setSelNode(n.data)
+          }}
+          onPickGroup={(n) => {
+            canvas.current?.focusNode(n.id)
+            canvas.current?.selectNode(n.id)
+            clearSel()
+            setSelGroup(n.data as unknown as TopoGroupData)
+          }}
+          onDrillGroup={drillInto}
+          onPickEdge={(e) => {
+            canvas.current?.focusEdge(e.id)
+            clearSel()
+            if (e.data) setSelEdge(e.data)
+            setSelEdgeId(e.id)
+          }}
+          onFocusZone={(z) => canvas.current?.focusZone(z)}
+          onRenameZone={(id, label) =>
+            setZones(
+              (zones ?? []).map((z) => (z.id === id ? { ...z, label } : z))
+            )
+          }
+        />
+      )}
       </div>
 
       {menu && (

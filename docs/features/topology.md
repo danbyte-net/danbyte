@@ -223,6 +223,31 @@ focus chip in the header clears it. The **Find device** box dims everything
 that doesn't match (name, IP, type) - press ++enter++ to zoom to the first
 hit.
 
+### On this map - the objects sidebar
+
+**Objects** in the toolbar opens the same sidebar the site map and the floor
+plans have: one search box, status chips, and every object on the map in
+foldable groups. It is the answer to "where is that switch" on a 70-card
+map.
+
+- **Problems** first: every card whose monitoring roll-up is down or
+  degraded, worst first. The **down / degraded / up** chips narrow the whole
+  list to one state.
+- **Devices** grouped by **role**, **site** or **location** - the switch at
+  the group header, remembered per browser - with the monitoring chip on
+  each row. When the map is grouped by site or location, the groups are
+  listed instead; double-click one to open it.
+- **Links** by media type, with LLDP-discovered links as their own family;
+  each row names its two ends and the cable label.
+- **Zones** on this view style: click to fit the box, double-click to
+  rename.
+
+A click on any row flies to the object and selects it, so its inspector
+opens as if you had clicked the card. The sidebar's "n removed · Show all"
+row is the same control as the chip in the corner; the chip shows when the
+sidebar is closed. The sidebar is a per-browser preference, like the site
+map's.
+
 ## Layout: side-to-side or tree
 
 The **Side-to-side / Tree** toggle picks the layout axis:
