@@ -439,6 +439,12 @@ const sections: NavSection[] = [
         label: "Protocols",
         items: [
           {
+            title: "BGP instances",
+            url: "/bgp-instances",
+            icon: Server,
+            objectType: "bgpinstance",
+          },
+          {
             title: "BGP sessions",
             url: "/bgp-sessions",
             icon: ArrowLeftRight,
@@ -451,10 +457,28 @@ const sections: NavSection[] = [
             objectType: "bgppeergroup",
           },
           {
+            title: "OSPF instances",
+            url: "/ospf-instances",
+            icon: Workflow,
+            objectType: "ospfinstance",
+          },
+          {
             title: "OSPF areas",
             url: "/ospf-areas",
             icon: Network,
             objectType: "ospfarea",
+          },
+          {
+            title: "IS-IS instances",
+            url: "/isis-instances",
+            icon: SquareStack,
+            objectType: "isisinstance",
+          },
+          {
+            title: "VTEPs",
+            url: "/vteps",
+            icon: Waypoints,
+            objectType: "vtep",
           },
           {
             title: "Static routes",

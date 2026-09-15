@@ -3,15 +3,19 @@ import { Link } from "@tanstack/react-router"
 
 import type {
   ASPathList,
+  BGPInstance,
   BGPPeerGroup,
   BGPSession,
   Community,
   CommunityList,
+  ISISInstance,
   OSPFArea,
+  OSPFInstance,
   PrefixList,
   RoutingKeychain,
   RoutingPolicy,
   StaticRoute,
+  StatusMini,
   VTEP,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -1225,6 +1229,420 @@ export function buildVTEPColumns<T extends VTEP = VTEP>(
           },
         },
       }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── Protocol instances ──────────────────────────────────────────────────────
+// A fleet-wide row per instance. Instances have no page of their own: the
+// device cell and the pencil lead to the device's Routing tab, where the
+// instance is edited and where a new one is added.
+
+type InstanceRow = {
+  id: string
+  device: { id: string; name: string }
+  site: { id: string; name: string } | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  status: StatusMini | null
+  description: string
+}
+
+function instanceDeviceColumn<T extends InstanceRow>(
+  objectType: string
+): ColumnDef<T, unknown> {
+  return {
+    id: "device",
+    accessorFn: (r) => r.device.name,
+    header: ({ column }) => <SortHeader column={column} label="Device" />,
+    cell: ({ row }) => (
+      <span className="inline-flex items-center gap-1.5">
+        <Link
+          to="/devices/$id"
+          params={{ id: row.original.device.id }}
+          search={{ tab: "routing" }}
+          className="link font-medium"
+        >
+          {row.original.device.name}
+        </Link>
+        <PlannedChangeMarker
+          objectType={objectType}
+          objectId={row.original.id}
+        />
+      </span>
+    ),
+    meta: {
+      facet: {
+        kind: "enum",
+        label: "Device",
+        get: (r: T) => r.device.id,
+        formatValue: (_v, sample) => ({ label: sample.device.name }),
+      },
+    },
+  }
+}
+
+function instanceSiteColumn<T extends InstanceRow>(): ColumnDef<T, unknown> {
+  return {
+    id: "site",
+    accessorFn: (r) => r.site?.name ?? "",
+    header: ({ column }) => <SortHeader column={column} label="Site" />,
+    cell: ({ row }) =>
+      row.original.site ? (
+        <Link
+          to="/sites/$id"
+          params={{ id: row.original.site.id }}
+          className="link text-xs"
+        >
+          {row.original.site.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    meta: {
+      facet: {
+        kind: "enum",
+        label: "Site",
+        get: (r: T) => r.site?.id ?? "__none__",
+        formatValue: (_v, sample) => ({
+          label: sample.site?.name ?? "No site",
+        }),
+      },
+    },
+  }
+}
+
+function instanceVrfColumn<T extends InstanceRow>(): ColumnDef<T, unknown> {
+  return {
+    id: "vrf",
+    accessorFn: (r) => r.vrf?.name ?? "",
+    header: "VRF",
+    cell: ({ row }) =>
+      row.original.vrf ? (
+        <Link
+          to="/vrfs/$id"
+          params={{ id: row.original.vrf.id }}
+          className="inline-flex"
+        >
+          <ColorBadge
+            name={row.original.vrf.name}
+            color={row.original.vrf.color}
+          />
+        </Link>
+      ) : (
+        <span className="text-xs text-muted-foreground">Global</span>
+      ),
+    meta: {
+      facet: {
+        kind: "enum",
+        label: "VRF",
+        get: (r: T) => r.vrf?.id ?? "__none__",
+        formatValue: (_v, sample) => ({
+          label: sample.vrf?.name ?? "Global",
+          color: sample.vrf?.color,
+        }),
+      },
+    },
+  }
+}
+
+function instanceStatusColumn<T extends InstanceRow>(): ColumnDef<T, unknown> {
+  return {
+    id: "status",
+    accessorFn: (r) => r.status?.name ?? "",
+    header: ({ column }) => <SortHeader column={column} label="Status" />,
+    cell: ({ row }) => <StatusBadge status={row.original.status} />,
+    meta: {
+      facet: {
+        kind: "enum",
+        label: "Status",
+        get: (r: T) => r.status?.id ?? "__none__",
+        formatValue: (_v, r) => ({
+          label: r.status?.name ?? "No status",
+          color: r.status?.color,
+        }),
+      },
+    },
+  }
+}
+
+const mono = (v: string | null | undefined) =>
+  v ? <span className="font-mono text-xs">{v}</span> : dash
+
+export type BGPInstanceColumnId =
+  | "numid"
+  | "device"
+  | "site"
+  | "asn"
+  | "vrf"
+  | "router_id"
+  | "address_families"
+  | "session_count"
+  | "status"
+  | "description"
+  | "tags"
+const BGP_INSTANCE_ORDER: BGPInstanceColumnId[] = [
+  "numid",
+  "device",
+  "site",
+  "asn",
+  "vrf",
+  "router_id",
+  "address_families",
+  "session_count",
+  "status",
+  "description",
+  "tags",
+]
+
+export function buildBGPInstanceColumns<T extends BGPInstance = BGPInstance>(
+  opts: CommonOpts<T, BGPInstanceColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, BGPInstanceColumnId>(
+    BGP_INSTANCE_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      device: () => instanceDeviceColumn<T>("routing.bgpinstance"),
+      site: () => instanceSiteColumn<T>(),
+      asn: () => ({
+        id: "asn",
+        accessorFn: (r) => r.asn.asn,
+        header: ({ column }) => <SortHeader column={column} label="AS" />,
+        cell: ({ row }) => (
+          <Link
+            to="/asns/$id"
+            params={{ id: row.original.asn.id }}
+            className="link num font-mono"
+          >
+            AS{row.original.asn.asn}
+          </Link>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "AS",
+            get: (r: T) => r.asn.id,
+            formatValue: (_v, sample) => ({ label: `AS${sample.asn.asn}` }),
+          },
+        },
+      }),
+      vrf: () => instanceVrfColumn<T>(),
+      router_id: () => ({
+        id: "router_id",
+        accessorKey: "router_id",
+        header: "Router ID",
+        cell: ({ row }) => mono(row.original.router_id),
+      }),
+      address_families: () => ({
+        id: "address_families",
+        accessorFn: (r) => r.address_families.map((a) => a.afi_safi).join(" "),
+        header: "Address families",
+        cell: ({ row }) =>
+          mono(row.original.address_families.map((a) => a.afi_safi).join(", ")),
+      }),
+      session_count: () => ({
+        id: "session_count",
+        accessorKey: "session_count",
+        header: ({ column }) => <SortHeader column={column} label="Sessions" />,
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.session_count}</span>
+        ),
+      }),
+      status: () => instanceStatusColumn<T>(),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+export type OSPFInstanceColumnId =
+  | "numid"
+  | "device"
+  | "site"
+  | "process_id"
+  | "version"
+  | "vrf"
+  | "router_id"
+  | "areas"
+  | "interface_count"
+  | "status"
+  | "description"
+  | "tags"
+const OSPF_INSTANCE_ORDER: OSPFInstanceColumnId[] = [
+  "numid",
+  "device",
+  "site",
+  "process_id",
+  "version",
+  "vrf",
+  "router_id",
+  "areas",
+  "interface_count",
+  "status",
+  "description",
+  "tags",
+]
+
+export function buildOSPFInstanceColumns<T extends OSPFInstance = OSPFInstance>(
+  opts: CommonOpts<T, OSPFInstanceColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  const areasOf = (r: T) =>
+    Array.from(new Set(r.interfaces.map((i) => i.area.area_id))).sort()
+  return assemble<T, OSPFInstanceColumnId>(
+    OSPF_INSTANCE_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      device: () => instanceDeviceColumn<T>("routing.ospfinstance"),
+      site: () => instanceSiteColumn<T>(),
+      process_id: () => ({
+        id: "process_id",
+        accessorKey: "process_id",
+        header: ({ column }) => <SortHeader column={column} label="Process" />,
+        cell: ({ row }) => mono(row.original.process_id),
+      }),
+      version: () => ({
+        id: "version",
+        accessorKey: "version",
+        header: "Version",
+        cell: ({ row }) => (
+          <Badge variant="secondary">OSPFv{row.original.version}</Badge>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Version",
+            get: (r: T) => String(r.version),
+            formatValue: (v) => ({ label: `OSPFv${v}` }),
+          },
+        },
+      }),
+      vrf: () => instanceVrfColumn<T>(),
+      router_id: () => ({
+        id: "router_id",
+        accessorKey: "router_id",
+        header: "Router ID",
+        cell: ({ row }) => mono(row.original.router_id),
+      }),
+      areas: () => ({
+        id: "areas",
+        accessorFn: (r) => areasOf(r).join(" "),
+        header: "Areas",
+        cell: ({ row }) => mono(areasOf(row.original).join(", ")),
+      }),
+      interface_count: () => ({
+        id: "interface_count",
+        accessorKey: "interface_count",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Interfaces" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.interface_count}</span>
+        ),
+      }),
+      status: () => instanceStatusColumn<T>(),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+export type ISISInstanceColumnId =
+  | "numid"
+  | "device"
+  | "site"
+  | "process"
+  | "net"
+  | "router_id"
+  | "vrf"
+  | "level"
+  | "metric_style"
+  | "interface_count"
+  | "status"
+  | "description"
+  | "tags"
+const ISIS_INSTANCE_ORDER: ISISInstanceColumnId[] = [
+  "numid",
+  "device",
+  "site",
+  "process",
+  "net",
+  "router_id",
+  "vrf",
+  "level",
+  "metric_style",
+  "interface_count",
+  "status",
+  "description",
+  "tags",
+]
+
+export function buildISISInstanceColumns<T extends ISISInstance = ISISInstance>(
+  opts: CommonOpts<T, ISISInstanceColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, ISISInstanceColumnId>(
+    ISIS_INSTANCE_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      device: () => instanceDeviceColumn<T>("routing.isisinstance"),
+      site: () => instanceSiteColumn<T>(),
+      process: () => ({
+        id: "process",
+        accessorKey: "process",
+        header: ({ column }) => <SortHeader column={column} label="Process" />,
+        cell: ({ row }) => mono(row.original.process),
+      }),
+      net: () => ({
+        id: "net",
+        accessorKey: "net",
+        header: "NET",
+        cell: ({ row }) => mono(row.original.net),
+      }),
+      router_id: () => ({
+        id: "router_id",
+        accessorKey: "router_id",
+        header: "Router ID",
+        cell: ({ row }) => mono(row.original.router_id),
+      }),
+      vrf: () => instanceVrfColumn<T>(),
+      level: () => ({
+        id: "level",
+        accessorKey: "level",
+        header: "Level",
+        cell: ({ row }) => (
+          <Badge variant="secondary">level {row.original.level}</Badge>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Level",
+            get: (r: T) => r.level,
+            formatValue: (v) => ({ label: `level ${v}` }),
+          },
+        },
+      }),
+      metric_style: () => ({
+        id: "metric_style",
+        accessorKey: "metric_style",
+        header: "Metric",
+        cell: ({ row }) => (
+          <span className="text-xs">{row.original.metric_style}</span>
+        ),
+      }),
+      interface_count: () => ({
+        id: "interface_count",
+        accessorKey: "interface_count",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Interfaces" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.interface_count}</span>
+        ),
+      }),
+      status: () => instanceStatusColumn<T>(),
       description: () => descriptionColumn<T>(),
       tags: tags<T>(opts),
     },

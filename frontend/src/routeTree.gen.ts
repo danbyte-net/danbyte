@@ -102,6 +102,7 @@ import { Route as WirelessLanGroupsIndexRouteImport } from './routes/wireless-la
 import { Route as WindowsServersIndexRouteImport } from './routes/windows-servers.index'
 import { Route as WebhooksIndexRouteImport } from './routes/webhooks.index'
 import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endpoints.index'
+import { Route as VtepsIndexRouteImport } from './routes/vteps.index'
 import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
 import { Route as VlansIndexRouteImport } from './routes/vlans.index'
 import { Route as VlanGroupsIndexRouteImport } from './routes/vlan-groups.index'
@@ -142,6 +143,7 @@ import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
 import { Route as PlanningIndexRouteImport } from './routes/planning.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
+import { Route as OspfInstancesIndexRouteImport } from './routes/ospf-instances.index'
 import { Route as OspfAreasIndexRouteImport } from './routes/ospf-areas.index'
 import { Route as NatRulesIndexRouteImport } from './routes/nat-rules.index'
 import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
@@ -152,6 +154,7 @@ import { Route as LocationsIndexRouteImport } from './routes/locations.index'
 import { Route as LabelTemplatesIndexRouteImport } from './routes/label-templates.index'
 import { Route as L2vpnsIndexRouteImport } from './routes/l2vpns.index'
 import { Route as JobsIndexRouteImport } from './routes/jobs.index'
+import { Route as IsisInstancesIndexRouteImport } from './routes/isis-instances.index'
 import { Route as IpsecProfilesIndexRouteImport } from './routes/ipsec-profiles.index'
 import { Route as IpsIndexRouteImport } from './routes/ips.index'
 import { Route as IpRolesIndexRouteImport } from './routes/ip-roles.index'
@@ -190,6 +193,7 @@ import { Route as CertificateIssuersIndexRouteImport } from './routes/certificat
 import { Route as CablesIndexRouteImport } from './routes/cables.index'
 import { Route as BgpSessionsIndexRouteImport } from './routes/bgp-sessions.index'
 import { Route as BgpPeerGroupsIndexRouteImport } from './routes/bgp-peer-groups.index'
+import { Route as BgpInstancesIndexRouteImport } from './routes/bgp-instances.index'
 import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
 import { Route as AsnsIndexRouteImport } from './routes/asns.index'
 import { Route as AsPathListsIndexRouteImport } from './routes/as-path-lists.index'
@@ -942,6 +946,11 @@ const WatchedEndpointsIndexRoute = WatchedEndpointsIndexRouteImport.update({
   path: '/watched-endpoints/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VtepsIndexRoute = VtepsIndexRouteImport.update({
+  id: '/vteps/',
+  path: '/vteps/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VrfsIndexRoute = VrfsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1143,6 +1152,11 @@ const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => PermissionsRoute,
 } as any)
+const OspfInstancesIndexRoute = OspfInstancesIndexRouteImport.update({
+  id: '/ospf-instances/',
+  path: '/ospf-instances/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OspfAreasIndexRoute = OspfAreasIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1191,6 +1205,11 @@ const L2vpnsIndexRoute = L2vpnsIndexRouteImport.update({
 const JobsIndexRoute = JobsIndexRouteImport.update({
   id: '/jobs/',
   path: '/jobs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IsisInstancesIndexRoute = IsisInstancesIndexRouteImport.update({
+  id: '/isis-instances/',
+  path: '/isis-instances/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IpsecProfilesIndexRoute = IpsecProfilesIndexRouteImport.update({
@@ -1383,6 +1402,11 @@ const BgpPeerGroupsIndexRoute = BgpPeerGroupsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
+const BgpInstancesIndexRoute = BgpInstancesIndexRouteImport.update({
+  id: '/bgp-instances/',
+  path: '/bgp-instances/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AutomationTargetsIndexRoute = AutomationTargetsIndexRouteImport.update({
   id: '/',
@@ -3108,6 +3132,7 @@ export interface FileRoutesByFullPath {
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
+  '/bgp-instances/': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions/': typeof BgpSessionsIndexRoute
   '/cables/': typeof CablesIndexRoute
@@ -3146,6 +3171,7 @@ export interface FileRoutesByFullPath {
   '/ip-roles/': typeof IpRolesIndexRoute
   '/ips/': typeof IpsIndexRoute
   '/ipsec-profiles/': typeof IpsecProfilesIndexRoute
+  '/isis-instances/': typeof IsisInstancesIndexRoute
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
   '/label-templates/': typeof LabelTemplatesIndexRoute
@@ -3156,6 +3182,7 @@ export interface FileRoutesByFullPath {
   '/module-types/': typeof ModuleTypesIndexRoute
   '/nat-rules/': typeof NatRulesIndexRoute
   '/ospf-areas/': typeof OspfAreasIndexRoute
+  '/ospf-instances/': typeof OspfInstancesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -3196,6 +3223,7 @@ export interface FileRoutesByFullPath {
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
+  '/vteps/': typeof VtepsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
   '/webhooks/': typeof WebhooksIndexRoute
   '/windows-servers/': typeof WindowsServersIndexRoute
@@ -3511,6 +3539,7 @@ export interface FileRoutesByTo {
   '/as-path-lists': typeof AsPathListsIndexRoute
   '/asns': typeof AsnsIndexRoute
   '/automation-targets': typeof AutomationTargetsIndexRoute
+  '/bgp-instances': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions': typeof BgpSessionsIndexRoute
   '/cables': typeof CablesIndexRoute
@@ -3549,6 +3578,7 @@ export interface FileRoutesByTo {
   '/ip-roles': typeof IpRolesIndexRoute
   '/ips': typeof IpsIndexRoute
   '/ipsec-profiles': typeof IpsecProfilesIndexRoute
+  '/isis-instances': typeof IsisInstancesIndexRoute
   '/jobs': typeof JobsIndexRoute
   '/l2vpns': typeof L2vpnsIndexRoute
   '/label-templates': typeof LabelTemplatesIndexRoute
@@ -3559,6 +3589,7 @@ export interface FileRoutesByTo {
   '/module-types': typeof ModuleTypesIndexRoute
   '/nat-rules': typeof NatRulesIndexRoute
   '/ospf-areas': typeof OspfAreasIndexRoute
+  '/ospf-instances': typeof OspfInstancesIndexRoute
   '/permissions': typeof PermissionsIndexRoute
   '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
@@ -3599,6 +3630,7 @@ export interface FileRoutesByTo {
   '/vlan-groups': typeof VlanGroupsIndexRoute
   '/vlans': typeof VlansIndexRoute
   '/vrfs': typeof VrfsIndexRoute
+  '/vteps': typeof VtepsIndexRoute
   '/watched-endpoints': typeof WatchedEndpointsIndexRoute
   '/webhooks': typeof WebhooksIndexRoute
   '/windows-servers': typeof WindowsServersIndexRoute
@@ -3981,6 +4013,7 @@ export interface FileRoutesById {
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
+  '/bgp-instances/': typeof BgpInstancesIndexRoute
   '/bgp-peer-groups/': typeof BgpPeerGroupsIndexRoute
   '/bgp-sessions/': typeof BgpSessionsIndexRoute
   '/cables/': typeof CablesIndexRoute
@@ -4019,6 +4052,7 @@ export interface FileRoutesById {
   '/ip-roles/': typeof IpRolesIndexRoute
   '/ips/': typeof IpsIndexRoute
   '/ipsec-profiles/': typeof IpsecProfilesIndexRoute
+  '/isis-instances/': typeof IsisInstancesIndexRoute
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
   '/label-templates/': typeof LabelTemplatesIndexRoute
@@ -4029,6 +4063,7 @@ export interface FileRoutesById {
   '/module-types/': typeof ModuleTypesIndexRoute
   '/nat-rules/': typeof NatRulesIndexRoute
   '/ospf-areas/': typeof OspfAreasIndexRoute
+  '/ospf-instances/': typeof OspfInstancesIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -4069,6 +4104,7 @@ export interface FileRoutesById {
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
+  '/vteps/': typeof VtepsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
   '/webhooks/': typeof WebhooksIndexRoute
   '/windows-servers/': typeof WindowsServersIndexRoute
@@ -4452,6 +4488,7 @@ export interface FileRouteTypes {
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
+    | '/bgp-instances/'
     | '/bgp-peer-groups/'
     | '/bgp-sessions/'
     | '/cables/'
@@ -4490,6 +4527,7 @@ export interface FileRouteTypes {
     | '/ip-roles/'
     | '/ips/'
     | '/ipsec-profiles/'
+    | '/isis-instances/'
     | '/jobs/'
     | '/l2vpns/'
     | '/label-templates/'
@@ -4500,6 +4538,7 @@ export interface FileRouteTypes {
     | '/module-types/'
     | '/nat-rules/'
     | '/ospf-areas/'
+    | '/ospf-instances/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -4540,6 +4579,7 @@ export interface FileRouteTypes {
     | '/vlan-groups/'
     | '/vlans/'
     | '/vrfs/'
+    | '/vteps/'
     | '/watched-endpoints/'
     | '/webhooks/'
     | '/windows-servers/'
@@ -4855,6 +4895,7 @@ export interface FileRouteTypes {
     | '/as-path-lists'
     | '/asns'
     | '/automation-targets'
+    | '/bgp-instances'
     | '/bgp-peer-groups'
     | '/bgp-sessions'
     | '/cables'
@@ -4893,6 +4934,7 @@ export interface FileRouteTypes {
     | '/ip-roles'
     | '/ips'
     | '/ipsec-profiles'
+    | '/isis-instances'
     | '/jobs'
     | '/l2vpns'
     | '/label-templates'
@@ -4903,6 +4945,7 @@ export interface FileRouteTypes {
     | '/module-types'
     | '/nat-rules'
     | '/ospf-areas'
+    | '/ospf-instances'
     | '/permissions'
     | '/planning'
     | '/platform-groups'
@@ -4943,6 +4986,7 @@ export interface FileRouteTypes {
     | '/vlan-groups'
     | '/vlans'
     | '/vrfs'
+    | '/vteps'
     | '/watched-endpoints'
     | '/webhooks'
     | '/windows-servers'
@@ -5324,6 +5368,7 @@ export interface FileRouteTypes {
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
+    | '/bgp-instances/'
     | '/bgp-peer-groups/'
     | '/bgp-sessions/'
     | '/cables/'
@@ -5362,6 +5407,7 @@ export interface FileRouteTypes {
     | '/ip-roles/'
     | '/ips/'
     | '/ipsec-profiles/'
+    | '/isis-instances/'
     | '/jobs/'
     | '/l2vpns/'
     | '/label-templates/'
@@ -5372,6 +5418,7 @@ export interface FileRouteTypes {
     | '/module-types/'
     | '/nat-rules/'
     | '/ospf-areas/'
+    | '/ospf-instances/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -5412,6 +5459,7 @@ export interface FileRouteTypes {
     | '/vlan-groups/'
     | '/vlans/'
     | '/vrfs/'
+    | '/vteps/'
     | '/watched-endpoints/'
     | '/webhooks/'
     | '/windows-servers/'
@@ -5636,6 +5684,7 @@ export interface RootRouteChildren {
   VirtualSwitchesIdRoute: typeof VirtualSwitchesIdRoute
   VirtualizationSourcesIdRoute: typeof VirtualizationSourcesIdRoute
   WindowsServersIdRoute: typeof WindowsServersIdRoute
+  BgpInstancesIndexRoute: typeof BgpInstancesIndexRoute
   CertificateIssuersIndexRoute: typeof CertificateIssuersIndexRoute
   CertificateRequestsIndexRoute: typeof CertificateRequestsIndexRoute
   CertificatesIndexRoute: typeof CertificatesIndexRoute
@@ -5649,10 +5698,12 @@ export interface RootRouteChildren {
   DnsRecordsIndexRoute: typeof DnsRecordsIndexRoute
   DnsZonesIndexRoute: typeof DnsZonesIndexRoute
   IpsIndexRoute: typeof IpsIndexRoute
+  IsisInstancesIndexRoute: typeof IsisInstancesIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
   LabelTemplatesIndexRoute: typeof LabelTemplatesIndexRoute
   MaintenanceIndexRoute: typeof MaintenanceIndexRoute
   NatRulesIndexRoute: typeof NatRulesIndexRoute
+  OspfInstancesIndexRoute: typeof OspfInstancesIndexRoute
   PlanningIndexRoute: typeof PlanningIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
@@ -5666,6 +5717,7 @@ export interface RootRouteChildren {
   VirtualSwitchesIndexRoute: typeof VirtualSwitchesIndexRoute
   VirtualTopologyIndexRoute: typeof VirtualTopologyIndexRoute
   VirtualizationSourcesIndexRoute: typeof VirtualizationSourcesIndexRoute
+  VtepsIndexRoute: typeof VtepsIndexRoute
   WatchedEndpointsIndexRoute: typeof WatchedEndpointsIndexRoute
   WindowsServersIndexRoute: typeof WindowsServersIndexRoute
   ZabbixIndexRoute: typeof ZabbixIndexRoute
@@ -6344,6 +6396,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WatchedEndpointsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vteps/': {
+      id: '/vteps/'
+      path: '/vteps'
+      fullPath: '/vteps/'
+      preLoaderRoute: typeof VtepsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vrfs/': {
       id: '/vrfs/'
       path: '/'
@@ -6624,6 +6683,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PermissionsIndexRouteImport
       parentRoute: typeof PermissionsRoute
     }
+    '/ospf-instances/': {
+      id: '/ospf-instances/'
+      path: '/ospf-instances'
+      fullPath: '/ospf-instances/'
+      preLoaderRoute: typeof OspfInstancesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ospf-areas/': {
       id: '/ospf-areas/'
       path: '/'
@@ -6692,6 +6758,13 @@ declare module '@tanstack/react-router' {
       path: '/jobs'
       fullPath: '/jobs/'
       preLoaderRoute: typeof JobsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/isis-instances/': {
+      id: '/isis-instances/'
+      path: '/isis-instances'
+      fullPath: '/isis-instances/'
+      preLoaderRoute: typeof IsisInstancesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ipsec-profiles/': {
@@ -6959,6 +7032,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/bgp-peer-groups/'
       preLoaderRoute: typeof BgpPeerGroupsIndexRouteImport
       parentRoute: typeof BgpPeerGroupsRoute
+    }
+    '/bgp-instances/': {
+      id: '/bgp-instances/'
+      path: '/bgp-instances'
+      fullPath: '/bgp-instances/'
+      preLoaderRoute: typeof BgpInstancesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/automation-targets/': {
       id: '/automation-targets/'
@@ -10290,6 +10370,7 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualSwitchesIdRoute: VirtualSwitchesIdRoute,
   VirtualizationSourcesIdRoute: VirtualizationSourcesIdRoute,
   WindowsServersIdRoute: WindowsServersIdRoute,
+  BgpInstancesIndexRoute: BgpInstancesIndexRoute,
   CertificateIssuersIndexRoute: CertificateIssuersIndexRoute,
   CertificateRequestsIndexRoute: CertificateRequestsIndexRoute,
   CertificatesIndexRoute: CertificatesIndexRoute,
@@ -10303,10 +10384,12 @@ const rootRouteChildren: RootRouteChildren = {
   DnsRecordsIndexRoute: DnsRecordsIndexRoute,
   DnsZonesIndexRoute: DnsZonesIndexRoute,
   IpsIndexRoute: IpsIndexRoute,
+  IsisInstancesIndexRoute: IsisInstancesIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
   LabelTemplatesIndexRoute: LabelTemplatesIndexRoute,
   MaintenanceIndexRoute: MaintenanceIndexRoute,
   NatRulesIndexRoute: NatRulesIndexRoute,
+  OspfInstancesIndexRoute: OspfInstancesIndexRoute,
   PlanningIndexRoute: PlanningIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
@@ -10320,6 +10403,7 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualSwitchesIndexRoute: VirtualSwitchesIndexRoute,
   VirtualTopologyIndexRoute: VirtualTopologyIndexRoute,
   VirtualizationSourcesIndexRoute: VirtualizationSourcesIndexRoute,
+  VtepsIndexRoute: VtepsIndexRoute,
   WatchedEndpointsIndexRoute: WatchedEndpointsIndexRoute,
   WindowsServersIndexRoute: WindowsServersIndexRoute,
   ZabbixIndexRoute: ZabbixIndexRoute,

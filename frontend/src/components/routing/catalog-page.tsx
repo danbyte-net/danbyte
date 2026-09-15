@@ -36,8 +36,10 @@ export interface RoutingListSpec<T extends { id: string }> {
   endpoint: string
   queryKey: string
   tableId: string
-  newTo: LinkProps["to"]
-  addLabel: string
+  /** Where "Add" goes. Absent for rows that are added on their device's
+   * Routing tab (instances, VTEPs). */
+  newTo?: LinkProps["to"]
+  addLabel?: string
   searchPlaceholder: string
   /** Which text fields the header search box matches. */
   searchText: (row: T) => string
@@ -154,7 +156,7 @@ export function RoutingListPage<T extends { id: string }>({
       actions={
         <>
           <TableActions ioType={spec.objectType} />
-          {canAdd && (
+          {canAdd && spec.newTo && (
             <Button size="sm" asChild>
               <Link to={spec.newTo}>{spec.addLabel}</Link>
             </Button>

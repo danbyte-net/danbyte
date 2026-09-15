@@ -202,6 +202,19 @@ function Body<T extends CatalogRow, TRule>({
       </DetailTab>
       {spec.rules && (
         <DetailTab value="rules">
+          {canDo(spec.objectType, "change") && (
+            <div className="mb-3 flex items-center justify-end">
+              <Button size="sm" variant="outline" className="h-7" asChild>
+                <Link
+                  to={spec.editTo}
+                  params={{ id: row.id } as LinkProps["params"]}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {rules.length === 0 ? "Add rules" : "Edit rules"}
+                </Link>
+              </Button>
+            </div>
+          )}
           {rules.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {spec.rules.emptyText}

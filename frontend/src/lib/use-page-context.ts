@@ -38,6 +38,10 @@ const ROUTE_TYPES: Record<string, string> = {
   "bgp-sessions": "BGP session",
   "bgp-peer-groups": "BGP peer group",
   "ospf-areas": "OSPF area",
+  "bgp-instances": "BGP instance",
+  "ospf-instances": "OSPF instance",
+  "isis-instances": "IS-IS instance",
+  vteps: "VTEP",
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

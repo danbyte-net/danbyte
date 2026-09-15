@@ -445,9 +445,18 @@ number.
 
 The routing that touches an object shows on that object's page: a device's
 **Routing** tab, an interface's **Routing** card, an ASN's **BGP sessions**
-tab, a VRF's **BGP sessions** and **Static routes** tabs, a prefix's
-**Static routes** tab (routes with that prefix as their destination), an
-L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
+tab, a peer group's **Sessions** tab, a VRF's **BGP sessions** and **Static
+routes** tabs, a prefix's **Static routes** tab (routes with that prefix as
+their destination), an L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
+
+The **Routing** menu lists everything fleet-wide: BGP instances, sessions
+and peer groups, OSPF instances and areas, IS-IS instances, VTEPs and
+static routes under *Protocols*; policies, prefix lists, communities,
+community lists, AS-path lists and keychains under *Policy*. An instance
+or a VTEP is added and edited on its device's Routing tab - the fleet list
+is where you find which boxes run what, and its pencil takes you there.
+A list's rules (prefix lists, community lists, AS-path lists, policies) are
+edited on the list's edit page; the **Rules** tab links to it.
 
 ## Permissions and audit
 

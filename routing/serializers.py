@@ -652,6 +652,7 @@ class BGPInstanceSerializer(
     cf_model = "bgpinstance"
 
     device = DeviceMiniSerializer(read_only=True)
+    site = SiteMiniSerializer(source="device.site", read_only=True)
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
     )
@@ -688,7 +689,7 @@ class BGPInstanceSerializer(
 
     class Meta:
         model = BGPInstance
-        fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id", "asn", "asn_id",
+        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id", "asn", "asn_id",
                   "router_id", "cluster_id", "graceful_restart", "bfd",
                   "address_families", "session_count",
                   "status", "status_id", "description", "extra",
@@ -916,6 +917,7 @@ class _RedistributingInstanceSerializer(
     parent_key = ""
 
     device = DeviceMiniSerializer(read_only=True)
+    site = SiteMiniSerializer(source="device.site", read_only=True)
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
     )
@@ -1025,7 +1027,7 @@ class OSPFInstanceSerializer(_RedistributingInstanceSerializer):
 
     class Meta:
         model = OSPFInstance
-        fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id",
+        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
                   "process_id", "version", "router_id", "reference_bandwidth",
                   "passive_by_default", "default_originate", "bfd",
                   "redistributions", "interfaces", "interface_count",
@@ -1086,7 +1088,7 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
 
     class Meta:
         model = ISISInstance
-        fields = ["id", "numid", "device", "device_id", "vrf", "vrf_id",
+        fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
                   "process", "net", "router_id", "level", "metric_style", "bfd",
                   "authentication", "keychain", "keychain_id",
                   "redistributions", "interfaces", "interface_count",

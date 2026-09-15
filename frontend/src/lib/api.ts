@@ -4298,6 +4298,7 @@ export interface BGPInstance {
   id: string
   numid: number | null
   device: DeviceMini
+  site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   asn: ASNMini
   router_id: string
@@ -4428,6 +4429,7 @@ interface IGPInstanceBase {
   id: string
   numid: number | null
   device: DeviceMini
+  site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   bfd: boolean
   redistributions: Redistribution[]
