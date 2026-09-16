@@ -506,30 +506,23 @@ function build(
       continue
     }
 
-    // A BGP session between the two cards - a dotted overlay line, one per
-    // device pair and table. Clicking opens the session.
+    // A BGP session between the two cards - a faint straight line under
+    // the wiring, one per device pair and table, no label: the sidebar
+    // names them and a click opens the session.
     if (e.type === "bgp") {
-      const d = e.data ?? {}
-      const ep = d.pairs?.[0]
-      const kind = d.kind === "ibgp" ? "iBGP" : d.kind === "ebgp" ? "eBGP" : ""
       allEdges.push({
         id: e.id,
         source: e.source,
         target: e.target,
-        type: "smoothstep",
-        pathOptions: { borderRadius: 10 },
-        label: [ep ? `${ep.a} ⇄ ${ep.b}` : "BGP", kind, d.vrf ?? ""]
-          .filter(Boolean)
-          .join(" · "),
+        type: "straight",
         data: { sem: "bgp", bgp: e.data },
         style: {
-          strokeWidth: 1.5,
+          strokeWidth: 1.25,
           stroke: "var(--primary)",
-          strokeDasharray: "2 4",
-          opacity: 0.9,
+          strokeDasharray: "3 5",
+          opacity: 0.45,
         },
-        labelStyle: { fontSize: 9 },
-        labelBgStyle: { fill: "var(--card)" },
+        interactionWidth: 12,
       } as Edge)
       continue
     }

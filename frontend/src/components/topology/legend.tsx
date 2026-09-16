@@ -146,7 +146,7 @@ export function CanvasLegend({
               label="LLDP, no cable"
             />
             <RowItem
-              swatch={<Line dash="2 4" width={1.5} color="var(--primary)" />}
+              swatch={<Line dash="3 5" width={1.25} color="var(--primary)" />}
               label="BGP session"
             />
             <RowItem
