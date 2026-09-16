@@ -13,9 +13,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils.text import slugify
 
-from api.models import VRF, IPAddress, Prefix, Site, VLAN
+from api.models import VLAN, VRF, IPAddress, Prefix, Site
 from core.models import Organization, Tag, Tenant
-
 
 ORG_NAME = "Acme Networks"
 TENANT_NAME = "Acme Networks"
@@ -134,7 +133,7 @@ class Command(BaseCommand):
     def handle(self, *args, wipe=False, **options):
         if wipe:
             Organization.objects.filter(name=ORG_NAME).delete()
-            Tag.objects.all().delete()
+            Tag.objects.filter(tenant__slug=TENANT_SLUG).delete()
             self.stdout.write(self.style.WARNING(f"Wiped existing '{ORG_NAME}' data."))
 
         org, _ = Organization.objects.get_or_create(
@@ -163,11 +162,12 @@ class Command(BaseCommand):
             vrf_map[name] = v
         self.stdout.write(f"VRFs: {len(vrf_map)} explicit + Global (NULL)")
 
-        # Tags (still global - Phase 5 makes them tenant-scoped)
+        # Tags are tenant-scoped: the same name may exist in another tenant.
         tag_map = {}
         for name, color in TAGS:
             tag, _ = Tag.objects.get_or_create(
-                name=name, defaults={"slug": slugify(name), "color": color}
+                tenant=tenant, name=name,
+                defaults={"slug": slugify(name), "color": color},
             )
             if tag.color != color:
                 tag.color = color
@@ -187,11 +187,12 @@ class Command(BaseCommand):
         # VLANs
         vlans = {}
         for vlan_id, name, desc in VLANS:
-            v, _ = VLAN.objects.get_or_create(
-                tenant=tenant,
-                vlan_id=vlan_id,
-                defaults={"name": name, "description": desc},
-            )
+            # VLAN IDs are unique per site; the demo VLANs are tenant-wide (no site).
+            v = VLAN.objects.filter(tenant=tenant, vlan_id=vlan_id, site=None).first()
+            if v is None:
+                v = VLAN.objects.create(
+                    tenant=tenant, vlan_id=vlan_id, name=name, description=desc
+                )
             vlans[vlan_id] = v
         self.stdout.write(f"VLANs: {len(vlans)}")
 
