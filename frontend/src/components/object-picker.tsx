@@ -5,7 +5,9 @@ import { SlidersHorizontal } from "lucide-react"
 import { api, type Paginated } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Combobox } from "@/components/ui/combobox"
+import { MultiCombobox } from "@/components/ui/multi-combobox"
 import {
   Dialog,
   DialogContent,
@@ -112,6 +114,13 @@ export interface ObjectPickerProps {
    * callers that keep their own id list and want the name without another
    * fetch (both the combobox and the advanced dialog deliver it). */
   onPickLabel?: (id: string, label: string) => void
+  /** Bulk mode: the combobox and the advanced search let several rows be
+   *  ticked and hand them over together; `value`/`onChange` are left alone.
+   *  For lists that collect things - a widget's watched devices. */
+  onPickMany?: (items: { id: string; label: string }[]) => void
+  /** Bulk mode: the most that can be ticked at once (a widget's remaining
+   *  room, say); select-all and further ticks stop there. */
+  pickLimit?: number
 }
 
 /**
@@ -144,6 +153,8 @@ export function ObjectPicker<
   initialFilters,
   preferQuery,
   onPickLabel,
+  onPickMany,
+  pickLimit,
 }: ObjectPickerProps & { spec: ObjectPickerSpec<T, O> }) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
@@ -218,22 +229,39 @@ export function ObjectPicker<
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 [&:has(>*:nth-child(3))]:grid-cols-[minmax(0,1fr)_auto_auto]">
         <div className="min-w-0">
-          <Combobox
-            value={value}
-            onChange={(v) => {
-              onChange(v)
-              if (v && onPickLabel) {
-                const o = mergedOptions.find((x) => x.value === v)
-                if (o) onPickLabel(v, o.label)
+          {onPickMany ? (
+            <MultiCombobox
+              options={mergedOptions.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
+              onAdd={(picked) =>
+                onPickMany(picked.map((o) => ({ id: o.value, label: o.label })))
               }
-            }}
-            options={mergedOptions}
-            noneLabel={noneLabel}
-            placeholder={placeholder ?? `Pick a ${spec.noun}`}
-            searchPlaceholder={searchPlaceholder ?? `Search ${spec.noun}s…`}
-            emptyText={emptyText ?? `No ${spec.noun}s.`}
-            disabled={disabled}
-          />
+              placeholder={placeholder ?? `Pick ${spec.noun}s`}
+              searchPlaceholder={searchPlaceholder ?? `Search ${spec.noun}s…`}
+              emptyText={emptyText ?? `No ${spec.noun}s.`}
+              max={pickLimit}
+              disabled={disabled}
+            />
+          ) : (
+            <Combobox
+              value={value}
+              onChange={(v) => {
+                onChange(v)
+                if (v && onPickLabel) {
+                  const o = mergedOptions.find((x) => x.value === v)
+                  if (o) onPickLabel(v, o.label)
+                }
+              }}
+              options={mergedOptions}
+              noneLabel={noneLabel}
+              placeholder={placeholder ?? `Pick a ${spec.noun}`}
+              searchPlaceholder={searchPlaceholder ?? `Search ${spec.noun}s…`}
+              emptyText={emptyText ?? `No ${spec.noun}s.`}
+              disabled={disabled}
+            />
+          )}
         </div>
         <Button
           type="button"
@@ -268,6 +296,22 @@ export function ObjectPicker<
           }
           setAdvancedOpen(false)
         }}
+        onSelectMany={
+          onPickMany
+            ? (rows) => {
+                onPickMany(
+                  rows.map((row) => ({
+                    id: row.id,
+                    label: spec.detailLabel
+                      ? spec.detailLabel(row)
+                      : ((row as { name?: string }).name ?? row.id),
+                  }))
+                )
+                setAdvancedOpen(false)
+              }
+            : undefined
+        }
+        selectLimit={pickLimit}
       />
     </Field>
   )
@@ -333,6 +377,8 @@ function ObjectSearchDialog<T extends { id: string }>({
   open,
   onOpenChange,
   onSelect,
+  onSelectMany,
+  selectLimit,
   exclude,
   customFieldId,
   initialFilters,
@@ -341,6 +387,10 @@ function ObjectSearchDialog<T extends { id: string }>({
   open: boolean
   onOpenChange: (v: boolean) => void
   onSelect: (id: string, row: T) => void
+  /** Bulk mode: rows tick instead of picking, and a footer button hands
+   *  the set over (ticks survive paging and searching). */
+  onSelectMany?: (rows: T[]) => void
+  selectLimit?: number
   exclude: Set<string>
   customFieldId?: string
   initialFilters?: Record<string, string>
@@ -351,6 +401,20 @@ function ObjectSearchDialog<T extends { id: string }>({
     initialFilters ?? {}
   )
   const [page, setPage] = useState(1)
+  const [picked, setPicked] = useState<Map<string, T>>(() => new Map())
+  const multi = !!onSelectMany
+  const togglePick = (row: T) =>
+    setPicked((prev) => {
+      const next = new Map(prev)
+      if (next.has(row.id)) next.delete(row.id)
+      else if (selectLimit === undefined || next.size < selectLimit)
+        next.set(row.id, row)
+      return next
+    })
+  const close = (v: boolean) => {
+    if (!v) setPicked(new Map())
+    onOpenChange(v)
+  }
   // Re-seed when the context changes (a different tile role) - the dialog is
   // mounted once per picker, so initial state alone would go stale. Keyed by
   // VALUE (not object identity - callers pass fresh literals every render,
@@ -397,12 +461,14 @@ function ObjectSearchDialog<T extends { id: string }>({
   })
 
   const rows = (results.data?.results ?? []).filter((r) => !exclude.has(r.id))
+  // The rows a page-wide tick can take - disabled ones stay untouched.
+  const pageable = multi ? rows.filter((r) => !spec.rowState?.(r).disabled) : []
   const count = results.data?.count ?? 0
   const hasPrev = !!results.data?.previous
   const hasNext = !!results.data?.next
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       {/* Inset to the page view (right of the fixed w-60 sidebar) on lg+ so
           the modal and its backdrop don't cover the sidebar. */}
       <DialogContent
@@ -411,7 +477,9 @@ function ObjectSearchDialog<T extends { id: string }>({
         className="flex max-h-[85vh] flex-col gap-4 overflow-hidden lg:left-[calc(50%+7.5rem)]"
       >
         <DialogHeader>
-          <DialogTitle>Find a {spec.noun}</DialogTitle>
+          <DialogTitle>
+            {multi ? `Find ${spec.noun}s` : `Find a ${spec.noun}`}
+          </DialogTitle>
         </DialogHeader>
 
         <Input
@@ -441,6 +509,35 @@ function ObjectSearchDialog<T extends { id: string }>({
           <Table>
             <TableHeader className="sticky top-0 bg-muted">
               <TableRow>
+                {multi && (
+                  <TableHead className="w-8">
+                    <Checkbox
+                      aria-label="Tick every row on this page"
+                      checked={
+                        pageable.length > 0 &&
+                        pageable.every((r) => picked.has(r.id))
+                          ? true
+                          : pageable.some((r) => picked.has(r.id))
+                            ? "indeterminate"
+                            : false
+                      }
+                      onCheckedChange={(v) =>
+                        setPicked((prev) => {
+                          const next = new Map(prev)
+                          for (const r of pageable) {
+                            if (!v) next.delete(r.id)
+                            else if (
+                              selectLimit === undefined ||
+                              next.size < selectLimit
+                            )
+                              next.set(r.id, r)
+                          }
+                          return next
+                        })
+                      }
+                    />
+                  </TableHead>
+                )}
                 {spec.columns.map((c) => (
                   <TableHead key={c.header}>{c.header}</TableHead>
                 ))}
@@ -458,8 +555,24 @@ function ObjectSearchDialog<T extends { id: string }>({
                         ? "cursor-not-allowed opacity-50"
                         : "cursor-pointer"
                     }
-                    onClick={() => !state.disabled && onSelect(row.id, row)}
+                    data-state={picked.has(row.id) ? "selected" : undefined}
+                    onClick={() => {
+                      if (state.disabled) return
+                      if (multi) togglePick(row)
+                      else onSelect(row.id, row)
+                    }}
                   >
+                    {multi && (
+                      <TableCell className="w-8">
+                        <Checkbox
+                          aria-label={`Tick ${row.id}`}
+                          checked={picked.has(row.id)}
+                          disabled={state.disabled}
+                          onClick={(e) => e.stopPropagation()}
+                          onCheckedChange={() => togglePick(row)}
+                        />
+                      </TableCell>
+                    )}
                     {spec.columns.map((c, i) => (
                       <TableCell
                         key={c.header}
@@ -479,7 +592,7 @@ function ObjectSearchDialog<T extends { id: string }>({
               {!rows.length && (
                 <TableRow>
                   <TableCell
-                    colSpan={spec.columns.length}
+                    colSpan={spec.columns.length + (multi ? 1 : 0)}
                     className="py-8 text-center text-muted-foreground"
                   >
                     {results.isLoading ? "Loading…" : `No ${spec.noun}s match.`}
@@ -494,6 +607,7 @@ function ObjectSearchDialog<T extends { id: string }>({
           <span className={cn("num", results.isFetching && "opacity-60")}>
             {count} {spec.noun}
             {count === 1 ? "" : "s"}
+            {multi && picked.size > 0 && ` · ${picked.size} ticked`}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -515,6 +629,19 @@ function ObjectSearchDialog<T extends { id: string }>({
             >
               Next
             </Button>
+            {multi && (
+              <Button
+                type="button"
+                size="sm"
+                disabled={!picked.size}
+                onClick={() => {
+                  onSelectMany([...picked.values()])
+                  setPicked(new Map())
+                }}
+              >
+                Add{picked.size ? ` ${picked.size}` : ""}
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

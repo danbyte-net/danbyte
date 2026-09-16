@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type { Contact } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
+import { Badge } from "@/components/ui/badge"
 import { dash } from "@/components/cells/dash"
 import { PhoneLink } from "@/components/cells/phone-link"
 import { numidColumn } from "@/components/cells/numid"
@@ -24,6 +25,8 @@ export type ContactColumnId =
   | "email"
   | "phone"
   | "group"
+  | "hours"
+  | "available"
   | "assignments"
   | "tags"
   | "updated"
@@ -35,6 +38,8 @@ const CANONICAL_ORDER: ContactColumnId[] = [
   "email",
   "phone",
   "group",
+  "hours",
+  "available",
   "assignments",
   "tags",
   "updated",
@@ -149,6 +154,36 @@ export function buildContactColumns<T extends Contact = Contact>(
             label: sample.group?.name ?? "No group",
           }),
         },
+      },
+    }),
+    // Both off by default on the list (Columns menu turns them on): the
+    // hours string is long and most contacts have none set.
+    hours: () => ({
+      id: "hours",
+      accessorKey: "business_hours_display",
+      meta: { label: "Working hours" },
+      header: ({ column }) => (
+        <SortHeader column={column} label="Working hours" />
+      ),
+      cell: ({ row }) =>
+        row.original.business_hours_display ? (
+          <span className="text-xs">{row.original.business_hours_display}</span>
+        ) : (
+          dash
+        ),
+    }),
+    available: () => ({
+      id: "available",
+      accessorFn: (r) => (r.open_now === null ? "" : r.open_now ? "1" : "0"),
+      header: ({ column }) => <SortHeader column={column} label="Available" />,
+      cell: ({ row }) => {
+        const v = row.original.open_now
+        if (v === null) return dash
+        return (
+          <Badge variant={v ? "success" : "secondary"}>
+            {v ? "Available now" : "Outside hours"}
+          </Badge>
+        )
       },
     }),
     assignments: () => ({

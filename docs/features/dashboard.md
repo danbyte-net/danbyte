@@ -35,8 +35,9 @@ The page is a mosaic of tiles:
   link to confirm them) and **Status history** (the status strips of the
   addresses and devices you pick - the same strip and availability figure
   their Monitoring tabs draw, over 1h to 90d, refreshed every minute; pick
-  them while editing the dashboard, up to twelve per widget, and add the
-  widget more than once to watch different sets). Add them from *Add
+  them while editing the dashboard - tick several in the picker, or in its
+  advanced search, and add them in one go - up to twelve per widget, and add
+  the widget more than once to watch different sets). Add them from *Add
   widget*; all follow the same site scoping as the monitoring pages.
 
 Colours come from your own statuses and roles where you've set them, so the
