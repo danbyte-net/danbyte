@@ -156,6 +156,13 @@ def parse_rows(content: str, fmt: str) -> list[dict]:
         if not isinstance(data, list):
             raise ValueError("JSON must be a list of objects.")
         return [d for d in data if isinstance(d, dict)]
-    # CSV
-    reader = csv.DictReader(io.StringIO(content))
+    # CSV - Excel writes ";" in half of Europe, so take the delimiter from
+    # the header line rather than assuming a comma.
+    head = content.lstrip("\ufeff").split("\n", 1)[0]
+    try:
+        dialect = csv.Sniffer().sniff(head, delimiters=",;\t|")
+        delimiter = dialect.delimiter
+    except csv.Error:
+        delimiter = ","
+    reader = csv.DictReader(io.StringIO(content.lstrip("\ufeff")), delimiter=delimiter)
     return list(reader)

@@ -142,7 +142,12 @@ errors.
 ## File formats
 
 - **CSV**, **Excel (.xlsx)**, and **JSON** are detected by file extension.
-- CSV files should be UTF-8 (a byte-order mark is tolerated).
+- CSV files should be UTF-8 (a byte-order mark is tolerated). The
+  delimiter is read from the header line - a comma, or the semicolon Excel
+  writes in locales that use a decimal comma, a tab or a pipe.
+- An empty cell in a required column that has a default (`gateway_policy`
+  on a site, say) takes the default; an empty required column with no
+  default is refused, and the error names the column.
 - Excel files are read on the server, so no spreadsheet plugin is needed.
 
 ## Extending it (for developers / plugins)
