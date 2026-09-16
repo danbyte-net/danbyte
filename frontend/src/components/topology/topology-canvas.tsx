@@ -49,6 +49,7 @@ import {
 } from "./layout"
 import { resolveLevels } from "./level-organiser"
 import { roleTiers } from "./levels-param"
+import { OverlayEdge } from "./overlay-edge"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE, ZoneNode } from "./zone-node"
 import { ZONE_H, ZONE_W } from "./view-positions"
@@ -69,7 +70,7 @@ const nodeTypes = {
   rear_port: PortNode,
   zone: ZoneNode,
 }
-const edgeTypes = { routed: RoutedEdge }
+const edgeTypes = { routed: RoutedEdge, overlay: OverlayEdge }
 
 /**
  * Zones paint under the cards - they are prepended to the node array, and
@@ -506,15 +507,15 @@ function build(
       continue
     }
 
-    // A BGP session between the two cards - a faint straight line under
-    // the wiring, one per device pair and table, no label: the sidebar
-    // names them and a click opens the session.
+    // A BGP session between the two cards - a faint straight line from
+    // centre to centre under the wiring, one per device pair and table,
+    // named on hover; the sidebar lists them and a click opens the session.
     if (e.type === "bgp") {
       allEdges.push({
         id: e.id,
         source: e.source,
         target: e.target,
-        type: "straight",
+        type: "overlay",
         data: { sem: "bgp", bgp: e.data },
         style: {
           strokeWidth: 1.25,
@@ -522,7 +523,6 @@ function build(
           strokeDasharray: "3 5",
           opacity: 0.45,
         },
-        interactionWidth: 12,
       } as Edge)
       continue
     }
