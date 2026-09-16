@@ -1,5 +1,6 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
+import type { QueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -250,14 +251,27 @@ export function useSaveObject() {
     }
 
     if (id) {
-      return api<T>(`${endpoint}${id}/`, {
+      const saved = await api<T>(`${endpoint}${id}/`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       })
+      invalidateObjectQueries(qc, id)
+      return saved
     }
     return api<T>(endpoint, {
       method: "POST",
       body: JSON.stringify(payload),
     })
   }
+}
+
+/**
+ * Every cached query keyed by the object - its detail page, the edit form's
+ * seed, the tabs that list by it - is stale the moment the object is written.
+ * Forms invalidate their list keys; this covers the per-object keys they leave
+ * out, which otherwise hand the edit form its pre-save copy for the staleTime
+ * window, so the next save writes the old values straight back.
+ */
+export function invalidateObjectQueries(qc: QueryClient, id: string) {
+  void qc.invalidateQueries({ predicate: (q) => q.queryKey.includes(id) })
 }

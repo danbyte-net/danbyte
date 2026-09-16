@@ -1,9 +1,14 @@
 import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 
+import { QueryClient } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 
-import { PLAN_CAPABLE, isPlanCapable } from "./save-object"
+import {
+  PLAN_CAPABLE,
+  invalidateObjectQueries,
+  isPlanCapable,
+} from "./save-object"
 
 /**
  * The guard that makes migrating ~70 forms verifiable instead of hopeful.
@@ -143,5 +148,23 @@ describe("plan-capable forms", () => {
     expect(isPlanCapable("api.cable")).toBe(false)
     expect(isPlanCapable("api.dev")).toBe(false)
     expect(isPlanCapable("")).toBe(false)
+  })
+})
+
+describe("invalidateObjectQueries", () => {
+  it("marks every query keyed by the object stale and leaves the rest", () => {
+    const qc = new QueryClient()
+    qc.setQueryData(["region", "r1"], { id: "r1" })
+    qc.setQueryData(["sites", "by-region", "r1"], [])
+    qc.setQueryData(["region", "r2"], { id: "r2" })
+    qc.setQueryData(["regions"], [])
+
+    invalidateObjectQueries(qc, "r1")
+
+    const stale = (key: unknown[]) => qc.getQueryState(key)?.isInvalidated
+    expect(stale(["region", "r1"])).toBe(true)
+    expect(stale(["sites", "by-region", "r1"])).toBe(true)
+    expect(stale(["region", "r2"])).toBe(false)
+    expect(stale(["regions"])).toBe(false)
   })
 })
