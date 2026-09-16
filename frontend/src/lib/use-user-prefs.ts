@@ -34,5 +34,8 @@ export function useUserPrefs() {
     isLoading: q.isLoading,
     saving: m.isPending,
     setPref: (key: string, value: unknown) => m.mutate({ [key]: value }),
+    /** Several keys in one request - a card's Save. */
+    setPrefs: (patch: Record<string, unknown>, onDone?: () => void) =>
+      m.mutate(patch, { onSuccess: () => onDone?.() }),
   }
 }

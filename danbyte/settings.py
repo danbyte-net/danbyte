@@ -72,9 +72,15 @@ INSTALLED_APPS = [
     "audit.apps.AuditConfig",
     "auth_api.apps.AuthApiConfig",
     "integrations.apps.IntegrationsConfig",
+    "zabbix.apps.ZabbixConfig",
     "search.apps.SearchConfig",
     "monitoring.apps.MonitoringConfig",
     "planning.apps.PlanningConfig",
+    "backups.apps.BackupsConfig",
+    "scripting.apps.ScriptingConfig",
+    "agents.apps.AgentsConfig",
+    "assistant.apps.AssistantConfig",
+    "routing.apps.RoutingConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -92,6 +98,10 @@ PLUGINS_CONFIG: dict = {}
 # `<dir>/installed.json`. Keep it OUTSIDE the app tree in production so an
 # upgrade never wipes it (DANBYTE_PLUGIN_DIR). Read the manifest at import time
 # and treat those names exactly like PLUGINS entries.
+# Where a script's SDK client points at this install. Loopback by default;
+# set it when the backend is not reachable on 127.0.0.1:8000 from a worker.
+DANBYTE_INTERNAL_URL = os.getenv("DANBYTE_INTERNAL_URL", "http://127.0.0.1:8000")
+
 PLUGIN_UPLOAD_DIR = Path(os.getenv("DANBYTE_PLUGIN_DIR", BASE_DIR / "plugins_local"))
 if PLUGIN_UPLOAD_DIR.is_dir() and str(PLUGIN_UPLOAD_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGIN_UPLOAD_DIR))
@@ -111,11 +121,18 @@ except Exception:  # a corrupt manifest must never block boot
 if TESTING and "danbyte_example_plugin" not in PLUGINS:
     PLUGINS.append("danbyte_example_plugin")
 
-if PLUGINS:
+# Plugins that ship inside Danbyte itself. They pass through the same loader
+# as operator-installed ones, so /api/plugins/ lists them for the per-tenant
+# toggle - with nothing to upload, apply, or uninstall. Empty until one lands.
+BUILTIN_PLUGINS: list[str] = []
+
+if PLUGINS or BUILTIN_PLUGINS:
     from danbyte import __version__ as _danbyte_version
     from danbyte.plugin_loader import discover as _discover_plugins
 
-    _plugin_load = _discover_plugins(PLUGINS, _danbyte_version)
+    _plugin_load = _discover_plugins(
+        BUILTIN_PLUGINS + PLUGINS, _danbyte_version, builtin=BUILTIN_PLUGINS
+    )
     INSTALLED_APPS += _plugin_load.enabled
     # Read back by plugins.registry / the /api/plugins/ endpoint.
     _PLUGIN_LOAD_REPORT = _plugin_load.report
@@ -141,6 +158,8 @@ MIDDLEWARE = [
     # Rolling idle-session timeout (admin-configurable; no-op when unset). After
     # auth so request.user is resolved.
     "core.middleware.SessionIdleTimeoutMiddleware",
+    # A restore holds the whole site behind 503 while it replaces the database.
+    "core.middleware.MaintenanceMiddleware",
     # Captures the request user for the change-log signals.
     "audit.middleware.AuditContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -298,6 +317,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "sites", "description": "Sites, regions, and locations."},
         {"name": "circuits", "description": "Circuits, providers, and terminations."},
         {"name": "tunnels", "description": "Tunnels, IPSec, and L2VPNs."},
+        {"name": "routing", "description": "Static routes, routing policies, prefix lists, communities, keychains."},
         {"name": "virtual-machines", "description": "VMs, clusters, and VM interfaces."},
         {"name": "power-panels", "description": "Power panels and feeds."},
         {"name": "monitoring", "description": "Checks, status, alerts, and SNMP."},
@@ -395,6 +415,10 @@ if HTTPS_DEPLOYMENT:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
+    # ACME HTTP-01 for the site's own certificate is fetched over plain HTTP
+    # on purpose; a CA that follows the redirect would then meet the very
+    # certificate it is about to replace. nginx hands the path straight here.
+    SECURE_REDIRECT_EXEMPT = [r"^\.well-known/acme-challenge/"]
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
@@ -508,6 +532,9 @@ STATICFILES_DIRS: list = []
 # Uploaded media (device-type rack images, …).
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# Where the default backup target writes - the same sibling directory the
+# upgrade scripts used for their pre-upgrade dumps (#27).
+DANBYTE_BACKUP_DIR = Path(os.getenv("DANBYTE_BACKUP_DIR", str(BASE_DIR.parent / "danbyte-backups")))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

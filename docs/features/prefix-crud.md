@@ -101,6 +101,16 @@ addresses are never created. A single pool is capped at 1024 addresses - add a
 wider span in smaller ranges. Each address is created individually, so it lands
 in the change log and history like any other IP.
 
+## Edit or delete many addresses
+
+The **IP addresses** list (and a prefix's **IPs** tab) has a checkbox per row
+and a select-all in the header. Once something is ticked a bar appears with the
+count and the actions that take a selection: **Edit** opens the bulk editor for
+the chosen addresses (status, role, VRF, tags, description and the rest, one
+field at a time), **Delete** asks once, naming how many rows go, **Export** writes
+just those rows, and **Check now** re-runs their monitoring checks. Select-all
+covers the rows on the page in front of you, after the filters you have set.
+
 ## Gateway autospawn
 
 If you leave the **gateway** field blank and the prefix's site has a gateway

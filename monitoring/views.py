@@ -22,6 +22,7 @@ import ipaddress as _ip
 import re
 
 from api.models import (
+    VirtualChassis,
     Device,
     DeviceRole,
     DeviceType,
@@ -35,7 +36,8 @@ from api.models import (
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
+from django.db.models.functions import Coalesce
 
 from django.utils import timezone
 
@@ -74,9 +76,8 @@ from .snmp_drift import (
     compute_device_drift,
     sync_device_from_snmp,
 )
+from .vc_stack import stack_members, stack_owner, stack_state
 
-# How many recent results feed the per-check sparkline.
-SPARK_POINTS = 30
 # Cap the per-IP grid on a prefix page so a huge prefix can't return 100k rows.
 GRID_CAP = 1000
 
@@ -259,13 +260,12 @@ def check_now_view(request, ip_id):
 
 
 @extend_schema(
-    summary="Effective checks for an IP with current state and sparkline",
+    summary="Effective checks for an IP with current state",
     tags=["monitoring"],
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="Resolved checks for the IP, each joined with its CheckState "
-        "and a short latency/status sparkline.",
+        description="Resolved checks for the IP, each joined with its CheckState.",
     ),
 )
 
@@ -273,9 +273,11 @@ def check_now_view(request, ip_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ip_checks_view(request, ip_id):
-    """Effective checks for an IP, each joined with its current CheckState and a
-    short latency/status sparkline. Resolves on the fly, so checks show up here
-    immediately after assignment - before the materialiser has run."""
+    """Effective checks for an IP, each joined with its current CheckState.
+    Resolves on the fly, so checks show up here immediately after assignment -
+    before the materialiser has run. Status over time is the timeline's and
+    latency over time the latency endpoint's - neither is fetched per check
+    here, which was one query per row on every open of the tab."""
     ip, tenant = _get_ip(request, ip_id)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
@@ -293,12 +295,6 @@ def ip_checks_view(request, ip_id):
     checks = []
     for rc in resolved:
         st = states.get(rc.template.id)
-        spark = list(
-            CheckResult.objects.filter(target_ip=ip, template=rc.template)
-            .order_by("-timestamp")[:SPARK_POINTS]
-            .values("timestamp", "status", "latency_ms")
-        )
-        spark.reverse()
         # Policy-sourced checks have no CheckAssignment - they're configured on
         # the Monitoring → Configuration policy, not per-IP.
         a = rc.assignment
@@ -311,6 +307,8 @@ def ip_checks_view(request, ip_id):
                 "prefix_id": str(rc.prefix.id) if rc.prefix else None,
                 "assignment_id": str(a.id) if a else None,
                 "interval_seconds": rc.interval_seconds,
+                "interval_ms": rc.interval_ms,
+                "record_every_seconds": rc.record_every_seconds,
                 "degraded_enabled": rc.degraded_enabled,
                 "params": rc.params,
                 # Per-assignment override editing (M18) - only meaningful to edit
@@ -329,17 +327,34 @@ def ip_checks_view(request, ip_id):
                         "since": st.since,
                         "last_checked": st.last_checked,
                         "last_latency_ms": st.last_latency_ms,
+                        # What the last run found. For an externally-answered
+                        # check this carries the open problems and which
+                        # protocols that system cannot reach the host on -
+                        # which is the answer to "why is this degraded".
+                        "last_detail": st.last_detail,
                         "consecutive_success": st.consecutive_success,
                         "consecutive_fail": st.consecutive_fail,
                         "next_run": st.next_run,
+                        "flapping_since": st.flapping_since,
+                        "flap_count": st.flap_count,
+                        "flap_cleared_at": st.flap_cleared_at,
                     }
                     if st
                     else None
                 ),
-                "sparkline": spark,
             }
         )
-    return Response({"ip_id": str(ip.id), "ip_address": ip.ip_address, "checks": checks})
+    # The same roll-up the lists show, from the same helper: the IP's own page
+    # said nothing about open problems or an unreachable protocol while the
+    # prefix's row for that very address showed both, which reads as the detail
+    # page disagreeing with the list it was opened from.
+    return Response({
+        "ip_id": str(ip.id),
+        "ip_address": ip.ip_address,
+        "checks": checks,
+        **_external_detail([s.last_detail for s in states.values()]),
+        **_flap_rollup(s.flapping_since for s in states.values()),
+    })
 
 
 @extend_schema(
@@ -383,21 +398,34 @@ def ip_history_view(request, ip_id):
     if (denied := _require(request, "ipaddress", "view")):
         return denied
 
-    qs = CheckResult.objects.filter(target_ip=ip).order_by("-timestamp")
+    qs = (
+        CheckResult.objects.filter(target_ip=ip)
+        .select_related("engine")
+        .order_by("-timestamp")
+    )
     template = request.query_params.get("template")
     if template:
         qs = qs.filter(template_id=template)
     status_f = request.query_params.get("status")
     if status_f:
         qs = qs.filter(status=status_f)
+    # ``before`` pages backwards through a busy check's samples by id - stable
+    # while new rows keep arriving, which an offset would not be.
+    before = request.query_params.get("before")
+    if before and before.isdigit():
+        qs = qs.filter(id__lt=int(before))
     try:
         limit = min(int(request.query_params.get("limit", 100)), 1000)
     except ValueError:
         limit = 100
-    rows = list(qs[:limit])
-    return Response(
-        {"count": len(rows), "results": CheckResultSerializer(rows, many=True).data}
-    )
+    rows = list(qs[:limit + 1])
+    more = len(rows) > limit
+    rows = rows[:limit]
+    return Response({
+        "count": len(rows),
+        "results": CheckResultSerializer(rows, many=True).data,
+        "next_before": rows[-1].id if more and rows else None,
+    })
 
 
 @extend_schema(
@@ -595,7 +623,10 @@ def device_checks_view(request, device_id):
             CheckState.objects.filter(target_ip_id__in=ip_ids),
         )
         .select_related("target_ip")
-        .values("target_ip_id", "target_ip__ip_address", "status")
+        .values(
+            "target_ip_id", "target_ip__ip_address", "status", "last_detail",
+            "flapping_since",
+        )
     )
     by_ip: dict = {}
     for s in states:
@@ -605,10 +636,17 @@ def device_checks_view(request, device_id):
                 "id": str(s["target_ip_id"]),
                 "ip_address": s["target_ip__ip_address"],
                 "statuses": [],
+                "details": [],
+                "flapping": [],
             },
         )
         e["statuses"].append(s["status"])
+        e["details"].append(s["last_detail"])
+        e["flapping"].append(s["flapping_since"])
 
+    # What an external system says rides along per address and for the
+    # device as a whole - the same chips the lists show, so the device page
+    # cannot read healthier than the row it was opened from.
     grid = sorted(
         (
             {
@@ -617,6 +655,8 @@ def device_checks_view(request, device_id):
                 "status": worst_status(e["statuses"]),
                 "checks": len(e["statuses"]),
                 "counts": status_counts(e["statuses"]),
+                **_external_detail(e["details"]),
+                **_flap_rollup(e["flapping"]),
             }
             for e in by_ip.values()
         ),
@@ -633,9 +673,12 @@ def device_checks_view(request, device_id):
                 "counts": status_counts([g["status"] for g in grid]),
                 "monitored_ips": len(grid),
                 "total_ips": len(ip_ids),
+                **_flap_rollup(s["flapping_since"] for s in states),
             },
             "ips": grid[:GRID_CAP],
             "truncated": len(grid) > GRID_CAP,
+            **_external_detail([s["last_detail"] for s in states]),
+            **_flap_rollup(s["flapping_since"] for s in states),
         }
     )
 
@@ -939,7 +982,23 @@ def engine_health_view(request):
             tenant=tenant, enabled=True, stale_since__isnull=False
         )
     ]
-    return Response({"stale_engines": stale})
+    # The fast lane is a process, not an engine, but "down while fast checks
+    # exist" is the same kind of news: those checks are on the minute beat
+    # at their fallback interval until it is back.
+    from .fastlane import fast_states, lane_alive, lane_stats
+
+    fast_count = _scope_ip_keyed(request, tenant, fast_states()).filter(tenant=tenant).count()
+    stats = lane_stats()
+    return Response({
+        "stale_engines": stale,
+        "fast_lane": {
+            "alive": lane_alive(now),
+            "checks": stats.get("checks") if stats else 0,
+            "probes_per_s": stats.get("probes_per_s") if stats else 0,
+            "at": stats.get("at") if stats else None,
+            "fast_checks_here": fast_count,
+        },
+    })
 
 
 @extend_schema(
@@ -972,7 +1031,7 @@ def engine_health_view(request):
 @api_view(["GET", "PUT"])
 @permission_classes([IsAuthenticated])
 def engine_binding_view(request, scope, object_id):
-    """Read/write the monitoring engine bound to a site/location/prefix.
+    """Read/write the monitoring engine bound to a device/site/location/prefix.
 
     GET returns ``{engine_id}``; PUT ``{engine_id}`` sets it (null clears →
     inherit). Prefix bindings drive subnet discovery and prefix-policy checks.
@@ -987,6 +1046,7 @@ def engine_binding_view(request, scope, object_id):
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
     if scope not in (
+        MonitoringEngineBinding.SCOPE_DEVICE,
         MonitoringEngineBinding.SCOPE_SITE,
         MonitoringEngineBinding.SCOPE_LOCATION,
         MonitoringEngineBinding.SCOPE_PREFIX,
@@ -1032,6 +1092,81 @@ def engine_binding_view(request, scope, object_id):
 
 
 @extend_schema(
+    summary="Engine kinds a driver has registered",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{'kinds': [{kind, label, description, fields, "
+        "configure_path}]} - the engine kinds beyond local and remote.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def engine_kinds_view(request):
+    """What an engine can be, beyond an Outpost.
+
+    The engines list reads this to know that a `zabbix` engine is configured
+    on the Zabbix page rather than enrolled with a token.
+    """
+    from .engine_drivers import engine_kinds
+
+    return Response({"kinds": [k.payload() for k in engine_kinds()]})
+
+
+@extend_schema(
+    summary="Every selectable check kind, built-in and registered",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{'kinds': [{value, label}]} - the built-in enum plus any "
+        "kind a plugin or engine driver registered.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def check_kinds_view(request):
+    """What a check can be.
+
+    The checker registry is the source of truth for what can actually run, so
+    the form asks it rather than restating the list in TypeScript - which is
+    how a registered kind (a Zabbix check, a plugin's own) could exist on the
+    server and be unreachable from the UI.
+    """
+    from .models import check_kinds
+
+    return Response({
+        "kinds": [{"value": value, "label": label} for value, label in check_kinds()]
+    })
+
+
+@extend_schema(
+    summary="Check-state names and colours the tenant has overridden",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="{'labels': {state: {id, name, color, text_color}}} - only "
+        "the states a Status row claims; the rest keep their shipped names.",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def status_labels_view(request):
+    """What this tenant calls each check state.
+
+    Every monitoring surface reads this once and overlays it on the shipped
+    palette, so a tenant that calls ``down`` "Critical" sees Critical in the
+    table, the rollup badge, the filter rail and the charts alike.
+    """
+    from .status_labels import status_labels
+
+    tenant = _get_active_tenant(request)
+    return Response({"labels": status_labels(tenant)})
+
+
+@extend_schema(
     summary="Overall monitoring stats for the active tenant",
     tags=["monitoring"],
     request=None,
@@ -1066,8 +1201,33 @@ def stats_view(request):
 
     recent = (
         _scope_ip_keyed(request, tenant, StateTransition.objects.filter(tenant=tenant))
-        .select_related("template", "target_ip")
+        .select_related("template", "target_ip", "engine")
         .order_by("-at")[:20]
+    )
+    hours = request.query_params.get("hours")
+    hours = int(hours) if hours in SERIES_HOURS else 24
+    series, bucket = _result_series(request, tenant, hours)
+    from .fastlane import lane_alive, lane_stats
+
+    fast_checks = states.filter(interval_ms__isnull=False).count()
+    lane = lane_stats() or {}
+    # Availability over the window from the same buckets the chart draws:
+    # up over up-plus-down, degraded counting as reachable.
+    up_n = sum(p["up"] + p["degraded"] for p in series)
+    down_n = sum(p["down"] for p in series)
+    availability = round(100.0 * up_n / (up_n + down_n), 2) if (up_n + down_n) else None
+    from datetime import timedelta
+
+    from .charts import alerts_per_day, bucket_seconds, latency_percentiles, viewer_tz
+
+    since = timezone.now() - timedelta(hours=hours)
+    scoped_results = _scope_ip_keyed(
+        request, tenant, CheckResult.objects.filter(tenant=tenant)
+    )
+    tz = viewer_tz(request, tenant)
+    q = rbac.row_filter(request.user, tenant, "ipaddress", "view")
+    ip_filter = None if q is True else (
+        IPAddress.objects.filter(tenant=tenant).filter(q) if q else IPAddress.objects.none()
     )
 
     return Response(
@@ -1078,28 +1238,58 @@ def stats_view(request):
             "monitored_ips": monitored_ips,
             "templates": tenant.check_templates.count(),
             "channels": tenant.notification_channels.filter(enabled=True).count(),
-            "series": _result_series(request, tenant),
+            "series": series,
+            "series_hours": hours,
+            "series_bucket": bucket,
             "recent_transitions": StateTransitionSerializer(recent, many=True).data,
+            "availability_pct": availability,
+            # The estate's latency per bucket - p50 says how it feels, p95
+            # says who is suffering.
+            "latency_series": latency_percentiles(
+                scoped_results, since, timezone.now(), bucket_seconds(hours)
+            ),
+            # Opened against resolved, per day over the window (a day at
+            # least, so the 24 h view still has a bar to compare).
+            "alerts_series": alerts_per_day(
+                tenant, since - timedelta(hours=0 if hours > 24 else 24 * 6),
+                timezone.now(), tz, ip_filter,
+            ),
+            # Sub-minute checks in the caller's view, and the lane's own pulse
+            # (deployment-wide - one process runs every tenant's).
+            "fast_lane": {
+                "fast_checks": fast_checks,
+                "alive": lane_alive(),
+                "checks": lane.get("checks", 0),
+                "probes_per_s": lane.get("probes_per_s", 0),
+            },
         }
     )
 
 
-def _result_series(request, tenant, hours: int = 24) -> list[dict]:
-    """Hourly counts of check results over the last ``hours``, grouped into
+#: The windows the results chart offers. 720 h is the result-retention
+#: ceiling - anything longer would draw from rows the pruner already removed.
+SERIES_HOURS = ("24", "168", "720")
+
+
+def _result_series(request, tenant, hours: int = 24) -> tuple[list[dict], str]:
+    """Counts of check results over the last ``hours``, grouped into
     reachable / degraded / down buckets - drives the dashboard area chart.
-    Site-aware: only the caller's viewable IPs contribute."""
+    Hour buckets up to three days, day buckets beyond, so a month is thirty
+    bars rather than seven hundred. Site-aware: only the caller's viewable
+    IPs contribute."""
     from datetime import timedelta
 
-    from django.db.models.functions import TruncHour
+    from django.db.models.functions import TruncDay, TruncHour
     from django.utils import timezone
 
     since = timezone.now() - timedelta(hours=hours)
+    hourly = hours <= 72
     rows = (
         _scope_ip_keyed(
             request, tenant,
             CheckResult.objects.filter(tenant=tenant, timestamp__gte=since),
         )
-        .annotate(h=TruncHour("timestamp"))
+        .annotate(h=TruncHour("timestamp") if hourly else TruncDay("timestamp"))
         .values("h", "status")
         .annotate(n=Count("id"))
     )
@@ -1114,7 +1304,7 @@ def _result_series(request, tenant, hours: int = 24) -> list[dict]:
             b["degraded"] += r["n"]
         elif status in ("down", "stale"):
             b["down"] += r["n"]
-    return sorted(buckets.values(), key=lambda x: x["t"])
+    return sorted(buckets.values(), key=lambda x: x["t"]), ("hour" if hourly else "day")
 
 
 @extend_schema(
@@ -1374,6 +1564,26 @@ def alerts_view(request):
     kind = request.query_params.get("kind")
     if kind:
         qs = qs.filter(kind=kind)
+    # One object, one check, one window - what a status-strip segment asks:
+    # "which alerts were open while this was going on?". An alert overlaps
+    # the window when it opened before its end and was not resolved before
+    # its start.
+    ip = request.query_params.get("ip")
+    if ip:
+        qs = qs.filter(target_ip_id=ip)
+    device = request.query_params.get("device")
+    if device:
+        qs = qs.filter(target_ip__assigned_device_id=device)
+    template = request.query_params.get("template")
+    if template:
+        qs = qs.filter(template_id=template)
+    from .history import window as _window
+
+    if request.query_params.get("since") or request.query_params.get("until"):
+        since, until = _window(request.query_params)
+        qs = qs.filter(opened_at__lt=until).filter(
+            Q(resolved_at__isnull=True) | Q(resolved_at__gt=since)
+        )
     rows = list(qs.order_by("-opened_at")[:200])
 
     # Annotate which firing alerts are currently muted by a silence - one
@@ -1444,6 +1654,89 @@ def flapping_view(request):
     return Response({"results": flapping_ips(tenant, viewable_ips=viewable)})
 
 
+def _without_key(params, key):
+    out = {k: v for k, v in params.items() if k != key}
+    return out
+
+
+def _clear_flapping_states(request, tenant, states_qs):
+    """Clear the flapping states the caller may *change* the address of.
+    The change grant rather than view: confirming a host is fine is a
+    statement about the record, and a viewer does not get to make it."""
+    from .flapping import clear_flapping
+
+    q = rbac.row_filter(request.user, tenant, "ipaddress", "change")
+    if q is None:
+        return Response({"detail": "Forbidden."}, status=403)
+    if q is not True:
+        states_qs = states_qs.filter(target_ip__in=IPAddress.objects.filter(tenant=tenant).filter(q))
+    states = list(states_qs.select_related("target_ip", "template"))
+    cleared = clear_flapping(states, request.user)
+    return Response({"cleared": cleared})
+
+
+@extend_schema(
+    summary="Confirm checks are not flapping",
+    tags=["monitoring"],
+    request=inline_serializer(
+        name="FlappingClearRequest",
+        fields={
+            "state_ids": serializers.ListField(child=serializers.UUIDField(), required=False),
+            "ip_ids": serializers.ListField(child=serializers.UUIDField(), required=False),
+            "device_ids": serializers.ListField(child=serializers.UUIDField(), required=False),
+        },
+    ),
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT, description="How many cleared."),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def flapping_clear_view(request):
+    """Clear the flapping state on checks, addresses or devices - the operator
+    has looked and the host is fine. Needs ``ipaddress.change`` on each
+    address; the rest of the request is simply not cleared."""
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    body = request.data or {}
+    state_ids = [str(x) for x in (body.get("state_ids") or [])]
+    ip_ids = [str(x) for x in (body.get("ip_ids") or [])]
+    device_ids = [str(x) for x in (body.get("device_ids") or [])]
+    if not (state_ids or ip_ids or device_ids):
+        return Response({"detail": "Nothing to clear."}, status=400)
+    qs = CheckState.objects.filter(tenant=tenant, flapping_since__isnull=False).filter(
+        Q(id__in=state_ids) | Q(target_ip_id__in=ip_ids)
+        | Q(target_ip__assigned_device_id__in=device_ids)
+    )
+    return _clear_flapping_states(request, tenant, qs)
+
+
+@extend_schema(summary="Confirm an address is not flapping", tags=["monitoring"], request=None)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ip_flapping_clear_view(request, ip_id):
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    qs = CheckState.objects.filter(tenant=tenant, target_ip_id=ip_id, flapping_since__isnull=False)
+    template = (request.data or {}).get("template_id")
+    if template:
+        qs = qs.filter(template_id=template)
+    return _clear_flapping_states(request, tenant, qs)
+
+
+@extend_schema(summary="Confirm a device is not flapping", tags=["monitoring"], request=None)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def device_flapping_clear_view(request, device_id):
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant."}, status=403)
+    qs = CheckState.objects.filter(
+        tenant=tenant, target_ip__assigned_device_id=device_id, flapping_since__isnull=False
+    )
+    return _clear_flapping_states(request, tenant, qs)
+
+
 @extend_schema(
     summary="Acknowledge or unacknowledge a firing alert",
     tags=["monitoring"],
@@ -1482,7 +1775,10 @@ def alert_ack_view(request, alert_id):
     if alert is None:
         return Response({"detail": "Not found."}, status=404)
 
-    if request.query_params.get("action") == "unack":
+    from .signals import alert_acknowledged
+
+    acknowledged = request.query_params.get("action") != "unack"
+    if not acknowledged:
         alert.acknowledged_at = None
         alert.acknowledged_by = None
         alert.ack_note = ""
@@ -1492,6 +1788,9 @@ def alert_ack_view(request, alert_id):
         alert.acknowledged_by = request.user
         alert.ack_note = (request.data or {}).get("note", "")[:255]
         alert.save(update_fields=["acknowledged_at", "acknowledged_by", "ack_note"])
+    alert_acknowledged.send(
+        sender=type(alert), alert=alert, acknowledged=acknowledged, actor=request.user
+    )
     return Response(AlertSerializer(alert).data)
 
 
@@ -1554,34 +1853,47 @@ def checks_list_view(request):
 
     # Site-aware: only the caller's viewable IPs' checks appear in the list AND
     # the per-status counts.
-    base = _scope_ip_keyed(
-        request, tenant,
-        CheckState.objects.filter(tenant=tenant),
-    ).select_related("target_ip", "template")
+    from .engines import SOURCE_EXPR
+    from .history import apply_target_filters, facet_counts, paginate
+    from .timeline import segments_for_pairs
 
-    # Counts across all statuses (before the status filter) so the tabs are
-    # stable regardless of which one is selected.
+    params = request.query_params
+    base = (
+        _scope_ip_keyed(request, tenant, CheckState.objects.filter(tenant=tenant))
+        .annotate(source=SOURCE_EXPR)
+    )
+
+    # Counts across all statuses (before any filter) so the tabs are stable
+    # regardless of which one is selected - the dashboard donut links here.
     status_counts = {
         row["status"]: row["n"]
-        for row in base.values("status").annotate(n=Count("id"))
+        for row in base.values("status").annotate(n=Count("id")).order_by()
     }
     status_counts["all"] = sum(status_counts.values())
 
-    qs = base
-    status = request.query_params.get("status")
-    if status and status != "all":
-        qs = qs.filter(status=status)
-    kind = request.query_params.get("kind")
-    if kind:
-        qs = qs.filter(kind=kind)
-    search = (request.query_params.get("search") or "").strip()
-    if search:
-        qs = qs.filter(
-            Q(target_ip__ip_address__icontains=search)
-            | Q(template__name__icontains=search)
-        )
+    def apply(qs, p):
+        """Everything the rail sends: the shared target dimensions plus what a
+        check itself carries. Status is a list here, unlike the old tab."""
+        qs = apply_target_filters(qs, p)
+        statuses = [v for v in (p.get("status") or "").split(",") if v and v != "all"]
+        if statuses:
+            qs = qs.filter(status__in=statuses)
+        source = (p.get("source") or "").strip()
+        if source:
+            qs = qs.filter(source__in=[v for v in source.split(",") if v])
+        engine = (p.get("engine") or "").strip()
+        if engine:
+            qs = qs.filter(engine_id__in=[v for v in engine.split(",") if v])
+        flapping = (p.get("flapping") or "").strip()
+        if flapping == "1":
+            qs = qs.filter(flapping_since__isnull=False)
+        elif flapping == "0":
+            qs = qs.filter(flapping_since__isnull=True)
+        return qs
 
-    ordering = request.query_params.get("ordering", "-last_checked")
+    qs = apply(base, params)
+
+    ordering = params.get("ordering", "-last_checked")
     order_map = {
         "ip": ("target_ip__ip_address",),
         "-ip": ("-target_ip__ip_address",),
@@ -1591,44 +1903,123 @@ def checks_list_view(request):
         "-last_checked": ("-last_checked", "target_ip__ip_address"),
         "latency": ("last_latency_ms",),
         "-latency": ("-last_latency_ms",),
+        "since": ("since", "target_ip__ip_address"),
+        "-since": ("-since", "target_ip__ip_address"),
+        "kind": ("kind", "target_ip__ip_address"),
+        "-kind": ("-kind", "target_ip__ip_address"),
+        "source": ("source", "target_ip__ip_address"),
+        "-source": ("-source", "target_ip__ip_address"),
+        "check": ("template__name", "target_ip__ip_address"),
+        "-check": ("-template__name", "target_ip__ip_address"),
+        "device": ("target_ip__assigned_device__name", "target_ip__ip_address"),
+        "-device": ("-target_ip__assigned_device__name", "target_ip__ip_address"),
+        "site": ("_site_name", "target_ip__ip_address"),
+        "-site": ("-_site_name", "target_ip__ip_address"),
     }
+    if ordering.lstrip("-") == "site":
+        qs = qs.annotate(
+            _site_name=Coalesce(
+                F("target_ip__site__name"),
+                F("target_ip__prefix__site__name"),
+                F("target_ip__assigned_device__site__name"),
+            )
+        )
     qs = qs.order_by(*order_map.get(ordering, order_map["-last_checked"]))
-
-    try:
-        page = max(int(request.query_params.get("page", 1)), 1)
-    except ValueError:
-        page = 1
-    try:
-        page_size = min(max(int(request.query_params.get("page_size", 50)), 1), 200)
-    except ValueError:
-        page_size = 50
-    total = qs.count()
-    start = (page - 1) * page_size
-    rows = list(qs[start : start + page_size])
-
-    results = [
-        {
-            "id": str(s.id),
-            "target_ip": {"id": str(s.target_ip_id), "ip_address": s.target_ip.ip_address},
-            "template": {"id": str(s.template_id), "name": s.template.name},
-            "kind": s.kind,
-            "status": s.status,
-            "last_latency_ms": s.last_latency_ms,
-            "last_checked": s.last_checked,
-            "since": s.since,
-            "consecutive_fail": s.consecutive_fail,
-        }
-        for s in rows
-    ]
-    return Response(
-        {
-            "count": total,
-            "page": page,
-            "page_size": page_size,
-            "status_counts": status_counts,
-            "results": results,
-        }
+    qs = qs.select_related(
+        "target_ip", "target_ip__site", "target_ip__prefix", "target_ip__prefix__site",
+        "target_ip__assigned_device", "target_ip__assigned_device__site",
+        "template", "engine",
     )
+    rows, total, page, page_size = paginate(qs, params)
+
+    # ``strip=<days>`` adds status-over-time segments per row - two queries
+    # for the page, not two per row.
+    strip_days = params.get("strip")
+    segments: dict = {}
+    since = until = None
+    if strip_days and strip_days.isdigit():
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        until = timezone.now()
+        since = until - timedelta(days=max(1, min(int(strip_days), 365)))
+        segments = segments_for_pairs(
+            tenant.id, [(r.target_ip_id, r.template_id) for r in rows], since, until
+        )
+
+    def site_of(ip):
+        site = ip.site if ip.site_id else (
+            ip.prefix.site if ip.prefix_id and ip.prefix.site_id else (
+                ip.assigned_device.site
+                if ip.assigned_device_id and ip.assigned_device.site_id else None
+            )
+        )
+        return {"id": str(site.id), "name": site.name} if site is not None else None
+
+    results = []
+    for st in rows:
+        ip = st.target_ip
+        device = ip.assigned_device if ip.assigned_device_id else None
+        row = {
+            "id": str(st.id),
+            "target_ip": {
+                "id": str(ip.id), "ip_address": ip.ip_address, "dns_name": ip.dns_name,
+            },
+            "template": {"id": str(st.template_id), "name": st.template.name},
+            "kind": st.kind,
+            "status": st.status,
+            "last_latency_ms": st.last_latency_ms,
+            "last_checked": st.last_checked,
+            "since": st.since,
+            "consecutive_fail": st.consecutive_fail,
+            "source": st.source,
+            "engine": (
+                {"id": str(st.engine_id), "name": st.engine.name} if st.engine_id else None
+            ),
+            "flapping_since": st.flapping_since,
+            "flap_count": st.flap_count,
+            "interval_ms": st.interval_ms,
+            "device": {"id": str(device.id), "name": device.name} if device else None,
+            "site": site_of(ip),
+            "prefix": (
+                {"id": str(ip.prefix_id), "cidr": ip.prefix.cidr} if ip.prefix_id else None
+            ),
+        }
+        if segments:
+            row["segments"] = segments.get((str(st.target_ip_id), str(st.template_id)), [])
+        results.append(row)
+    source_counts = {
+        r["source"]: r["n"]
+        for r in base.values("source").annotate(n=Count("id")).order_by()
+    }
+    facets = facet_counts(
+        base, params,
+        ("status", "kind", "source", "site", "device_type", "role", "platform",
+         "template", "engine"),
+        apply, status_field="status",
+    )
+    # One bucket, counted like the others (every filter but its own).
+    flapping_now = apply(base, _without_key(params, "flapping")).filter(
+        flapping_since__isnull=False
+    ).count()
+    facets["flapping"] = (
+        [{"value": "1", "label": "Flapping", "count": flapping_now}] if flapping_now else []
+    )
+    body = {
+        "count": total,
+        "page": page,
+        "page_size": page_size,
+        "status_counts": status_counts,
+        "source_counts": source_counts,
+        "flapping_count": flapping_now,
+        "facets": facets,
+        "results": results,
+    }
+    if since is not None:
+        body["since"] = since
+        body["until"] = until
+    return Response(body)
 
 
 @extend_schema(
@@ -1661,6 +2052,69 @@ def checks_list_view(request):
         description="Per-target roll-up status keyed by object id.",
     ),
 )
+def _flap_rollup(flapping_since_values) -> dict:
+    """``{"flapping": n}`` for the checks currently flagged, or nothing - so
+    the pill renders only where there is something to say."""
+    n = sum(1 for v in flapping_since_values if v is not None)
+    return {"flapping": n} if n else {}
+
+
+def _external_detail(rows) -> dict:
+    """What an external monitoring system said, rolled up for a list column.
+
+    ``{"problems": 3, "unreachable": ["snmp"]}`` - the number of open problems
+    across the target's checks, and the protocols the external system cannot
+    reach it on. Both are things only that system knows, and both are already
+    in ``last_detail``; the alternative was showing a green host whose SNMP has
+    been polling nothing for a week.
+
+    Empty when no check carries either, so nothing renders for the targets this
+    does not apply to - which is most of them.
+    """
+    problems = 0
+    names: list[dict] = []
+    unreachable: dict[str, str] = {}
+    external: dict = {}
+    for detail in rows:
+        if not isinstance(detail, dict):
+            continue
+        try:
+            problems += int(detail.get("problem_count") or 0)
+        except (TypeError, ValueError):
+            pass
+        for item in detail.get("problems") or []:
+            if isinstance(item, dict) and len(names) < 5:
+                names.append({"name": str(item.get("name") or "")[:120],
+                              "severity": str(item.get("severity") or "")})
+        # Where it came from, so a hover can link straight back to it.
+        if detail.get("zabbix_host") and "host" not in external:
+            external = {
+                "system": "zabbix",
+                "host": str(detail.get("zabbix_host"))[:120],
+                "hostid": str(detail.get("hostid") or ""),
+                "url": str(detail.get("zabbix_url") or ""),
+            }
+        # `last_detail` is whatever a checker or a plugin wrote, so nothing
+        # about its shape can be assumed. A status column that 500s on an
+        # unexpected payload takes the whole list page with it.
+        reach = detail.get("availability")
+        if not isinstance(reach, dict):
+            continue
+        for proto, entry in reach.items():
+            if isinstance(entry, dict) and entry.get("state") == "down":
+                unreachable.setdefault(str(proto), str(entry.get("error") or "")[:300])
+    out: dict = {}
+    if problems:
+        out["problems"] = problems
+        out["problem_names"] = names
+    if unreachable:
+        out["unreachable"] = sorted(unreachable)
+        out["unreachable_errors"] = unreachable
+    if external:
+        out["external"] = external
+    return out
+
+
 @extend_schema(
     methods=["POST"],
     summary="Roll-up status for many IPs/prefixes/devices (body form)",
@@ -1694,6 +2148,7 @@ def bulk_status_view(request):
     ``?devices=id,id`` → ``{statuses: {device_id: {status, counts, monitored_ips}}}``
         - rolled up across every IP assigned to the device (a service's check
         lives on its IP, so service monitoring rolls up here too).
+    ``?vms=id,id`` → the same, across every IP assigned to the virtual machine.
 
     Also accepts POST with ``{"ips": [...]}`` / ``{"prefixes": [...]}`` /
     ``{"devices": [...]}``. A page of ~110 prefix UUIDs makes a ~4.2 KB URL,
@@ -1725,16 +2180,23 @@ def bulk_status_view(request):
                 request, tenant,
                 CheckState.objects.filter(tenant=tenant, target_ip_id__in=ids),
             )
-            .values("target_ip_id", "status")
+            .values("target_ip_id", "status", "last_detail", "flapping_since")
         )
         grouped: dict = {}
-        for s in states:
-            grouped.setdefault(str(s["target_ip_id"]), []).append(s["status"])
+        details: dict = {}
+        flaps: dict = {}
+        for row in states:
+            key = str(row["target_ip_id"])
+            grouped.setdefault(key, []).append(row["status"])
+            details.setdefault(key, []).append(row["last_detail"])
+            flaps.setdefault(key, []).append(row["flapping_since"])
         for ip_id, statuses in grouped.items():
             out[ip_id] = {
                 "status": worst_status(statuses),
                 "checks": len(statuses),
                 "counts": status_counts(statuses),
+                **_external_detail(details.get(ip_id) or []),
+                **_flap_rollup(flaps.get(ip_id) or []),
             }
         return Response({"statuses": out})
 
@@ -1759,17 +2221,55 @@ def bulk_status_view(request):
             child_ids = _viewable_child_ip_ids(request, prefix, tenant)
             if not child_ids:
                 continue
-            states = _scope_ip_keyed(
+            rows = list(_scope_ip_keyed(
                 request, tenant,
                 CheckState.objects.filter(target_ip_id__in=child_ids),
-            ).values_list("status", flat=True)
-            statuses = list(states)
+            ).values("status", "last_detail", "flapping_since"))
+            statuses = [r["status"] for r in rows]
             if not statuses:
                 continue
             out[str(prefix.id)] = {
                 "status": worst_status(statuses),
                 "counts": status_counts(statuses),
                 "monitored_ips": len(set(child_ids)),
+                **_external_detail([r["last_detail"] for r in rows]),
+                **_flap_rollup(r["flapping_since"] for r in rows),
+            }
+        return Response({"statuses": out})
+
+    vm_param = _ids("vms")
+    if vm_param:
+        from api.models import VirtualMachine
+
+        ids = [x for x in vm_param.split(",") if x]
+        out = {}
+        viewable = list(
+            rbac.restrict_queryset(
+                VirtualMachine.objects.filter(tenant=tenant, id__in=ids),
+                request.user, tenant, "virtualmachine", "view",
+            ).values_list("id", flat=True)
+        )
+        ip_rows = _viewable_ips(
+            request, tenant,
+            IPAddress.objects.filter(assigned_vm_id__in=viewable),
+        ).values_list("assigned_vm_id", "id")
+        ips_by_vm: dict = {}
+        for vm_id, ip_id in ip_rows:
+            ips_by_vm.setdefault(str(vm_id), []).append(ip_id)
+        for vm_id, ip_ids in ips_by_vm.items():
+            states = list(_scope_ip_keyed(
+                request, tenant,
+                CheckState.objects.filter(target_ip_id__in=ip_ids),
+            ).values("target_ip_id", "status", "last_detail", "flapping_since"))
+            statuses = [s["status"] for s in states]
+            if not statuses:
+                continue
+            out[vm_id] = {
+                "status": worst_status(statuses),
+                "counts": status_counts(statuses),
+                "monitored_ips": len({s["target_ip_id"] for s in states}),
+                **_external_detail([s["last_detail"] for s in states]),
+                **_flap_rollup(s["flapping_since"] for s in states),
             }
         return Response({"statuses": out})
 
@@ -1794,11 +2294,11 @@ def bulk_status_view(request):
         for dev_id, ip_id in ip_rows:
             ips_by_device.setdefault(str(dev_id), []).append(ip_id)
         for dev_id, ip_ids in ips_by_device.items():
-            states = _scope_ip_keyed(
+            states = list(_scope_ip_keyed(
                 request,
                 tenant,
                 CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ).values("target_ip_id", "status")
+            ).values("target_ip_id", "status", "last_detail", "flapping_since"))
             statuses = [s["status"] for s in states]
             if not statuses:
                 continue
@@ -1806,6 +2306,8 @@ def bulk_status_view(request):
                 "status": worst_status(statuses),
                 "counts": status_counts(statuses),
                 "monitored_ips": len({s["target_ip_id"] for s in states}),
+                **_external_detail([s["last_detail"] for s in states]),
+                **_flap_rollup(s["flapping_since"] for s in states),
             }
         return Response({"statuses": out})
 
@@ -1851,14 +2353,14 @@ def device_snmp_view(request, device_id):
     if err is not None:
         return err
     device, tenant = resolved
-    state = (
-        DeviceSnmp.objects.filter(device=device, tenant=tenant)
-        .select_related("profile")
-        .first()
-    )
+    state = stack_state(device, tenant)
     if state is None:
         return Response(_empty_snmp(device))
-    return Response(DeviceSnmpSerializer(state).data)
+    data = DeviceSnmpSerializer(state).data
+    # A stack member reads the stack owner's observation (#148).
+    if state.device_id and state.device_id != device.id:
+        data["polled_via"] = {"id": str(state.device_id), "name": state.device.name}
+    return Response(data)
 
 
 @extend_schema(
@@ -2166,11 +2668,25 @@ def snmp_drift_list_view(request):
 
     states = [s for s in states if _is_configured(s.device)]
 
-    # Pre-fetch every polled device's intended interfaces in one query (grouped
+    # A stack owner's observation covers every member: one row per member,
+    # each compared against its own slice (#148). A member polled in its own
+    # right keeps its own row instead.
+    polled_ids = {s.device_id for s in states}
+    targets_by_state: dict = {}
+    for state in states:
+        targets = [state.device]
+        if state.device.virtual_chassis_id:
+            targets = [
+                m for m in (stack_members(state.device) or [state.device])
+                if m.id == state.device_id or m.id not in polled_ids
+            ]
+        targets_by_state[state.id] = targets
+
+    # Pre-fetch every listed device's intended interfaces in one query (grouped
     # by device) so the per-device drift compare below doesn't issue an N+1.
     ifaces_by_device: dict = {}
     for iface in Interface.objects.filter(
-        device_id__in=[s.device_id for s in states]
+        device_id__in=[t.id for ts in targets_by_state.values() for t in ts]
     ).select_related("vlan"):
         ifaces_by_device.setdefault(iface.device_id, []).append(iface)
 
@@ -2184,7 +2700,9 @@ def snmp_drift_list_view(request):
     rows = []
     # One policy read for the whole fleet, not one per device.
     skip_absent = _skip_not_present(tenant)
-    for state in states:
+    for state, target in (
+        (st, t) for st in states for t in targets_by_state[st.id]
+    ):
         # Only a confirmed-reachable poll has observed state worth comparing;
         # reachable False *or* None gets its own bucket, never a misleading
         # "in sync". (A reachable device can't match ?status=unreachable, so skip
@@ -2197,8 +2715,8 @@ def snmp_drift_list_view(request):
             if want == "unreachable":
                 continue
             items = compute_device_drift(
-                state.device, tenant, state=state,
-                intended_interfaces=ifaces_by_device.get(state.device_id, []),
+                target, tenant, state=state,
+                intended_interfaces=ifaces_by_device.get(target.id, []),
                 skip_absent=skip_absent,
             )
             status_ = "drift" if items else "in_sync"
@@ -2221,14 +2739,14 @@ def snmp_drift_list_view(request):
             if want_ifaces and k in _INTERFACE_DRIFT_KINDS and it.get("interface_id"):
                 entry = iface_drift.setdefault(
                     str(it["interface_id"]),
-                    {"device": str(state.device_id), "count": 0, "kinds": []},
+                    {"device": str(target.id), "count": 0, "kinds": []},
                 )
                 entry["count"] += 1
                 if k not in entry["kinds"]:
                     entry["kinds"].append(k)
         rows.append({
-            "device": str(state.device_id),
-            "device_name": state.device.name,
+            "device": str(target.id),
+            "device_name": target.name,
             "status": status_,
             "reachable": state.reachable,
             "drift_count": len(items),
@@ -2488,6 +3006,120 @@ def device_snmp_sync_view(request, device_id):
         )
     summary = sync_device_from_snmp(device, tenant)
     return Response({**summary, "drift": compute_device_drift(device, tenant)})
+
+
+# ─── Virtual chassis: poll, drift and sync for a whole stack (#148) ────────────
+
+def _resolve_vc(request, vc_id, action="view"):
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return None, Response({"detail": "No active tenant."}, status=403)
+    vc, _ = _scoped_get(request, VirtualChassis, "virtualchassis", action, vc_id)
+    if vc is None:
+        return None, Response({"detail": "Virtual chassis not found."}, status=404)
+    return (vc, tenant), None
+
+
+def _vc_member_ref(vc, member) -> dict:
+    return {
+        "id": str(member.id),
+        "name": member.name,
+        "vc_position": member.vc_position,
+        "is_master": vc.master_id == member.id,
+    }
+
+
+@extend_schema(
+    summary="Poll a virtual chassis over SNMP (through its owning member)",
+    tags=["monitoring"],
+    request=None,
+    responses=DeviceSnmpSerializer,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def vc_snmp_poll_view(request, vc_id):
+    """One poll for the whole stack: the designated master (else the lowest
+    member) answers for every member, and the observation is stored on it."""
+    resolved, err = _resolve_vc(request, vc_id, "change")
+    if err is not None:
+        return err
+    vc, _tenant = resolved
+    members = list(vc.members.order_by("vc_position", "name"))
+    if not members:
+        return Response({"detail": "The stack has no members."}, status=400)
+    owner = stack_owner(members[0])
+    return device_snmp_poll_view(request._request, device_id=owner.id)
+
+
+@extend_schema(
+    summary="SNMP drift for every member of a virtual chassis, from the stack's one observation",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def vc_snmp_drift_view(request, vc_id):
+    resolved, err = _resolve_vc(request, vc_id)
+    if err is not None:
+        return err
+    vc, tenant = resolved
+    members = list(vc.members.order_by("vc_position", "name"))
+    if not members:
+        return Response({"owner": None, "state": None, "members": []})
+    owner = stack_owner(members[0])
+    state = stack_state(owner, tenant)
+    return Response({
+        "owner": _vc_member_ref(vc, owner),
+        "state": (
+            {
+                "polled_at": state.polled_at,
+                "reachable": state.reachable,
+                "error": state.error,
+            }
+            if state is not None and state.polled_at
+            else None
+        ),
+        "members": [
+            {
+                "device": _vc_member_ref(vc, m),
+                "drift": compute_device_drift(m, tenant, state=state) if state else [],
+            }
+            for m in members
+        ],
+    })
+
+
+@extend_schema(
+    summary="Sync every member of a virtual chassis from the stack's SNMP observation",
+    tags=["monitoring"],
+    request=None,
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def vc_snmp_sync_view(request, vc_id):
+    """Runs the per-device sync for each member in position order, so each one
+    receives only the ports that are its own. Source-of-truth write →
+    ``device.change``."""
+    resolved, err = _resolve_vc(request, vc_id, "change")
+    if err is not None:
+        return err
+    vc, tenant = resolved
+    if not rbac.has_action(request.user, tenant, "device", "change"):
+        return Response(
+            {"detail": "You do not have permission to change devices."}, status=403
+        )
+    members = list(vc.members.order_by("vc_position", "name"))
+    out = []
+    for m in members:
+        summary = sync_device_from_snmp(m, tenant)
+        out.append({
+            "device": _vc_member_ref(vc, m),
+            "summary": summary,
+            "drift": compute_device_drift(m, tenant),
+        })
+    return Response({"members": out})
 
 
 def _binding_payload(tenant, scope, object_id):

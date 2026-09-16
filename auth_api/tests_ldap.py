@@ -77,3 +77,94 @@ class LDAPDisabledTests(TestCase):
         User.objects.create_user("local", password="pw12345!")
         self.assertIsNotNone(authenticate(username="local", password="pw12345!"))
         self.assertIsNone(authenticate(username="local", password="wrong"))
+
+
+class LDAPLoginGrantsTests(TestCase):
+    """A directory login gets everything its mapped groups say: the tenants
+    their grants name, and superuser when the mapping arms it."""
+
+    def setUp(self):
+        from core.models import Organization, Tenant
+
+        from .models import ObjectPermission
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.other = Tenant.objects.create(org=org, name="Beta", slug="beta")
+        self.group = Group.objects.create(name="Net Admins")
+        perm = ObjectPermission.objects.create(
+            name="admins", object_types=["device"], actions=["view", "change"]
+        )
+        perm.groups.add(self.group)
+        perm.tenants.add(self.tenant)
+        self.mapping = LDAPGroupMapping.objects.create(
+            ldap_group_dn="CN=Net Admins,DC=acme,DC=local", group=self.group
+        )
+        self.user = User.objects.create_user("jane")
+
+    def _login(self, tenant=None):
+        sync_user_groups(self.user, ["cn=net admins,dc=acme,dc=local"], tenant=tenant)
+        self.user.refresh_from_db()
+
+    def test_granted_tenant_lands_on_the_profile(self):
+        self._login()
+        prof = self.user.profile
+        self.assertEqual(list(prof.tenants.values_list("slug", flat=True)), ["acme"])
+        self.assertEqual(prof.current_tenant_id, self.tenant.id)
+        self.assertFalse(self.user.is_superuser)
+
+    def test_mapping_can_grant_superuser_and_never_revokes(self):
+        self.mapping.grants_superuser = True
+        self.mapping.save()
+        self._login()
+        self.assertTrue(self.user.is_superuser)
+        # The directory later omits the group: still a superuser.
+        sync_user_groups(self.user, [], tenant=None)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_superuser)
+        self.assertEqual(self.user.groups.count(), 0)
+
+    def test_tenant_directory_mapping_never_mints_superuser(self):
+        from .models import ObjectPermission
+
+        scoped = Group.objects.create(name="Acme only")
+        p = ObjectPermission.objects.create(name="s", object_types=["device"], actions=["view"])
+        p.groups.add(scoped)
+        p.tenants.add(self.tenant)
+        LDAPGroupMapping.objects.create(
+            ldap_group_dn="CN=T,DC=acme", group=scoped, tenant=self.tenant,
+            grants_superuser=True,
+        )
+        sync_user_groups(self.user, ["CN=T,DC=acme"], tenant=self.tenant)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_superuser)
+        self.assertEqual(list(self.user.groups.values_list("name", flat=True)), ["Acme only"])
+
+    def test_arming_the_flag_needs_grant_superuser(self):
+        from django.test import Client
+
+        admin = User.objects.create_user("admin", password="x", is_staff=True)
+        from .models import ObjectPermission, UserProfile
+
+        UserProfile.objects.create(user=admin, role="admin")
+        manage = ObjectPermission.objects.create(
+            name="users", object_types=["user"], actions=["view", "add", "change"]
+        )
+        manage.users.add(admin)
+        c = Client()
+        c.force_login(admin)
+        r = c.patch(
+            f"/api/ldap-group-mappings/{self.mapping.id}/",
+            data='{"grants_superuser": true}',
+            content_type="application/json",
+        )
+        self.assertIn(r.status_code, (400, 403), r.content)
+        root = User.objects.create_superuser("root", "r@e.com", "x")
+        c.force_login(root)
+        r = c.patch(
+            f"/api/ldap-group-mappings/{self.mapping.id}/",
+            data='{"grants_superuser": true}',
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["grants_superuser"])

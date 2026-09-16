@@ -584,7 +584,8 @@ class CheckTemplateSerializer(serializers.ModelSerializer):
         model = CheckTemplate
         fields = [
             "id", "name", "slug", "kind", "params", "secret_params",
-            "has_secrets", "usage_count", "interval_seconds", "timeout_ms",
+            "has_secrets", "usage_count", "interval_seconds", "interval_ms",
+            "record_every_seconds", "timeout_ms",
             "retries", "rise", "fall", "degraded_enabled", "enabled",
             "created_at", "updated_at",
         ]
@@ -618,6 +619,25 @@ class CheckTemplateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"params": str(e)})
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])[:120] or "check"
+        # The fast lane's floors: a datagram every 200 ms is fine, a TCP
+        # handshake every 200 ms to one host is not. A timeout longer than
+        # the interval would queue probes on each other, so the interval is
+        # also the timeout's ceiling.
+        interval_ms = attrs.get("interval_ms", getattr(self.instance, "interval_ms", None))
+        if interval_ms:
+            from .fastlane import MAX_INTERVAL_MS, min_interval_ms
+
+            floor = min_interval_ms(kind)
+            if interval_ms < floor or interval_ms > MAX_INTERVAL_MS:
+                raise serializers.ValidationError({
+                    "interval_ms": f"{floor}-{MAX_INTERVAL_MS} ms for a {kind} check.",
+                })
+            timeout = attrs.get("timeout_ms", getattr(self.instance, "timeout_ms", 2000))
+            if timeout > interval_ms:
+                attrs["timeout_ms"] = interval_ms
+        record = attrs.get("record_every_seconds")
+        if record is not None and record < 5:
+            raise serializers.ValidationError({"record_every_seconds": "At least 5 seconds."})
         return attrs
 
 
@@ -697,7 +717,9 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
         model = MonitoringPolicy
         fields = [
             "id", "scope", "vrf", "device_type", "device_role", "device",
-            "prefix", "enabled", "inherit", "target", "interval_seconds",
+            "prefix", "target_site", "region", "platform",
+            "match_tags", "match_name", "match_interface", "match_hardware",
+            "enabled", "inherit", "target", "interval_seconds",
             "profiles", "profile_detail", "templates", "template_detail",
             "created_at", "updated_at",
         ]
@@ -705,15 +727,14 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        from .policy_scopes import TARGET_FIELDS, target_field
+
         scope = attrs.get("scope", getattr(self.instance, "scope", ""))
         targets = {
-            "vrf": attrs.get("vrf", getattr(self.instance, "vrf", None)),
-            "device_type": attrs.get("device_type", getattr(self.instance, "device_type", None)),
-            "device_role": attrs.get("device_role", getattr(self.instance, "device_role", None)),
-            "device": attrs.get("device", getattr(self.instance, "device", None)),
-            "prefix": attrs.get("prefix", getattr(self.instance, "prefix", None)),
+            field: attrs.get(field, getattr(self.instance, field, None))
+            for field in TARGET_FIELDS
         }
-        expected = None if scope == "global" else scope
+        expected = target_field(scope)
         for key, value in targets.items():
             if key == expected:
                 if value is None:
@@ -758,18 +779,38 @@ class CheckStateSerializer(serializers.ModelSerializer):
         ]
 
 
-class CheckResultSerializer(serializers.ModelSerializer):
+class _EngineSourceMixin(serializers.Serializer):
+    """Who answered, on a history row: ``engine`` {id, name} or null, and the
+    one-word ``source`` the lists facet on. Null engine reads as local - true
+    for the core's workers and, honestly, for every row written before the
+    column existed."""
+
+    engine = serializers.SerializerMethodField()
+    source = serializers.SerializerMethodField()
+
+    def get_engine(self, obj) -> dict | None:
+        if not obj.engine_id:
+            return None
+        return {"id": str(obj.engine_id), "name": obj.engine.name}
+
+    def get_source(self, obj) -> str:
+        from .engines import source_of
+
+        return source_of(obj.engine if obj.engine_id else None)
+
+
+class CheckResultSerializer(_EngineSourceMixin, serializers.ModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
 
     class Meta:
         model = CheckResult
         fields = [
             "id", "template", "template_name", "kind", "status",
-            "latency_ms", "detail", "timestamp",
+            "latency_ms", "detail", "timestamp", "engine", "source",
         ]
 
 
-class StateTransitionSerializer(serializers.ModelSerializer):
+class StateTransitionSerializer(_EngineSourceMixin, serializers.ModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
     target_ip = serializers.SerializerMethodField()
 
@@ -777,7 +818,7 @@ class StateTransitionSerializer(serializers.ModelSerializer):
         model = StateTransition
         fields = [
             "id", "target_ip", "template", "template_name", "kind",
-            "from_status", "to_status", "at", "detail",
+            "from_status", "to_status", "at", "detail", "engine", "source",
         ]
 
     def get_target_ip(self, obj):
@@ -860,6 +901,8 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "renotify_enabled", "renotify_interval_minutes",
             "escalate_enabled", "escalate_after_minutes",
             "flap_threshold", "flap_window_minutes",
+            "auto_clear_flapping", "auto_clear_flapping_after_minutes",
+            "fast_lane_max_checks",
             "group_notifications", "group_threshold",
             "discovery_enabled", "discovery_min_prefix_length",
             "discovery_interval_minutes", "discovery_all_prefixes",
@@ -1062,6 +1105,16 @@ class AlertRuleSerializer(serializers.ModelSerializer):
 
 
 class NotificationChannelSerializer(serializers.ModelSerializer):
+    """A notification destination. ``config`` is the transport's plain target and
+    is read back; a credential (the Telegram bot token) is write-only and stored
+    encrypted in ``secrets``, so reads only report whether one is set."""
+
+    # Write-only credential - accepted on create/update, never returned.
+    bot_token = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=True
+    )
+    bot_token_set = serializers.SerializerMethodField()
+
     class Meta:
         model = NotificationChannel
         fields = [
@@ -1069,14 +1122,45 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             "enabled", "self_subscribable", "send_status_changes",
             "status_change_mode", "status_change_interval_minutes",
             "status_change_last_run", "match_prefix", "match_ip", "match_device",
+            "bot_token", "bot_token_set",
             "auto_created", "created_at", "updated_at",
         ]
         read_only_fields = [
             "created_at", "updated_at", "status_change_last_run", "auto_created",
+            "bot_token_set",
         ]
 
     # config validation per transport: which key the channel needs to deliver.
     _URL_KINDS = {"webhook", "slack", "teams", "discord"}
+    # Write-only secrets → the encrypted ``secrets`` map, keyed by field name.
+    _SECRET_FIELDS = {"bot_token": "bot_token"}
+
+    def get_bot_token_set(self, obj) -> bool:
+        return bool((obj.secrets or {}).get("bot_token"))
+
+    def _apply_secrets(self, secrets: dict, validated_data) -> dict:
+        for field, key in self._SECRET_FIELDS.items():
+            value = validated_data.pop(field, None)
+            if value is None:
+                continue  # not supplied - leave the stored secret untouched
+            if value:
+                secrets[key] = value
+            else:
+                secrets.pop(key, None)
+        return secrets
+
+    def create(self, validated_data):
+        secrets = self._apply_secrets({}, validated_data)
+        if secrets:
+            validated_data["secrets"] = secrets
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Set before super().update() so the encrypted column rides the same save.
+        instance.secrets = self._apply_secrets(
+            dict(instance.secrets or {}), validated_data
+        )
+        return super().update(instance, validated_data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -1094,6 +1178,8 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"config": "pagerduty needs an Events v2 'routing_key'."}
             )
+        if kind == "telegram":
+            self._validate_telegram(attrs, config)
         scopes = [
             attrs.get(f, getattr(self.instance, f, None))
             for f in ("match_prefix", "match_ip", "match_device")
@@ -1103,6 +1189,30 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
                 "Scope to at most one of subnet, IP or device."
             )
         return attrs
+
+    def _validate_telegram(self, attrs, config) -> None:
+        """Telegram is not URL-based: it needs a bot token (write-only, kept in
+        ``secrets``) plus the numeric chat ID, and optionally a topic/thread ID
+        for a group with Topics enabled."""
+        if not str(config.get("chat_id") or "").strip():
+            raise serializers.ValidationError(
+                {"config": "telegram needs a 'chat_id'."}
+            )
+        thread = config.get("message_thread_id")
+        if thread not in (None, ""):
+            try:
+                int(thread)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    {"config": "telegram 'message_thread_id' must be a number."}
+                ) from None
+        token = attrs.get("bot_token")
+        stored = (getattr(self.instance, "secrets", None) or {}).get("bot_token")
+        # Blank means "clear it"; omitted on update means "keep what's stored".
+        if not token and (token == "" or not stored):
+            raise serializers.ValidationError(
+                {"bot_token": "Required for a Telegram channel."}
+            )
 
 
 class NotificationSubscriptionSerializer(serializers.ModelSerializer):
@@ -1137,8 +1247,12 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
     """A monitoring engine - the built-in ``local`` or a remote **Outpost**.
 
     The auth token is never read back; the API exposes only ``token_set`` (and
-    the one-time value from the ``enroll`` action). ``kind`` is read-only: remote
-    engines are created here, the local one is the built-in singleton.
+    the one-time value from the ``enroll`` action).
+
+    ``kind`` is set on create and immutable after: an Outpost and a driver-backed
+    engine are different things, and a bound engine changing kind underneath its
+    sites would silently repoint everything. ``local`` is the built-in singleton
+    and is never created here.
     """
 
     slug = serializers.SlugField(required=False, allow_blank=True)
@@ -1149,6 +1263,24 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
     ssh_credential = serializers.JSONField(write_only=True, required=False)
     binding_count = serializers.SerializerMethodField()
     check_count = serializers.SerializerMethodField()
+
+    def validate_kind(self, value):
+        """``remote``, or a kind some driver has registered.
+
+        Validated against the registry rather than an enum so an app or plugin
+        that registers an engine kind becomes selectable without a migration -
+        the same rule DeploymentSettings.secrets_provider follows.
+        """
+        from monitoring.engine_drivers import driver_kinds
+
+        value = (value or "").strip() or MonitoringEngine.REMOTE
+        allowed = {MonitoringEngine.REMOTE} | driver_kinds()
+        if value not in allowed:
+            raise serializers.ValidationError(
+                f"Unknown engine kind '{value}'. Available: "
+                + ", ".join(sorted(allowed))
+            )
+        return value
 
     class Meta:
         model = MonitoringEngine
@@ -1162,7 +1294,7 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
             "binding_count", "check_count", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "kind", "token_set", "is_local", "ssh_configured",
+            "id", "token_set", "is_local", "ssh_configured",
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
             "created_at", "updated_at",
         ]
@@ -1180,6 +1312,14 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         if not attrs.get("slug") and attrs.get("name"):
             attrs["slug"] = slugify(attrs["name"])
+        # An Outpost and a driver-backed engine are different things, and a
+        # bound engine changing kind underneath its sites would repoint every
+        # one of them silently.
+        if self.instance and "kind" in attrs and attrs["kind"] != self.instance.kind:
+            raise serializers.ValidationError(
+                {"kind": "An engine's kind cannot change - create a new one "
+                         "and move its bindings."}
+            )
         return attrs
 
 

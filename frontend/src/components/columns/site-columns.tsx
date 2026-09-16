@@ -35,6 +35,8 @@ export type SiteColumnId =
   | "name"
   | "location"
   | "gateway_policy"
+  | "devices"
+  | "vms"
   | "prefixes"
   | "vlans"
   | "vrfs"
@@ -47,6 +49,8 @@ const CANONICAL_ORDER: SiteColumnId[] = [
   "name",
   "location",
   "gateway_policy",
+  "devices",
+  "vms",
   "prefixes",
   "vlans",
   "vrfs",
@@ -163,6 +167,18 @@ export function buildSiteColumns<T extends Site = Site>(
           }),
         },
       },
+    }),
+    devices: () => ({
+      id: "devices",
+      accessorKey: "device_count",
+      header: head("devices", "Devices"),
+      cell: ({ row }) => count(row.original.device_count),
+    }),
+    vms: () => ({
+      id: "vms",
+      accessorKey: "vm_count",
+      header: head("vms", "VMs"),
+      cell: ({ row }) => count(row.original.vm_count),
     }),
     prefixes: () => ({
       id: "prefixes",

@@ -15,6 +15,7 @@ import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
 import { KvCard, dash, mono } from "@/components/kv-card"
+import { PhoneLink } from "@/components/cells/phone-link"
 import { BusinessHoursSummary } from "@/components/business-hours-field"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -108,7 +109,7 @@ function Body({ provider: p }: { provider: Provider }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "circuits", label: "Circuits", count: p.circuit_count },
-        { value: "networks", label: "Networks" },
+        { value: "networks", label: "Networks", count: p.network_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -200,11 +201,7 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
     },
     {
       label: "NOC phone",
-      value: p.noc_phone ? (
-        <span className="font-mono text-[13px]">{p.noc_phone}</span>
-      ) : (
-        dash
-      ),
+      value: p.noc_phone ? <PhoneLink phone={p.noc_phone} /> : dash,
       copy: p.noc_phone || undefined,
     },
   ]
@@ -219,7 +216,7 @@ function ProviderOverview({ provider: p }: { provider: Provider }) {
     },
     {
       label: "Support phone",
-      value: p.support_phone ? mono(p.support_phone) : dash,
+      value: p.support_phone ? <PhoneLink phone={p.support_phone} /> : dash,
       copy: p.support_phone || undefined,
     },
     {

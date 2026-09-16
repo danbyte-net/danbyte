@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, Eye, EyeOff } from "lucide-react"
 
 import { CHECK_TONE } from "@/components/site-map/status-colors"
 import { cn } from "@/lib/utils"
@@ -29,11 +29,55 @@ function writeFold(storageId: string, title: string, open: boolean) {
   localStorage.setItem(storageId, JSON.stringify(map))
 }
 
+/** Show/hide this group's objects on the map. Separate from folding: folding
+ * tidies the list, this one takes the pins off the map. */
+export interface GroupVisibility {
+  shown: boolean
+  onChange: (shown: boolean) => void
+  /** What is being hidden, for the tooltip - e.g. "Access Point devices". */
+  what: string
+}
+
+/** The eye button both the group headers and the site rows use, so hiding a
+ * role and hiding one site look and behave the same. */
+export function VisibilityToggle({ vis }: { vis: GroupVisibility }) {
+  const Icon = vis.shown ? Eye : EyeOff
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      // Inside a <button> header, so it cannot be a nested button - and the
+      // click must not reach the fold underneath.
+      onClick={(e) => {
+        e.stopPropagation()
+        vis.onChange(!vis.shown)
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return
+        e.preventDefault()
+        e.stopPropagation()
+        vis.onChange(!vis.shown)
+      }}
+      aria-label={`${vis.shown ? "Hide" : "Show"} ${vis.what} on the map`}
+      title={`${vis.shown ? "Hide" : "Show"} ${vis.what} on the map`}
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded",
+        vis.shown
+          ? "text-muted-foreground/60 hover:text-foreground"
+          : "text-foreground"
+      )}
+    >
+      <Icon className="size-3" />
+    </span>
+  )
+}
+
 export function FoldableGroup({
   title,
   badge,
   count,
   extra,
+  visibility,
   defaultOpen = true,
   storageId,
   children,
@@ -45,6 +89,8 @@ export function FoldableGroup({
   /** Trailing header content before the count - e.g. health count chips,
    * visible even when the group is folded. */
   extra?: React.ReactNode
+  /** Adds the eye toggle to the header. Omit for a group that is only a list. */
+  visibility?: GroupVisibility
   defaultOpen?: boolean
   /** localStorage key of a {title: open} map; set it and the fold survives
    * the visit (per browser, like the other sidebar prefs). */
@@ -73,8 +119,16 @@ export function FoldableGroup({
           )}
         />
         {badge}
-        <span className="truncate">{title}</span>
+        <span
+          className={cn(
+            "truncate",
+            visibility && !visibility.shown && "text-muted-foreground/60"
+          )}
+        >
+          {title}
+        </span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
+          {visibility && <VisibilityToggle vis={visibility} />}
           {extra}
           <span className="num text-[11px] text-muted-foreground/70">
             {count}

@@ -14,6 +14,10 @@ import { BookmarksWidget } from "./widget-bookmarks"
 import { ChangelogWidget } from "./widget-changelog"
 import { ExpiredCertsWidget, ExpiringCertsWidget } from "./widget-certificates"
 import { CertHealthWidget } from "./widget-cert-health"
+import { FlappingWidget } from "./widget-flapping"
+import { StatusHistoryWidget } from "./widget-status-history"
+import type { StatusHistoryConfig } from "./widget-status-history"
+import { AlertsPerDay, LatencyWeek } from "./widget-monitoring-charts"
 import { MyTasksWidget } from "./widget-tasks"
 
 // Lazy - pulls in the floor-plan canvas only when the widget is actually shown.
@@ -46,12 +50,17 @@ export type WidgetId =
   | "device-manufacturer"
   | "check-status"
   | "alerts-severity"
+  | "flapping"
+  | "availability"
+  | "alerts-per-day"
+  | "latency-week"
   | "expiring-certs"
   | "expired-certs"
   | "cert-health"
   | "my-tasks"
   | "map"
   | "floorplan"
+  | "status-history"
 
 import type { WidgetMeta } from "@/lib/dashboard-layout"
 
@@ -87,20 +96,66 @@ export function baseWidgetId(id: string): WidgetId {
 // rows). Donuts keep a small ceiling - their charts are fixed-size, so a huge
 // tile is empty border. Lists grow to full width; changelog/tasks/map to
 // near-full dashboard, which is the #41 request.
-const D: WidgetMeta = { span: { w: 2, h: 2 }, min: { w: 2, h: 2 }, max: { w: 6, h: 4 } }
-const DONUT: WidgetMeta = { span: { w: 2, h: 2 }, min: { w: 1, h: 2 }, max: { w: 3, h: 3 } }
-const BIGGY: WidgetMeta = { span: { w: 3, h: 3 }, min: { w: 2, h: 2 }, max: { w: 6, h: 6 } }
+const D: WidgetMeta = {
+  span: { w: 2, h: 2 },
+  min: { w: 2, h: 2 },
+  max: { w: 6, h: 4 },
+}
+const DONUT: WidgetMeta = {
+  span: { w: 2, h: 2 },
+  min: { w: 1, h: 2 },
+  max: { w: 3, h: 3 },
+}
+const BIGGY: WidgetMeta = {
+  span: { w: 3, h: 3 },
+  min: { w: 2, h: 2 },
+  max: { w: 6, h: 6 },
+}
 export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
-  "reachable-gauge": DONUT, "ip-status": DONUT, "ip-role": DONUT,
-  "ip-scope": DONUT, "prefix-family": DONUT, "prefix-status": DONUT,
-  "device-status": DONUT, "check-status": DONUT, "alerts-severity": DONUT,
-  "object-counts": { span: { w: 4, h: 2 }, min: { w: 2, h: 2 }, max: { w: 6, h: 4 } },
+  "reachable-gauge": DONUT,
+  "ip-status": DONUT,
+  "ip-role": DONUT,
+  "ip-scope": DONUT,
+  "prefix-family": DONUT,
+  "prefix-status": DONUT,
+  "device-status": DONUT,
+  "check-status": DONUT,
+  "alerts-severity": DONUT,
+  availability: DONUT,
+  "alerts-per-day": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
+  },
+  "latency-week": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
+  },
+  "object-counts": {
+    span: { w: 4, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
+  },
   bookmarks: { span: { w: 2, h: 2 }, min: { w: 1, h: 1 }, max: { w: 4, h: 4 } },
   changelog: BIGGY,
-  "my-tasks": { span: { w: 2, h: 3 }, min: { w: 2, h: 2 }, max: { w: 6, h: 6 } },
-  "cert-health": { span: { w: 2, h: 2 }, min: { w: 2, h: 1 }, max: { w: 6, h: 4 } },
+  "my-tasks": {
+    span: { w: 2, h: 3 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 6 },
+  },
+  "cert-health": {
+    span: { w: 2, h: 2 },
+    min: { w: 2, h: 1 },
+    max: { w: 6, h: 4 },
+  },
   map: BIGGY,
   floorplan: BIGGY,
+  "status-history": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 1 },
+    max: { w: 6, h: 4 },
+  },
 }
 
 /** The built-in layout, hand-placed on the 6-column grid rather than flowed:
@@ -383,6 +438,41 @@ export const CATALOG: WidgetDef[] = [
     render: () => <CertHealthWidget />,
   },
   {
+    id: "availability",
+    fit: "center",
+    title: "Availability",
+    description: "Seven days: time reachable over time measured",
+    render: (d) => (
+      <RadialGauge
+        value={d.availability_7d}
+        label="7-day availability"
+        color="var(--color-emerald-500)"
+      />
+    ),
+  },
+  {
+    id: "alerts-per-day",
+    fit: "stretch",
+    title: "Alerts per day",
+    description: "Opened against resolved, the last seven days",
+    render: (d) => <AlertsPerDay rows={d.alerts_per_day} />,
+  },
+  {
+    id: "latency-week",
+    fit: "stretch",
+    title: "Latency",
+    description:
+      "Median and 95th percentile across every check, hourly, seven days",
+    render: (d) => <LatencyWeek rows={d.latency_series} />,
+  },
+  {
+    id: "flapping",
+    fit: "scroll",
+    title: "Flapping",
+    description: "Checks bouncing between states, until someone confirms",
+    render: (d) => <FlappingWidget rows={d.flapping} />,
+  },
+  {
     id: "expiring-certs",
     title: "Expiring certificates",
     description: "Certificates expired or expiring within 30 days",
@@ -412,6 +502,20 @@ export const CATALOG: WidgetDef[] = [
         planId={(ctx?.config?.plan as string) || undefined}
         editing={ctx?.editing}
         onPlanChange={(id) => ctx?.setConfig({ plan: id })}
+      />
+    ),
+  },
+  {
+    id: "status-history",
+    fit: "scroll",
+    multi: true,
+    title: "Status history",
+    description: "The status strips of addresses and devices you choose",
+    render: (_d, ctx) => (
+      <StatusHistoryWidget
+        config={ctx?.config as StatusHistoryConfig | undefined}
+        editing={ctx?.editing}
+        onChange={(c) => ctx?.setConfig({ ...c })}
       />
     ),
   },

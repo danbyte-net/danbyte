@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
-import { Field, FormSelect } from "@/components/forms"
+import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { RowActions } from "@/components/row-actions"
 import { timeAgo } from "@/components/cells/time-ago"
 import { SettingsCard } from "@/components/settings/settings-card"
@@ -25,6 +25,7 @@ export function ApiTokensSection() {
   const qc = useQueryClient()
   const [name, setName] = useState("")
   const [tenantId, setTenantId] = useState<string | null>(null)
+  const [readOnly, setReadOnly] = useState(false)
   const [created, setCreated] = useState<ApiTokenCreated | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -42,11 +43,16 @@ export function ApiTokensSection() {
     mutationFn: () =>
       api<ApiTokenCreated>("/api/api-tokens/", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim(), tenant_id: tenantId }),
+        body: JSON.stringify({
+          name: name.trim(),
+          tenant_id: tenantId,
+          scope: readOnly ? "read" : "full",
+        }),
       }),
     onSuccess: (t) => {
       setCreated(t)
       setName("")
+      setReadOnly(false)
       setCopied(false)
       qc.invalidateQueries({ queryKey: ["api-tokens"] })
     },
@@ -86,6 +92,18 @@ export function ApiTokensSection() {
       id: "tenant",
       header: "Tenant",
       cell: (t) => <span className="text-xs">{t.tenant.name}</span>,
+    },
+    {
+      id: "scope",
+      header: "Scope",
+      cell: (t) =>
+        t.scope === "read" ? (
+          <Badge variant="secondary" className="text-[10px]">
+            read only
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">full</span>
+        ),
     },
     {
       id: "prefix",
@@ -167,30 +185,38 @@ export function ApiTokensSection() {
         empty="No tokens yet."
       />
 
-      <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-        <Field label="Name">
-          <Input
-            placeholder="awx-runner"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+      <div className="grid gap-3 rounded-lg border border-border p-3">
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <Field label="Name">
+            <Input
+              placeholder="awx-runner"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+          <FormSelect
+            label="Tenant"
+            value={tenantId}
+            onChange={setTenantId}
+            options={(tenants.data?.results ?? []).map((t) => ({
+              value: t.id,
+              label: t.name,
+            }))}
+            placeholder="Pick a tenant"
           />
-        </Field>
-        <FormSelect
-          label="Tenant"
-          value={tenantId}
-          onChange={setTenantId}
-          options={(tenants.data?.results ?? []).map((t) => ({
-            value: t.id,
-            label: t.name,
-          }))}
-          placeholder="Pick a tenant"
+          <Button
+            onClick={() => create.mutate()}
+            disabled={!name.trim() || !tenantId || create.isPending}
+          >
+            {create.isPending ? "Creating..." : "Create token"}
+          </Button>
+        </div>
+        <FormCheckbox
+          label="Read only"
+          hint="Refused for every write, whatever your own permissions allow."
+          checked={readOnly}
+          onChange={setReadOnly}
         />
-        <Button
-          onClick={() => create.mutate()}
-          disabled={!name.trim() || !tenantId || create.isPending}
-        >
-          Create token
-        </Button>
       </div>
     </SettingsCard>
   )

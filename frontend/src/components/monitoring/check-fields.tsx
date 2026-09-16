@@ -1,4 +1,6 @@
-import { type CheckKind, type CheckTemplate } from "@/lib/api"
+import { useQuery } from "@tanstack/react-query"
+
+import { api, type CheckKind, type CheckTemplate } from "@/lib/api"
 import {
   FormCheckbox,
   FormSelect,
@@ -10,7 +12,11 @@ import {
 // the value→{params, secret_params} builder. Used by both the Add-check dialog
 // and the Check-template editor so they stay perfectly in sync.
 
-export const KINDS: { value: CheckKind; label: string }[] = [
+/** The kinds Danbyte ships, with the fields each one carries. Used as the
+ * fallback list before the server answers - and it is only a fallback: the
+ * checker registry is what can actually run, and a plugin or an engine driver
+ * can register a kind this file has never heard of. */
+export const KINDS: { value: string; label: string }[] = [
   { value: "icmp", label: "ICMP (ping)" },
   { value: "tcp", label: "TCP port" },
   { value: "udp", label: "UDP port" },
@@ -22,6 +28,26 @@ export const KINDS: { value: CheckKind; label: string }[] = [
   { value: "exec", label: "Script / exec" },
 ]
 
+/**
+ * Every selectable kind, from the checker registry.
+ *
+ * Hard-coding this list is how a registered kind ends up existing on the
+ * server and being unreachable from the UI - which is exactly what happened to
+ * the Zabbix check kind. Falls back to the built-in list while the request is
+ * in flight or if it fails, so the dialog is never empty.
+ */
+export function useCheckKinds(): { value: string; label: string }[] {
+  const q = useQuery({
+    queryKey: ["check-kinds"],
+    queryFn: () =>
+      api<{ kinds: { value: string; label: string }[] }>(
+        "/api/monitoring/check-kinds/"
+      ),
+    staleTime: 60 * 60_000,
+  })
+  return q.data?.kinds.length ? q.data.kinds : KINDS
+}
+
 export const INTERVALS = [
   { value: "60", label: "1 minute" },
   { value: "300", label: "5 minutes" },
@@ -31,6 +57,59 @@ export const INTERVALS = [
   { value: "21600", label: "6 hours" },
   { value: "86400", label: "Daily" },
 ]
+
+/** Fast-lane intervals, encoded as `ms:<n>` so one select holds both
+ * cadences. 200 ms and 500 ms are ICMP only - the server refuses them for a
+ * kind that opens a connection. */
+export const FAST_INTERVALS = [
+  { value: "ms:200", label: "200 ms" },
+  { value: "ms:500", label: "500 ms" },
+  { value: "ms:1000", label: "1 second" },
+  { value: "ms:2000", label: "2 seconds" },
+  { value: "ms:5000", label: "5 seconds" },
+  { value: "ms:10000", label: "10 seconds" },
+  { value: "ms:30000", label: "30 seconds" },
+]
+
+/** The picker for a check's own interval: the fast lane first, then the
+ * minute beat. Policies and the tenant default keep `INTERVALS` alone. */
+export function checkIntervals(kind: string) {
+  const fast =
+    kind === "icmp"
+      ? FAST_INTERVALS
+      : FAST_INTERVALS.filter((o) => Number(o.value.slice(3)) >= 1000)
+  return [...fast, ...INTERVALS]
+}
+
+export const RECORD_EVERY = [
+  { value: "15", label: "15 seconds" },
+  { value: "30", label: "30 seconds" },
+  { value: "60", label: "1 minute" },
+  { value: "300", label: "5 minutes" },
+]
+
+export const isFastInterval = (v: string) => v.startsWith("ms:")
+
+/** The select's value for a template's cadence. */
+export function intervalValue(t: {
+  interval_seconds: number
+  interval_ms?: number | null
+}): string {
+  return t.interval_ms ? `ms:${t.interval_ms}` : String(t.interval_seconds)
+}
+
+/** The payload for a select value. A fast pick keeps `interval_seconds` as
+ * the fallback cadence (one minute when the template had none faster). */
+export function intervalBody(
+  value: string,
+  fallbackSeconds?: number
+): { interval_seconds: number; interval_ms: number | null } {
+  if (isFastInterval(value)) {
+    const fb = fallbackSeconds && fallbackSeconds < 300 ? fallbackSeconds : 60
+    return { interval_seconds: fb, interval_ms: Number(value.slice(3)) }
+  }
+  return { interval_seconds: Number(value), interval_ms: null }
+}
 
 type FieldType =
   | "text"
@@ -225,9 +304,16 @@ export const SPECS: Record<CheckKind, Spec[]> = {
   ],
 }
 
-export function initialValues(kind: CheckKind): Vals {
+/** The fields a kind carries. A registered kind this build has no spec for -
+ * a Zabbix check, a plugin's own - has none, which is correct rather than a
+ * crash: what it watches is configured where it runs. */
+export function specsFor(kind: string): Spec[] {
+  return SPECS[kind as CheckKind] ?? []
+}
+
+export function initialValues(kind: string): Vals {
   const out: Vals = {}
-  for (const s of SPECS[kind])
+  for (const s of specsFor(kind))
     out[s.key] = s.default ?? (s.type === "checkbox" ? false : "")
   return out
 }
@@ -237,7 +323,7 @@ export function initialValues(kind: CheckKind): Vals {
 export function valuesFromTemplate(t: CheckTemplate): Vals {
   const out = initialValues(t.kind)
   const params = (t.params ?? {}) as Record<string, unknown>
-  for (const s of SPECS[t.kind]) {
+  for (const s of specsFor(t.kind)) {
     if (s.secret) continue
     const v = params[s.key]
     if (v === undefined) continue
@@ -251,11 +337,11 @@ export function valuesFromTemplate(t: CheckTemplate): Vals {
   return out
 }
 
-export function visibleSpecs(kind: CheckKind, vals: Vals): Spec[] {
-  return SPECS[kind].filter((s) => !s.when || s.when(vals))
+export function visibleSpecs(kind: string, vals: Vals): Spec[] {
+  return specsFor(kind).filter((s) => !s.when || s.when(vals))
 }
 
-export function missingRequired(kind: CheckKind, vals: Vals): boolean {
+export function missingRequired(kind: string, vals: Vals): boolean {
   return visibleSpecs(kind, vals).some(
     (s) => s.required && String(vals[s.key] ?? "").trim() === ""
   )
@@ -263,7 +349,7 @@ export function missingRequired(kind: CheckKind, vals: Vals): boolean {
 
 /** Split the field values into the public `params` and the encrypted
  * `secret_params` payloads, with per-type coercion. */
-export function buildParams(kind: CheckKind, vals: Vals) {
+export function buildParams(kind: string, vals: Vals) {
   const params: Record<string, unknown> = {}
   const secret_params: Record<string, unknown> = {}
   for (const s of visibleSpecs(kind, vals)) {
@@ -291,7 +377,7 @@ export function CheckFields({
   vals,
   onChange,
 }: {
-  kind: CheckKind
+  kind: string
   vals: Vals
   onChange: (key: string, value: string | boolean) => void
 }) {

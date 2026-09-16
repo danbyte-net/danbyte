@@ -1,19 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type Platform } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
+import { buildPlatformColumns } from "@/components/columns/platform-columns"
 import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
-import { numidColumn } from "@/components/cells/numid"
-import { timeAgoColumn } from "@/components/cells/time-ago"
-import { lifecycleColumn } from "@/components/cells/lifecycle-cell"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
-import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/platforms/")({
@@ -38,9 +34,19 @@ function PlatformsPage() {
   const rows = query.data?.results ?? []
 
   const handleDelete = useCallback((p: Platform) => setDeleting(p), [])
-  const columns = useMemo<ColumnDef<Platform>[]>(
+  const columns = useMemo(
     () =>
-      buildColumns({ onDelete: handleDelete, canEdit, canDelete, humanIds }),
+      buildPlatformColumns<Platform>({
+        selection: true,
+        humanIds,
+        actions: {
+          editTo: "/platforms/$id/edit",
+          editParams: (p) => ({ id: p.id }),
+          canEdit: () => canEdit,
+          onDelete: handleDelete,
+          canDelete: () => canDelete,
+        },
+      }),
     [handleDelete, canEdit, canDelete, humanIds]
   )
   const {
@@ -92,98 +98,3 @@ function PlatformsPage() {
   )
 }
 
-function buildColumns({
-  onDelete,
-  canEdit,
-  canDelete,
-  humanIds,
-}: {
-  onDelete: (p: Platform) => void
-  canEdit: boolean
-  canDelete: boolean
-  humanIds: boolean
-}): ColumnDef<Platform>[] {
-  return [
-    selectionColumn<Platform>(),
-    ...(humanIds ? [numidColumn<Platform>({ get: (r) => r.numid })] : []),
-    {
-      id: "name",
-      accessorKey: "name",
-      header: ({ column }) => <SortHeader column={column} label="Name" />,
-      cell: ({ row }) => (
-        <Link
-          to="/platforms/$id"
-          params={{ id: row.original.id }}
-          className="link font-medium"
-        >
-          {row.original.name}
-        </Link>
-      ),
-    },
-    {
-      id: "manufacturer",
-      accessorFn: (r) => r.manufacturer?.name ?? "",
-      header: ({ column }) => (
-        <SortHeader column={column} label="Manufacturer" />
-      ),
-      cell: ({ row }) =>
-        row.original.manufacturer ? (
-          <Link
-            to="/manufacturers/$id"
-            params={{ id: row.original.manufacturer.id }}
-            className="link text-xs"
-          >
-            {row.original.manufacturer.name}
-          </Link>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-      meta: {
-        facet: {
-          kind: "enum",
-          label: "Manufacturer",
-          get: (r: Platform) => r.manufacturer?.id ?? "__none__",
-          formatValue: (_v, r) => ({
-            label: r.manufacturer?.name ?? "No manufacturer",
-          }),
-        },
-      },
-    },
-    {
-      id: "devices",
-      accessorKey: "device_count",
-      header: ({ column }) => <SortHeader column={column} label="Devices" />,
-      cell: ({ row }) => (
-        <span className="num text-xs">{row.original.device_count}</span>
-      ),
-    },
-    lifecycleColumn<Platform>({ get: (r) => r, header: "OS lifecycle" }),
-    {
-      id: "description",
-      accessorKey: "description",
-      header: "Description",
-      cell: ({ row }) => (
-        <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "-"}
-        </span>
-      ),
-    },
-    timeAgoColumn<Platform>({
-      id: "updated",
-      header: "Updated",
-      get: (r) => r.updated_at,
-      align: "right",
-    }),
-    {
-      id: "actions",
-      enableHiding: false,
-      cell: ({ row }) => (
-        <RowActions
-          editTo={canEdit ? "/platforms/$id/edit" : undefined}
-          editParams={{ id: row.original.id }}
-          onDelete={canDelete ? () => onDelete(row.original) : undefined}
-        />
-      ),
-    },
-  ]
-}

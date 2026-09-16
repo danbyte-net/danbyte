@@ -1,7 +1,11 @@
 import { useState } from "react"
 import { Info, X } from "lucide-react"
 
-import { typeColor, type EdgeColorMode, type NodeStyle } from "./topology-canvas"
+import {
+  typeColor,
+  type EdgeColorMode,
+  type NodeStyle,
+} from "./topology-canvas"
 
 // Line-key legend for the topology views. Collapsible, remembered per
 // browser, and its rows adapt to the active view + color mode so it only
@@ -34,7 +38,13 @@ function Line({
   )
 }
 
-function RowItem({ swatch, label }: { swatch: React.ReactNode; label: string }) {
+function RowItem({
+  swatch,
+  label,
+}: {
+  swatch: React.ReactNode
+  label: string
+}) {
   return (
     <div className="flex items-center gap-2">
       {swatch}
@@ -72,9 +82,7 @@ export function CanvasLegend({
   /** Media types present on the map - swatched when coloring by type. */
   types?: string[]
 }) {
-  const [open, setOpen] = useState(
-    () => localStorage.getItem(KEY) !== "closed"
-  )
+  const [open, setOpen] = useState(() => localStorage.getItem(KEY) !== "closed")
   const toggle = (v: boolean) => {
     setOpen(v)
     localStorage.setItem(KEY, v ? "open" : "closed")
@@ -136,6 +144,10 @@ export function CanvasLegend({
             <RowItem
               swatch={<Line dash="6 4" width={1.5} />}
               label="LLDP, no cable"
+            />
+            <RowItem
+              swatch={<Line dash="3 5" width={1.25} color="var(--primary)" />}
+              label="BGP session"
             />
             <RowItem
               swatch={

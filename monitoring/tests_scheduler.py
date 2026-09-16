@@ -177,7 +177,12 @@ class DispatchTests(Base):
         self.assertEqual(CheckResult.objects.filter(target_ip=self.ip).count(), 1)
 
     def test_nothing_due_is_noop(self):
-        self.assertEqual(dispatch(sync=True), {"due": 0, "jobs": 0, "reaped": 0})
+        # `claimed` counts what engine drivers answered for themselves - zero
+        # here, and present on both exits so a tick always reports one shape.
+        self.assertEqual(
+            dispatch(sync=True),
+            {"due": 0, "jobs": 0, "reaped": 0, "claimed": 0},
+        )
 
     def test_in_flight_states_not_redispatched(self):
         from django.utils import timezone

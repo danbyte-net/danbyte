@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{ name }} - spec sheet</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 14mm 18mm 14mm;
+    @bottom-left { content: "{{ name }}"; font: 8pt "DejaVu Sans", sans-serif; color: #6b7280; }
+    @bottom-center { content: "{{ meta.url }}"; font: 7.5pt "DejaVu Sans Mono", monospace; color: #9ca3af; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt "DejaVu Sans", sans-serif; color: #6b7280; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #111827;
+    font: 9.5pt/1.4 "DejaVu Sans", "Helvetica Neue", Arial, sans-serif; }
+  .mono { font-family: "DejaVu Sans Mono", Menlo, monospace; font-size: 9pt; }
+  .muted { color: #6b7280; }
+  .vendor { font: 7.5pt "DejaVu Sans", sans-serif; color: #6b7280; }
+  header.top { display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 2px solid #111827; padding-bottom: 6mm; margin-bottom: 6mm; }
+  header.top > div:first-child { flex: 1 1 auto; min-width: 0; }
+  header.top h1 { font-size: 22pt; font-weight: 700; margin: 0 0 2mm 0; letter-spacing: -0.01em;
+    overflow-wrap: anywhere; }
+  header.top .sub { font-size: 10pt; color: #4b5563; }
+  header.top .brand { flex: 0 0 auto; margin-left: 8mm; text-align: right; font-size: 8.5pt;
+    color: #6b7280; white-space: nowrap; }
+  header.top .brand img { max-height: 12mm; max-width: 45mm; display: block; margin: 0 0 2mm auto; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 8.5pt;
+    font-weight: 600; vertical-align: middle; margin-left: 3mm; }
+  .stats { display: flex; gap: 4mm; margin: 0 0 7mm 0; }
+  .stat { flex: 1; border: 1px solid #d1d5db; border-radius: 4px; padding: 4mm 4mm 3.5mm; }
+  .stat .label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; }
+  .stat .value { font-size: 18pt; font-weight: 700; margin-top: 1mm; }
+  .stat .hint { font-size: 8pt; color: #6b7280; margin-top: 0.5mm; }
+  h2 { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280;
+    margin: 6mm 0 2mm 0; padding-bottom: 1mm; border-bottom: 1px solid #e5e7eb; }
+  section { page-break-inside: auto; }
+  .kv { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8mm; row-gap: 0; }
+  .kv .row { display: flex; gap: 3mm; padding: 1.2mm 0; border-bottom: 1px solid #f3f4f6; }
+  .kv .k { width: 34mm; flex: 0 0 34mm; color: #6b7280; font-size: 8.5pt; }
+  .kv .v { flex: 1; word-break: break-word; }
+  table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  th { text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #d1d5db;
+    padding: 1.5mm 2mm; font-size: 8pt; }
+  td { padding: 1.4mm 2mm; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  tr { page-break-inside: avoid; }
+  td.num, th.num { text-align: right; }
+  .sub1 { padding-left: 6mm; color: #4b5563; }
+  .dot { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; margin-right: 1.5mm;
+    vertical-align: middle; }
+  .on { background: #16a34a; } .off { background: #d1d5db; }
+  .comments { white-space: pre-wrap; border-left: 2px solid #e5e7eb; padding: 1mm 0 1mm 4mm; color: #374151; }
+  .elevation { margin: 0 0 5mm 0; }
+  .elevation .strip { page-break-inside: avoid; margin-bottom: 3mm; }
+  .elevation img { display: block; width: 100%; max-height: 40mm; object-fit: contain;
+    border: 1px solid #e5e7eb; border-radius: 3px; background: #fafafa; }
+  .elevation .cap { font-size: 8pt; color: #6b7280; margin-top: 1mm; }
+  .images { display: flex; flex-wrap: wrap; gap: 4mm; margin: 0 0 6mm 0; }
+  .figure { width: calc(50% - 2mm); page-break-inside: avoid; }
+  .figure img { max-width: 100%; max-height: 60mm; border: 1px solid #e5e7eb; border-radius: 3px; }
+  .figure .cap { font-size: 8pt; color: #6b7280; margin-top: 1mm; }
+  .empty { color: #9ca3af; font-size: 8.5pt; }
+  .ports { border: 1px solid #d1d5db; border-radius: 4px; padding: 3.5mm 4mm; page-break-inside: avoid; }
+  .ports .head { display: flex; justify-content: space-between; font-size: 10pt; }
+  .ports .head b { font-size: 12pt; }
+  .ports .bar { display: flex; height: 3mm; background: #e5e7eb; border-radius: 2mm; overflow: hidden; margin: 2.5mm 0 2mm; }
+  .ports .bar .c { background: #16a34a; } .ports .bar .r { background: #f59e0b; }
+  .ports .legend { font-size: 8pt; color: #6b7280; }
+  .ports .legend .sw { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; margin: 0 1mm 0 3mm; vertical-align: middle; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>{{ name }}{% if status %}<span class="pill" style="background:{{ status.color }};color:#111">{{ status.name }}</span>{% endif %}</h1>
+    {% if subtitle %}<div class="sub">{{ subtitle }}</div>{% endif %}
+  </div>
+  <div class="brand">
+    {% if meta.logo %}<img src="{{ meta.logo }}" alt="">{% endif %}
+    <div>{{ meta.deployment }}</div>
+    <div>{{ meta.generated|date:"Y-m-d H:i" }} UTC</div>
+  </div>
+</header>
+
+{% if elevation %}
+<div class="elevation">
+  {% for im in elevation %}<div class="strip"><img src="{{ im.src }}" alt=""><div class="cap">{{ im.caption }}</div></div>{% endfor %}
+</div>
+{% endif %}
+<div class="stats">
+  {% for s in stats %}
+  <div class="stat">
+    <div class="label">{{ s.label }}</div>
+    <div class="value">{{ s.value }}</div>
+    {% if s.hint %}<div class="hint">{{ s.hint }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<section>
+  <h2>Details</h2>
+  <div class="kv">
+    {% for k, v in details %}<div class="row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>{% endfor %}
+  </div>
+</section>
+
+{% if ports %}
+<section>
+  <h2>Port utilization</h2>
+  <div class="ports">
+    <div class="head"><span><b>{{ ports.used }}</b> of <b>{{ ports.total }}</b> ports used</span><span>{{ ports.pct }} %</span></div>
+    <div class="bar"><div class="c" style="width:{{ ports.connected_pct|floatformat:2 }}%"></div><div class="r" style="width:{{ ports.reserved_pct|floatformat:2 }}%"></div></div>
+    <div class="legend"><span class="sw" style="background:#16a34a;margin-left:0"></span>{{ ports.connected }} connected<span class="sw" style="background:#f59e0b"></span>{{ ports.reserved }} reserved<span class="sw" style="background:#d1d5db"></span>{{ ports.free }} free</div>
+  </div>
+</section>
+{% endif %}
+
+{% block body %}{% endblock %}
+
+{% if comments %}
+<section>
+  <h2>Comments</h2>
+  <div class="comments">{{ comments }}</div>
+</section>
+{% endif %}
+
+{% if images %}
+<section>
+  <h2>Images</h2>
+  <div class="images">
+    {% for im in images %}<div class="figure"><img src="{{ im.src }}" alt=""><div class="cap">{{ im.caption }}</div></div>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+</body>
+</html>

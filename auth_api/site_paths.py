@@ -55,6 +55,20 @@ SITE_PATHS: dict[str, str] = {
     # Per-site settings rows - a change grant scoped to sites=[X] makes its
     # holders "site admins" of X (see core.site_settings).
     "sitesettings": "site",
+    # Routing rows hang off their device; the catalogs they reference
+    # (policies, prefix lists, keychains) are tenant-wide.
+    "staticroute": "device__site",
+    "bgpinstance": "device__site",
+    "bgpaddressfamily": "instance__device__site",
+    "bgpsession": "instance__device__site",
+    "ospfinstance": "device__site",
+    "ospfinterface": "instance__device__site",
+    "isisinstance": "device__site",
+    "isisinterface": "instance__device__site",
+    "eigrpinstance": "device__site",
+    "eigrpinterface": "instance__device__site",
+    "vtep": "device__site",
+    "vtepmembership": "vtep__device__site",
 }
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global

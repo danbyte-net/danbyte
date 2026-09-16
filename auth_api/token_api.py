@@ -19,9 +19,9 @@ class ApiTokenSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ApiToken
-        fields = ["id", "name", "tenant", "tenant_id", "prefix", "last_used_at",
-                  "expires_at", "is_expired", "created_at"]
-        read_only_fields = ["id", "prefix", "last_used_at", "is_expired",
+        fields = ["id", "name", "tenant", "tenant_id", "prefix", "scope", "kind",
+                  "last_used_at", "expires_at", "is_expired", "created_at"]
+        read_only_fields = ["id", "prefix", "kind", "last_used_at", "is_expired",
                             "created_at"]
 
 
@@ -32,7 +32,7 @@ class ApiTokenViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return (
-            ApiToken.objects.filter(user=self.request.user)
+            ApiToken.objects.filter(user=self.request.user, kind="user")
             .select_related("tenant")
             .order_by("-created_at")
         )
@@ -57,6 +57,7 @@ class ApiTokenViewSet(viewsets.ModelViewSet):
             key_hash=hash_api_key(key),
             prefix=key[:11],
             expires_at=ser.validated_data.get("expires_at"),
+            scope=ser.validated_data.get("scope", "full"),
         )
         data = ApiTokenSerializer(token).data
         data["key"] = key  # shown once, never again

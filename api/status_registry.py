@@ -24,11 +24,34 @@ STATUSABLE_MODELS = [
     ("powerfeed", "Power feeds"),
     ("wirelesslan", "Wireless LANs"),
     ("tunnel", "Tunnels"),
+    ("l2vpn", "L2VPNs"),
     ("location", "Locations"),
     ("inventoryitem", "Inventory items"),
     ("maintenanceevent", "Maintenance & outage events"),
+    ("natrule", "NAT rules"),
+    ("staticroute", "Static routes"),
+    ("bgpsession", "BGP sessions"),
+    # One scope shared by the BGP, OSPF and IS-IS instance models.
+    ("routinginstance", "Routing instances"),
+    ("vtep", "VTEPs"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
+
+# The states a monitoring check can end in - the machine's vocabulary, and the
+# names Danbyte ships for them. A tenant may relabel and recolour any one of
+# them with a Status row (``Status.monitoring_state``); the stored state never
+# changes, so alert rules, escalation and the Outpost protocol are untouched.
+# Mirrors ``monitoring.models.CheckStatus``, which lives in an app ``api`` must
+# not import - ``monitoring.tests_status_labels`` asserts the two agree.
+MONITORING_STATES = [
+    ("up", "Up"),
+    ("degraded", "Degraded"),
+    ("down", "Down"),
+    ("unknown", "Unknown"),
+    ("stale", "Stale"),
+    ("skipped", "Skipped"),
+]
+MONITORING_STATE_VALUES = {s[0] for s in MONITORING_STATES}
 
 # Built-in status value → swatch hex, grouped by meaning (emerald = healthy,
 # amber = transitional, red = bad, neutral zinc = inactive/none).
@@ -114,6 +137,16 @@ STATUS_MODEL_VALUES = {
     "powerfeed": ["planned", "active", "offline", "failed"],
     "wirelesslan": ["active", "reserved", "disabled", "deprecated"],
     "tunnel": ["planned", "active", "disabled"],
+    "l2vpn": ["planned", "active", "disabled"],
+    # NAT rules (#151): a mapping is on, on its way, or written down but not
+    # in force. Nothing here means "broken" - a rule that stopped working is
+    # a device problem, not a state of the record.
+    "natrule": ["active", "planned", "disabled"],
+    # Static routes: in the table, on the way, or written down and off.
+    "staticroute": ["active", "planned", "disabled"],
+    "bgpsession": ["active", "planned", "disabled"],
+    "routinginstance": ["active", "planned", "disabled"],
+    "vtep": ["active", "planned", "disabled"],
     "location": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.

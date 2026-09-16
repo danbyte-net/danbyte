@@ -327,3 +327,9 @@ def _apply_profile_and_groups(provider, user, claims, subject="") -> None:
         if prof.current_tenant_id is None:
             prof.current_tenant = prov_tenant
             prof.save(update_fields=["current_tenant"])
+    # The mapped groups' tenant-scoped grants are tenant access too - put them
+    # on the profile so the account has a home tenant and shows up in the
+    # tenant's user list without a manual edit.
+    from .permissions import adopt_granted_tenants
+
+    adopt_granted_tenants(user)

@@ -18,6 +18,8 @@ import {
 import { ThemeProvider } from "@/components/theme-provider"
 import { LinkPrefsProvider } from "@/components/link-prefs-provider"
 import { AppSidebar } from "@/components/app-sidebar"
+import { ChatDock } from "@/components/chat/chat-dock-panel"
+import { ChatDockProvider } from "@/components/chat/chat-dock"
 import { SiteHeader } from "@/components/site-header"
 import { OnboardingWizard } from "@/components/onboarding-wizard"
 import { UpdatePrompt } from "@/components/update-prompt"
@@ -29,6 +31,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { Spinner } from "@/components/ui/spinner"
 import { useEffect } from "react"
 import { useMe } from "@/lib/use-me"
+import { useLoadStatusLabels } from "@/components/monitoring/status-palette"
 import { pageTitle, setTitleSuffix } from "@/lib/page-title"
 import { setUnauthorizedHandler } from "@/lib/api"
 
@@ -127,6 +130,9 @@ function AppLayout() {
   // Brand the browser tab from the admin "deployment name" setting (falls back
   // to Danbyte). useMe is cached, so this is a no-op fetch after first load.
   const { me, isLoading } = useMe()
+  // One fetch for the tenant's own names for the six check states, warm before
+  // any list paints its Monitoring column (see status-palette.ts).
+  useLoadStatusLabels(me.is_authenticated)
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // Routes reachable without a session - rendered bare, no sidebar, and the
@@ -206,24 +212,29 @@ function AppLayout() {
     >
       <AppSidebar variant="inset" />
       <PresenceProvider>
-        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
-          <SiteHeader />
-          {/* min-w-0 is load-bearing on mobile: without it a wide table/tab
+        <ChatDockProvider>
+          <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+            <SiteHeader />
+            {/* min-w-0 is load-bearing on mobile: without it a wide table/tab
               strip forces this column past the viewport and SidebarInset's
               overflow-hidden clips it (unreachable). With it, the width is
               capped and the page's own overflow-x-auto containers scroll. */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {/* Keyed on the pathname: a crashed view (often a browser
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {/* Keyed on the pathname: a crashed view (often a browser
                 extension mutating React's DOM on unmount) recovers the moment
                 the user navigates, instead of dead-until-refresh. */}
-            <ErrorBoundary resetKey={pathname}>
-              <Outlet />
-            </ErrorBoundary>
-          </div>
-          {/* First-run setup wizard - self-gates on a fresh tenant, renders
+              <ErrorBoundary resetKey={pathname}>
+                <Outlet />
+              </ErrorBoundary>
+            </div>
+            {/* First-run setup wizard - self-gates on a fresh tenant, renders
               nothing otherwise. Mounted once here so it overlays any page. */}
-          <OnboardingWizard me={me} />
-        </SidebarInset>
+            <OnboardingWizard me={me} />
+          </SidebarInset>
+          {/* Docked beside the app rather than over it, so the page stays
+            usable while the assistant is open. */}
+          <ChatDock />
+        </ChatDockProvider>
       </PresenceProvider>
     </SidebarProvider>
   )

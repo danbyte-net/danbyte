@@ -192,6 +192,7 @@ def _rollup_states(ip, items: list[RunItem], now) -> None:
                 "since",
                 "last_checked",
                 "last_latency_ms",
+                "last_detail",
                 "consecutive_success",
                 "consecutive_fail",
             ],

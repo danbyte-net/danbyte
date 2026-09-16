@@ -516,7 +516,11 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "monitoring", label: "Monitoring" },
-        { value: "certificates", label: "Certificates" },
+        {
+          value: "certificates",
+          label: "Certificates",
+          count: ip.certificate_count,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

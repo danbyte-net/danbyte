@@ -5,7 +5,8 @@ from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
 
-from .models import Cable, Device
+from .models import Cable, Device, Prefix
+from .test_utils import status_for
 
 
 class NumidSearchTests(APITestCase):
@@ -21,7 +22,9 @@ class NumidSearchTests(APITestCase):
     def _hit_ids(self, group, q):
         r = self.client.get(f"/api/search/?q={q}")
         self.assertEqual(r.status_code, 200, r.content)
-        return [h["id"] for h in r.json()["groups"][group]]
+        slug = {"devices": "device", "cables": "cable", "prefixes": "prefix",
+                "ips": "ipaddress", "vlans": "vlan"}.get(group, group)
+        return [h["id"] for h in r.json()["hits"] if h["type"] == slug]
 
     def test_device_found_by_short_id(self):
         dev = Device.objects.create(tenant=self.tenant, name="edge-fw")
@@ -520,4 +523,37 @@ class MarkerKeyTests(APITestCase):
         self.dt.refresh_from_db()
         self.assertEqual(
             self.dt.image_ports["front"][0]["name"], "LC 1"
+        )
+
+
+class IncludeSharedFilterTests(APITestCase):
+    """``?site=X&include_shared=1`` lists the site's prefixes and the shared
+    (site-less) space - what an IP picker for a device at X offers (#152)."""
+
+    def setUp(self):
+        from api.models import Site
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.a = Site.objects.create(tenant=self.tenant, name="A")
+        self.b = Site.objects.create(tenant=self.tenant, name="B")
+        st = status_for(self.tenant)
+        Prefix.objects.create(tenant=self.tenant, cidr="10.1.0.0/24", status=st, site=self.a)
+        Prefix.objects.create(tenant=self.tenant, cidr="10.2.0.0/24", status=st, site=self.b)
+        Prefix.objects.create(tenant=self.tenant, cidr="10.255.0.0/30", status=st)
+        admin = User.objects.create_superuser("admin", "a@e.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _cidrs(self, query):
+        return sorted(p["cidr"] for p in self.client.get(f"/api/prefixes/?{query}").json()["results"])
+
+    def test_site_filter_alone_stays_exact(self):
+        self.assertEqual(self._cidrs(f"site={self.b.id}"), ["10.2.0.0/24"])
+
+    def test_include_shared_adds_the_shared_space(self):
+        self.assertEqual(
+            self._cidrs(f"site={self.b.id}&include_shared=1"), ["10.2.0.0/24", "10.255.0.0/30"]
         )

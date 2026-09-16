@@ -204,6 +204,55 @@ class Organization(TimestampedModel):
         return self.name
 
 
+class SiteCertificate(TimestampedModel):
+    """The certificate Danbyte itself is served on - one row (``pk=1``).
+
+    The app never touches nginx and never holds root. It writes a pair into
+    ``deploy/nginx/certs/`` (a folder it owns) and a stamp file; the root
+    ``danbyte-tls.path`` unit the installer sets up notices the stamp, verifies
+    the pair, keeps the old one aside, installs, tests and reloads nginx, and
+    writes the outcome back for this row to show (``core.site_tls``).
+    """
+
+    class Source(models.TextChoices):
+        NONE = "none", "Not managed here"
+        UPLOAD = "upload", "Uploaded"
+        SELF_SIGNED = "self-signed", "Self-signed"
+        ACME = "acme", "ACME"
+
+    source = models.CharField(max_length=16, choices=Source.choices, default=Source.NONE)
+    #: Regenerate a self-signed certificate on the expiry beat once it has
+    #: under thirty days left. Only meaningful for ``source=self-signed``.
+    auto_renew = models.BooleanField(default=True)
+    #: The names the last dropped certificate answered for (``DNS:x`` / ``IP:y``).
+    names = models.JSONField(default=list, blank=True)
+    #: For ``source=acme``: the request whose key and orders back the site.
+    request = models.ForeignKey(
+        "monitoring.CertificateRequest", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    issuer = models.ForeignKey(
+        "monitoring.Issuer", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    dropped_sha256 = models.CharField(max_length=64, blank=True, default="")
+    dropped_at = models.DateTimeField(null=True, blank=True)
+    dropped_reason = models.CharField(max_length=200, blank=True, default="")
+    updated_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        verbose_name = "site certificate"
+
+    def __str__(self) -> str:
+        return f"Site certificate ({self.source})"
+
+    @classmethod
+    def load(cls) -> "SiteCertificate":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class DeploymentSettings(TimestampedModel):
     """Deployment-wide notification + outbound-delivery settings (singleton).
 
@@ -413,11 +462,12 @@ class DeploymentSettings(TimestampedModel):
     # keeps them in an external HashiCorp Vault / OpenBao. Vault connection
     # config (address, mount, auth) is added with the Vault backend; the token
     # lives in ``secrets`` (encrypted), never a plain column.
+    # Validated against monitoring.secret_store's registry (plugins can add
+    # kinds), so no fixed choices here.
     secrets_provider = models.CharField(
-        max_length=16,
+        max_length=32,
         blank=True,
         default="",
-        choices=[("", "Disabled"), ("local", "Local (encrypted)"), ("vault", "Vault / OpenBao")],
         help_text="Where issuance private keys (CSR, ACME) are stored. Blank "
         "leaves those features disabled.",
     )
@@ -434,6 +484,46 @@ class DeploymentSettings(TimestampedModel):
         help_text="KV v2 mount path secrets are written under.",
     )
     vault_verify_tls = models.BooleanField(default=True)
+
+    # Azure Key Vault connection (used only when secrets_provider == "azure").
+    # The client secret is a secret and lives in ``secrets["azure_client_secret"]``,
+    # never here. Deployment-tier for the same reason as vault_addr, which is
+    # also what lets it name a sovereign-cloud or Azure Stack endpoint.
+    azure_vault_url = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Key Vault URL, e.g. https://kv-danbyte.vault.azure.net.",
+    )
+    azure_directory_id = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Entra ID directory (tenant) ID the app registration lives in.",
+    )
+    azure_client_id = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Application (client) ID of the app registration.",
+    )
+    azure_authority = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Sign-in endpoint. Blank uses login.microsoftonline.com; set "
+        "it for Azure Government or another sovereign cloud.",
+    )
+
+    # ─── the in-app assistant's model connection ─────────────────────────
+    # Deployment tier on purpose: a tenant admin must not choose where the
+    # conversation is sent or where the key lives. The key itself is in
+    # ``secrets["ai_api_key"]``. The "local" provider is reached directly
+    # (it is RFC1918 by definition), same rationale as vault_addr above.
+    ai_provider = models.CharField(
+        max_length=16, blank=True, default="",
+        help_text="anthropic, openai (any OpenAI-compatible API) or local. "
+        "Blank leaves the in-app assistant unconfigured.",
+    )
+    ai_model = models.CharField(max_length=120, blank=True, default="")
+    ai_base_url = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Blank uses the provider's own endpoint; set it for a "
+        "gateway or a local model server.",
+    )
+    ai_verify_tls = models.BooleanField(default=True)
 
     # ─── site map tiles ──────────────────────────────────────────────────
     # Blank = OpenStreetMap's donated tile servers (light use only, per
@@ -631,6 +721,9 @@ class DeploymentSettings(TimestampedModel):
     update_window_days = models.CharField(max_length=32, blank=True, default="")
     update_window_start = models.CharField(max_length=5, blank=True, default="")
     update_window_end = models.CharField(max_length=5, blank=True, default="")
+    # Ids of the post-upgrade steps (core/upgrade_notes.py) an admin marked
+    # done. A fresh install starts with everything up to its version.
+    upgrade_notes_done = models.JSONField(default=list, blank=True)
 
     class Meta:
         verbose_name = "deployment settings"
@@ -645,7 +738,16 @@ class DeploymentSettings(TimestampedModel):
 
     @classmethod
     def load(cls) -> "DeploymentSettings":
-        obj, _ = cls.objects.get_or_create(pk=1)
+        obj, created = cls.objects.get_or_create(pk=1)
+        if created:
+            # First run: nothing to do "after upgrading" to the version we
+            # were installed at. An upgraded install keeps [] from the
+            # migration, so its notes stay pending.
+            from .upgrade_notes import ids_up_to
+            from .version import system_version
+
+            obj.upgrade_notes_done = ids_up_to(system_version()["version"])
+            obj.save(update_fields=["upgrade_notes_done"])
         return obj
 
 

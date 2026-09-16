@@ -287,7 +287,19 @@ def _mark_skipped(states, settings_map) -> None:
 # ─── shared finalise ──────────────────────────────────────────────────────
 
 
-def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_map: dict) -> None:
+def _finalise(
+    states: list[CheckState],
+    outcomes: list[CheckOutcome],
+    settings_map: dict,
+    *,
+    engine_id=None,
+) -> None:
+    """Record what came back, and who it came from.
+
+    ``engine_id`` is the engine that *ran* these - the Outpost that phoned
+    them in, the Zabbix driver - or None for the core's own workers. It goes
+    on the result and on any transition, so history can say who saw it.
+    """
     now = timezone.now()
     results: list[CheckResult] = []
     transitions: list[StateTransition] = []
@@ -304,6 +316,7 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
                 latency_ms=oc.latency_ms,
                 detail=oc.detail or {},
                 timestamp=now,
+                engine_id=engine_id,
             )
         )
         overrides = (state.assignment.overrides if state.assignment else {}) or {}
@@ -318,6 +331,7 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
             now=now,
             stale_after_scans=cfg["stale_after_scans"],
             stale_after_days=cfg["stale_after_days"],
+            engine_id=engine_id,
         )
         if tr is not None:
             transitions.append(tr)
@@ -327,8 +341,42 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
         interval = effective_interval(state, cfg)
         state.next_run = now + timedelta(seconds=interval) if interval else None
 
-    CheckResult.objects.bulk_create(results, batch_size=2000)
+    _persist(results, transitions, states, now)
+    _sync_dns(states, settings_map, outcomes)
+
+
+#: What a run may change on a state - the columns ``_persist`` writes back.
+STATE_FIELDS = [
+    "status",
+    "since",
+    "last_checked",
+    "last_latency_ms",
+    "last_detail",
+    "consecutive_success",
+    "consecutive_fail",
+    "in_flight",
+    "in_flight_since",
+    "next_run",
+    "last_recorded_at",
+    "fast_window",
+]
+
+
+def _persist(
+    results: list[CheckResult],
+    transitions: list[StateTransition],
+    states: list[CheckState],
+    now,
+) -> None:
+    """Write what a run produced - results, transitions, the states - and
+    fire what hangs off it (certificates, SSH keys, last_seen, alerts).
+
+    Shared by the minute-beat workers and the fast lane, which folds probes
+    in memory and hands over only the rows worth keeping. The two must not
+    diverge on what a status change sets off, so there is one of these.
+    """
     if results:
+        CheckResult.objects.bulk_create(results, batch_size=2000)
         from .certificates import record_check_results
         from .ssh_host_keys import record_ssh_results
 
@@ -336,21 +384,8 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
         record_ssh_results(results)
     if transitions:
         StateTransition.objects.bulk_create(transitions, batch_size=2000)
-    CheckState.objects.bulk_update(
-        states,
-        [
-            "status",
-            "since",
-            "last_checked",
-            "last_latency_ms",
-            "consecutive_success",
-            "consecutive_fail",
-            "in_flight",
-            "in_flight_since",
-            "next_run",
-        ],
-        batch_size=2000,
-    )
+    if states:
+        CheckState.objects.bulk_update(states, STATE_FIELDS, batch_size=2000)
 
     # Stamp last_seen on every IP that was reachable this run.
     seen_ids = {s.target_ip_id for s in states if s.status in ("up", "degraded")}
@@ -363,7 +398,10 @@ def _finalise(states: list[CheckState], outcomes: list[CheckOutcome], settings_m
         from .alerts import process_transitions
 
         process_transitions(transitions, now)
-    _sync_dns(states, settings_map, outcomes)
+    # Whoever has the address open hears about it now, not on reload.
+    from .live import publish
+
+    publish(states, transitions)
 
 
 def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> int:
@@ -390,7 +428,7 @@ def ingest_results(outcome_by_id: dict, *, engine_id=None, tenant_id=None) -> in
         return 0
     outcomes = [outcome_by_id[str(s.id)] for s in states]
     settings_map = _load_settings({s.tenant_id for s in states})
-    _finalise(states, outcomes, settings_map)
+    _finalise(states, outcomes, settings_map, engine_id=engine_id)
     return len(states)
 
 

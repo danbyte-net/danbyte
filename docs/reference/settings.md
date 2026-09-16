@@ -104,6 +104,17 @@ local + Netbird in `services/danbyte-backend.service`):
 Environment=ALLOWED_HOSTS=localhost,127.0.0.1,<your-vpn-fqdn>,<your-vpn-ip>
 ```
 
+## Backups (`DANBYTE_BACKUP_DIR`, `DANBYTE_SKIP_BACKUP`)
+
+`DANBYTE_BACKUP_DIR` is where the default local backup target and the
+restore work directory live. Default: `<install>/../danbyte-backups` on
+systemd installs, `/app/backups` in the container stack. The directory is
+created on the first backup, mode `0700`.
+
+`DANBYTE_SKIP_BACKUP=1` lets the upgrade scripts continue without the
+**Before upgrade** backup (they stop otherwise when the backup fails or
+`pg_dump` is missing). See [Backup and restore](../getting-started/backup-restore.md).
+
 ## Outbound requests (SSRF guard)
 
 User-configured outbound URLs - webhooks, notification channels, automation
@@ -190,11 +201,11 @@ Suitable for `journalctl --user -fu danbyte-backend`.
 |---|---|---|---|
 | `DJANGO_SECRET_KEY` | env | `dev-key-change-in-prod` | env var, rotated |
 | `DB_PASSWORD` | env | `danbyte` | env var, rotated |
-| Email creds | **DB (UI)** or env | console backend | Settings → Email & Delivery (encrypted) |
+| Email creds | **DB (UI)** or env | console backend | Settings → Email (encrypted) |
 
 The `EMAIL_*` env vars remain the fallback, but the SMTP server, credentials,
 and outbound-delivery options are normally configured at runtime under
-**Settings → Email & Delivery** (`users.manage`). They live in the
+**Settings → Email** (`users.manage`). They live in the
 deployment-wide singleton `core.DeploymentSettings`; the SMTP password is
 Fernet-encrypted at rest. See
 [Notifications](../features/monitoring.md#notifications).

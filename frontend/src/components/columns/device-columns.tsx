@@ -10,6 +10,8 @@ import {
 } from "@/components/columns/monitoring-facet"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { ExternalChips } from "@/components/monitoring/external-chips"
+import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import {
   DeviceDriftMarker,
@@ -132,15 +134,6 @@ export function DeviceIpRef({
   )
 }
 
-function monitoringTooltip(e: BulkStatusEntry): string {
-  const counts = e.counts ?? {}
-  const parts = Object.entries(counts).map(([s, n]) => `${n} ${s}`)
-  const head = `${e.monitored_ips ?? 0} monitored IP${
-    e.monitored_ips === 1 ? "" : "s"
-  }`
-  return parts.length ? `${head} - ${parts.join(", ")}` : head
-}
-
 export function buildDeviceColumns<T extends Device = Device>(
   opts: DeviceColumnOpts<T> = {}
 ): ColumnDef<T, unknown>[] {
@@ -227,10 +220,16 @@ export function buildDeviceColumns<T extends Device = Device>(
       header: ({ column }) => <SortHeader column={column} label="Role" />,
       cell: ({ row }) =>
         row.original.role ? (
-          <ColorBadge
-            name={row.original.role.name}
-            color={row.original.role.color || undefined}
-          />
+          <Link
+            to="/device-roles/$id"
+            params={{ id: row.original.role.id }}
+            className="link"
+          >
+            <ColorBadge
+              name={row.original.role.name}
+              color={row.original.role.color || undefined}
+            />
+          </Link>
         ) : (
           dash
         ),
@@ -382,9 +381,10 @@ export function buildDeviceColumns<T extends Device = Device>(
         const e = opts.monitoring?.[row.original.id]
         if (!e || !e.status) return dash
         return (
-          <span title={monitoringTooltip(e)}>
+          <ExternalStatusHover entry={e}>
             <MixedStatusBadge counts={e.counts} status={e.status} />
-          </span>
+            <ExternalChips entry={e} />
+          </ExternalStatusHover>
         )
       },
       // The rollup is a facet like any status: the rail lists the observed

@@ -18,24 +18,52 @@ Every check runs on a **monitoring engine**:
   assigned to an Outpost runs here, so nothing changes if you never install one.
 - **Outpost** - a remote engine. You create it in Danbyte, install the agent at
   the site, and assign it a scope.
+- **A driver** - an external monitoring system that already watches the estate
+  and can answer for it. Danbyte does not run the checks; it asks the system
+  what it knows and folds the answer through the same path an Outpost reports
+  through, so alerts, silences, flapping and every notification channel behave
+  identically whichever engine produced the result. **Zabbix** is the first -
+  see [Zabbix](zabbix.md). On the engines page a driver engine has no token,
+  transport or agent version; it shows the system it answers through and a
+  **Configure** link to that system's page.
 
 Manage them in **Governance → Monitoring engines** (admin only).
+
+!!! note "A driver engine is only chosen when it can answer"
+    An engine whose driver is unusable - the tenant switched the integration
+    off, the connection is gone, the server is below the supported version -
+    is **skipped during resolution** and falls through to the next level, and
+    the health sweep ignores it. Turning an integration off is a quiet switch,
+    not an outage: the alternative is a site bound to an engine that never
+    claims its checks and is then reported unreachable.
 
 ## How an engine is chosen for a target
 
 For each monitored IP, Danbyte resolves the engine **most-specific first**, and
 each level **inherits** from the next when it has no engine of its own:
 
-1. the IP's device **Location**, then its **parent locations** (a child location
+1. the IP's **Device**,
+2. the IP's device **Location**, then its **parent locations** (a child location
    left on *Inherit* falls through to its parent),
-2. the IP's **Site**,
-3. the tenant **default engine** (set on the Monitoring engines page),
-4. the built-in **Local** engine.
+3. the IP's **Prefix**,
+4. the IP's **Site**,
+5. the tenant **default engine** (set on the Monitoring engines page),
+6. the built-in **Local** engine.
 
-Assign an engine on the **Site** or **Location** edit form (the *Monitoring
-engine* dropdown - *Inherit* follows the level above). So "everything at Site
-AMS-02" is one setting; a single rack row (a child location) can override it,
-and anything left on *Inherit* rolls up to the site, then the tenant default.
+A level bound to an engine that cannot answer right now is treated as though it
+had no binding at all, so resolution continues down the list rather than
+stopping on a dead engine.
+
+Assign an engine on the **Device**, **Site** or **Location** edit form (the
+*Monitoring engine* dropdown - *Inherit* follows the level above). So
+"everything at Site AMS-02" is one setting; a single rack row (a child
+location) can override it, one device can override that, and anything left on
+*Inherit* rolls up to the site, then the tenant default.
+
+A driver-backed engine - a [Zabbix](zabbix.md) one - answers only **its own
+check kind**. A device bound to Zabbix keeps its ICMP ping, and Danbyte's own
+workers still run it. Binding a target somewhere else changes who answers what
+it was asked, not what it was asked.
 
 ## The agent repo + staying compatible
 
@@ -61,6 +89,24 @@ against a freshly-upgraded core. So:
 
 Full contract: `docs/COMPATIBILITY.md` in the danbyte-outpost repo. **Whenever you
 extend the monitoring engine, check that doc.**
+
+## Sub-minute checks on an Outpost {#fast-lane}
+
+A check with an interval under a minute (see
+[the fast lane](../features/monitoring.md#fast-lane)) bound to an Outpost is
+probed *by* that Outpost, from its own in-memory schedule, alongside its
+ordinary poll loop. The agent says `fast: true` in its hello; from then on
+the core hands sub-minute checks to `GET /api/outpost/fast-work/` (the whole
+set, refreshed every 15 s - nothing is claimed, the Outpost owns them) and
+the agent reports buffered probes to `POST /api/outpost/fast-results/` on
+its poll interval, or at once when a probe's reachability differs from the
+last one it reported. The core folds them through the same rise and fall as
+its own lane, so the status, the history and the alerts are identical
+whichever side did the probing.
+
+Additive, protocol version unchanged: an agent older than 0.8 never says
+`fast`, and its sub-minute checks are handed out on the minute beat at their
+ordinary interval - it keeps working, just not faster.
 
 ## Reverse DNS from an Outpost
 
@@ -181,7 +227,7 @@ Monitoring engines → Outpost versions**. *(Shipped.)*
 3. **Enroll** it → copy the one-liner (the token is shown **once**).
 4. On a host *at the site*, run the one-liner as root. It installs + starts the
    agent, which immediately dials out and begins pulling work.
-5. **Assign** it to a site or location (on their forms) → everything in that
+5. **Assign** it to a device, site or location (on their forms) → everything in that
    scope is now monitored by the Outpost. Watch it go healthy on the engine's
    detail dialog.
 
@@ -287,6 +333,20 @@ device is picked up on the next poll with no re-enrollment.
   notification channels get an *engine unreachable* event (and a *recovered*
   event when it comes back). Engines with no assigned checks never alert.
   The window is configurable per tenant (#129): **Outpost offline after N
-  minutes** in Monitoring settings, 0 = the automatic 3× rule. Checks behind a
+  minutes** in Monitoring settings, 0 = the automatic 3× rule.
+
+    A **driver engine** - Zabbix - has no agent phoning home. It is *seen*
+    each time it reaches the system it answers through, and the automatic
+    window is 3× the shortest interval among **its checks**, not the poll
+    interval, which is an Outpost's setting and meant nothing for it. A
+    failed call is deliberately not a sighting, so a Zabbix that is actually
+    down still raises the alarm. Checks behind a
   dead Outpost keep their last state rather than flipping down - no results
   means no transitions - until the ordinary staleness rules age them.
+- **Attribution (shipped)** - results and status changes an Outpost phones in
+  are stamped with that Outpost, so the Checks list, an address's history and
+  the recent-changes list can say which agent saw a host go down. A row with
+  no engine is the core's own workers - or predates the stamp, and reads the
+  same way.
+
+

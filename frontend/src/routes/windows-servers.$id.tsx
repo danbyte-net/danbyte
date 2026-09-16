@@ -234,8 +234,12 @@ function Body({ conn }: { conn: WindowsConnection }) {
           label: "Reservations",
           count: driftCount || undefined,
         },
-        { value: "leases", label: "Leases" },
-        { value: "dns", label: "DNS" },
+        {
+          value: "leases",
+          label: "Leases",
+          count: conn.lease_count || undefined,
+        },
+        { value: "dns", label: "DNS", count: conn.zone_count || undefined },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

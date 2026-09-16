@@ -10,11 +10,13 @@ import {
   type Paginated,
   type RouteTargetMini,
   type Status,
+  type VRFOption,
 } from "@/lib/api"
 import {
   Field,
   FormColumn,
   FormColumns,
+  FormCombobox,
   FormFooter,
   FormSection,
   FormSelect,
@@ -39,6 +41,9 @@ export const L2VPN_TYPES: { value: L2VPNType; label: string }[] = [
   { value: "spb", label: "SPB" },
   { value: "trill", label: "TRILL" },
 ]
+
+/** Types where a VRF makes the L2VPN that VRF's L3VNI. */
+const EVPN_TYPES: L2VPNType[] = ["vxlan-evpn", "mpls-evpn"]
 
 function slugify(s: string): string {
   return s
@@ -66,6 +71,7 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
   const [identifier, setIdentifier] = useState(
     l2vpn?.identifier != null ? String(l2vpn.identifier) : ""
   )
+  const [vrfId, setVrfId] = useState<string | null>(l2vpn?.vrf?.id ?? null)
   const [statusId, setStatusId] = useState<string | null>(
     l2vpn?.status?.id ?? null
   )
@@ -91,6 +97,7 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
     setSlugDirty(true)
     setType(l2vpn.type)
     setIdentifier(l2vpn.identifier != null ? String(l2vpn.identifier) : "")
+    setVrfId(l2vpn.vrf?.id ?? null)
     setStatusId(l2vpn.status?.id ?? null)
     setImportIds(l2vpn.import_targets.map((t) => t.id))
     setExportIds(l2vpn.export_targets.map((t) => t.id))
@@ -112,6 +119,12 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
       api<Paginated<RouteTargetMini>>("/api/route-targets/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  const isEvpn = EVPN_TYPES.includes(type)
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    enabled: isEvpn,
+  })
   const statuses = useQuery({
     queryKey: ["statuses", "l2vpn"],
     queryFn: () =>
@@ -128,6 +141,7 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
         slug: slug.trim() || slugify(name),
         type,
         identifier: identifier ? Number(identifier) : null,
+        vrf_id: isEvpn ? vrfId : null,
         status_id: statusId,
         import_target_ids: importIds,
         export_target_ids: exportIds,
@@ -208,14 +222,32 @@ export function L2vpnForm({ l2vpn, onSaved, onCancel }: L2vpnFormProps) {
               />
             </div>
 
-            <FormStatusSelect
-              value={statusId}
-              onChange={setStatusId}
-              options={statuses.data?.results ?? []}
-              noneLabel="No status"
-              placeholder="Select a status…"
-              error={fieldErrors.status_id}
-            />
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormStatusSelect
+                value={statusId}
+                onChange={setStatusId}
+                options={statuses.data?.results ?? []}
+                noneLabel="No status"
+                placeholder="Select a status…"
+                error={fieldErrors.status_id}
+              />
+              {isEvpn && (
+                <FormCombobox
+                  label="VRF"
+                  value={vrfId}
+                  onChange={setVrfId}
+                  options={(vrfs.data?.results ?? []).map((v) => ({
+                    value: v.id,
+                    label: v.rd ? `${v.name} · ${v.rd}` : v.name,
+                    color: v.color,
+                  }))}
+                  noneLabel="None - L2VNI"
+                  placeholder="None - L2VNI"
+                  info="Set a VRF and this VNI is that VRF's L3VNI: routed between subnets on every VTEP that carries it."
+                  error={fieldErrors.vrf_id}
+                />
+              )}
+            </div>
           </FormSection>
         </FormColumn>
 

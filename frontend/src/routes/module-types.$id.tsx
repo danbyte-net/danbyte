@@ -35,6 +35,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
+import { createEach, expandNameRange } from "@/lib/name-range"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -230,7 +231,8 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
         <p className="text-sm text-muted-foreground">
           No interface templates. Use{" "}
           <code className="font-mono">{"{module}"}</code> in names - it resolves
-          to the bay's position when the module is installed.
+          to the bay's position when the module is installed - and{" "}
+          <code className="font-mono">[1-24]</code> for one template per port.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -334,7 +336,7 @@ function ModuleInterfaceTemplateDialog({
 
   const editing = !!template
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const payload = {
         module_type_id: moduleTypeId,
         name: name.trim(),
@@ -342,19 +344,30 @@ function ModuleInterfaceTemplateDialog({
         enabled,
         mgmt_only: mgmtOnly,
       }
-      return saveObject<ModuleInterfaceTemplate>({
-        objectType: "api.moduleinterfacetemplate",
-        endpoint: "/api/module-interface-templates/",
-        id: editing ? template!.id : undefined,
-        payload,
-      })
+      const post = (n: string) =>
+        saveObject<ModuleInterfaceTemplate>({
+          objectType: "api.moduleinterfacetemplate",
+          endpoint: "/api/module-interface-templates/",
+          id: editing ? template!.id : undefined,
+          payload: { ...payload, name: n },
+        })
+      if (editing) return { count: 1 }
+      // A [a-b] range fans out into one create per port, like the device-type
+      // template dialog (the server expands too; this keeps the toast honest).
+      return createEach(expandNameRange(payload.name), post)
     },
-    onSuccess: () => {
+    onSuccess: ({ count }) => {
       qc.invalidateQueries({
         queryKey: ["mt-interface-templates", moduleTypeId],
       })
       qc.invalidateQueries({ queryKey: ["module-type", moduleTypeId] })
-      toast.success(editing ? "Template updated" : "Template created")
+      toast.success(
+        editing
+          ? "Template updated"
+          : count > 1
+            ? `Created ${count} templates`
+            : "Template created"
+      )
       onOpenChange(false)
     },
     onError: (err) => {
@@ -386,9 +399,10 @@ function ModuleInterfaceTemplateDialog({
             onChange={setName}
             mono
             placeholder="TenGigabitEthernet1/{module}/1"
-            hint="{module} → bay position at install · {position} → stack member"
+            hint="{module} → bay position at install · {position} → stack member · [1-24] → one per port"
             error={fieldErrors.name}
           />
+          <ModuleNamePreview name={name} editing={editing} />
           <FormCombobox
             label="Type"
             value={type || null}
@@ -420,5 +434,36 @@ function ModuleInterfaceTemplateDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Live feedback under the Name field: how many templates a [a-b] range
+ * creates, and what the {module} / {position} tokens render as. */
+function ModuleNamePreview({
+  name,
+  editing,
+}: {
+  name: string
+  editing: boolean
+}) {
+  const trimmed = name.trim()
+  if (!trimmed) return null
+  const names = editing ? [trimmed] : expandNameRange(trimmed)
+  const hasRange = !editing && names.length > 1
+  const hasToken = /\{module\}|\{position(?::\d+)?\}/.test(trimmed)
+  if (!hasRange && !hasToken) return null
+  const render = (n: string) =>
+    n.replace(/\{module\}/g, "1").replace(/\{position(?::\d+)?\}/g, "1")
+  return (
+    <p className="-mt-2 font-mono text-[11px] text-muted-foreground">
+      {hasRange && (
+        <>
+          Creates {names.length} templates: {names[0]} …{" "}
+          {names[names.length - 1]}
+          <br />
+        </>
+      )}
+      {hasToken && <>Installed in bay 1 on member 1: {render(names[0])}</>}
+    </p>
   )
 }

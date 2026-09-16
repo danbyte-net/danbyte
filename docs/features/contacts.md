@@ -37,6 +37,9 @@ blocks cycles - and NetBox contact-group trees import losslessly.
 2. Give it a **name** (must be unique).
 3. Optionally fill in the **title**, **phone**, **email**, **address**, and a
    **link** (such as a profile or ticket queue), and put it in a **group**.
+   Phone numbers render as `tel:` links wherever they show, so a click
+   places the call through your desk's softphone or Teams; e-mail addresses
+   are `mailto:` links the same way.
 4. Optionally set **working hours** - see below.
 5. Save.
 
@@ -56,7 +59,7 @@ hold more than one span - press **+** on a day to add a break, so
 may not overlap; they are sorted for you.
 
 The contact's page then shows the hours as one line - *Mon-Fri 08:00-17:00
-Europe/Copenhagen* - with an **Open now** or **Outside hours** badge beside it.
+Europe/Copenhagen* - with an **Available now** or **Outside hours** badge beside it.
 
 !!! note "No hours is not the same as closed"
     A contact with no hours recorded shows neither badge. "We don't know when

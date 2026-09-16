@@ -54,6 +54,8 @@ function dt(patch: Partial<DeviceType> = {}): DeviceType {
     custom_fields: {},
     device_count: 0,
     component_count: 0,
+    sensor_count: 0,
+    document_count: 0,
     owning_site: null,
     release_date: null,
     end_of_sale: null,

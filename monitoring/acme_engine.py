@@ -587,6 +587,11 @@ def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
     order.save(
         update_fields=["issued_certificate", "status", "error", "updated_at"]
     )
+    # The site's own certificate rides the same orders and renewals: when
+    # this request backs the site, the fresh pair goes to the drop folder.
+    from core.site_tls import on_issued
+
+    on_issued(order, finalized.fullchain_pem)
     return cert_row
 
 

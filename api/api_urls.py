@@ -15,6 +15,7 @@ from drf_spectacular.views import (
 )
 from rest_framework.routers import DefaultRouter
 
+from agents.views import mcp as agent_mcp
 from audit.api import ChangeLogViewSet, JournalEntryViewSet
 from auth_api import column_prefs, dashboard_prefs
 from auth_api import views as auth_views
@@ -66,6 +67,7 @@ from compliance.api import (
 from core import (
     deployment,
     service_api,
+    site_tls_api,
     upgrade,
 )
 from core import notifications_api as core_notifications
@@ -85,31 +87,60 @@ from integrations.api import (
     DeviceConfigStateViewSet,
     WebhookViewSet,
 )
-from integrations.dns_api import (
-    DnsDriftViewSet,
-    DnsRecordViewSet,
-    DnsZoneViewSet,
-)
-from integrations.virt_api import (
-    VirtChangeViewSet,
-    VirtNetworkViewSet,
-    VirtPlacementRuleViewSet,
-)
-from integrations.dhcp_api import (
-    DhcpLeaseViewSet,
-    DhcpReservationViewSet,
-    DhcpScopeViewSet,
-)
 from integrations.connections_api import (
     VirtualizationSourceViewSet,
     WindowsServerConnectionViewSet,
     integration_settings,
     integrations_enabled,
 )
+from integrations.dhcp_api import (
+    DhcpLeaseViewSet,
+    DhcpReservationViewSet,
+    DhcpScopeViewSet,
+)
+from integrations.dns_api import (
+    DnsDriftViewSet,
+    DnsRecordViewSet,
+    DnsZoneViewSet,
+)
 from integrations.netbox_api import (
     netbox_import_detail,
     netbox_imports,
     netbox_test,
+)
+from integrations.virt_api import (
+    VirtChangeViewSet,
+    VirtNetworkViewSet,
+    VirtPlacementRuleViewSet,
+)
+from routing.topology import bgp_topology_view
+from routing.viewsets import (
+    ASPathListRuleViewSet,
+    ASPathListViewSet,
+    BFDProfileViewSet,
+    BGPAddressFamilyViewSet,
+    BGPInstanceViewSet,
+    BGPPeerGroupViewSet,
+    BGPSessionViewSet,
+    CommunityListRuleViewSet,
+    CommunityListViewSet,
+    CommunityViewSet,
+    EIGRPInstanceViewSet,
+    EIGRPInterfaceViewSet,
+    ISISInstanceViewSet,
+    ISISInterfaceViewSet,
+    OSPFAreaViewSet,
+    OSPFInstanceViewSet,
+    OSPFInterfaceViewSet,
+    PrefixListRuleViewSet,
+    PrefixListViewSet,
+    RedistributionViewSet,
+    RoutingKeychainViewSet,
+    RoutingPolicyRuleViewSet,
+    RoutingPolicyViewSet,
+    StaticRouteViewSet,
+    VTEPMembershipViewSet,
+    VTEPViewSet,
 )
 
 from .csp_views import csp_report
@@ -124,6 +155,7 @@ from .io_views import (
     io_types_view,
 )
 from .mac_views import mac_detail_view, mac_list_view
+from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
 from .presence_views import (
     presence_heartbeat,
     presence_leave,
@@ -138,9 +170,9 @@ from .topology_views import (
     topology_view,
 )
 from .viewsets import (
+    AggregateViewSet,
     AntennaTemplateViewSet,
     AntennaViewSet,
-    AggregateViewSet,
     ASNViewSet,
     AuxPortTemplateViewSet,
     AuxPortViewSet,
@@ -202,6 +234,7 @@ from .viewsets import (
     ModuleInterfaceTemplateViewSet,
     ModuleTypeViewSet,
     ModuleViewSet,
+    NATRuleViewSet,
     PlatformGroupViewSet,
     PlatformViewSet,
     PortReservationViewSet,
@@ -269,6 +302,7 @@ router.register(r"documents",     DocumentViewSet,    basename="document")
 router.register(r"document-categories", DocumentCategoryViewSet, basename="document-category")
 router.register(r"vlans",         VLANViewSet,        basename="vlan")
 router.register(r"mac-addresses",  MACAddressViewSet,  basename="mac-address")
+router.register(r"oui-ranges",     OuiRangeViewSet,    basename="oui-range")
 router.register(r"vlan-groups",   VLANGroupViewSet,   basename="vlan-group")
 router.register(r"fhrp-groups",   FHRPGroupViewSet,   basename="fhrp-group")
 router.register(r"fhrp-assignments", FHRPGroupAssignmentViewSet, basename="fhrp-assignment")
@@ -315,6 +349,43 @@ router.register(r"rack-type-accessories", RackTypeAccessoryViewSet,
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
+router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
+# Routing - on this router (not a mounted app router) so bulk edit, planned
+# changes, CSV IO and the assistant's router walk all see the types.
+router.register(r"routing/prefix-lists", PrefixListViewSet, basename="prefixlist")
+router.register(r"routing/prefix-list-rules", PrefixListRuleViewSet,
+                basename="prefixlistrule")
+router.register(r"routing/communities", CommunityViewSet, basename="community")
+router.register(r"routing/community-lists", CommunityListViewSet,
+                basename="communitylist")
+router.register(r"routing/community-list-rules", CommunityListRuleViewSet,
+                basename="communitylistrule")
+router.register(r"routing/as-path-lists", ASPathListViewSet, basename="aspathlist")
+router.register(r"routing/as-path-list-rules", ASPathListRuleViewSet,
+                basename="aspathlistrule")
+router.register(r"routing/policies", RoutingPolicyViewSet, basename="routingpolicy")
+router.register(r"routing/policy-rules", RoutingPolicyRuleViewSet,
+                basename="routingpolicyrule")
+router.register(r"routing/keychains", RoutingKeychainViewSet,
+                basename="routingkeychain")
+router.register(r"routing/bfd-profiles", BFDProfileViewSet, basename="bfdprofile")
+router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
+router.register(r"routing/bgp-instances", BGPInstanceViewSet, basename="bgpinstance")
+router.register(r"routing/bgp-address-families", BGPAddressFamilyViewSet,
+                basename="bgpaddressfamily")
+router.register(r"routing/redistributions", RedistributionViewSet,
+                basename="redistribution")
+router.register(r"routing/bgp-peer-groups", BGPPeerGroupViewSet, basename="bgppeergroup")
+router.register(r"routing/bgp-sessions", BGPSessionViewSet, basename="bgpsession")
+router.register(r"routing/ospf-areas", OSPFAreaViewSet, basename="ospfarea")
+router.register(r"routing/ospf-instances", OSPFInstanceViewSet, basename="ospfinstance")
+router.register(r"routing/ospf-interfaces", OSPFInterfaceViewSet, basename="ospfinterface")
+router.register(r"routing/isis-instances", ISISInstanceViewSet, basename="isisinstance")
+router.register(r"routing/isis-interfaces", ISISInterfaceViewSet, basename="isisinterface")
+router.register(r"routing/eigrp-instances", EIGRPInstanceViewSet, basename="eigrpinstance")
+router.register(r"routing/eigrp-interfaces", EIGRPInterfaceViewSet, basename="eigrpinterface")
+router.register(r"routing/vteps", VTEPViewSet, basename="vtep")
+router.register(r"routing/vtep-memberships", VTEPMembershipViewSet, basename="vtepmembership")
 router.register(r"services",      ServiceViewSet,     basename="service")
 router.register(r"service-templates", ServiceTemplateViewSet, basename="service-template")
 router.register(r"device-types",  DeviceTypeViewSet,  basename="device-type")
@@ -446,19 +517,29 @@ urlpatterns = [
     # Content-Security-Policy report-uri set at the nginx edge).
     path("csp-report/", csp_report, name="csp-report"),
     path("topology/", topology_view, name="topology"),
+    path("routing/topology/bgp/", bgp_topology_view, name="routing-topology-bgp"),
     path("topology/logical/", topology_logical_view, name="topology-logical"),
     path("topology/summary/", topology_summary_view, name="topology-summary"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
+    path("oui/status/", oui_status, name="oui-status"),
+    path("oui/import/", oui_import, name="oui-import"),
+    path("oui/import/<uuid:run_id>/", oui_import_run, name="oui-import-run"),
     path("macs/", mac_list_view, name="macs"),
     path("macs/<str:mac>/", mac_detail_view, name="mac-detail"),
     path("dcim/choices/", dcim_choices_view, name="dcim-choices"),
     path("editable-fields/", editable_fields_view, name="editable-fields"),
     path("monitoring/", include("monitoring.api_urls")),
+    path("zabbix/", include("zabbix.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) - gated on jobs.manage.
     path("jobs/", include("jobs.api_urls")),
+    path("backups/", include("backups.api_urls")),
+    path("scripts/", include("scripting.api_urls")),
+    path("agent/", include("agents.api_urls")),
+    path("assistant/", include("assistant.api_urls")),
+    path("mcp/", agent_mcp, name="mcp"),
     # Plugin framework: installed-plugin inventory + each plugin's own API.
     path("plugins/", include("plugins.api_urls")),
     # Host service control (restart units, apply plugins) - superuser only.
@@ -469,6 +550,15 @@ urlpatterns = [
     path("system/services/", service_api.services_list, name="services-list"),
     path("system/services/workers/", service_api.set_workers,
          name="services-workers"),
+    path("system/site-certificate/", site_tls_api.site_certificate, name="site-certificate"),
+    path("system/site-certificate/upload/", site_tls_api.site_certificate_upload,
+         name="site-certificate-upload"),
+    path("system/site-certificate/self-signed/", site_tls_api.site_certificate_self_signed,
+         name="site-certificate-self-signed"),
+    path("system/site-certificate/acme/", site_tls_api.site_certificate_acme,
+         name="site-certificate-acme"),
+    path("system/site-certificate/watch/", site_tls_api.site_certificate_watch,
+         name="site-certificate-watch"),
     path("system/services/restart-all/", service_api.restart_danbyte,
          name="services-restart-all"),
     path("system/services/<str:key>/restart/", service_api.service_restart,
@@ -506,6 +596,8 @@ urlpatterns = [
     # an entered address using Danbyte's SMTP config.
     path("deployment/email/templates/", deployment.email_templates,
          name="deployment-email-templates"),
+    path("deployment/email/templates/<slug:key>/", deployment.email_template_html,
+         name="deployment-email-template-html"),
     path("deployment/email/preview/", deployment.email_send_preview,
          name="deployment-email-preview"),
     # Emergency "sign everyone out" - deletes all sessions (users.manage).
@@ -517,6 +609,8 @@ urlpatterns = [
     path("deployment/logo/", deployment.deployment_logo,
          name="deployment-logo"),
     # Optional built-in device fields - admin-controlled visibility.
+    path("deployment/secret-stores/", deployment.secret_store_providers_view,
+         name="deployment-secret-stores"),
     path("deployment/device-fields/", deployment.device_field_visibility,
          name="deployment-device-fields"),
     # Floor-plan tile popover - deployment default (the tenant override rides
@@ -559,6 +653,9 @@ urlpatterns = [
     path("health/", deployment.health, name="health"),
     path("system/info/", deployment.system_info, name="system-info"),
     path("system/updates/", deployment.system_updates, name="system-updates"),
+    path("system/upgrade-notes/", deployment.upgrade_notes, name="system-upgrade-notes"),
+    path("system/upgrade-notes/ack/", deployment.upgrade_notes_ack,
+         name="system-upgrade-notes-ack"),
     path("system/upgrade/", upgrade.system_upgrade, name="system-upgrade"),
     path("system/upgrade/upload/", upgrade.system_upgrade_upload,
          name="system-upgrade-upload"),

@@ -148,7 +148,13 @@ export function buildClusterColumns<T extends Cluster = Cluster>(
       accessorFn: (r) => r.group?.name ?? "",
       cell: ({ row }) =>
         row.original.group ? (
-          <span className="text-xs">{row.original.group.name}</span>
+          <Link
+            to="/cluster-groups/$id"
+            params={{ id: row.original.group.id }}
+            className="link text-xs"
+          >
+            {row.original.group.name}
+          </Link>
         ) : (
           dash
         ),

@@ -15,21 +15,22 @@ LOG_DIR        ?= /var/log/danbyte
 # doing so left an idle, empty Postgres container on hosts that already had one.
 DEV_SERVICES   := danbyte-mockups danbyte-infra danbyte-backend
 # Units both dev and production run.
-SHARED_SERVICES := danbyte-workers danbyte-docs
+SHARED_SERVICES := danbyte-workers danbyte-fastlane danbyte-docs
 SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 # Timer-driven oneshots (monitoring beat). Each has a .service + a .timer; the
 # timer is what gets enabled. Not part of `up`/`down` (they're not long-running).
-TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync
+TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services uninstall-services reload \
+.PHONY: help install-services uninstall-services reload admin-link install-tls-unit uninstall-tls-unit \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
         infra-up infra-down infra-restart infra-logs \
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
-        migrate makemigrations superuser bootstrap seed-demo shell test check \
+        fastlane-up fastlane-down fastlane-restart fastlane-logs \
+        migrate makemigrations superuser bootstrap seed-demo seed-fabric shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
         linger service-user
@@ -41,6 +42,8 @@ help:
 	@echo "    make install-services    Symlink unit files into $(SYSTEMD_DIR)"
 	@echo "    make uninstall-services  Remove the symlinks"
 	@echo "    make reload              systemctl --user daemon-reload"
+	@echo "    make admin-link          Put danbyte-admin on PATH as \`danbyte\`"
+	@echo "    make install-tls-unit    Root path unit that applies a dropped site certificate"
 	@echo "    make linger              Enable user-linger so services run when logged out"
 	@echo "    make service-user        Create the '$(SERVICE_USER)' service user in $(SERVICE_HOME) (+linger, +your group)"
 	@echo ""
@@ -63,9 +66,24 @@ help:
 
 # ---- service installation ----------------------------------------------------
 
+# scripts/install.sh does this for a packaged install; a source checkout has
+# no installer, so the same one-liner lives here rather than being a step
+# everyone rediscovers. /usr/local/bin needs root - the rest of the Makefile
+# does not, so this is its own target and not folded into install-services.
+admin-link:
+	@sudo ln -sfn $(PROJECT_DIR)/scripts/danbyte-admin /usr/local/bin/danbyte
+	@echo "  danbyte -> $(PROJECT_DIR)/scripts/danbyte-admin"
+
+# A production host (the installer linked danbyte-web) never gets the dev
+# units: the runserver, the compose infra, the mockups. Linking them is how
+# an upgrade's "restart everything" ends with two processes on :8000.
+DEV_ONLY_SERVICES := danbyte-mockups danbyte-infra danbyte-backend danbyte-frontend
 install-services:
 	@mkdir -p $(SYSTEMD_DIR)
 	@for s in $(SERVICES); do \
+		if [ -e $(SYSTEMD_DIR)/danbyte-web.service ] && echo " $(DEV_ONLY_SERVICES) " | grep -q " $$s " ; then \
+			continue ; \
+		fi ; \
 		ln -sfn $(PROJECT_DIR)/services/$$s.service $(SYSTEMD_DIR)/$$s.service ; \
 		echo "  linked $$s.service" ; \
 	done
@@ -78,6 +96,10 @@ install-services:
 	@for s in $(TIMERS); do \
 		systemctl --user enable --now $$s.timer ; \
 	done
+	@# A long-running service added after an install is linked above but
+	@# nothing starts it - the upgrader before 0.16 restarts only the units it
+	@# knew. The fast lane runs on every install, so start it here.
+	@systemctl --user enable --now danbyte-fastlane 2>/dev/null || true
 	@echo ""
 	@echo "Installed. Try:"
 	@echo "    make mockups-up        # http://localhost:8080"
@@ -134,6 +156,10 @@ workers-up:       ; systemctl --user start danbyte-workers
 workers-down:     ; systemctl --user stop danbyte-workers
 workers-restart:  ; systemctl --user restart danbyte-workers
 workers-logs:     ; journalctl --user -fu danbyte-workers
+fastlane-up:      ; systemctl --user start danbyte-fastlane
+fastlane-down:    ; systemctl --user stop danbyte-fastlane
+fastlane-restart: ; systemctl --user restart danbyte-fastlane
+fastlane-logs:    ; journalctl --user -fu danbyte-fastlane
 
 docs-up:          ; systemctl --user start danbyte-docs
 docs-down:        ; systemctl --user stop danbyte-docs
@@ -226,6 +252,7 @@ proxy-install: proxy-cert
 	@command -v nginx >/dev/null || { echo "Installing nginx ..."; sudo apt-get update -qq && sudo apt-get install -y nginx; }
 	@echo "Installing cert to /etc/ssl/danbyte ..."
 	@sudo mkdir -p /etc/ssl/danbyte
+	@sudo chmod 755 /etc/ssl/danbyte   # the certificate is public; root's umask must not hide it
 	@sudo install -m 644 $(CERT_DIR)/danbyte.crt $(CERT)
 	@sudo install -m 600 $(CERT_DIR)/danbyte.key $(KEY)
 	@echo "Writing nginx site for host '$(PROXY_HOST)' ..."
@@ -238,6 +265,28 @@ proxy-install: proxy-cert
 	@echo "Proxy live → https://$(PROXY_HOST)/   (docs at /docs/, api at /api/)"
 	@echo "Self-signed cert: your browser will warn once; accept it for the LAN."
 	@echo "Make sure the dev servers are up:  make docs-up backend-up  +  make frontend-dev"
+
+# The root path unit that applies a certificate pair the app drops in
+# deploy/nginx/certs/ (Settings → Updates → Site certificate). Needs sudo;
+# install.sh runs it on a fresh install, an upgraded host runs it once.
+install-tls-unit:
+	@for u in path service; do \
+		sed -e "s|@@APP@@|$(PROJECT_DIR)|g" deploy/systemd/danbyte-tls.$$u.template \
+		  | sudo tee /etc/systemd/system/danbyte-tls.$$u >/dev/null ; \
+	done
+	@sudo systemctl daemon-reload
+	@sudo systemctl enable --now danbyte-tls.path
+	@# The drop folder has to be the app's: a proxy-install run as root left
+	@# it root-only, and then nothing can be dropped.
+	@sudo mkdir -p $(CERT_DIR)
+	@sudo chown -R $$(stat -c %U:%G $(PROJECT_DIR)) $(CERT_DIR)
+	@sudo chmod 750 $(CERT_DIR)
+	@echo "  danbyte-tls.path watches $(CERT_DIR)/danbyte.apply"
+
+uninstall-tls-unit:
+	@sudo systemctl disable --now danbyte-tls.path 2>/dev/null || true
+	@sudo rm -f /etc/systemd/system/danbyte-tls.path /etc/systemd/system/danbyte-tls.service
+	@sudo systemctl daemon-reload
 
 proxy-reload:
 	@$(RENDER_NGINX)
@@ -290,6 +339,10 @@ bootstrap:
 seed-demo:
 	@$(PY) manage.py seed_demo
 	@$(PY) manage.py seed_demo_172
+
+# Opt-in demo leaf/spine EVPN fabric for the routing pages. Idempotent.
+seed-fabric:
+	@$(PY) manage.py seed_fabric
 
 shell:
 	@$(PY) manage.py shell

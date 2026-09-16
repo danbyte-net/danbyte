@@ -21,6 +21,10 @@ import { FormCheckbox } from "@/components/forms"
 import { SensorDialog } from "@/components/device-sensors-card"
 import { ComponentDeleteDialog } from "@/components/component-delete-dialog"
 import { QueryError } from "@/components/query-error"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/settings/snmp-sensors")({
@@ -132,16 +136,13 @@ function SnmpSensorCatalogPage() {
 
   return (
     <div className="max-w-5xl space-y-6">
-      <div>
-        <h2 className="text-sm font-semibold">SNMP sensors</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Every custom health sensor in this tenant. A sensor maps a vendor OID
-          to an inventory item's status - SNMP has no standard disk/PSU/fan
-          health MIB, so this is the escape hatch. Bind one to a device type and
-          every device of that model inherits it. Sensors carry no credentials,
-          which is what makes a pack safe to share.
-        </p>
-      </div>
+      <SettingsHeader title="SNMP sensors">
+        Every custom health sensor in this tenant. A sensor maps a vendor OID to
+        an inventory item's status - SNMP has no standard disk/PSU/fan health
+        MIB, so this is the escape hatch. Bind one to a device type and every
+        device of that model inherits it. Sensors carry no credentials, which is
+        what makes a pack safe to share.
+      </SettingsHeader>
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -175,7 +176,7 @@ function SnmpSensorCatalogPage() {
         </div>
       </div>
 
-      <section className="rounded-lg border border-border bg-card">
+      <SettingsCard title="Sensors" layout="flush">
         {list.isError && (
           <div className="p-4">
             <QueryError error={list.error} />
@@ -270,7 +271,7 @@ function SnmpSensorCatalogPage() {
             ))}
           </ul>
         )}
-      </section>
+      </SettingsCard>
 
       {/* Passing the sensor's own binding as `deviceTypeId` means the dialog's
           "this device type only" tick keeps it, and clearing it widens the

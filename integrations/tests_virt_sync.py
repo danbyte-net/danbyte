@@ -1,9 +1,11 @@
 """Proxmox sync engine: cluster/VM/interface/IP mapping, adoption, pruning."""
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest import mock
 
 from django.test import TestCase
+from django.utils import timezone
 
 from api.models import (
     VLAN,
@@ -173,6 +175,11 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(vm.device, host)
 
     def test_gone_guest_pruned_only_if_sync_created(self):
+        # Deleting is opt-in, and no grace period here - this is the
+        # ownership rule, not the timing.
+        self.source.auto_prune = True
+        self.source.auto_prune_after_days = 0
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
         self.sync()
         with mock.patch.object(
             virt_sync, "proxmox_get",
@@ -182,6 +189,144 @@ class ProxmoxSyncTests(TestCase):
             virt_sync.sync_proxmox(self.source)
         self.assertEqual(VirtGuest.objects.count(), 0)
         self.assertEqual(VirtualMachine.objects.count(), 0)  # ours → removed
+
+    def _vanish(self):
+        """A second sync where the hypervisor reports no guests at all."""
+        with mock.patch.object(
+            virt_sync, "proxmox_get",
+            side_effect=lambda s, p: CLUSTER_STATUS
+            if p == "cluster/status" else [],
+        ):
+            return virt_sync.sync_proxmox(self.source)
+
+    def test_a_missing_vm_survives_its_grace_period(self):
+        """#160: one bad poll must not cost a VM record. The guest is marked
+        missing and kept until the delay has actually elapsed."""
+        self.source.auto_prune = True
+        self.source.auto_prune_after_days = 7
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
+        self.sync()
+        counts = self._vanish()
+
+        self.assertEqual(counts["vms_missing"], 2)
+        self.assertEqual(VirtualMachine.objects.count(), 2)
+        for g in VirtGuest.objects.all():
+            self.assertIsNotNone(g.missing_since)
+
+    def test_a_vm_still_missing_after_the_delay_is_pruned(self):
+        self.source.auto_prune = True
+        self.source.auto_prune_after_days = 7
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
+        self.sync()
+        self._vanish()
+        # Back-date the mark rather than the clock: the delay is measured
+        # from when the guest went missing, which is what we store.
+        VirtGuest.objects.update(
+            missing_since=timezone.now() - timedelta(days=8)
+        )
+        self._vanish()
+        self.assertEqual(VirtualMachine.objects.count(), 0)
+        self.assertEqual(VirtGuest.objects.count(), 0)
+
+    def test_a_vm_that_comes_back_starts_the_delay_over(self):
+        self.source.auto_prune = True
+        self.source.auto_prune_after_days = 7
+        self.source.save(update_fields=["auto_prune", "auto_prune_after_days"])
+        self.sync()
+        self._vanish()
+        VirtGuest.objects.update(
+            missing_since=timezone.now() - timedelta(days=6)
+        )
+        self.sync()  # the hypervisor reports them again
+
+        self.assertFalse(
+            VirtGuest.objects.exclude(missing_since=None).exists()
+        )
+        # And a later disappearance does not inherit the spent six days.
+        counts = self._vanish()
+        self.assertEqual(counts["vms_missing"], 2)
+        self.assertEqual(VirtualMachine.objects.count(), 2)
+
+    def test_danbyte_does_not_delete_a_vm_unless_asked(self):
+        """The default. A guest the hypervisor stopped reporting is kept and
+        flagged; nothing is removed until an operator turns deleting on."""
+        self.assertFalse(self.source.auto_prune)  # the shipped default
+        self.source.auto_prune_after_days = 0
+        self.source.save(update_fields=["auto_prune_after_days"])
+        self.sync()
+        counts = self._vanish()
+        self.assertEqual(counts["vms_missing"], 2)
+        self.assertEqual(VirtualMachine.objects.count(), 2)
+        # And it stays that way, however long it is gone.
+        VirtGuest.objects.update(
+            missing_since=timezone.now() - timedelta(days=400)
+        )
+        self._vanish()
+        self.assertEqual(VirtualMachine.objects.count(), 2)
+
+    def test_a_powered_off_vm_is_skipped_but_never_counted_missing(self):
+        """#160's own caveat: skip_offline_vms and auto_prune together must
+        not delete a VM that is merely switched off."""
+        self.source.skip_offline_vms = True
+        self.source.auto_prune = True
+        self.source.auto_prune_after_days = 0
+        self.source.save(
+            update_fields=["skip_offline_vms", "auto_prune",
+                           "auto_prune_after_days"]
+        )
+        off = [dict(r, status="stopped") for r in RESOURCES]
+        with mock.patch.object(
+            virt_sync, "proxmox_get",
+            side_effect=lambda s, p: CLUSTER_STATUS
+            if p == "cluster/status" else (off if p.startswith("cluster/resources") else []),
+        ):
+            counts = virt_sync.sync_proxmox(self.source)
+
+        self.assertEqual(counts["vms_skipped_offline"], 2)
+        # Present, so not missing - and nothing was pruned.
+        self.assertFalse(
+            VirtGuest.objects.exclude(missing_since=None).exists()
+        )
+        # No detail was read: no interfaces created for a skipped guest.
+        self.assertEqual(counts["interfaces"], 0)
+
+    def _sync_with_mtu(self, mtu=9000):
+        """The lxc guest's NIC, with an MTU the hypervisor states."""
+        cfg = dict(LXC_CONFIG, net0=LXC_CONFIG["net0"] + f",mtu={mtu}")
+
+        def get(source, path):
+            if path == "nodes/pve2/lxc/101/config":
+                return cfg
+            return fake_get(source, path)
+
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def test_mtu_on_fills_a_blank_interface(self):
+        self._sync_with_mtu()
+        iface = VMInterface.objects.get(vm__name="lxc-dns", name="eth0")
+        self.assertEqual(iface.mtu, 9000)
+
+    def test_mtu_off_neither_fills_nor_diffs(self):
+        """MTU sync off makes Danbyte the source of truth for MTU (#160):
+        the hypervisor's value is not copied in, and a different one is not
+        raised as drift."""
+        from integrations.models import VirtChange
+
+        self.source.sync_vm_interface_mtu = False
+        self.source.save(update_fields=["sync_vm_interface_mtu"])
+        self._sync_with_mtu()
+
+        iface = VMInterface.objects.get(vm__name="lxc-dns", name="eth0")
+        self.assertIsNone(iface.mtu)
+        iface.mtu = 1400
+        iface.save(update_fields=["mtu"])
+        self._sync_with_mtu()
+        iface.refresh_from_db()
+        self.assertEqual(iface.mtu, 1400)  # ours, untouched
+        self.assertFalse(
+            VirtChange.objects.filter(kind="iface_drift").exists()
+        )
 
     def test_gone_guest_keeps_adopted_vm(self):
         ctype = ClusterType.objects.create(
@@ -408,9 +553,47 @@ class ProxmoxSyncTests(TestCase):
         from integrations.models import VirtNetwork
 
         vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
-        # No ungrouped VID 10 → the alphabetically-first group wins, every sync.
-        self.assertEqual(vn.vlan, in_a)
+        # Two unscoped groups both hold VID 10 and neither is bound to this
+        # cluster or its site, so there is nothing to choose between them.
+        # Picking the alphabetically-first one was deterministic but arbitrary
+        # - and arbitrary here means a NIC on the wrong network (#159). The
+        # sync mints its own instead, which is visible and reversible.
+        self.assertNotEqual(vn.vlan, in_a)
         self.assertNotEqual(vn.vlan, in_b)
+        self.assertTrue(vn.created_vlan)
+        self.assertTrue(vn.vlan.group.slug.startswith("virt-"))
+
+    def test_match_prefers_a_group_bound_to_this_cluster(self):
+        """Scoping one of the groups to this cluster makes the VID
+        unambiguous again, and the operator's VLAN wins (#159)."""
+        from api.models import VLANGroup
+        from integrations.models import VirtNetwork
+
+        # Pass 1 creates the cluster, so the group can be bound to it.
+        self.source.sync_networks = True
+        self.source.save(update_fields=["sync_networks"])
+        self.sync()
+        cluster = Cluster.objects.get(tenant=self.tenant, name="DB-CLUSTER01")
+
+        mine_grp = VLANGroup.objects.create(
+            tenant=self.tenant, name="Alpha", slug="alpha2", cluster=cluster
+        )
+        other = VLANGroup.objects.create(
+            tenant=self.tenant, name="Beta", slug="beta2"
+        )
+        VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-beta", group=other
+        )
+        mine = VLAN.objects.create(
+            tenant=self.tenant, vlan_id=10, name="in-alpha", group=mine_grp
+        )
+        self.source.match_existing_vlans = True
+        self.source.save(update_fields=["match_existing_vlans"])
+        self.sync()
+
+        vn = VirtNetwork.objects.get(ext_key="vmbr0:10")
+        self.assertEqual(vn.vlan, mine)
+        self.assertFalse(vn.created_vlan)
 
     def test_networks_off_by_default(self):
         self.sync()  # source.sync_networks defaults False
@@ -663,7 +846,12 @@ class ProxmoxModeTests(TestCase):
         from integrations.models import VirtChange
 
         self.source.sync_mode = "auto"
-        self.source.save(update_fields=["sync_mode"])
+        # No grace period: this is about review mode queueing rather than
+        # deleting, not about when the proposal appears. Deliberately leaves
+        # auto_prune off - a proposal is not a deletion, so it does not need
+        # the switch.
+        self.source.auto_prune_after_days = 0
+        self.source.save(update_fields=["sync_mode", "auto_prune_after_days"])
         self.sync()
         self.source.sync_mode = "review"
         self.source.save(update_fields=["sync_mode"])
@@ -677,12 +865,35 @@ class ProxmoxModeTests(TestCase):
         self.assertEqual(VirtualMachine.objects.count(), 2)
         self.assertEqual(VirtChange.objects.filter(kind="removed_guest").count(), 2)
 
+    def test_review_mode_waits_out_the_grace_period_too(self):
+        """The proposal is the dangerous part in review mode - an operator
+        approving "this VM is gone" that a flaky poll invented is the same
+        data loss. So it waits (#160)."""
+        from integrations.models import VirtChange
+
+        self.source.sync_mode = "auto"
+        self.source.auto_prune_after_days = 7
+        self.source.save(update_fields=["sync_mode", "auto_prune_after_days"])
+        self.sync()
+        self.source.sync_mode = "review"
+        self.source.save(update_fields=["sync_mode"])
+        with mock.patch.object(
+            virt_sync, "proxmox_get",
+            side_effect=lambda s, p: CLUSTER_STATUS if p == "cluster/status"
+            else ([] if p.startswith("cluster/resources") else fake_get(s, p)),
+        ):
+            virt_sync.sync_proxmox(self.source)
+        self.assertEqual(
+            VirtChange.objects.filter(kind="removed_guest").count(), 0
+        )
+        self.assertEqual(VirtualMachine.objects.count(), 2)
+
     def test_manual_source_skipped_by_beat(self):
         from integrations.models import IntegrationSettings
         from integrations.sync_tasks import enqueue_due_virt_syncs
 
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         self.source.sync_mode = "manual"
         self.source.save(update_fields=["sync_mode"])
@@ -939,7 +1150,7 @@ class VCenterSyncTests(TestCase):
         from integrations.sync_tasks import run_virt_sync
 
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         with mock.patch("integrations.virt_client.VCenterClient", FakeVCenter):
             counts = run_virt_sync(str(self.source.id))
@@ -959,7 +1170,7 @@ class VirtChangeApiTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         self.source = VirtualizationSource.objects.create(
             tenant=self.tenant, name="pve", host="192.0.2.30",
@@ -1045,7 +1256,7 @@ class VirtChangeApiTests(TestCase):
         from integrations.models import IntegrationSettings
 
         IntegrationSettings.objects.filter(tenant=self.tenant).update(
-            virtualization_enabled=False
+            virt_proxmox_enabled=False, virt_vcenter_enabled=False
         )
         self.assertEqual(self.client.get("/api/virt-changes/").status_code, 404)
 
@@ -1316,7 +1527,7 @@ class VirtNetworkVrfApiTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         self.source = VirtualizationSource.objects.create(
             tenant=self.tenant, name="pve", host="192.0.2.30",
@@ -1845,7 +2056,7 @@ class VmNetworkLinkTests(SwitchKindTests):
 
         self.sync()
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
         admin = get_user_model().objects.create_superuser("a", "a@x.dk", "pw")
         self.client.force_login(admin)
@@ -2277,7 +2488,7 @@ class SyncLogCaptureTests(SwitchKindTests):
         from integrations.models import IntegrationSettings
 
         IntegrationSettings.objects.create(
-            tenant=self.tenant, virtualization_enabled=True
+            tenant=self.tenant, virt_proxmox_enabled=True, virt_vcenter_enabled=True
         )
 
     def _run(self):

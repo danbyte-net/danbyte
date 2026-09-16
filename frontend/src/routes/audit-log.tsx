@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
+import { VIA_LABEL, VIA_OPTIONS } from "@/lib/audit-source"
 import { Badge } from "@/components/ui/badge"
 import { Combobox } from "@/components/ui/combobox"
 import {
@@ -87,19 +88,6 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "api.ipstatus", label: "IP status" },
   { value: "api.iprole", label: "IP role" },
 ]
-
-const VIA_OPTIONS = [
-  { value: "all", label: "All sources" },
-  { value: "ui", label: "UI" },
-  { value: "api", label: "API" },
-  { value: "system", label: "System" },
-]
-
-const VIA_LABEL: Record<string, string> = {
-  ui: "UI",
-  api: "API",
-  system: "System",
-}
 
 function AuditLogPage() {
   // Filters and the page live in the URL (#109): navigate into an entry, hit

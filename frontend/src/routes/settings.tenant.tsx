@@ -11,7 +11,10 @@ import { Button } from "@/components/ui/button"
 import { openOnboardingWizard } from "@/components/onboarding-wizard"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FormCombobox, FormSelect } from "@/components/forms"
-import { OverrideCard } from "@/components/settings/override-card"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { QueryError } from "@/components/query-error"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useTimezoneOptions } from "@/lib/use-timezones"
@@ -66,23 +69,10 @@ function TenantGeneralPage() {
   }, [q.data])
 
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (patch: Partial<TenantSettings>) =>
       api<TenantSettings>("/api/tenant-settings/", {
         method: "PUT",
-        body: JSON.stringify({
-          override_ui: form!.override_ui,
-          override_sharing: form!.override_sharing,
-          override_separation: form!.override_separation,
-          device_field_visibility: form!.device_field_visibility,
-          human_ids_enabled: form!.human_ids_enabled,
-          enhanced_site_separation: form!.enhanced_site_separation,
-          allow_site_settings: form!.allow_site_settings,
-          allow_site_editor_delegation: form!.allow_site_editor_delegation,
-          override_datetime: form!.override_datetime,
-          date_format: form!.date_format,
-          time_style: form!.time_style,
-          display_timezone: form!.display_timezone,
-        }),
+        body: JSON.stringify(patch),
       }),
     onSuccess: (data) => {
       setForm(data)
@@ -90,7 +80,7 @@ function TenantGeneralPage() {
       // human-ids / share flags flow through /api/me/ and the device form.
       qc.invalidateQueries({ queryKey: ["me"] })
       qc.invalidateQueries({ queryKey: ["device-field-visibility"] })
-      toast.success("Tenant settings saved")
+      toast.success("Saved")
     },
     onError: (err) => apiErrorToast(err),
   })
@@ -115,46 +105,64 @@ function TenantGeneralPage() {
     dep.device_field_visibility[key] ??
     false
 
+  const server = q.data
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        save.mutate()
-      }}
-      className="max-w-5xl space-y-6"
-    >
-      <p className="text-xs text-muted-foreground">
-        Per-tenant overrides. Groups left on{" "}
-        <span className="font-medium">deployment default</span> follow the
-        values a deployment admin sets under Settings → Deployment.
-      </p>
+    <div className="max-w-5xl space-y-4">
+      <SettingsHeader title="Tenant policy">
+        Rules for this tenant. A card left on its deployment default follows
+        whatever a deployment admin sets.
+      </SettingsHeader>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
-        <div>
-          <p className="text-sm font-medium">First-time setup</p>
-          <p className="text-xs text-muted-foreground">
-            Re-open the guided wizard to add a site, prefix, VLAN or device.
-          </p>
-        </div>
-        <Button type="button" variant="outline" onClick={openOnboardingWizard}>
-          <Rocket className="h-3.5 w-3.5" /> Re-run setup
-        </Button>
-      </div>
-
-      <OverrideCard
-        title="UI policy"
-        description="Optional device fields + human-readable object numbers for this tenant."
-        overridden={form.override_ui}
-        onOverriddenChange={(v) => set("override_ui", v)}
-        summary={
-          <span>
-            Human IDs {dep.human_ids_enabled ? "on" : "off"} · visible device
-            fields:{" "}
-            {DEVICE_FIELDS.filter((f) => dep.device_field_visibility[f.key])
-              .map((f) => f.label)
-              .join(", ") || "none"}
-          </span>
+      <SettingsCard
+        title="First-time setup"
+        description="Re-open the guided wizard to add a site, prefix, VLAN or device."
+        layout="plain"
+        footer={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openOnboardingWizard}
+          >
+            <Rocket className="h-3.5 w-3.5" /> Re-run setup
+          </Button>
         }
+      >
+        <></>
+      </SettingsCard>
+
+      <SettingsCard
+        title="UI policy"
+        description="Optional device fields and human-readable object numbers."
+        inherit={{
+          overridden: form.override_ui,
+          onChange: (v) => set("override_ui", v),
+          summary: (
+            <span>
+              Human IDs {dep.human_ids_enabled ? "on" : "off"} · visible device
+              fields:{" "}
+              {DEVICE_FIELDS.filter((f) => dep.device_field_visibility[f.key])
+                .map((f) => f.label)
+                .join(", ") || "none"}
+            </span>
+          ),
+        }}
+        layout="plain"
+        onSave={() =>
+          save.mutate({
+            override_ui: form.override_ui,
+            device_field_visibility: form.device_field_visibility,
+            human_ids_enabled: form.human_ids_enabled,
+          })
+        }
+        dirty={
+          !!server &&
+          (form.override_ui !== server.override_ui ||
+            form.human_ids_enabled !== server.human_ids_enabled ||
+            JSON.stringify(form.device_field_visibility) !==
+              JSON.stringify(server.device_field_visibility))
+        }
+        saving={save.isPending}
+        saveLabel="Save UI policy"
       >
         <div className="space-y-4">
           <label className="flex items-center gap-2 text-sm">
@@ -192,20 +200,40 @@ function TenantGeneralPage() {
             </div>
           </div>
         </div>
-      </OverrideCard>
+      </SettingsCard>
 
-      <OverrideCard
+      <SettingsCard
         title="Date & time"
-        description="How dates and times render for this tenant's users - each user can still pick their own under Preferences."
-        overridden={form.override_datetime}
-        onOverriddenChange={(v) => set("override_datetime", v)}
-        summary={
-          <span>
-            Dates {dep.date_format} ·{" "}
-            {dep.time_style === "12h" ? "12-hour" : "24-hour"} clock ·{" "}
-            {dep.display_timezone}
-          </span>
+        description="How dates and times render here - each person can still pick their own under Preferences."
+        inherit={{
+          overridden: form.override_datetime,
+          onChange: (v) => set("override_datetime", v),
+          summary: (
+            <span>
+              Dates {dep.date_format} ·{" "}
+              {dep.time_style === "12h" ? "12-hour" : "24-hour"} clock ·{" "}
+              {dep.display_timezone}
+            </span>
+          ),
+        }}
+        layout="plain"
+        onSave={() =>
+          save.mutate({
+            override_datetime: form.override_datetime,
+            date_format: form.date_format,
+            time_style: form.time_style,
+            display_timezone: form.display_timezone,
+          })
         }
+        dirty={
+          !!server &&
+          (form.override_datetime !== server.override_datetime ||
+            form.date_format !== server.date_format ||
+            form.time_style !== server.time_style ||
+            form.display_timezone !== server.display_timezone)
+        }
+        saving={save.isPending}
+        saveLabel="Save date & time"
       >
         <div className="grid gap-4 sm:max-w-md">
           <FormSelect
@@ -235,79 +263,7 @@ function TenantGeneralPage() {
             options={timezoneOptions}
           />
         </div>
-      </OverrideCard>
-
-      <OverrideCard
-        title="Delegation"
-        description="Site-editor delegation for this tenant."
-        overridden={form.override_sharing}
-        onOverriddenChange={(v) => set("override_sharing", v)}
-        summary={
-          <span>
-            Site-editor delegation{" "}
-            {dep.allow_site_editor_delegation ? "on" : "off"}
-          </span>
-        }
-      >
-        <div className="space-y-4">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={form.allow_site_editor_delegation}
-              onCheckedChange={(v) => set("allow_site_editor_delegation", !!v)}
-            />
-            Allow site editors to invite viewers to their sites
-          </label>
-        </div>
-      </OverrideCard>
-
-      <OverrideCard
-        title="Site separation"
-        description="Make each site behave like a mini-tenant: site-scoped users create only in their own site, and catalog entries they make stay local to it."
-        overridden={form.override_separation}
-        onOverriddenChange={(v) => set("override_separation", v)}
-        summary={
-          <span>
-            Enhanced separation {dep.enhanced_site_separation ? "on" : "off"} ·
-            site-managed settings {dep.allow_site_settings ? "on" : "off"}
-          </span>
-        }
-      >
-        <div className="space-y-4">
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox
-              className="mt-0.5"
-              checked={form.enhanced_site_separation}
-              onCheckedChange={(v) => set("enhanced_site_separation", !!v)}
-            />
-            <span>
-              Enhanced site separation
-              <span className="block text-[11px] text-muted-foreground">
-                Site-scoped users only see their own sites in pickers, new
-                objects default there, and shared (site-less) objects stay
-                read-only for them. Admins and cross-site users are unaffected.
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox
-              className="mt-0.5"
-              checked={form.allow_site_settings}
-              onCheckedChange={(v) => set("allow_site_settings", !!v)}
-            />
-            <span>
-              Let site admins manage their site's settings
-              <span className="block text-[11px] text-muted-foreground">
-                Site editors (and holders of a sitesettings grant) get a
-                Settings → This site section for e.g. email delivery.
-              </span>
-            </span>
-          </label>
-        </div>
-      </OverrideCard>
-
-      <Button type="submit" disabled={save.isPending}>
-        {save.isPending ? "Saving…" : "Save"}
-      </Button>
-    </form>
+      </SettingsCard>
+    </div>
   )
 }

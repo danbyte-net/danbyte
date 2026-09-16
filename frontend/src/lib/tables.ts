@@ -17,6 +17,9 @@ export interface TableMeta {
 }
 
 export const TABLES: TableMeta[] = [
+  { id: "scripts", label: "Scripts", area: "Integrations" },
+  { id: "script-runs", label: "Script runs", area: "Integrations" },
+  { id: "backups", label: "Backups", area: "Deployment" },
   { id: "prefixes", label: "Prefixes", area: "IPAM", ioType: "prefix" },
   { id: "prefix-ips", label: "Prefix · IPs", area: "IPAM" },
   { id: "prefix-embedded", label: "Prefixes (embedded)", area: "IPAM" },
@@ -32,6 +35,114 @@ export const TABLES: TableMeta[] = [
   { id: "statuses", label: "Statuses", area: "IPAM", ioType: "ipstatus" },
   { id: "ip-roles", label: "IP roles", area: "IPAM", ioType: "iprole" },
   { id: "services", label: "Services", area: "IPAM", ioType: "service" },
+  {
+    id: "static-routes",
+    label: "Static routes",
+    area: "Routing",
+    ioType: "staticroute",
+  },
+  {
+    id: "routing-policies",
+    label: "Routing policies",
+    area: "Routing",
+    ioType: "routingpolicy",
+  },
+  {
+    id: "prefix-lists",
+    label: "Prefix lists",
+    area: "Routing",
+    ioType: "prefixlist",
+  },
+  {
+    id: "community-lists",
+    label: "Community lists",
+    area: "Routing",
+    ioType: "communitylist",
+  },
+  {
+    id: "as-path-lists",
+    label: "AS-path lists",
+    area: "Routing",
+    ioType: "aspathlist",
+  },
+  {
+    id: "communities",
+    label: "Communities",
+    area: "Routing",
+    ioType: "community",
+  },
+  {
+    id: "routing-keychains",
+    label: "Routing keychains",
+    area: "Routing",
+    ioType: "routingkeychain",
+  },
+  {
+    id: "bfd-profiles",
+    label: "BFD profiles",
+    area: "Routing",
+    ioType: "bfdprofile",
+  },
+  {
+    id: "bgp-sessions",
+    label: "BGP sessions",
+    area: "Routing",
+    ioType: "bgpsession",
+  },
+  {
+    id: "bgp-peer-groups",
+    label: "BGP peer groups",
+    area: "Routing",
+    ioType: "bgppeergroup",
+  },
+  {
+    id: "device-bgp-sessions",
+    label: "BGP sessions (device)",
+    area: "Routing",
+  },
+  {
+    id: "ospf-areas",
+    label: "OSPF areas",
+    area: "Routing",
+    ioType: "ospfarea",
+  },
+  {
+    id: "bgp-instances",
+    label: "BGP instances",
+    area: "Routing",
+    ioType: "bgpinstance",
+  },
+  {
+    id: "ospf-instances",
+    label: "OSPF instances",
+    area: "Routing",
+    ioType: "ospfinstance",
+  },
+  {
+    id: "isis-instances",
+    label: "IS-IS instances",
+    area: "Routing",
+    ioType: "isisinstance",
+  },
+  {
+    id: "eigrp-instances",
+    label: "EIGRP instances",
+    area: "Routing",
+    ioType: "eigrpinstance",
+  },
+  { id: "vteps", label: "VTEPs", area: "Routing", ioType: "vtep" },
+  {
+    id: "embedded-bgp-sessions",
+    label: "BGP sessions (embedded)",
+    area: "Routing",
+  },
+  {
+    id: "embedded-static-routes",
+    label: "Static routes (embedded)",
+    area: "Routing",
+  },
+  { id: "embedded-vteps", label: "VTEPs (embedded)", area: "Routing" },
+  { id: "embedded-l2vpns", label: "L2VPNs (embedded)", area: "VPN" },
   { id: "sites", label: "Sites", area: "Organization", ioType: "site" },
   { id: "tenants", label: "Tenants", area: "Organization" },
   {
@@ -93,6 +204,8 @@ export const TABLES: TableMeta[] = [
   { id: "audit-log", label: "Audit log", area: "Governance" },
   { id: "compliance-rules", label: "Compliance rules", area: "Governance" },
   { id: "alerts", label: "Alerts", area: "Monitoring" },
+  { id: "monitoring-history", label: "Monitoring history", area: "Monitoring" },
+  { id: "monitoring-checks", label: "Monitoring checks", area: "Monitoring" },
   {
     id: "monitoring-engines",
     label: "Monitoring engines",

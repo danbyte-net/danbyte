@@ -12,7 +12,11 @@ import {
 } from "recharts"
 
 import type { DashActivity, DashDist, DashTopPrefix } from "@/lib/api"
-import { STATUS_COLOR, STATUS_LABEL } from "@/components/monitoring/charts"
+import { STATUS_COLOR } from "@/components/monitoring/charts"
+import {
+  statusColor,
+  statusLabel,
+} from "@/components/monitoring/status-palette"
 import {
   ChartContainer,
   ChartTooltip,
@@ -49,89 +53,105 @@ export function DistDonut({
   const sum = data.reduce((n, d) => n + d.count, 0)
   const chartData = data.map((d) => ({ ...d, fill: d.color }))
   return (
-    <div className="flex h-full flex-col items-center gap-2 sm:flex-row">
-      {/* Grows with the tile: height follows the row, width follows via
-          aspect-square. Fixed 170px made a 3x3 tile look mostly empty.
-          Safe re #42: tile size only changes between gestures - bodies are
-          unmounted placeholders while a drag/resize is in flight. */}
-      <ChartContainer
-        config={configFor(data)}
-        className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] shrink-0"
-      >
-        <PieChart>
-          <ChartTooltip
-            cursor={false}
-            content={<ChartTooltipContent hideLabel />}
-          />
-          <Pie
-            data={chartData}
-            dataKey="count"
-            nameKey="name"
-            innerRadius="62%"
-            strokeWidth={4}
-          >
-            <Label
-              content={({ viewBox }) => {
-                if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
-                  return null
-                const { cx, cy } = viewBox as { cx: number; cy: number }
-                return (
-                  <text x={cx} y={cy} textAnchor="middle">
-                    <tspan
-                      x={cx}
-                      y={cy - 2}
-                      className="fill-foreground"
-                      style={{ fontSize: 22, fontWeight: 700 }}
-                    >
-                      {sum.toLocaleString()}
-                    </tspan>
-                    <tspan
-                      x={cx}
-                      y={cy + 16}
-                      className="fill-muted-foreground"
-                      style={{ fontSize: 11 }}
-                    >
-                      {unit}
-                    </tspan>
-                  </text>
-                )
-              }}
+    // A container query, not a viewport one (#156). A dashboard widget can be
+    // narrow while the screen is wide, so `sm:flex-row` put the legend beside
+    // the donut in a tile with no room for it and the text ran outside the
+    // card. The query has to live on a parent: an element cannot respond to
+    // its own width.
+    <div className="@container h-full">
+      <div className="flex h-full flex-col items-center gap-2 @md:flex-row @md:justify-center @md:gap-6">
+        {/* Grows with the tile: height follows the row, width follows via
+            aspect-square. Fixed 170px made a 3x3 tile look mostly empty.
+            Safe re #42: tile size only changes between gestures - bodies are
+            unmounted placeholders while a drag/resize is in flight. */}
+        {/* Stacked (a narrow tile): the ring takes what the legend leaves,
+            or the legend lands below the body's edge and is never seen.
+            Side by side: the ring takes the height and the legend only the
+            width its rows need, so a short legend leaves the ring the room
+            and a long one grows into it - up to half the tile. */}
+        <ChartContainer
+          config={configFor(data)}
+          className="mx-auto aspect-square min-h-[120px] w-auto max-w-full flex-1 @md:mx-0 @md:h-full @md:max-h-[300px] @md:flex-none"
+        >
+          <PieChart>
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent hideLabel />}
             />
-          </Pie>
-        </PieChart>
-      </ChartContainer>
-      <ul className="grid w-full grid-cols-2 gap-x-3 gap-y-1 text-[12px] sm:flex-1 sm:grid-cols-1">
-        {data.slice(0, 6).map((d) => {
-          const target = link?.(d)
-          const row = (
-            <>
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-                style={{ backgroundColor: d.color }}
+            <Pie
+              data={chartData}
+              dataKey="count"
+              nameKey="name"
+              innerRadius="64%"
+              outerRadius="96%"
+              strokeWidth={4}
+            >
+              <Label
+                content={({ viewBox }) => {
+                  if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
+                    return null
+                  const { cx, cy } = viewBox as { cx: number; cy: number }
+                  return (
+                    <text x={cx} y={cy} textAnchor="middle">
+                      <tspan
+                        x={cx}
+                        y={cy - 2}
+                        className="fill-foreground"
+                        style={{ fontSize: 22, fontWeight: 700 }}
+                      >
+                        {sum.toLocaleString()}
+                      </tspan>
+                      <tspan
+                        x={cx}
+                        y={cy + 16}
+                        className="fill-muted-foreground"
+                        style={{ fontSize: 11 }}
+                      >
+                        {unit}
+                      </tspan>
+                    </text>
+                  )
+                }}
               />
-              <span className="truncate text-muted-foreground">{d.name}</span>
-              <span className="num ml-auto font-medium text-foreground tabular-nums">
-                {d.count.toLocaleString()}
-              </span>
-            </>
-          )
-          return (
-            <li key={d.name}>
-              {target ? (
-                <Link
-                  to={target.to}
-                  search={target.search}
-                  className="-mx-1 flex items-center gap-1.5 rounded px-1 hover:bg-muted/50"
-                >
-                  {row}
-                </Link>
-              ) : (
-                <span className="flex items-center gap-1.5">{row}</span>
-              )}
-            </li>
-          )
-        })}
-      </ul>
+            </Pie>
+          </PieChart>
+        </ChartContainer>
+        {/* Stacked: entries flow in a centred row and wrap, so four short
+            ones cost one line and the ring keeps the rest. Side by side: one
+            entry per row, counts aligned at the legend's own right edge. */}
+        <ul className="flex w-full min-w-0 shrink-0 flex-wrap justify-center gap-x-4 gap-y-1 text-[12px] @md:grid @md:w-auto @md:min-w-28 @md:max-w-[50%] @md:grid-cols-[minmax(0,1fr)] @md:gap-x-3">
+          {data.slice(0, 6).map((d) => {
+            const target = link?.(d)
+            const row = (
+              <>
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                  style={{ backgroundColor: d.color }}
+                />
+                <span className="truncate text-muted-foreground">{d.name}</span>
+                <span className="num ml-auto font-medium text-foreground tabular-nums">
+                  {d.count.toLocaleString()}
+                </span>
+              </>
+            )
+            return (
+              <li key={d.name} className="min-w-0 max-w-full">
+                {target ? (
+                  <Link
+                    to={target.to}
+                    search={target.search}
+                    className="-mx-1 flex items-center gap-1.5 rounded px-1 hover:bg-muted/50"
+                  >
+                    {row}
+                  </Link>
+                ) : (
+                  <span className="flex items-center gap-1.5">{row}</span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </div>
     </div>
   )
 }
@@ -218,53 +238,57 @@ export function RadialGauge({
     { name: "remainder", value: 100 - value, fill: "var(--muted)" },
   ]
   return (
-    <ChartContainer
-      config={{ value: { label } }}
-      className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px]"
-    >
-      <PieChart>
-        <Pie
-          data={data}
-          dataKey="value"
-          nameKey="name"
-          innerRadius="62%"
-          strokeWidth={4}
-          startAngle={90}
-          endAngle={-270}
-        >
-          <Label
-            content={({ viewBox }) => {
-              if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
-                return null
-              const { cx, cy } = viewBox as { cx: number; cy: number }
-              return (
-                <text x={cx} y={cy} textAnchor="middle">
-                  <tspan
-                    x={cx}
-                    y={cy - 2}
-                    className="fill-foreground"
-                    style={{ fontSize: 22, fontWeight: 700 }}
-                  >
-                    {value}%
-                  </tspan>
-                  <tspan
-                    x={cx}
-                    y={cy + 16}
-                    className="fill-muted-foreground"
-                    style={{ fontSize: 11 }}
-                  >
-                    {label}
-                  </tspan>
-                </text>
-              )
-            }}
-          />
-        </Pie>
-      </PieChart>
-    </ChartContainer>
+    // The same box as DistDonut's ring: without max-w-full a square that
+    // follows the tile's height overflows a tile narrower than it is tall
+    // and the ring is clipped at the edges.
+    <div className="flex h-full items-center justify-center">
+      <ChartContainer
+        config={{ value: { label } }}
+        className="mx-auto aspect-square h-full max-h-[300px] min-h-[150px] w-auto max-w-full shrink-0"
+      >
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            innerRadius="62%"
+            strokeWidth={4}
+            startAngle={90}
+            endAngle={-270}
+          >
+            <Label
+              content={({ viewBox }) => {
+                if (!viewBox || !("cx" in viewBox) || viewBox.cx == null)
+                  return null
+                const { cx, cy } = viewBox as { cx: number; cy: number }
+                return (
+                  <text x={cx} y={cy} textAnchor="middle">
+                    <tspan
+                      x={cx}
+                      y={cy - 2}
+                      className="fill-foreground"
+                      style={{ fontSize: 22, fontWeight: 700 }}
+                    >
+                      {value}%
+                    </tspan>
+                    <tspan
+                      x={cx}
+                      y={cy + 16}
+                      className="fill-muted-foreground"
+                      style={{ fontSize: 11 }}
+                    >
+                      {label}
+                    </tspan>
+                  </text>
+                )
+              }}
+            />
+          </Pie>
+        </PieChart>
+      </ChartContainer>
+    </div>
   )
 }
-
 
 /** Top prefixes by utilisation - fills the tile. */
 export function TopPrefixes({ data }: { data: DashTopPrefix[] }) {
@@ -310,6 +334,8 @@ const COUNT_ROWS: { key: string; label: string; to?: string }[] = [
   { key: "devices", label: "Devices", to: "/devices" },
   { key: "interfaces", label: "Interfaces", to: "/interfaces" },
   { key: "cables", label: "Cables", to: "/cables" },
+  { key: "bgp_sessions", label: "BGP sessions", to: "/bgp-sessions" },
+  { key: "static_routes", label: "Static routes", to: "/static-routes" },
 ]
 
 export function ObjectCounts({ counts }: { counts: Record<string, number> }) {
@@ -382,11 +408,11 @@ function Dot({ status }: { status: keyof typeof STATUS_COLOR }) {
   return (
     <span
       className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
-      title={STATUS_LABEL[status]}
+      title={statusLabel(status)}
     >
       <span
         className="h-2 w-2 rounded-full"
-        style={{ backgroundColor: STATUS_COLOR[status] }}
+        style={{ backgroundColor: statusColor(status) }}
       />
     </span>
   )

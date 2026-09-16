@@ -41,7 +41,10 @@ export const Route = createFileRoute("/saved-filters")({
 
 /** RBAC object slug → the list page it filters. Unknown slugs render as
  * plain text - the filter still edits and deletes fine. */
-const LISTS: Record<string, { label: string; to: string; api: string }> = {
+const LISTS: Record<
+  string,
+  { label: string; to: string; search?: Record<string, string>; api: string }
+> = {
   cable: { label: "Cables", to: "/cables", api: "/api/cables/" },
   certificate: {
     label: "Certificates",
@@ -93,6 +96,18 @@ const LISTS: Record<string, { label: string; to: string; api: string }> = {
     label: "Maintenance",
     to: "/maintenance",
     api: "/api/monitoring/maintenance-events/",
+  },
+  "monitoring-history": {
+    label: "Monitoring history",
+    to: "/monitoring",
+    search: { view: "history" },
+    api: "/api/monitoring/transitions/",
+  },
+  "monitoring-check": {
+    label: "Monitoring checks",
+    to: "/monitoring",
+    search: { view: "checks" },
+    api: "/api/monitoring/checks/",
   },
   manufacturer: {
     label: "Manufacturers",
@@ -260,7 +275,7 @@ function SavedFiltersPage() {
         cell: ({ row }) => {
           const target = LISTS[row.original.object_type]
           return target ? (
-            <Link to={target.to} className="link">
+            <Link to={target.to} search={target.search} className="link">
               {target.label}
             </Link>
           ) : (

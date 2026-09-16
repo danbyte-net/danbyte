@@ -165,7 +165,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: r.device_count },
-        { value: "documents", label: "Documents" },
+        { value: "documents", label: "Documents", count: r.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -286,7 +286,9 @@ function RackOverview({ rack: r }: { rack: Rack }) {
     {
       label: "Role",
       value: r.role ? (
-        <ColorBadge name={r.role.name} color={r.role.color || undefined} />
+        <Link to="/rack-roles/$id" params={{ id: r.role.id }} className="link">
+          <ColorBadge name={r.role.name} color={r.role.color || undefined} />
+        </Link>
       ) : (
         dash
       ),

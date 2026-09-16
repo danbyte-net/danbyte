@@ -471,15 +471,30 @@ class VLANForm(forms.ModelForm):
             raise forms.ValidationError("Required.")
         if v < 1 or v > 4094:
             raise forms.ValidationError("VLAN id must be between 1 and 4094.")
-        if self.tenant is not None:
-            qs = VLAN.objects.filter(tenant=self.tenant, vlan_id=v)
-            if self.instance and self.instance.pk:
-                qs = qs.exclude(pk=self.instance.pk)
-            if qs.exists():
-                raise forms.ValidationError(
-                    f"VLAN {v} is already registered in this tenant."
-                )
         return v
+
+    def clean(self):
+        """A VID is unique within its group, else within its site (#159) -
+        not across the tenant. Checked here rather than in ``clean_vlan_id``
+        because it needs the site and group from the same submission."""
+        cleaned = super().clean()
+        v = cleaned.get("vlan_id")
+        if v is None or self.tenant is None:
+            return cleaned
+        qs = VLAN.objects.filter(tenant=self.tenant, vlan_id=v)
+        group = cleaned.get("group")
+        if group is not None:
+            qs = qs.filter(group=group)
+            where = f"in {group.name}"
+        else:
+            site = cleaned.get("site")
+            qs = qs.filter(group__isnull=True, site=site)
+            where = f"at {site.name}" if site is not None else "with no site"
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            self.add_error("vlan_id", f"VLAN {v} already exists {where}.")
+        return cleaned
 
 
 class TagForm(_ColorMixin, forms.ModelForm):

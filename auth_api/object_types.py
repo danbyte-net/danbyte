@@ -23,7 +23,7 @@ from django.apps import apps
 # universe (used to validate a grant's actions); it is intentionally permissive
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
-ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser"]
+ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust"]
 
 # Which capability verbs a *specific* type actually honours - only these are
 # advertised for that type in the permission form, so the UI never offers e.g.
@@ -32,8 +32,15 @@ ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser"]
 # only governs what the picker surfaces.
 CAPABILITY_VERBS: dict[str, list[str]] = {
     "devicecredential": ["reveal"],
-    # An SSID's PSK is a credential, so revealing it is its own grant (#68).
+    # Execute a script, and mark one trusted (trusted scripts reach the
+    # database directly, so that verb is its own grant).
+    "script": ["run", "trust"],
+    # An SSID's PSK is a credential, so revealing it is its own grant (#68);
+    # an IPsec profile's pre-shared key the same (#168).
     "wirelesslan": ["reveal"],
+    "ipsecprofile": ["reveal"],
+    # A routing keychain holds the BGP / OSPF / IS-IS key.
+    "routingkeychain": ["reveal"],
     "device": ["connect"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
@@ -93,6 +100,39 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FHRPGroup", "FHRP groups", "IPAM"),
     ("api.FHRPGroupAssignment", "FHRP group assignments", "IPAM"),
     ("api.IPRole", "IP roles", "IPAM"),
+    ("api.NATRule", "NAT rules", "IPAM"),
+    ("routing.PrefixList", "Prefix lists", "Routing"),
+    ("routing.PrefixListRule", "Prefix list rules", "Routing"),
+    ("routing.Community", "Communities", "Routing"),
+    ("routing.CommunityList", "Community lists", "Routing"),
+    ("routing.CommunityListRule", "Community list rules", "Routing"),
+    ("routing.ASPathList", "AS-path lists", "Routing"),
+    ("routing.ASPathListRule", "AS-path list rules", "Routing"),
+    ("routing.RoutingPolicy", "Routing policies", "Routing"),
+    ("routing.RoutingPolicyRule", "Routing policy rules", "Routing"),
+    ("routing.RoutingKeychain", "Routing keychains", "Routing"),
+    ("routing.BFDProfile", "BFD profiles", "Routing"),
+    ("routing.StaticRoute", "Static routes", "Routing"),
+    ("routing.BGPInstance", "BGP instances", "Routing"),
+    ("routing.BGPAddressFamily", "BGP address families", "Routing"),
+    ("routing.Redistribution", "Redistributions", "Routing"),
+    ("routing.BGPPeerGroup", "BGP peer groups", "Routing"),
+    ("routing.BGPSession", "BGP sessions", "Routing"),
+    ("routing.OSPFArea", "OSPF areas", "Routing"),
+    ("routing.OSPFInstance", "OSPF instances", "Routing"),
+    ("routing.OSPFInterface", "OSPF interfaces", "Routing"),
+    ("routing.ISISInstance", "IS-IS instances", "Routing"),
+    ("routing.ISISInterface", "IS-IS interfaces", "Routing"),
+    ("routing.EIGRPInstance", "EIGRP instances", "Routing"),
+    ("routing.EIGRPInterface", "EIGRP interfaces", "Routing"),
+    ("routing.VTEP", "VTEPs", "Routing"),
+    ("routing.VTEPMembership", "VTEP memberships", "Routing"),
+    ("zabbix.ZabbixConnection", "Zabbix connections", "Monitoring"),
+    ("zabbix.ZabbixHostLink", "Zabbix host links", "Monitoring"),
+    ("zabbix.ZabbixChange", "Zabbix pending changes", "Monitoring"),
+    ("zabbix.ZabbixProvisionRule", "Zabbix provisioning rules", "Monitoring"),
+    ("zabbix.ZabbixMaintenance", "Zabbix maintenance windows", "Monitoring"),
+    ("zabbix.ZabbixAdoptionRule", "Zabbix adoption rules", "Monitoring"),
     ("api.Service", "Services", "IPAM"),
     ("api.ServiceTemplate", "Service templates", "IPAM"),
     # ─── DCIM ───────────────────────────────────────────────────────
@@ -208,6 +248,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FloorTileType", "Floor tile types", "Customize"),
     ("core.Tag", "Tags", "Customize"),
     # ─── Integrations ───────────────────────────────────────────────
+    ("scripting.Script", "Scripts", "Integrations"),
+    ("scripting.ScriptRun", "Script runs", "Integrations"),
     ("integrations.Webhook", "Webhooks", "Integrations"),
     ("integrations.AutomationTarget", "Automation targets", "Integrations"),
     ("integrations.DeployRun", "Config deploy runs", "Integrations"),

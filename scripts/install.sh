@@ -88,6 +88,9 @@ need_pkg=0
 for b in $CHECK_BINS; do command -v "$b" >/dev/null 2>&1 || need_pkg=1; done
 if [ "$need_pkg" -eq 1 ]; then
   if command -v apt-get >/dev/null 2>&1; then
+    # A fresh image's package lists are usually older than the archive;
+    # without a refresh the install fails on 404s for packages that moved.
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
     DEBIAN_FRONTEND=noninteractive apt-get install -y $PKGS \
       || die "apt could not install $PKGS - install them, then re-run."
   else
@@ -274,7 +277,16 @@ step "Installing + (re)starting services"
 # Redis stack. On a host that already ran Postgres that left an idle, empty
 # container competing for 5432 (issue #14).
 as_user bash -lc "cd '$APP' && make install-prod-services >/dev/null"
-DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs"
+
+# `danbyte` on PATH, so an administrator over SSH does not have to know where
+# the app was installed. A symlink rather than a shell alias: an alias exists
+# only in an interactive shell that sourced it, so it would be missing from
+# sudo, cron and every non-login session - exactly when this is wanted.
+# -f so a re-install or an upgrade re-points it instead of failing.
+if [ -d /usr/local/bin ]; then
+  ln -sfn "$APP/scripts/danbyte-admin" /usr/local/bin/danbyte
+fi
+DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane danbyte-docs"
 # enable = start at boot; restart = pick up freshly-deployed code (a plain
 # `enable --now` is a no-op on already-running units, so a re-install/upgrade
 # would keep serving the OLD code - restart is what makes the update take).
@@ -287,6 +299,14 @@ if [ "$DO_NGINX" -eq 1 ]; then
   ( cd "$APP" && make proxy-install \
       NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
       PROXY_HOST="$HOST" >/dev/null )
+  # proxy-install ran as root and left the staging folder root-only under
+  # root's umask; the app has to write its certificate drops there.
+  chown -R "$SERVICE_USER:$SERVICE_USER" "$APP/deploy/nginx/certs"
+  chmod 750 "$APP/deploy/nginx/certs"
+  chmod 600 "$APP/deploy/nginx/certs/danbyte.key" 2>/dev/null || true
+  # The root half of Settings → Updates → Site certificate: the app drops a
+  # pair in a folder it owns, this unit puts it in front of nginx.
+  ( cd "$APP" && make install-tls-unit >/dev/null )
 fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────
@@ -307,7 +327,8 @@ $(printf '\033[1;32m✓ Danbyte is installed.\033[0m')
 Next:
   • Sign in, then change the admin password (User → Preferences) and remove
     DJANGO_SUPERUSER_PASSWORD from $APP/.env.
-  • For a public host, replace the self-signed cert with a real one (certbot).
+  • The certificate is self-signed. Settings → Updates → Site certificate
+    gets a real one (Let's Encrypt in one click) or takes an uploaded pair.
   • Manage services as the service user:  sudo machinectl shell $SERVICE_USER@
 
 EOF

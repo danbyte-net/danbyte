@@ -28,7 +28,10 @@ so the interactive docs work on **airgapped** installs with no CDN access.
 
 - **API token** - create one under **Settings → Preferences → API tokens**, then
   send it as a header: `Authorization: Token <key>`. In Swagger UI, click
-  **Authorize** and paste the token. Tokens are scoped to a tenant.
+  **Authorize** and paste the token. Tokens are scoped to a tenant. Tick
+  **Read only** when creating one and every write is refused with 403 no
+  matter what the owning user may do - the right choice for reporting,
+  inventory pulls, and AI assistants.
 - **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 

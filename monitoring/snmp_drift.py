@@ -9,6 +9,7 @@ of truth while still letting reality flow in on demand.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 import ipaddress as ipmod
@@ -16,10 +17,14 @@ import ipaddress as ipmod
 from django.db import IntegrityError
 
 from api.models import Interface, IPAddress, MACAddress, Prefix, VLAN
+from api.vlan_scope import resolve_vid
 from api.speed import fmt_speed, speed_mbps
 from api.vrf_placement import ANY_VRF, containing_prefix
 
 from .models import DeviceSnmp, MonitoringSettings
+from .vc_stack import observed_for, stack_state
+
+log = logging.getLogger("monitoring.snmp_drift")
 
 
 def _real_ip(ip: str) -> bool:
@@ -151,14 +156,17 @@ def _norm(value) -> str:
 _OBSERVED_TYPE = {"lag": "lag"}
 
 
-def _lag_membership_items(device, observed: list[dict], int_by_name: dict) -> list[dict]:
+def _lag_membership_items(
+    device, observed: list[dict], int_by_name: dict, all_observed: list[dict] | None = None
+) -> list[dict]:
     """Bundle membership drift: the aggregate each port reports itself under
     versus the `lag` it has in Danbyte. Compared by aggregate NAME - on a
     stack the aggregate lives on the master while the member port sits on
     another member device, so ids can't be compared. Rows without the
     ``lag_if_index`` key come from an agent that never looked and say
-    nothing."""
-    by_ifindex = {str(o.get("if_index") or ""): o for o in observed}
+    nothing. ``all_observed`` is the whole stack's rows (the aggregate a
+    member port names usually sits on the master's slice)."""
+    by_ifindex = {str(o.get("if_index") or ""): o for o in (all_observed or observed)}
     items: list[dict] = []
     for o in observed:
         if "lag_if_index" not in o:
@@ -341,6 +349,64 @@ def _norm_mac(value) -> str:
     return re.sub(r"[^0-9a-f]", "", (value or "").lower())
 
 
+#: Plain ``Device`` fields an observation may speak for: the attribute, the key
+#: it lives under in an observation's ``data``, and what to call it.
+#:
+#: Only fields that are safe to write straight back. A model or a platform is a
+#: foreign key into a catalog the operator curates, so accepting one would mint
+#: a row behind their back - those stay out until there is somewhere honest for
+#: them to land.
+DEVICE_FIELDS = (
+    ("name", "sys_name", "Device name"),
+    ("serial_number", "serial", "Serial"),
+)
+ACCEPTABLE_DEVICE_FIELDS = {field for field, _key, _label in DEVICE_FIELDS}
+
+
+def _device_field_items(device, state) -> list[dict]:
+    """Device fields this observation disagrees with. Absent is not disagreement -
+    a source that does not report a serial is saying nothing about it."""
+    data = state.data or {}
+    out = []
+    for field, key, label in DEVICE_FIELDS:
+        observed = str(data.get(key) or "").strip()
+        if not observed:
+            continue
+        intended = str(getattr(device, field, "") or "").strip()
+        if _norm(observed) == _norm(intended):
+            continue
+        out.append({
+            "kind": "device_field", "field": field, "label": label,
+            "intended": intended, "observed": observed,
+        })
+    return out
+
+
+def _indirect_items(device, tenant, direct: list[dict]) -> list[dict]:
+    """What integrations observe, minus anything the direct poll already said.
+
+    Stamped with the source that raised them, because "Zabbix says the serial
+    is X" and "this device told us the serial is X" are different claims and an
+    operator deciding whether to accept one needs to know which they have.
+    """
+    from .observations import observations_for
+
+    seen = {
+        (i.get("kind"), i.get("field"))
+        for i in direct
+        if i.get("kind") == "device_field"
+    }
+    out: list[dict] = []
+    for source, state in observations_for(device, tenant):
+        for item in _device_field_items(device, state):
+            key = (item["kind"], item["field"])
+            if key in seen:
+                continue  # the direct poll wins, and so does the first source
+            seen.add(key)
+            out.append({**item, "source": source})
+    return out
+
+
 def compute_device_drift(
     device, tenant, state=None, intended_interfaces=None, skip_absent=None
 ) -> list[dict]:
@@ -351,19 +417,20 @@ def compute_device_drift(
     this to avoid an N+1. Omit them on the per-device path and they're queried.
     """
     if state is None:
-        state = DeviceSnmp.objects.filter(device=device, tenant=tenant).first()
-    if state is None or not state.polled_at:
-        return []
+        state = stack_state(device, tenant)
+    # No poll, or a poll that never reached the device, is no observation -
+    # comparing intent against nothing would flag every port stale (#153).
+    if state is None or not state.polled_at or state.reachable is False:
+        # An integration may still have looked. This is the case the whole
+        # registry exists for: a device Danbyte cannot poll - no route, no
+        # credentials - is precisely the one somebody else's poller knows.
+        return _indirect_items(device, tenant, [])
 
     items: list[dict] = []
 
-    # 1. Device name vs sysName.
-    sys_name = (state.data or {}).get("sys_name")
-    if sys_name and _norm(sys_name) != _norm(device.name):
-        items.append({
-            "kind": "device_field", "field": "name", "label": "Device name",
-            "intended": device.name, "observed": sys_name,
-        })
+    # 1. Device fields - the name against sysName, and anything else a source
+    #    can speak for. Shared with the indirect path below.
+    items.extend(_device_field_items(device, state))
 
     # 2. Interfaces, matched by name (case-insensitive).
     observed = [o for o in (state.interfaces or []) if o.get("name")]
@@ -376,6 +443,10 @@ def compute_device_drift(
     if policy["snmp_skip_unrouted_vlans"]:
         observed = [o for o in observed if not _is_unrouted_vlan(o)]
     fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
+    # A stack reports every member's ports; keep the ones that are this
+    # member's (#148). The full list stays around for aggregate lookups.
+    stack_observed = observed
+    observed = observed_for(device, observed)
     obs_by_name = {_norm(o["name"]): o for o in observed}
     intended = (
         list(intended_interfaces) if intended_interfaces is not None
@@ -489,7 +560,7 @@ def compute_device_drift(
             })
 
     # 2c. Bundle membership: which aggregate each port belongs to.
-    items.extend(_lag_membership_items(device, observed, int_by_name))
+    items.extend(_lag_membership_items(device, observed, int_by_name, stack_observed))
 
     # 3. Stale: Danbyte has it, the device doesn't report it. Report only -
     #    discovery never deletes from the SoT.
@@ -631,6 +702,7 @@ def compute_device_drift(
                     "observed": f"{device.name} · {iface.name}",
                 })
 
+    items.extend(_indirect_items(device, tenant, items))
     return items
 
 
@@ -638,13 +710,18 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
     """Apply one accepted drift item to intent. Returns True on success."""
     kind = action.get("kind")
 
-    if kind == "device_field" and action.get("field") == "name":
-        observed = action.get("observed")
-        if observed:
-            device.name = observed
-            device.save(update_fields=["name"])
-            return True
-        return False
+    if kind == "device_field":
+        # An allow-list, not whatever the body names: this writes the source of
+        # truth, and a field that reached here by any other route than one
+        # Danbyte offered is not one to set.
+        field = action.get("field")
+        observed = str(action.get("observed") or "").strip()
+        if field not in ACCEPTABLE_DEVICE_FIELDS or not observed:
+            return False
+        limit = device._meta.get_field(field).max_length or 255
+        setattr(device, field, observed[:limit])
+        device.save(update_fields=[field])
+        return True
 
     if kind == "interface_missing":
         observed = action.get("observed") or {}
@@ -693,7 +770,9 @@ def apply_drift_action(device, tenant, action: dict) -> bool:
             iface.save(update_fields=["speed"])
             return True
         if field == "vlan":
-            vlan = _resolve_observed_vlan(tenant, {"vlan": action.get("observed")})
+            vlan = _resolve_observed_vlan(
+                tenant, {"vlan": action.get("observed")}, device
+            )
             if vlan is None:
                 return False
             iface.vlan = vlan
@@ -798,8 +877,8 @@ def sync_device_from_snmp(device, tenant) -> dict:
     summary = {"interfaces_created": 0, "interfaces_updated": 0, "lag_memberships": 0,
                "ips_assigned": 0, "ips_skipped": 0, "vlans_assigned": 0,
                "switch_links": 0}
-    state = DeviceSnmp.objects.filter(device=device, tenant=tenant).first()
-    if state is None or not state.polled_at:
+    state = stack_state(device, tenant)
+    if state is None or not state.polled_at or state.reachable is False:
         return summary
 
     # The same observed-name map drift uses, so SNMP links hold here too -
@@ -811,7 +890,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
     skip_absent = _skip_not_present(tenant)
     policy = _snmp_policy(tenant)
     fdb_macs = _fdb_single_macs(state) if policy["snmp_mac_from_fdb"] else None
-    for o in (state.interfaces or []):
+    for o in observed_for(device, list(state.interfaces or [])):
         name = o.get("name")
         # Pre-allocated stack ports: not real hardware, not intent.
         if skip_absent and _is_not_present(o):
@@ -825,7 +904,7 @@ def sync_device_from_snmp(device, tenant) -> dict:
         if policy["snmp_skip_unrouted_vlans"] and _is_unrouted_vlan(o):
             continue
         speed = _fmt_speed(o.get("speed_mbps"))
-        vlan = _resolve_observed_vlan(tenant, o)
+        vlan = _resolve_observed_vlan(tenant, o, device)
         # Match on ifName then ifDescr (see _match_observed): a library-built
         # switch stores the FULL name (GigabitEthernet1/0/1) that SNMP reports
         # as ifDescr, so name-only matching would create a duplicate short-named
@@ -936,30 +1015,40 @@ def _ensure_mac_object(tenant, iface, mac: str) -> None:
     )
 
 
-def _resolve_observed_vlan(tenant, o: dict):
+def _resolve_observed_vlan(tenant, o: dict, device=None):
     """Find-or-create the access VLAN an observed interface reports (Q-BRIDGE
-    PVID), or ``None`` when it reports no usable VLAN. Ungrouped, tenant-scoped -
-    so a switch's VLANs become first-class Danbyte VLAN objects on sync."""
+    PVID), or ``None`` when it reports no usable VLAN.
+
+    Scoped to the polled device's **site** (#159): a VID is only unique within
+    its site or its group, so "VLAN 105" off a switch in Warsaw must not
+    resolve to Kyiv's 105. Where the VID is genuinely ambiguous - several
+    sites' VLANs and nothing to choose between them - this returns ``None``
+    and the caller leaves the port's VLAN alone. A missing assignment shows up
+    as drift on the next poll; a wrong one looks like the truth forever.
+    """
     try:
         vid = int(o.get("vlan"))
     except (ValueError, TypeError):
         return None
     if not (1 <= vid <= 4094):
         return None
-    vlan = VLAN.objects.filter(tenant=tenant, vlan_id=vid, group__isnull=True).first()
-    if vlan is None:
-        # Grouped VLANs count too (site-scoped groups are the norm on larger
-        # estates) - same resolution order as virt sync's match_existing_vlans:
-        # ungrouped first, then by group name, virt-sync groups excluded.
-        vlan = (
-            VLAN.objects.filter(tenant=tenant, vlan_id=vid)
-            .exclude(group__slug__startswith="virt-")
-            .order_by("group__name")
-            .first()
+
+    site = getattr(device, "site", None)
+    vlan, why = resolve_vid(
+        tenant, vid, site=site, exclude_group_prefix="virt-"
+    )
+    if why == "ambiguous":
+        log.info(
+            "VID %s exists at several sites and this device has none - "
+            "leaving the port's VLAN unset", vid,
         )
+        return None
     if vlan is None:
+        # New to Danbyte: create it AT THE DEVICE'S SITE, so the same VID
+        # polled from another site creates that site's own VLAN rather than
+        # colliding with this one.
         vlan = VLAN.objects.create(
-            tenant=tenant, vlan_id=vid,
+            tenant=tenant, vlan_id=vid, site=site,
             name=(o.get("vlan_name") or f"VLAN {vid}")[:255],
         )
     return vlan

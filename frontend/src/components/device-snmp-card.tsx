@@ -277,6 +277,19 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
         }
       >
         <SnmpBindingHint scope="device" objectId={deviceId} />
+        {state?.polled_via && (
+          <p className="text-[13px] text-muted-foreground">
+            Polled via stack member{" "}
+            <Link
+              to="/devices/$id"
+              params={{ id: state.polled_via.id }}
+              className="link font-mono"
+            >
+              {state.polled_via.name}
+            </Link>
+            .
+          </p>
+        )}
         {factRows.length === 0 ? (
           <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
             {state?.error ? state.error : "Not polled yet."}

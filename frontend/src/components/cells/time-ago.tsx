@@ -5,13 +5,18 @@ import { useUserPrefs } from "@/lib/use-user-prefs"
 
 // Relative-time helper. Pure - call anywhere.
 export function timeAgo(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (s < 60) return `${s}s ago`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
+  const delta = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  const future = delta < 0
+  const s = Math.abs(delta)
+  const unit =
+    s < 60
+      ? `${s}s`
+      : s < 3600
+        ? `${Math.floor(s / 60)}m`
+        : s < 86400
+          ? `${Math.floor(s / 3600)}h`
+          : `${Math.floor(s / 86400)}d`
+  return future ? `in ${unit}` : `${unit} ago`
 }
 
 /** Timestamp cell honouring the user's `time_format` preference (relative vs

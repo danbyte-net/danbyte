@@ -15,7 +15,9 @@ class AuditContextMiddleware:
         # Token-authenticated requests carry an Authorization header; browser
         # sessions don't. Good enough to tell "via API" from "via UI".
         via = "api" if request.META.get("HTTP_AUTHORIZATION") else "ui"
-        set_context(getattr(request, "user", None), uuid.uuid4().hex, via)
+        # Pass the request itself: DRF authenticates inside the view, after
+        # this runs, and sets the authenticated user back onto it.
+        set_context(getattr(request, "user", None), uuid.uuid4().hex, via, request=request)
         try:
             return self.get_response(request)
         finally:

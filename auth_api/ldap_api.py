@@ -326,8 +326,34 @@ class LDAPGroupMappingSerializer(serializers.ModelSerializer):
     class Meta:
         model = LDAPGroupMapping
         fields = ["id", "ldap_group_dn", "ldap_group_cn", "group_id",
-                  "group_name", "created_at", "updated_at"]
+                  "group_name", "grants_superuser", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        grants = attrs.get(
+            "grants_superuser", getattr(self.instance, "grants_superuser", False)
+        )
+        # Superuser is global - a tenant directory may not mint one.
+        if grants and self.context.get("tenant_mapping"):
+            raise serializers.ValidationError(
+                {"grants_superuser": "Not available on a tenant directory."}
+            )
+        # Arming the flag IS a superuser grant: it takes the same power as
+        # flipping is_superuser directly, or an admin below that bar could map
+        # their own directory group and promote themselves at next login.
+        turning_on = bool(attrs.get("grants_superuser")) and not bool(
+            getattr(self.instance, "grants_superuser", False)
+        )
+        if turning_on:
+            from .permissions import can_grant_superuser
+
+            actor = getattr(self.context.get("request"), "user", None)
+            if actor is None or not can_grant_superuser(actor):
+                raise serializers.ValidationError(
+                    {"grants_superuser": "Granting superuser via a mapping needs "
+                                         "the grant-superuser permission."}
+                )
+        return attrs
 
 
 # ─── Tenant directories (per-tenant LDAP overrides) ─────────────────────────
@@ -641,6 +667,9 @@ class TenantLDAPGroupMappingViewSet(viewsets.ModelViewSet):
     queryset = LDAPGroupMapping.objects.select_related("group").all()
     serializer_class = LDAPGroupMappingSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), "tenant_mapping": True}
 
     def _tenant(self):
         from api.views import _get_active_tenant

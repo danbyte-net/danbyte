@@ -341,6 +341,12 @@ function AlertsTable({ rows }: { rows: MonitoringAlert[] }) {
                 }
               >
                 <Check className="h-3 w-3" /> ack
+                {zabbixAck(a) === "ok" && (
+                  <span className="text-muted-foreground">· Zabbix</span>
+                )}
+                {zabbixAck(a) === "failed" && (
+                  <span className="text-destructive">· not in Zabbix</span>
+                )}
               </Badge>
             )}
           </div>
@@ -430,4 +436,14 @@ function humanDuration(ms: number): string {
   if (h < 24) return `${h}h ${m % 60}m`
   const d = Math.floor(h / 24)
   return `${d}d ${h % 24}h`
+}
+
+/** Whether the acknowledgement was written back to Zabbix (#162): "ok",
+ * "failed", or null when the alert was never Zabbix's to begin with. */
+function zabbixAck(a: MonitoringAlert): "ok" | "failed" | null {
+  const stamp = a.detail.zabbix_ack as
+    | { acknowledged?: boolean; error?: string }
+    | undefined
+  if (!stamp || !a.acknowledged) return null
+  return stamp.error ? "failed" : stamp.acknowledged ? "ok" : null
 }

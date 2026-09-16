@@ -343,7 +343,25 @@ class IntegrationSettings(TimestampedModel):
     )
     dhcp_sync_enabled = models.BooleanField(default=False)
     dns_sync_enabled = models.BooleanField(default=False)
-    virtualization_enabled = models.BooleanField(default=False)
+    # One switch per hypervisor, not one for "virtualization": a site that
+    # runs both should be able to stop syncing one of them without touching
+    # the other's sources. Upgrades turn both on for anyone who had the old
+    # combined switch on, so nothing changes for them.
+    virt_proxmox_enabled = models.BooleanField(default=False)
+    virt_vcenter_enabled = models.BooleanField(default=False)
+    # Agent access (MCP): an assistant reaching this tenant's data with the
+    # permissions of the API token it authenticates with. Writes need the
+    # second switch as well, so reading can be on with nothing changeable.
+    ai_access_enabled = models.BooleanField(default=False)
+    ai_writes_enabled = models.BooleanField(default=False)
+    # The in-app chat. Separate from agent access because it sends the
+    # conversation to whichever model the deployment configured.
+    ai_chat_enabled = models.BooleanField(default=False)
+    #: Read monitoring status from an existing Zabbix, and later provision it
+    #: (#162). Off until an admin turns it on, like every other integration -
+    #: and re-checked at job time, so switching it off stops the background
+    #: work rather than only hiding the pages.
+    zabbix_enabled = models.BooleanField(default=False)
 
     class Meta:
         verbose_name_plural = "integration settings"
@@ -519,6 +537,25 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: territory. The site comes from placement rules when they resolve one;
     #: the device type stays theirs - nothing on the wire says what it is.
     sync_hosts = models.BooleanField(default=False)
+    #: Copy the hypervisor's MTU onto a VM interface that has none, and treat
+    #: a differing MTU as drift. Off makes Danbyte the source of truth for
+    #: MTU, for estates that set it by hand (#160). Note that vCenter's VM-NIC
+    #: payload carries no MTU at all, so this only bites on Proxmox today.
+    sync_vm_interface_mtu = models.BooleanField(default=True)
+    #: Ignore powered-off guests. They still count as *present* - a VM that is
+    #: merely off must never look missing to auto-prune (#160).
+    skip_offline_vms = models.BooleanField(default=False)
+    #: Delete a VM that has vanished from the hypervisor. **Off by default:
+    #: Danbyte does not delete your records unless you ask it to.** Until this
+    #: is turned on a missing VM is kept and flagged, and in review mode it is
+    #: still *proposed* for removal - proposing is not deleting (#160).
+    auto_prune = models.BooleanField(default=False)
+    #: How long a guest must stay missing before Danbyte believes it. 0 acts on
+    #: the first pass that does not see it, which turns one flaky API call into
+    #: a deleted VM; new sources get a week. Gates the review-mode proposal
+    #: too, because approving a deletion a bad poll invented loses the same
+    #: data.
+    auto_prune_after_days = models.PositiveSmallIntegerField(default=7)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
@@ -892,6 +929,9 @@ class VirtGuest(TimestampedModel):
     created_vm = models.BooleanField(default=False)
     power_state = models.CharField(max_length=16, blank=True, default="")
     last_seen_at = models.DateTimeField(null=True, blank=True)
+    #: First pass that did not see this guest. Cleared the moment it comes
+    #: back, so a hypervisor blip does not eat into the prune delay.
+    missing_since = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["vmid"]

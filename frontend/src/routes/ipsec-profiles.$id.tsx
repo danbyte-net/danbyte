@@ -12,6 +12,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
+import { RevealPskButton } from "@/components/reveal-psk-button"
 import { IPSecProfileDeleteDialog } from "@/components/ipsec-profile-delete-dialog"
 import {
   DetailHero,
@@ -137,6 +138,23 @@ function Body({ profile: p }: { profile: IPSecProfile }) {
 
 /** The crypto parameters, which are the whole point of the object - read them
  * here before you change a profile that tunnels already depend on. */
+/** "Stored" plus a reveal button, or a plain "Not set". The key itself is
+ * never in the page payload - revealing is a separate, audited request that
+ * needs the `reveal` grant on IPsec profiles (#168). */
+function PskRow({ profile }: { profile: IPSecProfile }) {
+  const { canDo } = useMe()
+  if (!profile.psk_set)
+    return <span className="text-muted-foreground">Not set</span>
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="font-mono text-[13px]">••••••••</span>
+      {canDo("ipsecprofile", "reveal") && (
+        <RevealPskButton id={profile.id} endpoint="/api/ipsec-profiles" />
+      )}
+    </span>
+  )
+}
+
 function IPSecProfileOverview({ profile: p }: { profile: IPSecProfile }) {
   const { humanIds } = useMe()
 
@@ -185,6 +203,7 @@ function IPSecProfileOverview({ profile: p }: { profile: IPSecProfile }) {
           dash
         ),
     },
+    { label: "Pre-shared key", value: <PskRow profile={p} /> },
   ]
 
   const record: KvRow[] = [

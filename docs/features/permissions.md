@@ -29,8 +29,8 @@ The four things a permission can allow on a type of object are **view**, **add**
 
 A few extra **capability** verbs apply to specific types and are never implied
 by *change*: **connect** (on devices - open a [Connect launcher or the SSH
-terminal](device-access.md)), **reveal** (on device credentials and wireless
-LANs - read the referenced secret), **subscribe** (on notification channels -
+terminal](device-access.md)), **reveal** (on device credentials, wireless
+LANs and IPSec profiles - read the referenced secret), **subscribe** (on notification channels -
 self-service opt-in/out), and **grant superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
@@ -244,11 +244,30 @@ You can require a second step at sign-in for any account.
 ## Company directory (LDAP / Active Directory)
 
 Optional and off by default. When an administrator connects your directory under
-**Settings → Directory (LDAP)**, people can sign in with their existing company
+**Settings → Directory**, people can sign in with their existing company
 credentials. Their Danbyte group membership is kept in sync from their directory
 groups every time they sign in, so the directory decides *who's in what* and
 Danbyte groups decide *what that means*. Only directory groups you've explicitly
 mapped grant anything.
+
+### What a directory login receives
+
+On every LDAP login the account's Danbyte groups are re-synced from the
+mapped directory groups, and then:
+
+- **Tenants.** A group's tenant-scoped grant is tenant access. Those tenants
+  are added to the account's profile at login and the first one becomes the
+  home tenant, so the account lands in the right place and appears in that
+  tenant's user list without an admin editing the record.
+- **Superuser.** Tick **Grants superuser** on a deployment-directory mapping
+  and members of that directory group become superusers when they sign in -
+  the same switch an SSO mapping has. Arming it needs the grant-superuser
+  permission, it is not offered on a tenant directory, and a login never
+  clears it: revocation stays a manual act on the user.
+
+A permission whose actions include `grant_superuser` does **not** make its
+holders superusers - it lets them promote others. Use the mapping switch
+for the accounts that should be superusers themselves.
 
 ## Single sign-on (SSO)
 

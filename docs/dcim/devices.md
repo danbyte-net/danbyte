@@ -150,8 +150,8 @@ rack-face image, that front/rear photo shows below the cards too.
 
 Uploaded photos and diagrams live on their own **Images** tab (rack shots,
 labels, cabling pictures, faceplate close-ups). Click **Add image** to upload;
-hover an image and click the trash icon to remove it, or click an image to open
-the full-size original in a new tab.
+hover an image and click the trash icon to remove it - a confirmation asks
+first - or click an image to open the full-size original in a new tab.
 
 Two layouts, chosen with the toggle beside **Add image**. The **list**
 (default) names each file with its type, size, dimensions and when it changed,
@@ -369,3 +369,9 @@ device type - supports bulk editing. Tick rows and a floating bar appears:
 Changes go through `POST /api/<component>/bulk-update/` (`{ids, fields}`) and
 `bulk-delete/` (`{ids}`) - allow-listed fields per type, tenant-scoped,
 audited in the change log like any other edit.
+
+## Spec sheet
+
+**Spec sheet** in the page actions opens a printable PDF datasheet of the
+device - stat boxes, details, modules, interfaces with cable peers, comments
+and images. See [Spec sheets](../features/spec-sheets.md).

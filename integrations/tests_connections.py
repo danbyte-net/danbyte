@@ -64,10 +64,11 @@ class ConnectionApiTests(APITestCase):
         self._login(self.admin)
         res = self.client.get("/api/integrations/settings/")
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), {
-            "dhcp_sync_enabled": False, "dns_sync_enabled": False,
-            "virtualization_enabled": False,
-        })
+        # Every registered toggle, off - derived rather than listed, because a
+        # hand-kept list here is what let a missing serializer field ship.
+        from .toggles import KEYS
+
+        self.assertEqual(res.json(), {f: False for f in KEYS.values()})
         res = self.client.put(
             "/api/integrations/settings/", {"dhcp_sync_enabled": True},
             format="json",
@@ -86,7 +87,7 @@ class ConnectionApiTests(APITestCase):
         self.assertEqual(
             self.client.get("/api/virtualization-sources/").status_code, 404
         )
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         self.assertEqual(
             self.client.get("/api/virtualization-sources/").status_code, 200
         )
@@ -139,7 +140,7 @@ class ConnectionApiTests(APITestCase):
 
     def test_vcenter_kind_accepted_with_credentials(self):
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         res = self.client.post("/api/virtualization-sources/", {
             "name": "vc", "kind": "vcenter", "host": "192.0.2.20", "port": 443,
             "username": "administrator@vsphere.local", "password": "s",
@@ -149,12 +150,31 @@ class ConnectionApiTests(APITestCase):
 
     def test_vcenter_kind_requires_password(self):
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         res = self.client.post("/api/virtualization-sources/", {
             "name": "vc", "kind": "vcenter", "host": "192.0.2.20",
             "username": "administrator@vsphere.local",
         }, format="json")
         self.assertEqual(res.status_code, 400)
+
+    def test_a_source_of_a_disabled_kind_is_refused(self):
+        """The picker hides a kind whose switch is off; the server is the
+        rule. Splitting the toggle would be cosmetic otherwise."""
+        self._login(self.admin)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=False)
+        res = self.client.post("/api/virtualization-sources/", {
+            "name": "vc", "kind": "vcenter", "host": "192.0.2.20", "port": 443,
+            "username": "administrator@vsphere.local", "password": "s",
+        }, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("off for this tenant", str(res.json()["kind"]))
+
+        # ...and the kind that IS on still works.
+        ok = self.client.post("/api/virtualization-sources/", {
+            "name": "px", "kind": "proxmox", "host": "192.0.2.21",
+            "token_id": "a@pam!t", "secret": "s",
+        }, format="json")
+        self.assertEqual(ok.status_code, 201, ok.content)
 
     # ─── Test-connection names the product it actually probed (#33) ──────
 
@@ -171,7 +191,7 @@ class ConnectionApiTests(APITestCase):
     def test_vcenter_probe_says_vcenter(self):
         """It used to say "Proxmox VE" - the client named the product itself."""
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         src = self._source("vcenter", "192.0.2.20")
         client = mock.MagicMock()
         client.get.side_effect = lambda p: (
@@ -189,7 +209,7 @@ class ConnectionApiTests(APITestCase):
 
     def test_proxmox_probe_says_proxmox(self):
         self._login(self.admin)
-        self._enable(virtualization_enabled=True)
+        self._enable(virt_proxmox_enabled=True, virt_vcenter_enabled=True)
         src = self._source("proxmox", "192.0.2.30")
         with mock.patch(
             "integrations.virt_client.proxmox_get",

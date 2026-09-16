@@ -83,3 +83,6 @@ notes/
 
 # Uploaded (offline) plugins - runtime data, never committed
 plugins_local/
+
+# Marketing shots taken with ~/danbyte-lab/shot
+shots/

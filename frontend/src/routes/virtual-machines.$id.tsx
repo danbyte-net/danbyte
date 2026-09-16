@@ -1,4 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { PlatformCell } from "@/components/cells/platform-cell"
+import { CatalogCell } from "@/components/cells/catalog-cell"
+import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
@@ -38,6 +41,10 @@ import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
+  // Typed so other pages can deep-link a tab (the MAC pages point at
+  // Components); useUrlTab validates the value itself.
+  validateSearch: (s: Record<string, unknown>): { tab?: string } =>
+    typeof s.tab === "string" ? { tab: s.tab } : {},
 })
 
 /** Memory in MB → "x GB" when an even multiple of 1024, else "x MB". */
@@ -82,7 +89,10 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
-  const goBack = useCallback(() => nav({ to: "/virtual-machines", search: { device: undefined } }), [nav])
+  const goBack = useCallback(
+    () => nav({ to: "/virtual-machines", search: { device: undefined } }),
+    [nav]
+  )
 
   return (
     <DetailShell
@@ -92,6 +102,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       presence={{ type: "virtualmachine", id: vm.id }}
       actions={
         <>
+          <SpecSheetButton kind="vm" id={vm.id} />
           {canEdit && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/virtual-machines/$id/edit" params={{ id: vm.id }}>
@@ -192,7 +203,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         { value: "services", label: "Services", count: vm.service_count },
         { value: "monitoring", label: "Monitoring" },
         { value: "snmp", label: "SNMP" },
-        { value: "certificates", label: "Certificates" },
+        {
+          value: "certificates",
+          label: "Certificates",
+          count: vm.certificate_count,
+        },
         { value: "config", label: "Config" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -296,18 +311,25 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <Link
           to="/virtualization-sources/$id"
           params={{ id: vm.synced_from_id! }}
+          className="link"
         >
-          <Badge variant="outline" className="gap-1 text-[10px]">
-            <RefreshCw className="h-3 w-3" />
-            {vm.synced_from}
-          </Badge>
+          {vm.synced_from}
         </Link>
       ) : (
         dash
       ),
     },
-    { label: "Role", value: vm.role?.name ?? dash },
-    { label: "Platform", value: vm.platform?.name ?? dash },
+    {
+      label: "Role",
+      value: (
+        <CatalogCell
+          value={vm.role}
+          to="/device-roles/$id"
+          params={vm.role ? { id: vm.role.id } : undefined}
+        />
+      ),
+    },
+    { label: "Platform", value: <PlatformCell platform={vm.platform} /> },
     { label: "Description", value: vm.description || dash },
   ]
   const resourceRows: KvRow[] = [
@@ -399,7 +421,11 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <KvCard title="Management" rows={managementRows} />
       </div>
       {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
-      <VmTopologyCard vmId={vm.id} vmName={vm.name} syncedFromId={vm.synced_from_id} />
+      <VmTopologyCard
+        vmId={vm.id}
+        vmName={vm.name}
+        syncedFromId={vm.synced_from_id}
+      />
       <CustomFieldValues model="virtualmachine" values={vm.custom_fields} />
     </div>
   )

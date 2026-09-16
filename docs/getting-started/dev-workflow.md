@@ -12,6 +12,7 @@ Everyday commands. All driven by the project `Makefile`; under the hood they cal
 |---|---|---|
 | `danbyte-backend` | `:8000` | Django dev server |
 | `danbyte-workers` | - | RQ worker (default + high + low queues) |
+| `danbyte-fastlane` | - | The fast lane - sub-minute checks (`make fastlane-logs`) |
 | `danbyte-mockups` | `:8080` | Static design mockup server (`design/`) |
 | `danbyte-docs` | `:8001` | This documentation site (Zensical) |
 | `danbyte-infra` | `:5432`/`:6379` | Postgres + Redis via `docker compose` (no-op if Docker isn't installed) |
@@ -55,6 +56,15 @@ DB_HOST=127.0.0.1 DB_USER=danbyte DB_PASSWORD=danbyte DB_NAME=danbyte \
   .venv/bin/python manage.py seed_demo
 make backend-restart
 ```
+
+## Releases that need an operator step
+
+When a change needs something on the host that no migration can do (a
+reverse-proxy location, a volume, a package), add an `UpgradeNote` to
+`core/upgrade_notes.py` in the same change: id, version, title, a short
+body, the snippet to paste, the docs anchor, and the platforms it applies
+to. Admins see it after upgrading until they mark it done - see
+[Upgrading → After an upgrade](upgrading.md#after-an-upgrade).
 
 ## Docs while you work
 

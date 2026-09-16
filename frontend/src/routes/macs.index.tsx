@@ -11,6 +11,7 @@ import { useTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { MacObjectDialog } from "@/components/mac-object-dialog"
+import { OuiRangesDialog } from "@/components/oui-ranges-dialog"
 import { useMe } from "@/lib/use-me"
 
 interface MacList {
@@ -25,6 +26,7 @@ function MacsPage() {
   const canAdd = canDo("macaddress", "add")
   const [q, setQ] = useState("")
   const [adding, setAdding] = useState(false)
+  const [ranges, setRanges] = useState(false)
 
   const query = useQuery({
     queryKey: ["macs"],
@@ -37,11 +39,20 @@ function MacsPage() {
     if (!needle) return allRows
     return allRows.filter((m) => {
       if (m.mac.toLowerCase().includes(needle)) return true
+      if (m.vendor?.name.toLowerCase().includes(needle)) return true
       if (
         m.interfaces.some(
           (i) =>
             i.name.toLowerCase().includes(needle) ||
             i.device.name.toLowerCase().includes(needle)
+        )
+      )
+        return true
+      if (
+        m.vm_interfaces.some(
+          (i) =>
+            i.name.toLowerCase().includes(needle) ||
+            i.vm.name.toLowerCase().includes(needle)
         )
       )
         return true
@@ -78,6 +89,9 @@ function MacsPage() {
       actions={
         <>
           <TableActions ioType="macaddress" />
+          <Button size="sm" variant="outline" onClick={() => setRanges(true)}>
+            Vendor ranges
+          </Button>
           {canAdd && (
             <Button size="sm" onClick={() => setAdding(true)}>
               Add MAC
@@ -97,9 +111,11 @@ function MacsPage() {
           data={filteredRows}
           columns={wiredColumns}
           flexColumn="description"
+          tableId="macs"
         />
       )}
       <MacObjectDialog open={adding} onOpenChange={setAdding} />
+      <OuiRangesDialog open={ranges} onOpenChange={setRanges} />
     </ListPageShell>
   )
 }
@@ -135,11 +151,38 @@ function buildColumns(): ColumnDef<MacEntry>[] {
       ),
     },
     {
+      id: "vendor",
+      header: "Vendor",
+      cell: ({ row }) =>
+        row.original.vendor ? (
+          <span
+            className={
+              row.original.vendor.source === "local"
+                ? "text-xs text-muted-foreground"
+                : "text-xs"
+            }
+          >
+            {row.original.vendor.name}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Vendor",
+          get: (r: MacEntry) => r.vendor?.name ?? "__none__",
+          formatValue: (v) => ({ label: v === "__none__" ? "Unknown" : v }),
+        },
+      },
+    },
+    {
       id: "interfaces",
       header: "Interfaces",
       cell: ({ row }) => {
         const ifs = row.original.interfaces
-        if (ifs.length === 0)
+        const vifs = row.original.vm_interfaces
+        if (ifs.length === 0 && vifs.length === 0)
           return <span className="text-muted-foreground">-</span>
         return (
           <div className="flex flex-wrap items-center gap-1">
@@ -153,6 +196,17 @@ function buildColumns(): ColumnDef<MacEntry>[] {
                 {i.device.name}:{i.name}
               </Link>
             ))}
+            {vifs.map((i) => (
+              <Link
+                key={i.id}
+                to="/virtual-machines/$id"
+                params={{ id: i.vm.id }}
+                search={{ tab: "components" }}
+                className="link rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+              >
+                {i.vm.name}:{i.name}
+              </Link>
+            ))}
           </div>
         )
       },
@@ -160,7 +214,10 @@ function buildColumns(): ColumnDef<MacEntry>[] {
         facet: {
           kind: "enum",
           label: "Interface",
-          get: (r: MacEntry) => (r.interfaces.length > 0 ? "yes" : "no"),
+          get: (r: MacEntry) =>
+            r.interfaces.length > 0 || r.vm_interfaces.length > 0
+              ? "yes"
+              : "no",
           formatValue: (v) => ({
             label: v === "yes" ? "Has interface" : "No interface",
           }),

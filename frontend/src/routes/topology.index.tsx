@@ -6,9 +6,11 @@ import {
   Filter,
   LayoutGrid,
   Link2 as LinkIcon,
+  PanelRight,
   Plus,
   Save,
   SlidersHorizontal,
+  Square,
   Trash2,
   X,
 } from "lucide-react"
@@ -17,6 +19,7 @@ import { toast } from "sonner"
 
 import {
   api,
+  type BulkStatusResponse,
   type GhostEdgeData,
   type Paginated,
   type Status,
@@ -53,8 +56,22 @@ import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
 import { CanvasLegend } from "@/components/topology/legend"
 import { LogicalTopologyView } from "@/components/topology/logical-view"
+import { TopologyObjectsSidebar } from "@/components/topology/map-sidebar"
+import {
+  NO_TOPO_HIDDEN,
+  applyHidden,
+  hiddenOnMap,
+  readTopoHidden,
+  type TopoHidden,
+} from "@/components/topology/hidden"
+import { HiddenChip } from "@/components/hidden-chip"
+import {
+  setHidden as withHidden,
+  useHideKeys,
+} from "@/components/hidden-objects"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { QueryError } from "@/components/query-error"
+import { DevicePicker } from "@/components/device-picker"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
 import {
   typeColor,
@@ -88,10 +105,15 @@ import {
 import {
   migratePositions,
   viewPositions,
+  viewZones,
+  ZONE_COLORS,
+  ZONE_H,
+  ZONE_W,
   type PosByStyle,
   type PosMap,
 } from "@/components/topology/view-positions"
 import { usePageTitle } from "@/lib/page-title"
+import { cn } from "@/lib/utils"
 
 const TopologyCanvas = lazy(() =>
   import("@/components/topology/topology-canvas").then((m) => ({
@@ -280,10 +302,52 @@ function clearStoredPositions() {
   }
 }
 
+// Hidden cards and zones ride with the arrangement: they are part of how the
+// default map is shaped, and a reload that forgot them would put back cards
+// the user had just taken out.
+// Derived from the reader rather than imported: this import block already
+// carries the repo's inline-type-specifier debt and does not need two more.
+type ZonesByStyle = ReturnType<typeof viewZones>
+type Zone = NonNullable<ZonesByStyle["stencil"]>[number]
+
+const HIDDEN_KEY = "danbyte-topology-hidden"
+const ZONES_KEY = "danbyte-topology-zones"
+
+function readStoredHidden(): TopoHidden {
+  try {
+    return readTopoHidden(JSON.parse(localStorage.getItem(HIDDEN_KEY)!))
+  } catch {
+    return NO_TOPO_HIDDEN
+  }
+}
+function writeStoredHidden(h: TopoHidden) {
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(h))
+  } catch {
+    /* quota / private mode - non-fatal */
+  }
+}
+function readStoredZones(): ZonesByStyle {
+  try {
+    return viewZones(JSON.parse(localStorage.getItem(ZONES_KEY)!))
+  } catch {
+    return {}
+  }
+}
+function writeStoredZones(z: ZonesByStyle) {
+  try {
+    localStorage.setItem(ZONES_KEY, JSON.stringify(z))
+  } catch {
+    /* non-fatal */
+  }
+}
+
 // Display settings (Levels order/bonds/distances, direction, colour mode,
 // edge routing) for the DEFAULT topology - like the dragged positions above,
 // they must survive a reload. Saved views persist theirs via Save.
 const DISPLAY_KEY = "danbyte-topology-display"
+const SIDEBAR_KEY = "topology:sidebar"
+const EMPTY_MON: BulkStatusResponse["statuses"] = {}
 interface StoredDisplay {
   colorMode?: EdgeColorMode
   direction?: "LR" | "TB"
@@ -465,8 +529,14 @@ function TopologyPage() {
   const [menu, setMenu] = useState<{
     x: number
     y: number
+    /** Canvas coordinates - a zone is created where the click landed, not
+     * where the screen happens to be. */
+    fx?: number
+    fy?: number
     node?: TopoNode["data"]
+    nodeId?: string
     group?: TopoGroupData
+    zoneId?: string
   } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [search, setSearch] = useUrlText("q", "", { replace: true })
@@ -504,6 +574,77 @@ function TopologyPage() {
     setPosByStyle({})
     if (viewId === "none") clearStoredPositions()
   }
+  // Which map the annotations belong to. A saved view carries its own; the
+  // default map keeps its own in this browser; a custom map is a scratch
+  // map until it is saved, so what you draw on it must not follow you back
+  // to the default map when you exit.
+  const mapKey =
+    viewId !== "none" ? `view:${viewId}` : builder ? "custom" : "default"
+  const ownScratch = mapKey === "default"
+
+  // What is switched off on this map - by site, location, role, link family
+  // (the sidebar's eyes) or one card by hand ("Remove from view"). Not a
+  // filter: a filter says what kind of thing belongs, this says "not that
+  // one" - the last mile of a diagram you are shaping for someone to read.
+  const [hidden, setHidden] = useState<TopoHidden>(() =>
+    urlSearch.view || urlSearch.devices ? NO_TOPO_HIDDEN : readStoredHidden()
+  )
+  const setHiddenNodes = (next: TopoHidden) => {
+    setHidden(next)
+    if (ownScratch) writeStoredHidden(next)
+  }
+  // Labelled backdrop boxes, per view style - a box framing Flat chips is
+  // the wrong size around Stencil cards.
+  const [zonesByStyle, setZonesByStyle] = useState<ZonesByStyle>(() =>
+    urlSearch.view || urlSearch.devices ? {} : readStoredZones()
+  )
+  const zones = logical ? undefined : zonesByStyle[viewStyle]
+  const setZones = (next: Zone[]) => {
+    if (logical) return
+    const all = { ...zonesByStyle, [viewStyle]: next }
+    setZonesByStyle(all)
+    if (ownScratch) writeStoredZones(all)
+  }
+  const addZone = (x: number, y: number) =>
+    setZones([
+      ...(zones ?? []),
+      {
+        id: `z${Date.now().toString(36)}`,
+        label: "Zone",
+        // Dropped centred on the click, which is where the eye is.
+        x: Math.round(x - ZONE_W / 2),
+        y: Math.round(y - ZONE_H / 2),
+        w: ZONE_W,
+        h: ZONE_H,
+        color: ZONE_COLORS[(zones?.length ?? 0) % ZONE_COLORS.length],
+      },
+    ])
+  /** The toolbar button has no click point, so the box lands in the middle
+   * of what is on screen - where the user is looking. */
+  const addZoneCentered = () => {
+    const c = canvas.current?.center()
+    addZone(c?.x ?? 0, c?.y ?? 0)
+  }
+  const removeZone = (id: string) =>
+    setZones((zones ?? []).filter((z) => z.id !== id))
+  const recolorZone = (id: string, color: string) =>
+    setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
+
+  // Moving between maps swaps the annotations with them. A saved view's are
+  // restored by the appliedView effect below; these are the other two.
+  const prevMapKey = useRef(mapKey)
+  useEffect(() => {
+    if (prevMapKey.current === mapKey) return
+    prevMapKey.current = mapKey
+    if (mapKey === "custom") {
+      setZonesByStyle({})
+      setHidden(NO_TOPO_HIDDEN)
+    } else if (mapKey === "default") {
+      setZonesByStyle(readStoredZones())
+      setHidden(readStoredHidden())
+    }
+  }, [mapKey])
+
   const [layoutTick, setLayoutTick] = useState(0)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [ghost, setGhost] = useState<GhostEdgeData | null>(null)
@@ -516,6 +657,15 @@ function TopologyPage() {
   const [selGroup, setSelGroup] = useState<TopoGroupData | null>(null)
   const [selGroupEdge, setSelGroupEdge] = useState<GroupEdgeInfo | null>(null)
   const [hintDismissed, setHintDismissed] = useState(false)
+  // The objects sidebar is a per-browser preference, as on the site map.
+  const [showObjects, setShowObjects] = useState(
+    () => localStorage.getItem(SIDEBAR_KEY) !== "closed"
+  )
+  const toggleObjects = () =>
+    setShowObjects((v) => {
+      localStorage.setItem(SIDEBAR_KEY, v ? "closed" : "open")
+      return !v
+    })
 
   const clearSel = () => {
     setSelNode(null)
@@ -718,14 +868,37 @@ function TopologyPage() {
       ),
   })
 
-  const graph = useMemo<TopologyGraph | undefined>(() => {
+  const bgp = useQuery({
+    queryKey: ["topology-bgp", filters.site],
+    enabled: !logical,
+    queryFn: () =>
+      api<{ edges: TopoEdge[] }>(
+        `/api/routing/topology/bgp/${
+          filters.site !== "all" ? `?site=${filters.site}` : ""
+        }`
+      ),
+  })
+
+  /** Everything the query returned plus the LLDP ghosts and BGP sessions
+   * between those cards - what the sidebar lists, hidden or not. */
+  const fullGraph = useMemo<TopologyGraph | undefined>(() => {
     if (!q.data) return undefined
     const present = new Set(q.data.nodes.map((n) => n.id))
-    const ghostEdges = (ghosts.data?.edges ?? []).filter(
-      (e) => present.has(e.source) && present.has(e.target)
-    )
-    return { ...q.data, edges: [...q.data.edges, ...ghostEdges] }
-  }, [q.data, ghosts.data])
+    const between = (e: TopoEdge) =>
+      present.has(e.source) && present.has(e.target)
+    const ghostEdges = (ghosts.data?.edges ?? []).filter(between)
+    const bgpEdges = (bgp.data?.edges ?? []).filter(between)
+    return { ...q.data, edges: [...q.data.edges, ...ghostEdges, ...bgpEdges] }
+  }, [q.data, ghosts.data, bgp.data])
+  /** What the canvas draws. How many cards hiding took off THIS map is the
+   * chip's count - a view saved against one filter can carry names the
+   * current query never returns, and offering to restore those would be a
+   * lie. */
+  const graph = useMemo(
+    () => (fullGraph ? applyHidden(fullGraph, hidden) : undefined),
+    [fullGraph, hidden]
+  )
+  const hiddenHere = fullGraph ? hiddenOnMap(fullGraph, hidden) : 0
 
   // Media types on the map - the legend swatches them in type color mode.
   const presentTypes = useMemo(() => {
@@ -752,6 +925,53 @@ function TopologyPage() {
         .map((n) => n.id)
     )
   }, [search, graph])
+
+  // H hides the selected card (or, when grouped, the selected site or
+  // location) as its eye would; Shift+H shows all.
+  const selNodeId = selNode?.device_id ? `dev:${selNode.device_id}` : null
+  useHideKeys(
+    !logical && selNodeId
+      ? () => {
+          setHiddenNodes(withHidden(hidden, "devices", selNodeId, true))
+          clearSel()
+        }
+      : !logical && selGroup
+        ? () => {
+            setHiddenNodes(
+              withHidden(
+                hidden,
+                selGroup.kind === "site" ? "sites" : "locations",
+                selGroup.name,
+                true
+              )
+            )
+            clearSel()
+          }
+        : null,
+    () => setHiddenNodes(NO_TOPO_HIDDEN)
+  )
+
+  // Monitoring roll-up for the sidebar's chips - the graph payload carries
+  // none, and the api app stays decoupled from the monitoring app.
+  const deviceIds = useMemo(
+    () =>
+      (graph?.nodes ?? [])
+        .map((n) => n.data.device_id)
+        .filter((x): x is string => !!x)
+        .sort(),
+    [graph]
+  )
+  const monQuery = useQuery({
+    queryKey: ["device-mon-status", deviceIds],
+    queryFn: () =>
+      api<BulkStatusResponse>("/api/monitoring/status/", {
+        method: "POST",
+        body: JSON.stringify({ devices: deviceIds }),
+      }),
+    enabled: showObjects && !logical && deviceIds.length > 0,
+    staleTime: 30_000,
+  })
+  const checks = monQuery.data?.statuses ?? EMPTY_MON
 
   // ── Saved views ──
   /** Applying a view is one navigation to `?view=<id>`, clearing every other
@@ -782,6 +1002,8 @@ function TopologyPage() {
     if (restoredView.current === key) return
     restoredView.current = key
     setPosByStyle(viewPositions(appliedView, sanitizeViewStyle))
+    setZonesByStyle(viewZones(appliedView.state.zones_by_style))
+    setHidden(readTopoHidden(appliedView.state.hidden))
     setLayoutTick((t) => t + 1)
   }, [appliedView])
 
@@ -793,6 +1015,8 @@ function TopologyPage() {
     })
     restoredView.current = null
     setPosByStyle(readStoredPositions(viewStyle as NodeStyle))
+    setZonesByStyle(readStoredZones())
+    setHidden(readStoredHidden())
     setLayoutTick((t) => t + 1)
   }
 
@@ -828,6 +1052,8 @@ function TopologyPage() {
       positions_by_style: byStyle,
       // Kept in step for anything still reading the single-map field.
       positions: byStyle[viewStyle as NodeStyle] ?? {},
+      zones_by_style: zonesByStyle,
+      hidden,
     }
   }
 
@@ -1275,11 +1501,32 @@ function TopologyPage() {
           <Button
             variant="outline"
             size="sm"
+            className={cn(
+              "h-7 text-xs",
+              !showObjects && "text-muted-foreground"
+            )}
+            onClick={toggleObjects}
+            title="List everything on this map"
+          >
+            <PanelRight className="h-3 w-3" /> Objects
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             className="h-7 text-xs"
             onClick={() => setAddOpen(true)}
             title="Add a device to the map - starts a custom map you grow by right-clicking nodes"
           >
             <Plus className="h-3 w-3" /> Add device
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={addZoneCentered}
+            title="Draw a labelled box behind the map to group cards by eye"
+          >
+            <Square className="h-3 w-3" /> Zone
           </Button>
           <Button
             variant="outline"
@@ -1316,6 +1563,7 @@ function TopologyPage() {
 
       )}
 
+      <div className="flex min-h-0 flex-1">
       <div className="relative min-h-0 flex-1">
         {logical && <LogicalTopologyView />}
         {!logical && q.isLoading && (
@@ -1345,6 +1593,10 @@ function TopologyPage() {
               matchedIds={matchedIds}
               selectedEdgeId={selEdgeId}
               onGhostEdge={setGhost}
+              onBgpEdge={(d) => {
+                const id = d.sessions?.[0]
+                if (id) nav({ to: "/bgp-sessions/$id", params: { id } })
+              }}
               onSelectNode={(d) => {
                 clearSel()
                 setSelNode(d)
@@ -1372,13 +1624,22 @@ function TopologyPage() {
               onOpenDevice={(id) =>
                 nav({ to: "/devices/$id", params: { id } })
               }
+              zones={zones}
+              onZonesChange={setZones}
               onNodeContext={(node, x, y) => {
-                if (node.type === "sitegroup")
+                if (node.type === "zone")
+                  setMenu({ x, y, zoneId: node.id.slice(5) })
+                else if (node.type === "sitegroup")
                   setMenu({ x, y, group: node.data as unknown as TopoGroupData })
                 else if (node.type === "device" || node.type === "flat")
-                  setMenu({ x, y, node: node.data as TopoNode["data"] })
+                  setMenu({
+                    x,
+                    y,
+                    node: node.data as TopoNode["data"],
+                    nodeId: node.id,
+                  })
               }}
-              onPaneContext={(x, y) => setMenu({ x, y })}
+              onPaneContext={(x, y, fx, fy) => setMenu({ x, y, fx, fy })}
               onCanvasClick={clearSel}
               onDragEnd={() => {
                 const p = canvas.current?.positions()
@@ -1390,6 +1651,13 @@ function TopologyPage() {
               }}
             />
           </Suspense>
+        )}
+
+        {!showObjects && (
+          <HiddenChip
+            count={hiddenHere}
+            onShowAll={() => setHiddenNodes(NO_TOPO_HIDDEN)}
+          />
         )}
 
         {graph && viewStyle === "hierarchy" && count > 60 && !hintDismissed && (
@@ -1478,6 +1746,45 @@ function TopologyPage() {
         )}
       </div>
 
+      {showObjects && !logical && graph && (
+        <TopologyObjectsSidebar
+          graph={fullGraph!}
+          checks={checks}
+          zones={zones}
+          hidden={hidden}
+          onHiddenChange={setHiddenNodes}
+          selectedDeviceId={selNode?.device_id ?? null}
+          selectedGroupId={selGroup?.group_id ?? null}
+          selectedEdgeId={selEdgeId}
+          onPickNode={(n) => {
+            canvas.current?.focusNode(n.id)
+            canvas.current?.selectNode(n.id)
+            clearSel()
+            setSelNode(n.data)
+          }}
+          onPickGroup={(n) => {
+            canvas.current?.focusNode(n.id)
+            canvas.current?.selectNode(n.id)
+            clearSel()
+            setSelGroup(n.data as unknown as TopoGroupData)
+          }}
+          onDrillGroup={drillInto}
+          onPickEdge={(e) => {
+            canvas.current?.focusEdge(e.id)
+            clearSel()
+            if (e.data) setSelEdge(e.data)
+            setSelEdgeId(e.id)
+          }}
+          onFocusZone={(z) => canvas.current?.focusZone(z)}
+          onRenameZone={(id, label) =>
+            setZones(
+              (zones ?? []).map((z) => (z.id === id ? { ...z, label } : z))
+            )
+          }
+        />
+      )}
+      </div>
+
       {menu && (
         <>
           <div
@@ -1563,6 +1870,45 @@ function TopologyPage() {
                     Start custom map here
                   </MenuItem>
                 )}
+                {menu.nodeId && (
+                  <MenuItem
+                    onClick={() => {
+                      const id = menu.nodeId!
+                      setMenu(null)
+                      setHiddenNodes(withHidden(hidden, "devices", id, true))
+                    }}
+                  >
+                    Remove from view
+                  </MenuItem>
+                )}
+              </>
+            )}
+            {menu.zoneId && (
+              <>
+                <div className="flex items-center gap-1 px-2 py-1.5">
+                  {ZONE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        recolorZone(menu.zoneId!, c)
+                        setMenu(null)
+                      }}
+                      aria-label={`Colour this zone ${c}`}
+                      className="size-4 rounded-sm border border-border"
+                      style={{ background: c }}
+                    />
+                  ))}
+                </div>
+                <MenuItem
+                  onClick={() => {
+                    const id = menu.zoneId!
+                    setMenu(null)
+                    removeZone(id)
+                  }}
+                >
+                  Delete zone
+                </MenuItem>
               </>
             )}
             {menu.group && (
@@ -1575,7 +1921,7 @@ function TopologyPage() {
                 Open group
               </MenuItem>
             )}
-            {!menu.node && !menu.group && (
+            {!menu.node && !menu.group && !menu.zoneId && (
               <>
                 <MenuItem
                   onClick={() => {
@@ -1585,6 +1931,17 @@ function TopologyPage() {
                 >
                   Add device…
                 </MenuItem>
+                {!logical && (
+                  <MenuItem
+                    onClick={() => {
+                      const { fx, fy } = menu
+                      setMenu(null)
+                      addZone(fx ?? 0, fy ?? 0)
+                    }}
+                  >
+                    Add zone
+                  </MenuItem>
+                )}
                 {builder && (
                   <MenuItem
                     onClick={() => {
@@ -1604,6 +1961,7 @@ function TopologyPage() {
       <AddDeviceDialog
         open={addOpen}
         onOpenChange={setAddOpen}
+        excludeIds={custom ?? undefined}
         onPick={(id) => addToCustom([id])}
       />
       <MaterializeCableDialog ghost={ghost} onClose={() => setGhost(null)} />
@@ -1825,42 +2183,42 @@ function MenuItem({
 }
 
 /** Device picker for the custom-map builder's + button. */
+/**
+ * Add a device to the map.
+ *
+ * The shared `DevicePicker`, not a bare combobox: a flat list of every name
+ * is unusable past a few hundred devices, and the advanced search behind it
+ * filters on site, role, type, manufacturer, status and tag server-side -
+ * which is exactly how someone finds the card they want to add.
+ */
 function AddDeviceDialog({
   open,
   onOpenChange,
   onPick,
+  excludeIds,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   onPick: (deviceId: string) => void
+  /** Already on the map - offering them again just adds nothing. */
+  excludeIds?: string[]
 }) {
-  const devices = useQuery({
-    queryKey: ["devices-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/devices/?picker=1"),
-    staleTime: 60_000,
-    enabled: open,
-  })
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Add device to the map</DialogTitle>
         </DialogHeader>
-        <Combobox
+        <DevicePicker
+          label=""
           value={null}
+          excludeIds={excludeIds}
           onChange={(v) => {
             if (!v) return
             onPick(v)
             onOpenChange(false)
           }}
-          options={(devices.data?.results ?? []).map((d) => ({
-            value: d.id,
-            label: d.name,
-          }))}
           placeholder="Pick a device…"
-          searchPlaceholder="Search devices…"
-          emptyText={devices.isLoading ? "Loading…" : "No devices."}
         />
       </DialogContent>
     </Dialog>

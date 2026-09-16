@@ -30,6 +30,7 @@ RUN apk add --no-cache openssl \
         -keyout /etc/nginx/tls/key.pem -out /etc/nginx/tls/cert.pem \
         -subj "/CN=danbyte" >/dev/null 2>&1
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
 
 # ─── 3. Python application runtime ───────────────────────────────────────────
 FROM docker.io/library/python:3.13-slim AS runtime
@@ -51,6 +52,9 @@ WORKDIR /app
 # the workers service in docker-compose.prod.yml.
 # WeasyPrint (label-template PDFs) renders via Pango/cairo/GDK-PixBuf - these are
 # shared libraries, not pip-installable, so they must be baked into the image.
+# postgresql-client-17 (from PGDG, the distro's client is older) gives the
+# in-app backup its pg_dump/pg_restore; pg_dump must be at least the server's
+# major version, so bump it together with the postgres image in compose.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential libpq-dev libldap2-dev libsasl2-dev libssl-dev \
@@ -58,6 +62,15 @@ RUN apt-get update \
         netcat-openbsd \
         libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
         libffi8 fonts-dejavu-core \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc]" \
+        "https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

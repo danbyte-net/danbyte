@@ -76,6 +76,27 @@ The page is a clone of the floor-plan editor's shell:
   under the search box filter the whole list. Group headers show
   down/degraded counts even when folded, and fold state is remembered per
   browser.
+- **Hiding part of the map** - the eye on a group header takes that group
+  off the map: a device role, or a region's sites. Individual sites have
+  their own eye, since sites are the map's top-level objects and there are
+  rarely many. Roles and regions hide by **name**, so a device that gets the
+  role tomorrow is hidden too.
+
+    Hiding a site hides **everything that belongs to it**, not just its pin:
+    its devices, and every circuit, tunnel and cable with an end there - an
+    arc to a hidden site would otherwise hang in the sea. A cable route whose
+    cables are all hidden goes too; a route with no cables is a planned duct
+    and stays. What is left is a map you can actually read.
+
+    Hidden objects stay listed, greyed, so you can bring them back. They drop
+    out of Problems, the triage pill, **Find on map**, Fit-to-all, the Links
+    and Cable routes lists, and a device's cable count. A **"n hidden · Show
+    all"** line appears at the top of the sidebar whenever anything is off,
+    and the choice is remembered per browser. This is finer-grained than
+    **View**, which switches whole kinds on and off. The
+    [floor plans](floor-plans.md) and the [topology map](topology.md) have
+    the same eyes. Keyboard: ++h++ hides the selected site, or the selected
+    device's role; ++shift+h++ shows all.
 
 Placed markers are fully editable from the inspector: rename, describe,
 link/unlink a device, tune FOV, or delete (or press Delete in Edit mode).
@@ -192,6 +213,22 @@ marker always shows its name at any zoom. The **Labels** toggle in the View
 menu (remembered per browser) switches to hover/selection-only if you prefer
 a bare map.
 
+## What draws a line between two sites
+
+Site-to-site links are **derived**, never modelled - there is no "connection"
+object to create. A line appears when one of these resolves to two different
+sites that are both placed on the map:
+
+| Line | What has to be true |
+|---|---|
+| **Circuit** | Both the A and Z [termination](circuits.md#terminate-a-circuit) land on a site (not a provider network), and the two sites differ. Cabling a side to a port is not required for the line - it ties the circuit to the port. |
+| **Tunnel** | Each [tunnel](vpn.md) termination resolves to a site: a device interface through its device, a VM interface through its VM (its own site, else its cluster's, else its host's). Two sites draw one line; a `hub` termination draws one line per spoke. A peer mesh of more than two sites is not drawn. |
+| **Cable** | Its two ends sit on devices at different sites. Cables between sites are aggregated per site pair, so a bundle is one line. |
+
+A site is **placed** once it has a latitude and longitude - an unplaced site
+drops every line that would touch it. If a link you expect is missing, check
+that end's site first.
+
 ## Cabling on the map
 
 Every cable whose two ends land on the map draws as a line - you don't need
@@ -257,7 +294,7 @@ layers). Boundary data © OpenStreetMap contributors, ODbL.
 The header's **Satellite** button swaps the basemap to imagery -
 **Esri World Imagery** by default (their attribution shown as required).
 The choice is remembered per browser. A deployment can point the satellite
-basemap elsewhere in **Settings → Deployment → Map tiles** (satellite URL +
+basemap elsewhere in **Settings → Maps → Map tiles** (satellite URL +
 attribution), same rules as the street tiles: https-only, `{z}`/`{x}`/`{y}`
 placeholders, and the tile host must be allowed in the nginx CSP `img-src`
 (the shipped config already allows `server.arcgisonline.com`).
@@ -280,7 +317,7 @@ Danbyte follows it:
 
 The default is fine for **light internal use** - a handful of operators
 looking at a map. If your deployment is large, busy, or public-facing, the
-policy expects you to use your own tile source: set **Settings → Deployment →
+policy expects you to use your own tile source: set **Settings → Maps →
 Map tiles** to any raster tile server (an `https://…/{z}/{x}/{y}.png`
 template) - a commercial provider, or self-hosted tiles. Set the matching
 attribution string; nearly every provider requires one.
@@ -324,3 +361,8 @@ sites (all of them - unplaced ones carry `null` coordinates so the edit panel
 can offer them) and every device with coordinates. Site coordinates are plain
 fields on the Site resource (`latitude` / `longitude`, decimal degrees), so
 they're scriptable like everything else.
+
+`GET /api/site-map/cables/` returns every cable with two placeable ends. An
+end carries the point it draws at, its `device_id` and its `site_id` - a
+device with no coordinates of its own is drawn at its site's point, and that
+device is not in the payload above, so the site is what identifies it.

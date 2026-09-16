@@ -29,7 +29,16 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-from .models import CheckAssignment, MonitoringDenySubnet, MonitoringPolicy
+from django.db.models import Prefetch
+
+from .models import (
+    CheckAssignment,
+    CheckTemplate,
+    MonitoringDenySubnet,
+    MonitoringPolicy,
+    MonitoringProfile,
+)
+from .policy_scopes import filters_pass, hardware_names, scope_for
 
 if TYPE_CHECKING:  # pragma: no cover
     from api.models import IPAddress, Prefix
@@ -86,6 +95,21 @@ class ResolvedCheck:
         return int(self._ov("interval_seconds", self.template.interval_seconds))
 
     @property
+    def interval_ms(self) -> int | None:
+        """The fast-lane interval, or None for the minute beat. An assignment
+        may set one (or clear the template's with ``0``)."""
+        raw = self._ov("interval_ms", self.template.interval_ms)
+        try:
+            value = int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            value = None
+        return value or None
+
+    @property
+    def record_every_seconds(self) -> int:
+        return max(int(self._ov("record_every_seconds", self.template.record_every_seconds)), 5)
+
+    @property
     def timeout_ms(self) -> int:
         return int(self._ov("timeout_ms", self.template.timeout_ms))
 
@@ -130,7 +154,11 @@ def _enclosing_prefixes(ip: "IPAddress") -> list["Prefix"]:
     from api.models import Prefix
 
     try:
-        addr = ipaddress.ip_address(ip.ip_address)
+        # Tolerate a mask. The column is a GenericIPAddressField and should
+        # never hold one, but it validates on full_clean rather than on save,
+        # so an import or a shell can put one there - and every prefix policy
+        # and inherited assignment then silently missed that address.
+        addr = ipaddress.ip_address(str(ip.ip_address).split("/")[0])
     except (ValueError, TypeError):
         return []
 
@@ -168,11 +196,46 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
         return []
 
     device = getattr(ip, "assigned_device", None)
-    policies = (
-        MonitoringPolicy.objects.filter(tenant_id=ip.tenant_id, enabled=True)
-        .prefetch_related("templates", "profiles__templates")
+    # The enabled-only filter has to be in the prefetch, not in the loop below:
+    # `policy.templates.filter(...)` ignores a prefetch and re-queries per
+    # policy, per IP - which, with one enabled policy making every IP in the
+    # tenant a candidate, is the difference between a handful of queries and
+    # thousands.
+    policies = MonitoringPolicy.objects.filter(
+        tenant_id=ip.tenant_id, enabled=True
+    ).prefetch_related(
+        Prefetch("templates", queryset=CheckTemplate.objects.filter(enabled=True)),
+        Prefetch(
+            "profiles",
+            queryset=MonitoringProfile.objects.filter(enabled=True).prefetch_related(
+                Prefetch(
+                    "templates",
+                    queryset=CheckTemplate.objects.filter(enabled=True),
+                )
+            ),
+        ),
     )
     candidates: list[_Candidate] = []
+    # One read of the device's tags for the whole pass, and only when some
+    # policy actually filters on them.
+    _tags: dict = {}
+
+    def device_tags() -> set:
+        if "v" not in _tags:
+            _tags["v"] = (
+                {t.slug for t in device.tags.all()} if device is not None else set()
+            )
+        return _tags["v"]
+
+    # Same shape for hardware: two reads per address, and only when a policy
+    # asks. Never a query per policy.
+    _hw: dict = {}
+
+    def device_hardware() -> set:
+        if "v" not in _hw:
+            _hw["v"] = hardware_names(device)
+        return _hw["v"]
+
     # Frequency override for this IP = the interval_seconds of the most-specific
     # applicable policy that sets one (a prefix beats VRF beats global). Applied
     # to every policy-sourced check, regardless of which policy the template
@@ -182,9 +245,9 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
     def add(policy: MonitoringPolicy, specificity: int, prefix=None) -> None:
         if policy.interval_seconds:
             interval_by_spec.append((specificity, policy.interval_seconds))
-        templates = list(policy.templates.filter(enabled=True))
-        for profile in policy.profiles.filter(enabled=True).prefetch_related("templates"):
-            templates.extend(list(profile.templates.filter(enabled=True)))
+        templates = list(policy.templates.all())
+        for profile in policy.profiles.all():
+            templates.extend(list(profile.templates.all()))
         if not templates:
             # A "Follow global" policy (inherit) contributes nothing of its own
             # - it just rides the broader-scope policies (and may still carry a
@@ -213,46 +276,50 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
 
     def target_ok(policy) -> bool:
         """Device/type/role policies apply only to the device IPs their target
-        selects (all IPs / interface IPs / primary / OOB)."""
+        selects (all IPs / interface IPs / primary / OOB).
+
+        Every caller checks ``device`` first, so the guard below is unreachable
+        today - it is here because a scope that matches without a device (a
+        site one, say) would otherwise fail with an AttributeError deep in
+        resolution rather than simply not matching.
+        """
         t = policy.target
+        if t == MonitoringPolicy.TARGET_INTERFACES:
+            return ip.assigned_interface_id is not None
+        if device is None:
+            # No device means no primary and no OOB to be one of.
+            return t == MonitoringPolicy.TARGET_ALL
         if t == MonitoringPolicy.TARGET_PRIMARY:
             return device.primary_ip_id == ip.id
         if t == MonitoringPolicy.TARGET_OOB:
             return device.oob_ip_id == ip.id
-        if t == MonitoringPolicy.TARGET_INTERFACES:
-            return ip.assigned_interface_id is not None
         return True  # TARGET_ALL
 
     for policy in policies:
-        if policy.scope == MonitoringPolicy.SCOPE_GLOBAL:
-            add(policy, 0)
-        elif policy.scope == MonitoringPolicy.SCOPE_VRF and policy.vrf_id == ip.vrf_id:
-            add(policy, 10)
-        elif (
-            device
-            and policy.scope == MonitoringPolicy.SCOPE_DEVICE_TYPE
-            and policy.device_type_id == device.device_type_id
-            and target_ok(policy)
-        ):
-            add(policy, 20)
-        elif (
-            device
-            and policy.scope == MonitoringPolicy.SCOPE_DEVICE_ROLE
-            and policy.device_role_id == device.role_id
-            and target_ok(policy)
-        ):
-            add(policy, 21)
-        elif (
-            device
-            and policy.scope == MonitoringPolicy.SCOPE_DEVICE
-            and policy.device_id == device.id
-            and target_ok(policy)
-        ):
-            add(policy, 128)
-        elif policy.scope == MonitoringPolicy.SCOPE_PREFIX and policy.prefix_id:
+        scope = scope_for(policy.scope)
+        if scope is None:
+            # A scope the registry no longer knows. Skipping it is the safe
+            # reading - a policy nobody can explain must not quietly apply.
+            continue
+        if scope.rank is None:
+            # Prefix: its rank is the mask length, so it needs the enclosing
+            # list rather than a plain comparison.
+            if not policy.prefix_id or not filters_pass(
+                policy, ip, device, device_tags(), device_hardware()
+            ):
+                continue
             pfx = next((p for p in enclosing if p.id == policy.prefix_id), None)
             if pfx is not None and pfx.network is not None:
                 add(policy, pfx.network.prefixlen, pfx)
+            continue
+        if scope.requires_device and device is None:
+            continue
+        if scope.honours_target and not target_ok(policy):
+            continue
+        if not filters_pass(policy, ip, device, device_tags(), device_hardware()):
+            continue
+        if scope.match is not None and scope.match(policy, ip, device):
+            add(policy, scope.rank)
 
     # Stamp the winning frequency override onto every policy candidate so the
     # scheduler can persist it per check-state without re-resolving.

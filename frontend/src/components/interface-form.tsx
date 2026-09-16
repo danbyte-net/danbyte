@@ -200,6 +200,22 @@ export function InterfaceForm({
   })
   const deviceSiteId = deviceQ.data?.site?.id ?? null
   const vcId = deviceQ.data?.virtual_chassis?.id ?? null
+  // "Move to member" (#148): an interface may re-home inside its own stack.
+  const [memberId, setMemberId] = useState<string | null>(null)
+  const stackQ = useQuery({
+    queryKey: ["virtual-chassis", vcId],
+    queryFn: () =>
+      api<{
+        members: { id: string; name: string; vc_position: number | null }[]
+      }>(`/api/virtual-chassis/${vcId}/`),
+    enabled: isEdit && !!vcId,
+  })
+  const memberOptions = [...(stackQ.data?.members ?? [])]
+    .sort((a, b) => (a.vc_position ?? 999) - (b.vc_position ?? 999))
+    .map((m) => ({
+      value: m.id,
+      label: `${m.vc_position ?? "-"} · ${m.name}`,
+    }))
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
     queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
@@ -243,7 +259,11 @@ export function InterfaceForm({
       // A port never moves between devices - the field is locked on edit and
       // left out of the payload so a stale form can't move it either.
       const payload: InterfaceWritePayload = {
-        ...(isEdit ? {} : { device_id: deviceId ?? "" }),
+        ...(isEdit
+          ? memberId && memberId !== deviceId
+            ? { device_id: memberId }
+            : {}
+          : { device_id: deviceId ?? "" }),
         name: name.trim(),
         label: label.trim(),
         type,
@@ -401,6 +421,16 @@ export function InterfaceForm({
               hint={isEdit ? "fixed" : undefined}
               error={fieldErrors.device_id}
             />
+            {isEdit && vcId && memberOptions.length > 1 && (
+              <FormSelect
+                label="Stack member"
+                value={memberId ?? deviceId}
+                onChange={(v) => setMemberId(v)}
+                options={memberOptions}
+                hint="Moving keeps cables, IPs and MAC objects on the port."
+                error={fieldErrors.device_id}
+              />
+            )}
             {/* Type labels run long ("Link Aggregation Group (LAG)"); the
                 type column takes the larger share so the name field gives
                 way instead of the trigger spilling past the card. */}
@@ -445,14 +475,14 @@ export function InterfaceForm({
               />
             </div>
             <NameRangeHint name={name} editing={isEdit} noun="interfaces" />
-              <FormText
-                label="Label"
-                hint="Printed name, e.g. X1-P1"
-                value={label}
-                onChange={setLabel}
-                mono
-                error={fieldErrors.label}
-              />
+            <FormText
+              label="Label"
+              hint="Printed name, e.g. X1-P1"
+              value={label}
+              onChange={setLabel}
+              mono
+              error={fieldErrors.label}
+            />
           </FormSection>
 
           <FormSection title="Switching" card>
@@ -473,9 +503,7 @@ export function InterfaceForm({
                 label={
                   mode === "tagged" ? "Untagged / native VLAN" : "Untagged VLAN"
                 }
-                preferQuery={
-                  deviceSiteId ? `site=${deviceSiteId}` : undefined
-                }
+                preferQuery={deviceSiteId ? `site=${deviceSiteId}` : undefined}
                 value={vlanId}
                 onChange={setVlanId}
                 noneLabel="No VLAN"

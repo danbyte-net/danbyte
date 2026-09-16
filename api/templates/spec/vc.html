@@ -1,0 +1,35 @@
+{% extends "spec/base.html" %}
+{% block body %}
+<section>
+  <h2>Members</h2>
+  <table>
+    <thead><tr><th class="num">Pos</th><th>Device</th><th>Role</th><th class="num">Priority</th><th>Type</th><th>Serial</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for m in members %}<tr><td class="num">{{ m.position }}</td><td class="mono">{{ m.name }}</td><td>{{ m.role }}</td><td class="num">{{ m.priority }}</td><td>{{ m.type }}</td><td class="mono">{{ m.serial }}</td><td>{{ m.status }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% for mi in member_ifaces %}
+<section>
+  <h2>Interfaces · {{ mi.label }}</h2>
+  {% if mi.rows %}
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Speed</th><th>MAC</th><th>VLAN</th><th>IPs</th><th>Connected to</th></tr></thead>
+    <tbody>
+    {% for i in mi.rows %}
+    <tr>
+      <td class="mono{% if i.depth %} sub1{% endif %}"><span class="dot {% if i.enabled %}on{% else %}off{% endif %}"></span>{{ i.name }}</td>
+      <td>{{ i.type }}</td>
+      <td>{{ i.speed }}</td>
+      <td class="mono">{{ i.mac }}{% if i.vendor %}<div class="vendor">{{ i.vendor }}</div>{% endif %}</td>
+      <td>{{ i.vlan }}</td>
+      <td class="mono">{{ i.ips|join:", " }}</td>
+      <td class="mono">{{ i.peer }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No interfaces.</p>{% endif %}
+</section>
+{% endfor %}
+{% endblock %}

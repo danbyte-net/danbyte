@@ -38,8 +38,27 @@ every tunnel that shares that policy - no retyping the same parameters.
 | **DH group** | the Diffie-Hellman group for key exchange. |
 | **PFS group** | the Perfect Forward Secrecy group (optional). |
 | **SA lifetime** | how long a security association stays valid. |
+| **Pre-shared key** | the IKE pre-shared key - stored in the secret store, never in this record (see below). |
 
 4. Save.
+
+### The pre-shared key
+
+A pre-shared key is a credential, so Danbyte treats it exactly as it treats
+an SSID's passphrase (see [Wireless](wireless.md#the-pre-shared-key)): the
+profile holds only a **reference**, and the key itself is written to the
+deployment's [secret store](../architecture/tenant-settings.md).
+
+- Type the key into **Pre-shared key** on the profile form. On an existing
+  profile the box is always empty: leaving it blank keeps the stored key, and
+  typing a new one rotates it.
+- The profile page shows `••••••••` when a key is set, with an **eye** button
+  to reveal it. Revealing is a separate request, needs the **reveal**
+  permission on IPSec profiles, and is written to the change log.
+- Deleting the profile, or clearing the field, removes the key from the store.
+- Without a secret store, saving a key is **refused** with a message pointing
+  at **Settings → Security → Secret store**; the rest of the profile still
+  saves. Danbyte never keeps a key in the database in the clear.
 
 !!! note "Nothing is pre-filled"
     Danbyte ships no sample groups, profiles, or tunnels - you create exactly the
@@ -126,7 +145,8 @@ detail page - the pencil in the header edits it.
 - A **tunnel group** page shows its name, slug and description, with a
   **Tunnels** tab listing every tunnel in the group.
 - An **IPSec profile** page puts the crypto parameters - IKE version,
-  encryption, authentication, DH and PFS groups, SA lifetime - on its Overview,
+  encryption, authentication, DH and PFS groups, SA lifetime, and whether a
+  pre-shared key is stored - on its Overview,
   with a **Tunnels** tab listing every tunnel that inherits them. Read that tab
   before changing a profile: the edit lands on all of them at once.
 
@@ -153,7 +173,8 @@ itself; **terminations** attach it to the VLANs and interfaces that carry it.
 |---|---|
 | **Name** and **slug** | A label and a URL-friendly identifier (slug unique per tenant). |
 | **Type** | The overlay technology - VXLAN, VXLAN-EVPN, MPLS-EVPN, PBB-EVPN, VPWS, VPLS, EPL, EVPL, SPB, or TRILL. |
-| **Identifier** | The overlay identifier - a VNI or VC-ID (optional). |
+| **Identifier** | The overlay identifier - a VNI or VC-ID (optional). A VNI is unique per tenant across the VXLAN types. |
+| **VRF** | EVPN types only. Set it and this VNI is that VRF's **L3VNI** - see [the overlay](routing.md#overlay-evpn-and-vxlan). |
 | **Status** | Your own status catalog, same as elsewhere. |
 | **Import / export route targets** | BGP route targets, picked from your existing [route targets](ipam-objects.md). |
 
@@ -168,6 +189,10 @@ interface**, or a **VM interface** - from the L2VPN's detail page.
 - An endpoint can terminate **at most one L2VPN** - Danbyte blocks a second.
 - Point-to-point types (VPWS, EPL, EVPL) typically get two terminations;
   multipoint types (VPLS, the EVPN family) get as many as the overlay spans.
+- A VLAN's page lists the L2VPNs terminating on it under **L2VPNs**.
+
+Which leaves carry a VXLAN VNI is a different question - that is the
+**VTEPs** tab, fed by each device's [VTEP](routing.md#overlay-evpn-and-vxlan).
 
 ## Tags & custom fields
 

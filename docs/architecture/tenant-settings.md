@@ -9,7 +9,7 @@ Two settings stores:
 
 | Store | Scope | Holds |
 |---|---|---|
-| `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults, deployment LDAP, updates/release repo, `public_base_url`, proxy/timeouts, drift scheduler, retention, deployment name, branding (`favicon`, `login_logo`) - plus the **defaults** for every overridable group |
+| `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults (Settings → Email), deployment LDAP (Settings → Directory), updates/release repo, `public_base_url`, proxy/timeouts (Settings → Security → Outbound delivery), drift scheduler, retention, deployment name, branding (`favicon`, `login_logo`) - plus the **defaults** for every overridable group |
 | `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle) |
 | `SiteSettings` (`core/models.py`, OneToOne per site) | one site | **Email/SMTP only (v1)** - site-local relay + From address, for orgs whose sites run their own IT. Gated by `allow_site_settings` + site-admin qualification (`core/site_settings.py`) |
 
@@ -56,7 +56,7 @@ tenant counterpart by design - updates patch the shared process.
 tab **title**, and the login page. The tab **icon** is the `favicon` image:
 blank = the shipped default (the blue Danbyte "D", `frontend/public/favicon.*`),
 else the uploaded file served from media. Both live on `DeploymentSettings` and
-are set from Settings → Deployment → **Identity** (`users.manage`). The favicon
+are set from Settings → Branding & identity → **Identity** (`users.manage`). The favicon
 uploads via `POST /api/deployment/favicon/` (multipart; `DELETE` clears it) -
 only Pillow-decodable raster images are accepted, which rules out SVG so no
 active content lands on the media origin. `me_json` returns `favicon_url`
@@ -106,7 +106,7 @@ Tenant admins toggle their tenant (`PATCH /api/plugins/<slug>/config/` scope
 | Tier | Gate | Surfaces |
 |---|---|---|
 | **Tenant admin** | `can_manage_admin(user, tenant)` - a `users.manage`/user-change grant *narrowed to the tenant* suffices | Settings → **This tenant**: General (UI + sharing overrides), Email, Directory, Monitoring, SNMP profiles. API: `/api/tenant-settings/*` |
-| **Deployment admin** | `can_manage_deployment(user)` - superuser, global `users.manage`, or a user-change grant with **no** tenant narrowing | Settings → **Deployment**: General, Updates, Email & Delivery, Directory, Identity providers (SSO). API: `/api/deployment/*`, `/api/system/*`, `/api/identity-providers/` |
+| **Deployment admin** | `can_manage_deployment(user)` - superuser, global `users.manage`, or a user-change grant with **no** tenant narrowing | Settings → **Deployment**: General, Updates, Email, Directory, Identity providers (SSO). API: `/api/deployment/*`, `/api/system/*`, `/api/identity-providers/` |
 
 `me_json` exposes both flags (`can_manage_users`, `can_manage_deployment`);
 the SPA nav (`settings.tsx`) renders the two sections accordingly.

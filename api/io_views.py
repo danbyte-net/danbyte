@@ -389,7 +389,13 @@ def io_import_view(request, slug):
         except PermissionRow as exc:
             errors.append({"row": i, "error": str(exc), "action": "permission"})
         except Exception as exc:  # noqa: BLE001
-            msgs = getattr(exc, "messages", None)
+            # Name the field: "name: This field cannot be blank." beats a bare
+            # "This field cannot be blank." with five columns to guess from.
+            md = getattr(exc, "message_dict", None)
+            msgs = (
+                [f"{k}: {' '.join(v)}" if k != "__all__" else " ".join(v) for k, v in md.items()]
+                if md else getattr(exc, "messages", None)
+            )
             errors.append({
                 "row": i,
                 "error": "; ".join(msgs) if msgs else str(exc),

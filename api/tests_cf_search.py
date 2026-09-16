@@ -30,9 +30,9 @@ class CustomFieldSearchTests(_Base):
         )
         cab = Cable.objects.create(tenant=self.tenant, custom_fields={"netbox_id": 5701})
         Device.objects.create(tenant=self.tenant, name="other", custom_fields={"netbox_id": 9})
-        groups = self.client.get("/api/search/?q=57").json()["groups"]
-        self.assertEqual([d["id"] for d in groups["devices"]], [str(dev.id)])
-        self.assertIn(str(cab.id), [c["id"] for c in groups["cables"]])
+        hits = self.client.get("/api/search/?q=57").json()["hits"]
+        self.assertEqual([h["id"] for h in hits if h["type"] == "device"], [str(dev.id)])
+        self.assertIn(str(cab.id), [h["id"] for h in hits if h["type"] == "cable"])
 
     def test_list_search_finds_custom_field_values(self):
         dev = Device.objects.create(

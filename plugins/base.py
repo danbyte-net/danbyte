@@ -35,6 +35,9 @@ class DanbytePluginConfig(AppConfig):
     default_enabled: bool = True
     # URL/nav slug; defaults to the app label. Also the /api/plugins/<slug>/ mount.
     slug: str | None = None
+    # Ships inside Danbyte itself (also implied by settings.BUILTIN_PLUGINS):
+    # listed as toggle-only - nothing to upload, apply, or uninstall.
+    builtin: bool = False
 
     @property
     def plugin_slug(self) -> str:

@@ -2,27 +2,24 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type CheckKind,
-  type CheckTemplate,
-  type Paginated,
-} from "@/lib/api"
+import { api, type CheckTemplate, type Paginated } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { FormSelect, FormText } from "@/components/forms"
+import { FormFooter, FormSelect, FormText } from "@/components/forms"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   CheckFields,
-  INTERVALS,
-  KINDS,
+  checkIntervals,
+  intervalBody,
+  useCheckKinds,
   buildParams,
   initialValues,
   missingRequired,
+  specsFor,
   type Vals,
 } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -46,7 +43,9 @@ export function AddCheckDialog({
   const [mode, setMode] = useState<"existing" | "new">("existing")
 
   // New-check fields
-  const [kind, setKind] = useState<CheckKind>("icmp")
+  const [kind, setKind] = useState<string>("icmp")
+  const kinds = useCheckKinds()
+  const kindLabel = kinds.find((k) => k.value === kind)?.label ?? kind
   const [name, setName] = useState("")
   const [interval, setInterval] = useState("300")
   const [vals, setVals] = useState<Vals>(() => initialValues("icmp"))
@@ -89,7 +88,7 @@ export function AddCheckDialog({
               kind,
               params,
               secret_params,
-              interval_seconds: Number(interval),
+              ...intervalBody(interval),
               degraded_enabled: true,
             }),
           }
@@ -131,29 +130,19 @@ export function AddCheckDialog({
           <DialogTitle>Add check on {target.label}</DialogTitle>
         </DialogHeader>
 
-        {/* Existing vs new toggle */}
-        <div className="flex items-center gap-1 rounded-md bg-muted p-0.5 text-[13px]">
-          {(
-            [
-              ["existing", "Use existing"],
-              ["new", "New check"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              disabled={key === "existing" && !hasTemplates}
-              onClick={() => setMode(key)}
-              className={`flex-1 rounded px-3 py-1.5 font-medium transition-colors disabled:opacity-40 ${
-                mode === key
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* A kind with no templates yet has nothing to pick from; the tab is
+            simply absent rather than disabled, and the effect above already
+            forces "new" in that case. */}
+        <SegmentedTabs
+          value={mode}
+          onValueChange={setMode}
+          items={[
+            ...(hasTemplates
+              ? [{ value: "existing" as const, label: "Use existing" }]
+              : []),
+            { value: "new" as const, label: "New check" },
+          ]}
+        />
 
         <form
           onSubmit={(e) => {
@@ -180,17 +169,18 @@ export function AddCheckDialog({
                   label="Type"
                   value={kind}
                   onChange={(v) => {
-                    const k = (v as CheckKind) ?? "icmp"
+                    const k = v ?? "icmp"
                     setKind(k)
                     setVals(initialValues(k))
                   }}
-                  options={KINDS}
+                  options={kinds}
                 />
                 <FormSelect
                   label="Interval"
+                  info="Under a minute runs on the fast lane: status changes recorded at once, the rest as one aggregated result a minute."
                   value={interval}
                   onChange={(v) => setInterval(v ?? "300")}
-                  options={INTERVALS}
+                  options={checkIntervals(kind)}
                 />
               </div>
               <FormText
@@ -202,26 +192,23 @@ export function AddCheckDialog({
                 placeholder={`${kind.toUpperCase()} check`}
               />
               <CheckFields kind={kind} vals={vals} onChange={set} />
+              {specsFor(kind).length === 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Nothing to configure here - a {kindLabel} check is answered by
+                  the engine bound to the target.
+                </p>
+              )}
               <p className="text-[11px] text-muted-foreground">
-                This is saved as a reusable template you can attach elsewhere
-                and edit later.
+                Saved as a template; attach it elsewhere or edit it later.
               </p>
             </>
           )}
 
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={m.isPending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSubmit || m.isPending}>
-              {m.isPending ? "Adding…" : "Add check"}
-            </Button>
-          </div>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={m.isPending}
+            submitLabel="Add check"
+          />
         </form>
       </DialogContent>
     </Dialog>

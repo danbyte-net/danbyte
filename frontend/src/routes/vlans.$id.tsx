@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { SiteCell } from "@/components/cells/site-cell"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
@@ -21,8 +22,9 @@ import {
 } from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
 import { VlanAssignPrefixDialog } from "@/components/vlan-assign-prefix-dialog"
-import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
+import { EmbeddedL2VPNTable } from "@/components/embedded-tables"
 import { VlanDeleteDialog } from "@/components/vlan-delete-dialog"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -52,7 +54,7 @@ function VlanDetail() {
 
 function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "prefixes" | "journal" | "history"
+    "overview" | "prefixes" | "l2vpns" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo, humanIds } = useMe()
@@ -134,6 +136,7 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "prefixes", label: "Prefixes", count: v.prefix_count },
+        { value: "l2vpns", label: "L2VPNs", count: v.l2vpn_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -145,6 +148,13 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
       </DetailTab>
       <DetailTab value="prefixes">
         <VlanPrefixesTable vlanId={v.id} vlanLabel={`VLAN ${v.vlan_id}`} />
+      </DetailTab>
+      <DetailTab value="l2vpns">
+        <EmbeddedL2VPNTable
+          filter={{ vlan: v.id }}
+          omit={["terminations"]}
+          emptyText="No L2VPN terminates on this VLAN."
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.vlan" objectId={v.id} />
@@ -183,7 +193,7 @@ function VlanOverview({
       label: "VLAN ID",
       value: <span className="num font-mono">{v.vlan_id}</span>,
     },
-    { label: "Site", value: v.site?.name ?? dash },
+    { label: "Site", value: <SiteCell site={v.site} /> },
     {
       label: "Updated",
       value: <TimeCell iso={v.updated_at} />,

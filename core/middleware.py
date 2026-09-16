@@ -47,3 +47,48 @@ class SessionIdleTimeoutMiddleware:
                 # new expiry is persisted (rolling, not absolute).
                 request.session.set_expiry(minutes * 60)
         return self.get_response(request)
+
+
+# Requests that must keep working while a restore holds the site: the
+# health probe, the restore-run status the UI polls, and static assets.
+_MAINTENANCE_EXEMPT = ("/api/health/", "/api/backups/restore-runs/", "/static/", "/media/")
+
+
+class MaintenanceMiddleware:
+    """503 with ``Retry-After`` while a restore is replacing the database
+    (``backups.maintenance``). nginx turns the 503 into the maintenance page
+    for browsers; API callers get JSON they can act on."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        path = request.path or ""
+        if path.startswith("/api/backups/restore-runs/"):
+            # The database may be mid-replacement: answer the active run from
+            # its cache mirror instead of letting the view hit the ORM.
+            from backups.maintenance import active, progress
+
+            state = active()
+            run_id = (state or {}).get("run_id")
+            if run_id and path == f"/api/backups/restore-runs/{run_id}/":
+                data = progress(run_id)
+                if data:
+                    from django.http import JsonResponse
+
+                    return JsonResponse(data)
+        if not path.startswith(_MAINTENANCE_EXEMPT):
+            from backups.maintenance import active
+
+            state = active()
+            if state:
+                from django.http import JsonResponse
+
+                resp = JsonResponse(
+                    {"detail": f"Danbyte is in maintenance: {state.get('reason') or 'restore in progress'}.",
+                     "maintenance": state},
+                    status=503,
+                )
+                resp["Retry-After"] = "30"
+                return resp
+        return self.get_response(request)

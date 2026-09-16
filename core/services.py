@@ -36,8 +36,10 @@ DEFAULT_MANAGEABLE_SERVICES: dict[str, dict] = {
     "web": {"unit": "danbyte-web", "label": "Web / API (gunicorn)", "core": True},
     "backend": {"unit": "danbyte-backend", "label": "Backend (dev runserver)", "core": True},
     "workers": {"unit": "danbyte-workers", "label": "Workers (RQ)", "core": True},
+    "fastlane": {"unit": "danbyte-fastlane", "label": "Fast lane (sub-minute checks)", "core": False},
     "ws": {"unit": "danbyte-ws", "label": "WebSocket (presence)", "core": True},
     "frontend": {"unit": "danbyte-frontend-prod", "label": "Frontend (SSR)", "core": False},
+    "frontend-dev": {"unit": "danbyte-frontend", "label": "Frontend (dev server)", "core": False},
     "docs": {"unit": "danbyte-docs", "label": "Docs", "core": False},
 }
 
@@ -46,34 +48,44 @@ def _service_defs() -> dict[str, dict]:
     return getattr(settings, "MANAGEABLE_SERVICES", None) or DEFAULT_MANAGEABLE_SERVICES
 
 
-def _unit_state(unit: str) -> str:
-    """`systemctl --user is-active <unit>` → active | inactive | failed |
-    missing | unknown (when systemd can't be reached)."""
+def _unit_state(unit: str) -> tuple[str, bool]:
+    """``(state, enabled)`` for a user unit: state is active | inactive |
+    failed | missing | unknown (when systemd can't be reached); enabled says
+    whether the unit is meant to run on this install - a dev box links the
+    gunicorn and SSR units too but never enables them, and an inactive unit
+    that is not enabled is not a fault."""
     try:
         result = subprocess.run(
-            ["systemctl", "--user", "is-active", f"{unit}.service"],
+            ["systemctl", "--user", "show", f"{unit}.service",
+             "-p", "LoadState", "-p", "ActiveState", "-p", "UnitFileState"],
             capture_output=True, text=True, timeout=5, env=_systemd_env(),
         )
     except Exception:  # noqa: BLE001
-        return "unknown"
-    state = result.stdout.strip().lower()
-    err = result.stderr.strip().lower()
+        return "unknown", False
+    props = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if result.returncode != 0 or not props:
+        return "unknown", False
+    if props.get("LoadState") == "not-found":
+        return "missing", False
+    enabled = props.get("UnitFileState", "") in {"enabled", "enabled-runtime", "static"}
+    state = props.get("ActiveState", "").lower()
     if state in {"active", "activating", "reloading"}:
-        return "active"
+        return "active", enabled
     if state == "failed":
-        return "failed"
-    if "not found" in err or "could not be found" in err or "unknown unit" in err:
-        return "missing"
+        return "failed", enabled
     if state in {"inactive", "deactivating"}:
-        return "inactive"
-    return "unknown"
+        return "inactive", enabled
+    return "unknown", enabled
 
 
 def list_services() -> list[dict]:
-    """The manageable units that exist on this box, with live state."""
+    """The manageable units that exist on this box, with live state. A unit
+    that is neither running nor enabled is listed as not in use rather than
+    as a fault, and the UI offers no restart for it - starting gunicorn
+    beside the dev runserver would have both bind :8000."""
     out: list[dict] = []
     for key, spec in _service_defs().items():
-        state = _unit_state(spec["unit"])
+        state, enabled = _unit_state(spec["unit"])
         if state == "missing":
             continue  # not installed in this environment (dev vs prod differ)
         out.append(
@@ -83,6 +95,8 @@ def list_services() -> list[dict]:
                 "label": spec["label"],
                 "core": bool(spec.get("core")),
                 "state": state,
+                "enabled": enabled,
+                "in_use": state == "active" or enabled,
             }
         )
     return out
@@ -125,8 +139,10 @@ def restart_services(keys: list[str]) -> dict:
 
 
 def restart_danbyte() -> dict:
-    """Restart the core Danbyte units together."""
-    core_keys = [s["key"] for s in list_services() if s["core"]]
+    """Restart the core Danbyte units that are in use together - never
+    starting the one this install does not run (gunicorn beside the dev
+    runserver would have both bind :8000)."""
+    core_keys = [s["key"] for s in list_services() if s["core"] and s["in_use"]]
     return restart_services(core_keys)
 
 

@@ -26,6 +26,7 @@ from django.utils import timezone
 from api.models import IPAddress
 from core.models import Tenant
 
+from .engine_drivers import driver_claims_kind, driver_for, engine_usable
 from .engines import engine_for_ip
 from .models import (
     CheckAssignment, CheckState, MonitoringEngine, MonitoringPolicy,
@@ -112,6 +113,9 @@ def materialise_ip(ip: IPAddress, now=None) -> int:
                 "kind": rc.kind,
                 "engine": engine,
                 "interval_seconds": interval_override,
+                # Resolved here so the lane and the beat can select on a
+                # column rather than re-resolving overrides per tick.
+                "interval_ms": rc.interval_ms,
             },
         )
         if created:
@@ -190,6 +194,15 @@ def check_engine_health(now=None) -> dict:
         kind=MonitoringEngine.LOCAL
     )
     for eng in engines:
+        # An engine whose driver cannot answer right now - the tenant switched
+        # its integration off, the connection is gone - is not unreachable, it
+        # is not being asked. Calling that an outage pages somebody for doing
+        # exactly what the switch is for.
+        if not engine_usable(eng):
+            if eng.stale_since:
+                eng.stale_since = None
+                eng.save(update_fields=["stale_since"])
+            continue
         assigned = CheckState.objects.filter(engine=eng).count()
         if assigned == 0:
             # Nothing depends on it - quietly clear any leftover flag.
@@ -201,13 +214,24 @@ def check_engine_health(now=None) -> dict:
         minutes = MonitoringSettings.for_tenant(
             eng.tenant
         ).engine_offline_after_minutes
-        threshold = (
-            timedelta(minutes=minutes)
-            if minutes
-            else timedelta(
+        if minutes:
+            threshold = timedelta(minutes=minutes)
+        elif driver_for(eng) is not None:
+            # A driver has no heartbeat: it is seen each time it answers, and
+            # it answers on its checks' cadence. Judging it by an Outpost's
+            # poll interval (15 s here, so a 3 minute threshold) against
+            # checks that run every 5 minutes flagged it stale two minutes out
+            # of every five, with a notification each way.
+            shortest = (
+                CheckState.objects.filter(engine=eng)
+                .aggregate(m=models.Min("interval_seconds"))["m"]
+                or 300
+            )
+            threshold = timedelta(seconds=max(3 * shortest, 180))
+        else:
+            threshold = timedelta(
                 seconds=max(3 * (eng.poll_interval_seconds or 60), 180)
             )
-        )
         # Never-seen engines age from creation, so a just-enrolled Outpost
         # gets the same grace window before it's called unreachable.
         basis = eng.last_seen_at or eng.created_at
@@ -260,6 +284,61 @@ def check_engine_health(now=None) -> dict:
 # ─── dispatch ─────────────────────────────────────────────────────────────
 
 
+def dispatch_drivers(now=None) -> int:
+    """Let every driver-backed engine claim the states it answers for.
+
+    Danbyte does not run a driver's checks, so there is nothing to enqueue -
+    the driver reaches its own system and folds what it finds through
+    ``ingest_results``. A driver with no ``claim`` yet (one that is still only
+    a connection) simply reports nothing, which is the correct behaviour while
+    it is being built.
+
+    One driver failing never stops the others, or the local dispatch below it:
+    a monitoring loop that stops because one integration is sulking is worse
+    than the integration being down.
+    """
+    now = now or timezone.now()
+    total = 0
+    engines = MonitoringEngine.objects.filter(enabled=True).exclude(
+        kind__in=(MonitoringEngine.LOCAL, MonitoringEngine.REMOTE)
+    )
+    for eng in engines:
+        if not engine_usable(eng):
+            continue
+        driver = driver_for(eng)
+        claim = getattr(driver, "claim", None)
+        if claim is None:
+            continue
+        try:
+            total += claim(eng, now) or 0
+        except Exception:
+            log.exception("engine driver %r (%s) failed to claim", eng.name, eng.kind)
+    return total
+
+
+def _unclaimed_driver_states(now) -> list:
+    """Due states on a driver engine that its driver does not answer for.
+
+    Which kinds a driver claims is the driver's to say, so the final word is a
+    Python pass. The query first drops the ones matching the default rule -
+    a Zabbix engine's ``zabbix`` states, which is nearly all of them - so a
+    thousand-host engine does not haul its whole due batch into memory every
+    tick just to discard it.
+
+    The prefilter assumes a driver always claims the kind named after it. A
+    driver that disowned its own kind would strand those states, but that kind
+    exists *because* the driver registered it, so there is nothing to disown.
+    """
+    states = list(
+        CheckState.objects.filter(next_run__lte=now, in_flight=False)
+        .exclude(engine__isnull=True)
+        .exclude(engine__kind__in=(MonitoringEngine.LOCAL, MonitoringEngine.REMOTE))
+        .exclude(kind=models.F("engine__kind"))
+        .select_related("template", "assignment", "engine")
+    )
+    return [s for s in states if not driver_claims_kind(s.engine, s.kind)]
+
+
 def dispatch(now=None, sync: bool = False) -> dict:
     """Enqueue worker jobs for every due check. ``sync=True`` runs them inline
     (for tests / a no-worker box) instead of via RQ."""
@@ -269,9 +348,14 @@ def dispatch(now=None, sync: bool = False) -> dict:
     check_engine_health(now)
     # Reclaim anything a crashed worker left claimed, then dispatch as usual.
     reaped = reap_stale_in_flight(now)["reaped"]
+    # Give every driver kind a chance to claim its own states first. A driver
+    # answers for checks Danbyte does not run, so it materialises and claims
+    # them itself rather than being handed a shard of work.
+    claimed = dispatch_drivers(now)
     # Only LOCAL-engine work runs on the core's RQ workers. Remote (Outpost)
-    # states are left unclaimed for their Outpost to pull via /api/outpost/work.
-    due = list(
+    # states are left unclaimed for their Outpost to pull via /api/outpost/work,
+    # and driver states were just handled above.
+    due = (
         CheckState.objects.filter(next_run__lte=now, in_flight=False)
         .filter(
             models.Q(engine__isnull=True)
@@ -279,8 +363,20 @@ def dispatch(now=None, sync: bool = False) -> dict:
         )
         .select_related("template", "assignment")
     )
+    # Sub-minute checks belong to the fast lane while it is alive; when it is
+    # not, they run here at their fallback interval rather than not at all.
+    from .fastlane import lane_alive
+
+    if lane_alive(now):
+        due = due.filter(models.Q(interval_ms__isnull=True) | models.Q(fast_owned=False))
+    due = list(due)
+    # Plus the orphans: a target bound to a driver engine still has its other
+    # checks, and a driver only answers its own kind. Nobody was claiming an
+    # ICMP ping on a Zabbix-bound device, so it simply never ran - which reads
+    # as a monitoring system quietly going blind. The core runs them.
+    due += _unclaimed_driver_states(now)
     if not due:
-        return {"due": 0, "jobs": 0, "reaped": reaped}
+        return {"due": 0, "jobs": 0, "reaped": reaped, "claimed": claimed}
 
     # Claim the due states up front so a second tick can't double-dispatch them;
     # stamp the claim time (the reaper uses it) and push next_run forward
@@ -321,4 +417,7 @@ def dispatch(now=None, sync: bool = False) -> dict:
             queue.enqueue(run_generic, shard)
         jobs += 1
 
-    return {"due": len(due), "jobs": jobs, "reaped": reaped}
+    # `claimed` on both exits, not just the empty one: a caller reading the
+    # tick's numbers should not have to know that a driver-only tick reports a
+    # different shape from a busy one.
+    return {"due": len(due), "jobs": jobs, "reaped": reaped, "claimed": claimed}

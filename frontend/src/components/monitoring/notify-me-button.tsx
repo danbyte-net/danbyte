@@ -6,6 +6,19 @@ import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { apiErrorToast } from "@/lib/api-toast"
 
+/** The one scope a watch request names - the server insists on exactly one
+ * of the three, so a device must not fall through to an empty `ip`. */
+export function watchScope(
+  prefix?: string,
+  ip?: string,
+  device?: string
+): { prefix: string } | { ip: string } | { device: string } | null {
+  if (prefix) return { prefix }
+  if (ip) return { ip }
+  if (device) return { device }
+  return null
+}
+
 /** A one-click "email me about this prefix/IP/device" toggle. Backed by an
  * auto-created scoped channel + a self subscription - the user never has to
  * think about channels. Pass exactly one of `prefix` / `ip` / `device`. */
@@ -19,11 +32,13 @@ export function NotifyMeButton({
   device?: string
 }) {
   const qc = useQueryClient()
-  const qs = prefix ? `prefix=${prefix}` : ip ? `ip=${ip}` : `device=${device}`
+  const scope = watchScope(prefix, ip, device)
+  const qs = scope ? new URLSearchParams(scope).toString() : ""
   const key = ["watch-state", prefix ?? ip ?? device]
 
   const q = useQuery({
     queryKey: key,
+    enabled: scope !== null,
     queryFn: () =>
       api<{ watching: boolean; can_watch: boolean }>(
         `/api/monitoring/notifications/watch-state/?${qs}`
@@ -34,7 +49,7 @@ export function NotifyMeButton({
     mutationFn: (watch: boolean) =>
       api(`/api/monitoring/notifications/${watch ? "watch" : "unwatch"}/`, {
         method: "POST",
-        body: JSON.stringify(prefix ? { prefix } : { ip }),
+        body: JSON.stringify(scope ?? {}),
       }),
     onSuccess: (_r, watch) => {
       toast.success(

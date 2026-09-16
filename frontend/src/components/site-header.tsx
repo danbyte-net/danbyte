@@ -1,11 +1,13 @@
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ModeToggle } from "@/components/mode-toggle"
-import { GlobalSearch } from "@/components/global-search"
+import { SearchPalette } from "@/components/search-palette"
 import { BookmarkButton } from "@/components/bookmark-button"
 import { NotificationBell } from "@/components/notification-bell"
 import { DocsButton } from "@/components/docs-button"
+import { ChatButton } from "@/components/chat/chat-button"
 import { UpdateBadge } from "@/components/update-badge"
+import { UpgradeNotesBadge } from "@/components/upgrade-notes-badge"
 import { PresenceBar } from "@/components/presence-bar"
 import { usePresentUsers } from "@/lib/presence-context"
 import { useMe } from "@/lib/use-me"
@@ -62,6 +64,7 @@ export function SiteHeader({ crumbs }: { crumbs?: Crumb[] }) {
           <h1 className="text-base font-medium">{brandName}</h1>
         )}
         <UpdateBadge />
+        <UpgradeNotesBadge />
         <div className="ml-auto flex items-center gap-2">
           <PresenceBar present={present} />
           {present.length > 0 && (
@@ -70,8 +73,9 @@ export function SiteHeader({ crumbs }: { crumbs?: Crumb[] }) {
               className="data-[orientation=vertical]:h-4"
             />
           )}
-          <GlobalSearch />
+          <SearchPalette />
           <DocsButton />
+          <ChatButton />
           <NotificationBell />
           <BookmarkButton />
           <ModeToggle />

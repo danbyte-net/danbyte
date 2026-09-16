@@ -4,7 +4,13 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, STATUSABLE_MODELS, type Status, type Paginated } from "@/lib/api"
+import {
+  api,
+  MONITORING_STATES,
+  STATUSABLE_MODELS,
+  type Status,
+  type Paginated,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -77,6 +83,7 @@ function flagsOf(s: Status): string[] {
   const f: string[] = []
   if (s.is_available) f.push("available")
   if (s.requires_note) f.push("requires-note")
+  if (s.monitoring_state) f.push("monitoring")
   return f
 }
 
@@ -137,6 +144,7 @@ function IpStatusesPage() {
         label: "Requires note",
         count: c["requires-note"] ?? 0,
       },
+      { value: "monitoring", label: "Monitoring", count: c["monitoring"] ?? 0 },
     ].filter((o) => o.count) as FacetOption[]
   }, [allRows])
 
@@ -336,6 +344,21 @@ function buildColumns({
           </span>
         ) : (
           <span className="text-muted-foreground">-</span>
+        )
+      },
+    },
+    {
+      id: "monitoring",
+      header: "Monitoring",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const state = row.original.monitoring_state
+        if (!state) return <span className="text-muted-foreground">-</span>
+        const shipped = MONITORING_STATES.find((m) => m.value === state)
+        return (
+          <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px]">
+            {shipped?.label ?? state}
+          </span>
         )
       },
     },

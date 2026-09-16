@@ -9,16 +9,20 @@ import { isUserInitiated } from "@/lib/user-activation"
 
 const INHERIT = "__inherit__"
 
-/** Assign the monitoring engine (Outpost) that runs checks for a site or
- * location. Saves immediately on change via the engine-binding endpoint - the
+/** Assign the monitoring engine that runs checks for a device, site, location
+ * or prefix. Saves immediately on change via the engine-binding endpoint - the
  * assignment is independent of the form's own save. Render only for an existing
- * object (needs its id). */
+ * object (needs its id).
+ *
+ * Most specific wins: a device binding beats its location, which beats its
+ * prefix, which beats its site. That is what lets one host be answered by a
+ * Zabbix without moving the building it sits in. */
 export function MonitoringEngineField({
   scope,
   objectId,
   disabled = false,
 }: {
-  scope: "site" | "location"
+  scope: "device" | "site" | "location" | "prefix"
   objectId: string
   /** No change grant: render read-only instead of a select whose value snaps
    * back after a refused PUT - which reads as "not saved" (#125). */
@@ -54,22 +58,25 @@ export function MonitoringEngineField({
   })
 
   const options = [
-    { value: INHERIT, label: "Inherit (default)" },
+    { value: INHERIT, label: "Inherit" },
     ...(engines.data?.results ?? [])
       .filter((e) => e.enabled)
       .map((e) => ({
         value: e.id,
-        label: e.is_local ? "Local (built-in)" : e.name,
+        label: e.is_local ? "Local" : e.name,
       })),
   ]
 
   return (
     <FormSelect
       label="Monitoring engine"
-      hint={
-        scope === "location"
-          ? "Which engine runs checks here - overrides the site's."
-          : "Which engine runs checks here (an Outpost for a remote site). Inherit follows the tenant default."
+      hint="Where checks run"
+      info={
+        scope === "device"
+          ? "Overrides the location, prefix and site. Inherit follows them, then the tenant default."
+          : scope === "location"
+            ? "Overrides the site. Inherit follows it, then the tenant default."
+            : "An Outpost for a site the core cannot reach, or a Zabbix engine. Inherit follows the tenant default."
       }
       value={binding.data?.engine_id ?? INHERIT}
       onChange={(v) => {

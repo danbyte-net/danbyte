@@ -433,3 +433,355 @@ class RetentionTests(Base):
         out = prune()
         self.assertEqual(out["transitions_deleted"], 0)
         self.assertEqual(StateTransition.objects.count(), 1)
+
+
+class TeamsAdaptiveCardTests(Base):
+    """Teams gets an Adaptive Card, not Slack's bare {"text": ...} (#157)."""
+
+    def _channel(self, kind):
+        return NotificationChannel.objects.create(
+            tenant=self.tenant, name=kind, kind=kind,
+            config={"url": f"https://hooks.test/{kind}"},
+        )
+
+    def _alert(self, **kw):
+        from .models import Alert
+
+        base = dict(
+            tenant=self.tenant, target_ip=self.ip, template=self.template,
+            kind="icmp", dedup_key="127.0.0.1:icmp", severity="critical",
+            check_status="down",
+        )
+        base.update(kw)
+        return Alert.objects.create(**base)
+
+    def _base_url(self, value):
+        from core.models import DeploymentSettings
+
+        dep = DeploymentSettings.load()
+        dep.public_base_url = value
+        dep.save(update_fields=["public_base_url"])
+
+    def _card(self, payload):
+        """Assert the message envelope and hand back the AdaptiveCard."""
+        self.assertEqual(payload["type"], "message")
+        self.assertEqual(len(payload["attachments"]), 1)
+        att = payload["attachments"][0]
+        self.assertEqual(
+            att["contentType"], "application/vnd.microsoft.card.adaptive"
+        )
+        self.assertIsNone(att["contentUrl"])
+        card = att["content"]
+        self.assertEqual(card["type"], "AdaptiveCard")
+        self.assertEqual(
+            card["$schema"], "http://adaptivecards.io/schemas/adaptive-card.json"
+        )
+        self.assertEqual(card["version"], "1.4")
+        self.assertEqual(card["body"][0]["type"], "TextBlock")
+        self.assertTrue(card["body"][0]["wrap"])
+        return card
+
+    # ── notify_plain (generic, no Danbyte URL) ──────────────────────────────
+
+    def test_plain_teams_sends_card_without_actions(self):
+        with patch("monitoring.notify.safe_post") as post:
+            notify.notify_plain(self._channel("teams"), "Backup done", "all good")
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertEqual(card["body"][0]["text"], "Backup done\nall good")
+        self.assertNotIn("actions", card)  # no Danbyte URL at this call site
+
+    def test_plain_slack_and_discord_payloads_unchanged(self):
+        with patch("monitoring.notify.safe_post") as post:
+            notify.notify_plain(self._channel("slack"), "Backup done", "all good")
+            self.assertEqual(
+                post.call_args.kwargs["json"], {"text": "Backup done\nall good"}
+            )
+            notify.notify_plain(self._channel("discord"), "Backup done", "all good")
+            self.assertEqual(
+                post.call_args.kwargs["json"], {"content": "Backup done\nall good"}
+            )
+
+    # ── single alert ────────────────────────────────────────────────────────
+
+    def test_alert_teams_card_carries_open_url_action(self):
+        self._base_url("https://danbyte.test/")
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_to_channel(
+                self._channel("teams"), self._alert(), "firing", "127.0.0.1"
+            )
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertIn("127.0.0.1", card["body"][0]["text"])
+        # The link is an action, not appended to the text like Slack does.
+        self.assertNotIn("https://danbyte.test", card["body"][0]["text"])
+        self.assertEqual(
+            card["actions"],
+            [{"type": "Action.OpenUrl", "title": "View in Danbyte",
+              "url": "https://danbyte.test/alerts"}],
+        )
+
+    def test_alert_teams_card_omits_actions_without_base_url(self):
+        self._base_url("")
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_to_channel(
+                self._channel("teams"), self._alert(), "firing", "127.0.0.1"
+            )
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertNotIn("actions", card)
+
+    def test_alert_slack_and_discord_payloads_unchanged(self):
+        self._base_url("https://danbyte.test/")
+        alert = self._alert()
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_to_channel(
+                self._channel("slack"), alert, "firing", "127.0.0.1"
+            )
+            slack = post.call_args.kwargs["json"]
+            notify._dispatch_to_channel(
+                self._channel("discord"), alert, "firing", "127.0.0.1"
+            )
+            discord = post.call_args.kwargs["json"]
+        self.assertEqual(set(slack), {"text"})
+        self.assertTrue(slack["text"].endswith("\nhttps://danbyte.test/alerts"))
+        self.assertEqual(discord, {"content": slack["text"]})
+
+    # ── grouped alerts ──────────────────────────────────────────────────────
+
+    def test_group_teams_card_carries_open_url_action(self):
+        from core.models import DeploymentSettings
+
+        self._base_url("https://danbyte.test/")
+        dep = DeploymentSettings.load()
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_group_to_channel(
+                self._channel("teams"), [self._alert()], "firing", dep
+            )
+            card = self._card(post.call_args.kwargs["json"])
+        self.assertIn("1 alerts", card["body"][0]["text"])
+        self.assertNotIn("https://danbyte.test", card["body"][0]["text"])
+        self.assertEqual(
+            card["actions"],
+            [{"type": "Action.OpenUrl", "title": "View in Danbyte",
+              "url": "https://danbyte.test/alerts"}],
+        )
+
+    def test_group_slack_and_discord_payloads_unchanged(self):
+        from core.models import DeploymentSettings
+
+        self._base_url("https://danbyte.test/")
+        dep = DeploymentSettings.load()
+        alerts = [self._alert()]
+        with patch("monitoring.notify.safe_post") as post:
+            notify._dispatch_group_to_channel(
+                self._channel("slack"), alerts, "firing", dep
+            )
+            slack = post.call_args.kwargs["json"]
+            notify._dispatch_group_to_channel(
+                self._channel("discord"), alerts, "firing", dep
+            )
+            discord = post.call_args.kwargs["json"]
+        self.assertEqual(set(slack), {"text"})
+        self.assertTrue(slack["text"].endswith("\nhttps://danbyte.test/alerts"))
+        self.assertEqual(discord, {"content": slack["text"]})
+
+
+class TelegramTests(Base):
+    """Telegram Bot API delivery - request shape at all three dispatch sites,
+    the optional topic/thread id, and ``{"ok": false}`` on an HTTP 200."""
+
+    TOKEN = "123456:AA-BotFatherToken"
+    URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    def _channel(self, **cfg):
+        ch = NotificationChannel.objects.create(
+            tenant=self.tenant, name="tg", kind="telegram",
+            config={"chat_id": "-1001234567890", **cfg},
+        )
+        ch.secrets = {"bot_token": self.TOKEN}
+        ch.save(update_fields=["secrets"])
+        return ch
+
+    def _alert(self, **kw):
+        from .models import Alert
+
+        base = dict(
+            tenant=self.tenant, target_ip=self.ip, template=self.template,
+            kind="icmp", dedup_key="127.0.0.1:icmp", severity="critical",
+            check_status="down",
+        )
+        base.update(kw)
+        return Alert.objects.create(**base)
+
+    def _post(self, ok=True, description="", status_code=200):
+        """Patch safe_post with a Bot API response body - Telegram answers 200
+        even when it refuses the message, so the body is what tests assert on."""
+        p = patch("monitoring.notify.safe_post")
+        post = p.start()
+        self.addCleanup(p.stop)
+        body = {"ok": ok} if ok else {"ok": False, "description": description}
+        post.return_value.status_code = status_code
+        post.return_value.json.return_value = body
+        return post
+
+    def _dep(self):
+        from core.models import DeploymentSettings
+
+        return DeploymentSettings.load()
+
+    # ── request shape, all three dispatch sites ─────────────────────────────
+
+    def test_plain_send_posts_bot_api_sendmessage(self):
+        post = self._post()
+        notify.notify_plain(self._channel(), "Backup done", "all good")
+        self.assertEqual(post.call_args.args[0], self.URL)
+        self.assertEqual(
+            post.call_args.kwargs["json"],
+            {"chat_id": "-1001234567890", "text": "Backup done\nall good"},
+        )
+
+    def test_alert_send_posts_plain_text_with_link(self):
+        from core.models import DeploymentSettings
+
+        dep = DeploymentSettings.load()
+        dep.public_base_url = "https://danbyte.test/"
+        dep.save(update_fields=["public_base_url"])
+        post = self._post()
+        notify._dispatch_to_channel(
+            self._channel(), self._alert(), "firing", "127.0.0.1"
+        )
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(post.call_args.args[0], self.URL)
+        self.assertEqual(set(payload), {"chat_id", "text"})
+        self.assertIn("127.0.0.1", payload["text"])
+        # Plain text, like Slack/Discord - no parse_mode to escape around.
+        self.assertNotIn("parse_mode", post.call_args.kwargs)
+        self.assertTrue(payload["text"].endswith("\nhttps://danbyte.test/alerts"))
+
+    def test_group_send_posts_one_summary(self):
+        post = self._post()
+        notify._dispatch_group_to_channel(
+            self._channel(), [self._alert()], "firing", self._dep()
+        )
+        self.assertEqual(post.call_count, 1)
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(post.call_args.args[0], self.URL)
+        self.assertEqual(set(payload), {"chat_id", "text"})
+        self.assertIn("1 alerts", payload["text"])
+
+    # ── optional topic / thread id ──────────────────────────────────────────
+
+    def test_thread_id_is_sent_as_message_thread_id(self):
+        post = self._post()
+        notify.notify_plain(self._channel(message_thread_id="42"), "Hi")
+        self.assertEqual(post.call_args.kwargs["json"]["message_thread_id"], 42)
+
+    def test_thread_id_is_omitted_when_unset(self):
+        post = self._post()
+        notify.notify_plain(self._channel(), "Hi")
+        self.assertNotIn("message_thread_id", post.call_args.kwargs["json"])
+        post.reset_mock()
+        notify.notify_plain(self._channel(message_thread_id=""), "Hi")
+        self.assertNotIn("message_thread_id", post.call_args.kwargs["json"])
+
+    # ── an HTTP 200 is not delivery ─────────────────────────────────────────
+
+    def test_ok_false_raises_with_the_description(self):
+        self._post(ok=False, description="Bad Request: chat not found")
+        with self.assertRaises(RuntimeError) as cm:
+            notify._dispatch_to_channel(
+                self._channel(), self._alert(), "firing", "127.0.0.1"
+            )
+        self.assertIn("chat not found", str(cm.exception))
+
+    def test_ok_false_surfaces_through_send_test(self):
+        self._post(ok=False, description="Forbidden: bot is not a member")
+        with self.assertRaises(RuntimeError) as cm:
+            notify.send_test(self._channel())
+        self.assertIn("bot is not a member", str(cm.exception))
+
+    def test_ok_false_does_not_break_the_alert_run(self):
+        self._post(ok=False, description="chat not found")
+        self._channel()
+        # notify_alert is best-effort: the channel logs, the run survives.
+        with self.assertLogs("monitoring.notify", level="ERROR") as logs:
+            notify.notify_alert(self._alert(), "firing")
+        self.assertIn("alert channel tg (telegram) failed", "".join(logs.output))
+
+    def test_transport_error_message_hides_the_bot_token(self):
+        post = self._post()
+        post.side_effect = RuntimeError(f"connect failed for {self.URL}")
+        with self.assertRaises(RuntimeError) as cm:
+            notify.send_test(self._channel())
+        self.assertNotIn(self.TOKEN, str(cm.exception))
+
+    def test_missing_token_or_chat_id_is_refused(self):
+        post = self._post()
+        ch = self._channel()
+        ch.secrets = {}
+        ch.save(update_fields=["secrets"])
+        with self.assertRaises(RuntimeError):
+            notify.send_test(ch)
+        post.assert_not_called()
+
+
+class TelegramChannelApiTests(_SubApiBase):
+    """The bot token is write-only: accepted on create/update, never read back."""
+
+    TOKEN = "123456:AA-BotFatherToken"
+
+    def _create(self, **overrides):
+        body = {
+            "name": "tg", "kind": "telegram",
+            "config": {"chat_id": "-1001234567890"},
+            "bot_token": self.TOKEN,
+        }
+        body.update(overrides)
+        return self.client.post(
+            "/api/monitoring/channels/", body, format="json"
+        )
+
+    def test_create_stores_the_token_but_never_returns_it(self):
+        self._login(self.admin)
+        r = self._create()
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertNotIn("bot_token", r.json())
+        self.assertTrue(r.json()["bot_token_set"])
+        self.assertNotIn(self.TOKEN, r.content.decode())
+        ch = NotificationChannel.objects.get(id=r.json()["id"])
+        self.assertEqual(ch.secrets["bot_token"], self.TOKEN)
+        self.assertNotIn("bot_token", ch.config)
+
+    def test_list_and_detail_omit_the_token(self):
+        self._login(self.admin)
+        cid = self._create().json()["id"]
+        for url in ("/api/monitoring/channels/", f"/api/monitoring/channels/{cid}/"):
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200)
+            self.assertNotIn(self.TOKEN, r.content.decode())
+
+    def test_patch_without_a_token_keeps_the_stored_one(self):
+        self._login(self.admin)
+        cid = self._create().json()["id"]
+        r = self.client.patch(
+            f"/api/monitoring/channels/{cid}/",
+            {"config": {"chat_id": "-100999", "message_thread_id": "7"}},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        ch = NotificationChannel.objects.get(id=cid)
+        self.assertEqual(ch.secrets["bot_token"], self.TOKEN)
+        self.assertEqual(ch.config["message_thread_id"], "7")
+
+    def test_telegram_needs_a_chat_id_and_a_token(self):
+        self._login(self.admin)
+        r = self._create(config={})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("config", r.json())
+        r = self._create(bot_token="")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("bot_token", r.json())
+
+    def test_non_numeric_thread_id_is_refused(self):
+        self._login(self.admin)
+        r = self._create(config={"chat_id": "-100999", "message_thread_id": "abc"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("config", r.json())

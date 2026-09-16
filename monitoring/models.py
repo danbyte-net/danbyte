@@ -40,6 +40,7 @@ from core.models import (
     TimestampedModel,
 )
 
+from . import policy_scopes
 from .secrets import EncryptedJSONField
 
 
@@ -69,7 +70,11 @@ def check_kinds() -> list[tuple[str, str]]:
     out = list(CheckKind.choices)
     for kind in sorted(CHECKER_REGISTRY):
         if kind not in labels:
-            out.append((kind, kind))
+            # A registered checker may name itself. Optional, so a checker
+            # written against an older Outpost release still registers - it
+            # just reads as its slug.
+            checker = CHECKER_REGISTRY[kind]
+            out.append((kind, getattr(checker, "label", "") or kind))
     return out
 
 
@@ -135,7 +140,25 @@ class CheckTemplate(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
 
     interval_seconds = models.PositiveIntegerField(
-        default=300, help_text="How often the check runs, in seconds."
+        default=300, help_text="How often the check runs, in seconds. With a fast "
+        "interval set this is the fallback cadence when no fast lane can run it.",
+    )
+    # ─── the fast lane ────────────────────────────────────────────────────
+    # Sub-minute checks do not go through the minute beat and the RQ workers;
+    # a long-lived process (or the Outpost's own loop) probes them from an
+    # in-memory schedule and writes only what matters: every status change at
+    # once, and one aggregated sample per ``record_every_seconds``. That is
+    # what keeps a one-second ping from writing 86,400 rows a day.
+    interval_ms = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Fast-lane interval in milliseconds (200-59999). Empty = the "
+        "check runs on the normal minute beat at interval_seconds.",
+    )
+    record_every_seconds = models.PositiveIntegerField(
+        default=60,
+        help_text="Fast lane: how often one aggregated result is recorded "
+        "(min/avg/max latency and loss over the window). Status changes are "
+        "always recorded at once.",
     )
     timeout_ms = models.PositiveIntegerField(
         default=2000, help_text="Per-attempt timeout in milliseconds."
@@ -324,14 +347,12 @@ class MonitoringPolicy(TimestampedModel):
     SCOPE_DEVICE_ROLE = "device_role"
     SCOPE_DEVICE = "device"
     SCOPE_PREFIX = "prefix"
-    SCOPE_CHOICES = [
-        (SCOPE_GLOBAL, "Global"),
-        (SCOPE_VRF, "VRF"),
-        (SCOPE_DEVICE_TYPE, "Device type"),
-        (SCOPE_DEVICE_ROLE, "Device role"),
-        (SCOPE_DEVICE, "Device"),
-        (SCOPE_PREFIX, "Prefix"),
-    ]
+    SCOPE_SITE = "site"
+    SCOPE_REGION = "region"
+    SCOPE_PLATFORM = "platform"
+    #: From the registry, so a scope cannot exist for the resolver and not for
+    #: the form, or the other way round.
+    SCOPE_CHOICES = policy_scopes.CHOICES
 
     # Which of a device's IPs a device/type/role policy applies to. Ignored for
     # global/vrf/prefix scopes (those already target every IP in their scope).
@@ -371,8 +392,62 @@ class MonitoringPolicy(TimestampedModel):
         "api.Prefix", on_delete=models.CASCADE, null=True, blank=True,
         related_name="monitoring_policies",
     )
+    # Every target field is nullable, and has to stay that way: the RBAC
+    # visibility filter recognises a global policy by all of them being null.
+    #: Named `target_site`, not `site`: a field called `site` is the record's
+    #: *owning* site everywhere else in Danbyte, and the site-separation
+    #: stamper fills one in for a single-site creator. This is the site the
+    #: policy is *about*, which is a different thing - and left unrenamed, a
+    #: site-scoped admin's every policy came out stamped and then failed its
+    #: own visibility check.
+    target_site = models.ForeignKey(
+        "api.Site", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="monitoring_policies",
+    )
+    region = models.ForeignKey(
+        "api.Region", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="monitoring_policies",
+    )
+    platform = models.ForeignKey(
+        "api.Platform", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="monitoring_policies",
+    )
     enabled = models.BooleanField(default=True)
     inherit = models.BooleanField(default=True)
+
+    # ── filters ────────────────────────────────────────────────────────
+    # Filters narrow a scope; they are not scopes themselves. Two reasons.
+    # A scope must own a target field the RBAC visibility query can test, and
+    # a name pattern has no object to point at - giving it one would break the
+    # query that recognises a global policy by every target being null. And a
+    # ladder needs an answer to "is a tag more specific than a role", which
+    # nobody can predict. As filters they simply AND with the scope's match,
+    # which is safe because a policy can only ever *add* checks, never
+    # disable one.
+    match_tags = models.JSONField(
+        default=list, blank=True,
+        help_text="Tag slugs the device must carry - all of them. Empty = any.",
+    )
+    match_name = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Glob the device name must match, e.g. 'core-*'. Empty = any.",
+    )
+    match_interface = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text=(
+            "Glob the address's interface name must match, e.g. 'Gi0/0/*'. "
+            "Empty = any. An address bound to no interface never matches."
+        ),
+    )
+    match_hardware = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text=(
+            "Glob at least one of the device's inventory items or installed "
+            "modules must match, by name or part number, e.g. '*PSU*'. "
+            "Empty = any."
+        ),
+    )
+
     target = models.CharField(
         max_length=16,
         choices=TARGET_CHOICES,
@@ -421,6 +496,21 @@ class MonitoringPolicy(TimestampedModel):
                 fields=["tenant", "scope", "prefix"],
                 name="uniq_monitoringpolicy_prefix",
                 condition=models.Q(prefix__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "target_site"],
+                name="uniq_monitoringpolicy_site",
+                condition=models.Q(target_site__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "region"],
+                name="uniq_monitoringpolicy_region",
+                condition=models.Q(region__isnull=False),
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "scope", "platform"],
+                name="uniq_monitoringpolicy_platform",
+                condition=models.Q(platform__isnull=False),
             ),
         ]
 
@@ -517,6 +607,15 @@ class CheckResult(models.Model):
         help_text="Protocol-specific payload (rtt, snmp oid/value, http code, "
         "banner, error string).",
     )
+    #: Which engine actually ran this - an Outpost, the Zabbix driver - or
+    #: null for the core's own workers. Stamped from the ingest call, not
+    #: copied from the state's binding: a ping on a Zabbix-bound device is run
+    #: locally, and the binding would say Zabbix. No index on purpose: this is
+    #: displayed on a row that was already found, never used to find one.
+    engine = models.ForeignKey(
+        "MonitoringEngine", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", db_index=False,
+    )
 
     class Meta:
         ordering = ["-timestamp"]
@@ -583,6 +682,18 @@ class CheckState(TimestampedModel):
         "= use the tenant's global default. Assignment-sourced checks ignore "
         "this and follow their own schedule.",
     )
+    #: Resolved fast-lane interval (template or assignment override); null =
+    #: the minute beat. ``fast_owned`` is set by the lane when it takes the
+    #: state within the tenant's cap; a fast state nobody owns, or one whose
+    #: lane has stopped answering, runs on the beat at interval_seconds.
+    interval_ms = models.PositiveIntegerField(null=True, blank=True)
+    fast_owned = models.BooleanField(default=False)
+    #: The downsampling clock: when the lane last wrote an aggregated result.
+    last_recorded_at = models.DateTimeField(null=True, blank=True)
+    #: The open recording window's running totals, for checks an Outpost
+    #: reports in batches - the aggregate must cover the whole window, not
+    #: the last batch.
+    fast_window = models.JSONField(default=dict, blank=True)
 
     status = models.CharField(
         max_length=8, choices=CheckStatus.choices, default=CheckStatus.UNKNOWN
@@ -592,6 +703,16 @@ class CheckState(TimestampedModel):
     )
     last_checked = models.DateTimeField(null=True, blank=True)
     last_latency_ms = models.FloatField(null=True, blank=True)
+    last_detail = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "The latest result's protocol payload, denormalised. A list page "
+            "wanting the open-problem count or which protocols an external "
+            "system can reach a host on must not scan the history table for "
+            "it - the same reason status and latency live here."
+        ),
+    )
     consecutive_success = models.PositiveIntegerField(default=0)
     consecutive_fail = models.PositiveIntegerField(default=0)
 
@@ -608,6 +729,22 @@ class CheckState(TimestampedModel):
         "states orphaned by a dead/restarted worker.",
     )
 
+    # ─── flapping, as a state ─────────────────────────────────────────────
+    # Set by the flap sweep when bad transitions in the flap window reach the
+    # threshold; sticky until an operator confirms the host is fine, or - if
+    # the tenant asks for it - until it has been quiet for the settle time.
+    # ``Alert.flapping`` mirrors this; the "flapping a lot" list reads it.
+    flapping_since = models.DateTimeField(null=True, blank=True)
+    flap_count = models.PositiveIntegerField(default=0)
+    #: When somebody last said "not flapping" - only bad transitions after
+    #: this count towards flagging it again, so a confirmation means
+    #: something and the flag re-arms only on new evidence.
+    flap_cleared_at = models.DateTimeField(null=True, blank=True)
+    flap_cleared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
     class Meta:
         ordering = ["target_ip", "kind"]
         constraints = [
@@ -618,7 +755,12 @@ class CheckState(TimestampedModel):
         indexes = [
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["next_run", "in_flight"]),
+            models.Index(fields=["tenant", "flapping_since"]),
         ]
+
+    @property
+    def flapping(self) -> bool:
+        return self.flapping_since is not None
 
     def __str__(self) -> str:
         return f"{self.target_ip_id} {self.kind} = {self.status}"
@@ -748,6 +890,27 @@ class MonitoringSettings(TimestampedModel):
     )
     flap_window_minutes = models.PositiveIntegerField(
         default=30, help_text="Window for counting flaps."
+    )
+    # Off: a flapping state stays until somebody confirms the host is fine,
+    # because "it stopped bouncing" and "it is fine" are different claims and
+    # the second is the operator's to make. On: it clears itself once the
+    # check has been quiet for the settle time.
+    auto_clear_flapping = models.BooleanField(
+        default=False,
+        help_text="Clear a flapping state on its own once the check has been quiet "
+        "for the settle time. Off keeps it until an operator confirms.",
+    )
+    auto_clear_flapping_after_minutes = models.PositiveIntegerField(
+        default=30, help_text="Quiet minutes before a flapping state clears itself."
+    )
+    # ─── the fast lane ────────────────────────────────────────────────────
+    # A ceiling on sub-minute checks, because a thousand one-second pings is
+    # a decision somebody should make on purpose. Checks over the cap run on
+    # the minute beat at their fallback interval. 0 turns the lane off.
+    fast_lane_max_checks = models.PositiveIntegerField(
+        default=500,
+        help_text="How many sub-minute checks the fast lane runs for this tenant "
+        "(0 = none; the rest run at their fallback interval).",
     )
     # Grouping: when one batch opens many alerts (e.g. a switch dies), send one
     # digest per channel instead of a storm of individual messages.
@@ -930,7 +1093,12 @@ class MonitoringEngine(TimestampedModel):
         max_length=8, choices=TRANSPORT_CHOICES, default=PULL
     )
     description = models.TextField(blank=True)
-    kind = models.CharField(max_length=6, choices=KIND_CHOICES, default=REMOTE)
+    # No fixed choices, and wide enough for a real name: a driver-registered
+    # kind ("zabbix", "prometheus", "checkmk") is as valid here as the two
+    # built-ins, and is validated against monitoring.engine_drivers' registry
+    # rather than an enum - the same shape DeploymentSettings.secrets_provider
+    # uses for pluggable secret stores.
+    kind = models.CharField(max_length=32, default=REMOTE)
     enabled = models.BooleanField(default=True)
     # Bearer secret the Outpost authenticates with, stored as {"secret": …}.
     # Write-only - the API exposes only whether it's set, never the value.
@@ -940,6 +1108,10 @@ class MonitoringEngine(TimestampedModel):
     poll_interval_seconds = models.PositiveIntegerField(
         default=15, help_text="How often the Outpost polls the core for work."
     )
+    #: The agent said it runs a fast lane of its own (hello ``fast: true``).
+    #: Until it does, its sub-minute checks are handed out on the minute beat
+    #: like everything else - an older agent must keep working unchanged.
+    agent_fast = models.BooleanField(default=False)
     # When on, the agent self-updates to the default ("golden") release whenever
     # its version differs - pull-transport binary Outposts only.
     auto_update = models.BooleanField(default=False)
@@ -1031,18 +1203,26 @@ class MonitoringEngine(TimestampedModel):
 
 
 class MonitoringEngineBinding(TimestampedModel):
-    """Assigns a monitoring engine to a Site or Location.
+    """Assigns a monitoring engine to a Device, Site, Location or Prefix.
 
     Kept on the monitoring side (referencing api ids by ``object_id``) so the
     ``api`` app never depends on ``monitoring`` - the same pattern as
-    ``SnmpProfileBinding``. One engine per (tenant, scope, object). Location
-    beats Site when both are set (see ``monitoring/engines.py``).
+    ``SnmpProfileBinding``. One engine per (tenant, scope, object), resolved
+    most-specific-first in ``monitoring/engines.py``: **device → location (→
+    parents) → prefix → site → tenant default → local**.
+
+    The device scope is what lets one host answer somewhere else without
+    moving its whole site - "this switch is watched by Zabbix, the rest of the
+    building is ours" is a normal thing to want, and the site-level switch made
+    it an all-or-nothing choice.
     """
 
+    SCOPE_DEVICE = "device"
     SCOPE_SITE = "site"
     SCOPE_LOCATION = "location"
     SCOPE_PREFIX = "prefix"
     SCOPE_CHOICES = [
+        (SCOPE_DEVICE, "Device"),
         (SCOPE_SITE, "Site"),
         (SCOPE_LOCATION, "Location"),
         (SCOPE_PREFIX, "Prefix"),
@@ -1056,7 +1236,9 @@ class MonitoringEngineBinding(TimestampedModel):
         MonitoringEngine, on_delete=models.CASCADE, related_name="bindings"
     )
     scope = models.CharField(max_length=16, choices=SCOPE_CHOICES)
-    object_id = models.UUIDField(help_text="id of the site / location.")
+    object_id = models.UUIDField(
+        help_text="id of the device / site / location / prefix."
+    )
 
     class Meta:
         constraints = [
@@ -1124,9 +1306,13 @@ class NotificationChannel(TimestampedModel):
     """Where to send a status-change notification - one row per destination.
 
     ``kind`` selects the transport; ``config`` holds its target
-    (``{"url": …}`` for webhook, ``{"recipients": […]}`` for email).
+    (``{"url": …}`` for webhook, ``{"recipients": […]}`` for email,
+    ``{"chat_id": …, "message_thread_id": …}`` for Telegram).
     ``on_statuses`` optionally filters to transitions *into* the listed statuses
     (e.g. only ``["down", "degraded"]``); empty = every change.
+
+    Credentials never go in ``config`` - that column is returned by the API.
+    They live in ``secrets`` (Fernet-encrypted, write-only in the serializer).
     """
 
     class Kind(models.TextChoices):
@@ -1136,6 +1322,7 @@ class NotificationChannel(TimestampedModel):
         TEAMS = "teams", "Microsoft Teams"
         DISCORD = "discord", "Discord"
         PAGERDUTY = "pagerduty", "PagerDuty"
+        TELEGRAM = "telegram", "Telegram"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -1144,6 +1331,9 @@ class NotificationChannel(TimestampedModel):
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=12, choices=Kind.choices)
     config = models.JSONField(default=dict, blank=True)
+    # Transport credentials - Fernet-encrypted, never serialised back out.
+    # Telegram: {"bot_token": "…"}.
+    secrets = EncryptedJSONField(default=dict, blank=True)
     on_statuses = models.JSONField(
         default=list,
         blank=True,
@@ -1617,6 +1807,14 @@ class StateTransition(models.Model):
     to_status = models.CharField(max_length=8, choices=CheckStatus.choices)
     at = models.DateTimeField(default=timezone.now, db_index=True)
     detail = models.JSONField(default=dict, blank=True)
+    #: The engine whose answer caused the change - null for the core's own
+    #: workers, and for every row written before this existed, which the UI
+    #: reads as local. History that cannot say who saw a host go down is
+    #: history an operator has to distrust.
+    engine = models.ForeignKey(
+        "MonitoringEngine", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="transitions",
+    )
 
     class Meta:
         ordering = ["-at"]
@@ -3155,6 +3353,7 @@ class MaintenanceEvent(TimestampedModel):
                 silence, self.silence = self.silence, None
                 type(self).objects.filter(pk=self.pk).update(silence=None)
                 silence.delete()
+            _window_changed(self)
             return
 
         from datetime import timedelta
@@ -3180,6 +3379,15 @@ class MaintenanceEvent(TimestampedModel):
             self.silence = silence
             type(self).objects.filter(pk=self.pk).update(silence=silence)
         silence.match_devices.set(device_ids)
+        _window_changed(self)
+
+
+def _window_changed(event) -> None:
+    """Tell whoever mirrors the window - sent only after the silence and its
+    devices are settled, so a listener reads the final shape, never a half."""
+    from .signals import maintenance_window_changed
+
+    maintenance_window_changed.send(sender=type(event), event=event)
 
 
 class EventImpactLevel(models.TextChoices):

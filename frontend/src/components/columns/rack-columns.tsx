@@ -151,10 +151,16 @@ export function buildRackColumns<T extends Rack = Rack>(
       accessorFn: (r) => r.role?.name ?? "",
       cell: ({ row }) =>
         row.original.role ? (
-          <ColorBadge
-            name={row.original.role.name}
-            color={row.original.role.color || undefined}
-          />
+          <Link
+            to="/rack-roles/$id"
+            params={{ id: row.original.role.id }}
+            className="link"
+          >
+            <ColorBadge
+              name={row.original.role.name}
+              color={row.original.role.color || undefined}
+            />
+          </Link>
         ) : (
           dash
         ),

@@ -609,6 +609,10 @@ types** and carries its own **interface templates**, whose names may use the
 token resolves to the bay's *position* (`TenGigabitEthernet1/{module}/1` in
 bay position 1 → `…1/1/1`), and the [`{position}` stack
 token](virtual-chassis.md#position-aware-interface-names) still applies after.
+The `[1-24]` range shorthand works here too: `A[1-24]` or
+`TenGigabitEthernet1/{module}/[1-8]` adds one template per port in a single
+add, from the dialog or the API. A range written with curly braces
+(`{1-24}`) is refused rather than stored literally.
 
 The workflow:
 

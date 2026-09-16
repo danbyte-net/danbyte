@@ -1,9 +1,14 @@
 import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 
+import { QueryClient } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 
-import { PLAN_CAPABLE, isPlanCapable } from "./save-object"
+import {
+  PLAN_CAPABLE,
+  invalidateObjectQueries,
+  isPlanCapable,
+} from "./save-object"
 
 /**
  * The guard that makes migrating ~70 forms verifiable instead of hopeful.
@@ -52,6 +57,7 @@ const UNMIGRATED_FORMS = new Set<string>([
   "routes/services.$id.tsx",
   // Deployment settings, not a domain object.
   "routes/settings.sso.tsx",
+  "routes/settings.backups.tsx",
   // External-sync writes: saving pushes to a live Windows server over WinRM
   // (Add/Set/Remove-DhcpServerv4Reservation, Add-DhcpServerv4Scope) - replaying
   // one later as a planned change can't honour that contract, so these stay
@@ -111,7 +117,7 @@ describe("plan-capable forms", () => {
       // inline (console ports vs console server ports), so also count any
       // app-label literal in a file that routes writes through the helper.
       for (const m of src.matchAll(
-        /"((?:api|core|auth|auth_api|customization|integrations)\.[a-z]+)"/g
+        /"((?:api|core|auth|auth_api|customization|integrations|routing)\.[a-z]+)"/g
       )) {
         migrated.add(m[1])
       }
@@ -142,5 +148,23 @@ describe("plan-capable forms", () => {
     expect(isPlanCapable("api.cable")).toBe(false)
     expect(isPlanCapable("api.dev")).toBe(false)
     expect(isPlanCapable("")).toBe(false)
+  })
+})
+
+describe("invalidateObjectQueries", () => {
+  it("marks every query keyed by the object stale and leaves the rest", () => {
+    const qc = new QueryClient()
+    qc.setQueryData(["region", "r1"], { id: "r1" })
+    qc.setQueryData(["sites", "by-region", "r1"], [])
+    qc.setQueryData(["region", "r2"], { id: "r2" })
+    qc.setQueryData(["regions"], [])
+
+    invalidateObjectQueries(qc, "r1")
+
+    const stale = (key: unknown[]) => qc.getQueryState(key)?.isInvalidated
+    expect(stale(["region", "r1"])).toBe(true)
+    expect(stale(["sites", "by-region", "r1"])).toBe(true)
+    expect(stale(["region", "r2"])).toBe(false)
+    expect(stale(["regions"])).toBe(false)
   })
 })

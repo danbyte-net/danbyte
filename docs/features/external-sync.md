@@ -18,9 +18,13 @@ Everything is agentless. This page covers the ground rules they all share.
 
 ## Turning it on
 
-All three integrations ship **off**. A tenant admin enables them under
-**Settings → Integrations** - one toggle each for DHCP sync, DNS sync, and
-virtualization sync. A toggle governs the **sync machinery only**: while it's
+Every integration ships **off**. A tenant admin enables them under
+**Settings → Integrations** - one card each for DHCP sync, DNS sync, and one
+per hypervisor: **Proxmox VE sync** and **vCenter sync** are separate
+switches, so an install running both can stop one without touching the
+other's sources. (Upgrading from the single combined switch turns both on if
+it was on, so nothing changes.) A toggle governs the **sync machinery
+only**: while it's
 off, the connection pages, drift views and scheduled syncs are hidden and
 idle. DNS zones/records and DHCP scopes/reservations are first-class IPAM
 features and stay fully usable regardless - author a **local** zone (no
@@ -48,6 +52,29 @@ Like the NetBox importer, these integrations respect the deployment's
 servers and hypervisors are) must be allow-listed under **Settings →
 Deployment → General** (or `DANBYTE_SSRF_ALLOWLIST`) before Danbyte will
 connect. Test connection tells you exactly that when the target isn't listed.
+
+## Vendor names and logos
+
+Danbyte names other people's products the way their owners ask, and ships a
+logo only where its owner has said yes in writing.
+
+- **The mark goes on the most prominent mention** - the integration card, the
+  picker option, the page heading - and is dropped in running text.
+  `frontend/src/lib/vendors.ts` holds both forms per vendor, so the rule is
+  applied in one place: `Proxmox® Virtual Environment` on a card,
+  `Proxmox VE` in a sentence.
+- **Never as a bare noun, never invented.** It is "Proxmox Virtual
+  Environment", not "Proxmox"; "for Proxmox Virtual Environment", never
+  "Proxmox sync" as a product name of ours.
+- **Logos need permission.** Naming a product to say what Danbyte connects to
+  is referential use and needs none; redistributing a mark to every install
+  is a different question. Proxmox Server Solutions GmbH gave that permission
+  for the Proxmox brandmark, so it ships. Every other card's logo slot is
+  empty unless an operator drops a file into
+  `frontend/public/branding/vendors/` for their own install - see the README
+  there - and a card with no file shows no logo rather than an empty box.
+- The Integrations page carries one attribution line naming the owners, and
+  states that Danbyte is not affiliated with or endorsed by any of them.
 
 ## Shared rules of engagement
 

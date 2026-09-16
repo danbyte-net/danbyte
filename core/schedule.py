@@ -100,6 +100,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Enqueue due Windows DHCP/DNS and virtualization syncs",
     ),
     ScheduledTask(
+        unit="danbyte-zabbix-sync",
+        commands=("zabbix_sync",),
+        every=MINUTE,
+        label="Enqueue due Zabbix inventory, provisioning and host-status syncs",
+    ),
+    ScheduledTask(
         unit="danbyte-discover",
         commands=("discover_subnets",),
         every=5 * MINUTE,
@@ -135,6 +141,24 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         commands=("prune_check_results", "prune_changelog"),
         at=("04:17",),
         label="Retention - drop old check results and changelog rows",
+    ),
+    ScheduledTask(
+        unit="danbyte-backups",
+        commands=("run_backups",),
+        every=5 * MINUTE,
+        label="Start backup schedules that are due",
+    ),
+    ScheduledTask(
+        unit="danbyte-scripts",
+        commands=("run_scripts",),
+        every=MINUTE,
+        label="Run scheduled scripts that are due",
+    ),
+    ScheduledTask(
+        unit="danbyte-search-reindex",
+        commands=("rebuild_search_index",),
+        at=("03:40",),
+        label="Rebuild the global search index",
     ),
     ScheduledTask(
         unit="danbyte-cleanup",

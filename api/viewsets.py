@@ -47,7 +47,9 @@ from .models import (
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
-    Module, ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    Module,
+    ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    NATRule,
     install_module, uninstall_module,
     CableTermination, PortReservation,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
@@ -156,6 +158,7 @@ from .serializers import (
     PlatformGroupMiniSerializer,
     PlatformGroupSerializer,
     PlatformSerializer,
+    NATRuleSerializer,
     ServiceSerializer,
     ServiceTemplateSerializer,
     IPRangeSerializer,
@@ -1075,7 +1078,15 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             ("site", "site_id"), ("location", "location_id"),
         ):
             v = self.request.query_params.get(key)
-            if v:
+            if not v:
+                continue
+            # `?site=X&include_shared=1`: the site's prefixes plus the
+            # site-less shared space - what an IP picker for a device at X
+            # should offer, since transit and tunnel networks between sites
+            # live there (#152).
+            if key == "site" and self.request.query_params.get("include_shared"):
+                qs = qs.filter(Q(site_id=v) | Q(site__isnull=True))
+            else:
                 qs = qs.filter(**{field: v})
         # `contained_in=<cidr>`: only prefixes inside that network - the
         # aggregate page's Prefixes tab (#133). Postgres `<<=` on the stored
@@ -1501,7 +1512,12 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if vrf := p.get("vrf"):
             qs = qs.filter(prefix__vrf_id=vrf)
         if site := p.get("site"):
-            qs = qs.filter(prefix__site_id=site)
+            # With include_shared the site-less shared space rides along -
+            # the transit networks an IP picker must still offer (#152).
+            if p.get("include_shared"):
+                qs = qs.filter(Q(prefix__site_id=site) | Q(prefix__site__isnull=True))
+            else:
+                qs = qs.filter(prefix__site_id=site)
         if iface := p.get("assigned_interface"):
             qs = qs.filter(assigned_interface_id=iface)
         if role := p.get("role"):
@@ -3084,6 +3100,22 @@ class DeviceViewSet(
         "device_type", "role", "platform", "status", "site", "location",
         "cluster", "airflow", "description", "comments",
     )
+
+    @action(detail=True, methods=["get"], url_path="spec-sheet")
+    def spec_sheet(self, request, pk=None):
+        """A printable PDF datasheet of this object (#150): header, stat boxes,
+        details, components, interfaces, comments and images. Inline by
+        default; ``?download=1`` forces a download."""
+        from django.http import HttpResponse
+
+        from .spec_sheets import render_spec_pdf, spec_filename
+
+        obj = self.get_object()
+        pdf = render_spec_pdf("device", obj, request)
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        return resp
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
@@ -4739,14 +4771,16 @@ class ModuleTypeViewSet(TenantScopedViewSet):
         serializer.save(tenant=self._tenant_or_403())
 
 
-class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
+class ModuleInterfaceTemplateViewSet(NameRangeCreateMixin, TenantScopedViewSet):
     """Interface templates on a MODULE type - scope via module_type.tenant;
-    filter with ?module_type=."""
+    filter with ?module_type=. A ``[a-b]`` range in the name fans out like it
+    does for device-type templates, so ``{module}[1-24]`` is 24 rows (#147)."""
 
     queryset = ModuleInterfaceTemplate.objects.select_related("module_type").order_by(NATURAL_NAME)
     serializer_class = ModuleInterfaceTemplateSerializer
     pagination_class = StandardPagination
     tenant_field = None
+    bulk_name_scope_field = "module_type_id"
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)
@@ -4769,7 +4803,7 @@ class ModuleInterfaceTemplateViewSet(TenantScopedViewSet):
                 {"module_type_id": "Pick a module type in the current tenant."}
             )
 
-    def perform_create(self, serializer):
+    def _create_one(self, serializer):
         self._check(serializer)
         serializer.save()
 
@@ -5051,6 +5085,22 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         "cluster", "role", "platform", "device", "site", "status",
         "vcpus", "memory_mb", "disk_gb", "description",
     )
+
+    @action(detail=True, methods=["get"], url_path="spec-sheet")
+    def spec_sheet(self, request, pk=None):
+        """A printable PDF datasheet of this object (#150): header, stat boxes,
+        details, components, interfaces, comments and images. Inline by
+        default; ``?download=1`` forces a download."""
+        from django.http import HttpResponse
+
+        from .spec_sheets import render_spec_pdf, spec_filename
+
+        obj = self.get_object()
+        pdf = render_spec_pdf("vm", obj, request)
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        return resp
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
@@ -5543,6 +5593,56 @@ class PlatformViewSet(DeviceRoleViewSet):
 
 
 # ─── Services ────────────────────────────────────────────────────────────────
+class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """NAT / port-forward documentation (#151)."""
+
+    editable_str_fields = ("description",)
+    queryset = NATRule.objects.all().order_by(NATURAL_NAME)
+    serializer_class = NATRuleSerializer
+    pagination_class = StandardPagination
+    rbac_action_map = {"bulk_delete": "delete"}
+    # The mapping is the identity; carry everything that describes it.
+    clone_fields = ("device", "kind", "protocol", "external_ip",
+                    "internal_ip", "source_prefix", "source_ip", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device", "status", "external_ip", "internal_ip",
+                            "source_ip", "source_prefix")
+            .prefetch_related("tags")
+        )
+        if not self.request:
+            return qs
+        s = self.request.query_params.get("search", "").strip()
+        if s:
+            qs = (
+                qs.filter(name__icontains=s)
+                | qs.filter(description__icontains=s)
+                | qs.filter(external_ip__ip_address__icontains=s)
+                | qs.filter(internal_ip__ip_address__icontains=s)
+                | qs.filter(cf_text_q(qs.model, s))
+            )
+            # A port is what someone actually searches for on this page.
+            if s.isdigit():
+                qs = qs | super().get_queryset().filter(
+                    Q(external_ports__startswith=s)
+                    | Q(internal_ports__startswith=s)
+                )
+        for key, field in (
+            ("device", "device_id"),
+            ("kind", "kind"),
+            ("protocol", "protocol"),
+            ("status", "status_id"),
+            ("external_ip", "external_ip_id"),
+            ("internal_ip", "internal_ip_id"),
+        ):
+            v = self.request.query_params.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        return qs.distinct()
+
+
 class ServiceViewSet(TenantScopedViewSet):
     queryset = Service.objects.all().order_by(NATURAL_NAME)
     serializer_class = ServiceSerializer
@@ -6161,8 +6261,11 @@ class ProviderViewSet(TenantScopedViewSet):
         return ProviderSerializer
 
     def get_queryset(self):
+        # Two reverse joins in one query - distinct on each, or every circuit
+        # would be counted once per network and vice versa.
         qs = super().get_queryset().prefetch_related("tags").annotate(
-            circuit_count_annotated=Count("circuits")
+            circuit_count_annotated=Count("circuits", distinct=True),
+            network_count_annotated=Count("networks", distinct=True),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6388,6 +6491,11 @@ class PowerFeedViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("power_panel", "rack")
             .prefetch_related("tags")
+            # The Terminations tab's count: distinct cables among the feed's
+            # terminations, annotated so the list stays one query.
+            .annotate(
+                cable_count_annotated=Count("terminations__cable", distinct=True)
+            )
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6438,13 +6546,13 @@ class WirelessLANGroupViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class WirelessLANViewSet(TenantScopedViewSet):
-    """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
-    store - this viewset moves it in and out, never through a read."""
+class SecretPSKViewSetMixin:
+    """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
+    store around create/update/destroy, and reveals it through an audited
+    action gated by the ``reveal`` verb (#68, #168). ``psk_object_label`` is
+    what the change log calls the object."""
 
-    queryset = WirelessLAN.objects.all().order_by("ssid")
-    serializer_class = WirelessLANSerializer
-    pagination_class = StandardPagination
+    psk_object_label = ""
     rbac_action_map = {"reveal_psk": "reveal"}
 
     def _pop_psk(self, serializer):
@@ -6452,7 +6560,7 @@ class WirelessLANViewSet(TenantScopedViewSet):
         the model has no column for it, only a reference."""
         return serializer.validated_data.pop("psk", "")
 
-    def _apply_psk(self, lan, value) -> None:
+    def _apply_psk(self, obj, value) -> None:
         """None clears; a value stores; blank leaves the stored key alone."""
         from monitoring.secret_store import SecretStoreError
 
@@ -6460,12 +6568,12 @@ class WirelessLANViewSet(TenantScopedViewSet):
             return
         try:
             if value is None:
-                lan.clear_psk()
+                obj.clear_psk()
             else:
-                lan.store_psk(value)
+                obj.store_psk(value)
         except SecretStoreError as exc:
             raise ValidationError({"psk": str(exc)}) from exc
-        lan.save(update_fields=["psk_secret_path", "psk_secret_provider"])
+        obj.save(update_fields=["psk_secret_path", "psk_secret_provider"])
 
     def perform_create(self, serializer):
         from django.db import transaction
@@ -6484,8 +6592,8 @@ class WirelessLANViewSet(TenantScopedViewSet):
             self._apply_psk(serializer.instance, value)
 
     def perform_destroy(self, instance):
-        # Take the key with the record: an SSID nobody documents any more has
-        # no business leaving its passphrase in the store.
+        # Take the key with the record: a profile nobody documents any more
+        # has no business leaving its key in the store.
         instance.clear_psk()
         super().perform_destroy(instance)
 
@@ -6495,15 +6603,15 @@ class WirelessLANViewSet(TenantScopedViewSet):
         is audited, and fails closed when no secret store is enabled."""
         from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
 
-        lan = self.get_object()
+        obj = self.get_object()
         try:
-            psk = lan.resolve_psk()
+            psk = obj.resolve_psk()
         except (SecretStoreDisabled, SecretStoreError) as exc:
             raise ValidationError({"detail": str(exc)}) from exc
-        self._audit_reveal(lan)
+        self._audit_reveal(obj)
         return Response({"psk": psk})
 
-    def _audit_reveal(self, lan):
+    def _audit_reveal(self, obj):
         """Revealing writes no model change, so nothing else would log it -
         same trail the device-credential reveal leaves."""
         from audit.context import current_request_id, current_via
@@ -6513,19 +6621,30 @@ class WirelessLANViewSet(TenantScopedViewSet):
         u = getattr(self.request, "user", None)
         authed = bool(u and u.is_authenticated)
         ChangeLogEntry.objects.create(
-            tenant_id=getattr(lan, "tenant_id", None),
+            tenant_id=getattr(obj, "tenant_id", None),
             user=u if authed else None,
             user_name=(u.get_username() if authed else ""),
             action=ChangeAction.REVEAL,
-            object_type=lan._meta.label_lower,
-            object_label="Wireless LAN",
-            object_id=str(lan.pk),
-            object_repr=str(lan),
-            object_site_id=entry_site_id(lan),
+            object_type=obj._meta.label_lower,
+            object_label=self.psk_object_label or obj._meta.verbose_name.title(),
+            object_id=str(obj.pk),
+            object_repr=str(obj),
+            object_site_id=entry_site_id(obj),
             changes={"revealed": "psk"},
             request_id=current_request_id(),
             via=current_via() or "system",
         )
+
+
+class WirelessLANViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+    """SSIDs. The PSK (#68) is write-only and lives in the deployment's secret
+    store - the mixin moves it in and out, never through a read."""
+
+    psk_object_label = "Wireless LAN"
+
+    queryset = WirelessLAN.objects.all().order_by("ssid")
+    serializer_class = WirelessLANSerializer
+    pagination_class = StandardPagination
 
     def get_queryset(self):
         qs = (
@@ -6583,7 +6702,11 @@ class TunnelGroupViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class IPSecProfileViewSet(TenantScopedViewSet):
+class IPSecProfileViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+    """Crypto profiles. The pre-shared key (#168) is write-only and lives in
+    the secret store; the mixin moves it and reveals it under audit."""
+
+    psk_object_label = "IPsec profile"
     queryset = IPSecProfile.objects.all().order_by(NATURAL_NAME)
     serializer_class = IPSecProfileSerializer
     pagination_class = StandardPagination
@@ -6707,7 +6830,7 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
 class L2VPNViewSet(TenantScopedViewSet):
     queryset = (
         L2VPN.objects
-        .select_related("status")
+        .select_related("status", "vrf")
         .prefetch_related(
             "import_targets", "export_targets", "tags",
             "terminations__vlan", "terminations__interface__device",
@@ -6729,7 +6852,16 @@ class L2VPNViewSet(TenantScopedViewSet):
             t = self.request.query_params.get("type")
             if t:
                 qs = qs.filter(type=t)
-        return qs
+            # A device's Add-VNI picker: the overlays a VTEP can carry.
+            if self.request.query_params.get("vxlan") in ("1", "true"):
+                qs = qs.filter(type__in=L2VPN.VXLAN_TYPES)
+            v = self.request.query_params.get("vrf")
+            if v:
+                qs = qs.filter(vrf_id=v)
+            vl = self.request.query_params.get("vlan")
+            if vl:
+                qs = qs.filter(terminations__vlan_id=vl)
+        return qs.annotate(vtep_count_annotated=Count("vtep_memberships", distinct=True))
 
 
 class L2VPNTerminationViewSet(TenantScopedViewSet):
@@ -6800,6 +6932,21 @@ class VirtualChassisViewSet(TenantScopedViewSet):
                       | qs.filter(domain__icontains=search)
                       | qs.filter(description__icontains=search)) | qs.filter(cf_text_q(qs.model, search))
         return qs
+
+    @action(detail=True, methods=["get"], url_path="spec-sheet")
+    def spec_sheet(self, request, pk=None):
+        """A printable PDF datasheet of the stack (#150): every member's
+        elevation, the member table, and each member's interfaces."""
+        from django.http import HttpResponse
+
+        from .spec_sheets import render_spec_pdf, spec_filename
+
+        obj = self.get_object()
+        pdf = render_spec_pdf("vc", obj, request)
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        resp = HttpResponse(pdf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        return resp
 
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):

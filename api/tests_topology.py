@@ -327,6 +327,45 @@ class SavedViewTests(_Base):
             )
             self.assertEqual(resp.status_code, 400, resp.content)
 
+    def test_zones_and_hidden_round_trip(self):
+        """Zones are per style like the arrangements; hidden nodes are not -
+        taking a card off the map is about the device set, not the layout."""
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "annotated", "state": {
+                "zones_by_style": {
+                    "stencil": [{
+                        "id": "z1", "label": "Comms closet",
+                        "x": 10, "y": 20, "w": 400, "h": 260,
+                        "color": "#0ea5e9",
+                    }],
+                },
+                "hidden": ["dev:abc", "dev:def"],
+            }},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        state = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]
+        self.assertEqual(state["zones_by_style"]["stencil"][0]["label"], "Comms closet")
+        self.assertEqual(state["hidden"], ["dev:abc", "dev:def"])
+
+    def test_bad_zones_and_hidden_rejected(self):
+        for bad in (
+            {"zones_by_style": "nope"},
+            {"zones_by_style": {"photo": []}},
+            {"zones_by_style": {"flat": "nope"}},
+            {"hidden": "nope"},
+            {"hidden": [1, 2]},
+        ):
+            resp = self.client.post(
+                "/api/topology-views/",
+                {"name": "bad", "state": bad},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 400, resp.content)
+
 
 class PassThroughAndCrashTests(_Base):
     """Feature A: trace no longer crashes on console/power/aux terminations,

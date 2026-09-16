@@ -1,8 +1,10 @@
 import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
+import { PlatformCell } from "@/components/cells/platform-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { PrintLabelButton } from "@/components/print-label-button"
+import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { ShowOnSiteMap } from "@/components/show-on-site-map"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -154,6 +156,8 @@ import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ServicesPane } from "@/components/services-pane"
+import { DeviceRoutingPanel } from "@/components/routing/device-routing-panel"
+import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
   DeviceMonitoring,
   DeviceMonitoringBadge,
@@ -171,8 +175,10 @@ const DEVICE_TABS = [
   "components",
   "images",
   "photo-ports",
+  "monitoring",
   "snmp",
   "services",
+  "routing",
   "certificates",
   "contacts",
   "access",
@@ -273,6 +279,7 @@ function Body({ device: d }: { device: Device }) {
             deviceTypeId={d.device_type?.id}
             roleId={d.role?.id}
           />
+          <SpecSheetButton kind="device" id={d.id} />
           {canEdit && d.device_type && (
             <Button
               variant="outline"
@@ -360,16 +367,19 @@ function Body({ device: d }: { device: Device }) {
               (d.console_count || 0) +
               (d.power_count || 0) || undefined,
         },
-        { value: "images", label: "Images" },
+        { value: "images", label: "Images", count: d.image_count || undefined },
         // Only when the type has a rack-face photo to place markers on.
         ...(d.device_type?.front_image || d.device_type?.rear_image
           ? [{ value: "photo-ports", label: "Photo ports" }]
           : []),
+        { value: "monitoring", label: "Monitoring" },
+        // The value stays "snmp" so every ?tab=snmp link keeps landing here;
+        // the label says what the tab holds now that checks have their own.
         {
           value: "snmp",
           label: (
             <>
-              Monitoring
+              SNMP
               {deviceDrift.length > 0 && <DriftDot />}
             </>
           ),
@@ -379,11 +389,28 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
-        { value: "certificates", label: "Certificates & keys" },
-        { value: "contacts", label: "Contacts" },
+        {
+          value: "routing",
+          label: "Routing",
+          count: d.routing_count || undefined,
+        },
+        {
+          value: "certificates",
+          label: "Certificates & keys",
+          count: d.certificate_count || undefined,
+        },
+        {
+          value: "contacts",
+          label: "Contacts",
+          count: d.contact_count || undefined,
+        },
         { value: "access", label: "Access" },
         { value: "config", label: "Config" },
-        { value: "documents", label: "Documents" },
+        {
+          value: "documents",
+          label: "Documents",
+          count: d.document_count || undefined,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -399,6 +426,9 @@ function Body({ device: d }: { device: Device }) {
         <PendingFieldsProvider objectType="api.device" objectId={d.id}>
           <DeviceOverview device={d} onTab={setTab} />
         </PendingFieldsProvider>
+      </DetailTab>
+      <DetailTab value="monitoring">
+        <DeviceChecksPanel deviceId={d.id} />
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">
@@ -467,6 +497,9 @@ function Body({ device: d }: { device: Device }) {
           parent={{ kind: "device", id: d.id }}
           parentHasPrimaryIp={!!d.primary_ip}
         />
+      </DetailTab>
+      <DetailTab value="routing">
+        <DeviceRoutingPanel device={{ id: d.id, name: d.name }} />
       </DetailTab>
       <DetailTab value="certificates">
         <div className="space-y-6">
@@ -671,7 +704,7 @@ function DeviceOverview({
   onTab,
 }: {
   device: Device
-  onTab: (tab: "ips" | "components") => void
+  onTab: (tab: "ips" | "components" | "routing") => void
 }) {
   const { humanIds } = useMe()
   const nav = useNavigate({ from: "/devices/$id" })
@@ -729,7 +762,7 @@ function DeviceOverview({
       label: "Platform",
       value: d.platform ? (
         <span className="inline-flex items-center gap-2">
-          {d.platform.name}
+          <PlatformCell platform={d.platform} />
           <LifecycleFlag state={d.platform.lifecycle_state} />
         </span>
       ) : d.effective_platform ? (
@@ -1011,6 +1044,22 @@ function DeviceOverview({
         </button>
       ),
     },
+    ...(d.routing_count
+      ? [
+          {
+            label: "Routing",
+            value: (
+              <button
+                type="button"
+                onClick={() => onTab("routing")}
+                className="num link"
+              >
+                {d.routing_count}
+              </button>
+            ),
+          },
+        ]
+      : []),
   ]
   // The Panel (photo / rendered / bare) is pinned top-right and kept in view
   // The Panel shows when the device has ports or its type carries a rack-face

@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
+
+import { IpListCell } from "@/components/cells/ip-list"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { GitCompareArrows, Pencil, Plus, Trash2 } from "lucide-react"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -250,9 +252,13 @@ export function VMInterfacesPane({
         header: "MAC",
         cell: ({ row }) =>
           row.original.mac_address ? (
-            <span className="font-mono text-xs">
+            <Link
+              to="/macs/$mac"
+              params={{ mac: row.original.mac_address }}
+              className="link font-mono text-xs"
+            >
               {row.original.mac_address}
-            </span>
+            </Link>
           ) : (
             <span className="text-muted-foreground">-</span>
           ),
@@ -306,23 +312,7 @@ export function VMInterfacesPane({
       {
         id: "ips",
         header: "IPs",
-        cell: ({ row }) =>
-          row.original.ip_addresses.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {row.original.ip_addresses.map((ip) => (
-                <Link
-                  key={ip.id}
-                  to="/ips/$id"
-                  params={{ id: ip.id }}
-                  className="link font-mono text-xs"
-                >
-                  {ip.ip_address}
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
+        cell: ({ row }) => <IpListCell ips={row.original.ip_addresses} />,
       },
       {
         id: "actions",

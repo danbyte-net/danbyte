@@ -62,15 +62,36 @@ where you wire them up:
 
 Both respect your prefix permissions (*change* and *add* respectively).
 
+### Where a VLAN ID has to be unique
+
+A VLAN ID is an L2 namespace, and the namespace is a **group** or a **site** -
+never the whole tenant. Kyiv VLAN 105 and Warsaw VLAN 105 are different
+broadcast domains that happen to share a number, and both are valid.
+
+- **Ungrouped:** the VID is unique **per site**. A VLAN with no site at all is
+  not "every site" - it is one tenant-wide VLAN, and there can only be one of
+  those per VID.
+- **Grouped:** the group is the namespace, across every site it spans. That is
+  what a group is for, so the same VID twice in one group is still refused.
+
+!!! note "Reading a VID off a switch or a hypervisor"
+    Because a bare VID no longer names one VLAN, SNMP sync, drift and
+    virtualization sync resolve it **within the device's or cluster's site**:
+    the site's own ungrouped VLAN first, then a group bound to that site or
+    cluster, then a tenant-wide VLAN. Where two sites' VLANs are equally
+    plausible, Danbyte assigns **nothing** rather than guess - a missing
+    assignment reappears as drift on the next poll, a wrong one looks like the
+    truth forever. SNMP creates a VLAN it has never seen **at the polled
+    device's site**.
+
 ### VLAN groups
 
 A **VLAN group** is a named grouping that scopes VID uniqueness and defines a
 valid VID range:
 
-- The same VID can exist in different groups; ungrouped VLANs stay unique across
-  the tenant.
 - Assigning a VLAN to a group checks that its VID falls inside the group's range.
-- A group can optionally be bound to a site or cluster.
+- A group can optionally be bound to a site or cluster - which is also what lets
+  a synced VID resolve to it.
 
 !!! warning "Delete order"
     You can't delete a VLAN group that still contains VLANs. Move or remove its
@@ -169,7 +190,8 @@ tags, and search matches the number or description.
 ## FHRP groups
 
 An **FHRP group** models a First-Hop Redundancy Protocol group - VRRP, HSRP,
-GLBP, or CARP. It carries a group ID (0–255), optional authentication, an
+GLBP, CARP, or an **EVPN anycast gateway** (the same address answered by
+every leaf, see [the overlay](routing.md#overlay-evpn-and-vxlan)). It carries a group ID (0–255), optional authentication, an
 optional virtual IP, plus a description, tags, and custom fields.
 
 Members are added as **assignments**: each binds the group to exactly one device
@@ -191,6 +213,50 @@ the product - you define exactly the ones your network uses:
 See [IP statuses & roles](catalogs-and-settings.md) for managing these catalogs,
 and [Tags & custom fields](tags-and-custom-fields.md) for attaching your own
 attributes to any of these objects.
+
+## NAT rules
+
+A **NAT rule** records a translation your firewall performs - a port forward, a
+1:1, a source NAT - so the next person can answer *"what is 203.0.113.10:443?"*
+without reading a rule base they may not have access to.
+
+!!! note "Documentation, not configuration"
+    Danbyte writes nothing to any firewall. Deleting a rule here removes the
+    record; the box keeps doing whatever it is doing.
+
+A rule carries:
+
+- a **name**, a **type** (*Destination NAT*, *Source NAT*, *Static (1:1)*,
+  *Masquerade*) and a **protocol** (TCP, UDP, TCP/UDP, ICMP, Any);
+- the **firewall** it runs on - an ordinary Device link, so a firewall's page
+  can show everything it translates. Deleting the device leaves the rule: you
+  replaced a box, the mapping did not stop existing;
+- the **outside** end - an *external address* and *external port*;
+- the **inside** end - an *internal address* and *internal port*;
+- an optional **source restriction** - a prefix ("our office only") or a single
+  address. Both blank means anyone;
+- a **status** (*Active*, *Planned*, *Disabled*), a description, tags and
+  custom fields.
+
+Both address ends point at real **IP address** records wherever you have them,
+so a public address's page shows what it forwards to and an internal server's
+page shows what reaches it. Either end may be left blank - a masquerade rule
+has no external address of its own, and an address you have not recorded yet
+should not stop you writing the rule down.
+
+### Ports
+
+A port field takes **one port** (`443`) or an **inclusive range**
+(`8000-8100`). Two rules the form enforces, because a record of a rule no
+firewall could implement reads exactly like the truth:
+
+- a protocol that carries no ports (ICMP, Any) may not have any;
+- an external **range** needs an internal range of the **same size**, or no
+  internal port at all - forwarding a range straight through keeps the port
+  numbers.
+
+Rules are listed under **Services → NAT rules**, are found by global search on
+name, address or port, and carry the usual journal and change log.
 
 ## Service templates
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { Activity, AlertTriangle } from "lucide-react"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { Activity } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -21,7 +21,9 @@ import {
   type CheckStatus,
   type FlappingRow,
   type MonitoringStats,
+  type StatsHours,
 } from "@/lib/api"
+import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useMe } from "@/lib/use-me"
@@ -41,31 +43,86 @@ import {
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
+  countAxisWidth,
   type ChartConfig,
 } from "@/components/ui/chart"
-import { STATUS_COLOR, STATUS_LABEL } from "@/components/monitoring/charts"
+import {
+  statusColor,
+  statusLabel,
+  useStatusLabels,
+} from "@/components/monitoring/status-palette"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
+import { HistoryView } from "@/components/monitoring/history-view"
 import { TemplatesList } from "@/components/monitoring/templates-list"
-import { MonitoringConfiguration } from "@/components/monitoring/configuration"
+import {
+  CONFIG_TABS,
+  MonitoringConfiguration,
+} from "@/components/monitoring/configuration"
+import type { ConfigTab } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
+import { SourceBadge } from "@/components/monitoring/source-badge"
+import { SeriesLegend } from "@/components/monitoring/series-legend"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
   | "overview"
+  | "history"
   | "checks"
+  | "flapping"
   | "templates"
   | "configuration"
   | "settings"
-interface MonitoringSearch {
+
+// The filter params the history and checks views keep in the URL. Declared so
+// they survive navigation: a param the route does not validate is dropped
+// when the router rebuilds the location, which is what reset filters on
+// Back elsewhere (#109).
+const FILTER_KEYS = [
+  "to_status",
+  "from_status",
+  "kind",
+  "source",
+  "site",
+  "device_type",
+  "role",
+  "platform",
+  "template",
+  "engine",
+  "region",
+  "device",
+  "prefix",
+  "vrf",
+  "vlan",
+  "tag",
+  "port",
+  "ip",
+  "q",
+  "page",
+  "ordering",
+  "days",
+  "since",
+  "until",
+  "strip",
+  "flapping",
+  "dow",
+  "hour",
+] as const
+type FilterKey = (typeof FILTER_KEYS)[number]
+
+interface MonitoringSearch extends Partial<Record<FilterKey, string>> {
   view: MonitoringView
   status: CheckStatus | "all"
+  /** Configuration tab; absent means the default. */
+  scope?: ConfigTab
 }
 
 const VIEWS: MonitoringView[] = [
   "overview",
+  "history",
   "checks",
+  "flapping",
   "templates",
   "configuration",
   "settings",
@@ -79,6 +136,14 @@ export const Route = createFileRoute("/monitoring")({
       : "overview",
     status:
       typeof s.status === "string" ? (s.status as CheckStatus | "all") : "all",
+    ...(CONFIG_TABS.includes(s.scope as ConfigTab)
+      ? { scope: s.scope as ConfigTab }
+      : {}),
+    ...Object.fromEntries(
+      FILTER_KEYS.filter((k) => typeof s[k] === "string" && s[k] !== "").map(
+        (k) => [k, String(s[k])]
+      )
+    ),
   }),
 })
 
@@ -91,10 +156,19 @@ const STATUS_ORDER: CheckStatus[] = [
   "unknown",
 ]
 
-const SERIES_CONFIG = {
-  up: { label: "Up", color: STATUS_COLOR.up },
-  degraded: { label: "Degraded", color: STATUS_COLOR.degraded },
-  down: { label: "Down", color: STATUS_COLOR.down },
+const LATENCY_CONFIG = {
+  p50: { label: "Median", color: "var(--chart-1)" },
+  p95: { label: "95th percentile", color: "var(--chart-3)" },
+} satisfies ChartConfig
+const LATENCY_SERIES = (["p50", "p95"] as const).map((k) => ({
+  key: k,
+  label: LATENCY_CONFIG[k].label,
+  color: LATENCY_CONFIG[k].color,
+}))
+
+const ALERTS_CONFIG = {
+  opened: { label: "Opened", color: "var(--color-red-500)" },
+  resolved: { label: "Resolved", color: "var(--color-emerald-500)" },
 } satisfies ChartConfig
 
 // The brand chart palette (from the adopted preset) - used to colour the
@@ -109,27 +183,42 @@ const KIND_PALETTE = [
 
 function MonitoringPage() {
   usePageTitle("Monitoring")
-  const { view, status } = Route.useSearch()
+  const { view } = Route.useSearch()
+  const labels = useStatusLabels()
   // Same gate the settings page uses - the tab is hidden without it, and the
   // panel is guarded too so a hand-typed ?view=settings shows nothing.
   const { canManage } = useMe()
   const nav = useNavigate()
+  // Changing view starts clean - a history filter has no business on the
+  // Templates tab; changing anything else keeps the rest of the URL.
   const go = (next: Partial<MonitoringSearch>) =>
     nav({
       to: "/monitoring",
-      search: (prev): MonitoringSearch => ({
-        view: next.view ?? (prev.view as MonitoringView) ?? "overview",
-        status:
-          next.status ?? (prev.status as MonitoringSearch["status"]) ?? "all",
-      }),
+      search: (prev): MonitoringSearch =>
+        next.view && next.view !== prev.view
+          ? { view: next.view, status: "all" }
+          : {
+              ...(prev as MonitoringSearch),
+              view: (prev.view as MonitoringView) ?? "overview",
+              status:
+                next.status ??
+                (prev.status as MonitoringSearch["status"]) ??
+                "all",
+            },
     })
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
+  const [hours, setHours] = useState<StatsHours>(24)
+  const [hiddenLatency, setHiddenLatency] = useState<Set<string>>(
+    () => new Set()
+  )
   const stats = useQuery({
-    queryKey: ["monitoring-stats"],
-    queryFn: () => api<MonitoringStats>("/api/monitoring/stats/"),
+    queryKey: ["monitoring-stats", hours],
+    queryFn: () =>
+      api<MonitoringStats>(`/api/monitoring/stats/?hours=${hours}`),
+    placeholderData: keepPreviousData,
   })
   const d = stats.data
 
@@ -142,15 +231,24 @@ function MonitoringPage() {
 
   // shadcn shape: each datum carries `fill: var(--color-<key>)`, and the config
   // maps <key> → { label, color } so ChartStyle injects the matching CSS var.
+  // Both configs read the tenant's names, so the legend under a chart says the
+  // same word as the badge in the table above it.
   const statusConfig = {
     value: { label: "Checks" },
     ...Object.fromEntries(
       STATUS_ORDER.map((s) => [
         s,
-        { label: STATUS_LABEL[s], color: STATUS_COLOR[s] },
+        { label: statusLabel(s, labels), color: statusColor(s, labels) },
       ])
     ),
   } satisfies ChartConfig
+
+  const seriesConfig = Object.fromEntries(
+    (["up", "degraded", "down"] as const).map((s) => [
+      s,
+      { label: statusLabel(s, labels), color: statusColor(s, labels) },
+    ])
+  ) satisfies ChartConfig
 
   const statusData = d
     ? STATUS_ORDER.map((s) => ({
@@ -185,7 +283,42 @@ function MonitoringPage() {
 
   const seriesData = (d?.series ?? []).map((p) => ({
     ...p,
-    label: new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
+    label:
+      d?.series_bucket === "day"
+        ? new Date(p.t).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+          })
+        : hours > 24
+          ? new Date(p.t).toLocaleString([], {
+              weekday: "short",
+              hour: "2-digit",
+            })
+          : new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
+  }))
+  const windowLabel =
+    hours === 24 ? "24 hours" : hours === 168 ? "7 days" : "30 days"
+  const latencyData = (d?.latency_series ?? []).map((p) => ({
+    ...p,
+    label:
+      d?.series_bucket === "day"
+        ? new Date(p.t).toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+          })
+        : hours > 24
+          ? new Date(p.t).toLocaleString([], {
+              weekday: "short",
+              hour: "2-digit",
+            })
+          : new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
+  }))
+  const alertsData = (d?.alerts_series ?? []).map((p) => ({
+    ...p,
+    label: new Date(p.t).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+    }),
   }))
 
   const total = d?.total_checks ?? 0
@@ -204,7 +337,11 @@ function MonitoringPage() {
           onValueChange={(v) => go({ view: v as MonitoringView })}
           items={[
             { value: "overview", label: "Overview" },
+            { value: "history", label: "History" },
             { value: "checks", label: "Checks" },
+            ...(flaps.length > 0
+              ? [{ value: "flapping", label: "Flapping", count: flaps.length }]
+              : []),
             { value: "templates", label: "Templates" },
             { value: "configuration", label: "Configuration" },
             ...(canManage ? [{ value: "settings", label: "Settings" }] : []),
@@ -224,21 +361,20 @@ function MonitoringPage() {
           /prefixes), so the shared padding lives on the other views instead. */}
       <div
         className={
-          view === "configuration"
+          view === "configuration" ||
+          view === "history" ||
+          view === "checks" ||
+          view === "flapping"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
         }
       >
         {stats.isError && <QueryError error={stats.error} />}
 
-        {view === "checks" && (
-          <div className="mx-auto max-w-7xl">
-            <ChecksList
-              status={status}
-              onStatusChange={(s) => go({ status: s })}
-            />
-          </div>
-        )}
+        {view === "history" && <HistoryView />}
+
+        {view === "checks" && <ChecksList />}
+        {view === "flapping" && <ChecksList flappingOnly />}
 
         {view === "templates" && (
           <div className="mx-auto max-w-7xl">
@@ -268,10 +404,11 @@ function MonitoringPage() {
               Deployment-wide scheduling for drift runs and the email digest
               lives in{" "}
               <Link
-                to="/settings/monitoring-defaults"
-                className="underline underline-offset-2"
+                to="/settings/monitoring"
+                search={{ scope: "deployment" }}
+                className="link"
               >
-                Settings → Monitoring defaults
+                Settings → Monitoring
               </Link>
               .
             </p>
@@ -284,6 +421,20 @@ function MonitoringPage() {
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
               <Kpi label="Total checks" value={total} />
               <Kpi label="Monitored IPs" value={d.monitored_ips} />
+              {d.availability_pct != null && (
+                <Kpi
+                  label={`Availability · ${windowLabel}`}
+                  value={d.availability_pct}
+                  unit="%"
+                  tone={
+                    d.availability_pct >= 99.9
+                      ? "up"
+                      : d.availability_pct >= 99
+                        ? "flapping"
+                        : "down"
+                  }
+                />
+              )}
               <Kpi
                 label="Up"
                 value={d.by_status.up ?? 0}
@@ -302,6 +453,32 @@ function MonitoringPage() {
                 value={d.by_status.skipped ?? 0}
                 tone="skipped"
               />
+              {d.fast_lane.fast_checks > 0 && (
+                <Kpi
+                  label="Fast lane"
+                  value={d.fast_lane.fast_checks}
+                  tone={d.fast_lane.alive ? undefined : "down"}
+                  badge={
+                    d.fast_lane.alive
+                      ? `${d.fast_lane.probes_per_s}/s`
+                      : "alert"
+                  }
+                />
+              )}
+              {flaps.length > 0 && (
+                <Link
+                  to="/monitoring"
+                  search={{ view: "flapping", status: "all" }}
+                  className="block"
+                >
+                  <Kpi
+                    label="Flapping now"
+                    value={flaps.length}
+                    tone="flapping"
+                    badge="alert"
+                  />
+                </Link>
+              )}
             </div>
 
             {/* Certificate & key health - expiry buckets, SSH drift, firing
@@ -313,18 +490,29 @@ function MonitoringPage() {
               <CardHeader>
                 <CardTitle>Check results</CardTitle>
                 <CardDescription>
-                  Outcomes per hour over the last 24 hours
+                  Outcomes per {d.series_bucket} over the last {windowLabel}
                 </CardDescription>
+                <CardAction>
+                  <SegmentedTabs
+                    value={String(hours)}
+                    onValueChange={(v) => setHours(Number(v) as StatsHours)}
+                    items={[
+                      { value: "24", label: "24h" },
+                      { value: "168", label: "7d" },
+                      { value: "720", label: "30d" },
+                    ]}
+                  />
+                </CardAction>
               </CardHeader>
               <CardContent>
                 {!mounted || seriesData.length === 0 ? (
                   <Placeholder
                     h="h-[250px]"
-                    hint="No results recorded in the last 24 hours."
+                    hint={`No results recorded in the last ${windowLabel}.`}
                   />
                 ) : (
                   <ChartContainer
-                    config={SERIES_CONFIG}
+                    config={seriesConfig}
                     className="aspect-auto h-[250px] w-full"
                   >
                     <LineChart
@@ -343,7 +531,11 @@ function MonitoringPage() {
                       <YAxis
                         tickLine={false}
                         axisLine={false}
-                        width={32}
+                        width={countAxisWidth(
+                          seriesData.map((p) =>
+                            Math.max(p.up, p.degraded, p.down)
+                          )
+                        )}
                         allowDecimals={false}
                       />
                       <ChartTooltip
@@ -367,6 +559,145 @@ function MonitoringPage() {
               </CardContent>
             </Card>
 
+            {/* The estate's latency and the alert flow, over the same window */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Latency</CardTitle>
+                  <CardDescription>
+                    Median and 95th percentile across every check, per{" "}
+                    {d.series_bucket === "day" ? "day" : "bucket"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!mounted || latencyData.length === 0 ? (
+                    <Placeholder
+                      h="h-[200px]"
+                      hint={`No latency recorded in the last ${windowLabel}.`}
+                    />
+                  ) : (
+                    <ChartContainer
+                      config={LATENCY_CONFIG}
+                      className="aspect-auto h-[200px] w-full"
+                    >
+                      <LineChart
+                        accessibilityLayer
+                        data={latencyData}
+                        margin={{ left: 0, right: 12 }}
+                      >
+                        <CartesianGrid vertical={false} />
+                        <XAxis
+                          dataKey="label"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          minTickGap={32}
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          width={56}
+                          tickFormatter={(v: number) => `${v} ms`}
+                        />
+                        <ChartTooltip
+                          cursor={false}
+                          content={<ChartTooltipContent indicator="line" />}
+                        />
+                        <Line
+                          dataKey="p95"
+                          type="monotone"
+                          stroke="var(--color-p95)"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                          hide={hiddenLatency.has("p95")}
+                        />
+                        <Line
+                          dataKey="p50"
+                          type="monotone"
+                          stroke="var(--color-p50)"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                          hide={hiddenLatency.has("p50")}
+                        />
+                      </LineChart>
+                    </ChartContainer>
+                  )}
+                  {latencyData.length > 0 && (
+                    <SeriesLegend
+                      items={LATENCY_SERIES}
+                      hidden={hiddenLatency}
+                      onChange={setHiddenLatency}
+                      className="mt-2"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Alerts</CardTitle>
+                  <CardDescription>
+                    Opened against resolved, per day
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!mounted || alertsData.length === 0 ? (
+                    <Placeholder
+                      h="h-[200px]"
+                      hint="No alerts in this window."
+                    />
+                  ) : (
+                    <ChartContainer
+                      config={ALERTS_CONFIG}
+                      className="aspect-auto h-[200px] w-full"
+                    >
+                      <BarChart
+                        accessibilityLayer
+                        data={alertsData}
+                        margin={{ left: 0, right: 12 }}
+                      >
+                        <CartesianGrid vertical={false} />
+                        <XAxis
+                          dataKey="label"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          minTickGap={24}
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          width={countAxisWidth(
+                            alertsData.map((p) =>
+                              Math.max(p.opened, p.resolved)
+                            )
+                          )}
+                          allowDecimals={false}
+                        />
+                        <ChartTooltip
+                          cursor={false}
+                          content={<ChartTooltipContent />}
+                        />
+                        <Bar
+                          dataKey="opened"
+                          fill="var(--color-opened)"
+                          radius={3}
+                        />
+                        <Bar
+                          dataKey="resolved"
+                          fill="var(--color-resolved)"
+                          radius={3}
+                        />
+                        <ChartLegend content={<ChartLegendContent />} />
+                      </BarChart>
+                    </ChartContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             {/* Distribution + by-kind */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
               {/* Donut with text (shadcn) */}
@@ -381,30 +712,53 @@ function MonitoringPage() {
                   {!mounted || statusData.length === 0 ? (
                     <Placeholder h="h-[250px]" hint="No checks yet." />
                   ) : (
-                    <ChartContainer
-                      config={statusConfig}
-                      className="mx-auto aspect-square max-h-[250px]"
-                    >
-                      <PieChart>
-                        <ChartTooltip
-                          cursor={false}
-                          content={<ChartTooltipContent hideLabel />}
-                        />
-                        <Pie
-                          data={statusData}
-                          dataKey="value"
-                          nameKey="status"
-                          innerRadius={60}
-                          strokeWidth={5}
-                        >
-                          <Label content={<TotalLabel total={total} />} />
-                        </Pie>
-                        <ChartLegend
-                          content={<ChartLegendContent nameKey="status" />}
-                          className="-translate-y-2 flex-wrap gap-2 *:basis-1/4 *:justify-center"
-                        />
-                      </PieChart>
-                    </ChartContainer>
+                    <>
+                      {/* The legend lives outside the chart on purpose. A
+                          recharts Legend inside the PieChart shrinks the
+                          plot area, the pie moves up, and the centre label
+                          keeps the un-shrunk centre - so "22 checks" sat
+                          below the ring. Outside, the ring, its label and
+                          the legend each centre in their own box. */}
+                      <ChartContainer
+                        config={statusConfig}
+                        className="mx-auto aspect-square max-h-[220px]"
+                      >
+                        <PieChart>
+                          <ChartTooltip
+                            cursor={false}
+                            content={<ChartTooltipContent hideLabel />}
+                          />
+                          <Pie
+                            data={statusData}
+                            dataKey="value"
+                            nameKey="status"
+                            innerRadius={60}
+                            strokeWidth={5}
+                          >
+                            <Label content={<TotalLabel total={total} />} />
+                          </Pie>
+                        </PieChart>
+                      </ChartContainer>
+                      <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 pb-3 text-xs">
+                        {statusData.map((s) => (
+                          <li
+                            key={s.status}
+                            className="flex items-center gap-1.5 text-muted-foreground"
+                          >
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                              style={{
+                                backgroundColor: statusColor(s.status, labels),
+                              }}
+                            />
+                            {statusLabel(s.status, labels)}
+                            <span className="num text-foreground">
+                              {s.value}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -461,14 +815,23 @@ function MonitoringPage() {
               </Card>
             </div>
 
-            {/* Recent changes + flapping share a row */}
+            {/* Recent changes */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Recent status changes</CardTitle>
+                  <CardTitle>Recent changes</CardTitle>
                   <CardDescription>
-                    Latest transitions across the tenant
+                    The latest status changes, newest first
                   </CardDescription>
+                  <CardAction>
+                    <Link
+                      to="/monitoring"
+                      search={{ view: "history", status: "all" }}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      All history
+                    </Link>
+                  </CardAction>
                 </CardHeader>
                 <CardContent>
                   {d.recent_transitions.length === 0 ? (
@@ -476,87 +839,10 @@ function MonitoringPage() {
                       No status changes recorded yet.
                     </p>
                   ) : (
-                    <ul className="-my-1 divide-y divide-border">
-                      {d.recent_transitions.map((t) => (
-                        <li
-                          key={t.id}
-                          className="flex items-center gap-2 py-2 text-[13px]"
-                        >
-                          <CheckStatusBadge status={t.from_status} />
-                          <span className="text-muted-foreground">→</span>
-                          <CheckStatusBadge status={t.to_status} />
-                          {t.target_ip ? (
-                            <Link
-                              to="/ips/$id"
-                              params={{ id: t.target_ip.id }}
-                              className="link ml-2 truncate font-mono font-medium"
-                            >
-                              {t.target_ip.ip_address}
-                            </Link>
-                          ) : (
-                            <span className="ml-2 text-muted-foreground">
-                              -
-                            </span>
-                          )}
-                          <span className="truncate text-muted-foreground">
-                            {t.template_name ?? t.kind}
-                          </span>
-                          <span className="num ml-auto shrink-0 text-[11px] text-muted-foreground">
-                            {new Date(t.at).toLocaleString()}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <RecentChanges rows={d.recent_transitions} />
                   )}
                 </CardContent>
               </Card>
-
-              {flaps.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      Flapping a lot - maybe check on these
-                    </CardTitle>
-                    <CardDescription>
-                      IPs bouncing repeatedly over the flap window. Tune the
-                      threshold or exclude expected-churn statuses in settings.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="-my-1 divide-y divide-border">
-                      {flaps.map((f) => (
-                        <li
-                          key={`${f.ip_id}:${f.template_id}`}
-                          className="flex items-center gap-2 py-2 text-[13px]"
-                        >
-                          <Link
-                            to="/ips/$id"
-                            params={{ id: f.ip_id }}
-                            className="link truncate font-mono font-medium"
-                          >
-                            {f.ip_address}
-                          </Link>
-                          {f.dns_name && (
-                            <span className="truncate text-muted-foreground">
-                              {f.dns_name}
-                            </span>
-                          )}
-                          <span className="truncate text-muted-foreground">
-                            {f.template_name ?? f.kind}
-                          </span>
-                          <span className="ml-auto shrink-0">
-                            <Badge variant="warning">
-                              <span className="num">{f.flap_count}</span> flaps
-                              / {f.window_minutes}m
-                            </Badge>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
             </div>
 
             <p className="text-[11px] text-muted-foreground">
@@ -578,6 +864,7 @@ const TONE: Record<string, string> = {
   down: "text-red-600 dark:text-red-400",
   stale: "text-red-700 dark:text-red-400",
   skipped: "text-muted-foreground",
+  flapping: "text-amber-600 dark:text-amber-400",
 }
 
 function Kpi({
@@ -585,11 +872,14 @@ function Kpi({
   value,
   tone,
   badge,
+  unit,
 }: {
   label: string
   value: number
   tone?: keyof typeof TONE
   badge?: string
+  /** Rendered after the figure, muted - "%" on an availability. */
+  unit?: string
 }) {
   return (
     <Card size="sm">
@@ -601,6 +891,11 @@ function Kpi({
           }`}
         >
           {value.toLocaleString()}
+          {unit && (
+            <span className="ml-0.5 text-base font-normal text-muted-foreground">
+              {unit}
+            </span>
+          )}
         </CardTitle>
         {badge && (
           <CardAction>
@@ -662,6 +957,79 @@ function Placeholder({ h, hint }: { h: string; hint: string }) {
       className={`flex items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground ${h}`}
     >
       {hint}
+    </div>
+  )
+}
+
+/** The overview's latest changes, grouped by the hour they landed in so a
+ * burst reads as one event and a lone change as one line. */
+function RecentChanges({
+  rows,
+}: {
+  rows: MonitoringStats["recent_transitions"]
+}) {
+  const groups: { key: string; label: string; rows: typeof rows }[] = []
+  for (const t of rows) {
+    const at = new Date(t.at)
+    const key = `${at.toDateString()} ${at.getHours()}`
+    let g = groups[groups.length - 1]
+    if (!g || g.key !== key) {
+      g = {
+        key,
+        label: at.toLocaleString([], {
+          weekday: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        rows: [],
+      }
+      groups.push(g)
+    }
+    g.rows.push(t)
+  }
+  return (
+    <div className="-my-1 space-y-2">
+      {groups.map((g) => (
+        <div key={g.key}>
+          <div className="flex items-center gap-2 py-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+            {g.label}
+            <span className="font-normal normal-case">
+              · {g.rows.length} change{g.rows.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <ul className="divide-y divide-border">
+            {g.rows.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2 py-1.5 text-[13px]"
+              >
+                <CheckStatusBadge status={t.from_status} />
+                <span className="text-muted-foreground">→</span>
+                <CheckStatusBadge status={t.to_status} />
+                {t.target_ip ? (
+                  <Link
+                    to="/ips/$id"
+                    params={{ id: t.target_ip.id }}
+                    search={{ tab: "monitoring" }}
+                    className="link ml-2 truncate font-mono font-medium"
+                  >
+                    {t.target_ip.ip_address}
+                  </Link>
+                ) : (
+                  <span className="ml-2 text-muted-foreground">-</span>
+                )}
+                <span className="truncate text-muted-foreground">
+                  {t.template_name ?? t.kind}
+                </span>
+                <SourceBadge source={t.source} engine={t.engine} />
+                <span className="ml-auto shrink-0">
+                  <TimeCell iso={t.at} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   )
 }

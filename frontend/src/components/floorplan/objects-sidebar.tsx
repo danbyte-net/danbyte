@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Search } from "lucide-react"
+import { EyeOff, Search } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
 import { Input } from "@/components/ui/input"
@@ -10,7 +10,10 @@ import {
   tileName,
 } from "@/components/floorplan/floor-canvas"
 import { TileBadge } from "@/components/floorplan/tile-badge"
-import { FoldableGroup } from "@/components/foldable-group"
+import { FoldableGroup, VisibilityToggle } from "@/components/foldable-group"
+import { NO_FLOOR_HIDDEN, tileHidden } from "@/components/floorplan/hidden"
+import type { FloorHidden } from "@/components/floorplan/hidden"
+import { hiddenCount, isHidden, setHidden } from "@/components/hidden-objects"
 
 interface Group {
   key: string
@@ -75,14 +78,23 @@ export function ObjectsSidebar({
   liveState,
   selectedId,
   onPick,
+  hidden = NO_FLOOR_HIDDEN,
+  onHiddenChange,
 }: {
   tiles: FloorPlanTile[]
   liveState?: FloorPlanLiveState | null
   selectedId: string | null
   /** Select + focus the tile on the canvas. */
   onPick: (tile: FloorPlanTile) => void
+  /** The eyes: a type, a role or one tile taken off the plan. The list keeps
+   * every tile, dimmed when hidden, so it can be brought back. */
+  hidden?: FloorHidden
+  onHiddenChange?: (next: FloorHidden) => void
 }) {
   const [q, setQ] = useState("")
+  const eyes = !!onHiddenChange
+  const toggle = (key: keyof FloorHidden, value: string, shown: boolean) =>
+    onHiddenChange?.(setHidden(hidden, key, value, !shown))
 
   const { roleGroups, typeGroups, total } = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -102,7 +114,11 @@ export function ObjectsSidebar({
     }
   }, [tiles, q])
 
-  const section = (label: string, groups: Group[]) =>
+  const section = (
+    label: string,
+    groups: Group[],
+    groupKey: "tileTypes" | "roleTypes"
+  ) =>
     groups.length > 0 && (
       <div className="mb-3">
         <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
@@ -114,49 +130,75 @@ export function ObjectsSidebar({
             title={g.title}
             badge={<TileBadge color={g.color} icon={g.icon} />}
             count={g.tiles.length}
+            visibility={
+              eyes
+                ? {
+                    shown: !isHidden(hidden, groupKey, g.key),
+                    onChange: (shown) => toggle(groupKey, g.key, shown),
+                    what: `${g.title} tiles`,
+                  }
+                : undefined
+            }
           >
             {g.tiles.map((t) => {
               const live = liveState?.tiles[t.id]
               const tone = live?.check ? CHECK_TONE[live.check] : null
               const name = tileName(t)
+              const off = eyes && tileHidden(t, hidden)
               // A labelled tile hides its linked object's real name - surface
               // it as a muted second line so the row reads "label / device".
               const sub =
                 t.linked?.name && t.linked.name !== name ? t.linked.name : null
               return (
-                <button
+                <div
                   key={t.id}
-                  type="button"
-                  onClick={() => onPick(t)}
                   className={cn(
-                    "flex gap-2 rounded px-1.5 py-1 pl-6 text-left text-[13px] hover:bg-muted/60",
-                    sub ? "items-start" : "items-center",
-                    t.id === selectedId && "bg-muted font-medium"
+                    "flex items-center gap-1 rounded pr-1 hover:bg-muted/60",
+                    t.id === selectedId && "bg-muted font-medium",
+                    off && "opacity-50"
                   )}
-                  title={sub ? `${name} · ${sub}` : name || undefined}
                 >
-                  {tone && (
-                    <span
-                      className={cn(
-                        "size-1.5 shrink-0 rounded-full",
-                        sub && "mt-[5px]",
-                        tone
-                      )}
-                    />
-                  )}
-                  <span className="min-w-0">
-                    <span className="block truncate">
-                      {name || (
-                        <span className="text-muted-foreground">Unnamed</span>
+                  <button
+                    type="button"
+                    onClick={() => onPick(t)}
+                    className={cn(
+                      "flex min-w-0 flex-1 gap-2 px-1.5 py-1 pl-6 text-left text-[13px]",
+                      sub ? "items-start" : "items-center"
+                    )}
+                    title={sub ? `${name} · ${sub}` : name || undefined}
+                  >
+                    {tone && (
+                      <span
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          sub && "mt-[5px]",
+                          tone
+                        )}
+                      />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block truncate">
+                        {name || (
+                          <span className="text-muted-foreground">Unnamed</span>
+                        )}
+                      </span>
+                      {sub && (
+                        <span className="block truncate text-[11px] leading-tight font-normal text-muted-foreground">
+                          {sub}
+                        </span>
                       )}
                     </span>
-                    {sub && (
-                      <span className="block truncate text-[11px] leading-tight font-normal text-muted-foreground">
-                        {sub}
-                      </span>
-                    )}
-                  </span>
-                </button>
+                  </button>
+                  {eyes && (
+                    <VisibilityToggle
+                      vis={{
+                        shown: !isHidden(hidden, "tiles", t.id),
+                        onChange: (shown) => toggle("tiles", t.id, shown),
+                        what: name || "this tile",
+                      }}
+                    />
+                  )}
+                </div>
               )
             })}
           </FoldableGroup>
@@ -172,6 +214,16 @@ export function ObjectsSidebar({
         </p>
         <span className="num text-[11px] text-muted-foreground">{total}</span>
       </div>
+      {eyes && hiddenCount(hidden) > 0 && (
+        <button
+          type="button"
+          onClick={() => onHiddenChange?.(NO_FLOOR_HIDDEN)}
+          className="mb-2 flex items-center gap-1.5 rounded px-1 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <EyeOff className="size-3" />
+          <span className="num">{hiddenCount(hidden)}</span> hidden · show all
+        </button>
+      )}
       <div className="relative mb-3">
         <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -187,8 +239,8 @@ export function ObjectsSidebar({
         </p>
       ) : (
         <>
-          {section("Device roles", roleGroups)}
-          {section("Tile types", typeGroups)}
+          {section("Device roles", roleGroups, "roleTypes")}
+          {section("Tile types", typeGroups, "tileTypes")}
         </>
       )}
     </aside>

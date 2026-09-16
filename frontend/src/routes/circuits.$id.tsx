@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Cable as CableIcon, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import {
@@ -28,6 +28,7 @@ import {
   DetailStat,
   DetailTab,
 } from "@/components/detail-shell"
+import { hereUrl } from "@/lib/return-url"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -357,7 +358,9 @@ function TerminationCard({
       ),
     },
     {
-      // The switch port the provider handoff is cabled to (#118).
+      // The switch port the provider handoff is cabled to (#118). A circuit
+      // end is joined to a port by a cable, so this row is where the cable
+      // is made when there is none and where it is reached when there is.
       label: "Cabled to",
       value: t.connected_to ? (
         <span>
@@ -375,7 +378,37 @@ function TerminationCard({
           <span className="text-[11px] text-muted-foreground">
             {t.connected_to.name}
           </span>
+          {t.cable && (
+            <>
+              {" · "}
+              <Link
+                to="/cables/$id"
+                params={{ id: t.cable.id }}
+                className="link text-[11px]"
+              >
+                cable
+              </Link>
+            </>
+          )}
         </span>
+      ) : canEdit ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-xs"
+          asChild
+        >
+          <Link
+            to="/cables/new"
+            search={{
+              a_kind: "circuit_termination",
+              a_id: t.id,
+              ret: hereUrl(),
+            }}
+          >
+            <CableIcon className="h-3 w-3" /> Connect cable
+          </Link>
+        </Button>
       ) : (
         dash
       ),

@@ -1,0 +1,25 @@
+[Unit]
+Description=Danbyte fast lane (sub-minute checks)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+# One long-lived asyncio process: sub-minute checks are probed from an
+# in-memory schedule and only status changes and one aggregated row per
+# recording window reach the database. Stop it and the minute beat runs the
+# same checks at their fallback interval.
+ExecStart=%h/danbyte/.venv/bin/python manage.py fastlane
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+# Unprivileged ICMP, like the workers: one datagram socket per in-flight probe.
+LimitNOFILE=65535
+
+# Logs: journalctl --user -fu danbyte-fastlane
+
+[Install]
+WantedBy=default.target

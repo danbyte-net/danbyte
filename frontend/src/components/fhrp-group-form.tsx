@@ -34,6 +34,7 @@ const PROTOCOLS: { value: FHRPProtocol; label: string }[] = [
   { value: "hsrp", label: "HSRP" },
   { value: "glbp", label: "GLBP" },
   { value: "carp", label: "CARP" },
+  { value: "anycast", label: "EVPN anycast gateway" },
 ]
 const AUTH_TYPES = [
   { value: "plaintext", label: "Plaintext" },

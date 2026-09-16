@@ -233,7 +233,7 @@ The other tabs cover building from source and a local dev checkout.
     .venv/bin/python manage.py bootstrap
     make frontend-install frontend-build collectstatic
     make install-services install-prod-services
-    systemctl --user enable --now danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers
+    systemctl --user enable --now danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane
     ```
 
     **7 · nginx + TLS:**
@@ -241,10 +241,14 @@ The other tabs cover building from source and a local dev checkout.
     ```bash
     make proxy-install NGINX_TMPL=deploy/nginx/danbyte.prod.conf.template \
       PROXY_HOST=danbyte.example.com
+    make install-tls-unit      # the root unit that applies a certificate dropped from the app
     ```
 
-    Open `https://danbyte.example.com/` and sign in as `admin`. (Self-signed
-    cert by default - swap in a real one, e.g. Let's Encrypt, for a public host.)
+    Open `https://danbyte.example.com/` and sign in as `admin`. The
+    certificate is self-signed; for a public host get a real one from
+    **Settings → Updates → Site certificate** - Let's Encrypt is one click,
+    or upload a pair (see [the site's own
+    certificate](../monitoring/certificates.md#the-sites-own-certificate)).
 
     ??? note "The services (and why there are a few)"
         Danbyte runs as a handful of small user-level systemd units:
@@ -255,6 +259,7 @@ The other tabs cover building from source and a local dev checkout.
         | `danbyte-ws` | WebSockets / presence (daphne) on `127.0.0.1:8002` |
         | `danbyte-frontend-prod` | the built SSR frontend (node) on `127.0.0.1:3000` |
         | `danbyte-workers` | background jobs - scans, deploys (RQ) |
+        | `danbyte-fastlane` | sub-minute checks, from an in-memory schedule |
         | `danbyte-*` timers | drift dispatch, cleanup, materialise, … |
 
         gunicorn serves all plain HTTP; daphne serves **only** `/ws/`. Keeping the
@@ -294,6 +299,7 @@ The other tabs cover building from source and a local dev checkout.
         ```bash
         .venv/bin/python manage.py seed_demo       # Acme demo (IPAM)
         .venv/bin/python manage.py seed_demo_172   # 172.16 net + devices + monitoring
+        .venv/bin/python manage.py seed_fabric     # leaf/spine EVPN fabric (routing)
         ```
 
 ---

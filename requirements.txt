@@ -23,6 +23,7 @@ segno>=1.6                # pure-Python QR generator for server-side label PDFs
 requests>=2.32
 pywinrm>=0.5          # agentless Windows DHCP/DNS sync over WinRM (NTLM/Kerberos)
 openpyxl>=3.1
+jinja2>=3.1               # export templates and device config rendering (sandboxed)
 zensical>=0.0.45
 # Monitoring / check engine
 cryptography>=43.0        # secrets-at-rest (Fernet) for check credentials

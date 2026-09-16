@@ -18,6 +18,10 @@ import { Badge } from "@/components/ui/badge"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { QueryError } from "@/components/query-error"
+import {
+  SettingsCard,
+  SettingsHeader,
+} from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
 
@@ -300,67 +304,86 @@ function FloorplanSettingsPage() {
   )
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div className="mb-4">
-        <h1 className="text-base font-medium">Floor plans</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          What the tile popover shows when you hover or click a tile on a floor
-          plan.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <SettingsHeader title="Floor plans">
+        What the tile popover shows when you hover or click a tile on a floor
+        plan.
+      </SettingsHeader>
 
       {/* Tenants genuinely differ here, so THIS TENANT is the default layer; the
           deployment default is what a tenant inherits when it doesn't override. */}
       {canManageDeployment && (
-        <div className="mb-4">
-          <SegmentedTabs
-            value={layer}
-            onValueChange={setLayer}
-            items={[
-              { value: "tenant", label: "This tenant" },
-              { value: "deployment", label: "Deployment default" },
-            ]}
-          />
-        </div>
+        <SegmentedTabs
+          value={layer}
+          onValueChange={setLayer}
+          items={[
+            { value: "tenant", label: "This tenant" },
+            { value: "deployment", label: "Deployment default" },
+          ]}
+        />
       )}
 
-      {editingTenant && (
-        <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-border p-3">
-          <div>
-            <p className="text-sm font-medium">
-              {override
-                ? "This tenant has its own popover"
-                : "Using the deployment default"}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {override
-                ? "These fields apply to this tenant only."
-                : "Inheriting the deployment-wide fields shown below."}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const next = !override
-              setOverride(next)
-              // Seed the override from what it was inheriting, so you start from
-              // the current look rather than a blank slate.
-              if (next && q.data.deployment_defaults) {
-                setFields(q.data.deployment_defaults.popover_fields)
-                setOverrides(q.data.deployment_defaults.tile_overrides)
+      <SettingsCard
+        title="Tile popover"
+        description="The fields, and their order, for every tile or for one type."
+        layout="flush"
+        inherit={
+          editingTenant
+            ? {
+                overridden: !!override,
+                onChange: (next) => {
+                  setOverride(next)
+                  // Seed the override from what it was inheriting, so you start
+                  // from the current look rather than a blank slate.
+                  if (next && q.data.deployment_defaults) {
+                    setFields(q.data.deployment_defaults.popover_fields)
+                    setOverrides(q.data.deployment_defaults.tile_overrides)
+                  }
+                },
+                labels: { on: "This tenant", off: "Deployment default" },
+                summary: inheritedSummary(q.data.deployment_defaults, meta),
               }
-            }}
-          >
-            {override ? "Use deployment default" : "Override for this tenant"}
-          </Button>
-        </div>
-      )}
-
-      <div className="flex gap-4">
+            : undefined
+        }
+        onSave={() =>
+          save.mutate({
+            popover_fields: fields,
+            tile_overrides: overrides,
+            ...(editingTenant ? { override: !!override } : {}),
+          })
+        }
+        dirty={dirty}
+        saving={save.isPending}
+        saveLabel="Save popover"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!dirty}
+              onClick={() => {
+                setFields(q.data.popover_fields)
+                setOverrides(q.data.tile_overrides)
+              }}
+            >
+              Reset
+            </Button>
+            {isGlobal && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFields(q.data.defaults)}
+              >
+                Restore defaults
+              </Button>
+            )}
+          </>
+        }
+      >
+        <div className="flex">
         {/* Scopes. A type without its own list inherits the default, so you only
             configure the ones that genuinely differ. */}
-        <aside className="w-56 shrink-0">
+        <aside className="w-56 shrink-0 border-r border-border p-3">
           <p className="mb-1 px-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Applies to
           </p>
@@ -396,7 +419,7 @@ function FloorplanSettingsPage() {
           )}
         </aside>
 
-        <section className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4">
+        <div className="min-w-0 flex-1 p-4">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">
@@ -524,46 +547,26 @@ function FloorplanSettingsPage() {
               })}
             </div>
           )}
-        </section>
-      </div>
-
-      <div className="mt-4 flex items-center gap-2">
-        <Button
-          size="sm"
-          disabled={!dirty || save.isPending}
-          onClick={() =>
-            save.mutate({
-              popover_fields: fields,
-              tile_overrides: overrides,
-              ...(editingTenant ? { override: !!override } : {}),
-            })
-          }
-        >
-          Save
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!dirty}
-          onClick={() => {
-            setFields(q.data.popover_fields)
-            setOverrides(q.data.tile_overrides)
-          }}
-        >
-          Reset
-        </Button>
-        {isGlobal && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => setFields(q.data.defaults)}
-          >
-            Restore defaults
-          </Button>
-        )}
-      </div>
+        </div>
+        </div>
+      </SettingsCard>
     </div>
+  )
+}
+
+/** What a tenant gets while it inherits: the deployment fields, in order. */
+function inheritedSummary(
+  defaults: FloorplanPopoverSettings["deployment_defaults"],
+  meta: (key: string) => { label: string }
+) {
+  if (!defaults) return <span>Inheriting the deployment default.</span>
+  const labels = defaults.popover_fields.map((k) => meta(k).label)
+  const types = Object.keys(defaults.tile_overrides).length
+  return (
+    <span>
+      {labels.length ? labels.join(" · ") : "Just the tile name"}
+      {types > 0 && ` · ${types} type ${types === 1 ? "override" : "overrides"}`}
+    </span>
   )
 }
 

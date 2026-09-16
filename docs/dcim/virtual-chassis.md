@@ -104,6 +104,14 @@ A member's own device page shows a **Stack** badge in the header
 page shows - connected / reserved / free per port kind, undocumented cables
 counted as connected - summed across every member.
 
+## SNMP
+
+A stack is polled once, through its master (or lowest member), and the
+observation is split per member so drift and sync stay member-accurate. The
+stack page's **SNMP** tab polls and syncs the whole stack; details in
+[SNMP discovery → Polling a stack](../features/snmp-discovery.md#polling-a-stack).
+An interface can be moved between members from its edit form.
+
 ## Deleting a stack
 
 Deleting a virtual chassis **releases its members** - their positions and

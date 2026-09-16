@@ -6,7 +6,6 @@ import {
   api,
   type AlertRule,
   type AlertSeverity,
-  type CheckKind,
   type CheckStatus,
   type Paginated,
   type Prefix,
@@ -26,7 +25,7 @@ import {
   type SelectOption,
 } from "@/components/forms"
 import { CheckStatusBadge } from "./status-badge"
-import { KINDS } from "./check-fields"
+import { useCheckKinds } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const TRIGGER_STATUSES: CheckStatus[] = ["down", "stale", "degraded"]
@@ -68,7 +67,8 @@ export function RuleForm({
   )
   const [weight, setWeight] = useState(String(rule?.weight ?? 100))
   const [enabled, setEnabled] = useState(rule?.enabled ?? true)
-  const [kinds, setKinds] = useState<CheckKind[]>(rule?.match_kinds ?? [])
+  const kindOptions = useCheckKinds()
+  const [kinds, setKinds] = useState<string[]>(rule?.match_kinds ?? [])
   const [statuses, setStatuses] = useState<CheckStatus[]>(
     rule?.match_statuses ?? []
   )
@@ -181,7 +181,7 @@ export function RuleForm({
           hint="Leave all unticked to match any kind."
         >
           <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            {KINDS.map((k) => (
+            {kindOptions.map((k) => (
               <label
                 key={k.value}
                 className="flex items-center gap-2 text-[13px]"

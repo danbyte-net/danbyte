@@ -23,6 +23,7 @@ from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 from auth_api import rbac
 from auth_api.permissions import can_manage_admin
 
+from . import policy_scopes
 from .models import (
     PortUtilizationRule,
     AlertRule,
@@ -110,9 +111,12 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
         return MonitoringEngine.objects.filter(tenant=tenant)
 
     def perform_create(self, serializer):
-        # Only remote Outposts are created here; ``kind`` is read-only.
+        # An Outpost unless a driver kind was asked for - the serializer has
+        # already checked it against the registry. `local` is the built-in
+        # singleton and is never created through the API.
         serializer.save(
-            tenant=_get_active_tenant(self.request), kind=MonitoringEngine.REMOTE
+            tenant=_get_active_tenant(self.request),
+            kind=serializer.validated_data.get("kind") or MonitoringEngine.REMOTE,
         )
 
     def perform_destroy(self, instance):
@@ -183,7 +187,7 @@ class MonitoringEngineViewSet(viewsets.ModelViewSet):
             StateTransition.objects.filter(
                 target_ip_id__in=states.values("target_ip_id")
             )
-            .select_related("target_ip")
+            .select_related("target_ip", "engine")
             .order_by("-at")[:12]
         )
         return Response({
@@ -1509,11 +1513,32 @@ class CheckAssignmentViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSe
         self._validate_targets(serializer)
         super().perform_create(serializer)
         self._assert_saved_configuration_scope(serializer.instance, "add")
+        self._materialise(serializer.instance)
 
     def perform_update(self, serializer):
         self._validate_targets(serializer)
         super().perform_update(serializer)
         self._assert_saved_configuration_scope(serializer.instance, "change")
+        self._materialise(serializer.instance)
+
+    def perform_destroy(self, instance):
+        ip = instance.ip_address if instance.ip_address_id else None
+        super().perform_destroy(instance)
+        if ip is not None:
+            from .scheduler import materialise_ip
+
+            materialise_ip(ip)
+
+    @staticmethod
+    def _materialise(assignment) -> None:
+        """A check put on one address starts now, not on the next five-minute
+        materialise pass: the row already shows on the tab, and "never run"
+        for five minutes reads as broken. A prefix check can cover a /16,
+        so that one is left to the pass."""
+        if assignment.ip_address_id:
+            from .scheduler import materialise_ip
+
+            materialise_ip(assignment.ip_address)
 
 
 def _assert_tenant_objects(tenant, **objects):
@@ -1549,14 +1574,19 @@ class MonitoringProfileViewSet(TenantScopedViewSet):
 class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSet):
     queryset = (
         MonitoringPolicy.objects.select_related(
-            "vrf", "device_type", "device_role", "device", "prefix"
+            "vrf", "device_type", "device_role", "device", "prefix",
+            "target_site", "region", "platform",
         )
         .prefetch_related("profiles", "templates")
         .all()
     )
     serializer_class = MonitoringPolicySerializer
 
-    _TARGET_FIELDS = ("vrf", "device_type", "device_role", "device", "prefix")
+    #: From the registry. Kept as a name because the queries below read better
+    #: for it - but never hand-maintained: a non-nullable field slipped into
+    #: this tuple makes `global_q` match nothing, which hides **every** global
+    #: policy from every non-superuser with no error to say so.
+    _TARGET_FIELDS = policy_scopes.TARGET_FIELDS
 
     def _site_target_q(self, site_ids):
         from core.effective_settings import separation_enabled
@@ -1578,29 +1608,41 @@ class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewS
         return q
 
     def _filter_visible_targets(self, qs, tenant, user):
-        from api.models import Device, DeviceRole, DeviceType, Prefix, VRF
         from auth_api import rbac
+        from auth_api.object_types import model_for
 
-        target_models = {
-            "vrf": (VRF, "vrf"),
-            "device_type": (DeviceType, "devicetype"),
-            "device_role": (DeviceRole, "devicerole"),
-            "device": (Device, "device"),
-            "prefix": (Prefix, "prefix"),
-        }
-        visible = {
-            field: rbac.restrict_queryset(
-                model.objects.filter(tenant=tenant), user, tenant, slug, "view"
+        # Each scope names the catalog behind it, so adding one cannot leave a
+        # target unfiltered here - an unfiltered target is a policy somebody
+        # sees that names an object they may not.
+        visible = {}
+        for scope in policy_scopes.SCOPES:
+            if not scope.field:
+                continue
+            model = model_for(scope.rbac_slug)
+            if model is None:
+                # No RBAC type for this target: fail closed rather than show
+                # every policy of that scope to everybody.
+                visible[scope.field] = []
+                continue
+            visible[scope.field] = rbac.restrict_queryset(
+                model.objects.filter(tenant=tenant), user, tenant,
+                scope.rbac_slug, "view",
             ).values("pk")
-            for field, (model, slug) in target_models.items()
-        }
 
         global_q = Q(scope=MonitoringPolicy.SCOPE_GLOBAL)
         for field in self._TARGET_FIELDS:
             global_q &= Q(**{f"{field}__isnull": True})
         visibility_q = global_q
-        for field in self._TARGET_FIELDS:
-            scope_q = Q(scope=field, **{f"{field}_id__in": visible[field]})
+        for scope in policy_scopes.SCOPES:
+            field = scope.field
+            if not field:
+                continue
+            # `scope=scope.value`, not `scope=field`: they are equal today for
+            # every scope, and relying on that is how a scope whose value
+            # differs from its field name silently matches nothing.
+            scope_q = Q(
+                scope=scope.value, **{f"{field}_id__in": visible[field]}
+            )
             for other in self._TARGET_FIELDS:
                 if other != field:
                     scope_q &= Q(**{f"{other}__isnull": True})
@@ -1612,7 +1654,7 @@ class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewS
         scope = self.request.query_params.get("scope")
         if scope:
             qs = qs.filter(scope=scope)
-        for key in ("vrf", "device_type", "device_role", "device", "prefix"):
+        for key in policy_scopes.TARGET_FIELDS:
             value = self.request.query_params.get(key)
             if value:
                 qs = qs.filter(**{f"{key}_id": value})
@@ -1622,29 +1664,20 @@ class MonitoringPolicyViewSet(_TargetScopedConfigurationMixin, TenantScopedViewS
         from auth_api import rbac
 
         tenant = self._tenant_or_403()
+        # Every target the registry knows, so a new scope cannot arrive with
+        # its object unchecked - which would let a caller point a policy at a
+        # site, region or platform they may not even see.
+        targets = {
+            scope.field: (scope.rbac_slug, self._effective_value(serializer, scope.field))
+            for scope in policy_scopes.SCOPES
+            if scope.field
+        }
         _assert_tenant_objects(
             tenant,
-            vrf=self._effective_value(serializer, "vrf"),
-            device_type=self._effective_value(serializer, "device_type"),
-            device_role=self._effective_value(serializer, "device_role"),
-            device=self._effective_value(serializer, "device"),
-            prefix=self._effective_value(serializer, "prefix"),
             profiles=list(serializer.validated_data.get("profiles", [])),
             templates=list(serializer.validated_data.get("templates", [])),
+            **{field: value for field, (_slug, value) in targets.items()},
         )
-        targets = {
-            "vrf": ("vrf", self._effective_value(serializer, "vrf")),
-            "device_type": (
-                "devicetype",
-                self._effective_value(serializer, "device_type"),
-            ),
-            "device_role": (
-                "devicerole",
-                self._effective_value(serializer, "device_role"),
-            ),
-            "device": ("device", self._effective_value(serializer, "device")),
-            "prefix": ("prefix", self._effective_value(serializer, "prefix")),
-        }
         for field, (slug, target) in targets.items():
             if target is not None and not rbac.can_act_on(
                 self.request.user, tenant, slug, "view", target

@@ -132,7 +132,11 @@ function EnginesCard({ engines }: { engines: EngineHeartbeat[] }) {
           >
             <span className="font-medium">{e.name}</span>
             <Badge variant={e.kind === "local" ? "secondary" : "info"}>
-              {e.kind === "local" ? "Local" : "Outpost"}
+              {e.kind === "local"
+                ? "Local"
+                : e.kind === "remote"
+                  ? "Outpost"
+                  : e.kind}
             </Badge>
             {!e.enabled ? (
               <Badge variant="secondary">disabled</Badge>

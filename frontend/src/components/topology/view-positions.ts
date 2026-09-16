@@ -46,3 +46,51 @@ export function viewPositions(
     ? { [style as NodeStyle]: v.state.positions }
     : {}
 }
+
+/**
+ * A zone: a labelled box drawn behind the map to group things by eye.
+ *
+ * Annotation only - it does not own the cards inside it, so dragging a zone
+ * moves the box and nothing else. That is what makes it safe to draw one
+ * across a map somebody else arranged.
+ *
+ * Held per view style for the same reason positions are: a box that frames
+ * four Flat chips frames half a card in Stencil.
+ */
+export interface Zone {
+  id: string
+  label: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** One of ZONE_COLORS; anything else falls back to the first. */
+  color: string
+}
+
+export type ZonesByStyle = Partial<Record<NodeStyle, Zone[]>>
+
+/** The zone palette - a tint each, meaning nothing on its own. Kept small
+ * on purpose: a colour picker here invites a rainbow nobody can read. */
+export const ZONE_COLORS = [
+  "#64748b",
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#ec4899",
+  "#8b5cf6",
+] as const
+
+export const ZONE_W = 420
+export const ZONE_H = 260
+
+/** A saved view's zones, tolerating a view written before zones existed. */
+export function viewZones(raw: unknown): ZonesByStyle {
+  if (!raw || typeof raw !== "object") return {}
+  const out: ZonesByStyle = {}
+  for (const style of POSITION_STYLES) {
+    const list = (raw as Record<string, unknown>)[style]
+    if (Array.isArray(list)) out[style] = list
+  }
+  return out
+}

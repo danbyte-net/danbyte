@@ -16,6 +16,16 @@ import { api, formatBytes, type ImageAttachment } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -69,6 +79,7 @@ export function ObjectImages({
   // Name sort: off (upload order) → A-Z → Z-A.
   const [sort, setSort] = useState<"none" | "asc" | "desc">("none")
   const [renaming, setRenaming] = useState<ImageAttachment | null>(null)
+  const [deleting, setDeleting] = useState<ImageAttachment | null>(null)
   const queryKey = ["object-images", apiBase]
 
   const q = useQuery({
@@ -96,7 +107,10 @@ export function ObjectImages({
       setBusyId(imageId)
       return api(`${apiBase}/images/${imageId}/`, { method: "DELETE" })
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      setDeleting(null)
+    },
     onError: (e) => apiErrorToast(e, "Remove failed"),
     onSettled: () => setBusyId(null),
   })
@@ -284,7 +298,7 @@ export function ObjectImages({
                           type="button"
                           aria-label="Remove image"
                           disabled={busyId === img.id}
-                          onClick={() => remove.mutate(img.id)}
+                          onClick={() => setDeleting(img)}
                           className="text-destructive hover:opacity-80 disabled:opacity-50"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -339,7 +353,7 @@ export function ObjectImages({
                     type="button"
                     aria-label="Remove image"
                     disabled={busyId === img.id}
-                    onClick={() => remove.mutate(img.id)}
+                    onClick={() => setDeleting(img)}
                     className="rounded-md border border-border bg-background/90 p-1 text-destructive shadow-sm hover:bg-background disabled:opacity-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -358,6 +372,12 @@ export function ObjectImages({
           onClose={() => setRenaming(null)}
         />
       )}
+      <DeleteImageDialog
+        image={deleting}
+        pending={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+        onOpenChange={(o) => !o && setDeleting(null)}
+      />
     </Section>
   )
 }
@@ -404,5 +424,46 @@ function RenameImageDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function DeleteImageDialog({
+  image,
+  pending,
+  onConfirm,
+  onOpenChange,
+}: {
+  image: ImageAttachment | null
+  pending: boolean
+  onConfirm: () => void
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <AlertDialog open={!!image} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Delete {image?.name || image?.filename || "image"}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently removes the uploaded image. This action can't be
+            undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending}
+            onClick={(e) => {
+              e.preventDefault()
+              onConfirm()
+            }}
+          >
+            {pending ? "Deleting…" : "Delete"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

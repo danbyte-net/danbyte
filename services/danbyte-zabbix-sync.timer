@@ -1,0 +1,11 @@
+[Unit]
+Description=Enqueue due Danbyte Zabbix syncs every minute
+
+[Timer]
+OnCalendar=*:0/1
+OnBootSec=120
+Persistent=true
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

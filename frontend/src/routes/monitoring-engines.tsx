@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { Link, createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { KeyRound, RotateCcw, Server, Radio } from "lucide-react"
@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { MonitoringEngine, MonitoringSettings, Paginated } from "@/lib/api"
+import type { EngineKindInfo, MonitoringEngine, MonitoringSettings, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -50,7 +50,22 @@ function seenLabel(e: MonitoringEngine): { text: string; ok: boolean } {
   return { text: `seen ${timeAgo(e.last_seen_at)}`, ok }
 }
 
+/** An engine of a driver kind is configured on its integration's page and
+ * has no token, transport or agent version. Telling the two apart is what
+ * stops a Zabbix engine being offered a curl one-liner. */
+function useEngineKinds() {
+  const q = useQuery({
+    queryKey: ["engine-kinds"],
+    queryFn: () => api<{ kinds: EngineKindInfo[] }>("/api/monitoring/engine-kinds/"),
+    staleTime: 60 * 60_000,
+  })
+  return Object.fromEntries((q.data?.kinds ?? []).map((k) => [k.kind, k]))
+}
+
 function MonitoringEnginesPage() {
+  const driverKinds = useEngineKinds()
+  const driverOf = (e: MonitoringEngine) =>
+    e.is_local ? undefined : driverKinds[e.kind]
   const qc = useQueryClient()
   const [search, setSearch] = useState("")
   const [adding, setAdding] = useState(false)
@@ -134,7 +149,7 @@ function MonitoringEnginesPage() {
     mutationFn: (e: MonitoringEngine) =>
       api(`/api/monitoring/engines/${e.id}/`, { method: "DELETE" }),
     onSuccess: () => {
-      toast.success("Outpost removed")
+      toast.success("Engine removed")
       invalidate()
     },
     onError: (e: unknown) => apiErrorToast(e, "Delete failed"),
@@ -179,7 +194,7 @@ function MonitoringEnginesPage() {
             )}
             {!e.is_local && (
               <span className="text-[10px] text-muted-foreground">
-                {e.transport === "ssh" ? "SSH" : "HTTPS"}
+                {driverOf(e)?.label ?? (e.transport === "ssh" ? "SSH" : "HTTPS")}
               </span>
             )}
             {!e.enabled && (
@@ -200,6 +215,13 @@ function MonitoringEnginesPage() {
         const seen = seenLabel(e)
         if (e.is_local)
           return <span className="text-muted-foreground">built-in</span>
+        const driver = driverOf(e)
+        if (driver)
+          return (
+            <Badge variant="secondary" className="text-[10px]">
+              via {driver.label}
+            </Badge>
+          )
         if (!e.token_set)
           return (
             <Badge variant="warning" className="text-[10px]">
@@ -242,11 +264,16 @@ function MonitoringEnginesPage() {
     actionsColumn<MonitoringEngine>({
       canDelete: (e) => !e.is_local,
       onDelete: (e) => remove.mutate(e),
-      deleteLabel: "Remove Outpost",
+      deleteLabel: "Remove engine",
       extra: (e) =>
         e.is_local ? null : (
           <>
-            {e.transport === "pull" && (
+            {driverOf(e) && (
+              <Button size="sm" variant="ghost" className="h-7 text-xs" asChild>
+                <Link to={driverOf(e)!.configure_path as "/zabbix"}>Configure</Link>
+              </Button>
+            )}
+            {!driverOf(e) && e.transport === "pull" && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -290,9 +317,10 @@ function MonitoringEnginesPage() {
       <div className="space-y-6">
         <p className="max-w-3xl text-[13px] text-muted-foreground">
           Where checks run. <b>Local</b> is the core server's workers; an{" "}
-          <b>Outpost</b> is a remote agent at a site with no path to the core.
-          Assign Outposts to a site/location on their form - the default engine
-          catches everything else.
+          <b>Outpost</b> is a remote agent at a site with no path to the core;
+          an integration such as <b>Zabbix</b> answers with what it already
+          knows. Bind an engine to a device, site or location on their form -
+          the default engine catches everything else.
         </p>
 
         <DataTable

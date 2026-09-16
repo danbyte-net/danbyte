@@ -15,15 +15,26 @@ current `/opt` layout.
     entirely optional - see [Move an install to /opt](#move-an-install-to-opt)
     if you want to, and skip it otherwise.
 
+!!! tip "From a terminal"
+    `scripts/danbyte-admin upgrade online` wraps the steps below, refuses to
+    start while another upgrade holds the lock, and keeps a copy of a bundle
+    the upgrader would otherwise consume. See [danbyte-admin](../reference/danbyte-admin.md).
+
 ## Upgrade to a new version
 
 !!! info "The Updates page loads instantly"
-    **Settings → Updates** shows the running version and an environment table
-    (Python, Django, PostgreSQL, Redis, platform) from a local, network-free
-    check - so it renders immediately even on an airgapped or offline box. The
-    release-repo check (the list of available versions) runs separately; if it's
-    slow, failing, or disabled, the version and environment still show right
-    away.
+    **Settings → Updates** is two columns on a wide screen. **Update** holds
+    everything that changes the version: the after-upgrade steps, the
+    release source, the bundle upload, and at the bottom the releases with
+    their notes - rendered as GitHub Markdown, `#123` linking to the issue
+    in the release repo - and the upgrade button. **This install** holds the host it runs on: the
+    environment table (Python, Django, PostgreSQL, Redis, platform), the
+    services and their restart buttons, and the site certificate. The
+    running version and the environment come from a local, network-free
+    check - so the page renders immediately even on an airgapped or offline
+    box. The release-repo check (the list of available versions) runs
+    separately; if it's slow, failing, or disabled, the version and
+    environment still show right away.
 
 !!! info "The top-bar update badge"
     When a newer release exists, a blue **Update available** badge appears
@@ -56,10 +67,13 @@ current `/opt` layout.
     restarts the services and health-checks - with the "Danbyte is updating"
     page shown to visitors in the meantime.
 
-    - The DB is **backed up** before migrating; on failure the code is rolled
-      back to the starting commit and the services restarted automatically.
-      (A migration that already ran is *not* auto-reverted - the backup is your
-      net there.)
+    - A **Before upgrade** backup (database, media, config) is taken before
+      migrating and listed under **Settings → Backups**; on failure the code is
+      rolled back to the starting commit and the services restarted
+      automatically. (A migration that already ran is *not* auto-reverted -
+      restore that backup, see [Backup and restore](backup-restore.md).) A
+      missing `pg_dump` stops the upgrade; `DANBYTE_SKIP_BACKUP=1` skips the
+      backup on purpose.
     - Turn on **automatic updates** on the same page to track new releases
       hands-off. (Automatic updates are also skipped on container deployments,
       for the same reason - they would only half-apply.)
@@ -88,7 +102,7 @@ current `/opt` layout.
     make collectstatic frontend-build
 
     # Restart whatever this install runs (prod shown; dev uses danbyte-backend)
-    systemctl --user restart danbyte-web danbyte-ws danbyte-workers danbyte-frontend-prod
+    systemctl --user restart danbyte-web danbyte-ws danbyte-workers danbyte-fastlane danbyte-frontend-prod
     ```
 
     Back up the database first: `pg_dump danbyte > ~/danbyte-$(date +%F).sql`.
@@ -229,6 +243,44 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
                           "$APP/.upgrade-status.json" "$APP/.upgrade-bundle.tar.gz"
     ```
 
+## After an upgrade
+
+Some releases need a step no migration can do - an nginx location, a new
+volume, a system package. Each release ships its list, and after any
+upgrade path (in-app, bundle, automatic, Docker) deployment admins see:
+
+- an amber **After upgrade: N steps** badge in the top bar,
+- a card at the top of **Settings → Updates** with each step, its snippet
+  and a docs link, and a **Done** button per step (or **Mark all done**),
+- the same list in the in-app upgrade dialog's success message.
+
+The steps stay until marked done; they are not re-checked automatically.
+A fresh install starts with nothing pending. From the shell:
+
+```bash
+manage.py upgrade_notes              # print the pending steps (the upgrade scripts do this at the end)
+manage.py upgrade_notes --ack all    # or --ack <id>
+```
+
+## Search index
+
+Global search runs on an index table. The upgrade scripts and the container
+entrypoint rebuild it after migrating; if you migrate by hand, run
+`manage.py rebuild_search_index` once afterwards (it also runs nightly).
+
+## Database extensions
+
+Global search relies on the PostgreSQL `pg_trgm` and `unaccent` extensions.
+The migration creates them itself: both are *trusted* extensions in PostgreSQL
+13 and later, so the `danbyte` role needs no superuser rights. On an older
+server, or one where trusted extensions are disabled, create them once as a
+superuser before migrating:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+```
+
 ## Which install do I have?
 
 ```bash
@@ -273,7 +325,7 @@ untouched.** Back up first.
 
     # 1. stop services + the user's systemd manager
     asuser /srv/danbyte systemctl --user stop \
-      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs
+      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane danbyte-docs
     loginctl disable-linger "$U"; loginctl terminate-user "$U"; sleep 2
 
     # 2. move the home (contents included) and update the passwd entry
@@ -289,7 +341,7 @@ untouched.** Back up first.
     sudo install -d -o "$U" -g "$U" -m 755 /var/log/danbyte
     asuser /opt/danbyte systemctl --user daemon-reload
     asuser /opt/danbyte systemctl --user start \
-      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-docs
+      danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danbyte-fastlane danbyte-docs
     ```
 
 ## Turn on /var/log/danbyte logging

@@ -33,6 +33,7 @@ from .models import (
 )
 from .views import _get_active_tenant
 from auth_api import rbac
+from routing.models import BGPSession, StaticRoute
 
 # A neutral palette for distributions whose categories have no catalog colour
 # (device status, protocols, …). Sky-family to match the brand chart tokens.
@@ -154,8 +155,12 @@ def _empty_dashboard() -> dict:
         "prefix_by_family", "prefix_by_status",
         "top_prefixes", "device_by_status", "device_by_type", "device_by_site",
         "device_by_manufacturer", "check_by_status", "alerts_by_severity",
+        "flapping", "alerts_per_day", "latency_series",
     )
-    return {"counts": {}, "reachable_pct": None, **{k: [] for k in keys}}
+    return {
+        "counts": {}, "reachable_pct": None, "availability_7d": None,
+        **{k: [] for k in keys},
+    }
 
 
 @extend_schema(
@@ -200,6 +205,8 @@ def dashboard_view(request):
         "vrfs": _scoped(VRF, "vrf", tenant=tenant).count(),
         "cables": _scoped(Cable, "cable", tenant=tenant).count(),
         "interfaces": _scoped(Interface, "interface", device__tenant=tenant).count(),
+        "bgp_sessions": _scoped(BGPSession, "bgpsession", tenant=tenant).count(),
+        "static_routes": _scoped(StaticRoute, "staticroute", tenant=tenant).count(),
     }
 
     # ── IPAM ────────────────────────────────────────────────────────────
@@ -259,6 +266,11 @@ def dashboard_view(request):
         _monitoring_block(tenant) if can_see_monitoring
         else {"check_by_status": [], "alerts_by_severity": [],
               "reachable_pct": None}
+    )
+    monitoring["flapping"] = _flapping(u, tenant) if can_see_monitoring else []
+    monitoring.update(
+        _monitoring_charts(request, u, tenant) if can_see_monitoring
+        else {"availability_7d": None, "alerts_per_day": [], "latency_series": []}
     )
 
     return Response(
@@ -364,6 +376,62 @@ def _recent_activity(tenant, limit: int = 10) -> list:
         }
         for t in rows
     ]
+
+
+def _flapping(user, tenant, limit: int = 8) -> list:
+    """The checks currently flagged as flapping, noisiest first - the
+    dashboard's "go and look" list. Site-aware like the IP lists: a viewer
+    walled off from a site does not learn which of its hosts bounce."""
+    try:
+        from monitoring.flapping import flapping_ips
+    except Exception:  # noqa: BLE001
+        return []
+    from .models import IPAddress
+
+    q = rbac.row_filter(user, tenant, "ipaddress", "view")
+    if q is None:
+        return []
+    viewable = None if q is True else IPAddress.objects.filter(tenant=tenant).filter(q)
+    return flapping_ips(tenant, limit=limit, viewable_ips=viewable)
+
+
+def _monitoring_charts(request, user, tenant) -> dict:
+    """Seven days for the dashboard's widgets: availability (time-weighted
+    from the result buckets, up over up-plus-down), alerts opened against
+    resolved per day, and the estate's p50/p95 latency per hour. Site-aware
+    like the flapping list."""
+    try:
+        from monitoring.charts import alerts_per_day, latency_percentiles, viewer_tz
+        from monitoring.models import CheckResult
+    except Exception:  # noqa: BLE001
+        return {"availability_7d": None, "alerts_per_day": [], "latency_series": []}
+    from datetime import timedelta
+
+    from django.db.models import Count
+    from django.utils import timezone
+
+    from .models import IPAddress
+
+    q = rbac.row_filter(user, tenant, "ipaddress", "view")
+    if q is None:
+        return {"availability_7d": None, "alerts_per_day": [], "latency_series": []}
+    ip_filter = None if q is True else IPAddress.objects.filter(tenant=tenant).filter(q)
+    now = timezone.now()
+    since = now - timedelta(days=7)
+    results = CheckResult.objects.filter(tenant=tenant, timestamp__gte=since)
+    if ip_filter is not None:
+        results = results.filter(target_ip__in=ip_filter)
+    by_status = {
+        r["status"]: r["n"] for r in results.values("status").annotate(n=Count("id"))
+    }
+    up = by_status.get("up", 0) + by_status.get("degraded", 0)
+    down = by_status.get("down", 0) + by_status.get("stale", 0)
+    tz = viewer_tz(request, tenant)
+    return {
+        "availability_7d": round(100.0 * up / (up + down), 2) if (up + down) else None,
+        "alerts_per_day": alerts_per_day(tenant, since, now, tz, ip_filter),
+        "latency_series": latency_percentiles(results, since, now, 3600),
+    }
 
 
 def _monitoring_block(tenant) -> dict:

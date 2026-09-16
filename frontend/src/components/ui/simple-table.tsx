@@ -8,6 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ChevronRight } from "lucide-react"
+
 import { cn } from "@/lib/utils"
 
 export interface SimpleColumn<T> {
@@ -36,17 +38,24 @@ export function SimpleTable<T>({
   data,
   getRowKey,
   empty = "No results.",
+  renderExpanded,
 }: {
   columns: SimpleColumn<T>[]
   data: T[]
   getRowKey: (row: T, index: number) => React.Key
   empty?: React.ReactNode
+  /** Rows open: a chevron column appears, and the row's own content is
+   * rendered under it when opened. One row open at a time. */
+  renderExpanded?: (row: T, index: number) => React.ReactNode
 }) {
+  const [open, setOpen] = React.useState<React.Key | null>(null)
+  const span = columns.length + (renderExpanded ? 1 : 0)
   return (
     <div className="overflow-hidden rounded-lg border border-border">
       <Table>
         <TableHeader>
           <TableRow>
+            {renderExpanded && <TableHead className="w-8" />}
             {columns.map((c) => (
               <TableHead
                 key={c.id}
@@ -64,27 +73,59 @@ export function SimpleTable<T>({
         </TableHeader>
         <TableBody>
           {data.length ? (
-            data.map((row, i) => (
-              <TableRow key={getRowKey(row, i)}>
-                {columns.map((c) => (
-                  <TableCell
-                    key={c.id}
-                    className={cn(
-                      "py-2 text-sm",
-                      c.flex ? "w-full max-w-0 truncate" : "whitespace-nowrap",
-                      c.align === "right" && "text-right",
-                      c.className
-                    )}
+            data.map((row, i) => {
+              const key = getRowKey(row, i)
+              const isOpen = renderExpanded !== undefined && open === key
+              return (
+                <React.Fragment key={key}>
+                  <TableRow
+                    className={renderExpanded ? "cursor-pointer" : undefined}
+                    onClick={
+                      renderExpanded
+                        ? () => setOpen(isOpen ? null : key)
+                        : undefined
+                    }
                   >
-                    {c.cell(row, i)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
+                    {renderExpanded && (
+                      <TableCell className="w-8 py-2 pr-0">
+                        <ChevronRight
+                          className={cn(
+                            "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                            isOpen && "rotate-90"
+                          )}
+                        />
+                      </TableCell>
+                    )}
+                    {columns.map((c) => (
+                      <TableCell
+                        key={c.id}
+                        className={cn(
+                          "py-2 text-sm",
+                          c.flex
+                            ? "w-full max-w-0 truncate"
+                            : "whitespace-nowrap",
+                          c.align === "right" && "text-right",
+                          c.className
+                        )}
+                      >
+                        {c.cell(row, i)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {isOpen && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={span} className="bg-muted/30 py-3">
+                        {renderExpanded(row, i)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              )
+            })
           ) : (
             <TableRow>
               <TableCell
-                colSpan={columns.length}
+                colSpan={span}
                 className="h-16 text-center text-sm text-muted-foreground"
               >
                 {empty}

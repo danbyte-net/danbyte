@@ -99,21 +99,11 @@ def _get_active_tenant(request=None):
         t = allowed.filter(pk=tok_tid).first()
         if t is not None:
             return t
-    tid = request.session.get("current_tenant_id") if hasattr(request, "session") else None
-    if tid:
-        t = allowed.filter(pk=tid).first()
-        if t is not None:
-            return t
-    # No session choice yet (fresh login): prefer the profile's home tenant -
-    # site-role provisioning sets it to the tenant the user's grants live in,
-    # so a multi-tenant user doesn't land on an arbitrary first tenant where
-    # they can see nothing.
-    home_id = getattr(getattr(request.user, "profile", None), "current_tenant_id", None)
-    if home_id:
-        t = allowed.filter(pk=home_id).first()
-        if t is not None:
-            return t
-    return allowed.first()
+    # Session choice, else the profile's home tenant (site-role provisioning
+    # sets it to where the user's grants live, so a multi-tenant user does
+    # not land on an arbitrary first tenant), else the first allowed.
+    from auth_api.permissions import active_tenant
+    return active_tenant(request.user, request.session if hasattr(request, "session") else None)
 
 
 # Back-compat alias so I don't have to touch every call site at once.

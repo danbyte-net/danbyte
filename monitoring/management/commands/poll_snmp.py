@@ -12,6 +12,7 @@ from django.core.management.base import BaseCommand, CommandError
 from api.models import Device
 from core.models import Tenant
 from monitoring.snmp_poll import poll_device
+from monitoring.vc_stack import stack_owner
 
 
 class Command(BaseCommand):
@@ -39,6 +40,10 @@ class Command(BaseCommand):
         for tenant in tenants:
             devices = Device.objects.filter(tenant=tenant).select_related("primary_ip")
             for device in devices:
+                # One poll per stack, on its owner - a member would only
+                # repeat the same read (#148).
+                if device.virtual_chassis_id and stack_owner(device).id != device.id:
+                    continue
                 state, reason = poll_device(device, tenant)
                 if reason is not None:
                     skipped += 1

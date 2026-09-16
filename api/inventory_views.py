@@ -21,9 +21,7 @@ from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
     extend_schema,
-    inline_serializer,
 )
-from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -79,7 +77,7 @@ def with_inventory_relations(qs):
     from .models import Interface, IPAddress
 
     iface_qs = (
-        Interface.objects.select_related("vlan")
+        Interface.objects.select_related("vlan", "vrf")
         .prefetch_related(
             "tags",
             Prefetch(
@@ -95,9 +93,12 @@ def with_inventory_relations(qs):
     ).prefetch_related("tags", Prefetch("interfaces", queryset=iface_qs))
 
 
-def device_hostvars(d) -> dict:
+def device_hostvars(d, *, providers: bool = True) -> dict:
     """The per-host vars Ansible sees for one device - the ``danbyte`` metadata
-    block, interfaces, custom fields, merged config context, and ansible_host."""
+    block, interfaces, custom fields, merged config context, and ansible_host.
+    ``providers`` adds every registered render-context provider's block
+    (``danbyte.routing``) - on by default for a single host, opt-in
+    (``?routing=1``) on the fleet export, where most plays never read it."""
     hv = {
         "danbyte": {
             "id": str(d.id),
@@ -124,6 +125,10 @@ def device_hostvars(d) -> dict:
         },
         "config_context": render_config_context(d)["rendered"],
     }
+    if providers:
+        from .export_templates import provider_context
+
+        hv["danbyte"].update(provider_context(d))
     if d.primary_ip_id:
         hv["ansible_host"] = d.primary_ip.ip_address
     return hv
@@ -341,10 +346,11 @@ def ansible_inventory(request):
         groups.setdefault(group, set()).add(host)
 
     kind = (p.get("kind") or "").lower()
+    providers = p.get("routing") in ("1", "true", "yes")
     if kind != "vm":
         for d in qs:
             host = d.name
-            hostvars[host] = device_hostvars(d)
+            hostvars[host] = device_hostvars(d, providers=providers)
             for g in device_groups(d):
                 add(g, host)
 

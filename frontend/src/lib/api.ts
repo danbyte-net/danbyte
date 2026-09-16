@@ -92,6 +92,19 @@ export async function apiStatus<T>(
   return { data: (await res.json()) as T, status: res.status }
 }
 
+/** A file's own bytes as text, for previewing what an endpoint serves as a
+ * download (a script run's CSV, say). `api()` always parses JSON. */
+export async function apiText(path: string): Promise<string> {
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: { Accept: "text/plain, */*" },
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, null, `${path} → ${res.status}`)
+  }
+  return res.text()
+}
+
 // Human-readable message for a failed api() call. Prefers the DRF `detail`
 // string, then the first field error ("field: message", unprefixed for
 // non_field_errors), then the ApiError message with its "path → status "
@@ -163,6 +176,9 @@ export interface TagUsage {
 export interface ObjectPerms {
   change: boolean
   delete: boolean
+  /** Only present on types that report extra verbs (scripts). */
+  run?: boolean
+  trust?: boolean
 }
 
 /** The embedded VLAN mini-shape (VLANMiniSerializer) - zone rides along so
@@ -189,6 +205,10 @@ export interface Prefix {
   is_enumerable: boolean
   ip_count: number
   child_count: number
+  /** DNS records whose address is in the prefix - detail responses only. */
+  dns_record_count?: number
+  /** Static routes with this prefix as their destination; detail only. */
+  static_route_count?: number
   has_descendants: boolean
   site: { id: string; name: string } | null
   location: { id: string; name: string } | null
@@ -392,6 +412,8 @@ export type RBACAction =
   | "reveal"
   | "subscribe"
   | "grant_superuser"
+  | "run"
+  | "trust"
 
 export interface RBACUser {
   id: number
@@ -814,6 +836,8 @@ export interface IPAddress {
   is_primary_for_vm?: boolean
   is_secondary_for_device?: boolean
   is_oob_for_device?: boolean
+  /** Certificate assignments on the address - detail responses only. */
+  certificate_count?: number
   description: string
   reservation_note: string
   custom_fields: Record<string, unknown>
@@ -867,6 +891,23 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "location", label: "Locations" },
   { value: "inventoryitem", label: "Inventory items" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
+  { value: "natrule", label: "NAT rules" },
+  { value: "l2vpn", label: "L2VPNs" },
+  { value: "staticroute", label: "Static routes" },
+  { value: "bgpsession", label: "BGP sessions" },
+  { value: "routinginstance", label: "Routing instances" },
+  { value: "vtep", label: "VTEPs" },
+]
+
+// api/status_registry.MONITORING_STATES - the six states a check can end in.
+// A Status may claim one, renaming and recolouring it across the app.
+export const MONITORING_STATES: { value: CheckStatus; label: string }[] = [
+  { value: "up", label: "Up" },
+  { value: "degraded", label: "Degraded" },
+  { value: "down", label: "Down" },
+  { value: "unknown", label: "Unknown" },
+  { value: "stale", label: "Stale" },
+  { value: "skipped", label: "Skipped" },
 ]
 
 export interface Status {
@@ -883,6 +924,9 @@ export interface Status {
   requires_note: boolean
   suppresses_alerts: boolean
   is_closed: boolean
+  /** The check state this status speaks for, "" when it is not a monitoring
+   * status. See MONITORING_STATES. */
+  monitoring_state: string
   usage_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
@@ -901,6 +945,7 @@ export interface StatusWritePayload {
   requires_note?: boolean
   suppresses_alerts?: boolean
   is_closed?: boolean
+  monitoring_state?: string
 }
 
 export interface IPRole {
@@ -1177,6 +1222,10 @@ export interface DeviceType extends LifecycleInfo {
   component_count: number
   /** Per-kind template counts, keyed by the Components tab's sub slugs. */
   component_counts?: Record<string, number>
+  /** SNMP sensors bound to this type - detail responses only (0 on list). */
+  sensor_count: number
+  /** Documents attached to the type - detail responses only (0 on list). */
+  document_count: number
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
   created_at: string
@@ -1348,6 +1397,13 @@ export interface Device {
   console_count: number
   power_count: number
   service_count: number
+  /** Per-tab counts served on the detail payload only. */
+  routing_count?: number
+  image_count?: number
+  /** Certificate assignments plus SSH host keys - the Certificates & keys tab. */
+  certificate_count?: number
+  contact_count?: number
+  document_count?: number
   // ─── Rack placement (DCIM racks) ─────────────────────────────────────
   /** Lowest rack unit the device occupies, or null if unplaced. */
   position: number | null
@@ -1706,6 +1762,7 @@ export interface Rack {
   outer_depth_mm: number | null
   description: string
   device_count: number
+  document_count: number
   used_units: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -2067,7 +2124,13 @@ export interface Interface {
   wwn: string
   mac_address: string
   /** First-class MAC objects this interface bears (primary flagged). */
-  mac_addresses: { id: string; mac_address: string; is_primary: boolean }[]
+  mac_addresses: {
+    id: string
+    mac_address: string
+    is_primary: boolean
+    /** Resolved vendor name (OUI table or override); null when unknown. */
+    vendor: string | null
+  }[]
   description: string
   /** 802.1Q mode: "" | "access" | "tagged" | "tagged-all". */
   mode: string
@@ -2720,6 +2783,13 @@ export interface TopoEdge {
     target_device?: string
     local_port?: string
     remote_port?: string
+    /** BGP edges: the sessions between the two devices (both directions). */
+    sessions?: string[]
+    kind?: "ibgp" | "ebgp" | null
+    vrf?: string | null
+    address_families?: string[]
+    a_asn?: number | null
+    b_asn?: number | null
   }
 }
 
@@ -2778,6 +2848,11 @@ export interface TopologyViewState {
   /** The style-on-save arrangement. Predates `positions_by_style`; still
    * written so older readers keep working. */
   positions?: Record<string, [number, number]>
+  /** Labelled backdrop boxes, per view style - same reason as positions. */
+  zones_by_style?: Record<string, unknown>
+  /** What the eyes switched off - `components/topology/hidden.ts`'s
+   * TopoHidden; a flat list of node ids in views saved before it. */
+  hidden?: unknown
 }
 
 export interface TopologyViewSaved {
@@ -2867,12 +2942,28 @@ export interface MacIfaceRef {
   device: { id: string; name: string }
 }
 
+/** A VM interface bearing the MAC - links to the VM, since VM interfaces
+ * have no page of their own. */
+export interface MacVmIfaceRef {
+  id: string
+  name: string
+  vm: { id: string; name: string }
+}
+
+/** Where a MAC's vendor came from: the IEEE registry, a tenant's custom
+ * range, the locally-administered bit, or a hand-set override. */
+export interface MacVendor {
+  name: string
+  source: "ieee" | "custom" | "local" | "override"
+}
+
 /** A first-class MAC object (row-level view on the aggregation pages). */
 export interface MacObject {
   id: string
   numid: number | null
   mac_address: string
   description: string
+  vendor_override: string
   assigned_interface: MacIfaceRef | null
   tags: Tag[]
 }
@@ -2884,7 +2975,9 @@ export interface MacObjectDetail extends MacObject {
 
 export interface MacEntry {
   mac: string
+  vendor: MacVendor | null
   interfaces: MacIfaceRef[]
+  vm_interfaces: MacVmIfaceRef[]
   ips: {
     id: string
     ip_address: string
@@ -2896,6 +2989,7 @@ export interface MacEntry {
 /** MAC detail - richer than the list row (interface enabled, IP status). */
 export interface MacDetail {
   mac: string
+  vendor: MacVendor | null
   objects: MacObjectDetail[]
   interfaces: {
     id: string
@@ -2903,6 +2997,7 @@ export interface MacDetail {
     enabled: boolean
     device: { id: string; name: string }
   }[]
+  vm_interfaces: (MacVmIfaceRef & { enabled: boolean })[]
   ips: {
     id: string
     ip_address: string
@@ -2925,8 +3020,44 @@ export interface MacDetail {
 /** Full first-class MAC object - the `/api/mac-addresses/` CRUD serializer.
  * Same shape as the detail-page object, plus timestamps. */
 export interface MACAddress extends MacObjectDetail {
+  vendor: MacVendor | null
   created_at: string
   updated_at: string
+}
+
+/** A tenant's custom OUI range (`/api/oui-ranges/`). */
+export interface OuiRange {
+  id: string
+  /** Colon-separated display form, e.g. "02:00:aa" or "06:00:cc:0". */
+  prefix: string
+  bits: number
+  vendor: string
+  description: string
+  created_at: string
+  updated_at: string
+}
+
+export interface OuiImportRun {
+  id: string
+  source: "upload" | "url"
+  source_url: string
+  status: "queued" | "running" | "success" | "failed"
+  progress: {
+    done?: number
+    total?: number
+    created?: number
+    updated?: number
+    removed?: number
+  }
+  error: string
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface OuiStatus {
+  prefixes: number
+  last_import: OuiImportRun | null
 }
 
 export interface MACAddressWritePayload {
@@ -2935,6 +3066,7 @@ export interface MACAddressWritePayload {
   description: string
   tag_ids: number[]
   custom_fields: Record<string, unknown>
+  vendor_override?: string
 }
 
 export interface IPBulkUpdateFields {
@@ -2990,6 +3122,8 @@ export interface VLAN {
   description: string
   tags: Tag[]
   prefix_count: number
+  /** L2VPNs terminating on this VLAN; 0 on list responses. */
+  l2vpn_count: number
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -3082,7 +3216,13 @@ export interface ZoneOption {
 
 // ─── FHRP groups ───────────────────────────────────────────────────────────
 
-export type FHRPProtocol = "vrrp2" | "vrrp3" | "hsrp" | "glbp" | "carp"
+export type FHRPProtocol =
+  | "vrrp2"
+  | "vrrp3"
+  | "hsrp"
+  | "glbp"
+  | "carp"
+  | "anycast"
 
 export interface FHRPGroupAssignment {
   id: string
@@ -3279,6 +3419,8 @@ export interface RouteTarget {
   description: string
   import_vrf_count: number
   export_vrf_count: number
+  /** Distinct VRFs importing or exporting this target. */
+  vrf_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   owning_site?: { id: string; name: string } | null
@@ -3305,6 +3447,9 @@ export interface VRF {
   tags: Tag[]
   prefix_count: number
   ip_count: number
+  /** Detail only; 0 on list responses. */
+  static_route_count: number
+  bgp_session_count: number
   custom_fields: Record<string, unknown>
   owning_site?: { id: string; name: string } | null
   permissions?: ObjectPerms
@@ -3365,8 +3510,11 @@ export interface Site {
   /** VMs whose own site is this one (a cluster's site isn't inherited). */
   vm_count: number
   rack_count: number
+  /** Locations in the site, every level of the tree. */
+  location_count: number
   contact_count: number
   circuit_count: number
+  document_count: number
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -3452,6 +3600,7 @@ export interface Location {
   child_count: number
   device_count: number
   rack_count: number
+  document_count: number
   created_at: string
   updated_at: string
 }
@@ -3583,6 +3732,7 @@ export interface VirtualMachine {
   interface_count?: number
   disk_count?: number
   service_count?: number
+  certificate_count?: number
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
@@ -3717,6 +3867,760 @@ export type ServiceProtocol = "tcp" | "udp"
 /** Ports per protocol - a service may answer on both (DNS is TCP 53 and UDP
  * 53). Empty/absent means the single `protocol` + `ports` pair applies. */
 export type ProtocolPorts = Partial<Record<ServiceProtocol, number[]>>
+
+/** A NAT / port-forward mapping - documentation, never pushed anywhere. */
+/** One Zabbix server Danbyte reads from (#162). */
+export interface ZabbixConnection {
+  id: string
+  name: string
+  url: string
+  /** Derived - the JSON-RPC endpoint Danbyte actually posts to. */
+  api_url: string
+  /** Whether an API token is stored. The value is never returned. */
+  token_set: boolean
+  verify_tls: boolean
+  enabled: boolean
+  /** Monitoring engine ids that read through this connection. */
+  engines: string[]
+  engine_names: { id: string; name: string }[]
+  /** What the last Test learned. Empty until one has run. */
+  version: string
+  /** False below the supported floor, or before it has ever answered. */
+  supported: boolean
+  last_checked_at: string | null
+  last_error: string
+  /** Zabbix severity (0-5, keyed as a string) -> Danbyte status. */
+  severity_map: Record<string, string>
+  provision_mode: "off" | "review" | "auto"
+  /** Which devices get a host: the ones with a Zabbix check, or every device
+   * the provisioning rules match. */
+  provision_scope: "checks" | "rules"
+  prune_hosts: boolean
+  prune_after_days: number
+  /** Run the sync pass on a timer. Separate from provision_mode: when it runs
+   * and what it does with what it finds are two decisions. */
+  auto_sync: boolean
+  sync_interval_minutes: number
+  last_sync_at: string | null
+  last_sync_summary: Record<string, unknown>
+  /** Write the device's SNMP credentials into Zabbix as secret host macros.
+   * Its own switch: creating a host is inventory, handing over a community
+   * string is handing a credential to another system. */
+  send_snmp_credentials: boolean
+  /** Mirror maintenance and outage windows as Zabbix maintenance periods. */
+  sync_maintenance: boolean
+  last_maintenance_sync_at: string | null
+  /** Acknowledging an alert acknowledges the Zabbix problems behind it. */
+  write_acknowledgements: boolean
+  /** Record what Zabbix's inventory says, so a disagreement shows in the
+   * device's drift inbox. Rides the host read the sync already makes. */
+  read_inventory: boolean
+  /** Read each linked host's open problems and reachability on its own
+   * cadence, so the device page shows what Zabbix sees with or without a
+   * Zabbix check and with provisioning off. On by default; read-only. */
+  read_host_status: boolean
+  status_interval_minutes: number
+  last_status_sync_at: string | null
+  /** Propose a device for every Zabbix host Danbyte has no device for. */
+  adopt_hosts: boolean
+  adopt_site: string | null
+  adopt_role: string | null
+  adopt_device_type: string | null
+  adopt_names: {
+    site: string | null
+    role: string | null
+    device_type: string | null
+  }
+  created_at: string
+  updated_at: string
+}
+
+export interface ZabbixDefaults {
+  severities: { value: string; label: string }[]
+  default_map: Record<string, string>
+  /** The statuses a severity can map onto, named and coloured by the tenant's
+   * own catalog where it has an opinion. */
+  statuses: {
+    value: string
+    label: string
+    color: string
+    text_color: string
+  }[]
+}
+
+/** A rule saying what a kind of device carries in Zabbix - templates, and the
+ * host groups it belongs in. Rules stack. */
+/** Where an adopted Zabbix host lands, decided by its name, group or address.
+ * First match wins in weight order; a rule sets only what it names. */
+export interface ZabbixAdoptionRule {
+  id: string
+  connection: string
+  scope: "name" | "group" | "ip"
+  scope_display: string
+  /** Glob by default, `regex:` for a regular expression, a CIDR for an
+   * address rule. */
+  pattern: string
+  site: string
+  site_name: string
+  role: string | null
+  role_name: string
+  device_type: string | null
+  device_type_name: string
+  weight: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ZabbixProvisionRule {
+  id: string
+  connection: string
+  scope: string
+  scope_display: string
+  object_id: string | null
+  object_name: string
+  templates: string[]
+  /** Host groups. Empty means the device's site is used, as it always was. */
+  groups: string[]
+  /** Zabbix proxy the host is monitored through, by name. Empty = no opinion.
+   * Does not stack: the most specific rule naming one wins, a site first. */
+  proxy: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Every template on the connected Zabbix server, for the rule picker.
+ * `error` is set instead of failing the request when the server is
+ * unreachable - a rule stays editable either way. */
+/** Which devices a connection should keep hosts for, and where each has got
+ * to. Scope is derived from the checks, so this is the only place it is
+ * visible. */
+export interface ZabbixScope {
+  devices: {
+    device: { id: string; name: string }
+    site: string
+    address: string
+    hostid: string
+    host_name: string
+    matched_by: string
+    created_here: boolean
+    templates: string[]
+    groups: string[]
+    proxy: string
+    pending: string[]
+  }[]
+}
+
+export interface ZabbixServerTemplates {
+  templates: { value: string; label: string }[]
+  proxies: { value: string; label: string }[]
+  error: string
+}
+
+export interface ZabbixProvisionScopes {
+  scopes: { value: string; label: string; catalog: string }[]
+}
+
+export interface ZabbixTestResult {
+  ok: boolean
+  detail: string
+  version: string
+  hosts: number | null
+}
+
+/** A device paired with a Zabbix host. */
+/** A Danbyte window as written into Zabbix, for one connection. */
+export interface ZabbixMaintenance {
+  id: string
+  event: { id: string; name: string; kind: "maintenance" | "outage" } | null
+  name: string
+  maintenanceid: string
+  starts_at: string
+  ends_at: string
+  host_count: number
+  synced_at: string | null
+  last_error: string
+}
+
+export interface ZabbixHostLink {
+  id: string
+  device: { id: string; name: string } | null
+  hostid: string
+  host_name: string
+  /** link | address | serial | name | created */
+  matched_by: string
+  /** Danbyte made this host, so Danbyte may remove it. */
+  created_here: boolean
+  last_seen_at: string | null
+  unwanted_since: string | null
+}
+
+/** One proposed write, waiting for a person. */
+export interface ZabbixChange {
+  id: string
+  kind:
+    | "create_host"
+    | "update_host"
+    | "link_template"
+    | "ambiguous"
+    | "prune_host"
+    | "adopt_host"
+  kind_display: string
+  device: { id: string; name: string } | null
+  detail: Record<string, unknown>
+  ignored: boolean
+  /** False for "needs a decision" - it has to be resolved by hand. */
+  applicable: boolean
+  created_at: string
+}
+
+/** What applying a batch of proposals did, and what Zabbix refused. */
+export interface ZabbixApplyResult {
+  applied: number
+  failed: number
+  errors?: { device: string; kind: string; detail: string }[]
+}
+
+export interface ZabbixSyncResult {
+  scoped: number
+  linked: number
+  create: number
+  update: number
+  /** Linked hosts missing a template a rule asks for. */
+  template: number
+  ambiguous: number
+  prune: number
+  /** Zabbix hosts Danbyte has no device for, offered as devices. */
+  adopt: number
+  /** Devices the rules match that have no address, so cannot become a host. */
+  no_address?: number
+  applied?: number
+  failed?: number
+  /** What Zabbix said about the writes it refused - its refusals are usually
+   * the answer ("both templates define icmpping"), not just noise. */
+  errors?: { device: string; kind: string; detail: string }[]
+}
+
+export interface NATRule {
+  id: string
+  numid: number | null
+  name: string
+  kind: "dnat" | "snat" | "static" | "masquerade"
+  kind_display: string
+  protocol: "tcp" | "udp" | "tcp-udp" | "icmp" | "any"
+  protocol_display: string
+  device: { id: string; name: string } | null
+  /** The address reached from outside. Null for masquerade. */
+  external_ip: { id: string; ip_address: string; dns_name: string } | null
+  /** A port or an inclusive range: "443", "8000-8100", or "". */
+  external_ports: string
+  internal_ip: { id: string; ip_address: string; dns_name: string } | null
+  internal_ports: string
+  /** Optional restriction on who the rule applies to. */
+  source_ip: { id: string; ip_address: string; dns_name: string } | null
+  source_prefix: { id: string; cidr: string } | null
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+// ─── Routing ────────────────────────────────────────────────────────────────
+
+export type RoutingAction = "permit" | "deny"
+
+interface RoutingCatalogBase {
+  id: string
+  numid: number | null
+  name: string
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface PrefixListRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  prefix: string
+  prefix_obj: PrefixMini | null
+  ge: number | null
+  le: number | null
+  description: string
+}
+
+export interface PrefixList extends RoutingCatalogBase {
+  family: "ipv4" | "ipv6"
+  /** Empty on the list page; the detail carries them. */
+  rules: PrefixListRule[]
+  rule_count: number
+}
+
+export interface PrefixListMini {
+  id: string
+  name: string
+  family: "ipv4" | "ipv6"
+}
+
+export interface Community extends RoutingCatalogBase {
+  value: string
+  kind: "standard" | "large" | "extended"
+}
+
+export interface CommunityMini {
+  id: string
+  name: string
+  value: string
+  kind: Community["kind"]
+}
+
+export interface CommunityListRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  communities: CommunityMini[]
+  regex: string
+  description: string
+}
+
+export interface CommunityList extends RoutingCatalogBase {
+  kind: "standard" | "expanded" | "large" | "extended"
+  rules: CommunityListRule[]
+  rule_count: number
+}
+
+export interface ASPathListRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  regex: string
+  description: string
+}
+
+export interface ASPathList extends RoutingCatalogBase {
+  rules: ASPathListRule[]
+  rule_count: number
+}
+
+export interface RoutingPolicyRule {
+  id: string
+  sequence: number
+  action: RoutingAction
+  description: string
+  match_prefix_lists: PrefixListMini[]
+  match_community_lists: { id: string; name: string; kind: string }[]
+  match_as_path_lists: { id: string; name: string }[]
+  match_next_hop: PrefixListMini | null
+  match_extra: Record<string, unknown>
+  set_local_pref: number | null
+  set_med: number | null
+  set_weight: number | null
+  set_origin: "" | "igp" | "egp" | "incomplete"
+  set_next_hop: string
+  set_as_path_prepend: string
+  set_communities: CommunityMini[]
+  set_communities_additive: boolean
+  set_metric_type: 1 | 2 | null
+  set_extra: Record<string, unknown>
+  continue_seq: number | null
+}
+
+export interface RoutingPolicy extends RoutingCatalogBase {
+  rules: RoutingPolicyRule[]
+  rule_count: number
+}
+
+export interface RoutingKeychain extends RoutingCatalogBase {
+  algorithm: "md5" | "sha1" | "sha256" | "hmac-sha-256"
+  /** The key lives in the secret store; only whether one exists is read. */
+  psk_set: boolean
+}
+
+export type AfiSafi =
+  | "ipv4-unicast"
+  | "ipv6-unicast"
+  | "vpnv4-unicast"
+  | "vpnv6-unicast"
+  | "l2vpn-evpn"
+  | "ipv4-labeled-unicast"
+
+export type RemoteAsnMode = "asn" | "external" | "internal"
+export type SendCommunity =
+  | ""
+  | "none"
+  | "standard"
+  | "extended"
+  | "both"
+  | "large"
+
+export interface ASNMini {
+  id: string
+  asn: number
+}
+
+/** The neighbour settings a session and a peer group share. Null on a
+ * session means "as the group says"; on a group, the platform default. */
+export interface BFDProfileMini {
+  id: string
+  name: string
+  min_tx: number
+  min_rx: number
+  multiplier: number
+}
+
+export interface BFDProfile extends BFDProfileMini {
+  numid: number | null
+  echo: boolean
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface BGPPeerKnobs {
+  address_families: AfiSafi[]
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  bfd: boolean | null
+  bfd_profile: BFDProfileMini | null
+  ebgp_multihop: number | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  send_community: SendCommunity
+  keepalive: number | null
+  hold_time: number | null
+  keychain: { id: string; name: string; algorithm: string } | null
+  default_originate: boolean | null
+  maximum_prefix: number | null
+  allowas_in: number | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  soft_reconfiguration: boolean | null
+  extra: Record<string, unknown>
+}
+
+export interface Redistribution {
+  id: string
+  source: "connected" | "static" | "bgp" | "ospf" | "isis" | "eigrp" | "kernel"
+  policy: { id: string; name: string } | null
+  metric: number | null
+  extra: Record<string, unknown>
+}
+
+export interface BGPAddressFamily {
+  id: string
+  afi_safi: AfiSafi
+  afi_safi_display: string
+  networks: string[]
+  maximum_paths: number | null
+  maximum_paths_ibgp: number | null
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  redistributions: Redistribution[]
+  extra: Record<string, unknown>
+}
+
+export interface BGPInstance {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  site: { id: string; name: string } | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  asn: ASNMini
+  router_id: string
+  cluster_id: string
+  graceful_restart: boolean
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  address_families: BGPAddressFamily[]
+  session_count: number
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface BGPInstanceMini {
+  id: string
+  device: DeviceMini
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  asn: ASNMini
+}
+
+export interface BGPPeerGroup extends RoutingCatalogBase, BGPPeerKnobs {
+  remote_asn: number | null
+  remote_asn_mode: RemoteAsnMode
+  local_asn: ASNMini | null
+  update_source: string
+  session_count: number
+}
+
+export interface BGPPeerGroupMini {
+  id: string
+  name: string
+  remote_asn: number | null
+  remote_asn_mode: RemoteAsnMode
+}
+
+export interface BGPSessionEffective {
+  address_families: AfiSafi[]
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  ebgp_multihop: number | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  send_community: SendCommunity
+  keepalive: number | null
+  hold_time: number | null
+  keychain: { id: string; name: string; algorithm: string } | null
+  default_originate: boolean | null
+  maximum_prefix: number | null
+  allowas_in: number | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  soft_reconfiguration: boolean | null
+  extra: Record<string, unknown>
+  remote_asn_mode: RemoteAsnMode
+  remote_asn: number | null
+  local_asn: number
+  update_source: string
+  /** Derived from the two AS numbers - never set by hand. */
+  kind: "ibgp" | "ebgp" | null
+}
+
+export interface BGPSession extends BGPPeerKnobs {
+  id: string
+  numid: number | null
+  instance: BGPInstanceMini
+  name: string
+  peer_group: BGPPeerGroupMini | null
+  remote_asn: number | null
+  remote_asn_mode: "" | RemoteAsnMode
+  local_asn: ASNMini | null
+  local_address: { id: string; ip_address: string; dns_name: string } | null
+  /** The far end: an address, or an interface for unnumbered peering. */
+  remote_address: string
+  interface: { id: string; name: string; device: DeviceMini } | null
+  remote_address_obj: {
+    id: string
+    ip_address: string
+    dns_name: string
+  } | null
+  peer_device: DeviceMini | null
+  peer_session: { id: string; device: DeviceMini } | null
+  effective: BGPSessionEffective
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface OSPFArea extends RoutingCatalogBase {
+  area_id: string
+  kind: "normal" | "stub" | "totally-stub" | "nssa" | "totally-nssa"
+  kind_display: string
+  interface_count: number
+}
+
+export interface OSPFAreaMini {
+  id: string
+  name: string
+  area_id: string
+  kind: OSPFArea["kind"]
+}
+
+export interface OSPFInterface {
+  id: string
+  interface: { id: string; name: string; device: DeviceMini }
+  area: OSPFAreaMini
+  cost: number | null
+  network_type:
+    | ""
+    | "broadcast"
+    | "point-to-point"
+    | "nbma"
+    | "point-to-multipoint"
+  /** Null = the instance's passive_by_default. */
+  passive: boolean | null
+  priority: number | null
+  hello: number | null
+  dead: number | null
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  mtu_ignore: boolean
+  authentication: "none" | "simple" | "md5" | "sha"
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+}
+
+interface IGPInstanceBase {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  site: { id: string; name: string } | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  redistributions: Redistribution[]
+  interface_count: number
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface OSPFInstance extends IGPInstanceBase {
+  process_id: string
+  version: 2 | 3
+  router_id: string
+  reference_bandwidth: number | null
+  passive_by_default: boolean
+  default_originate: boolean
+  interfaces: OSPFInterface[]
+}
+
+export interface ISISInterface {
+  id: string
+  interface: { id: string; name: string; device: DeviceMini }
+  families: ("ipv4" | "ipv6")[]
+  level: "" | "1" | "2" | "1-2"
+  metric: number | null
+  metric_l2: number | null
+  network_type: "" | "point-to-point" | "broadcast"
+  passive: boolean | null
+  hello_interval: number | null
+  hello_multiplier: number | null
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  authentication: "none" | "text" | "md5"
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+}
+
+export interface ISISInstance extends IGPInstanceBase {
+  process: string
+  net: string
+  router_id: string
+  level: "1" | "2" | "1-2"
+  metric_style: "wide" | "narrow" | "transition"
+  authentication: "none" | "text" | "md5"
+  keychain: { id: string; name: string; algorithm: string } | null
+  interfaces: ISISInterface[]
+}
+
+/** The L2VPN as a VTEP membership carries it: enough to name the VNI. */
+export interface L2VPNBrief {
+  id: string
+  name: string
+  slug: string
+  type: L2VPNType
+  identifier: number | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+}
+
+export interface VTEPMembership {
+  id: string
+  l2vpn: L2VPNBrief
+  vlan: VLANMini | null
+  /** The VLAN the render resolves for this leaf (own, else the site's). */
+  resolved_vlan: VLANMini | null
+  rd: string
+  ingress_replication: boolean
+  mcast_group: string
+  extra: Record<string, unknown>
+}
+
+export interface VTEP {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  site: { id: string; name: string } | null
+  source_interface: { id: string; name: string; device: DeviceMini } | null
+  source_ip: { id: string; ip_address: string; dns_name: string } | null
+  anycast_ip: { id: string; ip_address: string; dns_name: string } | null
+  anycast_gateway_mac: string
+  arp_suppression: boolean
+  memberships: VTEPMembership[]
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface EIGRPInterface {
+  id: string
+  interface: { id: string; name: string; device: DeviceMini }
+  /** Null = the instance's passive_by_default. */
+  passive: boolean | null
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  hello_interval: number | null
+  hold_time: number | null
+  bandwidth_percent: number | null
+  /** Null = the platform default (on). */
+  split_horizon: boolean | null
+  summary_addresses: string[]
+  authentication: "none" | "md5" | "hmac-sha-256"
+  keychain: { id: string; name: string; algorithm: string } | null
+  extra: Record<string, unknown>
+}
+
+export interface EIGRPInstance extends IGPInstanceBase {
+  asn: number
+  /** Named mode when set. */
+  name: string
+  router_id: string
+  /** "K1 K2 K3 K4 K5"; blank = platform default. */
+  k_values: string
+  variance: number | null
+  maximum_paths: number | null
+  passive_by_default: boolean
+  stub: boolean
+  interfaces: EIGRPInterface[]
+}
+
+export interface StaticRoute {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  prefix: string
+  prefix_obj: PrefixMini | null
+  kind: "nexthop" | "interface" | "blackhole" | "reject"
+  kind_display: string
+  next_hop: string
+  next_hop_interface: { id: string; name: string; device: DeviceMini } | null
+  next_hop_vrf: { id: string; name: string; rd: string; color: string } | null
+  distance: number | null
+  metric: number | null
+  tag: number | null
+  bfd: boolean
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
 
 export interface Service {
   id: string
@@ -3993,66 +4897,35 @@ export interface CustomFieldGroupWritePayload {
 // ─── Global search ───────────────────────────────────────────────────────
 
 export interface SearchHit {
-  id: string | number
-  label: string
-  sublabel: string
-  extras: Record<string, unknown>
-  /** Frontend route (no /api prefix). Navigate via TanStack Router. */
+  /** Object-type slug, e.g. "device". */
+  type: string
+  type_label: string
+  id: string
+  title: string
+  subtitle: string
   url: string
+  score: number
+  numid: number | null
+  /** Display context: site, location, rack, role, device, VRF, … and a
+   * status pill. Keys vary per type. */
+  context: Record<string, string | SearchStatus>
+}
+
+export interface SearchStatus {
+  name: string
+  color: string
+  text_color: string
 }
 
 export interface SearchResponse {
   q: string
+  /** Ranked candidates the caller may view (capped server-side). */
   total: number
-  groups: {
-    prefixes: SearchHit[]
-    ips: SearchHit[]
-    vlans: SearchHit[]
-    vrfs: SearchHit[]
-    route_targets: SearchHit[]
-    sites: SearchHit[]
-    tenants: SearchHit[]
-    devices: SearchHit[]
-    vms: SearchHit[]
-    tags: SearchHit[]
-    locations: SearchHit[]
-    racks: SearchHit[]
-    clusters: SearchHit[]
-    device_types: SearchHit[]
-    manufacturers: SearchHit[]
-    circuits: SearchHit[]
-    cables: SearchHit[]
-    providers: SearchHit[]
-    contacts: SearchHit[]
-    interfaces: SearchHit[]
-  }
+  hits: SearchHit[]
+  facets: { types: { type: string; label: string; count: number }[] }
+  /** Offset for the next page, or null on the last one. */
+  next_cursor: number | null
 }
-
-export const SEARCH_GROUPS: Array<{
-  key: keyof SearchResponse["groups"]
-  label: string
-}> = [
-  { key: "prefixes", label: "Prefixes" },
-  { key: "ips", label: "IP addresses" },
-  { key: "vlans", label: "VLANs" },
-  { key: "vrfs", label: "VRFs" },
-  { key: "route_targets", label: "Route Targets" },
-  { key: "sites", label: "Sites" },
-  { key: "devices", label: "Devices" },
-  { key: "vms", label: "Virtual machines" },
-  { key: "interfaces", label: "Interfaces" },
-  { key: "racks", label: "Racks" },
-  { key: "locations", label: "Locations" },
-  { key: "clusters", label: "Clusters" },
-  { key: "device_types", label: "Device types" },
-  { key: "manufacturers", label: "Manufacturers" },
-  { key: "circuits", label: "Circuits" },
-  { key: "cables", label: "Cables" },
-  { key: "providers", label: "Providers" },
-  { key: "contacts", label: "Contacts" },
-  { key: "tags", label: "Tags" },
-  { key: "tenants", label: "Tenants" },
-]
 
 // ─── Monitoring / check engine ─────────────────────────────────────────────
 
@@ -4083,7 +4956,14 @@ export interface CheckTemplate {
   params: Record<string, unknown>
   has_secrets: boolean
   usage_count: number
+  /** The normal cadence - and the fallback when `interval_ms` is set but no
+   * fast lane can run the check (lane down, older Outpost). */
   interval_seconds: number
+  /** Fast lane: probe every this many milliseconds (200-59999); null = the
+   * minute beat. Status changes are recorded at once, the rest once per
+   * `record_every_seconds` as an aggregate. */
+  interval_ms: number | null
+  record_every_seconds: number
   timeout_ms: number
   retries: number
   rise: number
@@ -4113,6 +4993,16 @@ export interface WatchedEndpoint {
   updated_at: string
 }
 
+/** Who answered a check: the core's own workers, an Outpost, or a driver
+ * such as Zabbix. `engine` is null for local - and for every row written
+ * before attribution existed, which the UI reads as local. */
+export type CheckSource = "local" | "outpost" | (string & {})
+
+export interface EngineRef {
+  id: string
+  name: string
+}
+
 export interface CheckResultRow {
   id: number
   template: string | null
@@ -4122,12 +5012,8 @@ export interface CheckResultRow {
   latency_ms: number | null
   detail: Record<string, unknown>
   timestamp: string
-}
-
-export interface SparkPoint {
-  timestamp: string
-  status: CheckStatus
-  latency_ms: number | null
+  engine: EngineRef | null
+  source: CheckSource
 }
 
 export interface EffectiveCheckState {
@@ -4135,9 +5021,28 @@ export interface EffectiveCheckState {
   since: string | null
   last_checked: string | null
   last_latency_ms: number | null
+  /** What the last run found. An externally-answered check carries its open
+   * problems here, and which protocols that system cannot reach the host on. */
+  last_detail?: ExternalDetail
   consecutive_success: number
   consecutive_fail: number
   next_run: string | null
+  /** Flapping is a state: set by the sweep, cleared by an operator's
+   * confirmation (or by itself when the tenant allows). */
+  flapping_since: string | null
+  flap_count: number
+  flap_cleared_at: string | null
+}
+
+/** The parts of a check result an external monitoring system fills in. */
+export interface ExternalDetail {
+  zabbix_host?: string
+  zabbix_url?: string
+  hostid?: string
+  problem_count?: number
+  problems?: { name?: string; severity?: string }[]
+  availability?: Record<string, { state: string; error?: string }>
+  [key: string]: unknown
 }
 
 export interface EffectiveCheck {
@@ -4150,6 +5055,9 @@ export interface EffectiveCheck {
   /** Null for policy-sourced checks (no per-IP CheckAssignment). */
   assignment_id: string | null
   interval_seconds: number
+  /** Set when the check runs on the fast lane. */
+  interval_ms: number | null
+  record_every_seconds: number
   degraded_enabled: boolean
   params: Record<string, unknown>
   enabled: boolean
@@ -4157,13 +5065,14 @@ export interface EffectiveCheck {
   overrides: AssignmentOverrides
   template_defaults: { interval_seconds: number; rise: number; fall: number }
   state: EffectiveCheckState | null
-  sparkline: SparkPoint[]
 }
 
-export interface IpChecksResponse {
+export interface IpChecksResponse extends ExternalRollup {
   ip_id: string
   ip_address: string
   checks: EffectiveCheck[]
+  /** How many of the address's checks are flagged as flapping. */
+  flapping?: number
 }
 
 export interface CheckNowResult {
@@ -4217,9 +5126,11 @@ export interface PrefixRollup {
   counts: Partial<Record<CheckStatus, number>>
   monitored_ips: number
   total_ips: number
+  /** Checks flagged as flapping across the roll-up; absent at zero. */
+  flapping?: number
 }
 
-export interface PrefixIpStatus {
+export interface PrefixIpStatus extends ExternalRollup {
   id: string
   ip_address: string
   status: CheckStatus | null
@@ -4243,7 +5154,7 @@ export interface PrefixChecksResponse {
 // Device monitoring rolls up across the device's assigned IPs (a service's
 // check lives on its IP, so service monitoring is included). Reuses the same
 // rollup + per-IP grid shapes as prefixes.
-export interface DeviceChecksResponse {
+export interface DeviceChecksResponse extends ExternalRollup {
   device_id: string
   name: string
   rollup: PrefixRollup
@@ -4251,11 +5162,53 @@ export interface DeviceChecksResponse {
   truncated: boolean
 }
 
-export interface BulkStatusEntry {
+/** What an external monitoring system said about a target, rolled up.
+ *
+ * One shape wherever it is shown. A list row and the target's own page
+ * reading the same fields from the same server-side helper is what stops the
+ * detail page quietly disagreeing with the list it was opened from. */
+export interface ExternalRollup {
+  /** Open problems an external monitoring system reports. Absent when none. */
+  problems?: number
+  /** The first few of them, name and Zabbix severity (0-5 as a string). */
+  problem_names?: { name: string; severity: string }[]
+  /** Protocols that system cannot reach the target on - "snmp", "agent". */
+  unreachable?: string[]
+  /** That system's own error per unreachable protocol. */
+  unreachable_errors?: Record<string, string>
+  /** Which system answered, and how to open the host there. */
+  external?: { system: string; host: string; hostid: string; url: string }
+  /** Checks flagged as flapping - a state, sticky until confirmed. Absent
+   * at zero, so the pill renders only where there is something to say. */
+  flapping?: number
+}
+
+export interface BulkStatusEntry extends ExternalRollup {
   status: CheckStatus | null
   checks?: number
   counts?: Partial<Record<CheckStatus, number>>
   monitored_ips?: number
+}
+
+/** An engine kind a driver registered - configured on its own page rather
+ * than enrolled like an Outpost. */
+export interface EngineKindInfo {
+  kind: string
+  label: string
+  description: string
+  configure_path: string
+}
+
+/** A tenant's own name and colour for one check state. */
+export interface CheckStatusLabel {
+  id: string
+  name: string
+  color: string
+  text_color: string
+}
+
+export interface CheckStatusLabels {
+  labels: Partial<Record<CheckStatus, CheckStatusLabel>>
 }
 
 export interface BulkStatusResponse {
@@ -4299,6 +5252,13 @@ export interface MonitoringSettings {
   escalate_after_minutes: number
   flap_threshold: number
   flap_window_minutes: number
+  /** Off: a flapping state stays until an operator confirms the host is
+   * fine. On: it clears itself after the settle time of quiet. */
+  auto_clear_flapping: boolean
+  auto_clear_flapping_after_minutes: number
+  /** Sub-minute checks the fast lane runs for the tenant; 0 = none. Over
+   * the cap they run on the minute beat at their fallback interval. */
+  fast_lane_max_checks: number
   group_notifications: boolean
   group_threshold: number
   discovery_enabled: boolean
@@ -4330,9 +5290,14 @@ export interface MonitoringProfile {
   updated_at: string
 }
 
+// monitoring/policy_scopes.SCOPES, loosest first. The server is the registry;
+// this mirrors it for the pickers.
 export type MonitoringPolicyScope =
   | "global"
+  | "region"
+  | "site"
   | "vrf"
+  | "platform"
   | "device_type"
   | "device_role"
   | "device"
@@ -4346,9 +5311,25 @@ export interface MonitoringPolicy {
   device_role: string | null
   device: string | null
   prefix: string | null
+  /** The site the policy is *about*. Not `site`: a field of that name is a
+   * record's owning site everywhere else, and gets stamped automatically. */
+  target_site: string | null
+  region: string | null
+  platform: string | null
   enabled: boolean
   inherit: boolean
-  /** Device/type/role scopes: which of the device's IPs the checks target. */
+  /** Tag slugs the device must carry - all of them. Empty matches any. */
+  match_tags: string[]
+  /** Glob the device name must match, e.g. "core-*". Empty matches any. */
+  match_name: string
+  /** Glob the address's interface name must match, e.g. "Gi0/0/*". Reads the
+   * interface, not the device - an address bound to none never matches. */
+  match_interface: string
+  /** Glob at least one inventory item or installed module must match, by
+   * name or part number, e.g. "*PSU*". Empty matches any. */
+  match_hardware: string
+  /** Which of the matched device's IPs the checks target. Honoured by every
+   * scope that can name a device - site and region included. */
   target: "all" | "interfaces" | "primary" | "oob"
   /** Per-scope check frequency override, seconds. Null = global default. */
   interval_seconds: number | null
@@ -4377,7 +5358,7 @@ export interface MonitoringEngine {
   name: string
   slug: string
   description: string
-  kind: "local" | "remote"
+  kind: string
   /** pull = Outpost dials out (HTTPS 443); ssh = Danbyte dials in (SSH 22). */
   transport: "pull" | "ssh"
   enabled: boolean
@@ -4449,6 +5430,24 @@ export interface SystemInfo {
 }
 
 /** GET /api/system/updates - current version + the release repo's versions. */
+/** One operator step the running version needs after upgrading. */
+export interface UpgradeNote {
+  id: string
+  version: string
+  title: string
+  body: string
+  snippet: string
+  docs: string
+  platforms: string[]
+}
+
+export interface UpgradeNotes {
+  version: string
+  deployment: string
+  pending: UpgradeNote[]
+  done: string[]
+}
+
 export interface SystemUpdates {
   current: { version: string; commit: string }
   repo_url: string
@@ -4508,6 +5507,7 @@ export interface MonitoringEngineStats {
 }
 
 export interface FlappingRow {
+  state_id: string
   ip_id: string
   ip_address: string
   dns_name: string | null
@@ -4516,12 +5516,13 @@ export interface FlappingRow {
   kind: CheckKind
   flap_count: number
   window_minutes: number
+  flapping_since: string
   last_at: string
 }
 
 export interface CheckListRow {
   id: string
-  target_ip: { id: string; ip_address: string }
+  target_ip: { id: string; ip_address: string; dns_name: string }
   template: { id: string; name: string }
   kind: CheckKind
   status: CheckStatus
@@ -4529,13 +5530,37 @@ export interface CheckListRow {
   last_checked: string | null
   since: string | null
   consecutive_fail: number
+  /** Who runs it - the executor, not the binding. */
+  source: CheckSource
+  engine: EngineRef | null
+  /** Set while the check is flagged as flapping - sticky until confirmed. */
+  flapping_since: string | null
+  flap_count: number
+  /** Set when the check runs on the fast lane. */
+  interval_ms: number | null
+  device: { id: string; name: string } | null
+  /** The address's own site, else its prefix's, else its device's. */
+  site: { id: string; name: string } | null
+  prefix: { id: string; cidr: string } | null
+  /** Present when the list was asked for `?strip=<days>`. */
+  segments?: StatusSegment[]
 }
 
 export interface CheckListResponse {
   count: number
   page: number
   page_size: number
+  /** Per status before any filter - the quick tabs and the dashboard donut. */
   status_counts: Partial<Record<CheckStatus | "all", number>>
+  source_counts: Partial<Record<CheckSource, number>>
+  /** Checks flagged as flapping under every filter but `flapping` itself. */
+  flapping_count: number
+  facets: Partial<
+    Record<TransitionFacet | "status" | "flapping", FacetBucket[]>
+  >
+  /** The strip window, when `?strip=` was asked for. */
+  since?: string
+  until?: string
   results: CheckListRow[]
 }
 
@@ -4546,6 +5571,10 @@ export interface MonitoringSeriesPoint {
   down: number
 }
 
+/** The results-chart windows the stats endpoint offers. 720 h is the
+ * result-retention ceiling - older rows are pruned. */
+export type StatsHours = 24 | 168 | 720
+
 export interface MonitoringStats {
   by_status: Partial<Record<CheckStatus, number>>
   by_kind: Partial<Record<CheckKind, number>>
@@ -4554,6 +5583,21 @@ export interface MonitoringStats {
   templates: number
   channels: number
   series: MonitoringSeriesPoint[]
+  series_hours: StatsHours
+  series_bucket: "hour" | "day"
+  /** Up over up-plus-down across the window's results; null with none. */
+  availability_pct: number | null
+  /** The estate's p50/p95 latency per bucket over the window. */
+  latency_series: { t: string; p50: number | null; p95: number | null }[]
+  /** Alerts opened against resolved, per day. */
+  alerts_series: { t: string; opened: number; resolved: number }[]
+  /** Sub-minute checks in view, and the lane's own pulse. */
+  fast_lane: {
+    fast_checks: number
+    alive: boolean
+    checks: number
+    probes_per_s: number
+  }
   recent_transitions: Array<{
     id: number
     target_ip: { id: string; ip_address: string } | null
@@ -4564,7 +5608,242 @@ export interface MonitoringStats {
     to_status: CheckStatus
     at: string
     detail: Record<string, unknown>
+    engine: EngineRef | null
+    source: CheckSource
   }>
+}
+
+/** What Zabbix says about one of a device's hosts - `/api/zabbix/host-status/`.
+ * Beside Danbyte's status, never folded into it unless a Zabbix check exists. */
+export interface ZabbixHostStatus {
+  connection: {
+    id: string
+    name: string
+    url: string
+    read_host_status: boolean
+  }
+  host: { hostid: string; name: string }
+  link: { matched_by: string; created_here: boolean }
+  status: {
+    problems: {
+      name: string
+      severity: string
+      since: string | null
+      eventid: string
+    }[]
+    problem_count: number
+    worst_severity: string
+    /** The worst open problem through the connection's severity map; `up`
+     * when read and clean; null until the first read. */
+    worst_status: CheckStatus | null
+    availability: Record<string, { state: string; error?: string }>
+    maintenance: boolean
+    disabled: boolean
+    polled_at: string | null
+  }
+}
+
+// ─── Status history ──────────────────────────────────────────────────────
+//
+// The transition log read back: filtered by anything an address is, with the
+// facet counts and the bucketed series that feed a rail and a chart in the
+// same answer. Timelines are the same log as `{start, end, status}` runs.
+
+/** A run of one status over `[start, end)`. */
+export interface StatusSegment {
+  start: string
+  end: string
+  status: CheckStatus
+}
+
+export interface TransitionRow {
+  id: number
+  at: string
+  kind: CheckKind
+  from_status: CheckStatus
+  to_status: CheckStatus
+  detail: Record<string, unknown>
+  template: { id: string; name: string } | null
+  target_ip: { id: string; ip_address: string; dns_name: string } | null
+  device: { id: string; name: string } | null
+  site: { id: string; name: string } | null
+  source: CheckSource
+  engine: EngineRef | null
+  /** The check behind it is flagged as flapping right now. */
+  flapping: boolean
+}
+
+export interface FacetBucket {
+  value: string
+  label: string
+  count: number
+}
+
+export type TransitionFacet =
+  | "to_status"
+  | "from_status"
+  | "kind"
+  | "source"
+  | "site"
+  | "device_type"
+  | "role"
+  | "platform"
+  | "template"
+  | "engine"
+
+/** Counts per bucket per status the change went *to*. */
+export type TransitionSeriesPoint = { t: string } & Partial<
+  Record<CheckStatus, number>
+>
+
+/** One cell of the when-things-break heatmap; `dow` 0 = Monday, in the
+ * viewer's timezone. */
+export interface HeatCell {
+  dow: number
+  hour: number
+  n: number
+}
+
+export interface TopChanger {
+  ip_id: string
+  ip_address: string
+  dns_name: string | null
+  template_id: string | null
+  template_name: string
+  changes: number
+  /** Of which went to a bad state. */
+  bad: number
+}
+
+export interface TransitionsResponse {
+  count: number
+  page: number
+  page_size: number
+  since: string
+  until: string
+  bucket: "hour" | "day"
+  facets: Partial<Record<TransitionFacet, FacetBucket[]>>
+  series: TransitionSeriesPoint[]
+  heatmap: HeatCell[]
+  top: TopChanger[]
+  results: TransitionRow[]
+}
+
+/** The query keys `/api/monitoring/transitions/` understands. Lists are
+ * comma-separated and mean any-of; `tag` means every tag named. */
+export interface TransitionFilters {
+  days?: number
+  /** Wins over `days`; an hour up to a year. */
+  hours?: number
+  since?: string
+  until?: string
+  to_status?: string
+  from_status?: string
+  kind?: string
+  template?: string
+  source?: string
+  engine?: string
+  ip?: string
+  site?: string
+  region?: string
+  device?: string
+  device_type?: string
+  role?: string
+  platform?: string
+  prefix?: string
+  vrf?: string
+  vlan?: string
+  port?: string
+  tag?: string
+  search?: string
+  /** `1` = only the changes behind checks flagged as flapping right now. */
+  flapping?: string
+  /** One cell of the viewer's week: weekday (0 = Monday) and hour. */
+  dow?: string
+  hour?: string
+  ordering?: "at" | "-at" | "ip" | "-ip"
+  page?: number
+  page_size?: number
+}
+
+export function transitionsQuery(f: TransitionFilters): string {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(f)) {
+    if (v === undefined || v === null || v === "") continue
+    p.set(k, String(v))
+  }
+  const qs = p.toString()
+  return qs ? `?${qs}` : ""
+}
+
+/** The window's figures from a run of segments - the same arithmetic as
+ * the uptime report. `uptime_pct` is null when nothing was measured. */
+export interface WindowSummary {
+  uptime_pct: number | null
+  incidents: number
+  down_seconds: number
+  mttr_seconds: number | null
+}
+
+export interface TimelineCheck extends WindowSummary {
+  state_id: string
+  target_ip: { id: string; ip_address: string }
+  template_id: string
+  template_name: string | null
+  kind: CheckKind
+  source: CheckSource
+  segments: StatusSegment[]
+}
+
+/** One calendar day of availability (the viewer's timezone). `uptime_pct`
+ * is null when nothing was measured that day. */
+export interface DayAvailability {
+  date: string
+  uptime_pct: number | null
+  up_s: number
+  down_s: number
+  incidents: number
+}
+
+export interface IpTimeline {
+  since: string
+  until: string
+  rollup: StatusSegment[]
+  checks: TimelineCheck[]
+  summary: WindowSummary
+  days: DayAvailability[]
+}
+
+/** A bucket of latency for one check: sample-weighted average with the
+ * bucket's min/max band and loss. */
+export interface LatencyPoint {
+  t: string
+  avg: number | null
+  min: number | null
+  max: number | null
+  loss: number
+  samples: number
+}
+
+export interface LatencyResponse {
+  since: string
+  until: string
+  bucket_seconds: number
+  points: LatencyPoint[]
+}
+
+export interface DeviceTimeline extends IpTimeline {
+  ips: ({
+    id: string
+    ip_address: string
+    rollup: StatusSegment[]
+  } & WindowSummary)[]
+}
+
+export interface TimelineBatch {
+  since: string
+  until: string
+  segments: Record<string, StatusSegment[]>
 }
 
 // ─── Certificates ────────────────────────────────────────────────────────
@@ -4883,7 +6162,7 @@ export interface AlertsResponse {
 export interface Silence {
   id: string
   reason: string
-  match_kinds: CheckKind[]
+  match_kinds: string[]
   match_statuses: CheckStatus[]
   match_tag_slugs: string[]
   match_prefix: string | null
@@ -4903,7 +6182,7 @@ export interface AlertRule {
   name: string
   enabled: boolean
   weight: number
-  match_kinds: CheckKind[]
+  match_kinds: string[]
   match_statuses: CheckStatus[]
   match_tag_slugs: string[]
   match_prefix: string | null
@@ -4999,6 +6278,12 @@ export interface DashboardData {
   check_by_status: DashDist[]
   alerts_by_severity: DashDist[]
   reachable_pct: number | null
+  /** Checks currently flagged as flapping, noisiest first (top 8). */
+  flapping: FlappingRow[]
+  /** Seven days: availability, alerts per day, the estate's latency. */
+  availability_7d: number | null
+  alerts_per_day: { t: string; opened: number; resolved: number }[]
+  latency_series: { t: string; p50: number | null; p95: number | null }[]
 }
 
 export type ComplianceCheck =
@@ -5242,7 +6527,7 @@ export interface SnmpBinding {
   } | null
 }
 
-export type SnmpDriftItem =
+type SnmpDriftItemShape =
   | {
       kind: "device_field"
       field: string
@@ -5316,6 +6601,11 @@ export type SnmpDriftItem =
       lag_interface_id: string | null
     }
 
+/** Which observation raised a difference. Absent means Danbyte's own poll,
+ * which outranks every integration - so a source chip is shown only when
+ * something other than the device itself said it. */
+export type SnmpDriftItem = SnmpDriftItemShape & { source?: string }
+
 export interface SnmpNeighbor {
   local_port: string
   remote_device: string
@@ -5331,6 +6621,8 @@ export interface DeviceSnmp {
   device: string | null
   /** Set instead of `device` when the SNMP target is a VM (virtual router). */
   vm?: string | null
+  /** A stack member reads the stack owner's observation (#148). */
+  polled_via?: { id: string; name: string } | null
   profile: string | null
   profile_name: string | null
   data: Record<string, string>
@@ -5351,6 +6643,9 @@ export interface DeploymentSettings {
   smtp_security: SmtpSecurity
   smtp_username: string
   smtp_password_set: boolean
+  /** Write-only: send it to set the password, blank to keep the stored one.
+   * Never returned - `smtp_password_set` is the read side. */
+  smtp_password?: string
   email_from: string
   public_base_url: string
   webhook_timeout: number
@@ -5362,12 +6657,17 @@ export interface DeploymentSettings {
   /** Absolute URL of the custom login-page logo; null = the Danbyte logo. */
   login_logo_url: string | null
   ssrf_allowlist: string[]
-  /** "" = disabled, "local" = encrypted DB, "vault" = external Vault/OpenBao. */
-  secrets_provider: "" | "local" | "vault"
+  /** "" = disabled; otherwise a kind from /api/deployment/secret-stores/. */
+  secrets_provider: string
   vault_addr: string
   vault_mount: string
   vault_verify_tls: boolean
   vault_token_set: boolean
+  azure_vault_url: string
+  azure_directory_id: string
+  azure_client_id: string
+  azure_authority: string
+  azure_client_secret_set: boolean
   map_tile_url: string
   map_tile_attribution: string
   map_satellite_url: string
@@ -5517,6 +6817,8 @@ export interface LdapGroupMapping {
   ldap_group_cn: string
   group_id: number
   group_name: string
+  /** Members become superusers at login (deployment directory only). */
+  grants_superuser: boolean
   created_at: string
   updated_at: string
 }
@@ -5604,6 +6906,7 @@ export type ChannelKind =
   | "teams"
   | "discord"
   | "pagerduty"
+  | "telegram"
 
 export type MinSeverity = "info" | "warning" | "critical"
 
@@ -5623,6 +6926,8 @@ export interface NotificationChannel {
   match_prefix: string | null
   match_ip: string | null
   match_device: string | null
+  /** Telegram bot token is write-only; reads only say whether one is stored. */
+  bot_token_set: boolean
   auto_created: boolean
   created_at: string
   updated_at: string
@@ -5940,6 +7245,7 @@ export interface Provider extends BusinessHoursReads {
   account_manager_name: string
   comments: string
   circuit_count: number
+  network_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
@@ -6148,6 +7454,8 @@ export interface PowerFeed {
   voltage: number | null
   amperage: number | null
   max_utilization: number
+  /** Distinct cables terminating on this feed. */
+  cable_count: number
   comments: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -6302,6 +7610,9 @@ export interface IPSecProfile {
   dh_group: number
   pfs_group: number | null
   sa_lifetime: number | null
+  /** Whether a pre-shared key is stored (#168). The key itself never rides
+   * along: fetch it from `POST /api/ipsec-profiles/{id}/reveal-psk/`. */
+  psk_set: boolean
   description: string
   tunnel_count: number
   created_at: string
@@ -6316,6 +7627,9 @@ export interface IPSecProfileWritePayload {
   dh_group?: number
   pfs_group?: number | null
   sa_lifetime?: number | null
+  /** Write-only: a value stores the key, `null` clears it, omitting or
+   * blank keeps what is stored. */
+  psk?: string | null
   description?: string
 }
 
@@ -6577,6 +7891,10 @@ export interface ApiToken {
   name: string
   tenant: { id: string; name: string }
   prefix: string
+  /** `read` tokens are refused for every unsafe method. */
+  scope: "full" | "read"
+  /** `run` tokens are platform-minted and never listed here. */
+  kind: "user" | "run"
   last_used_at: string | null
   expires_at: string | null
   is_expired: boolean
@@ -6586,6 +7904,25 @@ export interface ApiToken {
 /** Create response - `key` is present only here, once. */
 export interface ApiTokenCreated extends ApiToken {
   key: string
+}
+
+// ─── Secret-store providers (Settings → Security) ──────────────────────
+export interface SecretStoreField {
+  name: string
+  label: string
+  type: "text" | "password" | "checkbox"
+  placeholder?: string
+  hint?: string
+  default?: string | boolean
+  /** Password fields: the deployment-settings boolean saying one is stored. */
+  set_flag?: string
+}
+
+export interface SecretStoreProvider {
+  kind: string
+  label: string
+  description: string
+  fields: SecretStoreField[]
 }
 
 // ─── Automation targets + deploy (Phase 2) ─────────────────────────────
@@ -6840,7 +8177,7 @@ export interface ScheduledTask {
 export interface EngineHeartbeat {
   id: string
   name: string
-  kind: "local" | "remote"
+  kind: string
   transport: string
   enabled: boolean
   last_seen_at: string | null
@@ -6871,6 +8208,25 @@ export interface SystemJobStatus {
 }
 
 // ─── Virtual chassis (switch stacks) ─────────────────────────────────────
+
+/** `/api/monitoring/virtual-chassis/<id>/snmp/drift/` - one observation on
+ * the stack owner, split per member. */
+export interface VcSnmpDrift {
+  owner: VcMemberRef | null
+  state: {
+    polled_at: string | null
+    reachable: boolean | null
+    error: string
+  } | null
+  members: { device: VcMemberRef; drift: SnmpDriftItem[] }[]
+}
+
+export interface VcMemberRef {
+  id: string
+  name: string
+  vc_position: number | null
+  is_master: boolean
+}
 
 export interface VirtualChassisMember {
   id: string
@@ -6959,11 +8315,14 @@ export interface L2VPN {
   type: L2VPNType
   type_display: string
   identifier: number | null
+  /** Set on an EVPN overlay: this L2VPN is that VRF's L3VNI. */
+  vrf: { id: string; name: string; rd: string; color: string } | null
   status: StatusMini | null
   import_targets: { id: string; name: string }[]
   export_targets: { id: string; name: string }[]
   terminations: L2VPNTermination[]
   termination_count: number
+  vtep_count: number
   description: string
   comments: string
   tags: Tag[]
@@ -6977,6 +8336,7 @@ export interface L2VPNWritePayload {
   slug?: string
   type: L2VPNType
   identifier?: number | null
+  vrf_id?: string | null
   status_id?: string | null
   import_target_ids?: string[]
   export_target_ids?: string[]
@@ -7295,6 +8655,10 @@ export interface SiteMapCableEnd {
   lng: number
   device_id: string
   device_name: string
+  /** The end's site. An unplaced device is drawn at its site's point, and
+   * that device is absent from the map's (placed-only) device list, so this
+   * is the only way to tell the end belongs to a hidden site. */
+  site_id: string | null
   port: string
   kind: string
 }
@@ -7431,6 +8795,10 @@ export interface WindowsConnection {
   last_sync_at: string | null
   last_sync_status: string
   last_sync_error: string
+  /** DHCP leases across the connection's scopes. */
+  lease_count: number
+  /** DNS zones on the connection. */
+  zone_count: number
   created_at: string
   updated_at: string
 }
@@ -7557,6 +8925,14 @@ export interface VirtualizationSource {
   /** Enrich those Devices with model, vendor and serial over vSphere SOAP.
    * vCenter only, and off by default - it mints catalog rows. */
   sync_host_hardware: boolean
+  /** Copy the hypervisor's MTU onto a VM interface, and diff it. */
+  sync_vm_interface_mtu: boolean
+  /** Powered-off guests are left alone - but still count as present. */
+  skip_offline_vms: boolean
+  /** Remove a VM that has vanished from the hypervisor. */
+  auto_prune: boolean
+  /** Days it must stay missing first. 0 = on the next sync. */
+  auto_prune_after_days: number
   /** Map the guest OS onto a Platform, creating rows on demand. Off by
    * default - it writes into a catalog you curate. */
   sync_platforms: boolean
@@ -7663,4 +9039,341 @@ export interface DnsRecordWritePayload {
   record_type: DnsRecordType
   data: string
   ttl?: string
+}
+
+// ─── Backups (/api/backups/, deployment admins) ───────────────────────────────
+
+export type BackupComponent = "db" | "media" | "config"
+export type BackupRunStatus = "queued" | "running" | "success" | "failed"
+
+export interface StorageKindField {
+  name: string
+  label: string
+  type: "text" | "password" | "checkbox"
+  placeholder?: string
+  secret?: boolean
+  default?: boolean
+}
+
+export interface StorageKind {
+  kind: string
+  label: string
+  fields: StorageKindField[]
+}
+
+export interface BackupsStatus {
+  deployment_name: string
+  backup_dir: string
+  storage_kinds: StorageKind[]
+  maintenance: { reason: string; run_id: string; since: string } | null
+  restore_in_progress: boolean
+  backup_in_progress: boolean
+}
+
+export interface BackupTarget {
+  id: string
+  name: string
+  kind: string
+  config: Record<string, unknown>
+  has_credentials: boolean
+  location: string
+  is_default: boolean
+  enabled: boolean
+  last_error: string
+  backups_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BackupCadence {
+  frequency: "hourly" | "daily" | "weekly" | "monthly"
+  at: string
+  weekday: number
+  day: number
+}
+
+export interface BackupRetention {
+  max_count: number | null
+  max_age_days: number | null
+}
+
+export interface BackupSchedule {
+  id: string
+  name: string
+  components: BackupComponent[]
+  target: string
+  target_name: string
+  cadence: BackupCadence
+  cadence_label: string
+  retention: BackupRetention
+  notify_channels: string[]
+  enabled: boolean
+  last_run_at: string | null
+  next_run_at: string | null
+  last_backup: string | null
+  last_backup_status: BackupRunStatus | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BackupStep {
+  name: string
+  status: "running" | "success" | "failed"
+  started_at: string
+  finished_at: string | null
+  detail: string
+}
+
+export interface Backup {
+  id: string
+  kind: "manual" | "scheduled" | "pre_upgrade" | "pre_restore" | "uploaded"
+  schedule: string | null
+  schedule_name: string | null
+  target: string
+  target_name: string
+  target_kind: string
+  components: BackupComponent[]
+  status: BackupRunStatus
+  steps: BackupStep[]
+  filename: string
+  location: string
+  size: number | null
+  checksum: string
+  summary: {
+    version: string | null
+    created_at: string | null
+    deployment_name: string | null
+    hostname: string | null
+    media_files: number | null
+    counts: Record<string, number>
+  }
+  error: string
+  protected: boolean
+  created_by_name: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
+
+export interface RestorePreviewCheck {
+  name: string
+  ok: boolean
+  detail: string
+}
+
+export interface RestorePreview {
+  backup: string
+  manifest: Record<string, unknown>
+  components: BackupComponent[]
+  checks: RestorePreviewCheck[]
+  can_restore: boolean
+  counts: Record<string, number>
+  media_files: number | null
+}
+
+export interface RestoreRun {
+  id: string
+  backup: string
+  backup_filename: string
+  components: BackupComponent[]
+  status: BackupRunStatus
+  steps: BackupStep[]
+  safety_backup: string | null
+  error: string
+  created_by_name: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
+
+// ─── Scripts (/api/scripts/) ─────────────────────────────────────────────────
+
+export type ScriptLanguage = "python"
+export type ScriptVisibility = "owner" | "users" | "groups" | "global"
+export type ScriptRunStatus =
+  | "queued"
+  | "running"
+  | "success"
+  | "failed"
+  | "timeout"
+  | "canceled"
+export type ScriptParamType =
+  | "string"
+  | "text"
+  | "integer"
+  | "decimal"
+  | "boolean"
+  | "choice"
+  | "object"
+
+export interface ScriptParam {
+  name: string
+  label: string
+  type: ScriptParamType
+  required: boolean
+  default: unknown
+  choices: string[]
+  help: string
+  object_type: string
+}
+
+export interface Script {
+  id: string
+  name: string
+  slug: string
+  description: string
+  language: ScriptLanguage
+  source: string
+  params_schema: ScriptParam[]
+  token_scope: "full" | "read"
+  timeout_seconds: number
+  trusted: boolean
+  run_as: "caller" | "owner"
+  owner: string | null
+  owner_name: string | null
+  visibility: ScriptVisibility
+  shared_users: string[]
+  shared_groups: string[]
+  schedule_enabled: boolean
+  cadence: BackupCadence
+  cadence_label: string
+  next_run_at: string | null
+  retention: BackupRetention
+  schedule_params: Record<string, unknown>
+  /** When the schedule last fired. */
+  last_run_at: string | null
+  /** The newest run of any kind. */
+  last_run_time: string | null
+  last_run_status: ScriptRunStatus | null
+  run_count: number
+  enabled: boolean
+  permissions?: ObjectPerms
+  created_at: string
+  updated_at: string
+}
+
+export interface ScriptOutput {
+  id: string
+  name: string
+  content_type: string
+  size: number
+  created_at: string
+}
+
+export interface ScriptRun {
+  id: string
+  script: string
+  script_name: string
+  status: ScriptRunStatus
+  params: Record<string, unknown>
+  exit_code: number | null
+  error: string
+  scheduled: boolean
+  trusted: boolean
+  started_by_name: string | null
+  run_as_name: string | null
+  rq_job_id: string
+  started_at: string | null
+  finished_at: string | null
+  duration_seconds: number | null
+  truncated: boolean
+  outputs: ScriptOutput[]
+  created_at: string
+}
+
+export interface ScriptRunDetail extends ScriptRun {
+  log: string
+  source: string
+}
+
+// ─── Agent access (MCP) (/api/agent/) ────────────────────────────────────────
+
+export interface AgentSettings {
+  allowed_types: string[]
+  max_rows: number
+  log_retention_days: number
+  enabled: boolean
+  writes_enabled: boolean
+  known_types: string[]
+}
+
+export interface AgentCall {
+  id: string
+  tool: string
+  object_type: string
+  arguments: Record<string, unknown>
+  rows: number
+  wrote: boolean
+  ms: number
+  error: string
+  client: string
+  token_name: string
+  user_name: string | null
+  created_at: string
+}
+
+export interface AgentClientSnippet {
+  id: string
+  label: string
+  kind: "shell" | "json"
+  path?: string
+  snippet: string
+}
+
+export interface AgentConnect {
+  url: string
+  enabled: boolean
+  writes_enabled: boolean
+  clients: AgentClientSnippet[]
+}
+
+// ─── In-app chat (/api/assistant/, /ws/chat/) ────────────────────────────────
+
+export interface ChatStatus {
+  enabled: boolean
+  configured: boolean
+  model: string
+  writes_enabled: boolean
+  conversations: number
+}
+
+export interface ChatConversation {
+  id: string
+  title: string
+  model: string
+  message_count: number
+  last_message_at: string | null
+  created_at: string
+}
+
+export interface ChatMessageRow {
+  id: string
+  role: "user" | "assistant" | "tool" | "error"
+  text: string
+  tool: Record<string, unknown>
+  tokens_in: number
+  tokens_out: number
+  created_at: string
+}
+
+export interface ChatConversationDetail extends ChatConversation {
+  messages: ChatMessageRow[]
+}
+
+export interface ChatProviderOption {
+  kind: string
+  label: string
+  default_model: string
+  default_base_url: string
+  needs_key: boolean
+  hint: string
+}
+
+export interface ChatConnection {
+  ai_provider: string
+  ai_model: string
+  ai_base_url: string
+  ai_verify_tls: boolean
+  ai_api_key_set: boolean
+  providers: ChatProviderOption[]
 }

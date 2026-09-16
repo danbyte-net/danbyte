@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-from collections import defaultdict
+from datetime import timedelta
 
 from django.conf import settings
 
@@ -62,6 +62,90 @@ def _enrich(transitions: list) -> list[dict]:
             }
         )
     return out
+
+
+def _teams_card(text: str, url: str | None = None) -> dict:
+    """Wrap ``text`` in an Adaptive Card message envelope for Teams.
+
+    Teams cannot take Slack's bare ``{"text": ...}``: both the Workflows webhook
+    and Power Automate's "Post card in a chat or channel" deserialise the body
+    as an Adaptive Card and reject anything else with InvalidBotAdaptiveCard -
+    after the webhook has already answered 202, so the failure is invisible to
+    us. TextBlock renders a markdown subset, so the summary text goes in raw
+    like it does for Slack and Discord.
+    """
+    card = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [{"type": "TextBlock", "text": text, "wrap": True}],
+    }
+    if url:
+        card["actions"] = [
+            {"type": "Action.OpenUrl", "title": "View in Danbyte", "url": url}
+        ]
+    return {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
+                "content": card,
+            }
+        ],
+    }
+
+
+_TELEGRAM_API = "https://api.telegram.org"
+
+
+def _telegram_send(channel, text: str, timeout, proxies) -> None:
+    """Send one plain-text message through the Telegram Bot API.
+
+    Plain text, no ``parse_mode``: the summary carries device names and detail
+    strings that would otherwise have to be escaped, and Slack/Discord send the
+    same raw text today.
+
+    Telegram answers **HTTP 200** with ``{"ok": false, "description": …}`` for
+    logical failures (wrong chat id, bot never added to the group, topic gone),
+    so the status code alone is not delivery. The body decides, and its
+    description is raised so ``send_test`` can show the operator what to fix.
+
+    The bot token is a credential and lives in the URL, so nothing derived from
+    it - exception text included - leaves this function unredacted.
+    """
+    cfg = channel.config or {}
+    token = str((channel.secrets or {}).get("bot_token") or "").strip()
+    chat_id = str(cfg.get("chat_id") or "").strip()
+    if not token or not chat_id:
+        raise RuntimeError("Telegram needs a bot token and a chat ID.")
+    payload: dict = {"chat_id": chat_id, "text": text}
+    thread = cfg.get("message_thread_id")
+    if thread not in (None, ""):
+        try:
+            payload["message_thread_id"] = int(thread)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("Telegram topic/thread ID must be a number.") from exc
+    try:
+        resp = safe_post(
+            f"{_TELEGRAM_API}/bot{token}/sendMessage",
+            json=payload,
+            timeout=timeout,
+            proxies=proxies,
+        )
+        body = resp.json()
+    except Exception as exc:  # noqa: BLE001 - redact the token before it travels
+        raise RuntimeError(
+            f"Telegram request failed: {str(exc).replace(token, '***')}"
+        ) from None
+    if not isinstance(body, dict) or not body.get("ok"):
+        detail = ""
+        if isinstance(body, dict):
+            detail = str(body.get("description") or "")
+        raise RuntimeError(
+            f"Telegram rejected the message: {detail or f'HTTP {resp.status_code}'}"
+        )
+    log.info("telegram %s → chat %s", channel.name, chat_id)
 
 
 # ─── built-in channels ────────────────────────────────────────────────────
@@ -194,45 +278,98 @@ def _scope_allows(channel, ip_addr, ip_id=None) -> bool:
     return True
 
 
-def _status_channels(tenant_id, mode):
+def _status_channels(tenant_id, mode=None):
     from .models import NotificationChannel
 
-    return NotificationChannel.objects.filter(
+    qs = NotificationChannel.objects.filter(
         tenant_id=tenant_id, enabled=True, send_status_changes=True,
-        status_change_mode=mode,
     ).select_related("match_prefix", "match_ip")
+    if mode:
+        qs = qs.filter(status_change_mode=mode)
+    return qs
+
+
+def flapping_pairs(tenant_id) -> set:
+    """``{(ip_id, template_id)}`` of the tenant's checks flagged flapping. Their
+    changes are not mailed one by one - the flapping notice stands in for them
+    - and the check's alerts open and resolve without a message each time."""
+    from .models import CheckState
+
+    return set(
+        CheckState.objects.filter(tenant_id=tenant_id, flapping_since__isnull=False)
+        .values_list("target_ip_id", "template_id")
+    )
+
+
+# An instant channel never sends more often than this. A check on the fast
+# lane can change every few seconds; the first change goes out at once, the
+# ones that follow inside the window are coalesced into one message when it
+# has passed (the beat delivers it). Once the flap sweep has flagged the
+# check its changes stop being mailed at all.
+INSTANT_SPACING = timedelta(seconds=60)
+
+
+def _instant_due(ch, now) -> bool:
+    return not ch.status_change_last_run or now - ch.status_change_last_run >= INSTANT_SPACING
+
+
+def _pending_rows(ch, since, now):
+    """The channel's status changes since ``since`` that are not on a
+    flapping check, in scope, and of a wanted status."""
+    from .models import StateTransition
+
+    qs = (
+        StateTransition.objects.filter(tenant_id=ch.tenant_id, at__gt=since, at__lte=now)
+        .select_related("target_ip", "target_ip__prefix", "template")
+        .order_by("at")
+    )
+    wanted = ch.on_statuses or []
+    if wanted:
+        qs = qs.filter(to_status__in=wanted)
+    flapping = flapping_pairs(ch.tenant_id)
+    return [
+        t for t in qs
+        if (t.target_ip_id, t.template_id) not in flapping
+        and _scope_allows(ch, getattr(t.target_ip, "ip_address", None), t.target_ip_id)
+    ]
+
+
+def _deliver_status_changes(ch, rows: list, now) -> None:
+    """One message for ``rows`` on an instant channel, then stamp the send."""
+    events = _enrich(rows)
+    if ch.kind == "webhook":
+        _send_webhook(ch, events)
+    elif ch.kind == "email":
+        _send_email(ch, events)
+    ch.status_change_last_run = now
+    ch.save(update_fields=["status_change_last_run", "updated_at"])
 
 
 def dispatch_status_changes(transitions: list, now=None) -> None:
-    """Instant path: email/post the just-observed status changes to every
-    ``send_status_changes`` channel in **instant** mode. Coalesced per batch:
-    one message per channel carrying all of the batch's matching changes.
+    """Instant path: email/post status changes to every ``send_status_changes``
+    channel in **instant** mode, at most once per :data:`INSTANT_SPACING` per
+    channel. A channel that is due sends everything since its last message
+    (this batch and whatever was held); one that is not due sends nothing now
+    and the beat catches up. Changes on flapping checks are left out.
 
     Called at the end of ``process_transitions`` (every check batch). Best-effort
     per channel - a delivery error can never fail the batch.
     """
+    from django.utils import timezone
+
     if not transitions:
         return
-    events = _enrich(transitions)
-    by_tenant: dict[str, list[dict]] = defaultdict(list)
-    for e in events:
-        by_tenant[e["tenant_id"]].append(e)
-
-    for tenant_id, tenant_events in by_tenant.items():
+    now = now or timezone.now()
+    for tenant_id in {t.tenant_id for t in transitions}:
         for ch in _status_channels(tenant_id, "instant"):
-            wanted = ch.on_statuses or []
-            relevant = [
-                e for e in tenant_events
-                if (not wanted or e["to_status"] in wanted)
-                and _scope_allows(ch, e["target_ip"], e["target_ip_id"])
-            ]
-            if not relevant:
+            if not _instant_due(ch, now):
+                continue
+            since = ch.status_change_last_run or (now - INSTANT_SPACING)
+            rows = _pending_rows(ch, since, now)
+            if not rows:
                 continue
             try:
-                if ch.kind == "webhook":
-                    _send_webhook(ch, relevant)
-                elif ch.kind == "email":
-                    _send_email(ch, relevant)
+                _deliver_status_changes(ch, rows, now)
             except Exception:  # noqa: BLE001 - one channel must not break others
                 log.exception("status channel %s (%s) failed", ch.name, ch.kind)
 
@@ -242,14 +379,29 @@ def run_due_status_change_digests(now=None) -> int:
     mode whose interval has elapsed, send a mini-digest of the status changes in
     the window and stamp ``status_change_last_run``. Driven by the minute beat.
     """
-    from datetime import timedelta
-
     from django.utils import timezone
 
-    from .models import NotificationChannel, StateTransition
+    from .models import NotificationChannel
 
     now = now or timezone.now()
     sent = 0
+    # Instant channels that held changes inside their spacing window: the
+    # batch that would have sent them is gone, so the beat delivers them.
+    for ch in NotificationChannel.objects.filter(
+        enabled=True, send_status_changes=True, status_change_mode="instant",
+        status_change_last_run__isnull=False,
+    ).select_related("match_prefix", "match_ip"):
+        if not _instant_due(ch, now):
+            continue
+        rows = _pending_rows(ch, ch.status_change_last_run, now)
+        if not rows:
+            continue
+        try:
+            _deliver_status_changes(ch, rows, now)
+            sent += 1
+        except Exception:  # noqa: BLE001 - one channel must not break others
+            log.exception("status channel %s (%s) failed", ch.name, ch.kind)
+
     channels = NotificationChannel.objects.filter(
         enabled=True, send_status_changes=True,
         status_change_mode="batched",
@@ -259,22 +411,7 @@ def run_due_status_change_digests(now=None) -> int:
         if ch.status_change_last_run and now - ch.status_change_last_run < interval:
             continue
         since = ch.status_change_last_run or (now - interval)
-        qs = (
-            StateTransition.objects.filter(
-                tenant_id=ch.tenant_id, at__gt=since, at__lte=now
-            )
-            .select_related("target_ip", "target_ip__prefix", "template")
-            .order_by("at")
-        )
-        wanted = ch.on_statuses or []
-        if wanted:
-            qs = qs.filter(to_status__in=wanted)
-        rows = [
-            t for t in qs
-            if _scope_allows(
-                ch, getattr(t.target_ip, "ip_address", None), t.target_ip_id
-            )
-        ]
+        rows = _pending_rows(ch, since, now)
         if rows:
             try:
                 _send_status_digest(ch, rows, since, now)
@@ -310,6 +447,152 @@ def _send_status_digest(channel, rows: list, since, now) -> None:
         subject, recipients, html_body=html, text_body=text,
         tenant=channel.tenant_id,
     )
+
+
+# ── flapping ─────────────────────────────────────────────────────────────────
+
+def _recent_chain(state, limit: int = 6) -> list:
+    """The last few status changes of one check, oldest first."""
+    from .models import StateTransition
+
+    rows = list(
+        StateTransition.objects.filter(
+            tenant_id=state.tenant_id, target_ip_id=state.target_ip_id,
+            template_id=state.template_id,
+        ).order_by("-at")[:limit]
+    )
+    rows.reverse()
+    return rows
+
+
+def _target_url(dep, state) -> str | None:
+    base = (getattr(dep, "public_base_url", "") or "").rstrip("/")
+    return f"{base}/ips/{state.target_ip_id}?tab=monitoring" if base else None
+
+
+def flapping_email(state, event: str, *, count: int = 0, window_minutes: int = 0,
+                   user=None, url: str | None = None, chain: list | None = None,
+                   name: str | None = None) -> tuple[str, str, str]:
+    """``(subject, html, text)`` for a flapping notice. ``event`` is
+    ``flapping`` (just flagged), ``settled`` (auto-cleared after a quiet
+    spell) or ``confirmed`` (an operator pressed Confirm not flapping)."""
+    from core import email as ek
+
+    name = name or _deployment_name()
+    ip = getattr(state.target_ip, "ip_address", str(state.target_ip_id))
+    dns = getattr(state.target_ip, "dns_name", "") or ""
+    device = getattr(getattr(state.target_ip, "assigned_device", None), "name", "") or ""
+    check = getattr(state.template, "name", None) or state.kind
+    what = f"{ip} · {check}"
+    if event == "flapping":
+        title = f"Flapping: {what}"
+        lead = (f"This check went bad {count} times in the last {window_minutes} minutes. "
+                f"{name} has stopped mailing each change; the next message about it "
+                f"comes when it settles, or when someone confirms it is fine.")
+        kicker = "Flapping"
+    elif event == "confirmed":
+        who = getattr(user, "get_username", lambda: "")() or "an operator"
+        title = f"Not flapping: {what}"
+        lead = (f"{who} confirmed this check is fine. Changes are mailed again; the flag "
+                f"comes back only on new evidence.")
+        kicker = "Flapping · confirmed"
+    else:
+        title = f"Settled: {what}"
+        lead = "This check has been quiet for a while and is no longer flagged. Changes are mailed again."
+        kicker = "Flapping · settled"
+    rows = [("Target", ek.escape(ip) + (f" <span style=\"color:#71717a\">{ek.escape(dns)}</span>" if dns else ""))]
+    if device:
+        rows.append(("Device", ek.escape(device)))
+    rows.append(("Check", ek.escape(str(check))))
+    rows.append(("Now", ek.pill(state.status, state.status)))
+    if event == "flapping":
+        rows.append(("Changes", f"<b>{count}</b> in {window_minutes} min"))
+    chain = chain if chain is not None else _recent_chain(state)
+    chain_html = ""
+    if chain:
+        cells = []
+        for i, t in enumerate(chain):
+            if i:
+                cells.append('<td style="padding:0 6px;color:#a1a1aa;">&rarr;</td>')
+            cells.append(
+                f'<td style="text-align:center;">{ek.pill(t.to_status, t.to_status)}'
+                f'<div style="margin-top:3px;font-size:10px;color:#71717a;white-space:nowrap;">'
+                f'{ek.escape(f"{t.at:%H:%M:%S}")}</div></td>'
+            )
+        chain_html = (
+            ek.section("Last changes")
+            + '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;"><tr>'
+            + "".join(cells) + "</tr></table>"
+        )
+    body = ek.lead(lead) + ek.kv_table(rows) + chain_html
+    if url:
+        body += ek.email_button(url, "Open in " + name)
+    html = ek.render_layout(title, body, deployment_name=name, kicker=kicker,
+                            preheader=lead.split(". ")[0])
+    text_lines = [title, "", lead, "", f"Target: {ip}" + (f" ({dns})" if dns else ""),
+                  f"Check: {check}", f"Now: {state.status}"]
+    if chain:
+        text_lines.append("Last changes: " + " -> ".join(
+            f"{t.to_status} {t.at:%H:%M:%S}" for t in chain))
+    if url:
+        text_lines += ["", url]
+    return f"{name} - {title}", html, "\n".join(text_lines) + "\n"
+
+
+def notify_flapping(state, event: str, *, count: int = 0, window_minutes: int = 0,
+                    user=None) -> int:
+    """Tell the status-change channels in scope of the check's address that it
+    is flapping (or settled / confirmed): one message per episode instead of
+    one per change. Instant and batched channels alike, at once - a flap is
+    rare and the point is that nothing else about the check will be sent.
+    Returns how many channels were told."""
+    from .models import CheckState
+
+    if not isinstance(state, CheckState):
+        return 0
+    try:
+        state = CheckState.objects.select_related(
+            "target_ip", "target_ip__assigned_device", "template"
+        ).get(pk=state.pk)
+    except CheckState.DoesNotExist:
+        return 0
+    dep = _deployment()
+    url = _target_url(dep, state)
+    ip_addr = getattr(state.target_ip, "ip_address", None)
+    told = 0
+    subject = html = text = None
+    for ch in _status_channels(state.tenant_id):
+        if not _scope_allows(ch, ip_addr, state.target_ip_id):
+            continue
+        try:
+            if ch.kind == "webhook":
+                _send_webhook(ch, [{
+                    "event": event, "tenant_id": str(state.tenant_id),
+                    "target_ip_id": str(state.target_ip_id), "target_ip": ip_addr,
+                    "template_id": str(state.template_id) if state.template_id else None,
+                    "template": getattr(state.template, "name", None), "kind": state.kind,
+                    "status": state.status, "count": count, "window_minutes": window_minutes,
+                    "url": url,
+                }])
+            elif ch.kind == "email":
+                recipients = resolve_recipients(ch)
+                if not recipients:
+                    continue
+                if subject is None:
+                    subject, html, text = flapping_email(
+                        state, event, count=count, window_minutes=window_minutes,
+                        user=user, url=url,
+                    )
+                from core.email import send_html_email
+
+                send_html_email(subject, recipients, html_body=html, text_body=text,
+                                tenant=ch.tenant_id)
+            else:
+                continue
+            told += 1
+        except Exception:  # noqa: BLE001 - one channel must not break others
+            log.exception("flapping notice via %s (%s) failed", ch.name, ch.kind)
+    return told
 
 
 def notify_event(
@@ -357,11 +640,80 @@ def notify_event(
             log.exception("notify_event channel %s (%s) failed", ch.name, ch.kind)
 
 
+def notify_plain(channel, subject: str, text: str = "", payload: dict | None = None) -> None:
+    """One message to one channel of any kind, outside the alert pipeline -
+    backups and restores use it. ``payload`` rides along on webhooks and sets
+    ``severity`` / ``dedup_key`` for PagerDuty. Best-effort: never raises."""
+    dep = _deployment()
+    cfg = channel.config or {}
+    kind = channel.kind
+    timeout = _timeout(dep)
+    proxies = _proxies(dep)
+    payload = dict(payload or {})
+    body = f"{subject}\n{text}" if text else subject
+    try:
+        if kind == "email":
+            recipients = resolve_recipients(channel)
+            if recipients:
+                from core import email as ek
+
+                html = ek.render_layout(
+                    subject,
+                    ek.callout(text or subject, "warning" if payload.get("severity") == "critical" else "info"),
+                    deployment_name=_deployment_name(),
+                    kicker=str(payload.get("kicker") or "Danbyte"),
+                    preheader=(text or subject)[:120],
+                )
+                ek.send_html_email(
+                    subject, recipients, html_body=html, text_body=body + "\n", tenant=channel.tenant_id
+                )
+        elif kind == "slack":
+            if cfg.get("url"):
+                safe_post(cfg["url"], json={"text": body}, timeout=timeout, proxies=proxies)
+        elif kind == "teams":
+            if cfg.get("url"):
+                safe_post(cfg["url"], json=_teams_card(body), timeout=timeout, proxies=proxies)
+        elif kind == "discord":
+            if cfg.get("url"):
+                safe_post(cfg["url"], json={"content": body}, timeout=timeout, proxies=proxies)
+        elif kind == "telegram":
+            _telegram_send(channel, body, timeout, proxies)
+        elif kind == "pagerduty":
+            key = cfg.get("routing_key")
+            if key:
+                safe_post(
+                    "https://events.pagerduty.com/v2/enqueue",
+                    json={
+                        "routing_key": key,
+                        "event_action": "resolve" if payload.get("resolved") else "trigger",
+                        "dedup_key": str(payload.get("dedup_key") or subject)[:255],
+                        "payload": {
+                            "summary": subject,
+                            "severity": _PD_SEV.get(str(payload.get("severity")), "warning"),
+                            "source": _deployment_name(),
+                            "component": str(payload.get("kind") or "danbyte"),
+                        },
+                    },
+                    timeout=timeout,
+                    proxies=proxies,
+                )
+        elif kind == "webhook":
+            if cfg.get("url"):
+                safe_post(
+                    cfg["url"],
+                    json={"channel": channel.name, "event": {"subject": subject, "text": text, **payload}},
+                    timeout=timeout,
+                    proxies=proxies,
+                )
+    except Exception:  # noqa: BLE001 - one channel must not break the caller
+        log.exception("notify_plain channel %s (%s) failed", channel.name, kind)
+
+
 # ─── alert routing (A3) ────────────────────────────────────────────────────
 # Alerts (not raw transitions) are the notification source. Each firing/resolved
 # alert is routed to the tenant's channels that pass the severity + status gate,
 # and rendered for the channel's transport (Slack/Teams/Discord/PagerDuty/
-# webhook/email).
+# webhook/email/Telegram).
 
 _SEV_RANK = {"info": 0, "warning": 1, "critical": 2}
 _PD_SEV = {"critical": "critical", "warning": "warning", "info": "info"}
@@ -651,13 +1003,18 @@ def _dispatch_to_channel(channel, alert, event: str, ip: str) -> None:
     elif kind == "teams":
         if cfg.get("url"):
             safe_post(
-                cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies
+                cfg["url"],
+                json=_teams_card(text, url),  # the link is a card action, not text
+                timeout=timeout,
+                proxies=proxies,
             )
     elif kind == "discord":
         if cfg.get("url"):
             safe_post(
                 cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies
             )
+    elif kind == "telegram":
+        _telegram_send(channel, linked, timeout, proxies)
     elif kind == "pagerduty":
         key = cfg.get("routing_key")
         if key:
@@ -795,12 +1152,22 @@ def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
                 text_body=body + "\n",
                 tenant=channel.tenant_id,
             )
-    elif channel.kind in ("slack", "teams"):
+    elif channel.kind == "slack":
         if cfg.get("url"):
             safe_post(cfg["url"], json={"text": linked}, timeout=timeout, proxies=proxies)
+    elif channel.kind == "teams":
+        if cfg.get("url"):
+            safe_post(
+                cfg["url"],
+                json=_teams_card(text, url),  # the link is a card action, not text
+                timeout=timeout,
+                proxies=proxies,
+            )
     elif channel.kind == "discord":
         if cfg.get("url"):
             safe_post(cfg["url"], json={"content": linked}, timeout=timeout, proxies=proxies)
+    elif channel.kind == "telegram":
+        _telegram_send(channel, linked, timeout, proxies)
     elif channel.kind == "webhook":
         if cfg.get("url"):
             safe_post(

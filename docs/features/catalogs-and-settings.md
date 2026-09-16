@@ -49,6 +49,31 @@ your devices and prefixes use too. Manage them all under **Statuses**.
     The monitoring **skip** policy can name statuses whose addresses aren't
     checked - point it at *Reserved*, say, and reserved IPs won't be polled.
 
+### Naming a monitoring check state
+
+A check always ends in one of six states - *Up*, *Degraded*, *Down*,
+*Unknown*, *Stale*, *Skipped*. Those are what alert rules, escalation and the
+Outposts run on, and they never change. What you **call** them is yours: tick
+**Speaks for a check state** on a status, pick the state, and that status's
+name and colour replace the shipped ones everywhere monitoring is shown - the
+Monitoring column and its split badge, the roll-up on a device or prefix, the
+filter rail, and the charts on the Monitoring dashboard. Call *Down*
+"Critical" in your own red and the whole product says Critical.
+
+Two rules follow from what actually gets stored:
+
+- **One status per state.** A check records the state, not the status, so a
+  second claimant would be indistinguishable after the fact. The form says
+  which status already has a state when you try to take it.
+- **The state is still what travels.** Webhook payloads, the notification
+  digest and the API keep sending `down` - the name is presentation, so a
+  script you wrote against Danbyte doesn't break when somebody renames a
+  status.
+
+A status that speaks for a state also becomes pickable wherever a check state
+is - mapping [Zabbix](../monitoring/zabbix.md) severities onto Danbyte
+statuses, for one, which then reads in your vocabulary rather than ours.
+
 ## IP roles
 
 An **IP role** describes the functional purpose of an address - for example
@@ -62,6 +87,33 @@ Roles carry their own flags:
 | **Gateway role** | Marks this as *the* gateway role, which [gateway autospawn](gateway-autospawn.md) uses to create gateway addresses. At most one per tenant. |
 | **Virtual** | Marks the role as virtual (e.g. a VIP rather than a physical interface address). |
 
+## Finding a setting
+
+**Settings** opens on a grid of every page you can reach, grouped by what a
+setting is *about* - Identity & access, Integrations, Notifications, Your
+data, Devices & polling, This install - rather than by which admin tier owns
+it. Which tier a setting belongs to is a control on the page itself: a page
+that exists at more than one scope, like Email or Directory, carries a
+**Deployment / This tenant / This site** switch, and a card that is
+inheriting shows the value it would fall back to.
+
+The **search box** above the sidebar filters both the grid and the rail as
+you type, and matches individual settings as well as pages: type "session
+timeout" and the result is the **Sessions** card, not a list of pages to go
+hunting through. Picking one opens its page scrolled to that card. It
+matches a name, its description and its keywords, so "relay", "587" or
+"starttls" all find the mail server.
+
+The [global search](search-and-macs.md) reaches the same catalog, so you can
+type "session timeout" from anywhere without opening Settings first.
+
+Every page and card is declared once in
+`frontend/src/lib/settings-catalog.json` - JSON because two languages read
+it: the SPA builds both navigations and both searches from it, and the
+assistant answers "where do I change X" from the same file. A page cannot
+appear in one and be missing from another, and a test fails the build if a
+card is renamed there without being renamed in the page that draws it.
+
 ## Managing the catalogs
 
 Both catalogs work the same way: a list page (filterable by their flags), plus
@@ -71,18 +123,26 @@ in use, Danbyte warns you how many addresses reference it first.
 
 ## Display preferences
 
-Separately, your own **Preferences → Display** page controls how Danbyte looks
-and behaves for you:
+Separately, your own **Preferences** page controls how Danbyte looks and
+behaves for you. It is a set of small cards - *Appearance*, *Tables*, *Dates
+and times*, *Navigation*, *Task emails*, *Space map* - each with its own
+**Save** button; a card shows *Unsaved changes* until you press it. Only
+*Appearance* applies as you change it: theme and link styling live in the
+browser, not on your profile. Below the cards, *Table layouts* lists every
+table grouped by area, with a filter, and a **Reset** per table to drop your
+own column layout back to the tenant default.
 
 | Setting | What it does |
 |---|---|
 | **Theme** | Light or dark - applied immediately. |
 | **Table density** | Comfortable or compact rows. |
-| **Page size** | How many rows per page in tables. |
+| **Page size** | How many rows per page in tables - 10 to 2000. |
 | **Timestamps** | Relative ("3h ago") or absolute in tables - the exact form is always on hover. |
 | **Date format** | How calendar dates render: ISO (`2026-01-31`), `31.01.2026`, `01/31/2026`, `31 Jan 2026`, … |
 | **Clock** | 24-hour (`14:30`) or 12-hour (`2:30 PM`). |
 | **Timezone** | The IANA timezone times render in (e.g. `Europe/Copenhagen`). The list comes from the server's own timezone database, so every offered zone is one it accepts; renamed zones (`Europe/Kiev` → `Europe/Kyiv`) are converted on save. |
+| **Landing page** | Where Danbyte opens right after you log in. |
+| **One menu category open at a time** | Opening a sidebar category (or landing on one of its pages) closes the others, so only the section you are in is unfolded. Off by default: categories stay as you left them, and *Collapse all* / *Expand all* at the top of the menu still work either way. |
 | **Striped rows** | Alternating row shading; on by default. |
 | **Confirm before deleting** | Whether delete actions ask for confirmation. |
 
@@ -90,9 +150,9 @@ These are saved to your own profile, so they follow you and don't affect other
 users. Each acts as a personal override on top of the tenant default.
 
 Date format, clock, and timezone default to **Auto (tenant default)**: they
-follow the tenant's *Date & time* group under **Settings → This tenant**,
-which in turn inherits the deployment default (**Settings → Deployment →
-General**) until a tenant admin overrides it. Pick an explicit value to
+follow the *Date & time* card under **Settings → Tenant policy**, which in
+turn inherits the deployment default (**Settings → Branding & identity →
+Date & time**) until a tenant admin overrides it. Pick an explicit value to
 override just for yourself; set it back to Auto to inherit again. Date pickers
 across the app display dates in whatever format resolves for you (the value
 stored is always ISO).

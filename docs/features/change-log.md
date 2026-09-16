@@ -28,7 +28,7 @@ the UUID.
 
 | Place | What it shows |
 |---|---|
-| **Governance → Change log** | The global feed across the whole tenant. Filter by action, object type, user, or **source** - UI (a browser session), API (a token request), or System (workers and shell) - and search. Click any entry to expand its diff. Filters and the page number live in the URL, so the back button returns to the view you left and a filtered view can be shared as a link. |
+| **Governance → Change log** | The global feed across the whole tenant. Filter by action, object type, user, or **source** - UI (a browser session), API (a token request), Assistant (a write the in-app assistant made), or System (workers and shell) - and search. An Assistant entry still names the person who asked for it: it acts with their access, not its own. Click any entry to expand its diff. Filters and the page number live in the URL, so the back button returns to the view you left and a filtered view can be shared as a link. |
 | **Change log tab** on a detail page | Just that one object's history. |
 
 One name everywhere: the global page and the per-object tab are both called
@@ -55,6 +55,11 @@ The change log covers the things people edit:
 
 Bulk edits (changing many rows at once) are recorded too - one entry per affected
 object, each with its own diff.
+
+Not every writer is a person. An [Outpost](../monitoring/outposts.md) writes as
+itself, and is named that way - `outpost:probe-1` - with no linked user account,
+because there is no user to link. The name is the whole record of who, which is
+what you want it to say.
 
 !!! note
     High-volume automatic data - like individual monitoring check results - is

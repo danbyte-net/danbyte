@@ -24,6 +24,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
+import { useOuiRanges } from "@/components/oui-ranges-dialog"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -55,6 +56,7 @@ export function MacObjectDialog({
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [interfaceId, setInterfaceId] = useState<string | null>(null)
   const [description, setDescription] = useState("")
+  const [vendorOverride, setVendorOverride] = useState("")
   const [tagIds, setTagIds] = useState<number[]>([])
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({})
 
@@ -67,6 +69,7 @@ export function MacObjectDialog({
       setDeviceId(object.assigned_interface?.device.id ?? null)
       setInterfaceId(object.assigned_interface?.id ?? null)
       setDescription(object.description)
+      setVendorOverride(object.vendor_override ?? "")
       setTagIds(object.tags.map((t) => t.id))
       setCustomFields(object.custom_fields ?? {})
     } else {
@@ -74,6 +77,7 @@ export function MacObjectDialog({
       setDeviceId(null)
       setInterfaceId(null)
       setDescription("")
+      setVendorOverride("")
       setTagIds([])
       setCustomFields({})
     }
@@ -89,6 +93,17 @@ export function MacObjectDialog({
     enabled: !!deviceId,
   })
 
+  const ranges = useOuiRanges(open && !isEdit)
+  const allocate = useMutation({
+    mutationFn: (rangeId: string) =>
+      api<{ mac: string }>(`/api/oui-ranges/${rangeId}/next/`),
+    onSuccess: (r) => setMac(r.mac),
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
+  })
+
   const canSubmit = mac.trim().length > 0
 
   const m = useMutation({
@@ -97,6 +112,7 @@ export function MacObjectDialog({
         mac_address: mac.trim(),
         assigned_interface_id: interfaceId,
         description: description.trim(),
+        vendor_override: vendorOverride.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
       }
@@ -150,6 +166,18 @@ export function MacObjectDialog({
             placeholder="00:1b:44:11:3a:b7"
             error={fieldErrors.mac_address}
           />
+          {!isEdit && (ranges.data?.results.length ?? 0) > 0 && (
+            <FormSelect
+              label="Next free in range"
+              value={null}
+              onChange={(v) => v && allocate.mutate(v)}
+              placeholder={allocate.isPending ? "Allocating…" : "Pick a range"}
+              options={(ranges.data?.results ?? []).map((r) => ({
+                value: r.id,
+                label: `${r.prefix} · ${r.vendor}`,
+              }))}
+            />
+          )}
           <div className="grid grid-cols-2 gap-3">
             <DevicePicker
               value={deviceId}
@@ -178,6 +206,13 @@ export function MacObjectDialog({
             onChange={setDescription}
             placeholder="e.g. NIC1 - replaced 2026-06"
             error={fieldErrors.description}
+          />
+          <FormText
+            label="Vendor"
+            value={vendorOverride}
+            onChange={setVendorOverride}
+            placeholder="Resolved from the OUI table when blank"
+            error={fieldErrors.vendor_override}
           />
           <FormTags label="Tags" value={tagIds} onChange={setTagIds} />
           <CustomFieldInputs

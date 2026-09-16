@@ -138,7 +138,7 @@ function Body({ range: r }: { range: IPRange }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
-        { value: "available", label: "Addresses" },
+        { value: "available", label: "Addresses", count: r.size ?? undefined },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

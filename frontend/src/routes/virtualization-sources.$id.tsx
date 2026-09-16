@@ -197,6 +197,22 @@ function SourceDetailPage() {
     },
     { label: "Hosts as devices", value: source.sync_hosts ? "Yes" : "No" },
     { label: "Platforms", value: source.sync_platforms ? "Yes" : "No" },
+    {
+      label: "Interface MTU",
+      value: source.sync_vm_interface_mtu ? "Yes" : "No",
+    },
+    {
+      label: "Powered-off VMs",
+      value: source.skip_offline_vms ? "Skipped" : "Synced",
+    },
+    {
+      label: "Delete removed VMs",
+      value: source.auto_prune
+        ? source.auto_prune_after_days === 0
+          ? "On the next sync"
+          : `After ${source.auto_prune_after_days} days missing`
+        : "No - kept and flagged",
+    },
     ...(source.kind === "vcenter"
       ? [
           {

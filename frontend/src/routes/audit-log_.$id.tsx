@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
+import { VIA_LABEL } from "@/lib/audit-source"
 import { objectDetailRoute, objectListRoute } from "@/lib/object-routes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -84,6 +85,14 @@ function ChangeLogDetail() {
       ),
     },
     { label: "User", value: e.user_name || "system" },
+    {
+      label: "Source",
+      value: e.via ? (
+        <Badge variant="outline">{VIA_LABEL[e.via] ?? e.via}</Badge>
+      ) : (
+        dash
+      ),
+    },
     {
       label: "Action",
       value: (

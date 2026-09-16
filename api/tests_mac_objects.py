@@ -10,7 +10,17 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from api.models import Device, DeviceType, Interface, MACAddress, Manufacturer
+from api.models import (
+    Cluster,
+    ClusterType,
+    Device,
+    DeviceType,
+    Interface,
+    MACAddress,
+    Manufacturer,
+    VirtualMachine,
+    VMInterface,
+)
 from core.models import Organization, Tenant
 
 User = get_user_model()
@@ -114,3 +124,21 @@ class MacAggregationTests(APITestCase):
         resp = self.client.get("/api/macs/")
         macs = {r["mac"] for r in resp.json()["results"]}
         self.assertNotIn("11:22:33:44:55:66", macs)
+
+    def test_vm_interface_mac_is_listed_and_resolves(self):
+        ct = ClusterType.objects.create(tenant=self.tenant, name="c", slug="c")
+        cl = Cluster.objects.create(tenant=self.tenant, name="C1", type=ct)
+        vm = VirtualMachine.objects.create(tenant=self.tenant, name="vm1", cluster=cl)
+        vi = VMInterface.objects.create(
+            vm=vm, name="Network adapter 1", mac_address="00:50:56:82:04:ea"
+        )
+        rows = {r["mac"]: r for r in self.client.get("/api/macs/").json()["results"]}
+        row = rows["00:50:56:82:04:ea"]
+        self.assertEqual(row["interfaces"], [])
+        self.assertEqual(row["vm_interfaces"][0]["vm"]["name"], "vm1")
+        r = self.client.get("/api/macs/00:50:56:82:04:ea/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["vm_interfaces"][0]["id"], str(vi.id))
+        self.assertTrue(r.json()["vm_interfaces"][0]["enabled"])
+        # every device-side row still carries the (empty) key
+        self.assertEqual(rows["aa:bb:cc:dd:ee:01"]["vm_interfaces"], [])

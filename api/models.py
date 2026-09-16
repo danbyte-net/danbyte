@@ -4,6 +4,7 @@ import uuid
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -2165,14 +2166,27 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     class Meta:
         ordering = ["vlan_id"]
         constraints = [
-            # VID is unique within a group; ungrouped VLANs (NULL group) are
-            # unique per tenant. nulls_distinct=False makes the NULL-group
-            # bucket behave like a real value for uniqueness.
+            # A VLAN ID is an L2 namespace, and the namespace is either a
+            # group or a site - never the whole tenant. Kyiv VLAN 105 and
+            # Warsaw VLAN 105 are different broadcast domains that happen to
+            # share a number, and refusing the second one was wrong (#159).
+            #
+            # Grouped: the group is the namespace, across every site it
+            # spans - that is what a group is for.
             models.UniqueConstraint(
                 fields=["tenant", "group", "vlan_id"],
+                condition=models.Q(group__isnull=False),
+                name="uniq_vlan_group_vid",
+            ),
+            # Ungrouped: the site is the namespace. nulls_distinct=False
+            # makes the site-less bucket behave like a real value, so VLANs
+            # with no site at all stay unique per tenant.
+            models.UniqueConstraint(
+                fields=["tenant", "site", "vlan_id"],
+                condition=models.Q(group__isnull=True),
                 nulls_distinct=False,
-                name="uniq_vlan_tenant_group_vid",
-            )
+                name="uniq_vlan_site_vid",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -2761,12 +2775,33 @@ class Status(_LabeledChoice):
                    "port utilization - the hardware isn't there (interface "
                    "'Not present' / 'Decommissioning')."),
     )
+    monitoring_state = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text=(
+            "The monitoring check state this status speaks for - blank means "
+            "it is not a monitoring status. Set, and the status replaces that "
+            "state's shipped name and colour wherever monitoring is shown, and "
+            "becomes pickable where a check state is (a Zabbix severity map, "
+            "say). A check still records one of the six states, so at most one "
+            "status per tenant may claim each."
+        ),
+    )
 
     class Meta(_LabeledChoice.Meta):
         verbose_name_plural = "statuses"
         constraints = [
             models.UniqueConstraint(fields=["tenant", "slug"],
                                     name="uniq_status_tenant_slug"),
+            # One status per check state: a CheckState stores the state, not
+            # the status, so two claimants would be indistinguishable after
+            # ingest and the badge would have to guess.
+            models.UniqueConstraint(
+                fields=["tenant", "monitoring_state"],
+                condition=~models.Q(monitoring_state=""),
+                name="uniq_status_tenant_monitoring_state",
+            ),
         ]
 
     def clean(self):
@@ -2785,6 +2820,13 @@ class Status(_LabeledChoice):
             raise ValidationError(
                 {"default_for": f"Must be a subset of available_to: {', '.join(not_in)}"}
             )
+        if self.monitoring_state:
+            from .status_registry import MONITORING_STATE_VALUES
+
+            if self.monitoring_state not in MONITORING_STATE_VALUES:
+                raise ValidationError(
+                    {"monitoring_state": f"Unknown check state: {self.monitoring_state}"}
+                )
 
 
 class Zone(_LabeledChoice, CustomFieldsMixin, TaggableMixin):
@@ -3024,6 +3066,9 @@ class MACAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
         help_text="The interface that bears this MAC, if known.",
     )
     description = models.CharField(max_length=255, blank=True)
+    # Blank = resolve the vendor from the OUI table; set for hardware whose
+    # prefix is missing, wrong, or locally administered.
+    vendor_override = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["mac_address"]
@@ -3043,6 +3088,86 @@ class MACAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
     def __str__(self) -> str:
         return self.mac_address
 
+
+
+class OuiPrefix(TimestampedModel):
+    """A MAC prefix → vendor row (#141).
+
+    ``tenant`` NULL is the deployment-wide IEEE registry, filled only by the
+    OUI import (never edited by hand). A tenant row is a **custom range** an
+    organisation owns - e.g. a locally-administered block a VM cluster hands
+    out - and it beats the registry at the same prefix length. ``prefix`` is
+    lowercase hex with no separators; ``bits`` is its length in bits.
+    """
+
+    SOURCE_CHOICES = [("ieee", "IEEE registry"), ("custom", "Custom range")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="oui_prefixes",
+        null=True, blank=True,
+    )
+    prefix = models.CharField(max_length=11, db_index=True)
+    bits = models.PositiveSmallIntegerField()
+    vendor = models.CharField(max_length=255)
+    source = models.CharField(max_length=8, choices=SOURCE_CHOICES, default="custom")
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["prefix"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "prefix"],
+                name="uniq_ouiprefix_tenant_prefix",
+                nulls_distinct=False,
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.display_prefix} {self.vendor}"
+
+    @property
+    def display_prefix(self) -> str:
+        p = self.prefix
+        return ":".join(p[i : i + 2] for i in range(0, len(p), 2))
+
+    def save(self, *args, **kwargs):
+        self.prefix = self.prefix.strip().lower()
+        self.bits = len(self.prefix) * 4
+        super().save(*args, **kwargs)
+
+
+class OuiImport(TimestampedModel):
+    """One run of the IEEE registry import - deployment-wide, pulled off the
+    RQ ``low`` queue so the settings card can poll it."""
+
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("success", "Success"),
+        ("failed", "Failed"),
+    ]
+    SOURCE_CHOICES = [("upload", "Uploaded CSV"), ("url", "Fetched from URL")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.CharField(max_length=8, choices=SOURCE_CHOICES, default="upload")
+    source_url = models.CharField(max_length=512, blank=True, default="")
+    file = models.FileField(upload_to="oui-imports/", blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    #: {"done": n, "total": n, "created": n, "updated": n, "removed": n}
+    progress = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"OUI import {self.status} ({self.created_at:%Y-%m-%d})"
 
 class RearPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """The trunk side of a patch panel - ``positions`` strands, each one a
@@ -4905,6 +5030,100 @@ class ServiceTemplate(ProtocolPortsMixin, NumIdMixin, TimestampedModel, CustomFi
         return self.name
 
 
+class NATRule(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A NAT mapping - a port forward, a 1:1, a source NAT (#151).
+
+    Documentation, not configuration: Danbyte records what the firewall is
+    doing so the next person can answer "what is 203.0.113.10:443?" without
+    reading a rule base they may not have access to. Nothing here is pushed
+    anywhere.
+
+    Both ends point at real :class:`IPAddress` rows wherever they exist, so a
+    public address's page can show what it forwards to and an internal
+    server's page can show what reaches it. Either end may be blank: the
+    outside address of a masquerade rule is the firewall's own, and an
+    address you have not recorded yet should not stop you writing the rule
+    down.
+    """
+
+    KIND_CHOICES = [
+        ("dnat", "Destination NAT (port forward)"),
+        ("snat", "Source NAT"),
+        ("static", "Static (1:1) NAT"),
+        ("masquerade", "Masquerade"),
+    ]
+    #: "any" and "tcp-udp" are both real firewall choices and mean different
+    #: things - one rule for every protocol, versus one for the two that
+    #: carry ports.
+    PROTOCOL_CHOICES = [
+        ("tcp", "TCP"),
+        ("udp", "UDP"),
+        ("tcp-udp", "TCP/UDP"),
+        ("icmp", "ICMP"),
+        ("any", "Any"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="nat_rules"
+    )
+    name = models.CharField(max_length=128)
+    #: The firewall or router enforcing it. SET_NULL, not CASCADE: replacing
+    #: the box does not mean the mapping stopped existing.
+    device = models.ForeignKey(
+        "Device", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_rules",
+    )
+    kind = models.CharField(max_length=12, choices=KIND_CHOICES, default="dnat")
+    protocol = models.CharField(
+        max_length=8, choices=PROTOCOL_CHOICES, default="tcp"
+    )
+
+    # ── outside ────────────────────────────────────────────────────────
+    external_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_external",
+        help_text="The address reached from outside. Blank for masquerade, "
+                  "which uses whatever the firewall's egress address is.",
+    )
+    #: A single port or an inclusive range - "443", "8000-8100", or blank for
+    #: a protocol that has none. Text rather than a list because the two ends
+    #: have to line up, and two lists of different lengths cannot.
+    external_ports = models.CharField(max_length=32, blank=True, default="")
+
+    # ── inside ─────────────────────────────────────────────────────────
+    internal_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_internal",
+        help_text="The address traffic is translated to.",
+    )
+    internal_ports = models.CharField(max_length=32, blank=True, default="")
+
+    # ── optional source restriction ────────────────────────────────────
+    #: Who the rule applies to. A prefix for "our office only", an address
+    #: for one peer; both blank means anyone.
+    source_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_rules",
+    )
+    source_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_source",
+    )
+
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="nat_rules",
+    )
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class DeviceTypeService(ProtocolPortsMixin, _ComponentTemplate):
     """A service template on a device type - like an interface/port template,
     but for a network service. Materialises a ``Service`` onto every new device
@@ -5204,6 +5423,9 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         ("hsrp", "HSRP"),
         ("glbp", "GLBP"),
         ("carp", "CARP"),
+        # The EVPN distributed anycast gateway: the same address on every
+        # leaf's SVI, no election.
+        ("anycast", "EVPN anycast gateway"),
     ]
     AUTH_CHOICES = [
         ("", "None"),
@@ -5776,48 +5998,18 @@ class WirelessLANGroup(NumIdMixin, TimestampedModel):
         return self.name
 
 
-class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A wireless network (SSID), optionally grouped and bridged to a VLAN."""
+class SecretBackedPSK(models.Model):
+    """A pre-shared key that lives in the deployment's secret store, never in
+    the row (#68, #168). The model holds only a reference; ``store_psk`` /
+    ``resolve_psk`` / ``clear_psk`` move the value in and out, and the reveal
+    is an audited action on the viewset. A key is a credential, and
+    credentials do not sit in a documentation database in plaintext - the
+    same arrangement DeviceCredential uses. Subclasses set ``psk_secret_prefix``
+    (the folder the key is filed under in the store).
+    """
 
-    AUTH_TYPE_CHOICES = [
-        ("open", "Open"),
-        ("wep", "WEP"),
-        ("wpa-personal", "WPA Personal (PSK)"),
-        ("wpa-enterprise", "WPA Enterprise"),
-    ]
-    AUTH_CIPHER_CHOICES = [
-        ("auto", "Auto"),
-        ("tkip", "TKIP"),
-        ("aes", "AES"),
-    ]
+    psk_secret_prefix = ""
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="wireless_lans"
-    )
-    ssid = models.CharField(max_length=64)
-    group = models.ForeignKey(
-        WirelessLANGroup, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="wireless_lans",
-    )
-    status = models.ForeignKey(
-        "Status", on_delete=models.PROTECT, null=True, blank=True,
-        related_name="wireless_lans",
-    )
-    vlan = models.ForeignKey(
-        VLAN, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="wireless_lans",
-    )
-    auth_type = models.CharField(
-        max_length=16, choices=AUTH_TYPE_CHOICES, blank=True, default=""
-    )
-    auth_cipher = models.CharField(
-        max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
-    )
-    # The PSK itself is deliberately NOT a field here (#68). Danbyte holds only
-    # a reference; the key lives in the deployment's secret store, the same
-    # arrangement DeviceCredential uses. A wireless key is a credential, and
-    # credentials do not sit in a documentation database in plaintext.
     psk_secret_provider = models.CharField(
         max_length=8, blank=True, default="",
         help_text="Which secret store holds the PSK, stamped at write-time.",
@@ -5826,30 +6018,25 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
         max_length=255, blank=True, default="",
         help_text="Reference to the PSK inside that store. Empty: no PSK set.",
     )
-    description = models.CharField(max_length=255, blank=True, default="")
-    comments = models.TextField(blank=True, default="")
 
     class Meta:
-        ordering = ["ssid"]
-
-    def __str__(self) -> str:
-        return self.ssid
+        abstract = True
 
     @property
     def psk_set(self) -> bool:
         return bool(self.psk_secret_path)
 
     def store_psk(self, value: str) -> None:
-        """Write the PSK into the active store under ``wireless-lans/<id>``,
+        """Write the PSK into the active store under ``<prefix>/<id>``,
         stamping which provider took it. Fail-closed: raises
         :class:`SecretStoreDisabled` when no store is configured, because the
-        alternative is a wireless key sitting in the database in the clear."""
+        alternative is a key sitting in the database in the clear."""
         from core.models import DeploymentSettings
         from monitoring.secret_store import require_secret_store
 
         store = require_secret_store()
         if not self.psk_secret_path:
-            self.psk_secret_path = f"wireless-lans/{self.id}"
+            self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
         self.psk_secret_provider = (
             DeploymentSettings.load().secrets_provider or ""
         ).strip()
@@ -5861,7 +6048,7 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
         from monitoring.secret_store import SecretStoreError, require_secret_store
 
         if not self.psk_secret_path:
-            raise SecretStoreError("No PSK is set for this SSID.")
+            raise SecretStoreError("No PSK is set.")
         store = require_secret_store()
         value = store.get(self.tenant_id, self.psk_secret_path)
         if value is None:
@@ -5892,6 +6079,56 @@ class WirelessLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
             pass
 
 
+class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A wireless network (SSID), optionally grouped and bridged to a VLAN."""
+
+    AUTH_TYPE_CHOICES = [
+        ("open", "Open"),
+        ("wep", "WEP"),
+        ("wpa-personal", "WPA Personal (PSK)"),
+        ("wpa-enterprise", "WPA Enterprise"),
+    ]
+    AUTH_CIPHER_CHOICES = [
+        ("auto", "Auto"),
+        ("tkip", "TKIP"),
+        ("aes", "AES"),
+    ]
+
+    psk_secret_prefix = "wireless-lans"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="wireless_lans"
+    )
+    ssid = models.CharField(max_length=64)
+    group = models.ForeignKey(
+        WirelessLANGroup, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="wireless_lans",
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="wireless_lans",
+    )
+    vlan = models.ForeignKey(
+        VLAN, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="wireless_lans",
+    )
+    auth_type = models.CharField(
+        max_length=16, choices=AUTH_TYPE_CHOICES, blank=True, default=""
+    )
+    auth_cipher = models.CharField(
+        max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
+    )
+    description = models.CharField(max_length=255, blank=True, default="")
+    comments = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["ssid"]
+
+    def __str__(self) -> str:
+        return self.ssid
+
+
 # ─── VPN ─────────────────────────────────────────────────────────────────────
 class TunnelGroup(NumIdMixin, TimestampedModel):
     """An organisational grouping of VPN tunnels. Zero pre-filled data."""
@@ -5916,9 +6153,12 @@ class TunnelGroup(NumIdMixin, TimestampedModel):
         return self.name
 
 
-class IPSecProfile(NumIdMixin, TimestampedModel):
+class IPSecProfile(SecretBackedPSK, NumIdMixin, TimestampedModel):
     """A reusable IKE/IPSec crypto profile that tunnels reference - flattens the
-    common IKE + IPSec policy parameters into one named record."""
+    common IKE + IPSec policy parameters into one named record. Its pre-shared
+    key (#168) lives in the secret store, like an SSID's."""
+
+    psk_secret_prefix = "ipsec-profiles"
 
     IKE_VERSION_CHOICES = [(1, "IKEv1"), (2, "IKEv2")]
     ENCRYPTION_CHOICES = [
@@ -6098,6 +6338,12 @@ class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     identifier = models.BigIntegerField(
         null=True, blank=True, help_text="Overlay identifier - VNI / VC-ID."
     )
+    #: An EVPN overlay carrying a table - the VRF's L3VNI. Only on the EVPN
+    #: types; a VXLAN L2VPN with terminations to VLANs is an L2VNI.
+    vrf = models.ForeignKey(
+        "VRF", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="l3vnis",
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
         related_name="l2vpns",
@@ -6117,11 +6363,30 @@ class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "slug"], name="uniq_l2vpn_tenant_slug"
-            )
+            ),
+            # Two VXLAN overlays cannot claim one VNI; VC-IDs on the other
+            # types are per circuit and may repeat.
+            models.UniqueConstraint(
+                fields=["tenant", "identifier"],
+                condition=models.Q(type__in=["vxlan", "vxlan-evpn"], identifier__isnull=False),
+                name="uniq_l2vpn_vxlan_vni",
+            ),
         ]
+
+    #: Types where a VRF makes the overlay an L3VNI.
+    EVPN_TYPES = ("vxlan-evpn", "mpls-evpn")
+    VXLAN_TYPES = ("vxlan", "vxlan-evpn")
 
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.vrf_id and self.type not in self.EVPN_TYPES:
+            raise ValidationError(
+                {"vrf": "Only an EVPN overlay carries a table (an L3VNI)."}
+            )
 
 
 class L2VPNTermination(TimestampedModel):
@@ -7006,3 +7271,59 @@ class CableRoute(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class SearchEntry(models.Model):
+    """One row per searchable object - the global search index (#89).
+
+    Denormalised on purpose: one table answers every search with one ranked
+    query instead of a fan-out per type. Kept current by save/delete signals
+    for every indexed model, a nightly rebuild for bulk paths that bypass
+    signals, and ``manage.py rebuild_search_index`` after upgrades. Text is
+    matched through ``danbyte_fold()`` (lowercase, accents stripped) with
+    trigram indexes, so ``aarhus`` finds ``Århus DC`` and a typo still lands.
+
+    ``facets`` holds lowercase name and slug lists per key (``site``, ``role``,
+    ``status``, ``tag``, …) so ``site:esbjerg`` is a JSON containment test.
+    ``tenant`` NULL is only used by deployment-global tags.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    object_type = models.CharField(max_length=64)
+    object_id = models.UUIDField()
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="search_entries",
+        null=True, blank=True,
+    )
+    site = models.ForeignKey(
+        "Site", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    numid = models.IntegerField(null=True, blank=True)
+    title = models.CharField(max_length=255)
+    subtitle = models.CharField(max_length=255, blank=True, default="")
+    body = models.TextField(blank=True, default="")
+    facets = models.JSONField(default=dict, blank=True)
+    # Display values for the result row (site, status with colour, role,
+    # device, VRF, rack, …) - facets hold the folded forms for matching.
+    context = models.JSONField(default=dict, blank=True)
+    url = models.CharField(max_length=255)
+    weight = models.PositiveSmallIntegerField(default=5)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["object_type", "object_id"], name="uniq_searchentry_object"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "object_type"], name="searchentry_tenant_type"),
+            models.Index(fields=["tenant", "numid"], name="searchentry_tenant_numid"),
+            # The trigram indexes on danbyte_fold(title) / danbyte_fold(body)
+            # are created by migration 0159 in SQL: Django renders an OpClass
+            # over a function call with doubled parentheses Postgres rejects.
+            GinIndex(fields=["facets"], name="searchentry_facets_gin"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.object_type}:{self.title}"

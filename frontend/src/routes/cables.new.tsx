@@ -6,6 +6,9 @@ import { CableForm } from "@/components/cable-form"
 import { EditPageShell } from "@/components/edit-page-shell"
 
 const KINDS: TerminationKind[] = [
+  // A circuit termination is a cable end like any port: the provider
+  // handoff is cabled to the switch port that carries it.
+  "circuit_termination",
   "interface",
   "front_port",
   "rear_port",
@@ -53,7 +56,7 @@ function NewCablePage() {
       wide
       crumbs={[{ label: "Cables", to: "/cables" }, { label: "Add" }]}
       title="Add cable"
-      subtitle="A physical connection between two interfaces."
+      subtitle="A physical connection between two ports. One end can be a circuit's handoff instead of a device port."
     >
       <CableForm
         initialA={a_kind && a_id ? [{ kind: a_kind, id: a_id }] : undefined}

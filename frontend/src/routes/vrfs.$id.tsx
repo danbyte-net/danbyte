@@ -23,7 +23,11 @@ import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { VrfDeleteDialog } from "@/components/vrf-delete-dialog"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
-import { EmbeddedIpTable } from "@/components/embedded-tables"
+import {
+  EmbeddedBGPSessionTable,
+  EmbeddedIpTable,
+  EmbeddedStaticRouteTable,
+} from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -50,7 +54,13 @@ function VrfDetail() {
 
 function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "prefixes" | "ips" | "journal" | "history"
+    | "overview"
+    | "prefixes"
+    | "ips"
+    | "bgp-sessions"
+    | "static-routes"
+    | "journal"
+    | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo, humanIds } = useMe()
@@ -136,6 +146,16 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
         { value: "overview", label: "Overview" },
         { value: "prefixes", label: "Prefixes", count: v.prefix_count },
         { value: "ips", label: "IPs", count: v.ip_count },
+        {
+          value: "bgp-sessions",
+          label: "BGP sessions",
+          count: v.bgp_session_count,
+        },
+        {
+          value: "static-routes",
+          label: "Static routes",
+          count: v.static_route_count,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -150,6 +170,20 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
       </DetailTab>
       <DetailTab value="ips">
         <EmbeddedIpTable filter={{ vrf: v.id }} />
+      </DetailTab>
+      <DetailTab value="bgp-sessions">
+        <EmbeddedBGPSessionTable
+          filter={{ vrf: v.id }}
+          omit={["vrf"]}
+          emptyText="No BGP session in this VRF."
+        />
+      </DetailTab>
+      <DetailTab value="static-routes">
+        <EmbeddedStaticRouteTable
+          filter={{ vrf: v.id }}
+          omit={["vrf"]}
+          emptyText="No static route in this VRF."
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.vrf" objectId={v.id} />

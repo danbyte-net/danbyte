@@ -33,6 +33,16 @@ So the form opens with a **Subnet** picker. To find the right one quickly:
    the pick is required and an address outside every range is refused.
 4. Set status, role, DNS name, etc., and save.
 
+### Tunnel and transit networks between sites
+
+A point-to-point network - a WireGuard, GRE or IPsec tunnel, a WAN link, a
+router-to-router transit /30 - has ends at two sites, so it belongs to
+neither. Leave the prefix's **site empty**: it then sits in the shared
+space, and the subnet pickers list it for a device at any site alongside
+that site's own subnets. A prefix that was given a site still works from the
+other end - pick **Any site** in the picker's site filter and it appears;
+the API never refused it.
+
 ## Assign an existing IP
 
 Click **Assign IP** to open the picker. Because a large network can hold

@@ -1,4 +1,5 @@
 import { Checkbox } from "@/components/ui/checkbox"
+import { InfoTip } from "@/components/ui/info-tip"
 import { cn } from "@/lib/utils"
 
 export interface FormCheckboxProps {
@@ -6,6 +7,8 @@ export interface FormCheckboxProps {
   checked: boolean
   onChange: (v: boolean) => void
   hint?: string
+  /** The why, behind the same (i) as the other field primitives. */
+  info?: React.ReactNode
   disabled?: boolean
   className?: string
 }
@@ -17,6 +20,7 @@ export function FormCheckbox({
   checked,
   onChange,
   hint,
+  info,
   disabled,
   className,
 }: FormCheckboxProps) {
@@ -37,7 +41,10 @@ export function FormCheckbox({
         className="mt-0.5"
       />
       <span className="flex flex-col">
-        <span>{label}</span>
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {info && <InfoTip>{info}</InfoTip>}
+        </span>
         {hint && (
           <span className="text-[10px] text-muted-foreground">{hint}</span>
         )}

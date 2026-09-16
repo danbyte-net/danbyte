@@ -2,19 +2,22 @@ import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type CheckKind, type CheckTemplate } from "@/lib/api"
+import { api, type CheckTemplate } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { FormSelect, FormText } from "@/components/forms"
+import { Field, FormFooter, FormSelect, FormText } from "@/components/forms"
 import {
   CheckFields,
-  INTERVALS,
-  KINDS,
+  RECORD_EVERY,
+  checkIntervals,
+  intervalBody,
+  intervalValue,
+  isFastInterval,
+  useCheckKinds,
   buildParams,
   initialValues,
   missingRequired,
@@ -38,8 +41,10 @@ export function TemplateEditor({
   const isEdit = !!template
 
   const [name, setName] = useState("")
-  const [kind, setKind] = useState<CheckKind>("icmp")
+  const [kind, setKind] = useState<string>("icmp")
+  const kinds = useCheckKinds()
   const [interval, setInterval] = useState("300")
+  const [recordEvery, setRecordEvery] = useState("60")
   const [vals, setVals] = useState<Vals>(() => initialValues("icmp"))
 
   // Re-seed when the dialog opens for a different template (or for "new").
@@ -48,12 +53,14 @@ export function TemplateEditor({
     if (template) {
       setName(template.name)
       setKind(template.kind)
-      setInterval(String(template.interval_seconds))
+      setInterval(intervalValue(template))
+      setRecordEvery(String(template.record_every_seconds ?? 60))
       setVals(valuesFromTemplate(template))
     } else {
       setName("")
       setKind("icmp")
       setInterval("300")
+      setRecordEvery("60")
       setVals(initialValues("icmp"))
     }
   }, [open, template])
@@ -67,7 +74,8 @@ export function TemplateEditor({
         name: name.trim(),
         kind,
         params,
-        interval_seconds: Number(interval),
+        ...intervalBody(interval, template?.interval_seconds),
+        record_every_seconds: Number(recordEvery),
         degraded_enabled: true,
       }
       // Only send secrets when the user actually entered some - otherwise a
@@ -105,7 +113,7 @@ export function TemplateEditor({
       <DialogContent size="xl" className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? `Edit check · ${template!.name}` : "New check template"}
+            {isEdit ? `Edit check · ${template!.name}` : "New check"}
           </DialogTitle>
         </DialogHeader>
         <form
@@ -117,33 +125,42 @@ export function TemplateEditor({
         >
           <div className="grid grid-cols-2 gap-3">
             {isEdit ? (
-              <div className="space-y-1">
-                <label className="text-[11px] tracking-wide text-muted-foreground uppercase">
-                  Type
-                </label>
-                <div className="flex h-9 items-center rounded-md border border-border bg-muted/40 px-3 text-sm text-muted-foreground">
-                  {KINDS.find((k) => k.value === kind)?.label ?? kind}
+              <Field label="Type" hint="fixed once created">
+                <div className="flex h-9 items-center text-sm text-muted-foreground">
+                  {kinds.find((k) => k.value === kind)?.label ?? kind}
                 </div>
-              </div>
+              </Field>
             ) : (
               <FormSelect
                 label="Type"
                 value={kind}
                 onChange={(v) => {
-                  const k = (v as CheckKind) ?? "icmp"
+                  const k = v ?? "icmp"
                   setKind(k)
                   setVals(initialValues(k))
                 }}
-                options={KINDS}
+                options={kinds}
               />
             )}
             <FormSelect
               label="Interval"
+              info="Under a minute runs on the fast lane: a status change is recorded the moment it happens, everything else once per recording window. If the lane is down, or an older Outpost holds the check, it runs every minute instead."
               value={interval}
               onChange={(v) => setInterval(v ?? "300")}
-              options={INTERVALS}
+              options={checkIntervals(kind)}
             />
           </div>
+          {isFastInterval(interval) && (
+            <div className="max-w-xs">
+              <FormSelect
+                label="Record every"
+                info="How often one aggregated result (min, average, max latency and loss) is stored. Fewer rows, same history: status changes are always stored at once."
+                value={recordEvery}
+                onChange={(v) => setRecordEvery(v ?? "60")}
+                options={RECORD_EVERY}
+              />
+            </div>
+          )}
 
           <FormText
             label="Name"
@@ -163,19 +180,11 @@ export function TemplateEditor({
             </p>
           )}
 
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={save.isPending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSubmit || save.isPending}>
-              {save.isPending ? "Saving…" : isEdit ? "Save" : "Create"}
-            </Button>
-          </div>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel={isEdit ? "Save changes" : "Create"}
+          />
         </form>
       </DialogContent>
     </Dialog>

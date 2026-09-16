@@ -138,7 +138,13 @@ def _physical_links(tenant):
             # shape the walk speaks: the circuit is the "device", the side is
             # the "port".
             if kind == "circuit_termination":
-                dev = SimpleNamespace(id=obj.circuit_id, name=obj.circuit.cid)
+                # site_id: a circuit end sits at a site through its own
+                # termination, not through this shim - and callers that place
+                # an endpoint on the map read `site_id` off it, so it must
+                # exist and be empty rather than be missing.
+                dev = SimpleNamespace(
+                    id=obj.circuit_id, name=obj.circuit.cid, site_id=None
+                )
                 port = SimpleNamespace(
                     id=obj.id, name=f"Side {obj.term_side}",
                     device_id=obj.circuit_id, device=dev,

@@ -17,6 +17,8 @@ import {
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { ExternalChips } from "@/components/monitoring/external-chips"
+import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { dash } from "@/components/cells/dash"
 import { UtilCell } from "@/components/cells/util-cell"
@@ -108,15 +110,6 @@ function cfFacetKey(v: unknown): string | null {
   if (typeof v === "boolean") return v ? "Yes" : "No"
   if (Array.isArray(v)) return v.map(String).join(", ")
   return String(v)
-}
-
-function monitoringTooltip(e: BulkStatusEntry): string {
-  const counts = e.counts ?? {}
-  const parts = Object.entries(counts).map(([s, n]) => `${n} ${s}`)
-  const head = `${e.monitored_ips ?? 0} monitored IP${
-    e.monitored_ips === 1 ? "" : "s"
-  }`
-  return parts.length ? `${head} - ${parts.join(", ")}` : head
 }
 
 export function buildPrefixColumns<T extends Prefix = Prefix>(
@@ -232,9 +225,10 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
         const e = opts.monitoring?.[row.original.id]
         if (!e || !e.status) return dash
         return (
-          <span title={monitoringTooltip(e)}>
+          <ExternalStatusHover entry={e}>
             <MixedStatusBadge counts={e.counts} status={e.status} />
-          </span>
+            <ExternalChips entry={e} />
+          </ExternalStatusHover>
         )
       },
       // The rollup is a facet like any status: the rail lists the observed

@@ -5,6 +5,8 @@ from django.urls import path
 
 from .outpost_views import (
     outpost_download_view,
+    outpost_fast_results_view,
+    outpost_fast_work_view,
     outpost_hello_view,
     outpost_install_script_view,
     outpost_results_view,
@@ -19,6 +21,10 @@ urlpatterns = [
     path("hello/", outpost_hello_view, name="outpost-hello"),
     path("work/", outpost_work_view, name="outpost-work"),
     path("results/", outpost_results_view, name="outpost-results"),
+    # The fast lane: the agent owns its sub-minute set continuously and
+    # reports buffered probes; the core folds them like its own lane's.
+    path("fast-work/", outpost_fast_work_view, name="outpost-fast-work"),
+    path("fast-results/", outpost_fast_results_view, name="outpost-fast-results"),
     # SNMP discovery (fetch on the Outpost, persist on the core).
     path("snmp-work/", outpost_snmp_work_view, name="outpost-snmp-work"),
     path("snmp/", outpost_snmp_results_view, name="outpost-snmp-results"),

@@ -205,6 +205,15 @@ export function usePolicySave<T extends { id: string }>(
   return { save, pendingId }
 }
 
+/** The policy field a scope fills in.
+ *
+ * Mostly the scope's own name, but not always - the `site` scope writes
+ * `target_site`, because a field called `site` is a record's *owning* site
+ * everywhere else in Danbyte and gets stamped automatically for a single-site
+ * user. Mirrors `monitoring/policy_scopes.py`. */
+const SCOPE_FIELD = { site: "target_site" } as const
+
 export function targetKey(scope: MonitoringPolicyScope) {
-  return scope as "vrf" | "device_type" | "device_role" | "device" | "prefix"
+  return (SCOPE_FIELD[scope as keyof typeof SCOPE_FIELD] ??
+    scope) as Exclude<MonitoringPolicyScope, "global" | "site"> | "target_site"
 }

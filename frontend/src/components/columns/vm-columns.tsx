@@ -1,9 +1,8 @@
 import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
-import type { VirtualMachine } from "@/lib/api"
+import type { BulkStatusEntry, VirtualMachine } from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
-import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerBadge } from "@/components/cells/power-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
@@ -15,6 +14,10 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
+import { monitoringBucket, monitoringFacet } from "@/components/columns/monitoring-facet"
+import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { ExternalChips } from "@/components/monitoring/external-chips"
+import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of virtual machines". Every surface
@@ -37,6 +40,7 @@ export type VmColumnId =
   | "name"
   | "cluster"
   | "status"
+  | "monitoring"
   | "power"
   | "vcpus"
   | "memory"
@@ -54,6 +58,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "name",
   "cluster",
   "status",
+  "monitoring",
   "power",
   "vcpus",
   "memory",
@@ -80,12 +85,16 @@ export interface VmColumnOpts<T extends VirtualMachine = VirtualMachine> {
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
+  /** Bulk monitoring roll-ups keyed by VM id; the column only exists when a
+   * page fetched them, exactly as on the device list. */
+  monitoring?: Record<string, BulkStatusEntry>
 }
 
 export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
   opts: VmColumnOpts<T> = {}
 ): ColumnDef<T, unknown>[] {
   const omit = new Set(opts.omit ?? [])
+  if (!opts.monitoring) omit.add("monitoring")
   // The "#" column only exists where the deployment enables human ids.
   if (!opts.humanIds) omit.add("numid")
   const keep = (id: VmColumnId) =>
@@ -151,6 +160,22 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
         },
       },
     }),
+    monitoring: () => ({
+      id: "monitoring",
+      accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),
+      header: ({ column }) => <SortHeader column={column} label="Monitoring" />,
+      cell: ({ row }) => {
+        const e = opts.monitoring?.[row.original.id]
+        if (!e || !e.status) return dash
+        return (
+          <ExternalStatusHover entry={e}>
+            <MixedStatusBadge counts={e.counts} status={e.status} />
+            <ExternalChips entry={e} />
+          </ExternalStatusHover>
+        )
+      },
+      meta: { facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]) },
+    }),
     power: () => ({
       id: "power",
       accessorFn: (r) => r.power_state ?? "",
@@ -182,16 +207,20 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     synced_from: () => ({
       id: "synced_from",
       accessorFn: (r) => r.synced_from ?? "",
-      header: ({ column }) => <SortHeader column={column} label="Synced from" />,
+      header: ({ column }) => (
+        <SortHeader column={column} label="Synced from" />
+      ),
       cell: ({ row }) =>
         row.original.synced_from ? (
+          // A foreign key, so it reads as a link like every other one. It
+          // was an outline chip, which drew a pill round a value in a column
+          // of plain text and looked like the row had been singled out.
           <Link
             to="/virtualization-sources/$id"
             params={{ id: row.original.synced_from_id! }}
+            className="link text-xs"
           >
-            <Badge variant="outline" className="text-[10px]">
-              {row.original.synced_from}
-            </Badge>
+            {row.original.synced_from}
           </Link>
         ) : (
           dash
@@ -266,10 +295,16 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
       accessorFn: (r) => r.role?.name ?? "",
       cell: ({ row }) =>
         row.original.role ? (
-          <ColorBadge
-            name={row.original.role.name}
-            color={row.original.role.color || undefined}
-          />
+          <Link
+            to="/device-roles/$id"
+            params={{ id: row.original.role.id }}
+            className="link"
+          >
+            <ColorBadge
+              name={row.original.role.name}
+              color={row.original.role.color || undefined}
+            />
+          </Link>
         ) : (
           dash
         ),

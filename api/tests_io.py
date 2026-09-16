@@ -340,3 +340,39 @@ class IOExportFilterTests(APITestCase):
         text = _csv(self.client.get("/api/io/ipaddress/export/?fmt=csv&nonsense=zzz"))
         self.assertIn("10.0.0.5", text)
         self.assertIn("10.1.0.5", text)
+
+
+class CsvDialectTests(APITestCase):
+    """A CSV the way Excel writes it in a Dutch or German locale, and the
+    errors a row gets when a required column is empty."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.admin = User.objects.create_user("a", password="x", is_superuser=True)
+        UserProfile.objects.create(user=self.admin).tenants.add(self.tenant)
+        self.client.force_login(self.admin)
+        self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+
+    def _import(self, content, dry_run=False):
+        return self.client.post(
+            "/api/io/site/import/",
+            {"format": "csv", "content": content, "dry_run": dry_run},
+            format="json",
+        ).json()
+
+    def test_semicolon_csv_and_blank_default_cells(self):
+        res = self._import(
+            "﻿name;region;time_zone;gateway_policy\n"
+            "IND-KK1;;Asia/Kolkata;last\n"
+            "IND-MA1;;Asia/Kolkata;\n"
+        )
+        self.assertEqual((res["created"], res["errors"]), (2, []))
+        sites = {s.name: s for s in Site.objects.filter(tenant=self.tenant)}
+        self.assertEqual(sites["IND-KK1"].gateway_policy, "last")
+        self.assertEqual(sites["IND-MA1"].gateway_policy, "first")  # the default
+
+    def test_errors_name_the_field(self):
+        res = self._import("name,time_zone\n,Asia/Kolkata\n")
+        self.assertEqual(res["created"], 0)
+        self.assertEqual(res["errors"][0]["error"], "name: This field cannot be blank.")

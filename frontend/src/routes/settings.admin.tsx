@@ -1,12 +1,28 @@
 import { useEffect, useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
-import { useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type DeploymentSettings } from "@/lib/api"
+import {
+  api,
+  type DeploymentSettings,
+  type OuiImportRun,
+  type OuiStatus,
+} from "@/lib/api"
+import { timeAgo } from "@/components/cells/time-ago"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Field,
   FormCheckbox,
@@ -63,6 +79,7 @@ function AdminPage() {
         <DateTimeCard />
         <HumanIdsCard />
         <FaceplatesCard />
+        <MacVendorsCard />
       </SettingsGrid>
     </div>
   )
@@ -282,11 +299,159 @@ function FaceplatesCard() {
   )
 }
 
+const OUI_VIA_BROWSER_KEY = "danbyte-oui-import-via-browser"
+
+function MacVendorsCard() {
+  const qc = useQueryClient()
+  const { data: deployment } = useDeploymentSettings()
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [url, setUrl] = useState("")
+  // Air-gapped server, connected operator: the browser downloads the CSV and
+  // posts it, the server never reaches out. Remembered per browser; defaults
+  // to on when the install is marked airgapped.
+  const [viaBrowser, setViaBrowserState] = useState<boolean | null>(() => {
+    try {
+      const v = localStorage.getItem(OUI_VIA_BROWSER_KEY)
+      return v === null ? null : v === "1"
+    } catch {
+      return null
+    }
+  })
+  const fetchInBrowser = viaBrowser ?? !!deployment?.disable_update_check
+  const setViaBrowser = (v: boolean) => {
+    setViaBrowserState(v)
+    try {
+      localStorage.setItem(OUI_VIA_BROWSER_KEY, v ? "1" : "0")
+    } catch {
+      /* private mode etc. - the tick still works for this session */
+    }
+  }
+  const [downloading, setDownloading] = useState(false)
+  const status = useQuery({
+    queryKey: ["oui-status"],
+    queryFn: () => api<OuiStatus>("/api/oui/status/"),
+    refetchInterval: (q) => {
+      const s = q.state.data?.last_import?.status
+      return s === "queued" || s === "running" ? 1500 : false
+    },
+  })
+  const start = useMutation({
+    mutationFn: (body: FormData | { url: string }) =>
+      api<OuiImportRun>("/api/oui/import/", {
+        method: "POST",
+        body: body instanceof FormData ? body : JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      setUrl("")
+      qc.invalidateQueries({ queryKey: ["oui-status"] })
+      qc.invalidateQueries({ queryKey: ["macs"] })
+    },
+    onError: (e) => apiErrorToast(e, "Import failed to start"),
+  })
+
+  const fetchUrl = async () => {
+    const target = url.trim()
+    if (!fetchInBrowser) {
+      start.mutate({ url: target })
+      return
+    }
+    setDownloading(true)
+    try {
+      const res = await fetch(target)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const fd = new FormData()
+      fd.append("file", new File([blob], "oui.csv", { type: "text/csv" }))
+      start.mutate(fd)
+    } catch {
+      toast.error(
+        "The browser couldn't download that URL (blocked by the source or CORS). Download the file and use Upload CSV."
+      )
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const last = status.data?.last_import ?? null
+  const running = last?.status === "queued" || last?.status === "running"
+  const p = last?.progress ?? {}
+
+  return (
+    <SettingsCard
+      title="MAC vendors"
+      description="The IEEE OUI registry that turns a MAC prefix into a vendor. Load it from a CSV (maclookup.app or the IEEE oui.csv) - it is not bundled, and air-gapped installs upload the file."
+    >
+      <p className="text-sm">
+        <span className="num font-medium">{status.data?.prefixes ?? 0}</span>{" "}
+        prefixes loaded
+        {last && (
+          <span className="text-muted-foreground">
+            {" "}
+            · last import {timeAgo(last.created_at)} · {last.status}
+            {running && p.total ? ` (${p.done ?? 0} / ${p.total})` : ""}
+            {last.status === "success" &&
+              ` (${p.created ?? 0} new, ${p.updated ?? 0} changed, ${p.removed ?? 0} removed)`}
+          </span>
+        )}
+      </p>
+      {last?.status === "failed" && last.error && (
+        <p className="text-sm text-destructive">{last.error}</p>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) {
+            const fd = new FormData()
+            fd.append("file", f)
+            start.mutate(fd)
+          }
+          e.target.value = ""
+        }}
+      />
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+        <Field label="Fetch from URL">
+          <Input
+            placeholder="https://maclookup.app/downloads/csv-database/get-db"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            disabled={running}
+          />
+        </Field>
+        <Button
+          variant="outline"
+          disabled={!url.trim() || running || start.isPending || downloading}
+          onClick={() => void fetchUrl()}
+        >
+          {downloading ? "Downloading..." : "Fetch"}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={running || start.isPending}
+          onClick={() => fileRef.current?.click()}
+        >
+          Upload CSV
+        </Button>
+      </div>
+      <FormCheckbox
+        label="Fetch through the browser"
+        checked={fetchInBrowser}
+        onChange={setViaBrowser}
+        hint="Your browser downloads the CSV and posts it, so the server never needs internet. On by default for an airgapped install."
+      />
+    </SettingsCard>
+  )
+}
+
 // Same file-not-field pattern as the favicon, for the login-page logo.
 function LogoField({ logoUrl }: { logoUrl: string | null }) {
   const qc = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<null | "upload" | "reset">(null)
+  const [confirming, setConfirming] = useState(false)
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["deployment-email"] })
@@ -313,6 +478,7 @@ function LogoField({ logoUrl }: { logoUrl: string | null }) {
     try {
       await api("/api/deployment/logo/", { method: "DELETE" })
       refresh()
+      setConfirming(false)
       toast.success("Logo reset to the Danbyte default")
     } catch (e) {
       apiErrorToast(e)
@@ -356,12 +522,20 @@ function LogoField({ logoUrl }: { logoUrl: string | null }) {
             variant="ghost"
             size="sm"
             disabled={busy !== null}
-            onClick={() => void reset()}
+            onClick={() => setConfirming(true)}
           >
             {busy === "reset" ? "Resetting…" : "Reset to default"}
           </Button>
         )}
       </div>
+      <ResetBrandingDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Reset the login-page logo?"
+        description="This removes the uploaded logo and restores the bundled Danbyte one. You can upload it again."
+        pending={busy === "reset"}
+        onConfirm={() => void reset()}
+      />
     </Field>
   )
 }
@@ -372,6 +546,7 @@ function FaviconField({ faviconUrl }: { faviconUrl: string | null }) {
   const qc = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<null | "upload" | "reset">(null)
+  const [confirming, setConfirming] = useState(false)
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["deployment-email"] })
@@ -398,6 +573,7 @@ function FaviconField({ faviconUrl }: { faviconUrl: string | null }) {
     try {
       await api("/api/deployment/favicon/", { method: "DELETE" })
       refresh()
+      setConfirming(false)
       toast.success("Favicon reset to the Danbyte default")
     } catch (e) {
       apiErrorToast(e)
@@ -441,12 +617,65 @@ function FaviconField({ faviconUrl }: { faviconUrl: string | null }) {
             variant="ghost"
             size="sm"
             disabled={busy !== null}
-            onClick={() => void reset()}
+            onClick={() => setConfirming(true)}
           >
             {busy === "reset" ? "Resetting…" : "Reset to default"}
           </Button>
         )}
       </div>
+      <ResetBrandingDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Reset the browser-tab icon?"
+        description="This removes the uploaded icon and restores the bundled Danbyte one. You can upload it again."
+        pending={busy === "reset"}
+        onConfirm={() => void reset()}
+      />
     </Field>
+  )
+}
+
+/**
+ * Confirm before dropping an uploaded branding image. Reverting is recoverable
+ * - the deployment falls back to the bundled Danbyte artwork - so the copy says
+ * that rather than warning about a permanent loss.
+ */
+function ResetBrandingDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  pending,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description: string
+  pending: boolean
+  onConfirm: () => void
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending}
+            onClick={(e) => {
+              e.preventDefault()
+              onConfirm()
+            }}
+          >
+            {pending ? "Resetting…" : "Reset"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

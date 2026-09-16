@@ -93,9 +93,18 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
       id: "provider",
       accessorFn: (c) => c.provider?.name ?? "",
       header: "Provider",
-      cell: ({ row }) => (
-        <span className="text-xs">{row.original.provider?.name ?? "-"}</span>
-      ),
+      cell: ({ row }) =>
+        row.original.provider ? (
+          <Link
+            to="/providers/$id"
+            params={{ id: row.original.provider.id }}
+            className="link text-xs"
+          >
+            {row.original.provider.name}
+          </Link>
+        ) : (
+          dash
+        ),
       meta: {
         facet: {
           kind: "enum",
@@ -111,10 +120,16 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
       header: "Type",
       cell: ({ row }) =>
         row.original.type ? (
-          <ColorBadge
-            name={row.original.type.name}
-            color={row.original.type.color || undefined}
-          />
+          <Link
+            to="/circuit-types/$id"
+            params={{ id: row.original.type.id }}
+            className="link"
+          >
+            <ColorBadge
+              name={row.original.type.name}
+              color={row.original.type.color || undefined}
+            />
+          </Link>
         ) : (
           dash
         ),

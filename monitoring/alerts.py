@@ -79,10 +79,19 @@ def process_transitions(transitions, now) -> dict:
     ``dispatch_transitions`` path is no longer called from the worker.)
     """
     from api.models import IPAddress
-    from .notify import notify_alert
+    from .notify import flapping_pairs, notify_alert
 
     bad = [tr for tr in transitions if tr.to_status in _BAD]
     clears = [tr for tr in transitions if tr.to_status in _CLEARS]
+    # A flapping check opens and resolves an alert every few minutes; the
+    # alerts are kept (the record is real) but not announced one by one -
+    # the flapping notice stands in for them until the check settles.
+    flapping = {
+        tid: flapping_pairs(tid) for tid in {tr.tenant_id for tr in bad + clears}
+    }
+
+    def _quiet(tr) -> bool:
+        return (tr.target_ip_id, tr.template_id) in flapping.get(tr.tenant_id, ())
 
     # Per-tenant enabled rules + the IPs we'll need to match against.
     rules_by_tenant: dict = {}
@@ -130,11 +139,13 @@ def process_transitions(transitions, now) -> dict:
                 "detail": tr.detail or {},
                 "last_notified_at": now,
                 "notify_count": 1,
+                "flapping": _quiet(tr),
             },
         )
         if created:
             opened += 1
-            opened_by_tenant.setdefault(tr.tenant_id, []).append(alert)
+            if not _quiet(tr):
+                opened_by_tenant.setdefault(tr.tenant_id, []).append(alert)
         elif alert.check_status != tr.to_status or alert.severity != severity:
             alert.check_status = tr.to_status
             alert.severity = severity
@@ -153,7 +164,8 @@ def process_transitions(transitions, now) -> dict:
                 ]
             )
             updated += 1
-            individual.append((alert, "firing"))
+            if not _quiet(tr):
+                individual.append((alert, "firing"))
 
     for tr in clears:
         key = _dedup_key(tr.target_ip_id, tr.template_id)
@@ -170,7 +182,8 @@ def process_transitions(transitions, now) -> dict:
                 update_fields=["status", "resolved_at", "last_notified_at"]
             )
             resolved += 1
-            individual.append((alert, "resolved"))
+            if not _quiet(tr):
+                individual.append((alert, "resolved"))
 
     _dispatch_notifications(opened_by_tenant, individual)
 

@@ -58,6 +58,11 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     vault_token_set = serializers.SerializerMethodField()
+    # Key Vault app-registration secret for the secret store (write-only).
+    azure_client_secret = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    azure_client_secret_set = serializers.SerializerMethodField()
     # Absolute URL of the custom favicon (read-only); null = the Danbyte
     # default. Uploaded via the dedicated multipart endpoint below.
     favicon_url = serializers.SerializerMethodField()
@@ -90,6 +95,12 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "vault_verify_tls",
             "vault_token",
             "vault_token_set",
+            "azure_vault_url",
+            "azure_directory_id",
+            "azure_client_id",
+            "azure_authority",
+            "azure_client_secret",
+            "azure_client_secret_set",
             "map_tile_url",
             "map_tile_attribution",
             "map_satellite_url",
@@ -124,10 +135,11 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "update_window_days",
             "update_window_start",
             "update_window_end",
+            "upgrade_notes_done",
             "updated_at",
         ]
         read_only_fields = ["updated_at", "config_drift_last_run", "favicon_url",
-                        "login_logo_url"]
+                        "login_logo_url", "upgrade_notes_done"]
 
     def get_favicon_url(self, obj) -> str | None:
         if not obj.favicon:
@@ -187,6 +199,19 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
     def validate_display_timezone(self, value):
         return clean_display_timezone(value)
 
+    def validate_secrets_provider(self, value):
+        value = (value or "").strip()
+        if not value:
+            return ""
+        from monitoring.secret_store import secret_store_kinds
+
+        if value not in secret_store_kinds():
+            raise serializers.ValidationError(
+                f"Unknown secret store '{value}'. Registered: "
+                + ", ".join(sorted(secret_store_kinds()))
+            )
+        return value
+
     def get_smtp_password_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("password"))
 
@@ -195,6 +220,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
 
     def get_vault_token_set(self, obj) -> bool:
         return bool((obj.secrets or {}).get("vault_token"))
+
+    def get_azure_client_secret_set(self, obj) -> bool:
+        return bool((obj.secrets or {}).get("azure_client_secret"))
 
     def update(self, instance, validated_data):
         secrets = dict(instance.secrets or {})
@@ -207,6 +235,9 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         vtok = validated_data.pop("vault_token", None)
         if vtok:
             secrets["vault_token"] = vtok
+        akey = validated_data.pop("azure_client_secret", None)
+        if akey:
+            secrets["azure_client_secret"] = akey
         instance.secrets = secrets
         for field, value in validated_data.items():
             setattr(instance, field, value)
@@ -219,6 +250,26 @@ def _require_manage(request):
     # only superusers / global users.manage / unscoped user-change grants.
     # Tenant admins get /api/tenant-settings/ instead.
     return can_manage_deployment(request.user)
+
+
+@extend_schema(
+    summary="List the secret-store providers the Security card can offer",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Registered providers: kind, label, description, and the "
+        "settings fields each one needs (text | password | checkbox).",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def secret_store_providers_view(request):
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from monitoring.secret_store import secret_store_providers
+
+    return Response({"providers": [p.payload() for p in secret_store_providers()]})
 
 
 @extend_schema(
@@ -841,6 +892,37 @@ def system_info(request):
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def upgrade_notes(request):
+    """Operator steps the running version still needs (core/upgrade_notes.py).
+    Network-free; deployment admins only."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from .upgrade_notes import payload
+
+    return Response(payload(DeploymentSettings.load()))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upgrade_notes_ack(request):
+    """Mark steps done: ``{"ids": [...]}`` or ``{"all": true}``."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from .upgrade_notes import acknowledge, payload
+
+    dep = DeploymentSettings.load()
+    if request.data.get("all"):
+        acknowledge(dep, None)
+    else:
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            return Response({"ids": ["Expected a list of step ids."]}, status=400)
+        acknowledge(dep, ids)
+    return Response(payload(dep))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def system_updates(request):
     """Current version + the release repo's versions (with changelog), and
     whether a newer one exists. Read-only; ``users.manage`` only."""
@@ -941,6 +1023,34 @@ def email_templates(request):
     from core.email_samples import TEMPLATES
 
     return Response({"templates": [{"key": k, "label": lbl} for k, lbl in TEMPLATES]})
+
+
+@extend_schema(
+    summary="Render one email template with sample data",
+    tags=["deployment"],
+    request=None,
+    responses=OpenApiResponse(response=OpenApiTypes.STR, description="The mail as HTML."),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def email_template_html(request, key: str):
+    """The rendered sample, for the Settings preview frame - the same HTML a
+    recipient gets, with the inline logo made visible to a browser."""
+    from django.http import HttpResponse
+
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from core.email import inline_logo_for_preview
+    from core.email_samples import TEMPLATE_KEYS, render_sample
+
+    if key not in TEMPLATE_KEYS:
+        return Response({"detail": "Unknown template."}, status=404)
+    _subject, html, _text = render_sample(key)
+    resp = HttpResponse(inline_logo_for_preview(html), content_type="text/html; charset=utf-8")
+    # Framed by the settings page only; nothing in it runs.
+    resp["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+    resp["X-Frame-Options"] = "SAMEORIGIN"
+    return resp
 
 
 @extend_schema(

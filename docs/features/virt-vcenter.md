@@ -6,7 +6,7 @@ icon: lucide/layers-3
 
 Danbyte imports a vCenter's inventory into the existing cluster/VM model -
 agentless, over the vSphere Automation REST API (`/api/`), one login session
-per sync pass. Enable the **Virtualization sync** toggle and add a source
+per sync pass. Enable the **vCenter sync** toggle and add a source
 under **Integrations → Virtualization sources**; see
 [External sync](external-sync.md) for the shared ground rules.
 
@@ -89,6 +89,47 @@ Per-source switches widen what a source imports:
   they are. A host you already model is matched **case-insensitively** and
   adopted, never duplicated. This is what lets VMs link to their host, and
   what gives bridge uplinks a Device to hang NICs off.
+
+### What the sync is allowed to overwrite, and what it removes
+
+Three more switches decide how far the sync reaches into what you already
+have:
+
+- **Sync interface MTU** (Proxmox only, on by default) - copies the
+  hypervisor's MTU onto a VM interface that has none, and reports a differing
+  one as drift. Turn it off to make Danbyte the source of truth for MTU: the
+  value is then not read at all, so it neither fills a blank nor shows up as a
+  disagreement you can never clear.
+
+    The switch is **not shown on a vCenter source**. vSphere puts MTU on the
+    vSwitch or port group, not on a VM's vNIC, so there is nothing for it to
+    copy - and an option that cannot act reads as one that is broken.
+- **Skip powered-off VMs** (off by default) - stopped guests are listed but
+  their detail is not read, so nothing about them is updated. They still
+  count as **present**: a VM that is merely switched off is never treated as
+  missing, and so is never pruned for being off.
+- **Delete VMs removed from the hypervisor** (**off by default**) with
+  **Delete after** (days). Danbyte does not delete your records unless you ask
+  it to: a VM the hypervisor stops reporting is marked *missing* and kept, and
+  the sync counts it, until you turn this on.
+
+    With it on, the VM still has to stay missing for the whole delay first.
+    One API error, one network blip, one paused vCenter is then not enough to
+    delete a VM record and everything hanging off it, and the moment the VM
+    reappears the clock resets - it does not resume a part-spent delay. **0
+    days** acts on the first sync that cannot see it.
+
+    In **review mode** nothing is ever deleted automatically, so the removal
+    is *proposed* for you to approve whether or not this switch is on - a
+    proposal is not a deletion. The delay applies to the proposal too, because
+    approving a removal a flaky poll invented loses the same data.
+
+!!! warning "This changed for existing sources"
+    An auto-mode source used to delete a VM the hypervisor stopped reporting,
+    on the very next sync, with no way to say no. Upgrading turns that **off**
+    and sets the delay to **0**: nothing is deleted any more, and review-mode
+    proposals keep appearing at the pace they always did. New sources start
+    with deleting off and a **7-day** delay for when you enable it.
 
 Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Virtualization → Network topology** draws the whole picture - switches,

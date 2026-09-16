@@ -102,7 +102,7 @@ def _resolve_public(host: str, port: int) -> list[str]:
         if _blocked(ip):
             raise SSRFError(
                 f"Host '{host}' resolves to a non-public address ({ip}). A "
-                "deployment admin can permit it under Settings → Deployment → "
+                "deployment admin can permit it under Settings → Security → "
                 "Outbound connections (or via DANBYTE_SSRF_ALLOWLIST)."
             )
         ips.append(ip)

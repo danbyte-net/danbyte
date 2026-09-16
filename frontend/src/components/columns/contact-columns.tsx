@@ -5,6 +5,7 @@ import type { Contact } from "@/lib/api"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
+import { PhoneLink } from "@/components/cells/phone-link"
 import { numidColumn } from "@/components/cells/numid"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -116,7 +117,9 @@ export function buildContactColumns<T extends Contact = Contact>(
       header: "Phone",
       cell: ({ row }) =>
         row.original.phone ? (
-          <span className="font-mono text-xs">{row.original.phone}</span>
+          <span className="text-xs">
+            <PhoneLink phone={row.original.phone} />
+          </span>
         ) : (
           dash
         ),

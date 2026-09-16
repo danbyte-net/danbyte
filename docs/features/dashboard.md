@@ -28,9 +28,21 @@ The page is a mosaic of tiles:
 - **Activity widgets** - **Changelog** (the latest audit changes across the
   tenant: who changed what, each linking to the full change and out to the audit
   log) and **Recent activity** (latest monitoring status changes).
+- **Monitoring widgets** - **Availability** (seven days, time reachable over
+  time measured, as a gauge), **Alerts per day** (opened against resolved, the
+  last seven days), **Latency** (the estate's median and 95th percentile per
+  hour over the week), **Flapping** (the checks currently flagged, with a
+  link to confirm them) and **Status history** (the status strips of the
+  addresses and devices you pick - the same strip and availability figure
+  their Monitoring tabs draw, over 1h to 90d, refreshed every minute; pick
+  them while editing the dashboard, up to twelve per widget, and add the
+  widget more than once to watch different sets). Add them from *Add
+  widget*; all follow the same site scoping as the monitoring pages.
 
 Colours come from your own statuses and roles where you've set them, so the
-charts speak your network's language.
+charts speak your network's language. A donut fills the tile: in a wide tile
+the legend sits beside the ring and takes only the width its names need; in a
+narrow one the ring sits on top and the legend flows underneath.
 
 Every chart segment is a **deep link**: click a slice or bar (or a legend row)
 and it opens the matching list already filtered - *IPs by status* → the IP list

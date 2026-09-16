@@ -49,8 +49,8 @@ Not all background work goes through the queue. Much of Danbyte's routine
 activity runs on a **timer** as a self-contained oneshot - the check engine
 dispatch, config-drift dispatch, the Outpost driver, subnet discovery, interface
 utilisation, alert maintenance, certificate expiry, the daily **email
-digest**, and the various
-cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled
+digest**, the backup schedule tick, scheduled scripts, the search-index
+rebuild, and the various cleanup/prune jobs. These never appear in the RQ queue, so the **Scheduled
 tasks** section surfaces them directly.
 
 Each task shows its **cadence** (e.g. *every minute*, *daily 07:00*), the
@@ -71,11 +71,23 @@ built-in **local** engine plus any **Outposts** - with each one's last
 normally shows **online**. It's the fastest way to confirm a remote site's agent
 is alive and reporting.
 
+## Services
+
+**Settings → Updates → Services** (superusers) lists the systemd user units
+this install has - web or dev runserver, workers, the fast lane, the
+WebSocket process, the frontend, docs - with their live state and a
+**Restart** each; **Restart Danbyte** cycles the core ones together. The
+database is never on the list. A unit that is installed but neither
+running nor enabled reads *not in use here* rather than as a fault, and
+gets no restart: a dev box links the gunicorn and SSR units it never runs,
+a production box the dev runserver, and starting the other one would have
+two processes bind the same port. *Restart Danbyte* skips those too.
+
 ## Worker pool size
 
 The number of RQ worker processes decides how many jobs run in parallel - more
 workers clear a backlog of queued scans/imports faster, at the cost of more
-RAM/CPU. Superusers can change it under **Settings → Deployment → Services →
+RAM/CPU. Superusers can change it under **Settings → Updates → Services →
 Background workers**: set a value (1–64) and **Apply**. That writes a systemd
 drop-in (`RQ_WORKERS`) and restarts *only* the worker pool - the web, database,
 and other services are untouched. The default is **8**. On installs where the

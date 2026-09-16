@@ -3,6 +3,12 @@ import { Star } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
 import { useBookmarks, labelForPath } from "@/lib/use-bookmarks"
 
 /**
@@ -30,25 +36,33 @@ export function BookmarkButton() {
     }
   }
 
+  const label = existing ? "Remove bookmark" : "Bookmark this page"
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-8 w-8"
-      onClick={toggle}
-      disabled={add.isPending || remove.isPending}
-      title={existing ? "Remove bookmark" : "Bookmark this page"}
-      aria-pressed={!!existing}
-    >
-      <Star
-        className={
-          "h-4 w-4 " +
-          (existing ? "fill-amber-400 text-amber-400" : "text-muted-foreground")
-        }
-      />
-      <span className="sr-only">
-        {existing ? "Remove bookmark" : "Bookmark this page"}
-      </span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={toggle}
+          disabled={add.isPending || remove.isPending}
+          aria-label={label}
+          aria-pressed={!!existing}
+        >
+          <Star
+            className={
+              "h-4 w-4 " +
+              (existing
+                ? "fill-amber-400 text-amber-400"
+                : "text-muted-foreground")
+            }
+          />
+          <span className="sr-only">{label}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" variant="panel">
+        {label}
+      </TooltipContent>
+    </Tooltip>
   )
 }

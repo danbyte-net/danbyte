@@ -102,6 +102,10 @@ export interface PluginInfo {
   unapplied_migrations: string[]
   /** Installed via offline upload (vs a pip-installed PLUGINS entry). */
   uploaded: boolean
+  /** Ships inside Danbyte - toggle only, never uploaded or uninstalled. */
+  builtin: boolean
+  /** Effective state for the active tenant (false unless loaded). */
+  enabled: boolean
 }
 
 export interface PluginList {
@@ -136,6 +140,11 @@ export interface ServiceInfo {
   label: string
   core: boolean
   state: string // active | inactive | failed | unknown
+  /** The unit file is enabled on this install. */
+  enabled: boolean
+  /** Running, or meant to run here. A linked-but-disabled unit (gunicorn
+   * on a dev box) is neither, and gets no restart button. */
+  in_use: boolean
 }
 
 export interface WorkerConfig {
@@ -150,7 +159,9 @@ export function useServices(enabled = true) {
   return useQuery({
     queryKey: ["services"],
     queryFn: () =>
-      api<{ services: ServiceInfo[]; workers: WorkerConfig }>("/api/system/services/"),
+      api<{ services: ServiceInfo[]; workers: WorkerConfig }>(
+        "/api/system/services/"
+      ),
     enabled,
   })
 }

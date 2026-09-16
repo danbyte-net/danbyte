@@ -225,6 +225,11 @@ export function CableForm({
               value={b}
               onChange={setB}
               seedDeviceId={cable?.b_terminations?.[0]?.device?.id ?? null}
+              hint={
+                a[0]?.kind === "circuit_termination"
+                  ? "The port the circuit lands on"
+                  : "The far end"
+              }
             />
           </FormSection>
         </FormColumn>

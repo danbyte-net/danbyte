@@ -53,7 +53,7 @@ and as a failure row for the type - it never disappears silently.
     The NetBox URL is **SSRF-guarded** on the server - it must resolve to a
     public address, so the import can't be pointed at internal services or
     cloud-metadata endpoints. An internal NetBox (a `10.x` / `192.168.x`
-    address) is reached by allow-listing it under **Settings → Deployment →
+    address) is reached by allow-listing it under **Settings → Security →
     Outbound connections** (deployment admins only - a tenant admin must not
     be able to widen the guard), or via the `DANBYTE_SSRF_ALLOWLIST` env var. The API token is encrypted at rest and
     **erased when the run finishes** - a migration credential shouldn't outlive

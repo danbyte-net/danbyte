@@ -20,11 +20,7 @@ import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { ExportBundleButton } from "@/components/device-bundle"
 import { SyncDevicesButton } from "@/components/device-type-sync-dialog"
 import { DeviceTypeImagePortsPane } from "@/components/device-type-image-ports-pane"
-import {
-  DetailHero,
-  DetailShell,
-  DetailTab,
-} from "@/components/detail-shell"
+import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ObjectDocuments } from "@/components/object-documents"
 import { SnmpVrfControl } from "@/components/snmp-vrf-control"
 import {
@@ -182,9 +178,9 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
         ...(d.front_image || d.rear_image
           ? [{ value: "photo-ports", label: "Photo ports" }]
           : []),
-        { value: "sensors", label: "Sensors" },
+        { value: "sensors", label: "Sensors", count: d.sensor_count },
         { value: "devices", label: "Devices", count: d.device_count },
-        { value: "documents", label: "Documents" },
+        { value: "documents", label: "Documents", count: d.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}

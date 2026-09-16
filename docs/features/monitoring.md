@@ -17,7 +17,7 @@ This page is organised by task. Jump to:
 - [Check types](#check-types) - the protocols and what each measures
 - [Where checks apply (prefixes and inheritance)](#where-checks-apply)
 - [Schedule modes](#schedule-modes) - when checks run
-- [Reading results](#reading-results) - status, sparklines, history, uptime
+- [Reading results](#reading-results) - status, sparklines, history, uptime, the history API
 - [Run a check now](#run-a-check-now)
 - [The Monitoring dashboard](#the-monitoring-dashboard)
 - [Alerts](#alerts) and [Notifications](#notifications)
@@ -42,8 +42,11 @@ works for both IPs and prefixes.
    for example a TCP check asks for a port, an ICMP check for a packet count.
 5. Set the timing and credentials as needed (see [Check types](#check-types) and
    [Schedule modes](#schedule-modes)).
-6. Save. The check appears in the Monitoring section and starts running on its
-   schedule. Use **Check now** if you want a result immediately.
+6. Save. The check appears in the Monitoring section and is scheduled at once
+   - a check on an address runs on the next dispatch (or, on the fast lane,
+   within about ten seconds); a check on a prefix is spread over its
+   addresses by the materialise pass, which runs every five minutes. Use
+   **Check now** if you want a result immediately.
 
 ### Reusable check definitions
 
@@ -215,6 +218,52 @@ instantly. Hand-attached checks (the *Add check* flow on an IP or prefix) keep
 their own per-check interval and schedule mode instead - see
 [Per-check overrides](#per-check-overrides).
 
+### Sub-minute checks - the fast lane {#fast-lane}
+
+The minute beat cannot run anything faster than a minute, and every run it
+records is a row. For the handful of things that matter more than that - a
+core switch, an uplink, a firewall pair - a check can run **every 200 ms to
+30 s** instead. Pick a sub-minute interval on the check (the *Interval*
+picker on a check definition or in *Add check*) and it moves to the **fast
+lane**: one long-lived process (`danbyte-fastlane`) that probes from an
+in-memory schedule, on the core for checks the core runs and inside the
+Outpost for checks an Outpost runs.
+
+What reaches the database is what matters:
+
+- a **status change** is recorded the moment it happens - the probe that
+  caused it, the change, and everything a change sets off (alerts,
+  notifications, history, flapping) exactly as on the minute beat;
+- everything else is **downsampled**: one aggregated result per **Record
+  every** (default 60 s, 5 s at the least) carrying the window's min,
+  average and max latency and its packet loss. A one-second ping therefore
+  costs the database what a sixty-second one does, while an outage is seen
+  in *interval × fall* - three seconds for a 1 s check with the default
+  fall of 3. The individual probes are not stored; the IP's Monitoring tab
+  shows the last ten minutes of them while it is open (see [On an
+  IP](#on-an-ip)).
+
+Rise and fall mean what they always meant; they simply add up faster.
+*Stale after N scans* counts scans at the check's normal cadence rather
+than probes, so ten failed one-second probes is not "stale" - ten failed
+minutes is.
+
+The floors are 200 ms for ICMP and 1 s for anything that opens a
+connection; a timeout longer than the interval is brought down to it.
+**Sub-minute checks** in the monitoring settings caps how many the lane runs
+for the tenant (500 by default; 0 turns it off) - the rest, and every fast
+check whenever the lane is not running, run on the minute beat at the
+check's ordinary interval, which is why a fast check still carries one. The
+Overview shows the lane's checks and probes per second, and the red strip
+at the top says when the lane is down while fast checks exist.
+
+An Outpost runs the same loop for the fast checks bound to it: it pulls
+its set, probes it locally, and reports buffered probes every poll - or at
+once when a probe's reachability differs from the last one - and the core
+applies the same rise and fall to them it applies to its own. An Outpost
+older than 0.8 does not know the lane; its fast checks simply run at the
+ordinary interval until it is upgraded.
+
 ### Monitoring devices, types, and roles
 
 Checks always run against **IP addresses**, so a device (or every device of a
@@ -231,8 +280,58 @@ checks cover:
 | **OOB / management IP** | the device's out-of-band IP |
 
 A device-type or device-role policy applies the same target to *every* matching
-device. The most-specific scope wins (a per-device policy beats the device's
-type/role).
+device.
+
+Scopes run loosest to tightest - **region**, **site**, VRF, prefix,
+**platform**, device type, device role, device - each inheriting from the ones
+above it, and the most specific one wins:
+
+| Scope | Matches |
+|---|---|
+| **Region** | Every address at a site in that region, **or in any region below it** - a policy on *Europe* reaches a site in *Amsterdam*. |
+| **Site** | Every address at that site, including ones with no device on them. |
+| **Platform** | Every device running it. Broader than a device type, since one platform spans many models. |
+
+Region and site honour the **target** selector too, so "the primary IP of
+everything at this site" is one setting - but unlike the device-shaped scopes
+they also reach addresses with no device at all, because those are still at the
+site.
+
+The tab is part of the address - `?view=configuration&scope=platforms` - so a
+link to one scope's policies is something you can hand somebody, and a reload
+lands where it was.
+
+### Narrowing a policy
+
+A scope answers *which* objects; **filters** answer *which of them*. Every
+policy carries two, both empty by default:
+
+| Filter | Effect |
+|---|---|
+| **Name** | A glob the device name must match - `core-*`, `*-fw??`. Case-insensitive. |
+| **Interface** | A glob the address's interface must match - `Gi0/0/*`. Reads the *port*, not the device, so "only the uplinks" is one setting. An address bound to no interface never matches it. |
+| **Tags** | Every tag listed must be on the device. Several tags means all of them, not any. |
+| **Hardware** | A glob at least one of the device's inventory items or installed modules must match, by name or part number - `*PSU*`, `C9300-NM-*`. This is how a policy says *has this hardware, add that sensor*. Case-insensitive. |
+
+They **narrow**, never widen: a filter can only stop a policy applying, never
+add a check and never disable one a looser policy already added. That is why
+they are filters rather than scopes - a ladder would need an answer to "is a
+tag more specific than a role", and nobody can predict that one.
+
+Name and tags read the **device**, so a policy filtered on either does not
+reach an address with nothing on it; the interface filter reads the address's
+own port. Narrower is the safe direction for a rule that can only add
+monitoring.
+
+!!! warning "A prefix policy competes by its mask length"
+    Scopes are ranked on one scale, and a **prefix** policy takes its rank from
+    the prefix's **mask length** rather than a fixed position. So a `/24`
+    prefix policy outranks a device-role policy, while a `/8` one is outranked
+    by a VRF policy. If two policies could both apply to an address and one is
+    prefix-scoped, check the mask before assuming which wins - and prefer a
+    per-device policy when you want certainty, since only a `/128` reaches that
+    high. Region and site sit deliberately below any realistic mask, so they
+    never collide.
 
 **Turning *Monitor* on with no profiles/templates selected monitors basic
 reachability** - the policy falls back to a default ICMP *Reachability (ping)*
@@ -281,21 +380,85 @@ To avoid flapping on a single blip, status changes require a streak:
 Every status change is logged so you get a history timeline and can drive
 notifications.
 
+### Calling the states what you call them
+
+The six states are the machine's vocabulary. Yours may differ - plenty of NOCs
+say *Critical* rather than *Down*, and the shipped red is not everybody's red.
+A [status](catalogs-and-settings.md#naming-a-monitoring-check-state) can speak
+for a check state: tick the box, pick the state, and that status's name and
+colour take over every monitoring surface - badges, split badges, the filter
+rail, the dashboard charts. One status per state, and the stored value is
+still the state, so alert rules and webhooks are untouched.
+
 ## Reading results
+
+Every result and every status change records **who answered**: Danbyte's own
+workers, an Outpost by name, or Zabbix. It is the engine that *ran* the check,
+not the one the target is bound to - a ping on a device bound to Zabbix is run
+by Danbyte and says so. The Checks list shows it as a **Source** column and
+filters on it (`?source=local|outpost|zabbix`, `?engine=<id>`), and the check
+history and recent-changes lists carry it per row. Rows written before this
+was tracked have no engine and show as *Local*.
 
 ### On an IP
 
-The IP detail page has a **Monitoring** section with one row per check showing:
+The IP detail page's **Monitoring** tab reads top to bottom as *now → other
+systems → over time*, three sections in the same frame: **Checks**, **Zabbix**
+(only when the address's device is a Zabbix host) and **History**.
 
-- A status badge - up / down / degraded / unknown.
-- The check name and kind.
-- An inline **sparkline** of recent latency/status.
-- The last latency and last-run time.
+The tab is **live**: while it is open, every result the workers or the fast
+lane write for the address is pushed to it over a WebSocket (`/ws/monitoring/`)
+- the pill, latency and *last checked* move on their own, the fast lane's
+probes every second, and a status change re-reads the strips, bars and
+history. A *Live* badge beside the section title says the socket is up;
+without one (no WebSocket process, a proxy that drops it) the tab polls
+every 15 seconds instead. Only addresses somebody is looking at are pushed:
+a page registers interest for its address and the writers check it first,
+so an estate with nobody watching costs nothing.
 
-Expand a row to see its recent **history** table. When an IP has several checks
-with **different** results (one down while others are up), the badge becomes a
-**split badge** - coloured segments sized by how many checks are in each state,
-with a hover breakdown - rather than collapsing to just the worst one.
+**Checks** is one row per check: the status pill, the name and kind (with
+*inherited* or *from policy* as muted text when the check is not the
+address's own), a *Fast* badge for a sub-minute check, a *Flapping* pill when
+it is flagged, the last seven days as a **status strip** drawn to scale (an
+outage two days ago is a red block two days back; hover a block for its
+state and length, click it for its exact bounds, the status change that
+started it and the alerts that were open while it lasted), the last
+latency and when it last ran. When the
+checks disagree (one down while others are up), the section's badge is a
+**split badge** - coloured segments sized by how many checks are in each
+state - rather than just the worst one.
+
+Every row opens: the check's **latency over time** (24h / 7d / 30d - the
+average as a line, each bucket's min–max as a band, packet loss as bars on
+its own axis; a fast-lane check's windows carry their own min, max and loss,
+so a one-second ping and a five-minute one draw the same way), the
+per-check overrides, and its recent recorded results. A result row opens
+too: a plain one shows what the checker returned, a fast-lane window
+(*N probes · min–max ms*) shows the window's length, how many probes it
+folded and at what pace, its loss and its min / average / max.
+
+What a window does **not** carry is the probes themselves - the lane keeps
+one row per *Record every* by design (see [the fast lane](#fast-lane)), so
+lower *Record every* (five seconds at the least) when a check needs finer
+stored history. The last **ten minutes** of a fast check's raw probes are
+still there to look at: **Recent probes** under the chart lists them,
+newest first with millisecond timestamps, and grows by one line per probe
+while the tab is open. That list lives in Redis, only for addresses
+somebody is watching, and is gone ten minutes after the last look - it is
+a window on the lane, not history.
+
+**History** carries the window - 1h / 12h / 24h / 7d / 30d / 90d on the
+tabs, or any span at all from the slider button beside them (a number of
+hours or days, an hour to a year) - and, for that window:
+the availability figure with incidents, MTTR and time down; **daily
+availability** as one bar per day once three or more days were measured
+(three nines green, two amber, less red, a day with nothing measured empty);
+a strip for all checks together (worst state wins) and one per check when
+there are several, each with its availability at the end; then the status
+changes behind the picture, paged, with who answered each. Strip, bars,
+figure and table come from the same log, so they cannot disagree. *Open in
+Monitoring* carries the address into the tenant-wide History view with its
+filters set.
 
 ### On a prefix
 
@@ -317,7 +480,17 @@ you in three places:
 - The **IPs tab** has a **Monitoring** column showing each IP's status badge.
 - The **Overview** has a **Monitoring** summary: the roll-up badge + breakdown
   across every IP assigned to the device (worst status winning) and a per-IP
-  status grid linking to each monitored IP.
+  status grid linking to each monitored IP. What an external system reports -
+  open problems, protocols it cannot reach the host on - shows as chips beside
+  the badge, and in the badge's hover, the same way the lists show it.
+- The **Monitoring** tab: the roll-up with seven days of status to scale, one
+  row per monitored address with its own strip and chips, a **Zabbix** panel
+  when the device is a Zabbix host (what Zabbix reports - problems,
+  reachability, disabled or in maintenance - beside Danbyte's status, never
+  folded into it; see [What Zabbix says about a device](../monitoring/zabbix.md#host-status)),
+  and the **History** panel with the changes behind them over 24h / 7d / 30d
+  / 90d. The tab beside it, **SNMP**, holds what the device itself reports -
+  system facts, interfaces, sensors, drift.
 
 Because a service's check lives on the service's IP, service monitoring rolls
 up here too. The summary only appears when the device has at least one
@@ -339,6 +512,51 @@ doesn't skew the number. Time spent in *unknown* or *skipped* is excluded from t
 calculation and reported separately, so a check that simply wasn't running can't
 read as 100% uptime. The card also shows the number of **incidents** in the window
 and the **mean time to recovery (MTTR)**.
+
+### History
+
+Status changes are kept for a year, results for thirty days. The history API
+reads the changes back filtered by anything an address is - the same
+dimensions the list pages filter on - and returns facet counts and a bucketed
+series alongside the rows, so one call feeds a rail, a chart and a table:
+
+- `GET /api/monitoring/alerts/` takes `ip=`, `device=`, `template=` and a
+  `since`/`until` window (an alert overlaps it when it opened before the end
+  and was not resolved before the start) - what a strip segment asks.
+- `GET /api/monitoring/transitions/` - paged (`page`, `page_size` ≤ 200),
+  ordered by `at` or `ip`. Window: `since`/`until` (timezone-aware ISO) or
+  `days` (default 7, up to 365). Filters: `to_status`, `from_status`, `kind`,
+  `template`, `source`, `engine`, `ip`, `site`, `region` (descendants
+  included), `device`, `device_type`, `role`, `platform`, `prefix`, `vrf`,
+  `vlan`, `port`, `tag` (repeatable, every tag must match), `search`, and
+  `flapping=1` for the changes behind checks flagged as flapping right now;
+  every row says whether its check is (`flapping`), and the facets carry a
+  *Flapping* bucket counted like the others. Lists are comma-separated and
+  mean *any of*. A site matches an address's own site, its prefix's or its
+  device's. A VLAN matches the prefix's VLAN or the interface's.
+- `…/ips/<id>/transitions/`, `…/devices/<id>/transitions/`,
+  `…/prefixes/<id>/transitions/` - the same shape, pinned to one object.
+- `…/ips/<id>/timeline/?days=` and `…/devices/<id>/timeline/` - status over the
+  window as segments `{start, end, status}`, per check and rolled up (worst
+  wins), computed from the same transitions the uptime figure integrates.
+  Every window-taking endpoint also accepts `hours=` (1 up to a year), which
+  wins over `days`; explicit `since`/`until` stamps win over both.
+  `POST …/timeline/ {states: [...], days}` returns segments for up to 200
+  checks at once, for list strips.
+- `…/ips/<id>/history/` pages a check's recorded results backwards with
+  `before=<id>` (`next_before` in the response).
+- `…/ips/<id>/probes/?template=` - the last ten minutes of a fast-lane
+  check's raw probes, newest first (`probes`, `kept_seconds`, `interval_ms`);
+  `fast: false` and no probes for an ordinary check. Kept in Redis only
+  while the address is being watched.
+- `…/stats/?hours=24|168|720` picks the results-chart window; beyond three
+  days the buckets are days. 720 hours is the ceiling because results are
+  pruned after thirty days.
+
+Facet counts are computed with every filter applied *except* the facet's own,
+so ticking a second value in one facet never zeroes its neighbours. All of it
+is site-scoped: a viewer limited to one site gets that site's history, counts
+and buckets and nothing else.
 
 ## Run a check now
 
@@ -362,15 +580,49 @@ exactly like an automatic scan.
 
 ## The Monitoring dashboard
 
-**Governance → Monitoring** is the global view. It has three tabs:
+**Governance → Monitoring** is the global view. Its tabs:
 
-- **Overview** - stat cards (total checks, monitored IPs, definitions, alert
-  channels), charts (status distribution, checks by type, results over the last
-  24 hours), recent status changes, a **flapping** card (see below), and the
-  monitoring settings.
-- **Checks** - a global list of every check with quick-filter tabs (All / Up /
-  Degraded / Down / Stale / Skipped / Unknown, each with a count), search, and
-  paging. Each row links to its IP.
+- **Overview** - stat cards (total checks, monitored IPs, **availability**
+  over the chosen window - up over up-plus-down, degraded counting as
+  reachable - definitions, alert channels), charts (status distribution,
+  checks by type, results over the last 24 hours, 7 days or 30 days - hourly
+  up to three days, daily beyond; 30 days is the ceiling because results are
+  pruned after that), **Latency** (the estate's median and 95th percentile
+  per bucket - the median says how it feels, the 95th says who is
+  suffering), **Alerts** (opened against resolved per day - whether you are
+  keeping up), **Recent changes** (the latest status changes grouped by the
+  hour they landed in, with who answered), a **Flapping now** count (see
+  below), and the monitoring settings.
+- **History** - every status change in the tenant. The rail on the left
+  filters by the state a change went to or came from, who answered, check
+  type, site, device type, role, platform, check and engine - each with a
+  count of what ticking it would leave - and narrows by region, device,
+  prefix, VRF, VLAN, tag or port. The window is 24h / 7d / 30d / 90d or a
+  custom date range; the chart above the table shows changes per hour or per
+  day by state. Under it, **By weekday and hour** is a heatmap of the same
+  changes in your timezone (a 03:00 column lit on every row is a backup
+  window; a lit Monday row is a boot storm) - click a cell and the table and
+  the top list narrow to that hour of that weekday (`?dow=&hour=`; the
+  heatmap itself stays whole so the next cell can be picked) - and **Most
+  changes** lists the addresses that changed most, ten a page, with how many
+  of those changes went bad. Both follow the rail. Everything lives in the URL, so a view is
+  a link, and saved views keep a rail, a window and a search under a name.
+  Export walks every page the filters match, up to 5,000 rows.
+- **Checks** - every check in the tenant, on the same rail as History: status,
+  source, type, site, device type, role, platform, check and engine facets
+  with counts, plus region, device, prefix, VRF, VLAN, tag and port. The
+  quick tabs (All / Up / Degraded / Down / …, each with a count) set the
+  status in one click; the rail's Status facet combines several. Columns -
+  status, address with DNS name, device, site, check, type, source, latency,
+  since, last checked - sort on the server, so a click reorders the whole
+  list, not the page in hand. **7 days** adds a status strip per row. Saved
+  views and export work as on History; the dashboard donut's slices land here
+  with the status set.
+- **Flapping** - shown while anything is flagged: the Checks list pinned to
+  flapping checks, with row selection and a bulk **Confirm not flapping**.
+  Every row carries its **last 24 hours** to scale - the alternation itself
+  is the picture, so you can see whether the bouncing is settling before you
+  confirm; a block opens to its exact times and the alerts it raised.
 - **Templates** - your reusable check library.
 
 ### The Settings tab
@@ -394,14 +646,58 @@ defaults**.
 | **Reverse-DNS sync** | Keep IPs' DNS names current automatically (see below). |
 | **Discovery & cleanup** | Auto-discovery and stale-IP cleanup options (see below). |
 
-### Flapping monitor
+### Flapping {#flapping}
 
-The Overview tab has a **flapping** card that proactively surfaces IPs bouncing
-between states a lot - "this host is flapping, maybe go look at it" - ranked by how
-noisy each one is, regardless of whether it's currently up or down. To keep
-expected churn out of the list you can exclude whole IP statuses (the DHCP-scope
-escape hatch, in settings) or flip an **Ignore flapping** toggle on a single
-known-noisy IP. It only raises visibility - it doesn't page anyone.
+A check that goes bad **Flap threshold** times (5) within the **Flap window**
+(30 minutes) is **flapping** - and that is something the check *is*, not a
+list you have to ask for. The state shows as a **Flapping** pill beside the
+status badge wherever the status is: the prefix, device and VM lists, the
+address's summary and Monitoring tab (one pill per check), the device's
+Overview and Monitoring tab, every row of the Checks list and every change
+of a flagged check on the History tab - both of which have a **Flapping**
+facet on the rail to keep only those. The pill's hover says how many checks
+under the target are flagged. A flapping alert stops sending reminders, so a bouncing
+host cannot page on a loop.
+
+It is **sticky**. "It stopped bouncing" and "it is fine" are different
+claims, and the second is the operator's to make: **Confirm not flapping**
+(on the address, on the device, or in bulk on the **Flapping** tab of the
+Monitoring page) clears the state, records who said so in the address's
+change log, and only bad transitions *after* that moment count towards
+flagging it again - a confirmation means something, and the flag re-arms
+only on new evidence. Confirming needs `ipaddress.change` on the address.
+
+A tenant that would rather not be asked turns on **Auto-clear flapping** in
+the monitoring settings: a flagged check then clears itself once it has been
+quiet for **Quiet for** minutes (30) and is under the threshold. Off by
+default.
+
+Two things keep expected churn out: exclude whole IP statuses (the
+DHCP-scope escape hatch, in settings) or tick **Ignore flapping** on one
+known-noisy address - neither is ever flagged, and either clears a flag
+already raised. That is different from confirming: confirming clears the
+flag once, ignoring stops it being raised at all.
+
+**What gets mailed.** A flapping check is not mailed one change at a time.
+The moment the sweep flags it, every status-change channel in scope of the
+address (instant or batched, email or webhook) gets one **Flapping** notice:
+target, device, check, how many changes in the window, the last few changes
+as a chain, and a link to the address. From then on its changes are left out
+of the instant and batched status-change messages, and the alerts it opens
+and resolves are recorded - flagged from the start - but not announced. One
+more message follows when it is over: **Not flapping** when someone confirms
+it (naming who), or **Settled** when auto-clear cleared it. A webhook channel
+receives the same as an event (`"event": "flapping"`, `"settled"`,
+`"confirmed"`). The alert channels stay quiet the whole time; the flapping
+notice stands in for them.
+
+The Monitoring page's Overview shows a **Flapping now** count that opens the
+**Flapping** tab - the Checks list pinned to flagged checks, where rows can
+be selected and confirmed together. The dashboard has a **Flapping** widget
+with the same list. `GET /api/monitoring/flapping/` returns it; `POST
+/api/monitoring/flapping/clear/` with `state_ids`, `ip_ids` or `device_ids`
+confirms, as do `…/ips/<id>/flapping/clear/` and
+`…/devices/<id>/flapping/clear/`.
 
 ### Reverse-DNS enrichment
 
@@ -486,7 +782,7 @@ still open and are tracked, but no notification is sent. A silence scheduled for
 the future is effectively a **maintenance window**. Manage these under **Alerts →
 Silences**; silenced alerts are flagged in the list.
 
-### Renotify, escalation, grouping, flap dampening
+### Renotify, escalation, grouping, flapping
 
 These time-based policies are **per-tenant** and **off by default** (except
 grouping), and all of them respect acknowledgement and silences:
@@ -499,9 +795,9 @@ grouping), and all of them respect acknowledgement and silences:
   reminders.
 - **Escalation** - an alert left firing and unacknowledged past a deadline is
   bumped to *critical* and re-notified.
-- **Flap dampening** - an alert whose condition keeps reopening is marked
-  *flapping* and excluded from reminders until it settles, so a flapping host can't
-  page on a loop.
+- **Flapping** - an alert whose check is [flapping](#flapping) is marked so
+  and excluded from reminders until the state is confirmed clear (or clears
+  itself, when auto-clear is on), so a flapping host can't page on a loop.
 
 The Alerts table surfaces *escalated*, *flapping*, *silenced*, and *ack* chips, and
 tracks how many times each alert has notified.
@@ -520,14 +816,55 @@ Supported channels:
 
 | Channel | You provide | Notes |
 |---|---|---|
-| **Slack / Teams / Discord** | An incoming-webhook URL | Posts the alert summary with a deep link. |
+| **Slack / Discord** | An incoming-webhook URL | Posts the alert summary with a deep link. |
+| **Microsoft Teams** | A workflow/webhook URL | Posts the alert summary as an Adaptive Card. |
 | **PagerDuty** | A routing key | Triggers on fire, resolves on clear; deduplicated per condition. |
+| **Telegram** | A bot token and a chat ID | Posts the alert summary as plain text; optionally into one group topic. |
 | **Webhook** | A URL | POSTs the alert as JSON to your own endpoint. |
 | **Email** | Recipient addresses | Sent via the deployment mail server (below). |
 
 Notifications are best-effort: a failing channel is logged and never breaks a
 check run. When a **public base URL** is configured (see below), messages include
 a clickable link straight back to the alert.
+
+#### Microsoft Teams
+
+Teams messages are sent as an **Adaptive Card** (v1.4) inside the standard
+message envelope, which is what both a **Teams Workflows** webhook and a Power
+Automate flow ending in **Post card in a chat or channel** expect. With a public
+base URL set, the card carries a *View in Danbyte* button instead of a pasted
+link.
+
+Note that the webhook answers **202 Accepted** as soon as the flow accepts the
+request - before the flow has posted anything. A 202 (and so a green **Send
+test**) means Danbyte delivered the payload, not that Teams rendered the message.
+If the card never appears, check the run history of the flow itself.
+
+#### Telegram
+
+Telegram uses the **Bot API**, not a webhook URL. You provide:
+
+- **Bot token** - from [@BotFather](https://t.me/BotFather). Stored encrypted and
+  never read back by the API; leave the field blank when editing to keep it.
+- **Chat ID** - the destination. A private chat, group, supergroup or channel;
+  group and channel IDs are negative (`-1001234567890`).
+- **Topic ID** - optional, for a group with **Topics** enabled. Sent as the Bot
+  API's `message_thread_id`; leave it blank to post in the general topic.
+
+Add the bot to the group or channel **before** testing - a bot cannot message a
+chat it isn't in, and for a channel it needs post rights. A user must have
+messaged the bot at least once before it can DM them.
+
+To find a chat ID, message the chat (or add the bot and post there) and read
+`https://api.telegram.org/bot<TOKEN>/getUpdates` - the `chat.id` in the last
+update is the value to paste. If the group has Topics on, the same update
+carries the `message_thread_id` of the topic you posted in.
+
+Messages are sent as **plain text** with no `parse_mode`, so device names and
+detail strings never need escaping. Telegram answers **HTTP 200** with
+`{"ok": false, "description": …}` when it refuses a message (wrong chat ID, bot
+not in the group, deleted topic) - Danbyte treats that as a failure and **Send
+test** shows the description.
 
 ### Subscriptions and the Notifications page
 
@@ -582,21 +919,27 @@ setting up any alert rule - for operators who just want "email me when something
 in this subnet goes down". Enable **Send raw status changes** on the channel and
 pick a delivery mode:
 
-- **Instant** - one message per check batch, carrying all of that batch's
-  matching changes (coalesced, so a big flap is one email, not fifty).
+- **Instant** - the first change goes out at once; a channel then never sends
+  more often than once a **minute**. Changes inside that minute are held and
+  delivered together in the next message (the minute beat sends it when no
+  new batch does), so a check on the fast lane that bounces every few seconds
+  costs one email a minute at most - and none once the flap sweep has
+  flagged it (see [Flapping](#flapping)).
 - **Batched** - a periodic **mini-digest** every *N* minutes (default 30),
   summarising the window's changes as the same per-prefix status-badge chains the
   monitoring digest uses. Nothing is sent for an empty window.
 
 Scope it with the channel's existing **On statuses** filter (e.g. only `down`)
-and an optional **subnet** - only IPs inside that prefix notify. This rides the
+and an optional **subnet** - only IPs inside that prefix notify. Changes on a
+check that is currently **flapping** are left out of both modes; the channel
+gets the flapping notice instead. This rides the
 same delivery gates and the same effective SMTP as everything else; instant fires
 from the check batch, batched from the minute beat, so neither needs a new timer.
 
 ### Email and outbound delivery (deployment-wide)
 
 Mail server and outbound options are a **single deployment-wide setting**, edited
-under **Settings → Email & Delivery** by an administrator (users with the manage
+under **Settings → Email** by an administrator (users with the manage
 permission). Email channels all deliver through this one server.
 
 | Setting | What it controls |
@@ -605,7 +948,7 @@ permission). Email channels all deliver through this one server.
 | **SMTP host / port / security** | The mail server and `none` / `starttls` / `ssl`. |
 | **SMTP username / password** | Auth (the password is encrypted at rest and write-only). |
 | **From address** | The From header on alert emails. |
-| **Public base URL** | Adds clickable links to alerts in Slack/Teams/email/PagerDuty messages. |
+| **Public base URL** | Adds clickable links to alerts in Slack/Teams/Telegram/email/PagerDuty messages. |
 | **Webhook timeout** | How long to wait for outbound webhook POSTs. |
 | **Outbound proxy** | Optional HTTP(S) proxy for outbound webhooks. |
 
@@ -614,14 +957,24 @@ or unreachable SMTP host fails fast (a bounded connection timeout,
 `EMAIL_SMTP_TIMEOUT`, default 10s) and returns the SMTP error, rather than
 hanging the request.
 
-**Preview email templates.** A **Preview email templates** card sends a sample
-of any email Danbyte produces - monitoring digest, certificate digest, alert and
-grouped-alert notifications, the sign-in code, and the invite - filled with
-example data, to an address you choose (or **All templates** at once). Subjects
-are prefixed with `[Preview]` and delivery uses the same SMTP config, so you can
-see exactly how each email looks before it goes out for real. Every email shares
-one branded, inline-styled HTML layout (with a plain-text alternative) using
-Danbyte's status palette.
+**Templates.** A **Templates** card on Settings → Email shows every email
+Danbyte produces - monitoring digest, certificate digest, alert and
+grouped-alert notifications, status changes, the flapping notice, the sign-in code, the invite -
+rendered with example data exactly as a recipient sees it. Pick one to see
+it in the page; **Send this one** (or **Send all**) mails it to an address you
+choose, subject prefixed with `[Preview]`, through the same SMTP config, so
+you can check it in a real mail client before it goes out for real.
+
+Every email shares one layout: a document, not a marketing card. White,
+black ink, hairlines, bold for emphasis, and colour only where something
+needs acting on - a red critical count, a red *Down*; a warning is bold, an
+*Up* is plain. The header carries the deployment's logo: the **login logo**
+uploaded under Settings → Branding & identity when there is one, else
+Danbyte's own. It is embedded in the mail itself as an inline image (not a
+`data:` URI, which Gmail and Outlook strip), so it shows on a laptop with no
+access to the site. SVG logos are skipped - mail clients do not draw them;
+upload a PNG. Everything is table-based inline-styled HTML with a plain-text
+alternative, the only markup every mail client agrees on.
 
 ## Auto-discovery and cleanup
 
@@ -692,7 +1045,7 @@ glance. Badges use Danbyte's status palette (green up, red down/stale, amber
 degraded), and a heavily-flapping network is capped so the mail stays a
 reasonable size.
 
-Configure it under **Settings → Deployment → General → Email digest**
+Configure it under **Settings → Monitoring → Email digest**
 (deployment-wide default) - enable it, choose **daily** or **weekly** (with a
 weekday), and set the **recipients** (comma/newline-separated). A tenant can
 override the whole group (schedule + recipients) via its own settings, so an MSP
@@ -731,7 +1084,7 @@ Each certificate digest covers, per tenant:
   expiry.
 - **Recent changes** - endpoints now serving a different certificate than before.
 
-Enable it under **Settings → Deployment → General → Email digest → Certificate
+Enable it under **Settings → Monitoring → Email digest → Certificate
 digest**. It runs on the same cadence as the monitoring digest (the daily
 `danbyte-digest` timer) but is gated by its own flag and tracked separately, so a
 tenant can run one, both, or neither. Recipients default to the digest

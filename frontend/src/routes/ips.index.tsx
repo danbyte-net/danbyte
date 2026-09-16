@@ -12,6 +12,7 @@ import { TableActions } from "@/components/table-actions"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import { buildIpColumns } from "@/components/columns/ip-columns"
+import { IpBulkBar } from "@/components/ip-bulk-bar"
 import { useTableFilters } from "@/components/table-filters"
 
 export const Route = createFileRoute("/ips/")({
@@ -35,6 +36,7 @@ function IpsPage() {
   const canAdd = canDo("ipaddress", "add")
   const { status, role, scope } = Route.useSearch()
   const [q, setQ] = useState("")
+  const [selectedRows, setSelectedRows] = useState<IPAddress[]>([])
 
   // Filter server-side (the address space can be very large): the
   // status/role/scope deep-links and the search box narrow before rows are
@@ -53,7 +55,7 @@ function IpsPage() {
   const allRows = useMemo(() => query.data?.results ?? [], [query.data])
 
   const columns = useMemo<ColumnDef<IPAddress>[]>(
-    () => buildIpColumns<IPAddress>({ copyButton: true }),
+    () => buildIpColumns<IPAddress>({ copyButton: true, selection: true }),
     []
   )
   // Seed the status / role / scope facets from the URL so the active filter is
@@ -75,44 +77,53 @@ function IpsPage() {
   } = useTableFilters(columns, allRows, initialEnums)
 
   return (
-    <ListPageShell
-      title="IP addresses"
-      count={query.data ? filteredRows.length : undefined}
-      rail={rail}
-      savedViews={{
-        objectType: "ipaddress",
-        filters: { snapshot, restore, activeCount },
-      }}
-      actions={
-        <>
-          <TableActions ioType="ipaddress" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/ips/new">Add IP</Link>
-            </Button>
-          )}
-        </>
-      }
-      search={{
-        value: q,
-        onChange: setQ,
-        placeholder: "Filter by address or DNS name…",
-      }}
-      query={query}
-    >
-      {allRows.length === 0 ? (
-        <EmptyState title="No IP addresses.">
-          IPs appear here as they're created under a prefix, discovered, or
-          imported. Open a prefix to see and manage the addresses inside it.
-        </EmptyState>
-      ) : (
-        <DataTable
-          data={filteredRows}
-          columns={wiredColumns}
-          flexColumn="description"
-          tableId="ips"
-        />
-      )}
-    </ListPageShell>
+    <>
+      <ListPageShell
+        title="IP addresses"
+        count={query.data ? filteredRows.length : undefined}
+        rail={rail}
+        savedViews={{
+          objectType: "ipaddress",
+          filters: { snapshot, restore, activeCount },
+        }}
+        actions={
+          <>
+            <TableActions ioType="ipaddress" />
+            {canAdd && (
+              <Button size="sm" asChild>
+                <Link to="/ips/new">Add IP</Link>
+              </Button>
+            )}
+          </>
+        }
+        search={{
+          value: q,
+          onChange: setQ,
+          placeholder: "Filter by address or DNS name…",
+        }}
+        query={query}
+      >
+        {allRows.length === 0 ? (
+          <EmptyState title="No IP addresses.">
+            IPs appear here as they're created under a prefix, discovered, or
+            imported. Open a prefix to see and manage the addresses inside it.
+          </EmptyState>
+        ) : (
+          <DataTable
+            data={filteredRows}
+            columns={wiredColumns}
+            flexColumn="description"
+            onSelectedRowsChange={setSelectedRows}
+            tableId="ips"
+          />
+        )}
+      </ListPageShell>
+      {/* Bulk bar at root so the table can unmount without losing the
+          selection mid-action (see /prefixes). */}
+      <IpBulkBar
+        selected={selectedRows}
+        onCleared={() => setSelectedRows([])}
+      />
+    </>
   )
 }

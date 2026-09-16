@@ -1,9 +1,19 @@
 import type { ColumnDef } from "@tanstack/react-table"
 
-import type { Device, DeviceRole, DeviceType } from "@/lib/api"
+import type {
+  Device,
+  DeviceRole,
+  DeviceType,
+  Platform,
+  Region,
+  Site,
+} from "@/lib/api"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
+import { buildSiteColumns } from "@/components/columns/site-columns"
 import { buildDeviceRoleColumns } from "@/components/columns/device-role-columns"
 import { buildDeviceTypeColumns } from "@/components/columns/device-type-columns"
+import { buildPlatformColumns } from "@/components/columns/platform-columns"
+import { buildRegionColumns } from "@/components/columns/region-columns"
 import {
   monitoringControlColumn,
   type PolicyColumnContext,
@@ -85,6 +95,38 @@ export function buildDeviceRolePolicyColumns({
     ...buildDeviceRoleColumns({
       include: ["name", "description", "devices", "vms", "updated"],
       countFacets: "range",
+    }),
+    monitoringControlColumn(controls),
+  ]
+}
+
+export function buildSitePolicyColumns({
+  controls,
+}: PolicyColumnContext<Site>): ColumnDef<Site>[] {
+  return [
+    ...buildSiteColumns<Site>({
+      // Counts belong on /sites; this tab is about which policy applies.
+      omit: ["gateway_policy", "vlans", "vrfs", "tags", "devices", "vms"],
+    }),
+    monitoringControlColumn(controls),
+  ]
+}
+
+export function buildRegionPolicyColumns({
+  controls,
+}: PolicyColumnContext<Region>): ColumnDef<Region>[] {
+  return [
+    ...buildRegionColumns<Region>({ include: ["name", "parent", "description"] }),
+    monitoringControlColumn(controls),
+  ]
+}
+
+export function buildPlatformPolicyColumns({
+  controls,
+}: PolicyColumnContext<Platform>): ColumnDef<Platform>[] {
+  return [
+    ...buildPlatformColumns<Platform>({
+      include: ["name", "manufacturer", "description"],
     }),
     monitoringControlColumn(controls),
   ]

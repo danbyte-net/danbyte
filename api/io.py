@@ -235,6 +235,13 @@ class ModelIOHandler:
             ):
                 fk_set[field.name] = None
                 continue
+            # An empty cell on a required column with a default means "the
+            # default" (gateway_policy, status flags), not an empty string.
+            if (
+                existing is None and not field.is_relation and not field.blank
+                and field.has_default() and isinstance(raw, str) and raw.strip() == ""
+            ):
+                continue
             val = _coerce(field, raw, tenant, user)
             if field.is_relation:
                 fk_set[field.name] = val

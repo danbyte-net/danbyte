@@ -11,3 +11,4 @@ tunnels that tie your sites and devices together.
 | [Power](../features/power.md) | Power panels and the feeds that run from them. |
 | [Wireless](../features/wireless.md) | Wireless LAN groups and SSIDs. |
 | [VPN tunnels](../features/vpn.md) | Tunnel groups, IPSec profiles, and individual tunnels. |
+| [Routing](../features/routing.md) | Static routes, routing policies, prefix lists, communities and keychains - what a device routes with, rendered into its config. |

@@ -132,6 +132,14 @@ ${colorConfig
   )
 }
 
+/** A count axis wide enough for its largest label. A fixed 28px fits two
+ * digits; a busy week of status changes runs to four, and recharts clips
+ * the first digit rather than growing the axis. */
+export function countAxisWidth(values: number[]) {
+  const top = Math.max(0, ...values.filter((v) => Number.isFinite(v)))
+  return Math.max(28, 12 + 7 * String(Math.round(top * 1.1)).length)
+}
+
 export const ChartTooltip = RechartsPrimitive.Tooltip
 
 interface ChartItem {
@@ -154,6 +162,8 @@ export function ChartTooltipContent({
   color,
   nameKey,
   labelKey,
+  formatter,
+  labelFormatter,
 }: {
   active?: boolean
   payload?: ChartItem[]
@@ -166,6 +176,21 @@ export function ChartTooltipContent({
   color?: string
   nameKey?: string
   labelKey?: string
+  /** Render a row's value yourself - a range as "2–8 ms", a percentage with
+   * its sign. The upstream shadcn prop; receives the item's value, its key
+   * and the item. */
+  formatter?: (
+    value: number | string,
+    name: string,
+    item: ChartItem
+  ) => React.ReactNode
+  /** Render the label row yourself - a bucket as "04:10 – 04:15" rather
+   * than its start. The upstream shadcn prop; receives the resolved label
+   * and the payload. */
+  labelFormatter?: (
+    label: React.ReactNode,
+    payload: ChartItem[]
+  ) => React.ReactNode
 }) {
   const { config } = useChart()
 
@@ -178,9 +203,23 @@ export function ChartTooltipContent({
       !labelKey && typeof label === "string"
         ? config[label]?.label || label
         : itemConfig?.label
+    if (labelFormatter)
+      return (
+        <div className={cn("font-medium", labelClassName)}>
+          {labelFormatter(value, payload)}
+        </div>
+      )
     if (!value) return null
     return <div className={cn("font-medium", labelClassName)}>{value}</div>
-  }, [label, labelKey, payload, hideLabel, labelClassName, config])
+  }, [
+    label,
+    labelKey,
+    payload,
+    hideLabel,
+    labelClassName,
+    config,
+    labelFormatter,
+  ])
 
   if (!active || !payload?.length) return null
 
@@ -239,13 +278,18 @@ export function ChartTooltipContent({
                     {itemConfig?.label || item.name}
                   </span>
                 </div>
-                {item.value != null && (
-                  <span className="num font-medium text-foreground tabular-nums">
-                    {typeof item.value === "number"
-                      ? item.value.toLocaleString()
-                      : item.value}
-                  </span>
-                )}
+                {item.value != null &&
+                  (formatter ? (
+                    <span className="num font-medium text-foreground tabular-nums">
+                      {formatter(item.value, key, item)}
+                    </span>
+                  ) : (
+                    <span className="num font-medium text-foreground tabular-nums">
+                      {typeof item.value === "number"
+                        ? item.value.toLocaleString()
+                        : item.value}
+                    </span>
+                  ))}
               </div>
             </div>
           )

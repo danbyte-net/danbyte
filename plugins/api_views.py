@@ -39,13 +39,17 @@ def plugins_list(request):
     """Installed plugins and their load state (loaded / incompatible / error),
     each annotated with any unapplied migrations so the UI can offer "Apply".
 
-    Readable by any authenticated user - it's inventory, not a secret. It does
-    not expose per-tenant enablement (that arrives with the config endpoints).
+    Readable by any authenticated user - it's inventory, not a secret. Each
+    loaded plugin carries ``enabled``: its effective state for the caller's
+    active tenant, so the toggle reflects what the cascade resolved to.
     """
+    from api.views import _get_active_tenant
     from core.services import pending_migrations_by_app
 
     from .install import uploaded_names
+    from .resolve import plugin_enabled
 
+    tenant = _get_active_tenant(request)
     pending = pending_migrations_by_app()
     uploaded = set(uploaded_names())
     # Map plugin module → its Django app_label (last dotted component).
@@ -56,6 +60,9 @@ def plugins_list(request):
         entry["unapplied_migrations"] = pending.get(label, []) if label else []
         # Installed via upload (offline) → the UI offers Uninstall.
         entry["uploaded"] = entry["module"] in uploaded
+        entry["enabled"] = (
+            plugin_enabled(entry["slug"], tenant) if entry["state"] == "loaded" else False
+        )
 
     # Uploaded plugins that aren't in the boot report yet are installed on disk
     # but not loaded until the next restart. Surface them as "pending" so the UI
@@ -78,6 +85,8 @@ def plugins_list(request):
                 "max_version": None,
                 "unapplied_migrations": [],
                 "uploaded": True,
+                "builtin": False,
+                "enabled": False,
             }
         )
 

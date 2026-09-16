@@ -16,6 +16,7 @@ import { QueryError } from "@/components/query-error"
 import { AsnDeleteDialog } from "@/components/asn-delete-dialog"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { EmbeddedBGPSessionTable } from "@/components/embedded-tables"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/asns/$id")({ component: AsnDetail })
@@ -39,9 +40,9 @@ function AsnDetail() {
 }
 
 function Body({ asn: a }: { asn: ASN }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "sessions" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<ASN | null>(null)
   const goBack = useCallback(() => nav({ to: "/asns" }), [nav])
@@ -84,6 +85,7 @@ function Body({ asn: a }: { asn: ASN }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "sessions", label: "BGP sessions" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -92,6 +94,13 @@ function Body({ asn: a }: { asn: ASN }) {
     >
       <DetailTab value="overview">
         <AsnOverview asn={a} />
+      </DetailTab>
+      <DetailTab value="sessions">
+        <EmbeddedBGPSessionTable
+          filter={{ asn: a.id }}
+          omit={["local_asn"]}
+          emptyText="No BGP instance runs this AS yet."
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.asn" objectId={a.id} />

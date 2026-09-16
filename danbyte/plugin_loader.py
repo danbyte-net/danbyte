@@ -42,6 +42,8 @@ class PluginStatus:
     error: str = ""
     min_version: str | None = None
     max_version: str | None = None
+    # Ships inside Danbyte (settings.BUILTIN_PLUGINS) - toggle-only in the UI.
+    builtin: bool = False
 
 
 @dataclass
@@ -116,14 +118,19 @@ def _compatible(current: str, minimum: str | None, maximum: str | None) -> tuple
     return True, ""
 
 
-def discover(plugin_modules: list[str], danbyte_version: str) -> LoadResult:
+def discover(
+    plugin_modules: list[str], danbyte_version: str, builtin: list[str] | tuple[str, ...] = ()
+) -> LoadResult:
     """Resolve the ``PLUGINS`` list into loadable apps + a status report.
 
     Called once from ``danbyte/settings.py``. Never raises for a single bad
     plugin - failures land in the report and are excluded from ``enabled``.
+    ``builtin`` names the modules that ship inside Danbyte itself; they go
+    through the same gate but are flagged so the UI offers only the toggle.
     """
     result = LoadResult()
     seen: set[str] = set()
+    builtin_set = set(builtin)
 
     for raw in plugin_modules:
         module = (raw or "").strip()
@@ -149,6 +156,7 @@ def discover(plugin_modules: list[str], danbyte_version: str) -> LoadResult:
             description=getattr(config, "description", "") or "",
             min_version=getattr(config, "min_version", None),
             max_version=getattr(config, "max_version", None),
+            builtin=module in builtin_set or bool(getattr(config, "builtin", False)),
         )
 
         ok, why = _compatible(danbyte_version, status.min_version, status.max_version)

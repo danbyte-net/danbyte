@@ -174,6 +174,67 @@ with a [saved view](#saved-views), so a curated diagram ("core row",
 "customer X hand-off") is one select away. Right-click also offers *Open
 device* and *Focus here* in any mode.
 
+### Hiding things - the eyes
+
+The map has the same eyes as the [site map](site-map.md) and the
+[floor plans](floor-plans.md). In the **Objects** sidebar, every group
+header has one - a **role**, a **site** or a **location** (whichever the
+Devices list is grouped by), a **link family** (a cable media type, or the
+LLDP-discovered links) - and so does every device row. Right-click a card →
+**Remove from view** is the same thing for one card, from the canvas.
+
+Hiding is not a filter: a filter says what kind of thing belongs on the map,
+this says "not that one" - the last mile of a diagram you are shaping for
+someone else to read. What is hidden is kept by *group*, so a role hidden
+today hides the switch that gets that role tomorrow. A hidden card takes its
+cables with it (a cable to a card that is not drawn has nowhere to land); a
+hidden link family goes without touching the cards. Positions are kept -
+hiding never re-runs the layout, and re-layout ignores hidden cards so they
+do not hold empty space. Hidden objects stay in the sidebar, dimmed, with the
+eye lit, so "where did my core switch go" answers itself; **Show all** at the
+top of the sidebar - or the **"n hidden · Show all"** chip in the corner when
+the sidebar is closed - puts everything back.
+
+The hidden set saves with the view, and the default map remembers it per
+browser. Views saved before the eyes existed hold their removed cards under
+the same model.
+
+Keyboard: ++h++ hides the selected card (or, on a grouped map, the selected
+site or location); ++shift+h++ shows everything again. The same two keys
+work on the site map and the floor plans.
+
+(In a custom map, *Remove from map* is the different thing next to *Remove
+from view*: it takes the device out of the hand-picked set the map is built
+from.)
+
+### Zones - boxes to group things by eye
+
+The **Zone** button (or right-click empty canvas → *Add zone*) drops a
+labelled box behind the map. Use them to say what a cluster of cards *is*:
+"WAN circuits", "comms closet rack", "customer side".
+
+- **Move** it by its label bar - the bar is the grip, so a click anywhere
+  else inside the box still reaches the canvas and the cards under it.
+- **Rename** it by double-clicking the label.
+- **Resize** it by selecting it and dragging a corner.
+- **Recolour or delete** it from the small toolbar above a selected zone, or
+  by right-clicking it.
+
+A zone is an **annotation, not a container** - it owns nothing inside it, so
+dragging one moves the box and leaves every card exactly where it was. That
+is what makes it safe to draw one across a map somebody else arranged.
+Zones sit behind the cables as well as the cards, so a cable crossing a zone
+still reads as a cable.
+
+Like the arrangement, zones are kept **per view style**: a box that frames
+four Flat chips would frame half a card in Wiring.
+
+Zones and hidden objects belong to the map you drew them on. A saved view
+carries its own, the default map keeps its own in this browser, and a
+**custom map is a scratch map** - what you draw there stays there until you
+save it as a view, and exiting the custom map does not carry it back to the
+default map.
+
 ## Filters, focus, search
 
 Filter by **site / role / status / tag** - the filter fields are searchable
@@ -182,6 +243,33 @@ re-query just its neighbourhood, with a **1–4 hop** radius selector; the
 focus chip in the header clears it. The **Find device** box dims everything
 that doesn't match (name, IP, type) - press ++enter++ to zoom to the first
 hit.
+
+### On this map - the objects sidebar
+
+**Objects** in the toolbar opens the same sidebar the site map and the floor
+plans have: one search box, status chips, and every object on the map in
+foldable groups. It is the answer to "where is that switch" on a 70-card
+map.
+
+- **Problems** first: every card whose monitoring roll-up is down or
+  degraded, worst first. The **down / degraded / up** chips narrow the whole
+  list to one state.
+- **Devices** grouped by **role**, **site** or **location** - the switch at
+  the group header, remembered per browser - with the monitoring chip on
+  each row. When the map is grouped by site or location, the groups are
+  listed instead; double-click one to open it.
+- **Links** by media type, with LLDP-discovered links and **BGP sessions**
+  (a dotted line per peering device pair and table, labelled with the two
+  AS numbers, iBGP or eBGP and the VRF; click it to open the session) as
+  their own families;
+  each row names its two ends and the cable label.
+- **Zones** on this view style: click to fit the box, double-click to
+  rename.
+
+A click on any row flies to the object and selects it, so its inspector
+opens as if you had clicked the card. The eyes on the headers and rows are
+[hiding](#hiding-things-the-eyes). The sidebar is a per-browser preference,
+like the site map's.
 
 ## Layout: side-to-side or tree
 

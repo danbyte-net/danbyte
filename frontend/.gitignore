@@ -13,3 +13,10 @@ todos.json
 
 # typescript
 *.tsbuildinfo
+
+# Vendor marks. Only the ones whose owner has said yes in writing are
+# tracked; everything else here is operator-supplied (see the README there).
+public/branding/vendors/*
+!public/branding/vendors/README.md
+!public/branding/vendors/proxmox.svg
+!public/branding/vendors/proxmox-dark.svg
