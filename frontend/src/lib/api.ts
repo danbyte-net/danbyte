@@ -3281,6 +3281,9 @@ export interface FHRPGroup {
   auth_type_display: string
   auth_key: string
   virtual_ip: { id: string; ip_address: string } | null
+  /** Anycast gateway: send IPv6 router advertisements, and how often. */
+  nd_ra: boolean
+  nd_ra_interval: number | null
   assignments: FHRPGroupAssignment[]
   assignment_count: number
   description: string
@@ -3300,6 +3303,8 @@ export interface FHRPGroupWritePayload {
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
+  nd_ra?: boolean
+  nd_ra_interval?: number | null
 }
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
@@ -4349,6 +4354,9 @@ export interface BGPAddressFamily {
   networks: string[]
   maximum_paths: number | null
   maximum_paths_ibgp: number | null
+  /** EVPN only: leak the VRF's unicast routes into EVPN as type-5. */
+  advertise_ipv4_unicast: boolean
+  advertise_ipv6_unicast: boolean
   import_policy: { id: string; name: string } | null
   export_policy: { id: string; name: string } | null
   redistributions: Redistribution[]

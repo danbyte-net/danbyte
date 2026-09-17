@@ -590,6 +590,9 @@ class BGPAddressFamily(models.Model):
     networks = models.JSONField(default=list, blank=True)
     maximum_paths = models.PositiveSmallIntegerField(null=True, blank=True)
     maximum_paths_ibgp = models.PositiveSmallIntegerField(null=True, blank=True)
+    # EVPN only: leak the VRF's unicast routes into EVPN as type-5.
+    advertise_ipv4_unicast = models.BooleanField(default=False)
+    advertise_ipv6_unicast = models.BooleanField(default=False)
     import_policy = models.ForeignKey(
         RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="bgp_af_imports",

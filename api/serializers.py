@@ -5789,7 +5789,7 @@ class FHRPGroupSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
         model = FHRPGroup
         fields = ["id", "name", "protocol", "protocol_display",
                   "group_id", "auth_type", "auth_type_display", "auth_key",
-                  "virtual_ip", "virtual_ip_id",
+                  "virtual_ip", "virtual_ip_id", "nd_ra", "nd_ra_interval",
                   "assignments", "assignment_count",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]

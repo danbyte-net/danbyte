@@ -114,6 +114,20 @@ class InstanceTests(_Base):
         inst_body = self.client.get(f"/api/routing/bgp-instances/{inst.id}/").json()
         self.assertEqual(inst_body["address_families"][0]["afi_safi"], "ipv4-unicast")
         self.assertEqual(inst_body["session_count"], 0)
+        # EVPN: the type-5 leak flags, on the row and as ready-made lines in
+        # the render; the collection names the instance the row is under.
+        r = self._post("/api/routing/bgp-address-families/", {
+            "instance_id": str(inst.id), "afi_safi": "l2vpn-evpn",
+            "advertise_ipv4_unicast": True,
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertTrue(r.json()["advertise_ipv4_unicast"])
+        self.assertEqual(r.json()["instance"]["id"], str(inst.id))
+        rows = self.client.get("/api/routing/bgp-address-families/").json()["results"]
+        self.assertEqual({x["instance"]["id"] for x in rows}, {str(inst.id)})
+        afs = {a["afi_safi"]: a for a in routing_context(inst.device)["bgp"][0]["address_families"]}
+        self.assertEqual(afs["l2vpn-evpn"]["advertise"], ["ipv4 unicast"])
+        self.assertEqual(afs["ipv4-unicast"]["advertise"], [])
 
 
 class SessionTests(_Base):

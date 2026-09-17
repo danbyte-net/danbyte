@@ -984,6 +984,23 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         "auto_discover", "auto_assign_site", "monitoring_engine",
     )
 
+    def perform_destroy(self, instance):
+        # Addresses on a deleted prefix go back to the prefix that still
+        # contains them; only ones nothing covers fall with it.
+        from .views import reparent_ips_out_of
+
+        reparent_ips_out_of(instance)
+        instance.delete()
+
+    @action(detail=True, methods=["get"], url_path="delete-impact")
+    def delete_impact(self, request, pk=None):
+        """What deleting this prefix does to the addresses on it: how many
+        move to a containing prefix (and which one takes most), how many have
+        no container and are removed."""
+        from .views import reparent_ips_out_of
+
+        return Response(reparent_ips_out_of(self.get_object(), dry_run=True))
+
     def perform_create(self, serializer):
         prefix = serializer.save(
             **{self.tenant_field: self._tenant_or_403()},

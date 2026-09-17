@@ -294,7 +294,14 @@ one (NX-OS does, FRR does not).
 
 The anycast gateway itself is an ordinary SVI: a virtual interface in the
 VRF, with the shared address assigned through an [FHRP group](ipam-objects.md#fhrp-groups) of
-protocol **EVPN anycast gateway**.
+protocol **EVPN anycast gateway**. That is the whole trick for "the same
+address on every leaf": the address exists **once**, as the group's virtual
+IP, and the group is assigned to each leaf's SVI - do not create the address
+per leaf, which the uniqueness rule refuses. An anycast group also carries
+the SVI's IPv6 neighbour discovery: whether it sends **router
+advertisements** and at what **interval**; the subnet it announces is the
+gateway's own prefix. The render hands all of it to the SVI loop (see
+[templates](routing-templates.md#one-shape-everywhere)).
 
 An L2VPN's page lists the VTEPs carrying it; a VLAN's page lists the
 L2VPNs terminating on it. The `l2vpn-evpn` address family on the BGP
@@ -351,7 +358,14 @@ routing:
   communities:   [{value, kind, name}]
   keychains:     [{name, algorithm, key_set}]
   bfd_profiles:  [{name, min_tx, min_rx, multiplier, echo}]
+  keychain_by_name, bfd_profile_by_name: the same two, keyed by name
 ```
+
+An `l2vpn-evpn` address family carries `advertise_ipv4_unicast` and
+`advertise_ipv6_unicast` (the type-5 leak of a VRF's unicast routes into
+EVPN) and, ready to print, `advertise: ["ipv4 unicast", …]`. An SVI's
+`by_interface` row carries `gateway` (the anycast address with its mask) and
+`nd` (`ra`, `ra_interval`, `prefix`) from its anycast group.
 
 Wherever a block carries `bfd`, it carries `bfd_profile` beside it - the
 resolved profile's name, or `null` for the platform default. `by_interface`
@@ -516,6 +530,12 @@ it.
 | `/api/routing/vteps/` | One per device, VNI memberships nested; filter by `device`, `site`, `status`, `l2vpn`. |
 | `/api/routing/vtep-memberships/` | The VNI rows on their own (`?vtep=`, `?l2vpn=`). |
 | `/api/l2vpns/` | Gains `vrf`/`vrf_id` and `vtep_count`; `?vxlan=1` keeps the VXLAN types, `?vrf=` the L3VNIs of a VRF, `?vlan=` those terminating on a VLAN. |
+
+Child rows - address families, OSPF, IS-IS and EIGRP interface rows, VTEP
+memberships - carry their parent read-only on their own endpoints
+(`instance` or `vtep`: id, device, and the process or ASN), so a sync can
+tell from the collection which parent a row is under; `instance_id` /
+`vtep_id` stay the write side.
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
 supports CSV import/export and bulk delete like the rest of Danbyte. A CSV

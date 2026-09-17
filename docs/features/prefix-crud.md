@@ -58,9 +58,10 @@ current values, including its tags. Change what you need and save.
 
 Open the prefix and click **Delete**. You'll be asked to confirm.
 
-!!! warning "Deleting takes the IPs with it"
-    Deleting a prefix also removes the IP addresses recorded inside it. Move or
-    confirm you no longer need those addresses first.
+The addresses recorded inside it are handed to the prefix that still
+contains them - the next one up, longest match - and keep their assignments;
+the confirmation says how many move and where. Only addresses no other prefix
+covers are removed with it, and the confirmation counts those too.
 
 ## What gets validated
 

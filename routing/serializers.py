@@ -591,6 +591,25 @@ class _ChildRowSerializer(NumIdModelSerializer):
         return attrs
 
 
+class _ParentRefMixin:
+    """The parent, read-only, on a child row's own endpoint - so a sync can
+    tell from the collection which parent a row belongs to."""
+
+    parent_field = ""
+
+    def _parent_ref(self, obj):
+        parent = getattr(obj, self.parent_field)
+        ref = {"id": str(parent.id)}
+        dev = getattr(parent, "device", None)
+        if dev is not None:
+            ref["device"] = {"id": str(dev.id), "name": dev.name}
+        for attr in ("process_id", "process", "asn"):
+            if hasattr(parent, attr):
+                ref["name"] = str(getattr(parent, attr))
+                break
+        return ref
+
+
 class RedistributionSerializer(_ChildRowSerializer):
     parent_field = "bgp_af"
     bgp_af_id = TenantScopedPrimaryKeyRelatedField(
@@ -622,8 +641,13 @@ class RedistributionSerializer(_ChildRowSerializer):
         read_only_fields = ["id"]
 
 
-class BGPAddressFamilySerializer(_ChildRowSerializer):
+class BGPAddressFamilySerializer(_ParentRefMixin, _ChildRowSerializer):
     parent_field = "instance"
+    instance = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_instance(self, obj):
+        return self._parent_ref(obj)
     instance_id = TenantScopedPrimaryKeyRelatedField(
         source="instance", queryset=BGPInstance.objects.all(),
         write_only=True, required=False,
@@ -643,7 +667,8 @@ class BGPAddressFamilySerializer(_ChildRowSerializer):
 
     class Meta:
         model = BGPAddressFamily
-        fields = ["id", "instance_id", "afi_safi", "afi_safi_display", "networks",
+        fields = ["id", "instance", "instance_id", "afi_safi", "afi_safi_display",
+                  "advertise_ipv4_unicast", "advertise_ipv6_unicast", "networks",
                   "maximum_paths", "maximum_paths_ibgp",
                   "import_policy", "import_policy_id", "export_policy", "export_policy_id",
                   "redistributions", "extra"]
@@ -1050,8 +1075,14 @@ class _RedistributingInstanceSerializer(
         return inst
 
 
-class OSPFInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
+class OSPFInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSerializer):
     parent_field = "instance"
+    instance = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_instance(self, obj):
+        return self._parent_ref(obj)
+
     instance_id = TenantScopedPrimaryKeyRelatedField(
         source="instance", queryset=OSPFInstance.objects.all(),
         write_only=True, required=False,
@@ -1072,7 +1103,7 @@ class OSPFInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
 
     class Meta:
         model = OSPFInterface
-        fields = ["id", "instance_id", "interface", "interface_id", "area", "area_id",
+        fields = ["id", "instance", "instance_id", "interface", "interface_id", "area", "area_id",
                   "cost", "network_type", "passive", "priority", "hello", "dead",
                   "bfd", "bfd_profile", "bfd_profile_id", "mtu_ignore",
                   "authentication", "keychain", "keychain_id", "extra"]
@@ -1098,8 +1129,14 @@ class OSPFInstanceSerializer(_RedistributingInstanceSerializer):
         validators = []
 
 
-class ISISInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
+class ISISInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSerializer):
     parent_field = "instance"
+    instance = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_instance(self, obj):
+        return self._parent_ref(obj)
+
     instance_id = TenantScopedPrimaryKeyRelatedField(
         source="instance", queryset=ISISInstance.objects.all(),
         write_only=True, required=False,
@@ -1129,7 +1166,7 @@ class ISISInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
 
     class Meta:
         model = ISISInterface
-        fields = ["id", "instance_id", "interface", "interface_id", "families",
+        fields = ["id", "instance", "instance_id", "interface", "interface_id", "families",
                   "level", "metric", "metric_l2", "network_type", "passive",
                   "hello_interval", "hello_multiplier", "bfd", "bfd_profile", "bfd_profile_id",
                   "authentication", "keychain", "keychain_id", "extra"]
@@ -1161,8 +1198,14 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
 
 # ─── Overlay: VTEPs ──────────────────────────────────────────────────────────
 
-class EIGRPInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
+class EIGRPInterfaceSerializer(_ParentRefMixin, _BFDProfileFields, _ChildRowSerializer):
     parent_field = "instance"
+    instance = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_instance(self, obj):
+        return self._parent_ref(obj)
+
     instance_id = TenantScopedPrimaryKeyRelatedField(
         source="instance", queryset=EIGRPInstance.objects.all(),
         write_only=True, required=False,
@@ -1182,7 +1225,7 @@ class EIGRPInterfaceSerializer(_BFDProfileFields, _ChildRowSerializer):
 
     class Meta:
         model = EIGRPInterface
-        fields = ["id", "instance_id", "interface", "interface_id", "passive", "bfd",
+        fields = ["id", "instance", "instance_id", "interface", "interface_id", "passive", "bfd",
                   "bfd_profile", "bfd_profile_id",
                   "hello_interval", "hold_time", "bandwidth_percent", "split_horizon",
                   "summary_addresses", "authentication", "keychain", "keychain_id", "extra"]
@@ -1215,8 +1258,14 @@ class L2VPNBriefSerializer(NumIdModelSerializer):
         fields = ["id", "name", "slug", "type", "identifier", "vrf"]
 
 
-class VTEPMembershipSerializer(_ChildRowSerializer):
+class VTEPMembershipSerializer(_ParentRefMixin, _ChildRowSerializer):
     parent_field = "vtep"
+    vtep = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_vtep(self, obj):
+        return self._parent_ref(obj)
+
     vtep_id = TenantScopedPrimaryKeyRelatedField(
         source="vtep", queryset=VTEP.objects.all(), write_only=True, required=False,
     )
@@ -1239,7 +1288,7 @@ class VTEPMembershipSerializer(_ChildRowSerializer):
 
     class Meta:
         model = VTEPMembership
-        fields = ["id", "vtep_id", "l2vpn", "l2vpn_id", "vlan", "vlan_id", "resolved_vlan",
+        fields = ["id", "vtep", "vtep_id", "l2vpn", "l2vpn_id", "vlan", "vlan_id", "resolved_vlan",
                   "rd", "ingress_replication", "mcast_group", "extra"]
         read_only_fields = ["id"]
         validators = []

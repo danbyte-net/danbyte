@@ -109,6 +109,10 @@ class VTEPTests(_Base):
         # Resolved to the site's VLAN without a device-side choice.
         self.assertEqual(r.json()["resolved_vlan"]["vlan_id"], 100)
         self.assertEqual(r.json()["resolved_vlan"]["id"], str(self.vlan_dc1.id))
+        # The collection says which VTEP each row belongs to.
+        rows = self.client.get("/api/routing/vtep-memberships/").json()["results"]
+        self.assertEqual(rows[0]["vtep"]["id"], vtep["id"])
+        self.assertEqual(rows[0]["vtep"]["device"]["name"], "leaf1")
         r = self._post("/api/routing/vtep-memberships/", {
             "vtep_id": vtep["id"], "l2vpn_id": str(self.l3.id), "mcast_group": "239.1.1.1",
             "ingress_replication": False,
@@ -171,11 +175,14 @@ class RenderTests(_Base):
         vip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.100.0.1", prefix=net, vrf=self.vrf)
         group = FHRPGroup.objects.create(
             tenant=self.tenant, name="anycast-100", protocol="anycast", group_id=100, virtual_ip=vip,
+            nd_ra=True, nd_ra_interval=60,
         )
         FHRPGroupAssignment.objects.create(fhrp_group=group, interface=svi, priority=100)
         row = routing_context(self.leaf)["by_interface"]["Vlan100"]
         self.assertEqual(row["gateway"], "10.100.0.1/24")
+        self.assertEqual(row["nd"], {"ra": True, "ra_interval": 60, "prefix": "10.100.0.0/24"})
         self.assertEqual(row["vrf"], "TENANT-A")
         self.assertEqual(row["fhrp"][0]["protocol"], "anycast")
         self.assertEqual(row["fhrp"][0]["group_id"], 100)
         self.assertIsNone(routing_context(self.leaf)["by_interface"]["lo0"]["gateway"])
+        self.assertIsNone(routing_context(self.leaf)["by_interface"]["lo0"]["nd"])

@@ -93,3 +93,42 @@ class PrefixBulkImportValidationTests(PrefixCidrValidationTests):
         res = import_rows(Prefix, self.tenant, [{"cidr": "10.44.0.0/24"}])
         self.assertEqual(res["created"], 1, res)
         self.assertTrue(Prefix.objects.filter(cidr="10.44.0.0/24").exists())
+
+
+class PrefixDeleteTests(APITestCase):
+    """Deleting a prefix hands its addresses back to the prefix that still
+    contains them; only addresses nothing covers go with it."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        admin = User.objects.create_superuser("a", "a@x.dk", "pw")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _post(self, cidr):
+        return self.client.post("/api/prefixes/", {"cidr": cidr}, format="json")
+
+    def test_addresses_move_up_instead_of_dying(self):
+        from .models import IPAddress
+
+        agg = Prefix.objects.get(pk=self._post("10.0.0.0/16").json()["id"])
+        ip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.1.1", prefix=agg)
+        # Carving the /24 adopts the address (longest match is live) …
+        link = Prefix.objects.get(pk=self._post("10.0.1.0/24").json()["id"])
+        ip.refresh_from_db()
+        self.assertEqual(ip.prefix_id, link.id)
+        # … and deleting the /24 hands it back to the /16, as the preview said.
+        r = self.client.get(f"/api/prefixes/{link.id}/delete-impact/")
+        self.assertEqual(r.json(), {"moved": 1, "removed": 0, "parent": "10.0.0.0/16"})
+        r = self.client.delete(f"/api/prefixes/{link.id}/")
+        self.assertEqual(r.status_code, 204, r.content)
+        ip.refresh_from_db()
+        self.assertEqual(ip.prefix_id, agg.id)
+        # Nothing above the /16: the address has nowhere to go and is removed.
+        r = self.client.get(f"/api/prefixes/{agg.id}/delete-impact/")
+        self.assertEqual(r.json(), {"moved": 0, "removed": 1, "parent": None})
+        self.client.delete(f"/api/prefixes/{agg.id}/")
+        self.assertFalse(IPAddress.objects.filter(pk=ip.pk).exists())

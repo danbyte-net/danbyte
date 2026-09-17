@@ -5461,6 +5461,14 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="fhrp_groups",
         help_text="The shared virtual IP this group answers on.",
     )
+    # An anycast gateway's IPv6 neighbour discovery: whether the SVI sends
+    # router advertisements (FRR: ``no ipv6 nd suppress-ra``) and how often.
+    nd_ra = models.BooleanField(
+        default=False, help_text="Send IPv6 router advertisements from the gateway SVI."
+    )
+    nd_ra_interval = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="Router advertisement interval, seconds."
+    )
     description = models.TextField(blank=True)
 
     class Meta:

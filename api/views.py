@@ -434,6 +434,46 @@ def reparent_ips_into(prefix) -> int:
     return moved
 
 
+def reparent_ips_out_of(prefix, *, dry_run: bool = False) -> dict:
+    """Before a prefix goes: hand every address on it to the longest prefix
+    that still contains it (same tenant and VRF). Addresses no other prefix
+    covers have nowhere to go and are counted as ``removed`` - they fall with
+    the prefix, as the confirm dialog says. Returns the counts and the prefix
+    most addresses land on."""
+    net = prefix.network
+    ips = list(IPAddress.objects.filter(prefix=prefix).only("id", "ip_address"))
+    if net is None or not ips:
+        return {"moved": 0, "removed": len(ips), "parent": None}
+    candidates = []
+    for p in (
+        Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf).exclude(pk=prefix.pk)
+    ):
+        pn = p.network
+        if pn is None or pn.prefixlen >= net.prefixlen or pn.version != net.version:
+            continue
+        if int(pn.network_address) <= int(net.network_address) and \
+                int(pn.broadcast_address) >= int(net.broadcast_address):
+            candidates.append((pn.prefixlen, p))
+    candidates.sort(key=lambda c: -c[0])  # longest first
+    moved = 0
+    landing: dict[str, int] = {}
+    with transaction.atomic():
+        for ip in ips:
+            try:
+                addr = ipaddress.ip_address(ip.ip_address)
+            except ValueError:
+                continue
+            for _, target in candidates:
+                if addr in target.network:
+                    if not dry_run:
+                        IPAddress.objects.filter(pk=ip.pk).update(prefix=target)
+                    moved += 1
+                    landing[str(target.cidr)] = landing.get(str(target.cidr), 0) + 1
+                    break
+    parent = max(landing.items(), key=lambda kv: kv[1])[0] if landing else None
+    return {"moved": moved, "removed": len(ips) - moved, "parent": parent}
+
+
 def _apply_filters(qs, params):
     """Apply the same filter set used by both the list view and the export."""
     statuses = params.getlist("status")

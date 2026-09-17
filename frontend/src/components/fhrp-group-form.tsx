@@ -12,6 +12,7 @@ import { IpPicker } from "@/components/ip-picker"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
   Field,
+  FormCheckbox,
   FormFooter,
   FormSection,
   FormSelect,
@@ -65,6 +66,10 @@ export function FhrpGroupForm({
   const [virtualIpId, setVirtualIpId] = useState<string | null>(
     group?.virtual_ip?.id ?? null
   )
+  const [ndRa, setNdRa] = useState(group?.nd_ra ?? false)
+  const [ndRaInterval, setNdRaInterval] = useState(
+    group?.nd_ra_interval != null ? String(group.nd_ra_interval) : ""
+  )
   const [description, setDescription] = useState(group?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     group?.tags.map((t) => t.id) ?? []
@@ -81,6 +86,10 @@ export function FhrpGroupForm({
     setAuthType(group.auth_type)
     setAuthKey(group.auth_key)
     setVirtualIpId(group.virtual_ip?.id ?? null)
+    setNdRa(group.nd_ra)
+    setNdRaInterval(
+      group.nd_ra_interval != null ? String(group.nd_ra_interval) : ""
+    )
     setDescription(group.description)
     setTagIds(group.tags.map((t) => t.id))
     setCustomFields(group.custom_fields ?? {})
@@ -96,6 +105,11 @@ export function FhrpGroupForm({
         auth_type: authType,
         auth_key: authType ? authKey : "",
         virtual_ip_id: virtualIpId,
+        nd_ra: protocol === "anycast" && ndRa,
+        nd_ra_interval:
+          protocol === "anycast" && ndRaInterval.trim()
+            ? Number(ndRaInterval)
+            : null,
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -173,6 +187,26 @@ export function FhrpGroupForm({
           placeholder="Select an IP…"
           error={fieldErrors.virtual_ip_id}
         />
+
+        {protocol === "anycast" && (
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormCheckbox
+              label="Router advertisements"
+              info="The gateway SVI sends IPv6 router advertisements for its subnet (FRR: no ipv6 nd suppress-ra)."
+              checked={ndRa}
+              onChange={setNdRa}
+            />
+            <FormText
+              label="RA interval"
+              hint="seconds"
+              type="number"
+              value={ndRaInterval}
+              onChange={setNdRaInterval}
+              placeholder="60"
+              error={fieldErrors.nd_ra_interval}
+            />
+          </div>
+        )}
 
         <FormTextarea
           label="Description"
