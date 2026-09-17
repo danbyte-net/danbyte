@@ -24,6 +24,7 @@ from .models import (
 )
 from .spec_sheets import (
     device_context,
+    device_full_context,
     device_hardware_context,
     render_spec_html,
     spec_filename,
@@ -129,7 +130,21 @@ class DeviceSheetTests(_Base):
         r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?variant=hardware")
         self.assertEqual(r.status_code, 200, r.content[:200])
         self.assertTrue(r.content.startswith(b"%PDF"))
-        self.assertIn("aarhus-sw1-spec-hardware-", r["Content-Disposition"])
+        # The serial number names the file, not the date.
+        self.assertIn("aarhus-sw1-spec-hardware-FOC1234.pdf", r["Content-Disposition"])
+
+        # The all-in-one sheet: the datasheet's boxes, plus the hardware block
+        # and the interfaces.
+        full = device_full_context(self.device)
+        self.assertEqual(full["stats"][0]["label"], "Interfaces")
+        self.assertEqual(full["hardware_stats"][0]["value"], "36 cores")
+        self.assertEqual(len(full["interfaces"]), 1)
+        html = render_spec_html("device_full", self.device)
+        for bit in ("Processors", "DIMM B1", "Interfaces", "aarhus-core1:Ethernet1/10"):
+            self.assertIn(bit, html)
+        r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?variant=full")
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        self.assertIn("aarhus-sw1-spec-full-FOC1234.pdf", r["Content-Disposition"])
 
     def test_needs_view_permission(self):
         member = User.objects.create_user("m", password="x")
@@ -142,6 +157,10 @@ class DeviceSheetTests(_Base):
 
     def test_filename_is_safe(self):
         self.device.name = "sw 1/core (a)"
+        self.device.serial_number = "FOC 12/34"
+        self.assertEqual(spec_filename(self.device), "sw-1-core-a-spec-FOC-12-34.pdf")
+        # No serial: the date names the file instead.
+        self.device.serial_number = ""
         self.assertRegex(spec_filename(self.device), r"^sw-1-core-a-spec-\d{4}-\d{2}-\d{2}\.pdf$")
 
 

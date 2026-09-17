@@ -550,13 +550,11 @@ def _hardware_stats(totals: dict) -> list[dict]:
     ]
 
 
-def device_hardware_context(device, request=None) -> dict:
-    """The hardware-first sheet: the same header, the parts' totals as the
-    stat boxes, then one table per kind with the slot each part sits in. No
-    rack figures, no interfaces - what a server's inventory sheet is for."""
+def _hardware_parts(device) -> dict:
+    """The parts grouped per kind, plus their totals - shared by the hardware
+    sheet and the all-in-one sheet."""
     from .models import INVENTORY_ITEM_KINDS, INVENTORY_MEDIA_TYPES
 
-    base = device_context(device, request)
     items = list(
         device.inventory_items.select_related("manufacturer", "status")
         .order_by("kind", "slot", "name")
@@ -584,19 +582,9 @@ def device_hardware_context(device, request=None) -> dict:
             ) if x),
         }
 
-    keep = {"Serial number", "Asset tag", "Type", "Part number", "Platform",
-            "Primary IP", "OOB IP", "Site", "Rack", "Description"}
     return {
-        **{k: v for k, v in base.items() if k not in ("ports", "images", "interfaces")},
-        "subtitle": " · ".join(s for s in (
-            f"{device.device_type.manufacturer.name} {device.device_type.model or device.device_type.name}"
-            if device.device_type_id and device.device_type.manufacturer_id
-            else (device.device_type.model or device.device_type.name) if device.device_type_id else "",
-            device.site.name if device.site_id else "",
-        ) if s),
-        "details": [(k, v) for k, v in base["details"] if k in keep],
-        "stats": _hardware_stats(totals),
         "totals": totals,
+        "hardware_stats": _hardware_stats(totals),
         "cpus": [_row(i) for i in items if i.kind == "cpu"],
         "rams": [_row(i) for i in items if i.kind == "ram"],
         "disks": [_row(i) for i in items if i.kind == "disk"],
@@ -604,9 +592,39 @@ def device_hardware_context(device, request=None) -> dict:
     }
 
 
+def device_full_context(device, request=None) -> dict:
+    """Everything on one sheet: the datasheet as it is, with the hardware
+    totals and the parts per kind between the details and the interfaces."""
+    base = device_context(device, request)
+    return {**base, **_hardware_parts(device)}
+
+
+def device_hardware_context(device, request=None) -> dict:
+    """The hardware-first sheet: the same header, the parts' totals as the
+    stat boxes, then one table per kind with the slot each part sits in. No
+    rack figures, no interfaces - what a server's inventory sheet is for."""
+    base = device_context(device, request)
+    parts = _hardware_parts(device)
+    keep = {"Serial number", "Asset tag", "Type", "Part number", "Platform",
+            "Primary IP", "OOB IP", "Site", "Rack", "Description"}
+    dt = device.device_type if device.device_type_id else None
+    return {
+        **{k: v for k, v in base.items() if k not in ("ports", "images", "interfaces")},
+        "subtitle": " · ".join(x for x in (
+            f"{dt.manufacturer.name} {dt.model or dt.name}" if dt and dt.manufacturer_id
+            else (dt.model or dt.name) if dt else "",
+            device.site.name if device.site_id else "",
+        ) if x),
+        "details": [(k, v) for k, v in base["details"] if k in keep],
+        **parts,
+        "stats": parts["hardware_stats"],
+    }
+
+
 _CONTEXTS = {
     "device": device_context,
     "device_hardware": device_hardware_context,
+    "device_full": device_full_context,
     "vm": vm_context,
     "vc": vc_context,
 }
@@ -623,5 +641,9 @@ def render_spec_pdf(kind: str, obj, request=None) -> bytes:
 
 
 def spec_filename(obj, suffix: str = "") -> str:
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", obj.name or "object").strip("-") or "object"
-    return f"{stem}-spec{suffix}-{datetime.now(UTC):%Y-%m-%d}.pdf"
+    """``<name>-spec[-variant]-<serial>.pdf`` when the object has a serial
+    number - the file then names the box wherever it lands - else the date."""
+    clean = lambda v: re.sub(r"[^A-Za-z0-9._-]+", "-", v).strip("-")  # noqa: E731
+    stem = clean(obj.name or "object") or "object"
+    tail = clean(getattr(obj, "serial_number", "") or "") or f"{datetime.now(UTC):%Y-%m-%d}"
+    return f"{stem}-spec{suffix}-{tail}.pdf"

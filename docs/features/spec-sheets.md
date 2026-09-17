@@ -59,13 +59,20 @@ cores or capacity, serial and status, followed by the modules. Rack position,
 power draw, port utilisation, interfaces and images are left off. The same
 totals sit above the parts table on the device's Hardware tab.
 
+**All in one**, the third entry, is the datasheet with the hardware block
+inserted: the three datasheet boxes, details, port utilisation, then the
+CPU, memory and storage boxes, the parts per kind, the modules, the
+interfaces, comments and images.
+
 ## Endpoint
 
 `GET /api/devices/<id>/spec-sheet/`, `GET /api/virtual-machines/<id>/spec-sheet/`
 and `GET /api/virtual-chassis/<id>/spec-sheet/` return `application/pdf`. The
-sheet is served inline; add `?download=1` for a download with the filename
+sheet is served inline; add `?download=1` for a download. The file is named
+`<name>-spec-<serial>.pdf` when the object has a serial number, else
 `<name>-spec-<date>.pdf`. On a device, `?variant=hardware` returns the
-hardware sheet (`<name>-spec-hardware-<date>.pdf`). Reading a sheet needs the same **view** permission
+hardware sheet and `?variant=full` the all-in-one sheet
+(`<name>-spec-hardware-<serial>.pdf`, `<name>-spec-full-<serial>.pdf`). Reading a sheet needs the same **view** permission
 as the object page, so site scoping applies unchanged.
 
 The PDF is rendered server-side with the same engine as

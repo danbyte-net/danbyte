@@ -3113,12 +3113,13 @@ class DeviceViewSet(
         obj = self.get_object()
         # ``?variant=hardware`` puts the parts first: CPU, memory and storage
         # totals as the stat boxes, one table per kind, no interfaces.
+        # ``?variant=full`` is the datasheet with the hardware block added.
         variant = request.query_params.get("variant", "")
-        kind = "device_hardware" if variant == "hardware" else "device"
+        kind = {"hardware": "device_hardware", "full": "device_full"}.get(variant, "device")
         pdf = render_spec_pdf(kind, obj, request)
         disposition = "attachment" if request.query_params.get("download") else "inline"
         resp = HttpResponse(pdf, content_type="application/pdf")
-        suffix = "-hardware" if variant == "hardware" else ""
+        suffix = f"-{variant}" if kind != "device" else ""
         resp["Content-Disposition"] = (
             f'{disposition}; filename="{spec_filename(obj, suffix)}"'
         )
