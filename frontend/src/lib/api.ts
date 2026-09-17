@@ -213,6 +213,8 @@ export interface Prefix {
   site: { id: string; name: string } | null
   location: { id: string; name: string } | null
   vlan: VLANMini | null
+  /** The VLAN documents one VRF and the prefix sits in another. */
+  vlan_vrf_mismatch: boolean
   vrf: { id: string; name: string; rd: string; color: string } | null
   gateway: string | null
   description: string
@@ -3148,6 +3150,8 @@ export interface VLAN {
   site: { id: string; name: string } | null
   group: { id: string; name: string } | null
   zone: { id: string; name: string; color: string; text_color: string } | null
+  /** The routing table the VLAN's SVI lives in, when documented. */
+  vrf: { id: string; name: string; rd: string; color: string } | null
   description: string
   tags: Tag[]
   prefix_count: number
@@ -3165,6 +3169,7 @@ export interface VLANWritePayload {
   site_id?: string | null
   group_id?: string | null
   zone_id?: string | null
+  vrf_id?: string | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -3481,6 +3486,7 @@ export interface VRF {
   tags: Tag[]
   prefix_count: number
   ip_count: number
+  vlan_count: number
   /** Detail only; 0 on list responses. */
   static_route_count: number
   bgp_session_count: number

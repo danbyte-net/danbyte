@@ -2161,6 +2161,12 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # The VLAN's own display colour (badges, topology rails). Optional - zones
     # stay firewall semantics, never a colour requirement.
     color = models.CharField(max_length=7, blank=True, default="")
+    # The routing table the VLAN's SVI lives in - documentation of the L3
+    # side, so a VLAN says which VRF it belongs to before any prefix does.
+    vrf = models.ForeignKey(
+        VRF, on_delete=models.SET_NULL, null=True, blank=True, related_name="vlans",
+        help_text="Optional: the VRF this VLAN's SVI belongs to.",
+    )
     description = models.TextField(blank=True)
 
     class Meta:

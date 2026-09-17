@@ -400,6 +400,9 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     }
   }
 
+  // "Save and add another": keep the form open with the shared context
+  // (site, role, table…) and clear only what names this one.
+  const againRef = useRef(false)
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: IPWritePayload = {
@@ -454,6 +457,12 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
       toast.success(
         isEdit ? `Updated ${saved.ip_address}` : `Created ${saved.ip_address}`
       )
+      if (againRef.current) {
+        againRef.current = false
+        setAddress("")
+        setDnsName("")
+        return
+      }
       onSaved(saved)
     },
     onError: (err) => {
@@ -878,6 +887,21 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Add IP"}
+        secondary={
+          isEdit ? undefined : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => {
+                againRef.current = true
+                mutation.mutate()
+              }}
+            >
+              Save and add another
+            </Button>
+          )
+        }
       />
     </form>
   )

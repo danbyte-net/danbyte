@@ -23,6 +23,7 @@ import {
   parseCidr,
   type NestedPrefix,
 } from "@/lib/prefix-tree"
+import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { EmbeddedStaticRouteTable } from "@/components/embedded-tables"
@@ -559,7 +560,16 @@ function PrefixOverview({
     },
     {
       label: "VLAN",
-      value: p.vlan ? <VlanBadge vlan={p.vlan} /> : dash,
+      value: p.vlan ? (
+        <span className="flex flex-wrap items-center gap-2">
+          <VlanBadge vlan={p.vlan} />
+          {p.vlan_vrf_mismatch && (
+            <Badge variant="warning">VLAN is in another VRF</Badge>
+          )}
+        </span>
+      ) : (
+        dash
+      ),
     },
     {
       label: "Gateway",

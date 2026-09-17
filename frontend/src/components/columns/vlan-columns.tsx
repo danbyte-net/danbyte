@@ -8,6 +8,7 @@ import { ViolationBadge } from "@/components/compliance/violation-badge"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { vrfColumn } from "@/components/cells/vrf-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -30,6 +31,7 @@ export type VlanColumnId =
   | "site"
   | "group"
   | "zone"
+  | "vrf"
   | "prefixes"
   | "description"
   | "tags"
@@ -42,6 +44,7 @@ const CANONICAL_ORDER: VlanColumnId[] = [
   "site",
   "group",
   "zone",
+  "vrf",
   "prefixes",
   "description",
   "tags",
@@ -164,6 +167,7 @@ export function buildVlanColumns<T extends VLAN = VLAN>(
         },
       },
     }),
+    vrf: () => vrfColumn<T>({ get: (r) => r.vrf, noneLabel: "-" }),
     zone: () => ({
       id: "zone",
       accessorFn: (r) => r.zone?.name ?? "",

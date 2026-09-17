@@ -2384,7 +2384,13 @@ def device_snmp_poll_view(request, device_id):
     if err is not None:
         return err
     device, tenant = resolved
+    return _snmp_poll(request, device, tenant)
 
+
+def _snmp_poll(request, device, tenant):
+    """The poll itself, on an already-authenticated request. The stack view
+    calls this too: re-dispatching the device view with the raw request made
+    the CSRF check read a body the first pass had consumed (#175)."""
     profile = None
     profile_id = request.data.get("profile_id")
     if profile_id:
@@ -3048,7 +3054,7 @@ def vc_snmp_poll_view(request, vc_id):
     if not members:
         return Response({"detail": "The stack has no members."}, status=400)
     owner = stack_owner(members[0])
-    return device_snmp_poll_view(request._request, device_id=owner.id)
+    return _snmp_poll(request, owner, _tenant)
 
 
 @extend_schema(

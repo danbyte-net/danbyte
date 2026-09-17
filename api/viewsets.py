@@ -1814,8 +1814,8 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors this viewset's own bulk_update action (see PrefixViewSet).
     editable_str_fields = ("description",)
-    editable_fk_fields = {"site_id": Site, "zone_id": Zone}
-    queryset = VLAN.objects.select_related("site", "group", "zone").prefetch_related("tags").all().order_by("vlan_id")
+    editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF}
+    queryset = VLAN.objects.select_related("site", "group", "zone", "vrf").prefetch_related("tags").all().order_by("vlan_id")
     serializer_class = VLANSerializer
     pagination_class = StandardPagination
     rbac_action_map = {"bulk_delete": "delete"}
@@ -1844,6 +1844,9 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         group = self.request.query_params.get("group")
         if group:
             qs = qs.filter(group_id=group)
+        vrf = self.request.query_params.get("vrf")
+        if vrf:
+            qs = qs.filter(vrf_id=vrf)
         return _apply_custom_field_scope(self.request, qs, "vlan")
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")

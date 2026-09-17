@@ -6,7 +6,13 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { CopyPlus, Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Prefix, type VRF } from "@/lib/api"
+import {
+  api,
+  type Paginated,
+  type Prefix,
+  type VLAN,
+  type VRF,
+} from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
@@ -19,6 +25,7 @@ import { Button } from "@/components/ui/button"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { DataTable } from "@/components/data-table"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
+import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { VrfDeleteDialog } from "@/components/vrf-delete-dialog"
@@ -57,6 +64,7 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
     | "overview"
     | "prefixes"
     | "ips"
+    | "vlans"
     | "bgp-sessions"
     | "static-routes"
     | "journal"
@@ -146,6 +154,7 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
         { value: "overview", label: "Overview" },
         { value: "prefixes", label: "Prefixes", count: v.prefix_count },
         { value: "ips", label: "IPs", count: v.ip_count },
+        { value: "vlans", label: "VLANs", count: v.vlan_count },
         {
           value: "bgp-sessions",
           label: "BGP sessions",
@@ -170,6 +179,9 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
       </DetailTab>
       <DetailTab value="ips">
         <EmbeddedIpTable filter={{ vrf: v.id }} />
+      </DetailTab>
+      <DetailTab value="vlans">
+        <VrfVlansTable vrfId={v.id} />
       </DetailTab>
       <DetailTab value="bgp-sessions">
         <EmbeddedBGPSessionTable
@@ -252,6 +264,38 @@ function VrfOverview({ vrf: v, humanIds }: { vrf: VRF; humanIds: boolean }) {
       <KvCard title="Route targets" rows={routeTargets} />
       <CustomFieldValues model="vrf" values={v.custom_fields} layout="cards" />
     </div>
+  )
+}
+
+function VrfVlansTable({ vrfId }: { vrfId: string }) {
+  const q = useQuery({
+    queryKey: ["vrf-vlans", vrfId],
+    queryFn: () =>
+      api<Paginated<VLAN>>(`/api/vlans/?vrf=${vrfId}&page_size=500`),
+  })
+  const columns = useMemo<ColumnDef<VLAN>[]>(
+    () => buildVlanColumns({ omit: ["vrf"] }),
+    []
+  )
+
+  if (q.isLoading)
+    return <p className="text-sm text-muted-foreground">Loading VLANs…</p>
+  if (q.isError) return <QueryError error={q.error} />
+  const rows = q.data?.results ?? []
+  if (rows.length === 0) {
+    return (
+      <EmptyState title="No VLANs yet.">
+        No VLAN names this VRF as the table its SVI lives in.
+      </EmptyState>
+    )
+  }
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      flexColumn="description"
+      tableId="vlan-embedded"
+    />
   )
 }
 

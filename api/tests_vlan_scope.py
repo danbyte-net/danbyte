@@ -176,3 +176,29 @@ class ResolveVidTests(_Base):
         vlan, why = resolve_vid(self.tenant, 999, site=self.kyiv)
         self.assertIsNone(vlan)
         self.assertEqual(why, "none")
+
+
+class VlanVrfTests(_Base):
+    """A VLAN documents the VRF its SVI lives in; the VRF lists its VLANs;
+    a prefix on the VLAN in another VRF is flagged."""
+
+    def test_link_filter_count_and_mismatch(self):
+        from .models import VRF, Prefix
+
+        prod = VRF.objects.create(tenant=self.tenant, name="PROD")
+        lab = VRF.objects.create(tenant=self.tenant, name="LAB")
+        r = self.client.post("/api/vlans/", {"vlan_id": 10, "name": "servers",
+                                             "site_id": str(self.kyiv.id),
+                                             "vrf_id": str(prod.id)}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        vlan = r.json()
+        self.assertEqual(vlan["vrf"]["name"], "PROD")
+        self.post_vlan(20, site=self.kyiv, name="loose")
+        rows = self.client.get(f"/api/vlans/?vrf={prod.id}").json()["results"]
+        self.assertEqual([x["vlan_id"] for x in rows], [10])
+        self.assertEqual(self.client.get(f"/api/vrfs/{prod.id}/").json()["vlan_count"], 1)
+        self.assertEqual(self.client.get(f"/api/vrfs/{lab.id}/").json()["vlan_count"], 0)
+        ok = Prefix.objects.create(tenant=self.tenant, cidr="10.10.0.0/24", vrf=prod, vlan_id=vlan["id"])
+        odd = Prefix.objects.create(tenant=self.tenant, cidr="10.20.0.0/24", vrf=lab, vlan_id=vlan["id"])
+        self.assertFalse(self.client.get(f"/api/prefixes/{ok.id}/").json()["vlan_vrf_mismatch"])
+        self.assertTrue(self.client.get(f"/api/prefixes/{odd.id}/").json()["vlan_vrf_mismatch"])

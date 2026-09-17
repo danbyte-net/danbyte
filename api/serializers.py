@@ -611,6 +611,11 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     cf_model = "vlan"
     site = SiteMiniSerializer(read_only=True)
     group = serializers.SerializerMethodField()
+    vrf = serializers.SerializerMethodField()
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tags = TagSerializer(many=True, read_only=True)
     prefix_count = serializers.SerializerMethodField()
     l2vpn_count = serializers.SerializerMethodField()
@@ -647,6 +652,14 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     def get_group(self, obj):
         g = obj.group
         return {"id": str(g.id), "name": g.name} if g else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_vrf(self, obj):
+        return (
+            {"id": str(obj.vrf_id), "name": obj.vrf.name, "rd": obj.vrf.rd or "",
+             "color": obj.vrf.color or ""}
+            if obj.vrf_id else None
+        )
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_zone(self, obj):
@@ -719,6 +732,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
             "site", "site_id",
             "group", "group_id",
             "zone", "zone_id",
+            "vrf", "vrf_id",
             "description",
             "tags", "tag_ids",
             "prefix_count", "l2vpn_count",
@@ -933,6 +947,7 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
     export_targets = RouteTargetMiniSerializer(many=True, read_only=True)
     prefix_count = serializers.SerializerMethodField()
     ip_count = serializers.SerializerMethodField()
+    vlan_count = serializers.SerializerMethodField()
     static_route_count = serializers.SerializerMethodField()
     bgp_session_count = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
@@ -952,6 +967,9 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
 
     def get_prefix_count(self, obj) -> int:
         return obj.prefixes.count()
+
+    def get_vlan_count(self, obj) -> int:
+        return obj.vlans.count()
 
     def get_ip_count(self, obj) -> int:
         return obj.ip_addresses.count()
@@ -978,7 +996,8 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
             "import_targets", "import_target_ids",
             "export_targets", "export_target_ids",
             "tags", "tag_ids",
-            "prefix_count", "ip_count", "static_route_count", "bgp_session_count",
+            "prefix_count", "ip_count", "vlan_count", "static_route_count",
+            "bgp_session_count",
             "custom_fields",
             "created_at", "updated_at",
         ]
@@ -1025,6 +1044,9 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     # ── read-only nested projections ────────────────────────────────────
     site = SiteMiniSerializer(read_only=True)
     vlan = VLANMiniSerializer(read_only=True)
+    # The VLAN says one VRF, the prefix sits in another: worth a warning on
+    # the page rather than a silent disagreement.
+    vlan_vrf_mismatch = serializers.SerializerMethodField()
     vrf = VRFMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     family = serializers.IntegerField(read_only=True)
@@ -1234,6 +1256,9 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     )
         return attrs
 
+    def get_vlan_vrf_mismatch(self, obj) -> bool:
+        return bool(obj.vlan_id and obj.vlan.vrf_id and obj.vlan.vrf_id != obj.vrf_id)
+
     class Meta:
         model = Prefix
         fields = [
@@ -1241,7 +1266,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "family", "utilisation_pct", "is_enumerable",
             "ip_count", "child_count", "has_descendants", "dhcp",
             "dns_record_count", "static_route_count",
-            "site", "vlan", "vrf", "location",
+            "site", "vlan", "vlan_vrf_mismatch", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
             "allocate_from_ranges", "allocation",

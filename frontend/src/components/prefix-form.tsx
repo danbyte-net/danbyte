@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
+
+import { Button } from "@/components/ui/button"
 
 import {
   api,
@@ -144,6 +146,9 @@ export function PrefixForm({
     staleTime: 5 * 60_000,
   })
 
+  // "Save and add another": keep the form open with the shared context
+  // (site, role, table…) and clear only what names this one.
+  const againRef = useRef(false)
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: PrefixWritePayload = {
@@ -172,6 +177,11 @@ export function PrefixForm({
       qc.invalidateQueries({ queryKey: ["prefix", saved.id] })
       qc.invalidateQueries({ queryKey: ["prefix-space-map"] })
       toast.success(isEdit ? `Updated ${saved.cidr}` : `Created ${saved.cidr}`)
+      if (againRef.current) {
+        againRef.current = false
+        setCidr("")
+        return
+      }
       onSaved(saved)
     },
     onError: (err) => {
@@ -330,6 +340,21 @@ export function PrefixForm({
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Create prefix"}
+        secondary={
+          isEdit ? undefined : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => {
+                againRef.current = true
+                mutation.mutate()
+              }}
+            >
+              Save and add another
+            </Button>
+          )
+        }
       />
     </form>
   )

@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { SiteCell } from "@/components/cells/site-cell"
+import { VrfCell } from "@/components/cells/vrf-cell"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
@@ -194,6 +195,10 @@ function VlanOverview({
       value: <span className="num font-mono">{v.vlan_id}</span>,
     },
     { label: "Site", value: <SiteCell site={v.site} /> },
+    {
+      label: "VRF",
+      value: <VrfCell vrf={v.vrf} noneLabel="-" />,
+    },
     {
       label: "Updated",
       value: <TimeCell iso={v.updated_at} />,
