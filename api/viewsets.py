@@ -1878,11 +1878,15 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         zval = fields.get("zone_id")
         if zval and not Zone.objects.filter(pk=zval, tenant=tenant).exists():
             raise ValidationError({"zone_id": "Not found in this tenant."})
+        vval = fields.get("vrf_id")
+        if vval and not VRF.objects.filter(pk=vval, tenant=tenant).exists():
+            raise ValidationError({"vrf_id": "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
         updates = {}
         if "site_id" in fields: updates["site_id"] = fields["site_id"]
         if "zone_id" in fields: updates["zone_id"] = fields["zone_id"]
+        if "vrf_id" in fields: updates["vrf_id"] = fields["vrf_id"]
         if "description" in fields: updates["description"] = fields["description"]
 
         with transaction.atomic():
