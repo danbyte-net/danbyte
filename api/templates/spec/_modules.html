@@ -1,0 +1,11 @@
+{% if modules %}
+<section>
+  <h2>Modules</h2>
+  <table>
+    <thead><tr><th>Bay</th><th>Module type</th><th>Serial</th></tr></thead>
+    <tbody>
+    {% for m in modules %}<tr><td>{{ m.bay }}</td><td>{{ m.type }}</td><td class="mono">{{ m.serial }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

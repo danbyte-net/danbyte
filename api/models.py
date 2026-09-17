@@ -2161,6 +2161,12 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # The VLAN's own display colour (badges, topology rails). Optional - zones
     # stay firewall semantics, never a colour requirement.
     color = models.CharField(max_length=7, blank=True, default="")
+    # The routing table the VLAN's SVI lives in - documentation of the L3
+    # side, so a VLAN says which VRF it belongs to before any prefix does.
+    vrf = models.ForeignKey(
+        VRF, on_delete=models.SET_NULL, null=True, blank=True, related_name="vlans",
+        help_text="Optional: the VRF this VLAN's SVI belongs to.",
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -3398,6 +3404,13 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     speed = models.CharField(
         max_length=64, blank=True, default="",
         help_text='Free-form: "7.2K RPM", "PCIe 4.0 x4", "3200 MT/s".',
+    )
+    slot = models.CharField(
+        max_length=32, blank=True, default="",
+        help_text='Where it sits: "Socket 1", "DIMM A1", "Bay 3".',
+    )
+    cores = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="CPU cores (kind=cpu)."
     )
     status = models.ForeignKey(
         "Status", on_delete=models.SET_NULL, null=True, blank=True,
@@ -5453,6 +5466,14 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         blank=True,
         related_name="fhrp_groups",
         help_text="The shared virtual IP this group answers on.",
+    )
+    # An anycast gateway's IPv6 neighbour discovery: whether the SVI sends
+    # router advertisements (FRR: ``no ipv6 nd suppress-ra``) and how often.
+    nd_ra = models.BooleanField(
+        default=False, help_text="Send IPv6 router advertisements from the gateway SVI."
+    )
+    nd_ra_interval = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="Router advertisement interval, seconds."
     )
     description = models.TextField(blank=True)
 

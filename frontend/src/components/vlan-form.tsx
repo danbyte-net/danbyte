@@ -1,16 +1,18 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import {
-  api,
-  ApiError,
-  type Paginated,
-  type VLAN,
-  type VLANGroupOption,
-  type VLANWritePayload,
-  type ZoneOption,
+import { Button } from "@/components/ui/button"
+
+import { api, ApiError } from "@/lib/api"
+import type {
+  Paginated,
+  VLAN,
+  VLANGroupOption,
+  VLANWritePayload,
+  VRFOption,
+  ZoneOption,
 } from "@/lib/api"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
@@ -61,6 +63,7 @@ export function VlanForm({
   const [siteId, setSiteId] = useState<string | null>(src?.site?.id ?? null)
   const [groupId, setGroupId] = useState<string | null>(src?.group?.id ?? null)
   const [zoneId, setZoneId] = useState<string | null>(src?.zone?.id ?? null)
+  const [vrfId, setVrfId] = useState<string | null>(src?.vrf?.id ?? null)
   const [color, setColor] = useState(src?.color ?? "")
   const [description, setDescription] = useState(src?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
@@ -77,6 +80,7 @@ export function VlanForm({
     setSiteId(vlan.site?.id ?? null)
     setGroupId(vlan.group?.id ?? null)
     setZoneId(vlan.zone?.id ?? null)
+    setVrfId(vlan.vrf?.id ?? null)
     setColor(vlan.color ?? "")
     setDescription(vlan.description)
     setTagIds(vlan.tags.map((t) => t.id))
@@ -97,12 +101,20 @@ export function VlanForm({
       api<Paginated<VLANGroupOption>>("/api/vlan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    staleTime: 10 * 60_000,
+  })
   const zones = useQuery({
     queryKey: ["zones-picker"],
     queryFn: () => api<Paginated<ZoneOption>>("/api/zones/?picker=1"),
     staleTime: 10 * 60_000,
   })
 
+  // "Save and add another": keep the form open with the shared context
+  // (site, role, table…) and clear only what names this one.
+  const againRef = useRef(false)
   const mutation = useMutation({
     mutationFn: async () => {
       const num = Number(vlanId)
@@ -119,6 +131,7 @@ export function VlanForm({
         site_id: siteId,
         group_id: groupId,
         zone_id: zoneId,
+        vrf_id: vrfId,
         color,
         description: description.trim(),
         tag_ids: tagIds,
@@ -140,6 +153,12 @@ export function VlanForm({
           ? `Updated VLAN ${saved.vlan_id}`
           : `Created VLAN ${saved.vlan_id}`
       )
+      if (againRef.current) {
+        againRef.current = false
+        setVlanId(String(Number(vlanId) + 1))
+        setName("")
+        return
+      }
       onSaved(saved)
     },
     onError: (err) => {
@@ -243,6 +262,23 @@ export function VlanForm({
           emptyText="No zones."
           error={fieldErrors.zone_id}
         />
+        <FormCombobox
+          label="VRF"
+          hint="optional"
+          info="The routing table this VLAN's SVI lives in. A prefix on the VLAN in another VRF is flagged on its page."
+          value={vrfId}
+          onChange={setVrfId}
+          options={(vrfs.data?.results ?? []).map((v) => ({
+            value: v.id,
+            label: v.name,
+            color: v.color || null,
+          }))}
+          noneLabel="No VRF"
+          placeholder="No VRF"
+          searchPlaceholder="Search VRFs…"
+          emptyText="No VRFs."
+          error={fieldErrors.vrf_id}
+        />
       </FormSection>
 
       <FormTags
@@ -262,6 +298,21 @@ export function VlanForm({
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Create VLAN"}
+        secondary={
+          isEdit ? undefined : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => {
+                againRef.current = true
+                mutation.mutate()
+              }}
+            >
+              Save and add another
+            </Button>
+          )
+        }
       />
     </form>
   )

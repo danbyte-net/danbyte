@@ -65,10 +65,22 @@ export function StatusHistoryWidget({
 
   const save = (patch: StatusHistoryConfig) =>
     onChange?.({ targets, hours, ...patch })
-  const add = (kind: "ip" | "device", id: string, label: string) => {
-    if (targets.some((t) => t.kind === kind && t.id === id)) return
-    if (targets.length >= MAX_TARGETS) return
-    save({ targets: [...targets, { kind, id, label }] })
+  // Several at once from either picker; the cap trims what does not fit.
+  const add = (
+    kind: "ip" | "device",
+    items: { id: string; label: string }[]
+  ) => {
+    const room = Math.max(0, MAX_TARGETS - targets.length)
+    const fresh = items
+      .filter((i) => !targets.some((t) => t.kind === kind && t.id === i.id))
+      .slice(0, room)
+    if (!fresh.length) return
+    save({
+      targets: [
+        ...targets,
+        ...fresh.map((i) => ({ kind, id: i.id, label: i.label })),
+      ],
+    })
   }
   const remove = (t: WatchedTarget) =>
     save({ targets: targets.filter((x) => !(x.kind === t.kind && x.id === t.id)) })
@@ -97,10 +109,11 @@ export function StatusHistoryWidget({
           </div>
           {adding === "ip" ? (
             <IpPicker
-              label="Add an address"
+              label="Add addresses"
               value={null}
               onChange={() => undefined}
-              onPickLabel={(id, label) => add("ip", id, label)}
+              onPickMany={(items) => add("ip", items)}
+              pickLimit={MAX_TARGETS - targets.length}
               excludeIds={targets.filter((t) => t.kind === "ip").map((t) => t.id)}
               placeholder={
                 targets.length >= MAX_TARGETS
@@ -111,10 +124,11 @@ export function StatusHistoryWidget({
             />
           ) : (
             <DevicePicker
-              label="Add a device"
+              label="Add devices"
               value={null}
               onChange={() => undefined}
-              onPickLabel={(id, label) => add("device", id, label)}
+              onPickMany={(items) => add("device", items)}
+              pickLimit={MAX_TARGETS - targets.length}
               excludeIds={targets
                 .filter((t) => t.kind === "device")
                 .map((t) => t.id)}

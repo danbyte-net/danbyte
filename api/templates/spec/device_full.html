@@ -1,0 +1,18 @@
+{% extends "spec/base.html" %}
+{% block body %}
+<section>
+  <h2>Hardware</h2>
+  <div class="stats">
+    {% for s in hardware_stats %}
+    <div class="stat">
+      <div class="label">{{ s.label }}</div>
+      <div class="value">{{ s.value }}</div>
+      {% if s.hint %}<div class="hint">{{ s.hint }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% include "spec/_parts.html" %}
+{% include "spec/_modules.html" %}
+{% include "spec/_interfaces.html" %}
+{% endblock %}

@@ -1,0 +1,21 @@
+<section>
+  <h2>Interfaces</h2>
+  {% if interfaces %}
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Speed</th><th>MAC</th><th>VLAN</th><th>IPs</th><th>Connected to</th></tr></thead>
+    <tbody>
+    {% for i in interfaces %}
+    <tr>
+      <td class="mono{% if i.depth %} sub1{% endif %}"><span class="dot {% if i.enabled %}on{% else %}off{% endif %}"></span>{{ i.name }}</td>
+      <td>{{ i.type }}</td>
+      <td>{{ i.speed }}</td>
+      <td class="mono">{{ i.mac }}{% if i.vendor %}<div class="vendor">{{ i.vendor }}</div>{% endif %}</td>
+      <td>{{ i.vlan }}</td>
+      <td class="mono">{{ i.ips|join:", " }}</td>
+      <td class="mono">{{ i.peer }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No interfaces.</p>{% endif %}
+</section>

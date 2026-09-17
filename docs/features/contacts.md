@@ -61,6 +61,10 @@ may not overlap; they are sorted for you.
 The contact's page then shows the hours as one line - *Mon-Fri 08:00-17:00
 Europe/Copenhagen* - with an **Available now** or **Outside hours** badge beside it.
 
+The same two things are columns on the Contacts list - **Working hours** and
+**Available** - off by default; turn them on from the **Columns** menu, and the
+layout is remembered like any other table's.
+
 !!! note "No hours is not the same as closed"
     A contact with no hours recorded shows neither badge. "We don't know when
     they work" and "they are off shift" lead to different decisions during an

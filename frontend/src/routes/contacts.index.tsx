@@ -155,6 +155,7 @@ function ContactsPage() {
         data={rows}
         columns={columns}
         flexColumn="title"
+        initialColumnVisibility={{ hours: false, available: false }}
         tableId="contacts"
       />
       <ContactDeleteDialog

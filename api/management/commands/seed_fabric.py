@@ -377,7 +377,10 @@ class Command(BaseCommand):
                 )
                 Redistribution.objects.get_or_create(bgp_af=v4, source="connected")
                 Redistribution.objects.get_or_create(bgp_af=v4, source="static")
-                BGPAddressFamily.objects.update_or_create(instance=vinst, afi_safi="l2vpn-evpn")
+                BGPAddressFamily.objects.update_or_create(
+                    instance=vinst, afi_safi="l2vpn-evpn",
+                    defaults={"advertise_ipv4_unicast": True},
+                )
         sessions = []
         for leaf in LEAVES:
             for spine in SPINES:

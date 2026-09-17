@@ -717,6 +717,8 @@ export function BGPAddressFamilyForm({
   const [maxPathsIbgp, setMaxPathsIbgp] = useState(
     numText(item?.maximum_paths_ibgp)
   )
+  const [advV4, setAdvV4] = useState(item?.advertise_ipv4_unicast ?? false)
+  const [advV6, setAdvV6] = useState(item?.advertise_ipv6_unicast ?? false)
   const [importPolicyId, setImportPolicyId] = useState<string | null>(
     item?.import_policy?.id ?? null
   )
@@ -762,6 +764,8 @@ export function BGPAddressFamilyForm({
             .filter(Boolean),
           maximum_paths: numOrNull(maxPaths),
           maximum_paths_ibgp: numOrNull(maxPathsIbgp),
+          advertise_ipv4_unicast: afiSafi === "l2vpn-evpn" && advV4,
+          advertise_ipv6_unicast: afiSafi === "l2vpn-evpn" && advV6,
           import_policy_id: importPolicyId,
           export_policy_id: exportPolicyId,
           redistributions: redist.map((r) => ({
@@ -797,6 +801,20 @@ export function BGPAddressFamilyForm({
             error={fieldErrors.maximum_paths_ibgp}
           />
         </div>
+        {afiSafi === "l2vpn-evpn" && (
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormCheckbox
+              label="Advertise IPv4 unicast"
+              checked={advV4}
+              onChange={setAdvV4}
+            />
+            <FormCheckbox
+              label="Advertise IPv6 unicast"
+              checked={advV6}
+              onChange={setAdvV6}
+            />
+          </div>
+        )}
         <FormTextarea
           label="Networks"
           hint="one per line"

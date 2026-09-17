@@ -24,11 +24,18 @@ export interface VrfCellProps {
   linked?: boolean
   /** Render the muted RD suffix inside the badge. Default false. */
   showRd?: boolean
+  /** Shown when there is no VRF; "Global" unless told otherwise. */
+  noneLabel?: string
 }
 
-export function VrfCell({ vrf, linked = true, showRd }: VrfCellProps) {
+export function VrfCell({
+  vrf,
+  linked = true,
+  showRd,
+  noneLabel = "Global",
+}: VrfCellProps) {
   if (!vrf) {
-    return <span className="text-muted-foreground">Global</span>
+    return <span className="text-muted-foreground">{noneLabel}</span>
   }
   const badge = (
     <ColorBadge
@@ -53,6 +60,9 @@ export interface VrfColumnOpts<T> {
   get: (row: T) => VrfLike | null | undefined
   linked?: boolean
   showRd?: boolean
+  /** What an empty value means: "Global" for addresses and prefixes (the
+   *  default), "-" for a VLAN that simply has no VRF recorded. */
+  noneLabel?: string
 }
 
 export function vrfColumn<T>(opts: VrfColumnOpts<T>): ColumnDef<T, unknown> {
@@ -60,13 +70,14 @@ export function vrfColumn<T>(opts: VrfColumnOpts<T>): ColumnDef<T, unknown> {
   const header = opts.header ?? "VRF"
   return {
     id,
-    accessorFn: (r) => opts.get(r)?.name ?? "Global",
+    accessorFn: (r) => opts.get(r)?.name ?? opts.noneLabel ?? "Global",
     header: ({ column }) => <SortHeader column={column} label={header} />,
     cell: ({ row }) => (
       <VrfCell
         vrf={opts.get(row.original)}
         linked={opts.linked}
         showRd={opts.showRd}
+        noneLabel={opts.noneLabel}
       />
     ),
     meta: {
@@ -77,7 +88,7 @@ export function vrfColumn<T>(opts: VrfColumnOpts<T>): ColumnDef<T, unknown> {
         formatValue: (_v, sample) => {
           const vrf = opts.get(sample)
           return {
-            label: vrf?.name ?? "Global",
+            label: vrf?.name ?? opts.noneLabel ?? "Global",
             color: vrf?.color ?? undefined,
           }
         },

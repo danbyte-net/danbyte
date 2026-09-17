@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -20,6 +20,7 @@ import {
   type StorageUnit,
 } from "@/lib/api"
 import type { ColumnDef } from "@tanstack/react-table"
+import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/status-badge"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { actionsColumn } from "@/components/columns/actions-column"
@@ -60,13 +61,96 @@ const MEDIA_LABEL = Object.fromEntries(
 
 /** "NVMe · 1.92 TB · PCIe 4.0" - the composed hardware summary cell. */
 function hardwareSummary(it: InventoryItemRow): string {
+  const cores = it.kind === "cpu" ? coresOf(it) : 0
   return [
     it.media ? MEDIA_LABEL[it.media] : "",
     formatBytes(it.capacity_bytes),
     it.speed,
+    cores ? `${cores} cores` : "",
   ]
     .filter(Boolean)
     .join(" · ")
+}
+
+/** "CPU1" → "CPU2", "DIMM A1" → "DIMM A2", "Bay 9" → "Bay 10"; a name with no
+ * trailing number is left alone. */
+function nextName(value: string): string {
+  const m = /^(.*?)(\d+)$/.exec(value.trim())
+  if (!m) return value
+  const width = m[2].length
+  return `${m[1]}${String(Number(m[2]) + 1).padStart(width, "0")}`
+}
+
+/** The recorded core count, else the "36 x Xeon…" prefix a BMC or
+ * hypervisor writes into the description. */
+function coresOf(item: InventoryItemRow): number {
+  if (item.cores) return item.cores
+  const m = CORES_PREFIX.exec(item.description)
+  return m ? Number(m[1]) : 0
+}
+
+const CORES_PREFIX = /^\s*(\d+)\s*[x×]\s/
+
+/** The model text without the "36 x " count prefix; the count is shown as
+ * cores, so it must not read twice. */
+function modelOf(item: InventoryItemRow): string {
+  return item.description.replace(CORES_PREFIX, "").trim() || item.part_id
+}
+
+function mostCommon(values: string[]): string {
+  const counts = new Map<string, number>()
+  for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1)
+  let best = ""
+  let n = 0
+  for (const [v, c] of counts) if (c > n) [best, n] = [v, c]
+  return best
+}
+
+/** What the parts add up to - the same figures the hardware spec sheet
+ * prints: sockets and cores, total memory, total storage. */
+function hardwareTotals(items: InventoryItemRow[]) {
+  const cpus = items.filter((i) => i.kind === "cpu")
+  const rams = items.filter((i) => i.kind === "ram")
+  const disks = items.filter((i) => i.kind === "disk")
+  const cores = cpus.reduce((n, i) => n + coresOf(i), 0)
+  const sum = (rows: InventoryItemRow[]) =>
+    rows.reduce((n, i) => n + (i.capacity_bytes ?? 0), 0)
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`
+  const join = (...bits: string[]) => bits.filter(Boolean).join(" · ")
+  const tiles: { label: string; value: string; hint: string }[] = []
+  if (cpus.length)
+    tiles.push({
+      label: "CPU",
+      value: cores ? `${cores} cores` : plural(cpus.length, "CPU"),
+      hint: join(
+        cores ? plural(cpus.length, "socket") : "",
+        mostCommon(cpus.map((i) => i.speed)),
+        mostCommon(cpus.map(modelOf))
+      ),
+    })
+  if (rams.length) {
+    const each = mostCommon(rams.map((i) => formatBytes(i.capacity_bytes)))
+    tiles.push({
+      label: "Memory",
+      value: formatBytes(sum(rams)) || plural(rams.length, "module"),
+      hint: join(
+        each ? `${rams.length} × ${each}` : plural(rams.length, "module"),
+        mostCommon(rams.map((i) => i.speed))
+      ),
+    })
+  }
+  if (disks.length) {
+    const each = mostCommon(disks.map((i) => formatBytes(i.capacity_bytes)))
+    tiles.push({
+      label: "Storage",
+      value: formatBytes(sum(disks)) || plural(disks.length, "disk"),
+      hint: join(
+        each ? `${disks.length} × ${each}` : plural(disks.length, "disk"),
+        MEDIA_LABEL[mostCommon(disks.map((i) => i.media))] ?? ""
+      ),
+    })
+  }
+  return tiles
 }
 
 /** Serial-tracked physical parts on the device - disks, CPUs, RAM, PSUs,
@@ -130,6 +214,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       ...rows.filter((i) => i.parent?.id === r.id),
     ])
   }, [q.data])
+  const totals = useMemo(() => hardwareTotals(ordered), [ordered])
 
   useRegisterAddActions(
     "inventory",
@@ -155,6 +240,16 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
               <span className="mr-1 text-muted-foreground">└</span>
             )}
             {row.original.name}
+          </span>
+        ),
+      },
+      {
+        id: "slot",
+        header: "Slot",
+        accessorKey: "slot",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.slot || "-"}
           </span>
         ),
       },
@@ -271,14 +366,36 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
           transceivers) live here.
         </p>
       ) : (
-        <DataTable
-          data={ordered}
-          columns={columns}
-          embedded
-          searchable
-          searchPlaceholder="Search parts…"
-          onSelectedRowsChange={setSelected}
-        />
+        <>
+          {totals.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 px-4 pt-3 pb-1 sm:grid-cols-3">
+              {totals.map((t) => (
+                <div
+                  key={t.label}
+                  className="rounded-lg border border-border bg-card px-3 py-2"
+                >
+                  <div className="text-[11px] tracking-wide text-muted-foreground uppercase">
+                    {t.label}
+                  </div>
+                  <div className="num text-lg font-semibold">{t.value}</div>
+                  {t.hint && (
+                    <div className="truncate text-xs text-muted-foreground">
+                      {t.hint}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <DataTable
+            data={ordered}
+            columns={columns}
+            embedded
+            searchable
+            searchPlaceholder="Search parts…"
+            onSelectedRowsChange={setSelected}
+          />
+        </>
       )}
 
       {canWrite && (
@@ -320,6 +437,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
               // Mixed selections can span kinds, so offer every known value.
               suggestions: inventorySpeedSuggestions(),
             },
+            { key: "slot", label: "Slot", kind: "text" },
             { key: "part_id", label: "Part ID", kind: "text" },
             { key: "description", label: "Description", kind: "text" },
           ]}
@@ -376,8 +494,13 @@ export function InventoryItemDialog({
   const [capacity, setCapacity] = useState("")
   const [capacityUnit, setCapacityUnit] = useState<StorageUnit>("GB")
   const [speed, setSpeed] = useState("")
+  const [slot, setSlot] = useState("")
+  const [cores, setCores] = useState("")
   const [description, setDescription] = useState("")
   const [statusId, setStatusId] = useState<string | null>(null)
+  // "Add another": save, then stay open with the next name in the sequence
+  // and the serial cleared - a rack of identical disks is one dialog.
+  const againRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
@@ -393,6 +516,8 @@ export function InventoryItemDialog({
     setCapacity(cap.value)
     setCapacityUnit(cap.unit)
     setSpeed(item?.speed ?? "")
+    setSlot(item?.slot ?? "")
+    setCores(item?.cores != null ? String(item.cores) : "")
     setDescription(item?.description ?? "")
     setStatusId(item?.status?.id ?? null)
     reset()
@@ -435,6 +560,12 @@ export function InventoryItemDialog({
           ? unitToBytes(capacity, capacityUnit)
           : (item?.capacity_bytes ?? null),
         speed: partFieldsFor(kind).speed ? speed.trim() : (item?.speed ?? ""),
+        slot: slot.trim(),
+        cores: partFieldsFor(kind).cores
+          ? cores.trim()
+            ? Number(cores)
+            : null
+          : (item?.cores ?? null),
         description: description.trim(),
         status_id: statusId,
       }
@@ -479,6 +610,14 @@ export function InventoryItemDialog({
             ? `${count} parts added`
             : "Part added"
       )
+      if (againRef.current && !editing) {
+        againRef.current = false
+        setName(nextName(name))
+        setSlot(nextName(slot))
+        setSerial("")
+        setAssetTag("")
+        return
+      }
       onOpenChange(false)
     },
     onError: (err) => {
@@ -555,6 +694,10 @@ export function InventoryItemDialog({
             onCapacity={setCapacity}
             capacityUnit={capacityUnit}
             onCapacityUnit={setCapacityUnit}
+            slot={slot}
+            onSlot={setSlot}
+            cores={cores}
+            onCores={setCores}
             errors={fieldErrors}
           />
           <div className="grid grid-cols-2 gap-3">
@@ -613,6 +756,21 @@ export function InventoryItemDialog({
             onCancel={() => onOpenChange(false)}
             submitting={mutation.isPending}
             submitLabel={editing ? "Save changes" : "Add part"}
+            secondary={
+              editing ? undefined : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={mutation.isPending || !name.trim()}
+                  onClick={() => {
+                    againRef.current = true
+                    mutation.mutate()
+                  }}
+                >
+                  Add another
+                </Button>
+              )
+            }
           />
         </form>
       </DialogContent>

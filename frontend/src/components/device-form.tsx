@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
+
+import { Button } from "@/components/ui/button"
 
 import {
   api,
@@ -389,6 +391,9 @@ export function DeviceForm({
     position,
   ])
 
+  // "Save and add another": keep the form open with the shared context
+  // (site, role, table…) and clear only what names this one.
+  const againRef = useRef(false)
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: DeviceWritePayload = {
@@ -441,6 +446,13 @@ export function DeviceForm({
       qc.invalidateQueries({ queryKey: ["devices-picker"] })
       qc.invalidateQueries({ queryKey: ["device", saved.id] })
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      if (againRef.current) {
+        againRef.current = false
+        setName("")
+        setSerial("")
+        setAssetTag("")
+        return
+      }
       onSaved(saved)
     },
     onError: (err) => {
@@ -898,6 +910,21 @@ export function DeviceForm({
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Create device"}
+        secondary={
+          isEdit ? undefined : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => {
+                againRef.current = true
+                mutation.mutate()
+              }}
+            >
+              Save and add another
+            </Button>
+          )
+        }
       />
     </form>
   )

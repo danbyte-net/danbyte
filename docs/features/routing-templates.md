@@ -320,6 +320,13 @@ interface {{ i.name }}{% if i.vrf %} vrf {{ i.vrf.name }}{% endif %}
 {% set r = routing.by_interface.get(i.name) %}
 {% if r and r.gateway %}
  ip address {{ r.gateway }}
+{% if r.nd and r.nd.ra %}
+ no ipv6 nd suppress-ra
+ ipv6 nd prefix {{ r.nd.prefix }}
+{% if r.nd.ra_interval %}
+ ipv6 nd ra-interval {{ r.nd.ra_interval }}
+{% endif %}
+{% endif %}
 {% endif %}
 {% if r and r.isis %}
 {% for fam in r.isis.families %}
@@ -484,9 +491,9 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
   exit-vni
 {% endfor %}
 {% endif %}
-{% if inst.vrf and af.afi_safi == "l2vpn-evpn" %}
-  advertise ipv4 unicast
-{% endif %}
+{% for a in af.advertise %}
+  advertise {{ a }}
+{% endfor %}
  exit-address-family
 {% endfor %}
 exit
@@ -522,6 +529,23 @@ prints only for the other address families. FRR's L3VNI lives on the VRF (`vrf T
 side on `router bgp 65100 vrf TENANT-A`, which is why the seeded fabric
 gives every leaf a BGP instance in the VRF as well as the global one - the
 template prints both from the same `routing.bgp` loop.
+
+## One shape, everywhere
+
+A few rules keep templates short:
+
+- **Names, not objects, on the rows.** Wherever a session, an instance or an
+  interface row carries a `keychain` or a `bfd_profile`, it is the name (or
+  `null`). The details live once, at the top: `routing.keychains` and
+  `routing.bfd_profiles` as lists, and `routing.keychain_by_name` and
+  `routing.bfd_profile_by_name` as lookups - `routing.bfd_profile_by_name[r.bfd_profile].min_tx`.
+- **The EVPN family says what it advertises.** `af.advertise` is the list of
+  `advertise <afi> unicast` lines an `l2vpn evpn` family wants (from the
+  family's *Advertise IPv4/IPv6 unicast* switches), so a template loops it
+  instead of guessing from the VRF.
+- **The anycast gateway comes with its neighbour discovery.** `r.gateway` is
+  the address with its mask; `r.nd` carries `ra`, `ra_interval` and the
+  subnet `prefix` from the gateway's FHRP group, for the `ipv6 nd` lines.
 
 ## Reading the two side by side
 

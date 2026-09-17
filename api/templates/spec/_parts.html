@@ -1,0 +1,44 @@
+<section>
+  <h2>Processors</h2>
+  {% if cpus %}
+  <table>
+    <thead><tr><th>Slot</th><th>Name</th><th>Model</th><th>Clock</th><th class="num">Cores</th><th>Serial</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for it in cpus %}<tr><td>{{ it.slot }}</td><td>{{ it.name }}</td><td>{{ it.model }}</td><td>{{ it.speed }}</td><td class="num">{{ it.cores }}</td><td class="mono">{{ it.serial }}</td><td>{{ it.status }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No processors recorded.</p>{% endif %}
+</section>
+<section>
+  <h2>Memory</h2>
+  {% if rams %}
+  <table>
+    <thead><tr><th>Slot</th><th>Name</th><th class="num">Size</th><th>Speed</th><th>Manufacturer</th><th>Part</th><th>Serial</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for it in rams %}<tr><td>{{ it.slot }}</td><td>{{ it.name }}</td><td class="num">{{ it.capacity }}</td><td>{{ it.speed }}</td><td>{{ it.manufacturer }}</td><td class="mono">{{ it.part }}</td><td class="mono">{{ it.serial }}</td><td>{{ it.status }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No memory recorded.</p>{% endif %}
+</section>
+<section>
+  <h2>Storage</h2>
+  {% if disks %}
+  <table>
+    <thead><tr><th>Slot</th><th>Name</th><th>Media</th><th class="num">Capacity</th><th>Speed</th><th>Manufacturer</th><th>Part</th><th>Serial</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for it in disks %}<tr><td>{{ it.slot }}</td><td>{{ it.name }}</td><td>{{ it.media }}</td><td class="num">{{ it.capacity }}</td><td>{{ it.speed }}</td><td>{{ it.manufacturer }}</td><td class="mono">{{ it.part }}</td><td class="mono">{{ it.serial }}</td><td>{{ it.status }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No storage recorded.</p>{% endif %}
+</section>
+{% if others %}
+<section>
+  <h2>Other parts</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>Slot</th><th>Name</th><th>Details</th><th>Manufacturer</th><th>Part</th><th>Serial</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for it in others %}<tr><td>{{ it.kind }}</td><td>{{ it.slot }}</td><td>{{ it.name }}</td><td>{{ it.details }}</td><td>{{ it.manufacturer }}</td><td class="mono">{{ it.part }}</td><td class="mono">{{ it.serial }}</td><td>{{ it.status }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

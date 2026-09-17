@@ -390,6 +390,19 @@ function BGPSection({ device }: { device: { id: string; name: string } }) {
                             <span className="num">{af.maximum_paths}</span>
                           </span>
                         )}
+                        {(af.advertise_ipv4_unicast ||
+                          af.advertise_ipv6_unicast) && (
+                          <span className="text-muted-foreground">
+                            advertise{" "}
+                            {[
+                              af.advertise_ipv4_unicast ? "ipv4" : "",
+                              af.advertise_ipv6_unicast ? "ipv6" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(", ")}{" "}
+                            unicast
+                          </span>
+                        )}
                         {af.import_policy && (
                           <span className="text-muted-foreground">
                             in{" "}

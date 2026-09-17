@@ -278,6 +278,13 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
             "networks": list(af.networks or []),
             "maximum_paths": af.maximum_paths,
             "maximum_paths_ibgp": af.maximum_paths_ibgp,
+            "advertise_ipv4_unicast": bool(af.advertise_ipv4_unicast),
+            "advertise_ipv6_unicast": bool(af.advertise_ipv6_unicast),
+            # The EVPN "advertise <afi> unicast" lines, ready to loop.
+            "advertise": [
+                x for x, on in (("ipv4 unicast", af.advertise_ipv4_unicast),
+                                ("ipv6 unicast", af.advertise_ipv6_unicast)) if on
+            ],
             "import_policy": _name(af.import_policy) if af.import_policy_id else None,
             "export_policy": _name(af.export_policy) if af.export_policy_id else None,
             "redistribute": redist,
@@ -623,6 +630,10 @@ def routing_context(device) -> dict:
                 f"{vip.ip_address}/{str(vip.prefix.cidr).split('/')[-1]}"
                 if vip is not None and vip.prefix_id else None
             ),
+            # The subnet the gateway answers for - what an IPv6 RA announces.
+            "prefix": str(vip.prefix.cidr) if vip is not None and vip.prefix_id else None,
+            "nd_ra": bool(g.nd_ra),
+            "nd_ra_interval": g.nd_ra_interval,
             "priority": a.priority,
         })
 
@@ -632,15 +643,24 @@ def routing_context(device) -> dict:
                 return r["cidr"]
         return None
 
+    def _nd(rows):
+        """The anycast gateway's neighbour-discovery settings, for the SVI."""
+        for r in rows:
+            if r["protocol"] == "anycast" and r["cidr"]:
+                return {"ra": r["nd_ra"], "ra_interval": r["nd_ra_interval"],
+                        "prefix": r["prefix"]}
+        return None
+
     by_interface: dict[str, dict] = {}
     for iface in device.interfaces.all():
         rows = fhrp.get(iface.name, [])
         by_interface[iface.name] = {
             "vrf": iface.vrf.name if iface.vrf_id else None,
             "ospf": None, "isis": None, "eigrp": None,
-            "fhrp": rows, "gateway": _gateway(rows),
+            "fhrp": rows, "gateway": _gateway(rows), "nd": _nd(rows),
         }
-    blank = {"vrf": None, "ospf": None, "isis": None, "eigrp": None, "fhrp": [], "gateway": None}
+    blank = {"vrf": None, "ospf": None, "isis": None, "eigrp": None, "fhrp": [],
+             "gateway": None, "nd": None}
     for o in ospf:
         for row in o["interfaces"]:
             by_interface.setdefault(row["interface"], dict(blank))
@@ -679,4 +699,8 @@ def routing_context(device) -> dict:
             for p in BFDProfile.objects.filter(tenant_id=device.tenant_id).order_by("name")
         ],
     }
+    # Every row names its keychain and BFD profile; the details sit here,
+    # by that name, so a template does not search the lists.
+    out["keychain_by_name"] = {k["name"]: k for k in out["keychains"]}
+    out["bfd_profile_by_name"] = {p["name"]: p for p in out["bfd_profiles"]}
     return out

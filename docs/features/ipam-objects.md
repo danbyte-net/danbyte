@@ -40,8 +40,16 @@ same route target can be shared across many VRFs.
 
 A **VLAN** carries a VID (1–4094), a name, an optional site, an optional group, a
 status, a description, tags, and any custom fields. Interfaces reference a VLAN
-for access or trunk membership. The list filters by site, status, and group, and
-supports **bulk edit** for changing many VLANs at once.
+for access or trunk membership. The list filters by site, status, group and VRF,
+and supports **bulk edit** for changing many VLANs at once.
+
+A VLAN can also name the **VRF** its SVI lives in - the Layer 3 side of the
+VLAN, documented before any prefix exists on it (a reserved or planned VLAN
+has none yet). It is optional; a flat network leaves it empty. The VRF shows
+on the VLAN's page and as a column and filter on the list, a VRF's page has
+a **VLANs** tab with a count, and a prefix that sits on the VLAN but in a
+different VRF gets a *VLAN is in another VRF* badge on its page, so a
+mismatch is seen rather than assumed.
 
 A VLAN also has an optional **colour** (set on its edit form) that paints its
 badge everywhere VLANs appear - tables, the IP/prefix panes, and the virtual

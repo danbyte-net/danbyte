@@ -22,7 +22,14 @@ from .models import (
     VirtualMachine,
     VMInterface,
 )
-from .spec_sheets import device_context, render_spec_html, spec_filename, vm_context
+from .spec_sheets import (
+    device_context,
+    device_full_context,
+    device_hardware_context,
+    render_spec_html,
+    spec_filename,
+    vm_context,
+)
 
 User = get_user_model()
 
@@ -93,6 +100,58 @@ class DeviceSheetTests(_Base):
         r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?download=1")
         self.assertIn("attachment", r["Content-Disposition"])
 
+    def test_hardware_variant(self):
+        from .models import InventoryItem
+
+        mk = InventoryItem.objects.create
+        for n, slot in (("CPU1", "Socket 1"), ("CPU2", "Socket 2")):
+            mk(device=self.device, name=n, kind="cpu", slot=slot, speed="3.0 GHz",
+               cores=18, description="Intel Xeon Gold 6154")
+        for n, slot in (("RAM1", "DIMM A1"), ("RAM2", "DIMM B1")):
+            mk(device=self.device, name=n, kind="ram", slot=slot, speed="DDR4-2666",
+               capacity_bytes=64_000_000_000)
+        mk(device=self.device, name="Disk 0", kind="disk", media="ssd",
+           capacity_bytes=960_000_000_000, speed="SATA 6Gb/s")
+        # No recorded figure on a third socket: the "36 x …" the BMC wrote
+        # into the description counts instead.
+        mk(device=self.device, name="CPU3", kind="cpu", slot="Socket 3",
+           description="36 x Intel(R) Xeon(R) Gold 6154")
+        ctx = device_hardware_context(self.device)
+        stats = {s["label"]: s for s in ctx["stats"]}
+        self.assertEqual(stats["CPU"]["value"], "72 cores")
+        for bit in ("3 sockets", "3.0 GHz", "Intel Xeon Gold 6154"):
+            self.assertIn(bit, stats["CPU"]["hint"])
+        self.assertEqual(stats["Memory"]["value"], "128 GB")
+        self.assertIn("2 × 64 GB", stats["Memory"]["hint"])
+        self.assertIn("DDR4-2666", stats["Memory"]["hint"])
+        self.assertEqual(stats["Storage"]["value"], "960 GB")
+        self.assertEqual(ctx["cpus"][0]["slot"], "Socket 1")
+        self.assertEqual(ctx["cpus"][2]["model"], "Intel(R) Xeon(R) Gold 6154")
+        self.assertNotIn("36 x", stats["CPU"]["hint"])
+        self.assertNotIn("interfaces", ctx)
+        self.assertNotIn("ports", ctx)
+        html = render_spec_html("device_hardware", self.device)
+        self.assertIn("Processors", html)
+        self.assertIn("Socket 2", html)
+        r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?variant=hardware")
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        self.assertTrue(r.content.startswith(b"%PDF"))
+        # The serial number names the file, not the date.
+        self.assertIn("aarhus-sw1-spec-hardware-FOC1234.pdf", r["Content-Disposition"])
+
+        # The all-in-one sheet: the datasheet's boxes, plus the hardware block
+        # and the interfaces.
+        full = device_full_context(self.device)
+        self.assertEqual(full["stats"][0]["label"], "Interfaces")
+        self.assertEqual(full["hardware_stats"][0]["value"], "72 cores")
+        self.assertEqual(len(full["interfaces"]), 1)
+        html = render_spec_html("device_full", self.device)
+        for bit in ("Processors", "DIMM B1", "Interfaces", "aarhus-core1:Ethernet1/10"):
+            self.assertIn(bit, html)
+        r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?variant=full")
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        self.assertIn("aarhus-sw1-spec-full-FOC1234.pdf", r["Content-Disposition"])
+
     def test_needs_view_permission(self):
         member = User.objects.create_user("m", password="x")
         self.client.force_login(member)
@@ -104,6 +163,10 @@ class DeviceSheetTests(_Base):
 
     def test_filename_is_safe(self):
         self.device.name = "sw 1/core (a)"
+        self.device.serial_number = "FOC 12/34"
+        self.assertEqual(spec_filename(self.device), "sw-1-core-a-spec-FOC-12-34.pdf")
+        # No serial: the date names the file instead.
+        self.device.serial_number = ""
         self.assertRegex(spec_filename(self.device), r"^sw-1-core-a-spec-\d{4}-\d{2}-\d{2}\.pdf$")
 
 

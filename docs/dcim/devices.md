@@ -374,4 +374,7 @@ audited in the change log like any other edit.
 
 **Spec sheet** in the page actions opens a printable PDF datasheet of the
 device - stat boxes, details, modules, interfaces with cable peers, comments
-and images. See [Spec sheets](../features/spec-sheets.md).
+and images - or, from the same menu, the **hardware sheet**: CPU, memory and
+storage totals first, then one table of parts per kind with the slot each
+sits in - or **All in one**, both on one sheet. The file is named after the
+device and its serial number. See [Spec sheets](../features/spec-sheets.md).

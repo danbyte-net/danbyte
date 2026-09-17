@@ -166,6 +166,32 @@ class StackEndpointTests(_Stack):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(poll.call_args[0][0].id, self.master.id)
 
+    def test_vc_poll_survives_the_csrf_check(self):
+        # A browser's POST carries a JSON body and a CSRF token; the check
+        # reads the body. Re-dispatching the device view on the raw request
+        # read it twice and raised (#175). The test client skips CSRF unless
+        # told otherwise, which is why this needs its own client.
+        from django.middleware.csrf import get_token
+        from django.test import RequestFactory
+        from rest_framework.test import APIClient
+
+        client = APIClient(enforce_csrf_checks=True)
+        client.force_login(self.user)
+        s = client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        req = RequestFactory().get("/")
+        req.session = client.session
+        token = get_token(req)
+        client.cookies["csrftoken"] = token
+        with mock.patch("monitoring.views.poll_device") as poll:
+            poll.return_value = (self.state, None)
+            r = client.post(
+                f"/api/monitoring/virtual-chassis/{self.vc.id}/snmp-poll/",
+                {}, format="json", HTTP_X_CSRFTOKEN=token,
+            )
+        self.assertEqual(r.status_code, 200, r.content)
+
 
 class PollTests(_Stack):
     def test_owner_and_target_fallback(self):

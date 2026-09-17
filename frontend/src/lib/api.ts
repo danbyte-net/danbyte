@@ -213,6 +213,8 @@ export interface Prefix {
   site: { id: string; name: string } | null
   location: { id: string; name: string } | null
   vlan: VLANMini | null
+  /** The VLAN documents one VRF and the prefix sits in another. */
+  vlan_vrf_mismatch: boolean
   vrf: { id: string; name: string; rd: string; color: string } | null
   gateway: string | null
   description: string
@@ -2457,7 +2459,32 @@ export const INVENTORY_MEDIA_OPTIONS: {
  * stays free text so any vendor's wording still fits.
  */
 const INVENTORY_SPEEDS_BY_KIND: Partial<Record<InventoryItemKind, string[]>> = {
-  cpu: ["1.8 GHz", "2.0 GHz", "2.2 GHz", "2.4 GHz", "2.6 GHz", "3.0 GHz"],
+  cpu: [
+    "1.8 GHz",
+    "2.0 GHz",
+    "2.1 GHz",
+    "2.2 GHz",
+    "2.3 GHz",
+    "2.4 GHz",
+    "2.5 GHz",
+    "2.6 GHz",
+    "2.7 GHz",
+    "2.8 GHz",
+    "2.9 GHz",
+    "3.0 GHz",
+    "3.1 GHz",
+    "3.2 GHz",
+    "3.3 GHz",
+    "3.4 GHz",
+    "3.5 GHz",
+    "3.6 GHz",
+    "3.7 GHz",
+    "3.8 GHz",
+    "4.0 GHz",
+    "4.2 GHz",
+    "4.5 GHz",
+    "5.0 GHz",
+  ],
   ram: [
     "DDR3-1600",
     "DDR4-2133",
@@ -2564,6 +2591,10 @@ export interface InventoryItemRow {
   media: InventoryMedia
   capacity_bytes: number | null
   speed: string
+  /** Where it sits - "Socket 1", "DIMM A1", "Bay 3". */
+  slot: string
+  /** CPU cores (kind=cpu). */
+  cores: number | null
   status: StatusMini | null
   tags: Tag[]
 }
@@ -3119,6 +3150,8 @@ export interface VLAN {
   site: { id: string; name: string } | null
   group: { id: string; name: string } | null
   zone: { id: string; name: string; color: string; text_color: string } | null
+  /** The routing table the VLAN's SVI lives in, when documented. */
+  vrf: { id: string; name: string; rd: string; color: string } | null
   description: string
   tags: Tag[]
   prefix_count: number
@@ -3136,6 +3169,7 @@ export interface VLANWritePayload {
   site_id?: string | null
   group_id?: string | null
   zone_id?: string | null
+  vrf_id?: string | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -3252,6 +3286,9 @@ export interface FHRPGroup {
   auth_type_display: string
   auth_key: string
   virtual_ip: { id: string; ip_address: string } | null
+  /** Anycast gateway: send IPv6 router advertisements, and how often. */
+  nd_ra: boolean
+  nd_ra_interval: number | null
   assignments: FHRPGroupAssignment[]
   assignment_count: number
   description: string
@@ -3271,6 +3308,8 @@ export interface FHRPGroupWritePayload {
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
+  nd_ra?: boolean
+  nd_ra_interval?: number | null
 }
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
@@ -3447,6 +3486,7 @@ export interface VRF {
   tags: Tag[]
   prefix_count: number
   ip_count: number
+  vlan_count: number
   /** Detail only; 0 on list responses. */
   static_route_count: number
   bgp_session_count: number
@@ -4320,6 +4360,9 @@ export interface BGPAddressFamily {
   networks: string[]
   maximum_paths: number | null
   maximum_paths_ibgp: number | null
+  /** EVPN only: leak the VRF's unicast routes into EVPN as type-5. */
+  advertise_ipv4_unicast: boolean
+  advertise_ipv6_unicast: boolean
   import_policy: { id: string; name: string } | null
   export_policy: { id: string; name: string } | null
   redistributions: Redistribution[]

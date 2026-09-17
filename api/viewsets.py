@@ -984,6 +984,23 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         "auto_discover", "auto_assign_site", "monitoring_engine",
     )
 
+    def perform_destroy(self, instance):
+        # Addresses on a deleted prefix go back to the prefix that still
+        # contains them; only ones nothing covers fall with it.
+        from .views import reparent_ips_out_of
+
+        reparent_ips_out_of(instance)
+        instance.delete()
+
+    @action(detail=True, methods=["get"], url_path="delete-impact")
+    def delete_impact(self, request, pk=None):
+        """What deleting this prefix does to the addresses on it: how many
+        move to a containing prefix (and which one takes most), how many have
+        no container and are removed."""
+        from .views import reparent_ips_out_of
+
+        return Response(reparent_ips_out_of(self.get_object(), dry_run=True))
+
     def perform_create(self, serializer):
         prefix = serializer.save(
             **{self.tenant_field: self._tenant_or_403()},
@@ -1797,8 +1814,8 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors this viewset's own bulk_update action (see PrefixViewSet).
     editable_str_fields = ("description",)
-    editable_fk_fields = {"site_id": Site, "zone_id": Zone}
-    queryset = VLAN.objects.select_related("site", "group", "zone").prefetch_related("tags").all().order_by("vlan_id")
+    editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF}
+    queryset = VLAN.objects.select_related("site", "group", "zone", "vrf").prefetch_related("tags").all().order_by("vlan_id")
     serializer_class = VLANSerializer
     pagination_class = StandardPagination
     rbac_action_map = {"bulk_delete": "delete"}
@@ -1827,6 +1844,9 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         group = self.request.query_params.get("group")
         if group:
             qs = qs.filter(group_id=group)
+        vrf = self.request.query_params.get("vrf")
+        if vrf:
+            qs = qs.filter(vrf_id=vrf)
         return _apply_custom_field_scope(self.request, qs, "vlan")
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
@@ -3111,10 +3131,18 @@ class DeviceViewSet(
         from .spec_sheets import render_spec_pdf, spec_filename
 
         obj = self.get_object()
-        pdf = render_spec_pdf("device", obj, request)
+        # ``?variant=hardware`` puts the parts first: CPU, memory and storage
+        # totals as the stat boxes, one table per kind, no interfaces.
+        # ``?variant=full`` is the datasheet with the hardware block added.
+        variant = request.query_params.get("variant", "")
+        kind = {"hardware": "device_hardware", "full": "device_full"}.get(variant, "device")
+        pdf = render_spec_pdf(kind, obj, request)
         disposition = "attachment" if request.query_params.get("download") else "inline"
         resp = HttpResponse(pdf, content_type="application/pdf")
-        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        suffix = f"-{variant}" if kind != "device" else ""
+        resp["Content-Disposition"] = (
+            f'{disposition}; filename="{spec_filename(obj, suffix)}"'
+        )
         return resp
 
     @action(detail=True, methods=["get"], url_path="config-context")

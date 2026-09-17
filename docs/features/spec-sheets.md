@@ -45,12 +45,34 @@ A4, built to print in black and white as well as colour:
 Every page carries the object name, its Danbyte URL and the page count in
 the footer.
 
+## The hardware sheet
+
+A device has a second sheet, **Spec sheet → Hardware sheet**, for when the
+question is what is inside the box rather than where it sits. The header and
+elevations are the same; the three stat boxes become **CPU** (total cores,
+with sockets, clock and model underneath - or the socket count when no core
+figure is recorded), **Memory** (total size, with "2 × 64 GB · DDR4-2666")
+and **Storage** (total capacity, with the disk count, size and media). Then
+one table per kind - Processors, Memory, Storage, Other parts - each with the
+**slot** the part sits in (Socket 1, DIMM A1, Bay 3), its model, speed,
+cores or capacity, serial and status, followed by the modules. Rack position,
+power draw, port utilisation, interfaces and images are left off. The same
+totals sit above the parts table on the device's Hardware tab.
+
+**All in one**, the third entry, is the datasheet with the hardware block
+inserted: the three datasheet boxes, details, port utilisation, then the
+CPU, memory and storage boxes, the parts per kind, the modules, the
+interfaces, comments and images.
+
 ## Endpoint
 
 `GET /api/devices/<id>/spec-sheet/`, `GET /api/virtual-machines/<id>/spec-sheet/`
 and `GET /api/virtual-chassis/<id>/spec-sheet/` return `application/pdf`. The
-sheet is served inline; add `?download=1` for a download with the filename
-`<name>-spec-<date>.pdf`. Reading a sheet needs the same **view** permission
+sheet is served inline; add `?download=1` for a download. The file is named
+`<name>-spec-<serial>.pdf` when the object has a serial number, else
+`<name>-spec-<date>.pdf`. On a device, `?variant=hardware` returns the
+hardware sheet and `?variant=full` the all-in-one sheet
+(`<name>-spec-hardware-<serial>.pdf`, `<name>-spec-full-<serial>.pdf`). Reading a sheet needs the same **view** permission
 as the object page, so site scoping applies unchanged.
 
 The PDF is rendered server-side with the same engine as

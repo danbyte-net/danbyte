@@ -150,6 +150,10 @@ class ISISTests(_Base):
         })
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(r.json()["families"], ["ipv6", "ipv4"])
+        # The collection says which instance each row belongs to.
+        rows = self.client.get("/api/routing/isis-interfaces/").json()["results"]
+        self.assertEqual({x["instance"]["id"] for x in rows}, {inst["id"]})
+        self.assertEqual(rows[0]["instance"]["name"], "UNDERLAY")
         r = self._post("/api/routing/isis-interfaces/", {
             "instance_id": inst["id"], "interface_id": str(self.swp2.id), "families": ["ipx"],
         })
