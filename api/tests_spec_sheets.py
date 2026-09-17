@@ -112,16 +112,22 @@ class DeviceSheetTests(_Base):
                capacity_bytes=64_000_000_000)
         mk(device=self.device, name="Disk 0", kind="disk", media="ssd",
            capacity_bytes=960_000_000_000, speed="SATA 6Gb/s")
+        # No recorded figure on a third socket: the "36 x …" the BMC wrote
+        # into the description counts instead.
+        mk(device=self.device, name="CPU3", kind="cpu", slot="Socket 3",
+           description="36 x Intel(R) Xeon(R) Gold 6154")
         ctx = device_hardware_context(self.device)
         stats = {s["label"]: s for s in ctx["stats"]}
-        self.assertEqual(stats["CPU"]["value"], "36 cores")
-        for bit in ("2 sockets", "3.0 GHz", "Intel Xeon Gold 6154"):
+        self.assertEqual(stats["CPU"]["value"], "72 cores")
+        for bit in ("3 sockets", "3.0 GHz", "Intel Xeon Gold 6154"):
             self.assertIn(bit, stats["CPU"]["hint"])
         self.assertEqual(stats["Memory"]["value"], "128 GB")
         self.assertIn("2 × 64 GB", stats["Memory"]["hint"])
         self.assertIn("DDR4-2666", stats["Memory"]["hint"])
         self.assertEqual(stats["Storage"]["value"], "960 GB")
         self.assertEqual(ctx["cpus"][0]["slot"], "Socket 1")
+        self.assertEqual(ctx["cpus"][2]["model"], "Intel(R) Xeon(R) Gold 6154")
+        self.assertNotIn("36 x", stats["CPU"]["hint"])
         self.assertNotIn("interfaces", ctx)
         self.assertNotIn("ports", ctx)
         html = render_spec_html("device_hardware", self.device)
@@ -137,7 +143,7 @@ class DeviceSheetTests(_Base):
         # and the interfaces.
         full = device_full_context(self.device)
         self.assertEqual(full["stats"][0]["label"], "Interfaces")
-        self.assertEqual(full["hardware_stats"][0]["value"], "36 cores")
+        self.assertEqual(full["hardware_stats"][0]["value"], "72 cores")
         self.assertEqual(len(full["interfaces"]), 1)
         html = render_spec_html("device_full", self.device)
         for bit in ("Processors", "DIMM B1", "Interfaces", "aarhus-core1:Ethernet1/10"):

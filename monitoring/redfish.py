@@ -164,6 +164,7 @@ def collect(endpoint) -> dict[str, Any]:
                     "speed": (
                         f"{p['MaxSpeedMHz']} MHz" if p.get("MaxSpeedMHz") else ""
                     ),
+                    "cores": p.get("TotalCores"),
                     "health": _health(p),
                 })
             # Memory DIMMs.
@@ -270,6 +271,8 @@ def reconcile(endpoint, observed: dict[str, Any]) -> dict[str, int]:
                 "part_id": (part.get("model") or "")[:128],
                 "serial_number": serial[:255],
             }
+            if kind == "cpu" and part.get("cores"):
+                facts["cores"] = int(part["cores"])
             status = _status_for_health(tenant, part.get("health") or "")
 
             if item is None:

@@ -61,10 +61,12 @@ const MEDIA_LABEL = Object.fromEntries(
 
 /** "NVMe · 1.92 TB · PCIe 4.0" - the composed hardware summary cell. */
 function hardwareSummary(it: InventoryItemRow): string {
+  const cores = it.kind === "cpu" ? coresOf(it) : 0
   return [
     it.media ? MEDIA_LABEL[it.media] : "",
     formatBytes(it.capacity_bytes),
     it.speed,
+    cores ? `${cores} cores` : "",
   ]
     .filter(Boolean)
     .join(" · ")
@@ -77,6 +79,22 @@ function nextName(value: string): string {
   if (!m) return value
   const width = m[2].length
   return `${m[1]}${String(Number(m[2]) + 1).padStart(width, "0")}`
+}
+
+/** The recorded core count, else the "36 x Xeon…" prefix a BMC or
+ * hypervisor writes into the description. */
+function coresOf(item: InventoryItemRow): number {
+  if (item.cores) return item.cores
+  const m = CORES_PREFIX.exec(item.description)
+  return m ? Number(m[1]) : 0
+}
+
+const CORES_PREFIX = /^\s*(\d+)\s*[x×]\s/
+
+/** The model text without the "36 x " count prefix; the count is shown as
+ * cores, so it must not read twice. */
+function modelOf(item: InventoryItemRow): string {
+  return item.description.replace(CORES_PREFIX, "").trim() || item.part_id
 }
 
 function mostCommon(values: string[]): string {
@@ -94,7 +112,7 @@ function hardwareTotals(items: InventoryItemRow[]) {
   const cpus = items.filter((i) => i.kind === "cpu")
   const rams = items.filter((i) => i.kind === "ram")
   const disks = items.filter((i) => i.kind === "disk")
-  const cores = cpus.reduce((n, i) => n + (i.cores ?? 0), 0)
+  const cores = cpus.reduce((n, i) => n + coresOf(i), 0)
   const sum = (rows: InventoryItemRow[]) =>
     rows.reduce((n, i) => n + (i.capacity_bytes ?? 0), 0)
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`
@@ -107,7 +125,7 @@ function hardwareTotals(items: InventoryItemRow[]) {
       hint: join(
         cores ? plural(cpus.length, "socket") : "",
         mostCommon(cpus.map((i) => i.speed)),
-        mostCommon(cpus.map((i) => i.description || i.part_id))
+        mostCommon(cpus.map(modelOf))
       ),
     })
   if (rams.length) {

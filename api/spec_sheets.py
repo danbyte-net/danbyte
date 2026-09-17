@@ -488,6 +488,24 @@ def _most_common(values) -> str:
     return max(set(vals), key=vals.count)
 
 
+_CORES_IN_TEXT = re.compile(r"^\s*(\d+)\s*[x×]\s")
+
+
+def cores_of(item) -> int:
+    """The part's core count: the recorded figure, else the "36 x Xeon…"
+    prefix a BMC or hypervisor writes into the description."""
+    if item.cores:
+        return item.cores
+    m = _CORES_IN_TEXT.match(item.description or "")
+    return int(m.group(1)) if m else 0
+
+
+def model_of(item) -> str:
+    """The part's model text without the "36 x " count prefix - the count is
+    shown as cores, so it must not read twice."""
+    return _CORES_IN_TEXT.sub("", item.description or "", count=1).strip() or item.part_id
+
+
 def hardware_totals(items) -> dict:
     """What the box adds up to - one entry per kind that carries a total:
     CPUs (sockets, cores, the clock and model most of them share), RAM (total
@@ -495,7 +513,7 @@ def hardware_totals(items) -> dict:
     cpus = [i for i in items if i.kind == "cpu"]
     rams = [i for i in items if i.kind == "ram"]
     disks = [i for i in items if i.kind == "disk"]
-    cores = sum(i.cores or 0 for i in cpus)
+    cores = sum(cores_of(i) for i in cpus)
     ram_bytes = sum(i.capacity_bytes or 0 for i in rams)
     disk_bytes = sum(i.capacity_bytes or 0 for i in disks)
     from .models import INVENTORY_MEDIA_TYPES
@@ -506,7 +524,7 @@ def hardware_totals(items) -> dict:
             "sockets": len(cpus),
             "cores": cores,
             "clock": _most_common(i.speed for i in cpus),
-            "model": _most_common((i.description or i.part_id or "") for i in cpus),
+            "model": _most_common(model_of(i) for i in cpus),
         },
         "ram": {
             "bytes": ram_bytes,
@@ -567,18 +585,18 @@ def _hardware_parts(device) -> dict:
         return {
             "slot": it.slot,
             "name": it.name,
-            "model": it.description or it.part_id,
+            "model": model_of(it),
             "manufacturer": it.manufacturer.name if it.manufacturer_id else "",
             "part": it.part_id,
             "serial": it.serial_number,
             "speed": it.speed,
-            "cores": it.cores or "",
+            "cores": cores_of(it) or "",
             "capacity": format_bytes(it.capacity_bytes),
             "media": media.get(it.media, ""),
             "status": it.status.name if it.status_id else "",
             "kind": kinds.get(it.kind, it.kind),
             "details": " · ".join(x for x in (
-                it.description or it.part_id, it.speed, format_bytes(it.capacity_bytes)
+                model_of(it), it.speed, format_bytes(it.capacity_bytes)
             ) if x),
         }
 
