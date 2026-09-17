@@ -245,7 +245,7 @@ class BulkAgreementTests(_Base):
         expected = {
             "prefix": {"status_id", "vrf_id", "site_id", "vlan_id", "description"},
             "ipaddress": {"status_id", "role_id", "description"},
-            "vlan": {"site_id", "zone_id", "description"},
+            "vlan": {"site_id", "zone_id", "vrf_id", "description"},
         }
         for slug, accepted in expected.items():
             model = apps.get_model("api", slug)
