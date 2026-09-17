@@ -3673,7 +3673,7 @@ class InventoryItemSerializer(
         fields = ["id", "device", "device_id", "parent", "parent_id", "name",
                   "manufacturer", "manufacturer_id", "part_id",
                   "serial_number", "asset_tag", "description",
-                  "kind", "media", "capacity_bytes", "speed",
+                  "kind", "media", "capacity_bytes", "speed", "slot", "cores",
                   "status", "status_id",
                   "tags", "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

@@ -3111,10 +3111,17 @@ class DeviceViewSet(
         from .spec_sheets import render_spec_pdf, spec_filename
 
         obj = self.get_object()
-        pdf = render_spec_pdf("device", obj, request)
+        # ``?variant=hardware`` puts the parts first: CPU, memory and storage
+        # totals as the stat boxes, one table per kind, no interfaces.
+        variant = request.query_params.get("variant", "")
+        kind = "device_hardware" if variant == "hardware" else "device"
+        pdf = render_spec_pdf(kind, obj, request)
         disposition = "attachment" if request.query_params.get("download") else "inline"
         resp = HttpResponse(pdf, content_type="application/pdf")
-        resp["Content-Disposition"] = f'{disposition}; filename="{spec_filename(obj)}"'
+        suffix = "-hardware" if variant == "hardware" else ""
+        resp["Content-Disposition"] = (
+            f'{disposition}; filename="{spec_filename(obj, suffix)}"'
+        )
         return resp
 
     @action(detail=True, methods=["get"], url_path="config-context")

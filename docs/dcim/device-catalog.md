@@ -564,6 +564,14 @@ Each part also carries its **hardware identity and health**:
   wear the disk outfit - a CPU offering "7200 RPM" and a capacity in GB.
   Fields a kind doesn't show keep their stored value, so editing a
   BMC-synced part never wipes facts Redfish wrote.
+- **Slot** - where the part sits: *Socket 1*, *DIMM A1*, *Bay 3*, *PSU 2*.
+  Optional, free text, shown as its own column and on the hardware sheet.
+- **Cores** (CPUs) - so the Hardware tab and the hardware sheet can add the
+  box up: total cores across sockets, total memory, total storage, each with
+  the count, size, clock or grade most parts share underneath.
+- **Add another** on the Add part dialog saves the part and keeps the dialog
+  open with the next name and slot in the sequence (CPU1 → CPU2, DIMM A1 →
+  DIMM A2) and the serial and asset tag cleared.
 - **Media** (disks) - NVMe, SSD (SATA/SAS), HDD, or Tape.
 - **Capacity** with a unit picker (KB → PB; stored in bytes, so it's
   backwards- and future-proof).

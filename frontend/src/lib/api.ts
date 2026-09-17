@@ -2457,7 +2457,32 @@ export const INVENTORY_MEDIA_OPTIONS: {
  * stays free text so any vendor's wording still fits.
  */
 const INVENTORY_SPEEDS_BY_KIND: Partial<Record<InventoryItemKind, string[]>> = {
-  cpu: ["1.8 GHz", "2.0 GHz", "2.2 GHz", "2.4 GHz", "2.6 GHz", "3.0 GHz"],
+  cpu: [
+    "1.8 GHz",
+    "2.0 GHz",
+    "2.1 GHz",
+    "2.2 GHz",
+    "2.3 GHz",
+    "2.4 GHz",
+    "2.5 GHz",
+    "2.6 GHz",
+    "2.7 GHz",
+    "2.8 GHz",
+    "2.9 GHz",
+    "3.0 GHz",
+    "3.1 GHz",
+    "3.2 GHz",
+    "3.3 GHz",
+    "3.4 GHz",
+    "3.5 GHz",
+    "3.6 GHz",
+    "3.7 GHz",
+    "3.8 GHz",
+    "4.0 GHz",
+    "4.2 GHz",
+    "4.5 GHz",
+    "5.0 GHz",
+  ],
   ram: [
     "DDR3-1600",
     "DDR4-2133",
@@ -2564,6 +2589,10 @@ export interface InventoryItemRow {
   media: InventoryMedia
   capacity_bytes: number | null
   speed: string
+  /** Where it sits - "Socket 1", "DIMM A1", "Bay 3". */
+  slot: string
+  /** CPU cores (kind=cpu). */
+  cores: number | null
   status: StatusMini | null
   tags: Tag[]
 }

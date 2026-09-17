@@ -3399,6 +3399,13 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=64, blank=True, default="",
         help_text='Free-form: "7.2K RPM", "PCIe 4.0 x4", "3200 MT/s".',
     )
+    slot = models.CharField(
+        max_length=32, blank=True, default="",
+        help_text='Where it sits: "Socket 1", "DIMM A1", "Bay 3".',
+    )
+    cores = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="CPU cores (kind=cpu)."
+    )
     status = models.ForeignKey(
         "Status", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="inventory_items",

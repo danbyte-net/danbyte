@@ -464,7 +464,152 @@ def vc_context(vc, request=None) -> dict:
 
 # ─── rendering ─────────────────────────────────────────────────────────────
 
-_CONTEXTS = {"device": device_context, "vm": vm_context, "vc": vc_context}
+# ─── hardware sheet ────────────────────────────────────────────────────────
+
+_UNITS = [("PB", 1e15), ("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("KB", 1e3)]
+
+
+def format_bytes(n) -> str:
+    """Bytes → "1.92 TB" (decimal units, trailing zeros trimmed)."""
+    if not n or n <= 0:
+        return ""
+    for unit, factor in _UNITS:
+        if n >= factor:
+            v = n / factor
+            text = f"{v:.0f}" if v >= 100 else f"{v:.2f}".rstrip("0").rstrip(".")
+            return f"{text} {unit}"
+    return f"{n} B"
+
+
+def _most_common(values) -> str:
+    vals = [v for v in values if v]
+    if not vals:
+        return ""
+    return max(set(vals), key=vals.count)
+
+
+def hardware_totals(items) -> dict:
+    """What the box adds up to - one entry per kind that carries a total:
+    CPUs (sockets, cores, the clock and model most of them share), RAM (total
+    size, sticks, grade) and disks (total capacity, count, media)."""
+    cpus = [i for i in items if i.kind == "cpu"]
+    rams = [i for i in items if i.kind == "ram"]
+    disks = [i for i in items if i.kind == "disk"]
+    cores = sum(i.cores or 0 for i in cpus)
+    ram_bytes = sum(i.capacity_bytes or 0 for i in rams)
+    disk_bytes = sum(i.capacity_bytes or 0 for i in disks)
+    from .models import INVENTORY_MEDIA_TYPES
+
+    media_labels = dict(INVENTORY_MEDIA_TYPES)
+    return {
+        "cpu": {
+            "sockets": len(cpus),
+            "cores": cores,
+            "clock": _most_common(i.speed for i in cpus),
+            "model": _most_common((i.description or i.part_id or "") for i in cpus),
+        },
+        "ram": {
+            "bytes": ram_bytes,
+            "total": format_bytes(ram_bytes),
+            "sticks": len(rams),
+            "stick": _most_common(format_bytes(i.capacity_bytes) for i in rams),
+            "speed": _most_common(i.speed for i in rams),
+        },
+        "disk": {
+            "bytes": disk_bytes,
+            "total": format_bytes(disk_bytes),
+            "count": len(disks),
+            "each": _most_common(format_bytes(i.capacity_bytes) for i in disks),
+            "media": media_labels.get(_most_common(i.media for i in disks), ""),
+        },
+    }
+
+
+def _hardware_stats(totals: dict) -> list[dict]:
+    cpu, ram, disk = totals["cpu"], totals["ram"], totals["disk"]
+    if cpu["cores"]:
+        cpu_value = f"{cpu['cores']} cores"
+        cpu_hint = " · ".join(x for x in (
+            f"{cpu['sockets']} socket{'s' if cpu['sockets'] != 1 else ''}",
+            cpu["clock"], cpu["model"]) if x)
+    else:
+        cpu_value = f"{cpu['sockets']} CPU{'s' if cpu['sockets'] != 1 else ''}" if cpu["sockets"] else "—"
+        cpu_hint = " · ".join(x for x in (cpu["clock"], cpu["model"]) if x)
+    ram_hint = " · ".join(x for x in (
+        f"{ram['sticks']} × {ram['stick']}" if ram["sticks"] and ram["stick"] else
+        f"{ram['sticks']} module{'s' if ram['sticks'] != 1 else ''}" if ram["sticks"] else "",
+        ram["speed"]) if x)
+    disk_hint = " · ".join(x for x in (
+        f"{disk['count']} × {disk['each']}" if disk["count"] and disk["each"] else
+        f"{disk['count']} disk{'s' if disk['count'] != 1 else ''}" if disk["count"] else "",
+        disk["media"]) if x)
+    return [
+        {"label": "CPU", "value": cpu_value, "hint": cpu_hint},
+        {"label": "Memory", "value": ram["total"] or "—", "hint": ram_hint},
+        {"label": "Storage", "value": disk["total"] or "—", "hint": disk_hint},
+    ]
+
+
+def device_hardware_context(device, request=None) -> dict:
+    """The hardware-first sheet: the same header, the parts' totals as the
+    stat boxes, then one table per kind with the slot each part sits in. No
+    rack figures, no interfaces - what a server's inventory sheet is for."""
+    from .models import INVENTORY_ITEM_KINDS, INVENTORY_MEDIA_TYPES
+
+    base = device_context(device, request)
+    items = list(
+        device.inventory_items.select_related("manufacturer", "status")
+        .order_by("kind", "slot", "name")
+    )
+    totals = hardware_totals(items)
+    media = dict(INVENTORY_MEDIA_TYPES)
+    kinds = dict(INVENTORY_ITEM_KINDS)
+
+    def _row(it):
+        return {
+            "slot": it.slot,
+            "name": it.name,
+            "model": it.description or it.part_id,
+            "manufacturer": it.manufacturer.name if it.manufacturer_id else "",
+            "part": it.part_id,
+            "serial": it.serial_number,
+            "speed": it.speed,
+            "cores": it.cores or "",
+            "capacity": format_bytes(it.capacity_bytes),
+            "media": media.get(it.media, ""),
+            "status": it.status.name if it.status_id else "",
+            "kind": kinds.get(it.kind, it.kind),
+            "details": " · ".join(x for x in (
+                it.description or it.part_id, it.speed, format_bytes(it.capacity_bytes)
+            ) if x),
+        }
+
+    keep = {"Serial number", "Asset tag", "Type", "Part number", "Platform",
+            "Primary IP", "OOB IP", "Site", "Rack", "Description"}
+    return {
+        **{k: v for k, v in base.items() if k not in ("ports", "images", "interfaces")},
+        "subtitle": " · ".join(s for s in (
+            f"{device.device_type.manufacturer.name} {device.device_type.model or device.device_type.name}"
+            if device.device_type_id and device.device_type.manufacturer_id
+            else (device.device_type.model or device.device_type.name) if device.device_type_id else "",
+            device.site.name if device.site_id else "",
+        ) if s),
+        "details": [(k, v) for k, v in base["details"] if k in keep],
+        "stats": _hardware_stats(totals),
+        "totals": totals,
+        "cpus": [_row(i) for i in items if i.kind == "cpu"],
+        "rams": [_row(i) for i in items if i.kind == "ram"],
+        "disks": [_row(i) for i in items if i.kind == "disk"],
+        "others": [_row(i) for i in items if i.kind not in ("cpu", "ram", "disk")],
+    }
+
+
+_CONTEXTS = {
+    "device": device_context,
+    "device_hardware": device_hardware_context,
+    "vm": vm_context,
+    "vc": vc_context,
+}
 
 
 def render_spec_html(kind: str, obj, request=None) -> str:
@@ -477,6 +622,6 @@ def render_spec_pdf(kind: str, obj, request=None) -> bytes:
     return weasyprint.HTML(string=render_spec_html(kind, obj, request)).write_pdf()
 
 
-def spec_filename(obj) -> str:
+def spec_filename(obj, suffix: str = "") -> str:
     stem = re.sub(r"[^A-Za-z0-9._-]+", "-", obj.name or "object").strip("-") or "object"
-    return f"{stem}-spec-{datetime.now(UTC):%Y-%m-%d}.pdf"
+    return f"{stem}-spec{suffix}-{datetime.now(UTC):%Y-%m-%d}.pdf"

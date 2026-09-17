@@ -16,18 +16,26 @@ import { FormSelect, FormText } from "@/components/forms"
  * PCIe 4.0 x4" and a capacity in GB. */
 const KIND_FIELDS: Record<
   string,
-  { media?: true; speed?: { label: string; placeholder: string }; capacity?: true }
+  {
+    media?: true
+    speed?: { label: string; placeholder: string }
+    capacity?: true
+    /** CPU cores - the figure the hardware totals add up. */
+    cores?: true
+    /** Placeholder for the slot the part sits in. */
+    slot: string
+  }
 > = {
-  disk: { media: true, speed: { label: "Speed", placeholder: "7200 RPM" }, capacity: true },
-  cpu: { speed: { label: "Clock", placeholder: "2.4 GHz" } },
-  ram: { speed: { label: "Speed", placeholder: "DDR4-3200 / 3200 MT/s" }, capacity: true },
-  gpu: { speed: { label: "Bus", placeholder: "PCIe 4.0 x16" }, capacity: true },
-  fan: { speed: { label: "Speed", placeholder: "12000 RPM" } },
-  psu: {},
-  controller: { speed: { label: "Bus", placeholder: "PCIe 3.0 x8" } },
-  transceiver: { speed: { label: "Speed", placeholder: "10G" } },
+  disk: { media: true, speed: { label: "Speed", placeholder: "7200 RPM" }, capacity: true, slot: "Bay 0" },
+  cpu: { speed: { label: "Clock", placeholder: "2.4 GHz" }, cores: true, slot: "Socket 1" },
+  ram: { speed: { label: "Speed", placeholder: "DDR4-3200 / 3200 MT/s" }, capacity: true, slot: "DIMM A1" },
+  gpu: { speed: { label: "Bus", placeholder: "PCIe 4.0 x16" }, capacity: true, slot: "Slot 2" },
+  fan: { speed: { label: "Speed", placeholder: "12000 RPM" }, slot: "Fan 1" },
+  psu: { slot: "PSU 1" },
+  controller: { speed: { label: "Bus", placeholder: "PCIe 3.0 x8" }, slot: "Slot 1" },
+  transceiver: { speed: { label: "Speed", placeholder: "10G" }, slot: "Port 49" },
   // Pre-kind rows and genuinely odd parts: everything stays reachable.
-  other: { media: true, speed: { label: "Speed", placeholder: "" }, capacity: true },
+  other: { media: true, speed: { label: "Speed", placeholder: "" }, capacity: true, slot: "" },
 }
 
 export function partFieldsFor(kind: string) {
@@ -47,6 +55,10 @@ export function PartHardwareFields({
   onCapacity,
   capacityUnit,
   onCapacityUnit,
+  slot,
+  onSlot,
+  cores,
+  onCores,
   errors,
 }: {
   kind: InventoryItemKind | string
@@ -58,6 +70,13 @@ export function PartHardwareFields({
   onCapacity: (v: string) => void
   capacityUnit: StorageUnit
   onCapacityUnit: (v: StorageUnit) => void
+  /** The slot the part sits in; the device dialog wires it, the device-type
+   *  template editor leaves it out. */
+  slot?: string
+  onSlot?: (v: string) => void
+  /** CPU cores; shown for kind=cpu when wired. */
+  cores?: string
+  onCores?: (v: string) => void
   errors: Record<string, string | undefined>
 }) {
   const show = partFieldsFor(kind)
@@ -65,9 +84,12 @@ export function PartHardwareFields({
     kind as InventoryItemKind,
     media as InventoryMedia
   )
+  const withSlot = onSlot !== undefined
+  const withCores = show.cores && onCores !== undefined
+  const setCores = onCores ?? (() => undefined)
   return (
     <>
-      {(show.media || show.speed) && (
+      {(show.media || show.speed || withSlot || withCores) && (
         <div className="grid grid-cols-2 gap-3">
           {show.media && (
             <FormSelect
@@ -87,6 +109,26 @@ export function PartHardwareFields({
               placeholder={show.speed.placeholder || suggestions[0] || ""}
               suggestions={suggestions}
               error={errors.speed}
+            />
+          )}
+          {withCores && (
+            <FormText
+              label="Cores"
+              type="number"
+              value={cores ?? ""}
+              onChange={setCores}
+              placeholder="18"
+              error={errors.cores}
+            />
+          )}
+          {withSlot && (
+            <FormText
+              label="Slot"
+              hint="optional"
+              value={slot ?? ""}
+              onChange={onSlot}
+              placeholder={show.slot}
+              error={errors.slot}
             />
           )}
         </div>

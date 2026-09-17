@@ -22,7 +22,13 @@ from .models import (
     VirtualMachine,
     VMInterface,
 )
-from .spec_sheets import device_context, render_spec_html, spec_filename, vm_context
+from .spec_sheets import (
+    device_context,
+    device_hardware_context,
+    render_spec_html,
+    spec_filename,
+    vm_context,
+)
 
 User = get_user_model()
 
@@ -92,6 +98,38 @@ class DeviceSheetTests(_Base):
         self.assertIn("aarhus-sw1-spec-", r["Content-Disposition"])
         r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?download=1")
         self.assertIn("attachment", r["Content-Disposition"])
+
+    def test_hardware_variant(self):
+        from .models import InventoryItem
+
+        mk = InventoryItem.objects.create
+        for n, slot in (("CPU1", "Socket 1"), ("CPU2", "Socket 2")):
+            mk(device=self.device, name=n, kind="cpu", slot=slot, speed="3.0 GHz",
+               cores=18, description="Intel Xeon Gold 6154")
+        for n, slot in (("RAM1", "DIMM A1"), ("RAM2", "DIMM B1")):
+            mk(device=self.device, name=n, kind="ram", slot=slot, speed="DDR4-2666",
+               capacity_bytes=64_000_000_000)
+        mk(device=self.device, name="Disk 0", kind="disk", media="ssd",
+           capacity_bytes=960_000_000_000, speed="SATA 6Gb/s")
+        ctx = device_hardware_context(self.device)
+        stats = {s["label"]: s for s in ctx["stats"]}
+        self.assertEqual(stats["CPU"]["value"], "36 cores")
+        for bit in ("2 sockets", "3.0 GHz", "Intel Xeon Gold 6154"):
+            self.assertIn(bit, stats["CPU"]["hint"])
+        self.assertEqual(stats["Memory"]["value"], "128 GB")
+        self.assertIn("2 × 64 GB", stats["Memory"]["hint"])
+        self.assertIn("DDR4-2666", stats["Memory"]["hint"])
+        self.assertEqual(stats["Storage"]["value"], "960 GB")
+        self.assertEqual(ctx["cpus"][0]["slot"], "Socket 1")
+        self.assertNotIn("interfaces", ctx)
+        self.assertNotIn("ports", ctx)
+        html = render_spec_html("device_hardware", self.device)
+        self.assertIn("Processors", html)
+        self.assertIn("Socket 2", html)
+        r = self.client.get(f"/api/devices/{self.device.id}/spec-sheet/?variant=hardware")
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        self.assertTrue(r.content.startswith(b"%PDF"))
+        self.assertIn("aarhus-sw1-spec-hardware-", r["Content-Disposition"])
 
     def test_needs_view_permission(self):
         member = User.objects.create_user("m", password="x")
