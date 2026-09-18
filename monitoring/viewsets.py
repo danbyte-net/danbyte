@@ -2073,7 +2073,13 @@ class AlertRuleViewSet(_TargetScopedConfigurationMixin, TenantScopedViewSet):
         )
 
     def get_queryset(self):
-        return self._scope_configuration_queryset(super().get_queryset())
+        # The firing count per rule comes with the page, not per row (#189).
+        from django.db.models import Count
+
+        qs = self._scope_configuration_queryset(super().get_queryset())
+        return qs.annotate(
+            firing_n=Count("alerts", filter=Q(alerts__status="firing"), distinct=True)
+        )
 
     def _check_prefix(self, serializer):
         from auth_api import rbac

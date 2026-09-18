@@ -1093,6 +1093,9 @@ class AlertRuleSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
     def get_alert_count(self, obj) -> int:
+        n = getattr(obj, "firing_n", None)
+        if n is not None:
+            return n
         return obj.alerts.filter(status="firing").count()
 
     def validate_match_statuses(self, value):

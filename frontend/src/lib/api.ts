@@ -7760,7 +7760,10 @@ export interface Webhook {
   http_method: WebhookMethod
   http_content_type: string
   secret_set: boolean
-  additional_headers: string
+  /** Headers are written and never read back - they carry Authorization
+   *  values. The row says whether any are set and names them. */
+  additional_headers_set: boolean
+  additional_header_names: string[]
   ssl_verification: boolean
   created_at: string
   updated_at: string
@@ -7777,7 +7780,8 @@ export interface WebhookWritePayload {
   http_method?: WebhookMethod
   http_content_type?: string
   secret?: string
-  additional_headers?: string
+  /** Text replaces the stored headers, "" keeps them, null clears them. */
+  additional_headers?: string | null
   ssl_verification?: boolean
 }
 

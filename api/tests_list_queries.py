@@ -119,3 +119,64 @@ class AggregateListTests(_Base):
         for a in aggs:
             self.assertEqual(rows[a.prefix], a.utilisation_pct, a.prefix)
         self.assertGreaterEqual(rows["10.5.0.0/16"], 50)
+
+
+class RackListTests(_Base):
+    """Every figure on a rack row (devices, units, weight, power, documents)
+    comes from the page's prefetches (#188)."""
+
+    def test_page_cost_is_flat_and_figures_match(self):
+        from .models import Rack
+
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        for i in range(6):
+            r = Rack.objects.create(tenant=self.tenant, site=site, name=f"r{i}")
+            for k in range(8):
+                Device.objects.create(
+                    tenant=self.tenant, name=f"d-{i}-{k}", site=site, rack=r, position=k + 1
+                )
+        small, _ = self._queries("/api/racks/?page_size=2")
+        big, body = self._queries("/api/racks/?page_size=6")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        row = body["results"][0]
+        self.assertEqual(row["device_count"], 8)
+        self.assertEqual(row["used_units"], 8)
+        self.assertEqual(row["document_count"], 0)
+        self.assertEqual(row["power"]["allocated_w"], 0)
+
+
+class IpListTests(_Base):
+    """DHCP state on an address row is a per-row EXISTS, not a grouped join
+    over every DHCP table (#187)."""
+
+    def test_no_grouping_and_states_hold(self):
+        from integrations.models import DhcpExclusion, DhcpReservation, DhcpScope
+
+        p = Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+        ips = {
+            h: IPAddress.objects.create(tenant=self.tenant, ip_address=f"10.77.0.{h}", prefix=p)
+            for h in (5, 50, 60, 200)
+        }
+        scope = DhcpScope.objects.create(
+            tenant=self.tenant, scope_id="10.77.0.0", name="Lab", prefix=p,
+            start_range="10.77.0.10", end_range="10.77.0.100",
+        )
+        DhcpExclusion.objects.create(
+            scope=scope, start_address="10.77.0.55", end_address="10.77.0.65"
+        )
+        DhcpReservation.objects.create(scope=scope, ip="10.77.0.50", ip_address=ips[50])
+        self.client.get("/api/ips/")
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get("/api/ips/?page_size=10")
+        self.assertEqual(r.status_code, 200, r.content)
+        for q in ctx.captured_queries:
+            if "api_ipaddress" in q["sql"] and "SELECT" in q["sql"]:
+                self.assertNotIn("GROUP BY", q["sql"])
+        state = {row["ip_address"]: row["dhcp"] for row in r.json()["results"]}
+        self.assertIsNone(state["10.77.0.5"])
+        self.assertEqual(state["10.77.0.50"], "leased")
+        self.assertEqual(state["10.77.0.60"], "exclusion")
+        self.assertEqual(state["10.77.0.200"], None)
+        self.assertEqual(
+            {k: v for k, v in state.items() if v == "scope"}, {}
+        )

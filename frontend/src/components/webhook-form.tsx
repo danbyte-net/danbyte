@@ -63,7 +63,10 @@ export function WebhookForm({ webhook, onSaved, onCancel }: WebhookFormProps) {
   const [contentType, setContentType] = useState(
     webhook?.http_content_type ?? "application/json"
   )
-  const [headers, setHeaders] = useState(webhook?.additional_headers ?? "")
+  // Stored headers never come back from the API; the box starts empty and
+  // blank keeps them, so editing a webhook does not drop its Authorization.
+  const [headers, setHeaders] = useState("")
+  const [clearHeaders, setClearHeaders] = useState(false)
   const [sslVerify, setSslVerify] = useState(webhook?.ssl_verification ?? true)
 
   useEffect(() => {
@@ -79,7 +82,8 @@ export function WebhookForm({ webhook, onSaved, onCancel }: WebhookFormProps) {
     setOnDelete(webhook.on_delete)
     setSecret("")
     setContentType(webhook.http_content_type)
-    setHeaders(webhook.additional_headers)
+    setHeaders("")
+    setClearHeaders(false)
     setSslVerify(webhook.ssl_verification)
     reset()
   }, [webhook, reset])
@@ -111,10 +115,11 @@ export function WebhookForm({ webhook, onSaved, onCancel }: WebhookFormProps) {
         payload_url: payloadUrl.trim(),
         http_method: method,
         http_content_type: contentType.trim() || "application/json",
-        additional_headers: headers,
         ssl_verification: sslVerify,
       }
       if (secret.trim()) payload.secret = secret
+      if (headers.trim()) payload.additional_headers = headers
+      else if (clearHeaders) payload.additional_headers = null
       return saveObject<Webhook>({
         objectType: "integrations.webhook",
         endpoint: "/api/webhooks/",
@@ -205,12 +210,23 @@ export function WebhookForm({ webhook, onSaved, onCancel }: WebhookFormProps) {
             />
             <FormTextarea
               label="Additional headers"
-              hint="One 'Name: value' per line"
+              hint={
+                webhook?.additional_headers_set
+                  ? `Set: ${webhook.additional_header_names.join(", ")}. Blank keeps them.`
+                  : "One 'Name: value' per line"
+              }
               rows={3}
               value={headers}
               onChange={setHeaders}
               error={fieldErrors.additional_headers}
             />
+            {webhook?.additional_headers_set && !headers.trim() && (
+              <FormCheckbox
+                label="Remove stored headers"
+                checked={clearHeaders}
+                onChange={setClearHeaders}
+              />
+            )}
           </FormSection>
         </FormColumn>
 

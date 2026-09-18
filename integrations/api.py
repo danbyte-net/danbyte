@@ -19,9 +19,34 @@ class WebhookSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     secret_set = serializers.SerializerMethodField()
+    # Headers routinely carry an Authorization value, so they are written
+    # and never read back (#191): the response says whether any are set and
+    # names them. Blank on update keeps the stored headers; null clears them.
+    additional_headers = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, allow_null=True,
+        trim_whitespace=False,
+    )
+    additional_headers_set = serializers.SerializerMethodField()
+    additional_header_names = serializers.SerializerMethodField()
 
     def get_secret_set(self, obj) -> bool:
         return bool(obj.secret)
+
+    def get_additional_headers_set(self, obj) -> bool:
+        return bool(obj.additional_headers)
+
+    def get_additional_header_names(self, obj) -> list[str]:
+        names = []
+        for line in (obj.additional_headers or "").splitlines():
+            name = line.split(":", 1)[0].strip()
+            if name:
+                names.append(name)
+        return names
+
+    def create(self, validated):
+        if validated.get("additional_headers") is None:
+            validated["additional_headers"] = ""
+        return super().create(validated)
 
     def validate_object_types(self, value):
         if not isinstance(value, list) or not value:
@@ -32,6 +57,11 @@ class WebhookSerializer(serializers.ModelSerializer):
         # A blank secret on update leaves the stored one untouched.
         if validated.get("secret", None) == "":
             validated.pop("secret", None)
+        if "additional_headers" in validated:
+            if validated["additional_headers"] is None:
+                validated["additional_headers"] = ""
+            elif validated["additional_headers"] == "":
+                validated.pop("additional_headers")
         return super().update(instance, validated)
 
     class Meta:
@@ -39,9 +69,11 @@ class WebhookSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "enabled", "object_types", "on_create",
                   "on_update", "on_delete", "payload_url", "http_method",
                   "http_content_type", "secret", "secret_set",
-                  "additional_headers", "ssl_verification",
+                  "additional_headers", "additional_headers_set",
+                  "additional_header_names", "ssl_verification",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "secret_set", "created_at", "updated_at"]
+        read_only_fields = ["id", "secret_set", "additional_headers_set",
+                            "additional_header_names", "created_at", "updated_at"]
 
 
 class WebhookViewSet(TenantScopedViewSet):
