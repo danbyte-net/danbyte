@@ -67,6 +67,49 @@ def log_bulk_delete(rows) -> None:
         ChangeLogEntry.objects.bulk_create(entries)
 
 
+_TEMPLATE_RELATIONS = (
+    ("interfaces", "interface_templates"),
+    ("console_ports", "console_port_templates"),
+    ("console_server_ports", "console_server_port_templates"),
+    ("aux_ports", "aux_port_templates"),
+    ("antennas", "antenna_templates"),
+    ("power_ports", "power_port_templates"),
+    ("power_outlets", "power_outlet_templates"),
+    ("rear_ports", "rear_port_templates"),
+    ("front_ports", "front_port_templates"),
+    ("module_bays", "module_bay_templates"),
+    ("device_bays", "device_bay_templates"),
+    ("inventory_items", "inventory_item_templates"),
+)
+
+
+def log_device_type_deletes(types) -> None:
+    """One DELETE entry per device type, its field snapshot carrying the
+    component templates it had (names per kind) - what the type contained,
+    without a row per template. The caller deletes with the audit suspended."""
+    from .signals import _field_dict
+
+    user = current_user()
+    rid = current_request_id()
+    entries = []
+    for dt in types:
+        templates = {}
+        for key, rel in _TEMPLATE_RELATIONS:
+            manager = getattr(dt, rel, None)
+            if manager is None:
+                continue
+            names = list(manager.order_by("name").values_list("name", flat=True))
+            if names:
+                templates[key] = names
+        pre = _field_dict(dt)
+        pre["templates"] = templates
+        entry = _entry(dt, ChangeAction.DELETE, {}, user, rid)
+        entry.pre_change = pre
+        entries.append(entry)
+    if entries:
+        ChangeLogEntry.objects.bulk_create(entries)
+
+
 def log_tag_change(instance, added=(), removed=()) -> None:
     """Record a tag add/remove on one object (m2m doesn't fire save signals)."""
     if not added and not removed:

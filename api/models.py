@@ -2364,6 +2364,11 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     @property
     def utilisation_pct(self):
+        return self.utilisation_with(None)
+
+    def utilisation_with(self, used):
+        """Utilisation with the address count supplied (a list page annotates
+        it once for the page); ``None`` counts it here."""
         # ``status`` is a Status FK (post-0047), not the old enum string - compare
         # the slug. The bare ``== "container"`` here was always False after the
         # migration, so container prefixes reported a bogus utilisation %.
@@ -2387,7 +2392,8 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             capacity = n.num_addresses - 2
         if capacity == 0:
             return None
-        used = self.ip_addresses.count()
+        if used is None:
+            used = self.ip_addresses.count()
         return min(100, int(round(100 * used / capacity)))
 
     # ── Allocation from ranges ────────────────────────────────────────────
@@ -5335,12 +5341,19 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         """Share of the aggregate's space covered by child prefixes (those that
         are subnets of it, same tenant). IPv4 only - IPv6 spaces are too large
         to express as a meaningful percentage."""
+        return self.utilisation_with(None)
+
+    def utilisation_with(self, covered):
+        """Utilisation with the covered address count supplied (the list page
+        sums it in SQL, once per page); ``None`` walks the prefixes here."""
         net = self.network
         if net is None or net.version == 6:
             return None
         total = net.num_addresses
         if total == 0:
             return None
+        if covered is not None:
+            return min(100, int(round(100 * int(covered) / total)))
         covered = 0
         for p in (
             Prefix.objects.filter(tenant_id=self.tenant_id).only("cidr")

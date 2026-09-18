@@ -61,6 +61,13 @@ output, or drop a real cert in `/etc/ssl/danbyte/`.
 - `/` proxies the Vite dev server **with websocket upgrade** so HMR keeps
   working. For a production deployment, point that `location /` at your built
   SPA / Django static host instead of `:3000`.
+- While the backend is down (an upgrade, a restart, a request that outran the
+  worker) nginx answers a page load with the "Danbyte is updating" page. That
+  page is a static file, and nginx will not serve a static file for a POST, so
+  an API call that meets it gets a JSON **503** with a one-line explanation
+  instead of nginx's bare "405 Not Allowed" - the `if ($request_method …)`
+  branch in `location @danbyte_maintenance`. Keep it when you carry your own
+  copy of the config.
 
 ## Commands
 

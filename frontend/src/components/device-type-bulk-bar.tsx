@@ -94,11 +94,23 @@ function BulkDeleteConfirm({
 }) {
   const qc = useQueryClient()
   const m = useMutation({
-    mutationFn: () =>
-      api<{ deleted: number }>("/api/device-types/bulk-delete/", {
-        method: "POST",
-        body: JSON.stringify({ ids }),
-      }),
+    // Batches of 100: a library import is easily 800 types with dozens of
+    // port templates each, and one request for all of them outran the
+    // backend's request timeout (#178).
+    mutationFn: async () => {
+      let deleted = 0
+      for (let i = 0; i < ids.length; i += 100) {
+        const res = await api<{ deleted: number }>(
+          "/api/device-types/bulk-delete/",
+          {
+            method: "POST",
+            body: JSON.stringify({ ids: ids.slice(i, i + 100) }),
+          }
+        )
+        deleted += res.deleted
+      }
+      return { deleted }
+    },
     onSuccess: (res) => {
       toast.success(
         `Deleted ${res.deleted} device type${res.deleted === 1 ? "" : "s"}.`
