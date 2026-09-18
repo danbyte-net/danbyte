@@ -46,6 +46,7 @@ def check_and_upgrade(now=None) -> dict:
     from .upgrade import (
         UpgradeLaunchUncertain,
         _acquire_upgrade_lock,
+        _read_status,
         _record_launch_failure,
         _release_upgrade_lock,
         _upgrade_running,
@@ -86,6 +87,13 @@ def check_and_upgrade(now=None) -> dict:
         return {"skipped": "up_to_date", "current": cur}
 
     target = newer[0]["tag"]  # list is newest-first
+    # A tag the last attempt failed on is not tried again by the timer: every
+    # retry would take another full backup and fail the same way, three times
+    # an hour, until the disk was full. A person retries from the Updates
+    # page, or the next release moves the target.
+    last = _read_status()
+    if last.get("state") == "failed" and last.get("version_to") == target:
+        return {"skipped": "failed_before", "target": target, "error": last.get("error", "")}
     # Take the same atomic slot the manual endpoints use, so a scheduled tick
     # can't race a hand-triggered upgrade.
     lock_owner = _acquire_upgrade_lock()

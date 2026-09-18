@@ -86,7 +86,7 @@ who made it. Kinds:
 |--------------------|-----------------------------------------------------------|
 | Manual             | *Back up now*, or `manage.py backup_now`                  |
 | Scheduled          | a schedule                                                |
-| Before upgrade     | the upgrade scripts, before migrating                     |
+| Before upgrade     | the upgrade scripts, before migrating (the newest three are kept) |
 | Before restore     | every restore, of the state it is about to replace (protected) |
 | Uploaded           | *Upload backup*                                           |
 

@@ -295,6 +295,12 @@ def run_backup(backup_id: str) -> Backup | None:
             backup.step_start("retention")
             removed = prune_schedule(backup.schedule)
             backup.step_end(detail=f"{removed} removed")
+        elif backup.kind == "pre_upgrade":
+            # No schedule owns these, so nothing else prunes them - and an
+            # upgrade that keeps failing makes one per attempt.
+            backup.step_start("retention")
+            removed = prune_pre_upgrade()
+            backup.step_end(detail=f"{removed} removed")
     except Exception as exc:  # noqa: BLE001 - land it on the row
         logger.exception("backup %s failed", backup_id)
         backup.step_end("failed", str(exc))
@@ -311,6 +317,25 @@ def run_backup(backup_id: str) -> Backup | None:
     except Exception:  # noqa: BLE001 - notification must never fail a backup
         logger.exception("backup notification failed")
     return backup
+
+
+#: How many *Before upgrade* backups stay. Each is a full database + media
+#: archive, and an upgrade that fails on every try makes one per attempt.
+PRE_UPGRADE_KEEP = 3
+
+
+def prune_pre_upgrade(keep: int = PRE_UPGRADE_KEEP) -> int:
+    """Keep the newest ``keep`` successful, unprotected pre-upgrade backups
+    and delete the rest. Returns how many were removed."""
+    rows = list(
+        Backup.objects.filter(kind="pre_upgrade", status="success", protected=False)
+        .order_by("-finished_at", "-created_at")
+        .select_related("target")
+    )
+    gone = rows[keep:]
+    for b in gone:
+        delete_backup(b)
+    return len(gone)
 
 
 def prune_schedule(schedule: BackupSchedule, now=None) -> int:

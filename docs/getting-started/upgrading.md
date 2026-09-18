@@ -68,15 +68,27 @@ current `/opt` layout.
     page shown to visitors in the meantime.
 
     - A **Before upgrade** backup (database, media, config) is taken before
-      migrating and listed under **Settings → Backups**; on failure the code is
-      rolled back to the starting commit and the services restarted
-      automatically. (A migration that already ran is *not* auto-reverted -
-      restore that backup, see [Backup and restore](backup-restore.md).) A
-      missing `pg_dump` stops the upgrade; `DANBYTE_SKIP_BACKUP=1` skips the
-      backup on purpose.
+      migrating and listed under **Settings → Backups**; the newest three are
+      kept and older ones pruned as each new one lands (protect one to keep
+      it). A missing `pg_dump` stops the upgrade; `DANBYTE_SKIP_BACKUP=1`
+      skips the backup on purpose.
+    - **On failure before the migration** the code is put back where it
+      started and the services restarted. **After the migration has run the
+      new code stays**: the old code would run against a schema it does not
+      know. To go back, restore that backup - see
+      [Backup and restore](backup-restore.md). The Updates page quotes the
+      failing step's own error output (the migration traceback, the missing
+      wheel, the truncated bundle), not a fixed sentence per step.
+    - The final health check asks `/api/health/` on the app port with a host
+      name from `ALLOWED_HOSTS` in `.env`, and then through nginx on 443 with
+      the same name, so it reaches *this* install even when another site is
+      nginx's default server.
     - Turn on **automatic updates** on the same page to track new releases
-      hands-off. (Automatic updates are also skipped on container deployments,
-      for the same reason - they would only half-apply.)
+      hands-off. A release the timer failed on is not tried again by the timer
+      (each try would take another full backup and fail the same way); retry
+      it from the Updates page, or wait for the next release. (Automatic
+      updates are also skipped on container deployments, for the same reason
+      as the in-app upgrade - they would only half-apply.)
     - **Airgapped install?** Tick **Settings → Updates → Airgapped install
       (disable update check)**. Danbyte then never contacts the release repo -
       no version check, no auto-update - and you upgrade only by uploading a
@@ -215,9 +227,11 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
 
     `GET /api/health/` is unauthenticated and returns `{"status": "ok",
     "database": true, "version": "X.Y.Z"}` (HTTP 503 if the database is
-    unreachable). Point a load balancer or uptime probe at it; the release
-    pipeline's install-smoke uses it to prove the bundle actually serves
-    requests.
+    unreachable). It is exempt from the HTTPS redirect, so a plain-HTTP
+    probe on the app port gets an answer. Point a load balancer or uptime
+    probe at it; the release pipeline's install-smoke uses it to prove the
+    bundle actually serves requests, and the upgrade scripts use it to decide
+    the upgrade worked.
 
 !!! warning "\"An upgrade is already running\" (stuck lock)"
 

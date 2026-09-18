@@ -137,6 +137,27 @@ class RetentionTests(_Base):
         )
         return Backup.objects.get(pk=b.pk)
 
+    def test_pre_upgrade_backups_keep_the_last_few(self):
+        from backups.engine import PRE_UPGRADE_KEEP, prune_pre_upgrade
+
+        made = []
+        for i in range(PRE_UPGRADE_KEEP + 2):
+            b = run_backup(str(create_backup(kind="pre_upgrade", components=["config"]).id))
+            Backup.objects.filter(pk=b.pk).update(
+                finished_at=timezone.now() - timedelta(hours=10 - i)
+            )
+            made.append(Backup.objects.get(pk=b.pk))
+        # The last run pruned on its way out: only the newest three remain.
+        left = list(Backup.objects.filter(kind="pre_upgrade").order_by("finished_at"))
+        self.assertEqual(len(left), PRE_UPGRADE_KEEP)
+        self.assertEqual([b.pk for b in left], [b.pk for b in made[-PRE_UPGRADE_KEEP:]])
+        self.assertFalse(os.path.exists(made[0].location))
+        # A protected one is never counted out.
+        Backup.objects.filter(pk=left[0].pk).update(protected=True)
+        run_backup(str(create_backup(kind="pre_upgrade", components=["config"]).id))
+        self.assertEqual(prune_pre_upgrade(), 0)
+        self.assertTrue(Backup.objects.filter(pk=left[0].pk).exists())
+
     def test_prune_keeps_protected_and_other_schedules(self):
         target = default_target()
         # Retention is empty while the rows are made so the runs' own

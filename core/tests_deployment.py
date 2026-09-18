@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APITestCase
 
 from .models import DeploymentSettings
@@ -856,6 +856,37 @@ class AutoUpgradeTests(APITestCase):
         self.assertEqual(r.get("upgrading"), "v9.9.9")
         up.assert_called_once_with("v9.9.9", "owner")
 
+    def test_a_failed_tag_is_not_retried_by_the_timer(self):
+        from unittest.mock import patch
+
+        from core.auto_upgrade import check_and_upgrade
+        self.s.auto_update_enabled = True
+        self.s.update_window_days = ""
+        self.s.update_window_start = ""
+        self.s.update_window_end = ""
+        self.s.save()
+        rels = [{"tag": "v9.9.9", "name": "9.9.9", "body": "", "published_at": None,
+                 "prerelease": False, "has_binary": False}]
+        failed = {"state": "failed", "step": "healthcheck", "version_to": "v9.9.9",
+                  "error": "app did not come back healthy"}
+        with patch("core.github.list_releases", return_value=rels), \
+             patch("core.upgrade._read_status", return_value=failed), \
+             patch("core.upgrade.start_upgrade") as up, \
+             patch("core.upgrade._acquire_upgrade_lock", return_value="owner"), \
+             patch("core.upgrade._upgrade_running", return_value=False):
+            r = check_and_upgrade()
+        self.assertEqual(r.get("skipped"), "failed_before")
+        up.assert_not_called()
+        # A newer tag than the one that failed is tried.
+        failed["version_to"] = "v9.9.8"
+        with patch("core.github.list_releases", return_value=rels), \
+             patch("core.upgrade._read_status", return_value=failed), \
+             patch("core.upgrade.start_upgrade") as up, \
+             patch("core.upgrade._acquire_upgrade_lock", return_value="owner"), \
+             patch("core.upgrade._upgrade_running", return_value=False):
+            r = check_and_upgrade()
+        self.assertEqual(r.get("upgrading"), "v9.9.9")
+
     def test_containerized_skips_auto_upgrade_before_any_fetch(self):
         """The scheduled tick never even reaches the repo in a container - it
         could only half-apply, so it doesn't try."""
@@ -1130,3 +1161,20 @@ class MigrationDriftTests(TestCase):
         from core.version import system_info
 
         self.assertEqual(system_info()["migration_drift"], [])
+
+
+class HealthProbeTests(SimpleTestCase):
+    """The upgrader probes /api/health/ over plain HTTP on the app port; on an
+    HTTPS deployment that must answer, not redirect."""
+
+    def test_health_is_exempt_from_the_https_redirect(self):
+        from django.http import HttpResponse
+        from django.middleware.security import SecurityMiddleware
+        from django.test import RequestFactory
+
+        with override_settings(SECURE_SSL_REDIRECT=True):
+            mw = SecurityMiddleware(lambda r: HttpResponse())
+            rf = RequestFactory()
+            self.assertIsNone(mw.process_request(rf.get("/api/health/")))
+            self.assertIsNone(mw.process_request(rf.get("/.well-known/acme-challenge/x")))
+            self.assertEqual(mw.process_request(rf.get("/api/version/")).status_code, 301)
