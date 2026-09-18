@@ -1,0 +1,121 @@
+"""List pages answer in a fixed number of queries: what a page costs must not
+grow with the rows on it (#179, #180, #181). Each test asks for a small page
+and a bigger page of the same list and expects the same query count, then
+checks the batched figures against the per-object ones."""
+from __future__ import annotations
+
+from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+from rest_framework.test import APITestCase
+
+from core.models import Organization, Tenant
+
+from .models import RIR, VLAN, Aggregate, Device, IPAddress, Prefix, Site, VirtualMachine
+
+User = get_user_model()
+
+
+class _Base(APITestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _queries(self, url) -> tuple[int, dict]:
+        # The first request of a test pays one-off lookups (content types,
+        # settings rows, the tenant's local engine); count the second.
+        self.client.get(url)
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get(url)
+        self.assertEqual(r.status_code, 200, r.content)
+        return len(ctx.captured_queries), r.json()
+
+
+class PrefixListTests(_Base):
+    def setUp(self):
+        super().setUp()
+        self.agg = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/16")
+        for i in range(30):
+            p = Prefix.objects.create(tenant=self.tenant, cidr=f"10.0.{i}.0/24")
+            for h in range(1, 4):
+                IPAddress.objects.create(tenant=self.tenant, ip_address=f"10.0.{i}.{h}", prefix=p)
+
+    def test_page_cost_is_flat_and_figures_match(self):
+        small, body = self._queries("/api/prefixes/?page_size=5")
+        big, body_big = self._queries("/api/prefixes/?page_size=30")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["cidr"]: r for r in body_big["results"]}
+        agg = rows["10.0.0.0/16"]
+        self.assertEqual(agg["child_count"], 30)
+        self.assertTrue(agg["has_descendants"])
+        leaf = rows["10.0.1.0/24"]
+        self.assertEqual(leaf["child_count"], 0)
+        self.assertFalse(leaf["has_descendants"])
+        self.assertEqual(leaf["ip_count"], 3)
+        self.assertEqual(leaf["utilisation_pct"], Prefix.objects.get(cidr="10.0.1.0/24").utilisation_pct)
+        self.assertEqual(leaf["monitoring_engine"]["is_local"], True)
+
+
+class VlanListTests(_Base):
+    def test_page_cost_is_flat_and_counts_match(self):
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        for i in range(1, 31):
+            v = VLAN.objects.create(tenant=self.tenant, site=site, vlan_id=i, name=f"v{i}")
+            for k in range(i % 3):
+                Prefix.objects.create(tenant=self.tenant, cidr=f"10.{i}.{k}.0/24", vlan=v)
+        small, _ = self._queries("/api/vlans/?page_size=5")
+        big, body = self._queries("/api/vlans/?page_size=30")
+        self.assertEqual(small, big)
+        counts = {r["vlan_id"]: r["prefix_count"] for r in body["results"]}
+        self.assertEqual(counts[2], 2)
+        self.assertEqual(counts[3], 0)
+
+
+class SiteListTests(_Base):
+    def test_page_cost_is_flat_and_counts_match(self):
+        from .models import Cluster, ClusterType
+
+        ct = ClusterType.objects.create(tenant=self.tenant, name="t", slug="t")
+        cl = Cluster.objects.create(tenant=self.tenant, name="c", type=ct)
+        for i in range(30):
+            s = Site.objects.create(tenant=self.tenant, name=f"site-{i:02d}")
+            for k in range(i % 3):
+                Prefix.objects.create(tenant=self.tenant, cidr=f"10.{i}.{k}.0/24", site=s)
+                VLAN.objects.create(tenant=self.tenant, site=s, vlan_id=k + 1, name=f"v{k}")
+                Device.objects.create(tenant=self.tenant, name=f"d-{i}-{k}", site=s)
+                VirtualMachine.objects.create(tenant=self.tenant, name=f"vm-{i}-{k}", cluster=cl, site=s)
+        small, _ = self._queries("/api/sites/?page_size=5")
+        big, body = self._queries("/api/sites/?page_size=30")
+        self.assertEqual(small, big)
+        rows = {r["name"]: r for r in body["results"]}
+        for key in ("prefix_count", "vlan_count", "device_count", "vm_count"):
+            self.assertEqual(rows["site-02"][key], 2, key)
+            self.assertEqual(rows["site-03"][key], 0, key)
+        # The tab counts stay on the site page.
+        detail = self.client.get(f"/api/sites/{Site.objects.get(name='site-02').id}/").json()
+        self.assertEqual(detail["device_count"], 2)
+
+
+class AggregateListTests(_Base):
+    def test_page_cost_is_flat_and_utilisation_matches(self):
+        rir = RIR.objects.create(tenant=self.tenant, name="RIPE", slug="ripe")
+        aggs = [
+            Aggregate.objects.create(tenant=self.tenant, rir=rir, prefix=f"10.{i}.0.0/16")
+            for i in range(30)
+        ]
+        for i in range(30):
+            for k in range(i % 4):
+                Prefix.objects.create(tenant=self.tenant, cidr=f"10.{i}.{k}.0/24")
+        Prefix.objects.create(tenant=self.tenant, cidr="10.5.0.0/17")  # half of one aggregate
+        small, _ = self._queries("/api/aggregates/?page_size=5")
+        big, body = self._queries("/api/aggregates/?page_size=30")
+        self.assertEqual(small, big)
+        rows = {r["prefix"]: r["utilisation_pct"] for r in body["results"]}
+        for a in aggs:
+            self.assertEqual(rows[a.prefix], a.utilisation_pct, a.prefix)
+        self.assertGreaterEqual(rows["10.5.0.0/16"], 50)

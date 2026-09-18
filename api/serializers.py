@@ -639,7 +639,8 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     )
 
     def get_prefix_count(self, obj) -> int:
-        return obj.prefixes.count()
+        n = getattr(obj, "prefix_n", None)
+        return n if n is not None else obj.prefixes.count()
 
     def get_l2vpn_count(self, obj) -> int:
         """L2VPNs terminating on this VLAN - the detail page's tab count."""
@@ -817,22 +818,36 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
     location_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
 
+    def _detail_only(self) -> bool:
+        # The tab counts below are for the site page; the list renders four
+        # counts, annotated once per page by the viewset (#180).
+        view = self.context.get("view")
+        return view is None or getattr(view, "action", None) != "list"
+
     def get_prefix_count(self, obj) -> int:
-        return obj.prefixes.count()
+        n = getattr(obj, "prefix_n", None)
+        return n if n is not None else obj.prefixes.count()
 
     def get_vlan_count(self, obj) -> int:
-        return obj.vlan_set.count()
+        n = getattr(obj, "vlan_n", None)
+        return n if n is not None else obj.vlan_set.count()
 
     def get_device_count(self, obj) -> int:
-        return obj.device_set.count()
+        n = getattr(obj, "device_n", None)
+        return n if n is not None else obj.device_set.count()
 
     def get_vm_count(self, obj) -> int:
-        return obj.virtual_machines.count()
+        n = getattr(obj, "vm_n", None)
+        return n if n is not None else obj.virtual_machines.count()
 
     def get_rack_count(self, obj) -> int:
+        if not self._detail_only():
+            return 0
         return obj.racks.count()
 
     def get_contact_count(self, obj) -> int:
+        if not self._detail_only():
+            return 0
         # ContactAssignment binds by a "app.model" label + object_id string,
         # not a ContentType FK.
         return ContactAssignment.objects.filter(
@@ -840,15 +855,21 @@ class SiteSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         ).count()
 
     def get_circuit_count(self, obj) -> int:
+        if not self._detail_only():
+            return 0
         # Distinct circuits landing here, not raw terminations - a circuit with
         # both ends at one site still counts once.
         return obj.circuit_terminations.values("circuit").distinct().count()
 
     def get_location_count(self, obj) -> int:
+        if not self._detail_only():
+            return 0
         # Every location at the site, whatever its depth in the tree.
         return obj.locations.count()
 
     def get_document_count(self, obj) -> int:
+        if not self._detail_only():
+            return 0
         # Document binds by "app.model" label + object_id, like contacts.
         # Own rows only - a superseded version is still a row on the tab.
         return Document.objects.filter(
@@ -1050,7 +1071,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     vrf = VRFMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     family = serializers.IntegerField(read_only=True)
-    utilisation_pct = serializers.IntegerField(read_only=True, allow_null=True)
+    utilisation_pct = serializers.SerializerMethodField()
     is_enumerable = serializers.BooleanField(read_only=True)
     allocation = serializers.SerializerMethodField()
     ip_count = serializers.SerializerMethodField()
@@ -1111,8 +1132,13 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         """This prefix backs a DHCP scope (annotated by the viewset)."""
         return getattr(obj, "dhcp_scope_n", 0) > 0
 
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_utilisation_pct(self, obj):
+        return obj.utilisation_with(getattr(obj, "ip_n", None))
+
     def get_ip_count(self, obj) -> int:
-        return obj.ip_addresses.count()
+        n = getattr(obj, "ip_n", None)
+        return n if n is not None else obj.ip_addresses.count()
 
     def get_child_count(self, obj) -> int:
         return self._descendant_count(obj)
@@ -1121,11 +1147,28 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return self._descendant_count(obj) > 0
 
     def get_monitoring_engine(self, obj) -> dict | None:
-        try:
-            from monitoring.engines import engine_for_prefix
-        except Exception:
-            return None
-        engine = engine_for_prefix(obj)
+        # Resolved once for the whole page (the list serializer's rows), not
+        # a three-query walk per row (#179).
+        cache = getattr(self.root, "_engine_cache", None)
+        if cache is None:
+            inst = self.root.instance
+            rows = (
+                list(inst) if isinstance(inst, (list, tuple)) else
+                [inst] if isinstance(inst, Prefix) else []
+            )
+            try:
+                from monitoring.engines import engines_for_prefixes
+                cache = engines_for_prefixes(rows)
+            except Exception:
+                cache = {}
+            self.root._engine_cache = cache
+        engine = cache.get(obj.id)
+        if engine is None:
+            try:
+                from monitoring.engines import engine_for_prefix
+                engine = engine_for_prefix(obj)
+            except Exception:
+                return None
         return {
             "id": str(engine.id),
             "name": engine.name,
@@ -1145,7 +1188,12 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return DnsRecord.objects.filter(ip_address__prefix=obj).count()
 
     def _descendant_count(self, obj) -> int:
-        # Cached per-instance so child_count + has_descendants share the work.
+        # The list annotates it in SQL (#179); a detail or a bare instance
+        # falls back to the scan, cached per instance so child_count and
+        # has_descendants share the work.
+        annotated = getattr(obj, "descendant_n", None)
+        if annotated is not None:
+            return annotated
         cached = getattr(obj, "_descendant_count_cache", None)
         if cached is not None:
             return cached
@@ -5601,7 +5649,11 @@ class AggregateSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
     rir = RIRMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     family = serializers.IntegerField(read_only=True, allow_null=True)
-    utilisation_pct = serializers.IntegerField(read_only=True, allow_null=True)
+    utilisation_pct = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_utilisation_pct(self, obj):
+        return obj.utilisation_with(getattr(obj, "covered_n", None))
 
     rir_id = TenantScopedPrimaryKeyRelatedField(
         source="rir", queryset=RIR.objects.all(), write_only=True,

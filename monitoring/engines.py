@@ -169,6 +169,38 @@ def engine_for_ip(ip) -> MonitoringEngine:
     return engine or MonitoringEngine.local_for(tenant)
 
 
+def engines_for_prefixes(prefixes) -> dict:
+    """``{prefix_id: engine}`` for a page of prefixes in a handful of queries -
+    the per-row ``engine_for_prefix`` walk cost three queries per row on the
+    prefix list (#179). Same precedence: prefix binding, site binding, the
+    tenant default, local."""
+    prefixes = list(prefixes)
+    if not prefixes:
+        return {}
+    tenant = prefixes[0].tenant
+    ids = {p.id for p in prefixes}
+    site_ids = {p.site_id for p in prefixes if p.site_id}
+    by_prefix: dict = {}
+    by_site: dict = {}
+    for b in (
+        MonitoringEngineBinding.objects.filter(
+            tenant=tenant,
+            scope__in=[MonitoringEngineBinding.SCOPE_PREFIX, MonitoringEngineBinding.SCOPE_SITE],
+            object_id__in=[*ids, *site_ids],
+        )
+        .select_related("engine")
+    ):
+        if not engine_usable(b.engine):
+            continue
+        target = by_prefix if b.scope == MonitoringEngineBinding.SCOPE_PREFIX else by_site
+        target.setdefault(b.object_id, b.engine)
+    fallback = _default_engine(tenant) or MonitoringEngine.local_for(tenant)
+    return {
+        p.id: by_prefix.get(p.id) or by_site.get(p.site_id) or fallback
+        for p in prefixes
+    }
+
+
 def engine_for_prefix(prefix) -> MonitoringEngine:
     """The engine responsible for a **prefix** (never None) - resolved via its
     prefix binding, then site binding, then the tenant default, then local. Used

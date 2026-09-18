@@ -290,6 +290,8 @@ class DeviceTypeBulkDeleteTests(_CatalogBase):
         DeviceType; an extra explicit log_bulk_delete() would double every
         entry (which is what the sibling bulk-delete endpoints do today)."""
         self._login(self.hq)
+        for n in ("eth0", "eth1", "eth2"):
+            InterfaceTemplate.objects.create(device_type=self.dt_global, name=n)
         ChangeLogEntry.objects.all().delete()
         res = self._post([self.dt_global.id, self.dt_b.id])
         self.assertEqual(res.status_code, 200, res.content)
@@ -302,6 +304,16 @@ class DeviceTypeBulkDeleteTests(_CatalogBase):
             {str(self.dt_global.id), str(self.dt_b.id)},
         )
         self.assertEqual({e.user_name for e in entries}, {"hq"})
+        # The templates a type carried are in its own entry, not entries of
+        # their own: a library-sized delete stays a few rows (#178).
+        self.assertFalse(
+            ChangeLogEntry.objects.filter(object_type="api.interfacetemplate").exists()
+        )
+        by_id = {e.object_id: e for e in entries}
+        self.assertEqual(
+            by_id[str(self.dt_global.id)].pre_change["templates"]["interfaces"],
+            ["eth0", "eth1", "eth2"],
+        )
 
     def test_empty_id_list_is_a_400(self):
         self._login(self.hq)

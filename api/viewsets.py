@@ -1081,8 +1081,34 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # it was stamped to the user's own site on create.
 
     def get_queryset(self):
-        qs = super().get_queryset().annotate(
-            dhcp_scope_n=Count("dhcp_scopes", distinct=True)
+        from django.db.models import IntegerField
+        from django.db.models.expressions import RawSQL
+
+        ip_n = Coalesce(
+            Subquery(
+                IPAddress.objects.filter(prefix_id=OuterRef("pk")).order_by()
+                .values("prefix_id").annotate(c=Count("*")).values("c")[:1]
+            ),
+            0,
+        )
+
+        # Everything the list renders per row, once per page (#179): the
+        # address count, the descendant count (Postgres ``<<`` on the stored
+        # cidr, scoped to the same table), the scope flag; ``status`` joined
+        # for the container check in utilisation.
+        qs = (
+            super().get_queryset()
+            .select_related("status")
+            .annotate(
+                dhcp_scope_n=Count("dhcp_scopes", distinct=True),
+                ip_n=ip_n,
+                descendant_n=RawSQL(
+                    "(SELECT COUNT(*) FROM api_prefix c WHERE c.tenant_id = api_prefix.tenant_id"
+                    " AND c.vrf_id IS NOT DISTINCT FROM api_prefix.vrf_id AND c.id <> api_prefix.id"
+                    " AND c.cidr::inet <<= api_prefix.cidr::inet)",
+                    (), output_field=IntegerField(),
+                ),
+            )
         )
         if not self.request:
             return qs
@@ -1723,7 +1749,21 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         return SiteSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # The four counts the list shows, one subquery each per page instead
+        # of a count per row (#180); the rest are detail-only.
+        def _n(model):
+            return Coalesce(
+                Subquery(
+                    model.objects.filter(site_id=OuterRef("pk")).order_by()
+                    .values("site_id").annotate(c=Count("*")).values("c")[:1]
+                ),
+                0,
+            )
+
+        qs = super().get_queryset().annotate(
+            prefix_n=_n(Prefix), vlan_n=_n(VLAN), device_n=_n(Device),
+            vm_n=_n(VirtualMachine),
+        )
         if not self.request:
             return qs
         search = self.request.query_params.get("search", "").strip()
@@ -1830,7 +1870,19 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         return VLANSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # The prefix count as one subquery per page instead of a count per
+        # row (#179). A subquery, not a join Count: the tags prefetch and a
+        # joined aggregate would multiply.
+        qs = super().get_queryset().annotate(
+            prefix_n=Coalesce(
+                Subquery(
+                    Prefix.objects.filter(vlan_id=OuterRef("pk"))
+                    .order_by().values("vlan_id")
+                    .annotate(c=Count("*")).values("c")[:1]
+                ),
+                0,
+            )
+        )
         if not self.request:
             return qs
         search = self.request.query_params.get("search", "").strip()
@@ -2968,16 +3020,18 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             )
         if len(ids) > 1000:
             raise ValidationError({"ids": "At most 1000 ids per call."})
+        from audit.bulk import log_device_type_deletes
+        from audit.context import suspended
+
         with transaction.atomic():
             rows = list(self.get_queryset().filter(pk__in=ids))
-            # No log_bulk_delete() here, deliberately: that helper exists for
-            # deletes Django can "fast delete" (no signals). DeviceType is in
-            # AUDITED_MODELS *and* cascades, so the collector always fires
-            # post_delete - one richer entry per row (it carries the
-            # pre_change field snapshot) plus entries for the templates that
-            # go with it. Adding the explicit call would log every deletion
-            # TWICE. Covered by tests_catalog_scope.
-            DeviceType.objects.filter(pk__in=[r.pk for r in rows]).delete()
+            # One change-log entry per type, carrying the templates it had, is
+            # written here; the cascade itself runs with the audit suspended.
+            # Letting post_delete log every port template made 800 library
+            # types tens of thousands of inserts and outran the worker (#178).
+            log_device_type_deletes(rows)
+            with suspended():
+                DeviceType.objects.filter(pk__in=[r.pk for r in rows]).delete()
         return Response({"deleted": len(rows)}, status=drf_status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="images",
@@ -5918,11 +5972,25 @@ class AggregateViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
+        from django.db.models import BigIntegerField
+        from django.db.models.expressions import RawSQL
+
+        # The IPv4 address space covered by prefixes inside the aggregate,
+        # summed in SQL once per page - the property walked every prefix in
+        # the tenant per row (#181).
         qs = (
             super()
             .get_queryset()
             .select_related("rir")
             .prefetch_related("tags")
+            .annotate(
+                covered_n=RawSQL(
+                    "(SELECT COALESCE(SUM(power(2, 32 - masklen(p.cidr::inet))), 0)::bigint"
+                    " FROM api_prefix p WHERE p.tenant_id = api_aggregate.tenant_id"
+                    " AND family(p.cidr::inet) = 4 AND p.cidr::inet <<= api_aggregate.prefix::inet)",
+                    (), output_field=BigIntegerField(),
+                )
+            )
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()

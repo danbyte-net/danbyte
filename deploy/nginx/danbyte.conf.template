@@ -133,8 +133,15 @@ server {
     error_page 502 503 504 @danbyte_maintenance;
     location @danbyte_maintenance {
         root @@MAINTENANCE_ROOT@@;
-        rewrite ^ /maintenance.html break;
         internal;
         add_header Retry-After 30 always;
+        # nginx serves a static file for GET and HEAD only; a POST that lands
+        # here (an API call whose backend just died) would come back as its
+        # bare "405 Not Allowed" page. Say what happened instead.
+        if ($request_method !~ ^(GET|HEAD)$) {
+            add_header Content-Type application/json always;
+            return 503 '{"detail":"Danbyte is restarting or the request outran the backend - try again in a moment."}';
+        }
+        rewrite ^ /maintenance.html break;
     }
 }
