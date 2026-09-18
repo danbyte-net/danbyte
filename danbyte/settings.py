@@ -411,14 +411,17 @@ X_FRAME_OPTIONS = "DENY"
 # app-level backstop (nginx already sets HSTS + the redirect at the edge, and
 # scripts/install.sh - which configures nginx+TLS - writes DANBYTE_HTTPS=True).
 HTTPS_DEPLOYMENT = os.getenv("DANBYTE_HTTPS", "False") == "True"
+# Paths a plain-HTTP request may reach even when everything else is sent to
+# HTTPS. ACME HTTP-01 for the site's own certificate is fetched over plain
+# HTTP on purpose; a CA that follows the redirect would then meet the very
+# certificate it is about to replace, and nginx hands the path straight here.
+# The upgrader's readiness probe hits the app port from the box itself;
+# answering it with a redirect to HTTPS made every upgrade look failed.
+SECURE_REDIRECT_EXEMPT = [r"^\.well-known/acme-challenge/", r"^api/health/$"]
 if HTTPS_DEPLOYMENT:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
-    # ACME HTTP-01 for the site's own certificate is fetched over plain HTTP
-    # on purpose; a CA that follows the redirect would then meet the very
-    # certificate it is about to replace. nginx hands the path straight here.
-    SECURE_REDIRECT_EXEMPT = [r"^\.well-known/acme-challenge/"]
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

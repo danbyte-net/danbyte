@@ -8,7 +8,9 @@
 #
 # Runs entirely as the service user (no root): deploy code, reinstall deps from
 # the bundle's offline wheelhouse, migrate, collectstatic, restart user units,
-# healthcheck. On failure the previous code is restored from a backup.
+# healthcheck. On a failure BEFORE the migration the previous code is restored
+# from a backup; after the migration has run the new code stays, and the
+# pre-upgrade backup is the way back.
 set -u
 
 TARBALL="${1:?usage: danbyte-upgrade-bundle.sh <bundle.tar.gz>}"
@@ -40,7 +42,13 @@ status() {  # <state> <step> <pct>
 }
 restart_services() { systemctl --user restart $SERVICES 2>/dev/null; }
 BACKUP=""
+MIGRATED=""
 rollback() {
+  if [ -n "$MIGRATED" ]; then
+    ERR="$ERR - the database is already migrated, so the new code is kept (the old code would not run on it); to go back, restore the pre-upgrade backup"
+    restart_services
+    return
+  fi
   [ -n "$BACKUP" ] && [ -f "$BACKUP" ] && tar -C "$CODE_DIR" -xzf "$BACKUP" 2>/dev/null
   restart_services
 }
@@ -54,10 +62,39 @@ fail() {
   exit 1
 }
 
+# A step's stderr is kept and quoted in the failure, so the status JSON says
+# what actually broke (a truncated bundle, a missing wheel, the migration's
+# traceback) instead of one fixed sentence per step (#185).
+ERRF="$STATUS_FILE.err"
+step() {  # <step> <what went wrong> <command...>
+  s="$1"; what="$2"; shift 2
+  "$@" 2>"$ERRF" || fail "$s" "$what: $(tail -c 300 "$ERRF" 2>/dev/null | tr -c '[:print:]' ' ')"
+}
+
+# The readiness probe must reach *this* app: on a box where Danbyte is not
+# nginx's default server a bare 127.0.0.1 request lands on another server
+# block, and the app port answers a nameless request with a redirect or a
+# 400. So the probe carries a host the install answers to (ALLOWED_HOSTS in
+# .env) and says it came over HTTPS.
+HOSTS="$(sed -n 's/^ALLOWED_HOSTS=//p' "$CODE_DIR/.env" 2>/dev/null | tr -d "'\"" | tr ',' ' ')"
+[ -n "$HOSTS" ] || HOSTS="127.0.0.1 localhost"
+healthy() {
+  for h in $HOSTS; do
+    [ "$h" = "*" ] && h=127.0.0.1
+    c=$(curl -ks -o /dev/null -w '%{http_code}' -H "Host: $h" -H "X-Forwarded-Proto: https" \
+        "http://127.0.0.1:8000/api/health/" 2>/dev/null || echo 000)
+    [ "$c" = "200" ] && return 0
+    c=$(curl -ks -o /dev/null -w '%{http_code}' --resolve "$h:443:127.0.0.1" \
+        "https://$h/api/health/" 2>/dev/null || echo 000)
+    [ "$c" = "200" ] && return 0
+  done
+  return 1
+}
+
 status running preflight 5
 [ -f "$TARBALL" ] || fail preflight "bundle not found: $TARBALL"
 TMP="$(mktemp -d)"
-tar -xzf "$TARBALL" -C "$TMP" 2>/dev/null || fail extract "could not extract bundle (not a .tar.gz?)"
+step extract "could not extract bundle" tar -xzf "$TARBALL" -C "$TMP"
 SRC="$(find "$TMP" -maxdepth 1 -type d -name 'danbyte-*' | head -1)"
 [ -d "$SRC" ] || SRC="$TMP"
 [ -f "$SRC/manage.py" ] || fail preflight "bundle missing manage.py - not a Danbyte release"
@@ -72,7 +109,7 @@ if [ "${DANBYTE_SKIP_BACKUP:-0}" = "1" ]; then
   echo "danbyte-upgrade: DANBYTE_SKIP_BACKUP=1 - skipping the pre-upgrade backup" >&2
 else
   BACKUP_OUT="$("$PY" manage.py backup_now --kind pre_upgrade 2>"$BACKUP_DIR/.pre-upgrade.err")" \
-    || fail backup "pre-upgrade backup failed - aborting before any migration: $(tail -c 300 "$BACKUP_DIR/.pre-upgrade.err" 2>/dev/null | tr '\n' ' ')"
+    || fail backup "pre-upgrade backup failed - aborting before any migration: $(tail -c 300 "$BACKUP_DIR/.pre-upgrade.err" 2>/dev/null | tr -c '[:print:]' ' ')"
   echo "danbyte-upgrade: backup $BACKUP_OUT" >&2
 fi
 
@@ -85,16 +122,18 @@ status running deploy 40
 touch "$MAINT" 2>/dev/null || true   # nginx shows the "updating" page
 # Overlay the new tree; keep .env/media (not in the bundle). Excludes the
 # installer entrypoint so it doesn't clutter the code dir.
-tar -C "$SRC" --exclude=./install.sh -cf - . | tar -C "$CODE_DIR" -xf - \
-  || fail deploy "copying new code failed"
+step deploy "copying new code failed" \
+  sh -c "tar -C '$SRC' --exclude=./install.sh -cf - . | tar -C '$CODE_DIR' -xf -"
 
 status running deps 60
 "$CODE_DIR/vendor/python/bin/python3" -m venv "$CODE_DIR/.venv" >/dev/null 2>&1 || true
-"$PY" -m pip install --no-index --find-links "$CODE_DIR/vendor/wheels" \
-  -r "$CODE_DIR/requirements.txt" -q || fail deps "offline dependency install failed"
+step deps "offline dependency install failed" \
+  "$PY" -m pip install --no-index --find-links "$CODE_DIR/vendor/wheels" \
+  -r "$CODE_DIR/requirements.txt" -q
 
 status running migrate 75
-"$PY" manage.py migrate --noinput || fail migrate "database migration failed"
+step migrate "database migration failed" "$PY" manage.py migrate --noinput
+MIGRATED=1
 "$PY" manage.py rebuild_search_index >/dev/null 2>&1 || true
 
 status running static 85
@@ -120,15 +159,11 @@ while [ "$i" -lt 12 ]; do
   # Require the real readiness endpoint (200 = Django up AND DB reachable) - a
   # 2xx/3xx from "/" would also pass on the nginx "updating" page or a login
   # redirect while the app is actually broken.
-  for probe in "https://127.0.0.1/api/health/" "http://127.0.0.1:8000/api/health/"; do
-    c=$(curl -ks -o /dev/null -w '%{http_code}' "$probe" 2>/dev/null || echo 000)
-    [ "$c" = "200" ] && { ok=1; break; }
-  done
-  [ -n "$ok" ] && break
+  healthy && { ok=1; break; }
 done
-[ -n "$ok" ] || fail healthcheck "app did not come back healthy after restart (/api/health/ never returned 200)"
+[ -n "$ok" ] || fail healthcheck "app did not come back healthy after restart (/api/health/ never returned 200 for hosts: $HOSTS)"
 
-rm -f "$MAINT" "$TARBALL"
+rm -f "$MAINT" "$TARBALL" "$ERRF"
 rm -rf "$TMP"
 status done done 100
 echo "upgrade: now on $VERSION (from bundle)"
