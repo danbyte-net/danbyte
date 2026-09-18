@@ -5025,10 +5025,18 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
             )
             materialize_device_components(device)
 
+    # The list viewset prefetches ``devices`` (with their type, ports and an
+    # outlet count) and annotates ``document_n``; every figure below reads
+    # those so a page costs a fixed number of queries. Chaining a fresh
+    # ``.select_related()`` / ``.filter()`` onto ``obj.devices`` would bypass
+    # the prefetch and query per rack again (#188).
     def get_device_count(self, obj) -> int:
-        return obj.devices.count()
+        return len(obj.devices.all())
 
     def get_document_count(self, obj) -> int:
+        n = getattr(obj, "document_n", None)
+        if n is not None:
+            return n
         return Document.objects.filter(
             object_type="api.rack", object_id=obj.id
         ).count()
@@ -5037,7 +5045,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         # Distinct units occupied by any device - two half-width devices
         # sharing a U count it once.
         units: set[int] = set()
-        for d in obj.devices.select_related("device_type").all():
+        for d in obj.devices.all():
             if d.position is None:
                 continue
             if d.device_type and d.device_type.exclude_from_utilization:
@@ -5057,7 +5065,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         # Sum of the racked devices' type weights, normalised to kg. Devices
         # whose type has no weight contribute 0 - the UI notes the count.
         total = 0.0
-        for d in obj.devices.select_related("device_type").all():
+        for d in obj.devices.all():
             dt = d.device_type
             kg = weight_kg(dt.weight, dt.weight_unit) if dt else None
             if kg:
@@ -5089,7 +5097,10 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
             # restates its children's draws, so counting both doubled the
             # rack's demand. Distributors contribute supply topology, not
             # demand.
-            if d.power_outlets.exists():
+            outlet_n = getattr(d, "outlet_n", None)
+            if outlet_n is None:
+                outlet_n = d.power_outlets.count()
+            if outlet_n:
                 continue
             for pp in d.power_ports.all():
                 allocated += pp.allocated_draw or 0

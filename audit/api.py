@@ -260,6 +260,37 @@ def _label_for(model, pk):
     return str(obj)[:120] if obj is not None else None
 
 
+def _labels_for_rows(rows) -> dict:
+    """``{(model_label, str(pk)): label | None}`` for every FK value in the
+    changes of ``rows`` - one ``pk__in`` query per related model for the whole
+    page, instead of one query per changed relation per row (#190)."""
+    wanted: dict = {}
+    for r in rows:
+        rels = _relation_fields(r.object_type)
+        if not rels:
+            continue
+        for field, diff in (r.changes or {}).items():
+            model = rels.get(field)
+            if model is None or not isinstance(diff, dict):
+                continue
+            for pk in (diff.get("old"), diff.get("new")):
+                if pk not in (None, ""):
+                    wanted.setdefault(model, set()).add(str(pk))
+    out: dict = {}
+    for model, ids in wanted.items():
+        label = model._meta.label_lower
+        found: dict = {}
+        try:
+            for obj in model.objects.filter(pk__in=ids):
+                found[str(obj.pk)] = str(obj)[:120]
+        except Exception:
+            # Stale label / pk-type mismatch: nothing to resolve.
+            found = {}
+        for i in ids:
+            out[(label, i)] = found.get(i)
+    return out
+
+
 class ChangeLogSerializer(serializers.ModelSerializer):
     action_display = serializers.CharField(source="get_action_display", read_only=True)
     change_count = serializers.SerializerMethodField()
@@ -318,6 +349,23 @@ class ChangeLogSerializer(serializers.ModelSerializer):
         rels = _relation_fields(obj.object_type)
         if not rels:
             return raw
+        labels = self.context.get("_fk_labels")
+        if labels is None:
+            rows = (
+                list(self.parent.instance)
+                if self.parent is not None and self.parent.instance is not None
+                else [obj]
+            )
+            labels = self.context["_fk_labels"] = _labels_for_rows(rows)
+
+        def label_for(model, pk):
+            if pk in (None, ""):
+                return None
+            key = (model._meta.label_lower, str(pk))
+            if key not in labels:
+                labels[key] = _label_for(model, pk)
+            return labels[key]
+
         out = {}
         for field, diff in raw.items():
             related = rels.get(field)
@@ -325,8 +373,8 @@ class ChangeLogSerializer(serializers.ModelSerializer):
                 out[field] = diff
                 continue
             enriched = dict(diff)
-            old_label = _label_for(related, diff.get("old"))
-            new_label = _label_for(related, diff.get("new"))
+            old_label = label_for(related, diff.get("old"))
+            new_label = label_for(related, diff.get("new"))
             if old_label is not None:
                 enriched["old_label"] = old_label
             if new_label is not None:

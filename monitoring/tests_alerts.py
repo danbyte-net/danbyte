@@ -549,3 +549,57 @@ class AlertGroupingTests(TestCase):
         process_transitions([self._tr("10.0.0.1")], timezone.now())
         self.group.assert_not_called()
         self.single.assert_called_once()
+
+
+class AlertRuleListQueryTests(APITestCase):
+    """The firing count per rule comes with the page, not per row (#189)."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        from .models import AlertRule
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        prefix = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.0.0.0/8", status=status_for(self.tenant, "container")
+        )
+        ip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.5", prefix=prefix)
+        t = CheckTemplate.objects.create(tenant=self.tenant, name="p", slug="p", kind=CheckKind.ICMP)
+        rules = [
+            AlertRule.objects.create(
+                tenant=self.tenant, name=f"rule {i:02d}", weight=i,
+                match_kinds=["icmp"], match_statuses=["down"], severity="info",
+            )
+            for i in range(12)
+        ]
+        for n, status in ((0, "firing"), (1, "firing"), (2, "resolved")):
+            Alert.objects.create(
+                tenant=self.tenant, target_ip=ip, template=t, kind="icmp", rule=rules[0],
+                dedup_key=f"{ip.id}:{t.id}:{n}", severity="info", check_status="down",
+                status=status,
+            )
+        user = get_user_model().objects.create_superuser("a", "a@b.c", "pw")
+        self.client.force_login(user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+
+    def _queries(self, url):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.get(url)
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get(url)
+        self.assertEqual(r.status_code, 200, r.content)
+        return len(ctx.captured_queries), r.json()
+
+    def test_page_cost_is_flat_and_counts_match(self):
+        small, _ = self._queries("/api/monitoring/alert-rules/?page_size=2")
+        big, body = self._queries("/api/monitoring/alert-rules/?page_size=12")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = body["results"] if isinstance(body, dict) else body
+        counts = {r["name"]: r["alert_count"] for r in rows}
+        self.assertEqual(counts["rule 00"], 2)
+        self.assertEqual(counts["rule 01"], 0)

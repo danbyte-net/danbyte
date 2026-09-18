@@ -6,7 +6,9 @@ import hmac
 import json
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
 from integrations.models import Webhook
@@ -79,3 +81,59 @@ class WebhookMatchTests(TestCase):
             res = wh.deliver_webhook(str(h.id), "created", "prefix", "x", {})
         self.assertFalse(res["ok"])
         self.assertIn("boom", res["error"])
+
+
+class WebhookHeaderSecrecyTests(APITestCase):
+    """Additional headers carry Authorization values, so the API never reads
+    them back (#191): a webhook says whether headers are set and names them;
+    a blank write keeps them, null clears them."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        admin = get_user_model().objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        self.hook = Webhook.objects.create(
+            tenant=self.tenant, name="h", payload_url="http://x.test/h",
+            object_types=["prefix"],
+            additional_headers="Authorization: Bearer s3cret\nX-Env: prod",
+        )
+
+    def test_headers_are_never_returned(self):
+        for url in (f"/api/webhooks/{self.hook.id}/", "/api/webhooks/"):
+            body = self.client.get(url).json()
+            row = body["results"][0] if "results" in body else body
+            self.assertNotIn("s3cret", str(row))
+            self.assertNotIn("additional_headers", row)
+            self.assertTrue(row["additional_headers_set"])
+            self.assertEqual(row["additional_header_names"], ["Authorization", "X-Env"])
+
+    def test_blank_keeps_null_clears_text_replaces(self):
+        url = f"/api/webhooks/{self.hook.id}/"
+        r = self.client.patch(url, {"name": "h2", "additional_headers": ""}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.hook.refresh_from_db()
+        self.assertIn("s3cret", self.hook.additional_headers)
+        r = self.client.patch(url, {"additional_headers": "X-Key: new"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.hook.refresh_from_db()
+        self.assertEqual(self.hook.additional_headers, "X-Key: new")
+        r = self.client.patch(url, {"additional_headers": None}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.hook.refresh_from_db()
+        self.assertEqual(self.hook.additional_headers, "")
+        self.assertFalse(r.json()["additional_headers_set"])
+
+    def test_create_stores_headers(self):
+        r = self.client.post(
+            "/api/webhooks/",
+            {"name": "n", "payload_url": "http://x.test/n", "object_types": ["prefix"],
+             "additional_headers": "X-Key: abc"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(Webhook.objects.get(name="n").additional_headers, "X-Key: abc")
+        self.assertNotIn("additional_headers", r.json())

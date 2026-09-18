@@ -5,6 +5,7 @@ import uuid
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.contrib.postgres.indexes import GinIndex
+from django.db.models.functions import Upper
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -2609,6 +2610,17 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                 nulls_distinct=False,
                 name="uniq_ip_tenant_vrf_addr",
             )
+        ]
+        # The list filters (status, role, site) and the case-insensitive
+        # DNS-name lookup each walked the whole table at a few hundred
+        # thousand addresses (#186). The Upper index matches ``iexact``.
+        indexes = [
+            models.Index(fields=["tenant", "status"], name="ip_tenant_status_idx"),
+            models.Index(fields=["tenant", "role"], name="ip_tenant_role_idx"),
+            models.Index(fields=["tenant", "site"], name="ip_tenant_site_idx"),
+            models.Index(
+                "tenant", Upper("dns_name"), name="ip_tenant_dns_upper_idx"
+            ),
         ]
 
     def __str__(self) -> str:

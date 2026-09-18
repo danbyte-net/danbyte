@@ -26,7 +26,7 @@ Webhooks live under **Integrations → Webhooks** in the sidebar.
    | **Payload URL** | The endpoint Danbyte sends the request to. |
    | **Content type** | The content type of the request body. |
    | **Secret** | Optional signing key (see below). Write-only - once saved, the value is never shown again. |
-   | **Additional headers** | Extra headers, one `Name: value` per line. |
+   | **Additional headers** | Extra headers, one `Name: value` per line. They usually carry an API key, so the API never returns them: a saved webhook shows which header names are set, a blank box keeps them, and **Remove stored headers** clears them. |
    | **Verify TLS** | Whether to verify the server's TLS certificate. |
 
 3. Save.

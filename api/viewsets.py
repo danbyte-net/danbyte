@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.db.models.functions import Coalesce, Collate
-from django.db.models import Count, F, OuterRef, Q, Subquery
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import permissions, status as drf_status, viewsets
@@ -214,31 +214,36 @@ from .serializers import (
 
 
 def annotate_dhcp(qs):
-    """Add the counts the IPAddress serializer's ``dhcp`` field reads, so every
+    """Add the flags the IPAddress serializer's ``dhcp`` field reads, so every
     surface that lists IPs marks DHCP state consistently: a reservation, a lease,
     or membership in a scope's pool range (address between start/end). An
     exclusion range carves a hole in the pool - DHCP never hands those out - so
-    the serializer subtracts ``dhcp_excl_n`` from pool membership. The reverse
-    path ``prefix__dhcp_scopes`` keeps ``api`` free of an ``integrations``
-    import; the ``inet`` columns compare directly."""
+    the serializer checks ``dhcp_excl_n`` before pool membership.
+
+    Each flag is a correlated EXISTS, evaluated for the rows a page returns.
+    The joined COUNT(DISTINCT) form this replaces grouped every listed address
+    across a dozen DHCP tables before paging, which was the dominant cost of
+    the IP list at a few hundred thousand rows (#187). The ``inet`` columns
+    compare directly. Imported lazily: ``integrations`` imports from ``api``."""
+    from django.db.models import Exists
+
+    from integrations.models import DhcpExclusion, DhcpLease, DhcpReservation, DhcpScope
+
+    addr = OuterRef("ip_address")
     return qs.annotate(
-        dhcp_resv_n=Count("dhcp_reservations", distinct=True),
-        dhcp_lease_n=Count("dhcp_leases", distinct=True),
-        dhcp_pool_n=Count(
-            "prefix__dhcp_scopes",
-            distinct=True,
-            filter=Q(
-                prefix__dhcp_scopes__start_range__lte=F("ip_address"),
-                prefix__dhcp_scopes__end_range__gte=F("ip_address"),
-            ),
+        dhcp_resv_n=Exists(DhcpReservation.objects.filter(ip_address=OuterRef("pk"))),
+        dhcp_lease_n=Exists(DhcpLease.objects.filter(ip_address=OuterRef("pk"))),
+        dhcp_pool_n=Exists(
+            DhcpScope.objects.filter(
+                prefix=OuterRef("prefix_id"), start_range__lte=addr, end_range__gte=addr
+            )
         ),
-        dhcp_excl_n=Count(
-            "prefix__dhcp_scopes__exclusions",
-            distinct=True,
-            filter=Q(
-                prefix__dhcp_scopes__exclusions__start_address__lte=F("ip_address"),
-                prefix__dhcp_scopes__exclusions__end_address__gte=F("ip_address"),
-            ),
+        dhcp_excl_n=Exists(
+            DhcpExclusion.objects.filter(
+                scope__prefix=OuterRef("prefix_id"),
+                start_address__lte=addr,
+                end_address__gte=addr,
+            )
         ),
     )
 
@@ -277,9 +282,19 @@ def _apply_custom_field_scope(request, qs, model_slug: str):
     field_id = request.query_params.get("custom_field") or request.query_params.get("cf")
     if not field_id:
         return qs
-    try:
-        field = CustomField.objects.get(pk=field_id)
-    except (CustomField.DoesNotExist, ValueError):
+    # The field must be the active tenant's own: another tenant's id neither
+    # applies its scope here nor reveals, by a different answer, that it
+    # exists (#192). A miss and a foreign id look the same - an empty list.
+    from django.core.exceptions import ValidationError
+
+    tenant = _get_active_tenant(request)
+    field = None
+    if tenant is not None:
+        try:
+            field = CustomField.objects.filter(pk=field_id, tenant=tenant).first()
+        except (ValueError, ValidationError):
+            field = None
+    if field is None:
         return qs.none()
     from customization.scopes import apply_scope_to_queryset
 
@@ -5430,13 +5445,31 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         return RackSerializer
 
     def get_queryset(self):
+        # Everything the serializer's figures read (units, weight, power,
+        # documents) is fetched per page here: the racked devices with their
+        # type, port draws and an outlet count, plus a document count per
+        # rack - a page of racks costs the same whatever sits in them (#188).
+        from django.db.models import Prefetch
+
+        from .models import Document
+
+        racked = (
+            Device.objects.select_related("device_type")
+            .annotate(outlet_n=Count("power_outlets", distinct=True))
+            .prefetch_related("power_ports")
+        )
+        documents = (
+            Document.objects.filter(object_type="api.rack", object_id=OuterRef("pk"))
+            .order_by()
+            .values("object_id")
+            .annotate(n=Count("pk"))
+            .values("n")
+        )
         qs = (
             super().get_queryset()
             .select_related("site", "role", "location", "rack_type__manufacturer")
-            .prefetch_related(
-                "tags", "devices__device_type",
-                "devices__power_ports", "power_feeds",
-            )
+            .prefetch_related("tags", Prefetch("devices", queryset=racked), "power_feeds")
+            .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
