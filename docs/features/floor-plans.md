@@ -139,13 +139,13 @@ uploaded blueprint textures it.
   or are focused on, and **Names off the gear** starts each plate at the
   rail edge so it runs over the frame and past the cabinet instead of
   covering the faceplate.
-- **Cable thickness** (View menu, 3D): a slider from half to four times
+- **Cable thickness** (View menu, 3D): a slider from a quarter to double
   life size. Real jacket diameters are right up close and vanish across a
-  hall; pick what reads at the distance you work at. Under it, **Tubes /
-  Lines** picks the renderer: real tubes shaded like the rest of the room,
-  or flat lines of constant on-screen width in the cable's solid colour (the
-  look a hall with more than two hundred cables gets regardless). Both saved
-  per device in the browser, like Quality.
+  hall; pick what reads at the distance you work at. Under it, **Auto /
+  Tubes / Lines** picks the renderer: real tubes shaded like the rest of the
+  room, or flat lines of constant on-screen width in the cable's solid
+  colour. Auto draws tubes up to two hundred cables and lines past that.
+  Both saved per device in the browser, like Quality.
 - **Quality** (View menu, 3D): Auto / Low / Medium / High - how much the
   effects may cost. Low drops shadows and caps resolution (software
   rendering survives), Medium adds shadows, High adds ambient occlusion.

@@ -94,7 +94,7 @@ export default function FloorScene3D({
   shellMode = "cutaway",
   quality = "auto",
   cableScale = 1,
-  cableLook = "lit",
+  cableLook = "auto",
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -124,11 +124,13 @@ export default function FloorScene3D({
   quality?: RenderQualitySetting
   /** Cable jacket multiplier - 1 is life size; per-device, from the View menu. */
   cableScale?: number
-  /** Shaded tubes, or a flat solid colour. */
-  cableLook?: "lit" | "flat"
+  /** Tubes, lines, or auto (tubes up to the room's tube limit). */
+  cableLook?: "auto" | "tubes" | "lines"
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
+  // Read once here; every rack and device gets the values as props.
+  const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
   const [selection, setSelection] = useState<Sel | null>(null)
   const [cableSel, setCableSel] = useState<string | null>(null)
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
@@ -573,6 +575,8 @@ export default function FloorScene3D({
             showNames={showNames}
             namesScope={namesScope}
             namesAtEdge={namesAtEdge}
+            portLabelSource={faceplatePortLabels}
+            portLabelColor={faceplatePortLabelColor}
             showAirflow={showAirflow}
             shellMode={shellMode}
             ghosted={focusOn && !!selection && selection.tileId !== t.id}

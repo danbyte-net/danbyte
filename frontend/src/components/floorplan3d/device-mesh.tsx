@@ -23,7 +23,7 @@ import {
 } from "@/components/device-faceplate"
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
-import { useMe } from "@/lib/use-me"
+import type { PortLabelSource } from "@/lib/api"
 
 import { FaceLabel } from "./text-sprite"
 import { useMaxAnisotropy } from "./texture-quality"
@@ -192,6 +192,8 @@ export function DeviceMesh({
   onSelectPort,
   onZoomTo,
   onLegend,
+  portLabelSource = "",
+  portLabelColor = "#ffffff",
 }: {
   rack: SceneRack
   dev: SceneDevice
@@ -227,14 +229,14 @@ export function DeviceMesh({
   /** Report the colours this face puts on screen, so the room's legend keys
    * only those. Near tier only - a far cabinet draws no port colours. */
   onLegend?: LegendReporter
+  /** The deployment's port-label choice and colour, read once by the room
+   * and handed down - a device must not subscribe to /api/me on its own. */
+  portLabelSource?: PortLabelSource
+  portLabelColor?: string
 }) {
   const [hovered, setHovered] = useState(false)
   const [hoveredPort, setHoveredPort] = useState<number | null>(null)
-  const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
-  const labelSource = effectivePortLabelSource(
-    faceplatePortLabels,
-    dev.port_labels
-  )
+  const labelSource = effectivePortLabelSource(portLabelSource, dev.port_labels)
   // Shared geometry - the cables layer anchors runs to these same numbers.
   const { y, h, dx, dz, dw, dd, boxH, mountedRear } = deviceBoxM(
     rack,
@@ -559,7 +561,7 @@ export function DeviceMesh({
                         maxWidthM={m.w * dw * 0.9}
                         align="center"
                         fontFamily="'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif"
-                        color={fp!.label_color || faceplatePortLabelColor}
+                        color={fp!.label_color || portLabelColor}
                         background="rgba(0,0,0,0.55)"
                       />
                     ) : null

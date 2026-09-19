@@ -72,8 +72,11 @@ export function detectRenderQuality(): RenderQuality {
 }
 
 const CABLE_SCALE_KEY = "danbyte.floorplan3d.cableScale"
-export const CABLE_SCALE_MIN = 0.5
-export const CABLE_SCALE_MAX = 4
+// A quarter to double life size: a cat6 jacket is 4.5 mm in radius, so the
+// top end is an 18 mm tube - readable across an aisle without turning into
+// a drainpipe - and the bottom a hairline on a hall view.
+export const CABLE_SCALE_MIN = 0.25
+export const CABLE_SCALE_MAX = 2
 
 /** How much fatter than life the 3D room draws cables - a per-device
  * viewing preference like the quality tier, since it is about what reads on
@@ -96,18 +99,18 @@ export function storeCableScale(v: number): void {
 }
 
 const CABLE_LOOK_KEY = "danbyte.floorplan3d.cableLook"
-export type CableLook = "lit" | "flat"
+export type CableLook = "auto" | "tubes" | "lines"
 
-/** How cables draw: "lit" = shaded tubes with a real jacket radius; "flat"
- * = the screen-space line renderer, constant width at any distance and a
- * flat solid colour (what a hall over the tube limit gets anyway). Per
- * device. */
+/** How cables draw. "tubes": shaded tubes with a real jacket radius, whatever
+ * the count. "lines": the screen-space line renderer for every run -
+ * constant width at any distance, flat solid colour. "auto": tubes up to
+ * the room's tube limit, lines past it. Per device. */
 export function storedCableLook(): CableLook {
   try {
     const v = window.localStorage.getItem(CABLE_LOOK_KEY)
-    return v === "flat" ? "flat" : "lit"
+    return v === "tubes" || v === "lines" ? v : "auto"
   } catch {
-    return "lit"
+    return "auto"
   }
 }
 

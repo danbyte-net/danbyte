@@ -8240,17 +8240,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
         ]
         feed_type_by_port: dict = {}
         if inlet_ids:
-            for term in CableTermination.objects.filter(
-                power_port_id__in=inlet_ids, cable__isnull=False
-            ).select_related("cable"):
-                far = (
-                    CableTermination.objects.filter(cable=term.cable)
-                    .exclude(id=term.id)
-                    .select_related("power_feed")
-                    .first()
-                )
-                if far and far.power_feed_id:
-                    feed_type_by_port[term.power_port_id] = far.power_feed.type
+            # Two queries for the whole plan: the inlets' cables, then the
+            # feed on the far end of each of those cables - not one query per
+            # inlet (a 2,400-device hall paid 600 of them per scene load).
+            inlet_terms = list(
+                CableTermination.objects.filter(
+                    power_port_id__in=inlet_ids, cable__isnull=False
+                ).values_list("power_port_id", "cable_id")
+            )
+            feed_by_cable = dict(
+                CableTermination.objects.filter(
+                    cable_id__in={c for _, c in inlet_terms}, power_feed__isnull=False
+                ).values_list("cable_id", "power_feed__type")
+            )
+            for port_id, cable_id in inlet_terms:
+                if cable_id in feed_by_cable:
+                    feed_type_by_port[port_id] = feed_by_cable[cable_id]
 
         def img(f):
             return request.build_absolute_uri(f.url) if f else None

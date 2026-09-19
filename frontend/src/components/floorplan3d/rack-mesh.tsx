@@ -12,6 +12,7 @@ import { DeviceInstances } from "./device-instances"
 import { DeviceMesh } from "./device-mesh"
 import { SideStripMesh } from "./side-strip-mesh"
 import { RackRuler } from "./rack-ruler"
+import type { PortLabelSource } from "@/lib/api"
 import { FaceLabel } from "./text-sprite"
 import {
   rackOpeningM,
@@ -96,6 +97,8 @@ export function RackMesh({
   onSelect,
   onFlyTo,
   onLegend,
+  portLabelSource = "",
+  portLabelColor = "#ffffff",
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
@@ -123,6 +126,9 @@ export function RackMesh({
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
   /** Forwarded to each device so the room's legend keys what's on screen. */
   onLegend?: LegendReporter
+  /** Deployment port-label choice and colour, forwarded to each device. */
+  portLabelSource?: PortLabelSource
+  portLabelColor?: string
 }) {
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
@@ -318,6 +324,8 @@ export function RackMesh({
                 viewRear={viewRear}
                 livePorts={liveData}
                 onLegend={onLegend}
+                portLabelSource={portLabelSource}
+                portLabelColor={portLabelColor}
                 onZoomTo={(target) => {
                   // Same fly-to channel the rack's own double-click uses,
                   // one level down: frame THIS device's face.

@@ -447,7 +447,7 @@ export function CablesLayer({
   scene,
   xray = false,
   scale = 1,
-  look = "lit",
+  look = "auto",
   selectedId,
   onSelect,
 }: {
@@ -458,10 +458,11 @@ export function CablesLayer({
   xray?: boolean
   /** Jacket multiplier from the View menu - 1 is life size. */
   scale?: number
-  /** "lit": real tubes, shaded like the room (up to TUBE_LIMIT runs).
-   * "flat": the screen-space line renderer for every run - constant width
-   * at any distance, flat solid colour - the look a big hall gets anyway. */
-  look?: "lit" | "flat"
+  /** "tubes": real tubes, shaded like the room, whatever the count.
+   * "lines": the screen-space line renderer for every run - constant width
+   * at any distance, flat solid colour. "auto": tubes up to TUBE_LIMIT,
+   * lines past it (the motion cull keeps orbiting smooth either way). */
+  look?: "auto" | "tubes" | "lines"
   selectedId: string | null
   onSelect: (cableId: string) => void
 }) {
@@ -491,6 +492,8 @@ export function CablesLayer({
   const shown = useRef(true)
   const invalidate = useThree((s) => s.invalidate)
   const cull = runs.length > MOTION_CULL_LIMIT
+  const tubes =
+    look === "tubes" || (look === "auto" && runs.length <= TUBE_LIMIT)
   useFrame(() => {
     if (!cull) return
     const want = !isCameraMoving()
@@ -516,8 +519,7 @@ export function CablesLayer({
           ))}
       <group ref={group}>
         {runs.map(({ cp, points }) =>
-          cp.id === selectedId ? null : look !== "flat" &&
-            runs.length <= TUBE_LIMIT ? (
+          cp.id === selectedId ? null : tubes ? (
             <CableTube
               key={cp.id}
               points={points}
