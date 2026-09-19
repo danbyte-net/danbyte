@@ -78,9 +78,17 @@ A full UUID is long and makes for a dense QR. Every object also has a
 **per-tenant human number** (`numid`, e.g. `27`) - enable it with
 **human-readable object numbers** in deployment settings. Labels can use:
 
-- `{{ short_id }}` - the human number, to print alongside the name.
+- `{{ short_id }}` - the human number, to print alongside the name. An
+  object with no number yet gets its `short_hex` here instead.
+- `{{ short_hex }}` - the first eight characters of the object's UUID
+  (`d4d9c41c`): reads as an identifier and is unique across tenants.
 - `{{ short_url }}` - a compact link, `…/l/<tenant>/<type>/<number>`, that
   resolves to the object's page.
+
+Whichever id is on the flag finds the object again: typing the number or the
+hex prefix into any list's search box matches it (a number matches `numid`
+exactly, six or more hex characters match the start of the UUID), and every
+list endpoint of a numbered type takes `?numid=<n>`.
 
 The default QR now encodes `short_url` (falling back to the full URL when an
 object has no number), so scanned codes are smaller. Scanning opens

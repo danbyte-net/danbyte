@@ -388,7 +388,20 @@ class TenantScopedViewSet(RBACViewSetMixin, viewsets.ModelViewSet):
             qs = self.queryset
         else:
             qs = self.queryset.filter(**{self.tenant_field: tenant})
+        qs = self._numid_filter(qs)
         return restrict_for_view(self, qs)
+
+    def _numid_filter(self, qs):
+        """``?numid=<n>`` on any list of a numbered type - the number printed
+        on a label - instead of an ignored parameter and the whole list."""
+        if not self.request:
+            return qs
+        raw = self.request.query_params.get("numid")
+        if raw is None or not any(f.name == "numid" for f in qs.model._meta.fields):
+            return qs
+        if not raw.strip().isdigit():
+            raise ValidationError({"numid": "A whole number."})
+        return qs.filter(numid=int(raw))
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
