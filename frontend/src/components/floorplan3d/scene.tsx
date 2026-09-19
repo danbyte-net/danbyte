@@ -39,7 +39,12 @@ import { CableForm } from "@/components/cable-form"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 
-import { CablesLayer, CableTrace3D, useCablePaths } from "./cable-trace-3d"
+import {
+  cableEndsAnchored,
+  CablesLayer,
+  CableTrace3D,
+  useCablePaths,
+} from "./cable-trace-3d"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
@@ -1595,6 +1600,19 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
   const followed = (path?.tray_ids ?? [])
     .map((id) => scene.data?.trays.find((t) => t.id === id))
     .filter((t): t is SceneTray => Boolean(t))
+  // An end with no port marker on its device type is drawn at the panel's
+  // centre; say so here rather than let the run look mis-routed.
+  const anchored =
+    scene.data && path ? cableEndsAnchored(scene.data, path) : null
+  const unanchored = anchored
+    ? !anchored[0] && !anchored[1]
+      ? "Both ends have"
+      : !anchored[0]
+        ? "The A end has"
+        : !anchored[1]
+          ? "The B end has"
+          : null
+    : null
   const side = (label: string, terms: Cable["a_terminations"]) => (
     <div className="grid gap-0.5">
       <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
@@ -1644,6 +1662,12 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
           <div className="mt-2 grid gap-2 text-[12px]">
             {side("A side", c.a_terminations)}
             {side("B side", c.b_terminations)}
+            {unanchored && (
+              <span className="text-[11px] text-muted-foreground">
+                {unanchored} no port marker on the device type, so the run is
+                drawn at the panel centre.
+              </span>
+            )}
             <div className="grid gap-0.5">
               <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                 Routing

@@ -187,11 +187,17 @@ uploaded blueprint textures it.
   trays and dropping into both end racks.
 - **Cables are real geometry**: each run renders as a lit tube whose jacket
   thickness follows its kind (power fatter than copper, copper fatter than
-  fibre), leaves its port with a rounded bend into the cabinet's front-corner
-  channel - never straight down across the faceplates - and rides its trays
+  fibre), leaves its port with a rounded bend into a corner channel just
+  outside the rail - never straight down across the faceplates - and rides its trays
   in a **lane of its own**, so ten runs in one duct read as ten parallel
   runs. Hover glows; click opens the cable card. Past a couple hundred runs
   the layer falls back to simple lines for performance.
+- **Same-rack runs dress at the rail.** A lead between two devices in one
+  cabinet takes the corner channel nearest the two ports (2 cm outside the
+  rail opening, 3 cm in front of the face) and gets a small lane of its own,
+  so ten patch leads down one rail read as ten. Two ports a U apart on the
+  same face still patch directly. An end whose device type has no marker for
+  that port is drawn at the panel's centre, and the cable card says so.
 - **Trays are open baskets** - two side rails and a floor of rungs - and
   runs ride *inside* them, resting on the rungs. **Click a tray to open it**:
   the near rail drops away, the basket tints, and a card lists every cable

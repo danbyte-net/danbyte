@@ -238,6 +238,12 @@ export function trayElevationM(
 export const RACK_CAP_M = 0.03
 
 /** Cabinet outer footprint (m) - recorded, or derived like the docs promise. */
+/** The rail opening (19" = 483 mm) in metres - where the gear's edge is,
+ * which is where a lead is dressed, not the cabinet's outer wall. */
+export function rackOpeningM(rack: SceneRack): number {
+  return mm(OPENING_MM[rack.width] ?? PANEL_MM.opening)
+}
+
 export function rackFootprintM(rack: SceneRack): {
   width: number
   depth: number

@@ -20,6 +20,7 @@ import {
   freeAirRideY,
   offsetPolyline,
   portLocalM,
+  rackOpeningM,
   sideStripBoxM,
   stripPortLocalM,
   syntheticPortMarkers,
@@ -67,6 +68,9 @@ interface EndRun {
   /** Which face the lead exits - true = rear. Two same-face ends on one rack
    * patch directly; opposite faces must wrap the side, not cut through. */
   rear: boolean
+  /** False when no marker matched the port and the lead is anchored on the
+   * panel's centre - the card says so, rather than the run looking wrong. */
+  anchored: boolean
   /** Rack-LOCAL anchor + tile, so a same-rack run can be routed in local
    * coords (rotation-safe) and transformed once. `chanX` is this end's side
    * channel; `stubZ` is the depth the lead exits to. */
@@ -135,6 +139,7 @@ function portEndRun(
       ],
       railAt: (y) => worldOf(scene, tile, chanX, y, stubZ),
       rear: p.out === 1,
+      anchored: true,
       local: { tile, x: p.x, y: p.y, z: p.z, stubZ, chanX },
     }
   }
@@ -189,11 +194,15 @@ function portEndRun(
 
   // Stub OUT of the face (toward the rack-space side portLocalM resolved the
   // panel to), then sweep sideways at stub depth - clear of every faceplate -
-  // to the nearest cabinet edge, and rise there: the front-corner channel,
-  // like a vertical manager bolted to the rail.
-  const outZ = panelRear !== box.mountedRear ? 0.12 : -0.12
-  const chanX = (lx >= 0 ? 1 : -1) * (width / 2 + 0.04)
-  const chanZ = lz + outZ * 0.75 // riser tucks a hair closer to the face
+  // to the nearest RAIL edge, and rise there: the corner channel, like a
+  // vertical manager bolted to the rail. The channel sits 2 cm outside the
+  // rail opening, not outside the cabinet wall: in an 800 mm cabinet the wall
+  // is 20 cm past the gear, and a lead dressed out there left the rack in a
+  // horseshoe. The riser tucks 3 cm in front of the face, not out in the
+  // aisle.
+  const outZ = panelRear !== box.mountedRear ? 0.06 : -0.06
+  const chanX = (lx >= 0 ? 1 : -1) * (rackOpeningM(rack) / 2 + 0.02)
+  const chanZ = lz + outZ * 0.5
   return {
     entry: [
       world(lx, ly, lz),
@@ -202,6 +211,7 @@ function portEndRun(
     ],
     railAt: (y) => world(chanX, y, chanZ),
     rear: panelRear,
+    anchored: Boolean(m ?? synth),
     local: { tile, x: lx, y: ly, z: lz, stubZ: lz + outZ, chanX },
   }
 }
@@ -248,6 +258,7 @@ export function cableRunPoints(
       entry: [[x, y, z]],
       railAt: (ry) => [x, ry, z],
       rear: true,
+      anchored: false,
       local: { tile: t ?? scene.tiles[0], x: 0, y, z: 0, stubZ: 0, chanX: 0 },
     }
   }
@@ -255,24 +266,29 @@ export function cableRunPoints(
   const A = endRun(cp.a_points, cp.a_tiles[0])
   const B = endRun(cp.b_points, cp.b_tiles[0])
 
-  // Same rack (or same tile). Two cases, told apart by the exit face:
-  //  · SAME face (both rear, e.g. a PSU→PDU cord): a short direct patch -
-  //    port → stub → stub → port. No corner channels (they sit outside the
-  //    rack edges, so taking both looped the lead across the cabinet - the
-  //    "big loops").
+  // Same rack (or same tile). Three shapes:
+  //  · SAME face, CLOSE (a PSU→PDU cord, two ports a U apart): a short
+  //    direct patch - port → stub → stub → port.
+  //  · SAME face, FAR (a switch's front port to a server five U down): the
+  //    direct patch became a diagonal across every faceplate in between, so
+  //    it takes the corner channel like an installer would - out, over to
+  //    the side, down the rail, back in.
   //  · OPPOSITE faces (front↔rear): a straight hop would spear through the
   //    gear, so wrap the SIDE - port → stub → side corner (front depth) →
-  //    same-side corner (rear depth) → stub → port. Forcing both to ONE side
-  //    (A's) keeps it hugging that edge instead of crossing the cabinet.
+  //    same-side corner (rear depth) → stub → port.
+  // The side is the one nearer the two ports' midpoint (a tie goes to A's),
+  // so a lead never wraps the far edge and then crosses the whole face to
+  // reach its port. Every run gets its own small lane offset in the channel
+  // (the same stagger the trays use), so ten leads down one rail read as
+  // ten leads, not one crossing bundle.
   if (cp.a_tiles[0] === cp.b_tiles[0]) {
     const la = A.local
     const lb = B.local
     const w = (x: number, y: number, z: number) =>
       worldOf(scene, la.tile, x, y, z)
-    if (A.rear === B.rear) {
-      // Same face - a short direct patch, port → stub → stub → port, hugging
-      // the gear. No corner channels (outside the rack edges, they looped the
-      // lead across the whole cabinet).
+    const lane = cableLane(cp.id)
+    const far = Math.abs(la.y - lb.y) > 0.15 || Math.abs(la.x - lb.x) > 0.25
+    if (A.rear === B.rear && !far) {
       return filletPath(
         [
           w(la.x, la.y, la.z),
@@ -283,19 +299,38 @@ export function cableRunPoints(
         0.05
       )
     }
-    // Opposite faces - wrap ONE side edge (A's channel), so the lead never
-    // crosses the cabinet interior: out A's face, over to A's side, along that
-    // edge to B's depth, in to B. Built in local coords so a rotated rack
-    // can't turn "the side" into a diagonal through the gear.
-    const side = la.chanX
+    const mid = (la.x + lb.x) / 2
+    const sideSign = Math.abs(mid) < 1e-6 ? Math.sign(la.chanX) || 1 : Math.sign(mid)
+    const side = sideSign * (Math.abs(la.chanX) + Math.abs(lane.across))
+    // Riser depth per end: the stub depth plus the lane's lift, pushed
+    // outward from that end's face.
+    const outA = Math.sign(la.stubZ - la.z) || 1
+    const outB = Math.sign(lb.stubZ - lb.z) || 1
+    const zA = la.stubZ + outA * lane.lift
+    const zB = lb.stubZ + outB * lane.lift
+    if (A.rear === B.rear) {
+      return filletPath(
+        [
+          w(la.x, la.y, la.z),
+          w(la.x, la.y, zA),
+          w(side, la.y, zA),
+          w(side, lb.y, zA),
+          w(lb.x, lb.y, zA),
+          w(lb.x, lb.y, lb.z),
+        ],
+        0.06
+      )
+    }
+    // Opposite faces - built in local coords so a rotated rack can't turn
+    // "the side" into a diagonal through the gear.
     return filletPath(
       [
         w(la.x, la.y, la.z),
-        w(la.x, la.y, la.stubZ),
-        w(side, la.y, la.stubZ),
-        w(side, lb.y, la.stubZ),
-        w(side, lb.y, lb.stubZ),
-        w(lb.x, lb.y, lb.stubZ),
+        w(la.x, la.y, zA),
+        w(side, la.y, zA),
+        w(side, lb.y, zA),
+        w(side, lb.y, zB),
+        w(lb.x, lb.y, zB),
         w(lb.x, lb.y, lb.z),
       ],
       0.06
@@ -334,6 +369,23 @@ export function cableRunPoints(
   pts.push(B.railAt(rideY), ...[...B.entry].reverse()) // …drop to the B port.
   // Hard corners become bends - nobody installs cable at 90°.
   return filletPath(pts, 0.12)
+}
+
+/** Whether each end of ``cp`` anchored on a port marker (A, B). An end that
+ * did not is drawn at its panel's centre; the cable card says so. */
+export function cableEndsAnchored(
+  scene: ScenePayload,
+  cp: FloorPlanCablePath
+): [boolean, boolean] {
+  const sites = deviceSites(scene)
+  const one = (points: { device: string; port: string }[]) => {
+    for (const p of points) {
+      const r = portEndRun(scene, sites, p)
+      if (r) return r.anchored
+    }
+    return false
+  }
+  return [one(cp.a_points), one(cp.b_points)]
 }
 
 /** Shared cable-paths fetch - same endpoint + query key as the 2D canvas. */
@@ -589,6 +641,11 @@ function CableLine({
  * 60–144 Hz. Up close on a High-quality device that tanked the frame rate for
  * a decorative crawl. 30 Hz reads identically and halves the work; the offset
  * still advances by real elapsed time, so the crawl speed is unchanged.
+ *
+ * The clock is a timer, not `useFrame`: on a demand frameloop a frame
+ * callback only runs when a frame is drawn, so a callback that throttled
+ * itself and skipped `invalidate()` never asked for the next frame - the
+ * crawl froze the moment the camera stopped and only moved while orbiting.
  */
 const MARCH_HZ = 30
 
@@ -601,17 +658,20 @@ function MarchingLine({
 }) {
   const ref = useRef<Line2>(null)
   const invalidate = useThree((s) => s.invalidate)
-  const since = useRef(0)
-  useFrame((_, delta) => {
-    since.current += delta
-    if (since.current < 1 / MARCH_HZ) return
-    const mat = ref.current?.material
-    if (mat && "dashOffset" in mat) {
-      ;(mat as { dashOffset: number }).dashOffset -= since.current * 0.6
-      invalidate()
-    }
-    since.current = 0
-  })
+  useEffect(() => {
+    let last = performance.now()
+    const id = window.setInterval(() => {
+      const now = performance.now()
+      const dt = (now - last) / 1000
+      last = now
+      const mat = ref.current?.material
+      if (mat && "dashOffset" in mat) {
+        ;(mat as { dashOffset: number }).dashOffset -= dt * 0.6
+        invalidate()
+      }
+    }, 1000 / MARCH_HZ)
+    return () => window.clearInterval(id)
+  }, [invalidate])
   return (
     <Line
       ref={ref}
