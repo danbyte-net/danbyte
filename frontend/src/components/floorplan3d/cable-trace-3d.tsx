@@ -458,7 +458,9 @@ export function CablesLayer({
   xray?: boolean
   /** Jacket multiplier from the View menu - 1 is life size. */
   scale?: number
-  /** Shaded (lit like the room) or flat solid colour. */
+  /** "lit": real tubes, shaded like the room (up to TUBE_LIMIT runs).
+   * "flat": the screen-space line renderer for every run - constant width
+   * at any distance, flat solid colour - the look a big hall gets anyway. */
   look?: "lit" | "flat"
   selectedId: string | null
   onSelect: (cableId: string) => void
@@ -514,13 +516,13 @@ export function CablesLayer({
           ))}
       <group ref={group}>
         {runs.map(({ cp, points }) =>
-          cp.id === selectedId ? null : runs.length <= TUBE_LIMIT ? (
+          cp.id === selectedId ? null : look !== "flat" &&
+            runs.length <= TUBE_LIMIT ? (
             <CableTube
               key={cp.id}
               points={points}
               color={cp.color || CABLE_FALLBACK}
               radius={cableRadiusM(cp.type) * scale}
-              flat={look === "flat"}
               xray={xray}
               onClick={() => onSelect(cp.id)}
             />
@@ -559,16 +561,12 @@ function CableTube({
   points,
   color,
   radius,
-  flat = false,
   xray = false,
   onClick,
 }: {
   points: [number, number, number][]
   color: string
   radius: number
-  /** Solid colour, unlit - the jacket reads the same from every angle and
-   * never picks up the room's highlights. */
-  flat?: boolean
   xray?: boolean
   onClick: () => void
 }) {
@@ -603,25 +601,15 @@ function CableTube({
       }}
       renderOrder={xray ? XRAY_CABLE_ORDER : 0}
     >
-      {flat ? (
-        <meshBasicMaterial
-          color={hovered ? "#ffffff" : color}
-          toneMapped={false}
-          depthTest={!xray}
-          transparent={xray}
-          opacity={xray ? 0.75 : 1}
-        />
-      ) : (
-        <meshStandardMaterial
-          color={color}
-          roughness={0.55}
-          emissive={color}
-          emissiveIntensity={hovered ? 0.5 : 0}
-          depthTest={!xray}
-          transparent={xray}
-          opacity={xray ? 0.75 : 1}
-        />
-      )}
+      <meshStandardMaterial
+        color={color}
+        roughness={0.55}
+        emissive={color}
+        emissiveIntensity={hovered ? 0.5 : 0}
+        depthTest={!xray}
+        transparent={xray}
+        opacity={xray ? 0.75 : 1}
+      />
     </mesh>
   )
 }

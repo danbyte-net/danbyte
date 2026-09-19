@@ -1603,8 +1603,8 @@ function FloorPlanPage() {
                       value={cableLook}
                       onValueChange={setCableLook}
                       items={[
-                        { value: "lit", label: "Shaded" },
-                        { value: "flat", label: "Solid" },
+                        { value: "lit", label: "Tubes" },
+                        { value: "flat", label: "Lines" },
                       ]}
                     />
                   </div>

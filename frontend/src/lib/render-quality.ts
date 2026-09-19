@@ -98,8 +98,10 @@ export function storeCableScale(v: number): void {
 const CABLE_LOOK_KEY = "danbyte.floorplan3d.cableLook"
 export type CableLook = "lit" | "flat"
 
-/** How a cable's jacket is shaded: lit like the rest of the room, or a
- * flat solid colour that reads the same from every angle. Per device. */
+/** How cables draw: "lit" = shaded tubes with a real jacket radius; "flat"
+ * = the screen-space line renderer, constant width at any distance and a
+ * flat solid colour (what a hall over the tube limit gets anyway). Per
+ * device. */
 export function storedCableLook(): CableLook {
   try {
     const v = window.localStorage.getItem(CABLE_LOOK_KEY)
