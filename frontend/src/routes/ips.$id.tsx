@@ -264,6 +264,15 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       copy: ip.mac_address,
     },
     {
+      label: "CIDR",
+      value: ip.cidr ? (
+        <span className="font-mono">{ip.cidr}</span>
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      ),
+      copy: ip.cidr ?? "",
+    },
+    {
       label: "DNS name",
       value: <DnsNameLink name={ip.dns_name} />,
       copy: ip.dns_name,

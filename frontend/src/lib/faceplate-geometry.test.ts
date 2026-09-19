@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   CONNECTOR_MM,
   familyForType,
+  findPortMarker,
   renderTemplateName,
 } from "./faceplate-geometry"
 import { autoLayout } from "./faceplate-layout"
@@ -172,5 +173,28 @@ describe("autoLayout - C9500-48Y4C shape", () => {
     const doc = autoLayout(mixed)
     expect(doc.front[0].label).toBe("Gi1/0/")
     expect(doc.front[1].label).toBe("Te1/0/")
+  })
+})
+
+describe("findPortMarker", () => {
+  const marks = [
+    { name: "TenGigabitEthernet{position}/0/1" },
+    { name: "TenGigabitEthernet{position}/0/2" },
+    { name: "Psu 1" },
+  ]
+
+  it("renders the stack position before matching", () => {
+    expect(findPortMarker(marks, "TenGigabitEthernet2/0/2", 2)).toBe(marks[1])
+    expect(findPortMarker(marks, "TenGigabitEthernet1/0/2", 1)).toBe(marks[1])
+  })
+
+  it("has no marker for a second member without its position", () => {
+    expect(
+      findPortMarker(marks, "TenGigabitEthernet2/0/2", null)
+    ).toBeUndefined()
+  })
+
+  it("falls back to the case-tolerant form", () => {
+    expect(findPortMarker(marks, "PSU 1", null)).toBe(marks[2])
   })
 })

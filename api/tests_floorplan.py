@@ -617,6 +617,7 @@ class SceneTests(_Base):
         devs = tile["rack"]["devices"]
         self.assertEqual([d["name"] for d in devs], ["sw1"])
         self.assertEqual(devs[0]["position"], 10)
+        self.assertIn("vc_position", devs[0])
         self.assertEqual(devs[0]["u_height"], 1)
         self.assertEqual(devs[0]["rack_width"], "full")
         # Photo-anchored port markers flow through for the 3D face overlay.

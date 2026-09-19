@@ -34,7 +34,9 @@ static route in `TENANT-A`. Demo inventory, never bootstrap.
 
 The IOS/NX-OS family keeps one `router bgp` with the VRFs nested, VLAN-to-VNI
 under `vlan`, the VTEP as `interface nve1`. Address masks come from the
-[address filters](export-templates.md#address-filters).
+[address filters](export-templates.md#address-filters): an address's own
+mask length when set (a `/31` uplink inside a `/24` link block), else its
+prefix's.
 
 ```jinja
 {# template: nxos #}

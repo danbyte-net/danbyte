@@ -1393,6 +1393,24 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     switch = DeviceMiniSerializer(read_only=True)
     switch_interface = serializers.SerializerMethodField()
     dhcp = serializers.SerializerMethodField()
+    # The mask the address carries on its interface. Stored only when it
+    # differs from the containing prefix (a /31 link inside an aggregate);
+    # ``cidr`` is always the effective ``address/length``. An address may be
+    # written as ``10.0.0.1/31`` - the length lands in ``mask_length``.
+    mask_length = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=128
+    )
+    cidr = serializers.CharField(read_only=True)
+
+    def to_internal_value(self, data):
+        raw = data.get("ip_address") if hasattr(data, "get") else None
+        if isinstance(raw, str) and "/" in raw:
+            addr, _, length = raw.strip().partition("/")
+            data = data.copy()
+            data["ip_address"] = addr
+            if length and data.get("mask_length") in (None, ""):
+                data["mask_length"] = length
+        return super().to_internal_value(data)
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_dhcp(self, obj) -> str | None:
@@ -1506,6 +1524,11 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                 raise serializers.ValidationError(
                     {"ip_address": f"{ip_str} is not inside the prefix {prefix.cidr}."}
                 )
+            mask = attrs.get("mask_length", getattr(self.instance, "mask_length", None))
+            if mask is not None and mask > addr.max_prefixlen:
+                raise serializers.ValidationError(
+                    {"mask_length": f"An IPv{addr.version} address takes at most /{addr.max_prefixlen}."}
+                )
             # A prefix that allocates only from its ranges refuses an address
             # outside every range - but only when the address or prefix is
             # what's being set; renaming a legacy IP still saves.
@@ -1608,7 +1631,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
     class Meta:
         model = IPAddress
         fields = [
-            "id", "numid", "ip_address", "dhcp",
+            "id", "numid", "ip_address", "mask_length", "cidr", "dhcp",
             "prefix", "prefix_id",
             "site",
             "status", "status_id",
