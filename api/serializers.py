@@ -986,14 +986,19 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
         write_only=True, required=False, many=True,
     )
 
+    # The list viewset annotates these once per page (#196); a lone instance
+    # (create/update responses) falls back to a live count.
     def get_prefix_count(self, obj) -> int:
-        return obj.prefixes.count()
+        n = getattr(obj, "prefix_n", None)
+        return n if n is not None else obj.prefixes.count()
 
     def get_vlan_count(self, obj) -> int:
-        return obj.vlans.count()
+        n = getattr(obj, "vlan_n", None)
+        return n if n is not None else obj.vlans.count()
 
     def get_ip_count(self, obj) -> int:
-        return obj.ip_addresses.count()
+        n = getattr(obj, "ip_n", None)
+        return n if n is not None else obj.ip_addresses.count()
 
     def _one(self) -> bool:
         # The routing tab counts are for the VRF's own page; the list never
@@ -6828,10 +6833,18 @@ class ExportTemplateSerializer(NumIdModelSerializer):
         return entry["label"] if entry else obj.object_type
 
     def validate_object_type(self, value):
-        from auth_api.object_types import is_registered
+        from auth_api.object_types import is_registered, model_for
+
+        from .export_templates import has_secret_fields
 
         if not is_registered(value):
             raise serializers.ValidationError("Unknown object type.")
+        # A type with a credential field (webhooks, automation targets,
+        # device credentials) is never a template's subject (#193).
+        if has_secret_fields(model_for(value)):
+            raise serializers.ValidationError(
+                "This type carries credentials and cannot be exported by template."
+            )
         return value
 
     def validate_template_code(self, value):

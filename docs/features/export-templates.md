@@ -81,6 +81,16 @@ prefix; a router config needs the pieces. These filters take a string
 |---|---|
 | `host` | `10.0.0.5` |
 | `cidr` | `10.0.0.5/24` (an address object gets its own mask length when one is set, else its prefix's; a bare string is a host) |
+
+!!! note "What a template can reach"
+    `objects` holds the rows the **caller** may view - the same row and site
+    restriction the list pages apply - so a site-scoped user renders their
+    site, not the tenant. A type that carries credentials (webhooks,
+    automation targets, device credentials) cannot be a template's subject,
+    and a secret-bearing field or PSK accessor is unreadable from any row a
+    template reaches. Output is always served as a download of an inert type:
+    `text/plain`, CSV, JSON, XML or YAML. A template declaring `text/html`
+    downloads as plain text.
 | `prefixlen` | `24` |
 | `netmask` | `255.255.255.0` |
 | `wildcard` | `0.0.0.255` |

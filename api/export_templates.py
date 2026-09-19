@@ -98,10 +98,52 @@ FILTERS = {
 TESTS = {"ipv4": _t_ipv4, "ipv6": _t_ipv6}
 
 
-def _env():
+# Attribute names that hand out a stored secret however the row is reached
+# (the keychain / IPsec PSK accessors read the secret store on call).
+_SECRET_ATTRS = frozenset({"resolve_psk", "store_psk", "clear_psk"})
+
+
+def _template_environment_class():
     from jinja2.sandbox import SandboxedEnvironment
 
-    env = SandboxedEnvironment(
+    class _Environment(SandboxedEnvironment):
+        """The sandbox plus what a template must never reach on a model row
+        (#193): a secret-bearing field (``core.secret_fields`` - the same
+        rule the audit trail and exports apply, so an encrypted webhook
+        secret or an Authorization header cannot be printed), the PSK
+        accessors, and the escape hatches from one row to every row - a
+        manager's or queryset's ``model`` and any attribute of a model
+        class, which would reach ``Model.objects`` across tenants."""
+
+        def is_safe_attribute(self, obj, attr, value):
+            if not super().is_safe_attribute(obj, attr, value):
+                return False
+            if attr in _SECRET_ATTRS:
+                return False
+            if isinstance(obj, type) and hasattr(obj, "_meta"):
+                return False
+            meta = getattr(obj, "_meta", None)
+            if meta is not None and hasattr(meta, "get_field"):
+                from django.core.exceptions import FieldDoesNotExist
+
+                from core.secret_fields import is_secret_field
+
+                try:
+                    field = meta.get_field(attr)
+                except FieldDoesNotExist:
+                    return True
+                return not is_secret_field(obj, field)
+            from django.db.models import Manager, QuerySet
+
+            if isinstance(obj, (Manager, QuerySet)) and attr in ("model", "raw", "extra", "db", "query"):
+                return False
+            return True
+
+    return _Environment
+
+
+def _env():
+    env = _template_environment_class()(
         trim_blocks=True, lstrip_blocks=True, autoescape=False
     )
     env.filters.update(FILTERS)
@@ -109,27 +151,63 @@ def _env():
     return env
 
 
-def _objects_for(template, tenant):
+def has_secret_fields(model) -> bool:
+    """Whether any concrete field of ``model`` is classified secret - such a
+    type is not offered to export templates at all."""
+    from core.secret_fields import is_secret_field
+
+    return any(is_secret_field(model, f) for f in model._meta.concrete_fields)
+
+
+def _objects_for(template, tenant, user=None):
+    """The rows a template may loop over: the type's rows in the tenant,
+    narrowed to what ``user`` may view - the same row/site restriction a
+    list request applies, so a site-scoped user renders their site, not the
+    tenant (#193). No user = nothing (a render is always on someone's
+    behalf)."""
+    from auth_api import rbac
     from auth_api.object_types import model_for
 
     model = model_for(template.object_type)
     if model is None:
         return None
+    if has_secret_fields(model):
+        raise ValueError(f"{template.object_type} carries credentials and cannot be exported by template.")
     qs = model.objects.all()
     if any(f.name == "tenant" for f in model._meta.concrete_fields):
         qs = qs.filter(tenant=tenant)
+    if user is None:
+        return []
+    qs = rbac.restrict_queryset(qs, user, tenant, template.object_type, "view")
     return list(qs)
 
 
-def render_export_template(template, tenant) -> str:
-    """Render the template against its object type. Raises ``ValueError`` on a
-    bad object type and ``jinja2.TemplateError`` on a template problem."""
-    objects = _objects_for(template, tenant)
+def render_export_template(template, tenant, user=None) -> str:
+    """Render the template against its object type, over the rows ``user``
+    may view. Raises ``ValueError`` on a bad object type and
+    ``jinja2.TemplateError`` on a template problem."""
+    objects = _objects_for(template, tenant, user)
     if objects is None:
         raise ValueError(f"Unknown object type: {template.object_type}")
 
     tmpl = _env().from_string(template.template_code or "")
     return tmpl.render(objects=objects, queryset=objects, count=len(objects))
+
+
+# Output types a render may be served as. Anything else (text/html above
+# all) goes out as plain text: the body is template-authored, so an active
+# type would let a template author run script on the app's origin for whoever
+# opens the render (#195).
+INERT_MIME_TYPES = frozenset({
+    "text/plain", "text/csv", "text/tab-separated-values", "text/markdown",
+    "text/xml", "application/xml", "application/json",
+    "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml",
+})
+
+
+def safe_mime_type(declared: str | None) -> str:
+    base = (declared or "").split(";")[0].strip().lower()
+    return base if base in INERT_MIME_TYPES else "text/plain"
 
 
 def render_device_config(template, device, tenant) -> str:

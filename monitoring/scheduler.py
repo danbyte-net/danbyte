@@ -32,7 +32,7 @@ from .models import (
     CheckAssignment, CheckState, MonitoringEngine, MonitoringPolicy,
     MonitoringSettings,
 )
-from .resolver import resolve_effective_checks
+from .resolver import PrefixIndex, resolve_effective_checks
 from .worker import effective_interval, run_generic, run_icmp_sweep
 
 log = logging.getLogger("monitoring.scheduler")
@@ -67,34 +67,41 @@ def _candidate_ips(tenant: Tenant) -> set:
         CheckAssignment.objects.filter(tenant=tenant, prefix__isnull=False)
         .select_related("prefix")
     )
+    # The tenant's addresses once, tested against every assignment's
+    # prefix - not one load of every address per assignment (#198).
+    nets = []
     for a in prefix_assignments:
         if not a.apply_to_children:
             continue
         net = a.prefix.network
-        if net is None:
-            continue
-        candidates = IPAddress.objects.filter(
-            tenant=tenant, vrf_id=a.prefix.vrf_id
-        ).only("id", "ip_address")
-        for ip in candidates:
-            try:
-                import ipaddress as _ip
+        if net is not None:
+            nets.append((a.prefix.vrf_id, net))
+    if nets:
+        import ipaddress as _ip
 
-                if _ip.ip_address(ip.ip_address) in net:
-                    ips.add(ip.id)
+        rows = IPAddress.objects.filter(tenant=tenant).values_list("id", "ip_address", "vrf_id")
+        for ip_id, addr, vrf_id in rows:
+            try:
+                parsed = _ip.ip_address(addr)
             except (ValueError, TypeError):
                 continue
+            for net_vrf, net in nets:
+                if net_vrf == vrf_id and parsed.version == net.version and parsed in net:
+                    ips.add(ip_id)
+                    break
     if MonitoringPolicy.objects.filter(tenant=tenant, enabled=True).exists():
         ips.update(IPAddress.objects.filter(tenant=tenant).values_list("id", flat=True))
     return ips
 
 
-def materialise_ip(ip: IPAddress, now=None) -> int:
+def materialise_ip(ip: IPAddress, now=None, prefix_index=None) -> int:
     """Sync ``CheckState`` rows for one IP to its current effective checks.
     Returns the number of effective checks. New states are scheduled to run
-    immediately; stale states (check no longer effective) are deleted."""
+    immediately; stale states (check no longer effective) are deleted.
+    ``prefix_index`` is the tenant's :class:`PrefixIndex` when a caller
+    materialises many addresses in one pass."""
     now = now or timezone.now()
-    resolved = resolve_effective_checks(ip)
+    resolved = resolve_effective_checks(ip, prefix_index)
     keep_template_ids = set()
     engine = engine_for_ip(ip) if resolved else None
     for rc in resolved:
@@ -135,10 +142,11 @@ def materialise_states(tenant: Tenant | None = None, now=None) -> dict:
     for t in tenants:
         ids = _candidate_ips(t)
         total_ips += len(ids)
+        index = PrefixIndex(t.id) if ids else None
         for ip in IPAddress.objects.filter(id__in=ids).select_related(
             "tenant", "prefix", "assigned_device"
         ):
-            total_checks += materialise_ip(ip, now=now)
+            total_checks += materialise_ip(ip, now=now, prefix_index=index)
     return {"tenants": len(tenants), "ips": total_ips, "effective_checks": total_checks}
 
 

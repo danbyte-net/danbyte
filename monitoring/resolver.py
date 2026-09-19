@@ -148,30 +148,66 @@ class _Candidate:
     _overrides: dict = field(default_factory=dict)  # policy-level, e.g. interval
 
 
-def _enclosing_prefixes(ip: "IPAddress") -> list["Prefix"]:
-    """Every prefix in the IP's tenant + VRF whose network contains the IP,
-    most-specific first. Computed by CIDR containment (no parent FK)."""
-    from api.models import Prefix
-
+def _parse_addr(ip: "IPAddress"):
     try:
         # Tolerate a mask. The column is a GenericIPAddressField and should
         # never hold one, but it validates on full_clean rather than on save,
         # so an import or a shell can put one there - and every prefix policy
         # and inherited assignment then silently missed that address.
-        addr = ipaddress.ip_address(str(ip.ip_address).split("/")[0])
+        return ipaddress.ip_address(str(ip.ip_address).split("/")[0])
     except (ValueError, TypeError):
-        return []
+        return None
 
-    candidates = Prefix.objects.filter(tenant_id=ip.tenant_id, vrf_id=ip.vrf_id)
-    out: list[tuple[int, "Prefix"]] = []
-    for pfx in candidates:
-        net = pfx.network
-        if net is None or net.version != addr.version:
-            continue
-        if addr in net:
-            out.append((net.prefixlen, pfx))
-    out.sort(key=lambda t: t[0], reverse=True)
-    return [pfx for _, pfx in out]
+
+class PrefixIndex:
+    """A tenant's prefixes, loaded once and bucketed by VRF, family and
+    length, so the prefixes enclosing an address cost one dictionary lookup
+    per distinct length in that VRF - not a scan of every prefix row per
+    address (#198). Build one per materialise pass and hand it down.
+
+    ``vrf_id=...`` limits the load to one VRF for a single-address lookup."""
+
+    _ALL = object()
+
+    def __init__(self, tenant_id, vrf_id=_ALL):
+        from api.models import Prefix
+
+        qs = Prefix.objects.filter(tenant_id=tenant_id)
+        if vrf_id is not self._ALL:
+            qs = qs.filter(vrf_id=vrf_id)
+        self._nets: dict[tuple, dict] = {}   # (vrf, version, len) -> {network: prefix}
+        self._lens: dict[tuple, list[int]] = {}   # (vrf, version) -> lengths, longest first
+        for pfx in qs:
+            net = pfx.network
+            if net is None:
+                continue
+            self._nets.setdefault((pfx.vrf_id, net.version, net.prefixlen), {})[net] = pfx
+        for vrf, version, plen in self._nets:
+            self._lens.setdefault((vrf, version), []).append(plen)
+        for lens in self._lens.values():
+            lens.sort(reverse=True)
+
+    def enclosing(self, ip: "IPAddress") -> list["Prefix"]:
+        """The prefixes containing ``ip`` in its VRF, most-specific first."""
+        addr = _parse_addr(ip)
+        if addr is None:
+            return []
+        out = []
+        for plen in self._lens.get((ip.vrf_id, addr.version), ()):
+            net = ipaddress.ip_network(f"{addr}/{plen}", strict=False)
+            pfx = self._nets[(ip.vrf_id, addr.version, plen)].get(net)
+            if pfx is not None:
+                out.append(pfx)
+        return out
+
+
+def _enclosing_prefixes(ip: "IPAddress", index: PrefixIndex | None = None) -> list["Prefix"]:
+    """Every prefix in the IP's tenant + VRF whose network contains the IP,
+    most-specific first. Computed by CIDR containment (no parent FK). With
+    no ``index`` the IP's VRF is loaded for this one lookup."""
+    if index is None:
+        index = PrefixIndex(ip.tenant_id, vrf_id=ip.vrf_id)
+    return index.enclosing(ip)
 
 
 def _in_policy_deny(ip: "IPAddress") -> bool:
@@ -330,7 +366,9 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
     return candidates
 
 
-def resolve_effective_checks(ip: "IPAddress") -> list[ResolvedCheck]:
+def resolve_effective_checks(
+    ip: "IPAddress", prefix_index: PrefixIndex | None = None
+) -> list[ResolvedCheck]:
     """The checks that should actually run against ``ip`` right now.
 
     Returns only *enabled* effective checks - disabled / excluded ones are
@@ -348,7 +386,7 @@ def resolve_effective_checks(ip: "IPAddress") -> list[ResolvedCheck]:
         )
 
     # Inherited from enclosing prefixes.
-    enclosing = _enclosing_prefixes(ip)
+    enclosing = _enclosing_prefixes(ip, prefix_index)
     if enclosing:
         pfx_by_id = {p.id: p for p in enclosing}
         masklen = {p.id: p.network.prefixlen for p in enclosing}

@@ -36,8 +36,12 @@ class WebhookSerializer(serializers.ModelSerializer):
         return bool(obj.additional_headers)
 
     def get_additional_header_names(self, obj) -> list[str]:
+        # Only a well-formed "Name: value" line has a name; a bare token on
+        # its own line (a folded header) is a value and stays hidden (#194).
         names = []
         for line in (obj.additional_headers or "").splitlines():
+            if ":" not in line:
+                continue
             name = line.split(":", 1)[0].strip()
             if name:
                 names.append(name)

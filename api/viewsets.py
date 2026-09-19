@@ -213,6 +213,27 @@ from .serializers import (
 )
 
 
+# Bulk rename patterns: longest accepted, and the per-name match deadline.
+_RENAME_PATTERN_MAX = 256
+_RENAME_MATCH_TIMEOUT = 0.2
+
+
+def _count_of(model, fk: str):
+    """``COUNT(*)`` of ``model`` rows pointing at the outer row through
+    ``fk``, as a correlated subquery (0 when none) - the shape a list page
+    annotates so a figure per row does not become a query per row."""
+    return Coalesce(
+        Subquery(
+            model.objects.filter(**{fk: OuterRef("pk")})
+            .order_by()
+            .values(fk)
+            .annotate(n=Count("pk"))
+            .values("n")
+        ),
+        0,
+    )
+
+
 def annotate_dhcp(qs):
     """Add the flags the IPAddress serializer's ``dhcp`` field reads, so every
     surface that lists IPs marks DHCP state consistently: a reservation, a lease,
@@ -713,8 +734,13 @@ class ComponentBulkMixin(FieldWriteAllowList):
         return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
 
     def _rename_fn(self, request):
-        """Build a name→name transform from {find, replace, use_regex}."""
-        import re
+        """Build a name→name transform from {find, replace, use_regex}.
+
+        A user pattern runs under a deadline: ``(a+)+$`` against one
+        thirty-character name held a worker for twenty seconds, so the
+        pattern is bounded in length and every match is cut off after a
+        fraction of a second (#202)."""
+        import regex
 
         find = request.data.get("find") or ""
         replace = request.data.get("replace")
@@ -723,11 +749,22 @@ class ComponentBulkMixin(FieldWriteAllowList):
         if not find:
             return None, replace, use_regex
         if use_regex:
+            if len(find) > _RENAME_PATTERN_MAX:
+                raise ValidationError({"find": f"Pattern longer than {_RENAME_PATTERN_MAX} characters."})
             try:
-                pat = re.compile(find)
-            except re.error as e:
+                pat = regex.compile(find)
+            except regex.error as e:
                 raise ValidationError({"find": f"Invalid regex: {e}"})
-            return (lambda s: pat.sub(replace, s)), replace, use_regex
+
+            def sub(s: str) -> str:
+                try:
+                    return pat.sub(replace, s, timeout=_RENAME_MATCH_TIMEOUT)
+                except TimeoutError:
+                    raise ValidationError(
+                        {"find": "This pattern takes too long to match; simplify it."}
+                    ) from None
+
+            return sub, replace, use_regex
         return (lambda s: s.replace(find, replace)), replace, use_regex
 
     @action(detail=False, methods=["post"], url_path="bulk-rename")
@@ -1686,6 +1723,13 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Per-row figures come with the page: one correlated count per
+        # related table, not three COUNT queries per VRF (#196).
+        qs = qs.annotate(
+            prefix_n=_count_of(Prefix, "vrf"),
+            vlan_n=_count_of(VLAN, "vrf"),
+            ip_n=_count_of(IPAddress, "vrf"),
+        )
         if not self.request:
             return qs
         search = self.request.query_params.get("search", "").strip()
@@ -7323,7 +7367,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         tmpl = self.get_object()
         tenant = _get_active_tenant(request)
         try:
-            return render_export_template(tmpl, tenant), tmpl
+            return render_export_template(tmpl, tenant, request.user), tmpl
         except (ValueError, TemplateError) as exc:
             return None, exc
 
@@ -7343,12 +7387,18 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         out, info = self._render(request)
         if out is None:
             return Response({"detail": str(info)}, status=drf_status.HTTP_400_BAD_REQUEST)
+        from .export_templates import safe_mime_type
+
         tmpl = info
-        resp = HttpResponse(out, content_type=tmpl.mime_type or "text/plain")
-        if tmpl.as_attachment:
-            ext = (tmpl.file_extension or "txt").lstrip(".")
-            fname = f"{tmpl.name}.{ext}"
-            resp["Content-Disposition"] = f'attachment; filename="{fname}"'
+        # Always a download of an inert type, never a page on this origin:
+        # the body is whatever the template's author wrote (#195). The SPA
+        # fetches the text and saves it under the declared type itself.
+        resp = HttpResponse(
+            out, content_type=f"{safe_mime_type(tmpl.mime_type)}; charset=utf-8"
+        )
+        ext = (tmpl.file_extension or "txt").lstrip(".")
+        resp["Content-Disposition"] = f'attachment; filename="{tmpl.name}.{ext}"'
+        resp["X-Content-Type-Options"] = "nosniff"
         return resp
 
 
