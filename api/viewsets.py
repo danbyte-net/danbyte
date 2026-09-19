@@ -66,6 +66,8 @@ from .models import (
     diff_device_components, sync_device_components,
 )
 from .serializers import (
+    FAR_END_PREFETCH,
+    far_end,
     AntennaSerializer,
     AntennaTemplateSerializer,
     CableRouteSerializer,
@@ -3418,7 +3420,7 @@ class DeviceViewSet(
                 # reverse Module relation (there is no field on the bay).
                 if cabled:
                     comps = comps.prefetch_related(
-                        "terminations__cable__status", "reservations"
+                        "terminations__cable__status", "reservations", *FAR_END_PREFETCH
                     )
                 elif relation == "module_bays":
                     comps = comps.select_related("module__module_type")
@@ -3535,6 +3537,12 @@ class DeviceViewSet(
                             # Real-world name, when it differs from the
                             # template-matching name ("X1-P1" on "Port 1").
                             "label": getattr(comp, "label", "") or "",
+                            # What a port marker may print instead of the
+                            # label: the cable's label or the far end.
+                            "cable_label": (term.cable.label if term else "") or "",
+                            "peer": far_end(term),
+                            "label_hidden": bool(getattr(comp, "hide_label", False)),
+                            "label_color": getattr(comp, "label_color", "") or "",
                         })
                 out.append(entry)
             return out
@@ -3981,6 +3989,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "tags", "terminations__cable", "reservations", "ip_addresses", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
+            *FAR_END_PREFETCH,
         )
         .order_by("device__name", NATURAL_NAME)
     )
@@ -8265,6 +8274,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "u_height": dt.u_height if dt else 1,
                 "rack_width": (dt.rack_width if dt else "full") or "full",
                 "is_full_depth": dt.is_full_depth if dt else True,
+                # Port labels on this device's quads: inherit / on / off.
+                "port_labels": d.port_labels,
                 # Effective airflow (device override, else type default) so the
                 # 3D room can draw intake/exhaust glyphs. "" = unknown/passive.
                 "airflow": d.effective_airflow,

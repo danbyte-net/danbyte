@@ -157,8 +157,11 @@ import { apiErrorToast } from "@/lib/api-toast"
 import {
   CABLE_SCALE_MAX,
   CABLE_SCALE_MIN,
+  storeCableLook,
   storeCableScale,
+  storedCableLook,
   storedCableScale,
+  type CableLook,
   storedQualitySetting,
   storeQualitySetting,
 } from "@/lib/render-quality"
@@ -362,6 +365,10 @@ function FloorPlanPage() {
   // 3D overlay prefs - same persistence pattern as the 2D ones.
   const [show3dULocal, setShow3dULocal] = useState<boolean | null>(null)
   const [show3dNamesLocal, setShow3dNamesLocal] = useState<boolean | null>(null)
+  const [names3dScopeLocal, setNames3dScopeLocal] = useState<
+    "all" | "selected" | null
+  >(null)
+  const [names3dEdgeLocal, setNames3dEdgeLocal] = useState<boolean | null>(null)
   const [show3dCablesLocal, setShow3dCablesLocal] = useState<boolean | null>(
     null
   )
@@ -392,6 +399,13 @@ function FloorPlanPage() {
   const setCableScale = (v: number) => {
     setCableScaleState(v)
     storeCableScale(v)
+  }
+  const [cableLook, setCableLookState] = useState<CableLook>(() =>
+    storedCableLook()
+  )
+  const setCableLook = (v: CableLook) => {
+    setCableLookState(v)
+    storeCableLook(v)
   }
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
@@ -632,6 +646,14 @@ function FloorPlanPage() {
     show3dNamesLocal ??
     (plan?.state.show_3d_names as boolean | undefined) ??
     false
+  const names3dScope =
+    names3dScopeLocal ??
+    (plan?.state.show_3d_names_scope as "all" | "selected" | undefined) ??
+    "all"
+  const names3dEdge =
+    names3dEdgeLocal ??
+    (plan?.state.show_3d_names_edge as boolean | undefined) ??
+    false
   const show3dCables =
     show3dCablesLocal ??
     (plan?.state.show_3d_cables as boolean | undefined) ??
@@ -707,22 +729,28 @@ function FloorPlanPage() {
       | "show_3d_airflow"
       | "show_3d_floor_peek"
       | "show_3d_walls"
-      | "show_3d_ceiling",
-    value: boolean
+      | "show_3d_ceiling"
+      | "show_3d_names_scope"
+      | "show_3d_names_edge",
+    value: boolean | "all" | "selected"
   ) => {
-    if (key === "label_fit") setLabelFitLocal(value)
-    else if (key === "show_fov") setShowFovLocal(value)
-    else if (key === "show_zone_labels") setShowZoneLabelsLocal(value)
-    else if (key === "show_trays") setShowTraysLocal(value)
-    else if (key === "show_objects") setShowObjectsLocal(value)
-    else if (key === "show_3d_u") setShow3dULocal(value)
-    else if (key === "show_3d_names") setShow3dNamesLocal(value)
-    else if (key === "show_3d_cables") setShow3dCablesLocal(value)
-    else if (key === "show_3d_airflow") setShow3dAirflowLocal(value)
-    else if (key === "show_3d_floor_peek") setFloorPeekLocal(value)
-    else if (key === "show_3d_walls") setShow3dWallsLocal(value)
-    else if (key === "show_3d_ceiling") setShow3dCeilingLocal(value)
-    else setShowLinksLocal(value)
+    if (key === "label_fit") setLabelFitLocal(value as boolean)
+    else if (key === "show_fov") setShowFovLocal(value as boolean)
+    else if (key === "show_zone_labels")
+      setShowZoneLabelsLocal(value as boolean)
+    else if (key === "show_trays") setShowTraysLocal(value as boolean)
+    else if (key === "show_objects") setShowObjectsLocal(value as boolean)
+    else if (key === "show_3d_u") setShow3dULocal(value as boolean)
+    else if (key === "show_3d_names") setShow3dNamesLocal(value as boolean)
+    else if (key === "show_3d_cables") setShow3dCablesLocal(value as boolean)
+    else if (key === "show_3d_airflow") setShow3dAirflowLocal(value as boolean)
+    else if (key === "show_3d_floor_peek") setFloorPeekLocal(value as boolean)
+    else if (key === "show_3d_walls") setShow3dWallsLocal(value as boolean)
+    else if (key === "show_3d_ceiling") setShow3dCeilingLocal(value as boolean)
+    else if (key === "show_3d_names_scope")
+      setNames3dScopeLocal(value as "all" | "selected")
+    else if (key === "show_3d_names_edge") setNames3dEdgeLocal(value as boolean)
+    else setShowLinksLocal(value as boolean)
     if (canEdit && plan)
       patchPlan.mutate({ state: { ...plan.state, [key]: value } })
   }
@@ -1490,6 +1518,26 @@ function FloorPlanPage() {
                     onChange={(v) => setViewPref("show_3d_names", v)}
                     className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
                   />
+                  {show3dNames && (
+                    <div className="grid gap-1.5 px-2 pb-1">
+                      <SegmentedTabs<"all" | "selected">
+                        value={names3dScope}
+                        onValueChange={(v) =>
+                          setViewPref("show_3d_names_scope", v)
+                        }
+                        items={[
+                          { value: "all", label: "All racks" },
+                          { value: "selected", label: "Highlighted rack" },
+                        ]}
+                      />
+                      <FormCheckbox
+                        label="Names off the gear"
+                        checked={names3dEdge}
+                        onChange={(v) => setViewPref("show_3d_names_edge", v)}
+                        className="items-center rounded px-2 py-1 text-[13px] hover:bg-muted/60"
+                      />
+                    </div>
+                  )}
                   <FormCheckbox
                     label="Cables"
                     checked={show3dCables}
@@ -1549,6 +1597,15 @@ function FloorPlanPage() {
                       step={0.25}
                       value={[cableScale]}
                       onValueChange={(v) => setCableScale(v[0])}
+                    />
+                    <SegmentedTabs<CableLook>
+                      className="mt-2"
+                      value={cableLook}
+                      onValueChange={setCableLook}
+                      items={[
+                        { value: "lit", label: "Shaded" },
+                        { value: "flat", label: "Solid" },
+                      ]}
                     />
                   </div>
                   <div className="px-2 pt-1.5 pb-1">
@@ -1829,6 +1886,8 @@ function FloorPlanPage() {
                   traceCableId={traceParam ?? null}
                   showUNumbers={show3dU}
                   showNames={show3dNames}
+                  namesScope={names3dScope}
+                  namesAtEdge={names3dEdge}
                   showCables={show3dCables}
                   showAirflow={show3dAirflow}
                   floorPeek={floorPeek}
@@ -1837,6 +1896,7 @@ function FloorPlanPage() {
                   shellMode={shell3d}
                   quality={quality3d}
                   cableScale={cableScale}
+                  cableLook={cableLook}
                 />
               </Suspense>
               {show3dHint && (

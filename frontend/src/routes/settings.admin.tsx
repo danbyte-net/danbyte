@@ -11,6 +11,8 @@ import {
 } from "@/lib/api"
 import { timeAgo } from "@/components/cells/time-ago"
 import { useMe } from "@/lib/use-me"
+import type { PortLabelSource } from "@/lib/api"
+import { FormColor } from "@/components/forms/color"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -250,15 +252,26 @@ function HumanIdsCard() {
   )
 }
 
+const PORT_LABEL_SOURCES = [
+  { value: "interface", label: "Port label" },
+  { value: "cable", label: "Cable label" },
+  { value: "peer_device", label: "Far-end device" },
+  { value: "peer_port", label: "Far-end port label" },
+]
+
 function FaceplatesCard() {
   const { data, save, savingKey } = useDeploymentSettings()
   const [lit, setLit] = useState(false)
   const [groupLabels, setGroupLabels] = useState(false)
+  const [portLabels, setPortLabels] = useState<PortLabelSource>("")
+  const [portLabelColor, setPortLabelColor] = useState("#ffffff")
 
   useEffect(() => {
     if (data) {
       setLit(data.faceplate_mark_connected_lit)
       setGroupLabels(data.faceplate_group_labels)
+      setPortLabels(data.faceplate_port_labels)
+      setPortLabelColor(data.faceplate_port_label_color || "#ffffff")
     }
   }, [data])
 
@@ -273,12 +286,16 @@ function FaceplatesCard() {
           patch: {
             faceplate_mark_connected_lit: lit,
             faceplate_group_labels: groupLabels,
+            faceplate_port_labels: portLabels,
+            faceplate_port_label_color: portLabelColor,
           },
         })
       }
       dirty={
         lit !== data.faceplate_mark_connected_lit ||
-        groupLabels !== data.faceplate_group_labels
+        groupLabels !== data.faceplate_group_labels ||
+        portLabels !== data.faceplate_port_labels ||
+        portLabelColor !== (data.faceplate_port_label_color || "#ffffff")
       }
       saving={savingKey === "faceplates"}
       saveLabel="Save faceplates"
@@ -295,6 +312,22 @@ function FaceplatesCard() {
         onChange={setGroupLabels}
         hint="The Ethernet1/ label in front of each port group. Off keeps dense panels inside their card."
       />
+      <div className="grid gap-3 @md:grid-cols-2">
+        <FormSelect
+          label="Port labels"
+          value={portLabels === "" ? null : portLabels}
+          onChange={(v) => setPortLabels((v ?? "") as PortLabelSource)}
+          noneLabel="Off"
+          options={PORT_LABEL_SOURCES}
+          hint="Printed inside each port marker on drawn faceplates, photo panels and the 3D room. Five characters or fewer read best. A device can force it on or off; a port can opt out."
+        />
+        <FormColor
+          label="Label colour"
+          value={portLabelColor}
+          onChange={(v) => setPortLabelColor(v || "#ffffff")}
+          allowEmpty={false}
+        />
+      </div>
     </SettingsCard>
   )
 }

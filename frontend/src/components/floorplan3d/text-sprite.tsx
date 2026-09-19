@@ -12,6 +12,9 @@ function textTexture(
     color = "#e4e4e7",
     background = "rgba(24,24,27,0.9)",
     fontPx = 44,
+    /** The face; the room's plates use the system stack, port labels use
+     * the app's own so they match the 2D faceplate. */
+    fontFamily = "ui-monospace, ui-sans-serif, system-ui, sans-serif",
     align = "left" as CanvasTextAlign,
     pad = 12,
     anisotropy = 4,
@@ -21,7 +24,7 @@ function textTexture(
     scale = 2,
   } = {}
 ): { texture: THREE.CanvasTexture; w: number; h: number } {
-  const font = `600 ${fontPx * scale}px ui-monospace, ui-sans-serif, system-ui, sans-serif`
+  const font = `600 ${fontPx * scale}px ${fontFamily}`
   const canvas = document.createElement("canvas")
   const ctx = canvas.getContext("2d")!
   ctx.font = font
@@ -61,7 +64,10 @@ export function FaceLabel({
   position,
   rotation = [0, Math.PI, 0],
   heightM = 0.05,
+  maxWidthM,
   align = "left",
+  anchorX = "center",
+  fontFamily,
   color,
   background,
 }: {
@@ -70,19 +76,44 @@ export function FaceLabel({
   rotation?: [number, number, number]
   /** World height of the text band, in metres. */
   heightM?: number
+  /** Widest the band may be: the height shrinks to keep the text inside
+   * (a port label must never leave its marker). */
+  maxWidthM?: number
   align?: CanvasTextAlign
+  /** Where `position` sits on the band: its centre, or its left edge so the
+   * band grows away from an anchor (a name plate starting at a rack edge). */
+  anchorX?: "center" | "left"
+  fontFamily?: string
   color?: string
   background?: string
 }) {
   const anisotropy = useMaxAnisotropy()
   const { texture, aspect } = useMemo(() => {
-    const t = textTexture(text, { align, color, background, anisotropy })
+    const t = textTexture(text, {
+      align,
+      color,
+      background,
+      anisotropy,
+      ...(fontFamily ? { fontFamily } : {}),
+    })
     return { texture: t.texture, aspect: t.w / t.h }
-  }, [text, align, color, background, anisotropy])
+  }, [text, align, fontFamily, color, background, anisotropy])
   useEffect(() => () => texture.dispose(), [texture])
+  const h = maxWidthM != null ? Math.min(heightM, maxWidthM / aspect) : heightM
+  const w = h * aspect
+  // A left anchor puts `position` at the band's start; the band then runs
+  // along its local +x, which the π-about-Y rotation maps to world −x.
+  const pos: [number, number, number] =
+    anchorX === "left"
+      ? [
+          position[0] + (w / 2) * (rotation[1] ? -1 : 1),
+          position[1],
+          position[2],
+        ]
+      : position
   return (
-    <mesh position={position} rotation={rotation} raycast={() => null}>
-      <planeGeometry args={[heightM * aspect, heightM]} />
+    <mesh position={pos} rotation={rotation} raycast={() => null}>
+      <planeGeometry args={[w, h]} />
       <meshBasicMaterial map={texture} transparent depthWrite={false} />
     </mesh>
   )

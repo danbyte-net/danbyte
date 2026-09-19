@@ -122,6 +122,8 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "human_ids_enabled",
             "faceplate_mark_connected_lit",
             "faceplate_group_labels",
+            "faceplate_port_labels",
+            "faceplate_port_label_color",
             "date_format",
             "time_style",
             "display_timezone",

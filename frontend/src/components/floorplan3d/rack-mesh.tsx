@@ -14,6 +14,7 @@ import { SideStripMesh } from "./side-strip-mesh"
 import { RackRuler } from "./rack-ruler"
 import { FaceLabel } from "./text-sprite"
 import {
+  rackOpeningM,
   RACK_BASE_M,
   RACK_CAP_M,
   TRANSPARENT_ORDER,
@@ -85,6 +86,8 @@ export function RackMesh({
   selection,
   showUNumbers,
   showNames,
+  namesScope = "all",
+  namesAtEdge = false,
   showAirflow,
   shellMode = "cutaway",
   ghosted = false,
@@ -100,6 +103,12 @@ export function RackMesh({
   selection: Sel | null
   showUNumbers: boolean
   showNames: boolean
+  /** Which racks carry device name plates: every one, or only the rack the
+   * operator has highlighted (selected, or holding the focused device). */
+  namesScope?: "all" | "selected"
+  /** Name plates start at the rail edge and run outward, off the gear,
+   * instead of sitting on the faceplate. */
+  namesAtEdge?: boolean
   /** Draw intake/exhaust cones per device (near tier only). */
   showAirflow?: boolean
   shellMode?: ShellMode
@@ -403,9 +412,27 @@ export function RackMesh({
       )}
       {showOverlays &&
         showNames &&
+        (namesScope !== "selected" || engaged) &&
         positioned.map((dev) => {
           const { y, h } = deviceYM(rack, dev)
-          return (
+          return namesAtEdge ? (
+            // Off the gear: the plate starts just past the rail opening (the
+            // frame strip) and runs outward, so nothing on the faceplate is
+            // covered. The face is drawn mirrored (π about Y), so "outward
+            // to the viewer's right" is world −x here.
+            <FaceLabel
+              key={`name-${dev.id}`}
+              text={dev.name}
+              heightM={Math.min(0.03, h * 0.7)}
+              align="left"
+              anchorX="left"
+              position={[
+                -(rackOpeningM(rack) / 2 + 0.01),
+                y + h / 2,
+                -depth / 2 - 0.01,
+              ]}
+            />
+          ) : (
             <FaceLabel
               key={`name-${dev.id}`}
               text={dev.name}

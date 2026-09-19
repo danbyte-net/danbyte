@@ -2822,6 +2822,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
                   "description", "comments", "airflow", "effective_airflow",
+                  "port_labels",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",
@@ -2885,12 +2886,63 @@ class CableMiniSerializer(NumIdModelSerializer):
 
     class Meta:
         model = Cable
-        fields = ["id", "type", "color", "status"]
+        fields = ["id", "label", "type", "color", "status"]
+
+
+_TERMINATION_COMPONENTS = (
+    "interface", "front_port", "rear_port", "console_port", "console_server_port",
+    "power_port", "power_outlet", "aux_port", "power_feed", "circuit_termination",
+)
+
+
+def termination_component(term):
+    """The component a cable termination sits on (exactly one FK is set)."""
+    for name in _TERMINATION_COMPONENTS:
+        comp = getattr(term, name, None)
+        if comp is not None:
+            return comp
+    return None
+
+
+def far_end(term):
+    """``{"device": name, "port": name}`` for the other end of ``term``'s
+    cable, or None when the cable ends nowhere yet. Reads the prefetched
+    terminations, so a list costs no query per row."""
+    if term is None:
+        return None
+    for other in term.cable.terminations.all():
+        if other.pk == term.pk:
+            continue
+        comp = termination_component(other)
+        if comp is None:
+            return None
+        device = getattr(comp, "device", None)
+        return {
+            "device": device.name if device is not None else "",
+            "port": getattr(comp, "name", "") or "",
+            # The far port's own printed label - what a marker prints for
+            # "far-end port"; its name is never printed as a label.
+            "port_label": getattr(comp, "label", "") or "",
+        }
+    return None
+
+
+# Prefetch that lets ``far_end`` read the other end without a query per
+# row, for the kinds a faceplate marker can carry.
+FAR_END_PREFETCH = (
+    "terminations__cable__terminations__interface__device",
+    "terminations__cable__terminations__front_port__device",
+    "terminations__cable__terminations__rear_port__device",
+)
 
 
 def _point_cable(point):
     t = point.terminations.all().first()  # ≤1 due to the per-port unique rule
     return CableMiniSerializer(t.cable).data if t is not None else None
+
+
+def _point_far_end(point):
+    return far_end(next(iter(point.terminations.all()), None))
 
 
 def _point_reservation(point):
@@ -2997,6 +3049,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
         return _point_cable(obj)
+
+    # What the cable reaches: the far end's device and port, for the port
+    # labels a faceplate can print ("far-end device"), the same names the
+    # cable row shows.
+    link_peer = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_link_peer(self, obj):
+        return _point_far_end(obj)
 
     reservation = serializers.SerializerMethodField()
 
@@ -3168,7 +3229,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                   "mode", "mode_display", "vlan", "vlan_id",
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",
                   "tags", "tag_ids",
-                  "cable", "cable_count", "reservation",
+                  "cable", "cable_count", "reservation", "link_peer", "hide_label", "label_color",
                   "ip_addresses", "tunnel_terminations",
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",

@@ -61,6 +61,10 @@ export function useMe() {
     faceplateMarkedLit: me.faceplate_mark_connected_lit === true,
     /** Rendered faceplates print the interface prefix before each port group. */
     faceplateGroupLabels: me.faceplate_group_labels === true,
+    /** What every faceplate render prints inside each port marker ("" = nothing). */
+    faceplatePortLabels: me.faceplate_port_labels ?? "",
+    /** Text colour of those labels. */
+    faceplatePortLabelColor: me.faceplate_port_label_color || "#ffffff",
     /** May the user invite viewers to this specific site (delegation)?
      * True for admins/global editors ("all") or when the site is in their
      * delegable set. Always false when the deployment toggle is off. */

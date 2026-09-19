@@ -447,6 +447,7 @@ export function CablesLayer({
   scene,
   xray = false,
   scale = 1,
+  look = "lit",
   selectedId,
   onSelect,
 }: {
@@ -457,6 +458,8 @@ export function CablesLayer({
   xray?: boolean
   /** Jacket multiplier from the View menu - 1 is life size. */
   scale?: number
+  /** Shaded (lit like the room) or flat solid colour. */
+  look?: "lit" | "flat"
   selectedId: string | null
   onSelect: (cableId: string) => void
 }) {
@@ -517,6 +520,7 @@ export function CablesLayer({
               points={points}
               color={cp.color || CABLE_FALLBACK}
               radius={cableRadiusM(cp.type) * scale}
+              flat={look === "flat"}
               xray={xray}
               onClick={() => onSelect(cp.id)}
             />
@@ -555,12 +559,16 @@ function CableTube({
   points,
   color,
   radius,
+  flat = false,
   xray = false,
   onClick,
 }: {
   points: [number, number, number][]
   color: string
   radius: number
+  /** Solid colour, unlit - the jacket reads the same from every angle and
+   * never picks up the room's highlights. */
+  flat?: boolean
   xray?: boolean
   onClick: () => void
 }) {
@@ -595,15 +603,25 @@ function CableTube({
       }}
       renderOrder={xray ? XRAY_CABLE_ORDER : 0}
     >
-      <meshStandardMaterial
-        color={color}
-        roughness={0.55}
-        emissive={color}
-        emissiveIntensity={hovered ? 0.5 : 0}
-        depthTest={!xray}
-        transparent={xray}
-        opacity={xray ? 0.75 : 1}
-      />
+      {flat ? (
+        <meshBasicMaterial
+          color={hovered ? "#ffffff" : color}
+          toneMapped={false}
+          depthTest={!xray}
+          transparent={xray}
+          opacity={xray ? 0.75 : 1}
+        />
+      ) : (
+        <meshStandardMaterial
+          color={color}
+          roughness={0.55}
+          emissive={color}
+          emissiveIntensity={hovered ? 0.5 : 0}
+          depthTest={!xray}
+          transparent={xray}
+          opacity={xray ? 0.75 : 1}
+        />
+      )}
     </mesh>
   )
 }

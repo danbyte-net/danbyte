@@ -84,6 +84,8 @@ export default function FloorScene3D({
   traceCableId,
   showUNumbers = false,
   showNames = false,
+  namesScope = "all",
+  namesAtEdge = false,
   showAirflow = false,
   floorPeek = false,
   showCables = false,
@@ -92,6 +94,7 @@ export default function FloorScene3D({
   shellMode = "cutaway",
   quality = "auto",
   cableScale = 1,
+  cableLook = "lit",
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -101,6 +104,10 @@ export default function FloorScene3D({
   /** Overlay toggles - owned by the route's View popover, like the 2D prefs. */
   showUNumbers?: boolean
   showNames?: boolean
+  /** Name plates on every rack, or only the highlighted one. */
+  namesScope?: "all" | "selected"
+  /** Name plates start at the rail edge and run off the gear. */
+  namesAtEdge?: boolean
   showAirflow?: boolean
   /** Lift the raised floor: translucent finished-floor slabs so underfloor
    * trays and cable runs read through the plenum. */
@@ -117,6 +124,8 @@ export default function FloorScene3D({
   quality?: RenderQualitySetting
   /** Cable jacket multiplier - 1 is life size; per-device, from the View menu. */
   cableScale?: number
+  /** Shaded tubes, or a flat solid colour. */
+  cableLook?: "lit" | "flat"
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -507,7 +516,7 @@ export default function FloorScene3D({
       >
         <InvalidatorBridge apiRef={invalidateRef} />
         <InvalidateOnToggle
-          stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
+          stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${namesScope}|${namesAtEdge}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
         />
         {/* Light rig: soft ambient + one shadow-casting key light + a dim
             fill, over a procedural studio environment (PMREM'd
@@ -562,6 +571,8 @@ export default function FloorScene3D({
             attention={attention}
             showUNumbers={showUNumbers}
             showNames={showNames}
+            namesScope={namesScope}
+            namesAtEdge={namesAtEdge}
             showAirflow={showAirflow}
             shellMode={shellMode}
             ghosted={focusOn && !!selection && selection.tileId !== t.id}
@@ -652,6 +663,7 @@ export default function FloorScene3D({
             scene={data}
             xray={shellMode === "xray"}
             scale={cableScale}
+            look={cableLook}
             selectedId={cableSel}
             onSelect={(id) => {
               setSelection(null)

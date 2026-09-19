@@ -330,6 +330,10 @@ export interface Me {
   faceplate_mark_connected_lit?: boolean
   /** Rendered faceplates print the interface prefix before each port group. */
   faceplate_group_labels?: boolean
+  /** What every faceplate render prints inside each port marker; "" = nothing. */
+  faceplate_port_labels?: PortLabelSource
+  /** Text colour of those labels (#rrggbb). */
+  faceplate_port_label_color?: string
   /** Whether the in-browser SSH terminal is enabled deployment-wide. */
   ssh_terminal_enabled?: boolean
   /** First-run wizard: true once this tenant has completed or skipped it. */
@@ -1377,6 +1381,8 @@ export interface Device {
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
   airflow: string
+  /** Port labels on this device's faceplate renders: inherit / on / off. */
+  port_labels: DevicePortLabels
   latitude: string | null
   longitude: string | null
   location: { id: string; name: string } | null
@@ -1462,6 +1468,7 @@ export interface DeviceWritePayload {
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments?: string
   airflow?: string
+  port_labels?: DevicePortLabels
   latitude?: string | null
   longitude?: string | null
   location_id?: string | null
@@ -1876,8 +1883,19 @@ export interface Antenna {
   updated_at: string
 }
 
+/** What a faceplate prints inside a port marker; "" prints nothing. */
+export type PortLabelSource =
+  | ""
+  | "interface"
+  | "cable"
+  | "peer_device"
+  | "peer_port"
+/** A device's say over the deployment's port-label setting. */
+export type DevicePortLabels = "" | "on" | "off"
+
 export interface CableMini {
   id: string
+  label: string
   type: string
   color: string
   status: StatusMini | null
@@ -1899,6 +1917,13 @@ export interface FacePort {
   connected: boolean
   /** Real-world name when it differs from the template name ("X1-P1"). */
   label?: string
+  /** What the marker may print instead of the label: the cable's label or
+   * the far end of the cable. `label_hidden` = the port opted out. */
+  cable_label?: string
+  peer?: { device: string; port: string; port_label: string } | null
+  label_hidden?: boolean
+  /** This port's own label colour, "" = the deployment's. */
+  label_color?: string
   /** free | connected | reserved | marked (mark_connected, no cable). */
   cable_state?: string
   cable_id: string | null
@@ -2151,6 +2176,13 @@ export interface Interface {
   tags: Tag[]
   cable: CableMini | null
   cable_count: number
+  /** The far end of the cable - device and port names, and the far port's
+   * printed label - or null. */
+  link_peer: { device: string; port: string; port_label: string } | null
+  /** Leave this port's marker blank on faceplate renders. */
+  hide_label: boolean
+  /** This port's own label colour (#rrggbb), "" = the deployment's. */
+  label_color: string
   reservation: PortReservationMini | null
   ip_addresses: { id: string; ip_address: string }[]
   /** VPN tunnel ends this interface terminates (the "in a tunnel" chip). */
@@ -2191,6 +2223,8 @@ export interface InterfaceWritePayload {
   is_uplink?: boolean
   mgmt_only?: boolean
   mark_connected?: boolean
+  hide_label?: boolean
+  label_color?: string
   combo_group?: string
   duplex?: string
   poe_mode?: string
@@ -6742,6 +6776,8 @@ export interface DeploymentSettings {
   human_ids_enabled: boolean
   faceplate_mark_connected_lit: boolean
   faceplate_group_labels: boolean
+  faceplate_port_labels: PortLabelSource
+  faceplate_port_label_color: string
   date_format: DateFormat
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */

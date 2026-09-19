@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 
 import {
+  type DevicePortLabels,
   api,
   DEFAULT_DEVICE_FIELD_VISIBILITY,
   type Device,
@@ -42,6 +43,11 @@ import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { useMe } from "@/lib/use-me"
+
+const PORT_LABEL_OPTIONS = [
+  { value: "on", label: "Shown" },
+  { value: "off", label: "Hidden" },
+]
 
 const AIRFLOW_OPTIONS: { value: string; label: string }[] = [
   { value: "front-to-rear", label: "Front to rear" },
@@ -164,6 +170,9 @@ export function DeviceForm({
     seed?.cluster?.id ?? null
   )
   const [airflow, setAirflow] = useState(seed?.airflow ?? "")
+  const [portLabels, setPortLabels] = useState<DevicePortLabels>(
+    seed?.port_labels ?? ""
+  )
   const [latitude, setLatitude] = useState(device?.latitude ?? "")
   const [longitude, setLongitude] = useState(device?.longitude ?? "")
   // ─── Stack membership (virtual chassis) ──────────────────────────────────
@@ -204,6 +213,7 @@ export function DeviceForm({
     setLocationId(device.location?.id ?? null)
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
+    setPortLabels(device.port_labels ?? "")
     setLatitude(device.latitude ?? "")
     setLongitude(device.longitude ?? "")
     setVcId(device.virtual_chassis?.id ?? null)
@@ -423,6 +433,7 @@ export function DeviceForm({
             : null,
         comments: comments.trim(),
         airflow,
+        port_labels: portLabels,
         latitude: latitude.trim() !== "" ? latitude.trim() : null,
         longitude: longitude.trim() !== "" ? longitude.trim() : null,
         location_id: locationId,
@@ -638,6 +649,14 @@ export function DeviceForm({
                 error={fieldErrors.airflow}
               />
             )}
+            <FormSelect
+              label="Port labels"
+              value={portLabels === "" ? null : portLabels}
+              onChange={(v) => setPortLabels((v ?? "") as DevicePortLabels)}
+              noneLabel="Inherit"
+              options={PORT_LABEL_OPTIONS}
+              error={fieldErrors.port_labels}
+            />
           </FormSection>
 
           <FormSection title="Placement" card>

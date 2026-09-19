@@ -95,6 +95,28 @@ export function storeCableScale(v: number): void {
   }
 }
 
+const CABLE_LOOK_KEY = "danbyte.floorplan3d.cableLook"
+export type CableLook = "lit" | "flat"
+
+/** How a cable's jacket is shaded: lit like the rest of the room, or a
+ * flat solid colour that reads the same from every angle. Per device. */
+export function storedCableLook(): CableLook {
+  try {
+    const v = window.localStorage.getItem(CABLE_LOOK_KEY)
+    return v === "flat" ? "flat" : "lit"
+  } catch {
+    return "lit"
+  }
+}
+
+export function storeCableLook(v: CableLook): void {
+  try {
+    window.localStorage.setItem(CABLE_LOOK_KEY, v)
+  } catch {
+    // Storage full/blocked - the session keeps the in-memory choice.
+  }
+}
+
 /** The stored setting, sanitised - anything unrecognised reads as "auto". */
 export function storedQualitySetting(): RenderQualitySetting {
   try {

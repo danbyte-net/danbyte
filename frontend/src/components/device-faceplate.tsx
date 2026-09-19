@@ -76,6 +76,13 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
 import { cableState } from "@/lib/cable-state"
+import {
+  effectivePortLabelSource,
+  fitLabelFontPx,
+  portLabelText,
+  type PortLabelFacts,
+} from "@/lib/port-label"
+import type { DevicePortLabels, PortLabelSource } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { TruncatedText } from "@/components/ui/truncated-text"
 
@@ -192,6 +199,102 @@ function liveLine(o: ObservedPort): string {
 
 // ─── port cage ──────────────────────────────────────────────────────────────
 
+/** A port's label fitted inside its marker or cage: an SVG the size of the
+ * box, the text sized by `fitLabelFontPx` for that box, so however long the
+ * label it never leaves the port (the box is the viewport and the fit keeps
+ * the glyphs inside it). `w`/`h` are the box's dimensions in ANY unit with
+ * the right aspect - CSS px for a cage, photo px for a photo marker. */
+export function PortLabelText({
+  text,
+  w,
+  h,
+  color = "#ffffff",
+  topInset = 0,
+}: {
+  text: string
+  w: number
+  h: number
+  color?: string
+  /** Box height (same unit as `h`) reserved at the top - the rendered cage
+   * keeps its port number there, above the label. */
+  topInset?: number
+}) {
+  const bh = h - topInset
+  if (!text || w <= 0 || bh <= 0) return null
+  const fs = fitLabelFontPx(text, w, bh)
+  if (fs <= 0) return null
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <text
+        x={w / 2}
+        y={topInset + bh / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={fs}
+        fontWeight={600}
+        fontFamily="'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif"
+        fill={color}
+        stroke="rgba(0,0,0,0.65)"
+        strokeWidth={fs * 0.14}
+        paintOrder="stroke"
+      >
+        {text}
+      </text>
+    </svg>
+  )
+}
+
+/** What the faceplate below prints inside its port markers: the source in
+ * force on THIS device (deployment setting + the device's override) and the
+ * colour. FaceplateView provides it; a cage or marker outside a view falls
+ * back to the deployment setting alone. */
+const PortLabelContext = React.createContext<{
+  source: PortLabelSource
+  color: string
+} | null>(null)
+
+export function usePortLabelStyle(): {
+  source: PortLabelSource
+  color: string
+} {
+  const ctx = React.useContext(PortLabelContext)
+  const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
+  return ctx ?? { source: faceplatePortLabels, color: faceplatePortLabelColor }
+}
+
+/** The facts a port offers a label - one shape for a live Interface row and
+ * a face-ports entry, so the text rule lives in one place. */
+function ifaceLabelFacts(i: Interface): PortLabelFacts {
+  return {
+    label: i.label,
+    hideLabel: i.hide_label,
+    cableLabel: i.cable?.label,
+    peerDevice: i.link_peer?.device,
+    peerPortLabel: i.link_peer?.port_label,
+    color: i.label_color,
+  }
+}
+function facePortLabelFacts(fp: FacePort): PortLabelFacts {
+  return {
+    label: fp.label,
+    hideLabel: fp.label_hidden,
+    cableLabel: fp.cable_label,
+    peerDevice: fp.peer?.device,
+    peerPortLabel: fp.peer?.port_label,
+    color: fp.label_color,
+  }
+}
+
+/** The port number kept above the label in a rendered cage needs this much
+ * cage height (CSS px): an 8 px number band plus room for a readable label.
+ * A life-size RJ45 cage is about 20 px; shorter cages print the label alone. */
+const CAGE_NUMBER_MIN_H = 18
+
 /** One connector cage, mm-sized. Interfaces get state color + link + hover
  * card; other component kinds render as static cages with a title tooltip;
  * unmatched ports are dashed ghosts; blanks are empty cages. */
@@ -248,6 +351,9 @@ function Cage({
   const i = r.iface
   const state = portState(i)
   const { faceplateMarkedLit } = useMe()
+  const labelStyle = usePortLabelStyle()
+  const portLabel = portLabelText(labelStyle.source, ifaceLabelFacts(i))
+  const keepNumber = showNum && style.height >= CAGE_NUMBER_MIN_H
   const trunk = i.mode === "tagged" || i.mode === "tagged-all"
   const hasVlan = trunk || !!i.vlan
   // Cabled ports wear their speed TIER (shared ramp); free ports get a muted
@@ -295,7 +401,32 @@ function Cage({
             !cabled && PORT_STATE_CLASS[state]
           )}
         >
-          {showNum ? (r.num ?? "·") : ""}
+          {portLabel ? (
+            <>
+              {/* The number stays, small, along the top edge; the label is
+                  fitted to what is left below it. A cage too short for both
+                  prints the label alone - the hover card still names the port. */}
+              {keepNumber && (
+                <span
+                  aria-hidden
+                  className="absolute top-0 right-0 left-0 text-center text-[7px] leading-[8px] opacity-70"
+                >
+                  {r.num ?? ""}
+                </span>
+              )}
+              <PortLabelText
+                text={portLabel}
+                w={style.width}
+                h={style.height}
+                color={i.label_color || labelStyle.color}
+                topInset={keepNumber ? 8 : 0}
+              />
+            </>
+          ) : showNum ? (
+            (r.num ?? "·")
+          ) : (
+            ""
+          )}
           {trunk && (
             <span
               className="absolute inset-x-1 top-0 h-[2px] rounded-b bg-current opacity-70"
@@ -944,6 +1075,7 @@ export function FaceplateView({
   legendKey = "panel",
   className,
   fit,
+  portLabels,
 }: {
   mode?: FaceplateMode
   deviceTypeId?: string | null
@@ -956,10 +1088,20 @@ export function FaceplateView({
   legendKey?: string
   className?: string
   fit?: "container" | number
+  /** The device's own say over port labels: inherit / on / off. */
+  portLabels?: DevicePortLabels | null
 }) {
   const hasImage = useHasImagePorts(deviceTypeId)
-  if (mode === "image" && hasImage && deviceTypeId) {
-    return (
+  const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
+  const labelStyle = useMemo(
+    () => ({
+      source: effectivePortLabelSource(faceplatePortLabels, portLabels),
+      color: faceplatePortLabelColor,
+    }),
+    [faceplatePortLabels, faceplatePortLabelColor, portLabels]
+  )
+  const panel =
+    mode === "image" && hasImage && deviceTypeId ? (
       <ImagePortsFaceplate
         deviceTypeId={deviceTypeId}
         deviceId={deviceId}
@@ -971,21 +1113,24 @@ export function FaceplateView({
         legendKey={legendKey}
         className={className}
       />
+    ) : (
+      <DeviceFaceplate
+        interfaces={interfaces}
+        deviceId={deviceId}
+        deviceTypeId={deviceTypeId}
+        vcPosition={vcPosition}
+        side={side}
+        fit={fit}
+        observed={observed}
+        onLegend={onLegend}
+        legendKey={legendKey}
+        className={className}
+      />
     )
-  }
   return (
-    <DeviceFaceplate
-      interfaces={interfaces}
-      deviceId={deviceId}
-      deviceTypeId={deviceTypeId}
-      vcPosition={vcPosition}
-      side={side}
-      fit={fit}
-      observed={observed}
-      onLegend={onLegend}
-      legendKey={legendKey}
-      className={className}
-    />
+    <PortLabelContext.Provider value={labelStyle}>
+      {panel}
+    </PortLabelContext.Provider>
   )
 }
 
@@ -1041,6 +1186,7 @@ export function ImagePortsFaceplate({
   className?: string
 }) {
   const { faceplateMarkedLit } = useMe()
+  const labelStyle = usePortLabelStyle()
   const { canDo } = useMe()
   // Editing a bay writes to the device's parts, so it needs the same permission
   // the Hardware tab does - and a device to write them to. Module bays install
@@ -1101,6 +1247,7 @@ export function ImagePortsFaceplate({
   const photoView = photoDoc?.view?.[side]
   const photoScale = photoView ? (photoView.scale ?? null) : 1
   const [photoW, setPhotoW] = useState<number | null>(null)
+  const [photoH, setPhotoH] = useState<number | null>(null)
   const wantsInventory =
     !!deviceId && markers.some((m) => m.kind === "inventory-item")
   // Console / power / aux / panel-port markers resolve through the same
@@ -1257,7 +1404,19 @@ export function ImagePortsFaceplate({
         <img
           src={image}
           alt={`${side} panel`}
-          onLoad={(e) => setPhotoW(e.currentTarget.naturalWidth)}
+          // A cached photo is complete before React attaches onLoad (a fresh
+          // page load hydrates after the image), so read its size from the
+          // element too - the port labels need the photo's aspect.
+          ref={(el) => {
+            if (el?.complete && el.naturalWidth) {
+              setPhotoW((w) => (w === el.naturalWidth ? w : el.naturalWidth))
+              setPhotoH((h) => (h === el.naturalHeight ? h : el.naturalHeight))
+            }
+          }}
+          onLoad={(e) => {
+            setPhotoW(e.currentTarget.naturalWidth)
+            setPhotoH(e.currentTarget.naturalHeight)
+          }}
           className={cn(
             "block select-none",
             photoScale != null
@@ -1520,6 +1679,21 @@ export function ImagePortsFaceplate({
               fp.drift &&
                 "ring-2 ring-amber-500 ring-offset-1 ring-offset-background"
             )
+            // The marker's box in photo pixels - the aspect PortLabelText
+            // fits the text to. Unknown until the photo has loaded.
+            const labelStr = portLabelText(
+              labelStyle.source,
+              facePortLabelFacts(fp)
+            )
+            const labelText =
+              labelStr && photoW && photoH ? (
+                <PortLabelText
+                  text={labelStr}
+                  w={m.w * photoW}
+                  h={m.h * photoH}
+                  color={fp.label_color || labelStyle.color}
+                />
+              ) : null
             return (
               <HoverCard
                 key={`${m.name}-${idx}`}
@@ -1544,7 +1718,9 @@ export function ImagePortsFaceplate({
                         portClass,
                         "cursor-pointer hover:ring-2 hover:ring-primary/40"
                       )}
-                    />
+                    >
+                      {labelText}
+                    </button>
                   ) : (
                     <span
                       style={portStyle}
@@ -1553,7 +1729,9 @@ export function ImagePortsFaceplate({
                       data-port-kind={termKind ?? ""}
                       data-port-id={fp.id ?? ""}
                       className={portClass}
-                    />
+                    >
+                      {labelText}
+                    </span>
                   )}
                 </HoverCardTrigger>
                 <HoverCardContent
@@ -1641,6 +1819,20 @@ export function ImagePortsFaceplate({
                     state === "disabled" && "border-dashed"
                   )}
                 >
+                  {(() => {
+                    const t = portLabelText(
+                      labelStyle.source,
+                      ifaceLabelFacts(iface)
+                    )
+                    return t && photoW && photoH ? (
+                      <PortLabelText
+                        text={t}
+                        w={m.w * photoW}
+                        h={m.h * photoH}
+                        color={iface.label_color || labelStyle.color}
+                      />
+                    ) : null
+                  })()}
                   {obs && (
                     <span
                       className={cn(

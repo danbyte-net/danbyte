@@ -24,6 +24,8 @@ export interface SceneDevice {
   position: number | null
   /** Stack member number; `{position}` in a marker name renders to it. */
   vc_position?: number | null
+  /** Port labels on this device's quads: inherit / on / off. */
+  port_labels?: "" | "on" | "off"
   face: "" | "front" | "rear"
   rack_side: "" | "left" | "right"
   /** Zero-U side mounting (vertical PDU strips); ""/absent = racked. */

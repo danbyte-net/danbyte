@@ -698,6 +698,28 @@ class DeploymentSettings(TimestampedModel):
         help_text="Rendered faceplates print each port group's interface prefix "
                   "(Ethernet1/) in front of its cages.",
     )
+    # Text printed inside each port's cage or photo marker, on the drawn
+    # faceplate, the photo panel and the 3D room alike: the port's own label
+    # ("A01"), the cable's label, or what sits at the far end. The text is
+    # fitted to the marker and never leaves it; five characters or fewer
+    # stay readable. A device can force it on or off (Device.port_labels)
+    # and a port can opt out (Interface.hide_label).
+    PORT_LABEL_SOURCES = [
+        ("", "Off"),
+        ("interface", "Port label"),
+        ("cable", "Cable label"),
+        ("peer_device", "Far-end device"),
+        ("peer_port", "Far-end port label"),
+    ]
+    faceplate_port_labels = models.CharField(
+        max_length=16, choices=PORT_LABEL_SOURCES, blank=True, default="",
+        help_text="What faceplates, photo panels and the 3D room print inside "
+                  "each port marker; blank prints nothing.",
+    )
+    faceplate_port_label_color = models.CharField(
+        max_length=7, blank=True, default="#ffffff",
+        help_text="Text colour of the port labels (#rrggbb).",
+    )
 
     # ─── in-app updates ──────────────────────────────────────────────────
     # Release repo Danbyte checks for updates. Blank = the official repo. The

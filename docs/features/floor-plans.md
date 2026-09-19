@@ -134,10 +134,17 @@ uploaded blueprint textures it.
   front of it, and painted steel and galvanised tray read as material
   rather than flat grey. On High quality, screen-space ambient occlusion
   adds the interior depth that makes an open cabinet look hollow.
+- **Device names** (View menu, 3D): name plates per device. Underneath,
+  **All racks / Highlighted rack** limits them to the rack you have selected
+  or are focused on, and **Names off the gear** starts each plate at the
+  rail edge so it runs over the frame and past the cabinet instead of
+  covering the faceplate.
 - **Cable thickness** (View menu, 3D): a slider from half to four times
   life size. Real jacket diameters are right up close and vanish across a
-  hall; pick what reads at the distance you work at. Saved per device in the
-  browser, like Quality.
+  hall; pick what reads at the distance you work at. Under it, **Shaded /
+  Solid** picks the jacket's look: shaded like the rest of the room, or a
+  flat solid colour that reads the same from every angle. Both saved per
+  device in the browser, like Quality.
 - **Quality** (View menu, 3D): Auto / Low / Medium / High - how much the
   effects may cost. Low drops shadows and caps resolution (software
   rendering survives), Medium adds shadows, High adds ambient occlusion.
