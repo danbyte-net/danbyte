@@ -87,3 +87,29 @@ class DashboardScopeWidgetTests(APITestCase):
         resp = self.client.get("/api/dashboard/")
         rows = resp.json()["ip_by_scope"]
         self.assertEqual([r["name"] for r in rows], ["Public"])
+
+
+class ScopeAggregateTests(APITestCase):
+    """The dashboard's scope distribution is a grouped count in the database
+    and agrees with the Python classifier for every bucket (#201)."""
+
+    def test_sql_buckets_match_the_classifier(self):
+        from api.dashboard_views import _ip_by_scope
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        v4 = Prefix.objects.create(tenant=tenant, cidr="0.0.0.0/0")
+        v6 = Prefix.objects.create(tenant=tenant, cidr="::/0")
+        addrs = [
+            "192.168.1.10", "10.5.5.5", "172.16.9.9", "fc00::1", "192.0.2.7",
+            "100.64.0.1", "100.127.255.254",
+            "127.0.0.1", "169.254.1.1", "::1", "fe80::1", "224.0.0.1", "240.0.0.9",
+            "8.8.8.8", "1.1.1.1", "2606:4700:4700::1111",
+        ]
+        for a in addrs:
+            IPAddress.objects.create(tenant=tenant, ip_address=a, prefix=v6 if ":" in a else v4)
+        want = {"Public": 0, "Private": 0, "CGNAT": 0, "Special": 0}
+        for a in addrs:
+            want[_classify_ip_scope(a)] += 1
+        got = {row["name"]: row["count"] for row in _ip_by_scope(IPAddress.objects.filter(tenant=tenant))}
+        self.assertEqual(got, want)

@@ -11,6 +11,8 @@ type, VRF, cluster, provider, manufacturer, group and tags, so a
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 import re
 import unicodedata
@@ -324,7 +326,8 @@ def _facets(obj, spec: IndexSpec) -> dict:
             out[_FACET_KEYS.get(attr, attr)] = vals
     if hasattr(obj, "tags") and _has_field(obj, "tags"):
         try:
-            tags = [fold(t.name) for t in obj.tags.all()] + [fold(t.slug) for t in obj.tags.all()]
+            rows = list(obj.tags.all())
+            tags = [fold(t.name) for t in rows] + [fold(t.slug) for t in rows]
         except Exception:  # noqa: BLE001
             tags = []
         tags = [t for t in dict.fromkeys(tags) if t]
@@ -507,8 +510,35 @@ def rebuild(slugs=None, *, log=None) -> dict[str, int]:
 
 # ─── signals ───────────────────────────────────────────────────────────────
 
+# While a bulk operation runs, saves are collected here instead of indexed
+# one by one; the collector indexes each object once at the end (#197).
+_deferred: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "search_index_deferred", default=None
+)
+
+
+@contextlib.contextmanager
+def deferred(flush: bool = True):
+    """Collect every save inside the block and index each object once when
+    it ends - a row saved three times during an import costs one index
+    write, and a dry run (``flush=False``) indexes nothing it rolled back."""
+    pending: dict = {}
+    token = _deferred.set(pending)
+    try:
+        yield pending
+    finally:
+        _deferred.reset(token)
+        if flush:
+            for instance in pending.values():
+                index_object(instance)
+
+
 def _on_save(sender, instance, **kwargs):
     if kwargs.get("raw"):
+        return
+    pending = _deferred.get()
+    if pending is not None:
+        pending[(instance._meta.label_lower, str(instance.pk))] = instance
         return
     index_object(instance)
 

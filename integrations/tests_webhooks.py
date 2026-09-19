@@ -137,3 +137,10 @@ class WebhookHeaderSecrecyTests(APITestCase):
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(Webhook.objects.get(name="n").additional_headers, "X-Key: abc")
         self.assertNotIn("additional_headers", r.json())
+
+    def test_a_line_without_a_colon_is_not_a_name(self):
+        self.hook.additional_headers = "Authorization: Bearer\n  eyJTOKEN.sig\nX-Api-Key: abc"
+        self.hook.save()
+        row = self.client.get(f"/api/webhooks/{self.hook.id}/").json()
+        self.assertEqual(row["additional_header_names"], ["Authorization", "X-Api-Key"])
+        self.assertNotIn("eyJTOKEN", str(row))

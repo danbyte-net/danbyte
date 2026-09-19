@@ -103,7 +103,7 @@ def available_fields(object_type, tenant=None) -> dict | None:
         "tokens": sorted(set(tokens)),
         # Always in the render context, plus any per-type extras.
         "special": [
-            "url", "short_url", "short_id", "qr", "obj",
+            "url", "short_url", "short_id", "short_hex", "qr", "obj",
             *_TYPE_SPECIALS.get(name, []),
         ],
     }
@@ -380,7 +380,11 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
     ctx = _context(obj, url)
     # `short_id` = the per-tenant human number; `short_url` = the compact `/l/…`
     # link that resolves to this object (keeps the QR small).
-    ctx["short_id"] = getattr(obj, "numid", None) or ""
+    # `short_hex` = the first eight characters of the UUID, an id that reads
+    # as one and is unique across tenants; `short_id` falls back to it so a
+    # label always carries something a person can type into a search box.
+    ctx["short_hex"] = str(obj.pk)[:8]
+    ctx["short_id"] = getattr(obj, "numid", None) or ctx["short_hex"]
     ctx["short_url"] = short_url
 
     # HTML body: autoescape ON so a field value with markup is escaped, not

@@ -1,7 +1,7 @@
 """Evaluate compliance rules against current data → violations (computed)."""
 from __future__ import annotations
 
-import re
+import regex
 
 from .models import ComplianceRule, OBJECT_TYPES
 
@@ -12,6 +12,7 @@ from .models import ComplianceRule, OBJECT_TYPES
 # Follow-up: swap ``re`` for a linear-time engine (google-re2) to remove the
 # backtracking risk entirely, then this cap can go.
 _REGEX_VALUE_CAP = 10_000
+_REGEX_TIMEOUT = 0.2  # seconds per match
 
 # object_type → (model, detail-route key for the SPA).
 _ROUTES = {
@@ -57,8 +58,12 @@ def _violates(rule: ComplianceRule, obj, tag_slugs) -> bool:
         if _empty(value):
             return False  # presence is a separate (required) check
         try:
-            return re.search(rule.pattern, str(value)[:_REGEX_VALUE_CAP]) is None
-        except re.error:
+            # A user pattern under a deadline: a pathological one stops
+            # after the timeout instead of holding the request (#202).
+            return regex.search(
+                rule.pattern, str(value)[:_REGEX_VALUE_CAP], timeout=_REGEX_TIMEOUT
+            ) is None
+        except (regex.error, TimeoutError):
             return False
     return False
 
@@ -93,21 +98,27 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
     rule_rows = []
     violations = []
 
+    # One scan per object type, every rule of that type applied to each row
+    # as it goes by - ten rules on addresses read the addresses once (#200).
+    by_type: dict[str, list] = {}
     for rule in rules:
-        model = models.get(rule.object_type)
-        if model is None:
-            continue
+        if rule.object_type in models:
+            by_type.setdefault(rule.object_type, []).append(rule)
+    counts = {rule.id: 0 for rule in rules}
+    for object_type, type_rules in by_type.items():
+        model = models[object_type]
         qs = model.objects.filter(tenant=tenant)
-        needs_tags = rule.check_type == "required_tag"
+        needs_tags = any(r.check_type == "required_tag" for r in type_rules)
         if needs_tags:
             qs = qs.prefetch_related("tags")
-        count = 0
         for obj in qs[:cap]:
             tag_slugs = (
                 {t.slug for t in obj.tags.all()} if needs_tags else set()
             )
-            if _violates(rule, obj, tag_slugs):
-                count += 1
+            for rule in type_rules:
+                if not _violates(rule, obj, tag_slugs):
+                    continue
+                counts[rule.id] += 1
                 # Bound the flat list, but keep it generous: per-object UI
                 # markers (the violation badge) rely on object_ids being
                 # present here, not just the aggregate per-rule counts.
@@ -126,6 +137,10 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
                             "object_repr": str(obj)[:120],
                         }
                     )
+    for rule in rules:
+        if rule.object_type not in models:
+            continue
+        count = counts[rule.id]
         rule_rows.append(
             {
                 "id": str(rule.id),

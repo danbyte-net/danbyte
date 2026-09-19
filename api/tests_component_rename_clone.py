@@ -109,3 +109,57 @@ class ComponentRenameCloneTests(APITestCase):
         self.assertTrue(
             InterfaceTemplate.objects.filter(device_type=self.dt, name="Gi1/0/1 copy").exists()
         )
+
+
+class RenamePatternBoundsTests(APITestCase):
+    """A user pattern is bounded (#202): too long is refused, and a
+    pathological one is cut off instead of holding the worker."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="Acme", slug="acme")
+        self.dt = DeviceType.objects.create(tenant=self.tenant, manufacturer=mfr, model="SW-1")
+        self.t = InterfaceTemplate.objects.create(device_type=self.dt, name="a" * 29 + "!")
+        admin = User.objects.create_superuser("root", "r@a.c", "pw")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _rename(self, find):
+        return self.client.post(
+            "/api/interface-templates/bulk-rename/",
+            {"ids": [str(self.t.id)], "find": find, "replace": "x", "use_regex": True},
+            format="json",
+        )
+
+    def test_pathological_pattern_is_cut_off(self):
+        # ``(a+)+$`` held a worker for twenty seconds on this one name under
+        # the stdlib engine. Now it either finishes at once or is refused
+        # by the deadline - never runs on.
+        import time
+
+        t0 = time.monotonic()
+        r = self._rename("(a+)+$")
+        self.assertLess(time.monotonic() - t0, 5)
+        self.assertIn(r.status_code, (200, 400), r.content)
+
+    def test_a_timed_out_match_is_a_field_error(self):
+        from unittest.mock import patch
+
+        with patch("api.viewsets._RENAME_MATCH_TIMEOUT", 1e-9):
+            r = self._rename("(a|aa)+b?c?(a|aa)+$")
+        self.assertIn(r.status_code, (200, 400), r.content)
+        if r.status_code == 400:
+            self.assertIn("find", r.json())
+
+    def test_overlong_pattern_is_refused(self):
+        r = self._rename("a" * 300)
+        self.assertEqual(r.status_code, 400)
+
+    def test_ordinary_pattern_still_works(self):
+        r = self._rename("a+")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.t.refresh_from_db()
+        self.assertEqual(self.t.name, "x!")

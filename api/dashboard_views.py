@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 
-from django.db.models import Count
+from django.db.models import Count, Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -98,13 +98,50 @@ _SCOPE_COLORS = {
 }
 
 
+# The same buckets as ``_classify_ip_scope``, as one SQL CASE over the inet
+# column, so the distribution is a grouped count in the database rather than
+# every address parsed in Python (#201). Special = the stdlib's loopback,
+# link-local, unspecified, multicast and reserved; Private = its private
+# networks that are none of those; CGNAT sits between the two.
+_SPECIAL_NETS = (
+    "127.0.0.0/8", "169.254.0.0/16", "0.0.0.0/8", "224.0.0.0/4", "240.0.0.0/4",
+    "::1/128", "::/128", "fe80::/10", "ff00::/8",
+)
+_PRIVATE_NETS = (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "192.0.0.0/24",
+    "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
+    "::ffff:0:0/96", "64:ff9b:1::/48", "100::/64", "2001::/23", "2001:db8::/32",
+    "fc00::/7",
+)
+
+
+def _nets_sql(nets) -> str:
+    return "ARRAY[" + ",".join(f"'{n}'::inet" for n in nets) + "]"
+
+
+SCOPE_CASE_SQL = (
+    "CASE"
+    f" WHEN ip_address::inet <<= ANY({_nets_sql(_SPECIAL_NETS)}) THEN 'Special'"
+    " WHEN ip_address::inet <<= '100.64.0.0/10'::inet THEN 'CGNAT'"
+    f" WHEN ip_address::inet <<= ANY({_nets_sql(_PRIVATE_NETS)}) THEN 'Private'"
+    " ELSE 'Public' END"
+)
+
+
 def _ip_by_scope(ips) -> list:
     """Public/private/CGNAT/special distribution of a tenant's IP addresses."""
+    from django.db.models.expressions import RawSQL
+
     counts = {k: 0 for k in _SCOPE_ORDER}
-    for value in ips.values_list("ip_address", flat=True):
-        bucket = _classify_ip_scope(value)
-        if bucket is not None:
-            counts[bucket] += 1
+    grouped = (
+        ips.annotate(scope=RawSQL(SCOPE_CASE_SQL, ()))
+        .order_by()
+        .values("scope")
+        .annotate(n=Count("id"))
+    )
+    for row in grouped:
+        if row["scope"] in counts:
+            counts[row["scope"]] += row["n"]
     return [
         {
             "key": name.lower(),
@@ -214,9 +251,11 @@ def dashboard_view(request):
     ip_by_role = _by(ips, "role_id", "role__name", "role__color")
     ip_by_scope = _ip_by_scope(ips)
 
-    fam = {"4": 0, "6": 0}
-    for cidr in prefixes.values_list("cidr", flat=True):
-        fam["6" if ":" in (cidr or "") else "4"] += 1
+    fam = prefixes.aggregate(
+        v6=Count("id", filter=Q(cidr__contains=":")),
+        v4=Count("id", filter=~Q(cidr__contains=":")),
+    )
+    fam = {"4": fam["v4"] or 0, "6": fam["v6"] or 0}
     prefix_by_family = [
         {"key": "4", "name": "IPv4", "count": fam["4"], "color": "var(--chart-1)"},
         {"key": "6", "name": "IPv6", "count": fam["6"], "color": "var(--chart-3)"},

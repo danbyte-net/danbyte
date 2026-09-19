@@ -180,3 +180,28 @@ class IpListTests(_Base):
         self.assertEqual(
             {k: v for k, v in state.items() if v == "scope"}, {}
         )
+
+
+class VrfListTests(_Base):
+    """The prefix, VLAN and address counts per VRF come with the page (#196)."""
+
+    def test_page_cost_is_flat_and_counts_match(self):
+        from .models import VRF
+
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        for i in range(12):
+            v = VRF.objects.create(tenant=self.tenant, name=f"vrf-{i:02d}")
+            for k in range(i % 3):
+                p = Prefix.objects.create(tenant=self.tenant, cidr=f"10.{i}.{k}.0/24", vrf=v)
+                IPAddress.objects.create(tenant=self.tenant, ip_address=f"10.{i}.{k}.1", prefix=p)
+            if i % 2:
+                VLAN.objects.create(tenant=self.tenant, site=site, vlan_id=i + 1, name=f"v{i}", vrf=v)
+        small, _ = self._queries("/api/vrfs/?page_size=2")
+        big, body = self._queries("/api/vrfs/?page_size=12")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["name"]: r for r in body["results"]}
+        self.assertEqual(rows["vrf-02"]["prefix_count"], 2)
+        self.assertEqual(rows["vrf-02"]["ip_count"], 2)
+        self.assertEqual(rows["vrf-02"]["vlan_count"], 0)
+        self.assertEqual(rows["vrf-03"]["vlan_count"], 1)
+        self.assertEqual(rows["vrf-03"]["prefix_count"], 0)

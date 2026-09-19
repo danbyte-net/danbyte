@@ -253,3 +253,29 @@ class ComplianceApiTests(APITestCase):
         ).json()
         self.assertEqual(len(combined["violations"]), 1)
         self.assertEqual(combined["violations"][0]["rule_id"], str(rule2.id))
+
+
+class GroupedEvaluationTests(TestCase):
+    """Every rule of a type is applied in one scan of that type (#200)."""
+
+    def test_one_scan_per_object_type(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        Prefix.objects.create(tenant=tenant, cidr="10.0.0.0/24", description="ok")
+        Prefix.objects.create(tenant=tenant, cidr="10.0.1.0/24", description="")
+        rules = [
+            ComplianceRule.objects.create(
+                tenant=tenant, name=f"r{i}", object_type="prefix",
+                check_type="required", field="description",
+            )
+            for i in range(3)
+        ]
+        with CaptureQueriesContext(connection) as ctx:
+            res = evaluate(tenant, rules=rules)
+        scans = [q for q in ctx.captured_queries if "api_prefix" in q["sql"]]
+        self.assertEqual(len(scans), 1)
+        self.assertEqual([r["violations"] for r in res["rules"]], [1, 1, 1])
+        self.assertEqual(len(res["violations"]), 3)

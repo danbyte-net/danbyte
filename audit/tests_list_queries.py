@@ -45,3 +45,23 @@ class ChangeLogLabelBatchingTests(APITestCase):
         site = updates[0]["changes"]["site"]
         self.assertEqual(site["old_label"], "HQ")
         self.assertEqual(site["new_label"], "DC")
+
+
+class MalformedPkTests(APITestCase):
+    """One malformed stored pk costs only its own label (#199)."""
+
+    def test_valid_labels_survive_a_bad_neighbour(self):
+        from types import SimpleNamespace
+
+        from .api import _labels_for_rows
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        hq = Site.objects.create(tenant=tenant, name="HQ")
+        rows = [
+            SimpleNamespace(object_type="api.prefix", changes={"site": {"old": None, "new": str(hq.id)}}),
+            SimpleNamespace(object_type="api.prefix", changes={"site": {"old": "not-a-uuid", "new": str(hq.id)}}),
+        ]
+        labels = _labels_for_rows(rows)
+        self.assertEqual(labels[("api.site", str(hq.id))], "HQ")
+        self.assertIsNone(labels[("api.site", "not-a-uuid")])

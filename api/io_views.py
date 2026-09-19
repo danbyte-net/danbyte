@@ -349,6 +349,25 @@ def io_import_view(request, slug):
 
     created = updated = 0
     errors, preview = [], []
+    # One index write per imported object, after the rows, instead of one
+    # inline per save - and none at all for a dry run's rolled-back rows.
+    from . import search_index
+
+    with search_index.deferred(flush=not dry_run):
+        _import_rows(
+            rows, handler, tenant, request, change_qs, add_qs, can_add, can_change,
+            dry_run, errors, preview, counts := {"created": 0, "updated": 0},
+        )
+    created, updated = counts["created"], counts["updated"]
+
+    return Response({
+        "total": len(rows), "created": created, "updated": updated,
+        "errors": errors, "dry_run": dry_run, "preview": preview,
+    })
+
+
+def _import_rows(rows, handler, tenant, request, change_qs, add_qs, can_add,
+                 can_change, dry_run, errors, preview, counts) -> None:
     for i, row in enumerate(rows, start=1):
         try:
             with transaction.atomic():
@@ -377,10 +396,7 @@ def io_import_view(request, slug):
                         raise PermissionRow(
                             "the new row falls outside the sites you may edit"
                         )
-                if action == "create":
-                    created += 1
-                else:
-                    updated += 1
+                counts["created" if action == "create" else "updated"] += 1
                 if dry_run:
                     preview.append({
                         "row": i, "action": action,
@@ -400,11 +416,6 @@ def io_import_view(request, slug):
                 "row": i,
                 "error": "; ".join(msgs) if msgs else str(exc),
             })
-
-    return Response({
-        "total": len(rows), "created": created, "updated": updated,
-        "errors": errors, "dry_run": dry_run, "preview": preview,
-    })
 
 
 class PermissionRow(Exception):

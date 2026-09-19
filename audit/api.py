@@ -260,6 +260,23 @@ def _label_for(model, pk):
     return str(obj)[:120] if obj is not None else None
 
 
+def _valid_pks(model, ids) -> set:
+    """The ids that parse as ``model``'s primary-key type. A stored diff can
+    hold anything (a hand-written import, an older schema); one malformed
+    value must cost only its own label, never the whole model's page (#199)."""
+    from django.core.exceptions import ValidationError
+
+    pk = model._meta.pk
+    out = set()
+    for i in ids:
+        try:
+            pk.to_python(i)
+        except (ValidationError, ValueError, TypeError):
+            continue
+        out.add(i)
+    return out
+
+
 def _labels_for_rows(rows) -> dict:
     """``{(model_label, str(pk)): label | None}`` for every FK value in the
     changes of ``rows`` - one ``pk__in`` query per related model for the whole
@@ -280,11 +297,13 @@ def _labels_for_rows(rows) -> dict:
     for model, ids in wanted.items():
         label = model._meta.label_lower
         found: dict = {}
+        valid = _valid_pks(model, ids)
         try:
-            for obj in model.objects.filter(pk__in=ids):
-                found[str(obj.pk)] = str(obj)[:120]
+            if valid:
+                for obj in model.objects.filter(pk__in=valid):
+                    found[str(obj.pk)] = str(obj)[:120]
         except Exception:
-            # Stale label / pk-type mismatch: nothing to resolve.
+            # Stale label: nothing to resolve.
             found = {}
         for i in ids:
             out[(label, i)] = found.get(i)
@@ -329,14 +348,15 @@ class ChangeLogSerializer(serializers.ModelSerializer):
         for label, ids in by_type.items():
             try:
                 model = django_apps.get_model(label)
+                valid = _valid_pks(model, ids)
                 alive = {
                     str(pk)
-                    for pk in model.objects.filter(pk__in=ids).values_list(
+                    for pk in model.objects.filter(pk__in=valid).values_list(
                         "pk", flat=True
                     )
-                }
+                } if valid else set()
             except Exception:
-                # Stale label / pk-type mismatch: nothing to link to.
+                # Stale label: nothing to link to.
                 alive = set()
             for i in ids:
                 cache[(label, i)] = i in alive

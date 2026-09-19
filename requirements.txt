@@ -10,6 +10,7 @@ channels[daphne]>=4.1        # ASGI + WebSockets for real-time presence
 channels-redis>=4.2          # Redis channel layer (presence group fan-out)
 gunicorn>=22                 # production WSGI HTTP server (daphne handles WS only)
 psycopg2-binary>=2.9.10
+regex>=2024.4                    # user-supplied patterns run under a timeout (bulk rename, compliance)
 python-dotenv>=1.0.1
 redis>=5.0.0
 rq>=1.16

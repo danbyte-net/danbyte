@@ -1368,8 +1368,11 @@ def bulk_check_now_view(request):
         return Response({"targets": 0, "checks": 0})
 
     now = timezone.now()
+    from .resolver import PrefixIndex
+
+    index = PrefixIndex(tenant.id)
     for ip in ips:
-        materialise_ip(ip, now=now)
+        materialise_ip(ip, now=now, prefix_index=index)
     states = CheckState.objects.filter(tenant=tenant, target_ip__in=ips)
     armed_ids = [str(i) for i in states.values_list("id", flat=True)]
     armed = states.update(next_run=now, in_flight=False)
