@@ -201,3 +201,23 @@ export function renderTemplateName(
     return String(position ?? fallback)
   })
 }
+
+/** The photo marker that draws `port` on a device sitting in stack slot
+ * `position`: the exact rendered name first, then the case/spacing-tolerant
+ * form (imported markers disagree with live names by case alone). The
+ * position matters: `TenGigabitEthernet{position}/0/1` is only member 2's
+ * `TenGigabitEthernet2/0/1` when 2 is passed - with null the token renders
+ * to its default and member 2's ports have no marker at all. */
+export function findPortMarker<M extends { name: string }>(
+  marks: M[],
+  port: string,
+  position: number | null
+): M | undefined {
+  const want = normalizePortName(port)
+  return (
+    marks.find((mk) => renderTemplateName(mk.name, position) === port) ??
+    marks.find(
+      (mk) => normalizePortName(renderTemplateName(mk.name, position)) === want
+    )
+  )
+}

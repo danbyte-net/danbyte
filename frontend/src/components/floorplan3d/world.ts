@@ -22,6 +22,8 @@ export interface SceneDevice {
   name: string
   /** Lowest occupied U - null for side-mounted 0U strips. */
   position: number | null
+  /** Stack member number; `{position}` in a marker name renders to it. */
+  vc_position?: number | null
   face: "" | "front" | "rear"
   rack_side: "" | "left" | "right"
   /** Zero-U side mounting (vertical PDU strips); ""/absent = racked. */

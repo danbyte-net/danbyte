@@ -8,7 +8,7 @@ import type { Line2 } from "three-stdlib"
 import { useQuery } from "@tanstack/react-query"
 
 import { api, type FloorPlanCablePath } from "@/lib/api"
-import { normalizePortName, renderTemplateName } from "@/lib/faceplate-geometry"
+import { findPortMarker, normalizePortName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
 import {
@@ -148,18 +148,15 @@ function portEndRun(
   // Exact name first, then the shared case/spacing-tolerant normalization:
   // imported photo markers routinely disagree with the live component names
   // by case alone ("Psu 1" vs "PSU 1"), and exact-only matching silently
-  // dropped those anchors to the middle of the face.
-  const wantNorm = normalizePortName(point.port)
-  const find = (panel: "front" | "rear") => {
-    const marks = dev.image_ports?.[panel] ?? []
-    return (
-      marks.find((mk) => renderTemplateName(mk.name, null) === point.port) ??
-      marks.find(
-        (mk) =>
-          normalizePortName(renderTemplateName(mk.name, null)) === wantNorm
-      )
+  // dropped those anchors to the middle of the face. Marker names are
+  // rendered with the device's stack position: without it a second stack
+  // member's `{position}` ports never matched and landed mid-face.
+  const find = (panel: "front" | "rear") =>
+    findPortMarker(
+      dev.image_ports?.[panel] ?? [],
+      point.port,
+      dev.vc_position ?? null
     )
-  }
   const onFront = find("front")
   const m = onFront ?? find("rear")
   // Which of the device's OWN panels we resolved it to. With no marker at all
@@ -178,7 +175,7 @@ function portEndRun(
   const synth = m
     ? undefined
     : syntheticPortMarkers(dev).find(
-        (s) => normalizePortName(s.name) === wantNorm
+        (s) => normalizePortName(s.name) === normalizePortName(point.port)
       )
   const panelRear = synth ? true : portRear
   const [lx, ly, lz] = portLocalM(

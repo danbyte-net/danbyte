@@ -8189,6 +8189,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "id": str(d.id),
                 "name": d.name,
                 "position": d.position,
+                # Stack member number: `{position}` in a photo marker's name
+                # renders to it, so member 2's ports anchor on their markers.
+                "vc_position": d.vc_position,
                 "face": d.face or "",
                 "rack_side": d.rack_side or "",
                 # Zero-U side mounting - position is None for these; the 3D
