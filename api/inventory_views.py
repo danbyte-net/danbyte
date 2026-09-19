@@ -40,12 +40,8 @@ def _grp(*parts) -> str:
 
 def _ip_dict(ip) -> dict:
     """An interface-assigned IP: the bare address plus its CIDR (host address +
-    the prefix's mask length), so a play can render either form."""
-    masklen = str(ip.prefix.cidr).split("/")[-1] if ip.prefix_id else None
-    return {
-        "address": ip.ip_address,
-        "cidr": f"{ip.ip_address}/{masklen}" if masklen else None,
-    }
+    its own mask length, else the prefix's), so a play can render either form."""
+    return {"address": ip.ip_address, "cidr": ip.cidr}
 
 
 def _iface_dict(iface) -> dict:

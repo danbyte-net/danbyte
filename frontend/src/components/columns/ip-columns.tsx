@@ -167,6 +167,9 @@ export function buildIpColumns<T = IPAddress>(
             className="link font-mono font-medium"
           >
             {ip.ip_address}
+            {ip.mask_length != null && (
+              <span className="text-muted-foreground">/{ip.mask_length}</span>
+            )}
           </Link>
         )
         const marker = (

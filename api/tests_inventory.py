@@ -94,6 +94,11 @@ class InventoryTests(APITestCase):
         # IP carries the bare address + a CIDR built from the prefix mask.
         self.assertEqual(eth["ip_addresses"][0]["address"], "10.0.0.5")
         self.assertEqual(eth["ip_addresses"][0]["cidr"], "10.0.0.5/24")
+        # ... or from the address's own mask when it has one (a /31 link).
+        IPAddress.objects.filter(ip_address="10.0.0.5").update(mask_length=31)
+        r = self.client.get("/api/inventory/ansible/")
+        eth = r.json()["_meta"]["hostvars"]["sw1"]["danbyte"]["interfaces"][0]
+        self.assertEqual(eth["ip_addresses"][0]["cidr"], "10.0.0.5/31")
 
     def test_per_device_inventory_preview(self):
         self.dev.custom_fields = {"install_btop": True}

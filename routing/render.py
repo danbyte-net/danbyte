@@ -228,7 +228,7 @@ def session_dict(s, policies: set[str]) -> dict:
         "local_asn": eff["local_asn"],
         "local_address": {
             "address": local.ip_address,
-            "cidr": f"{local.ip_address}/{str(local.prefix.cidr).split('/')[-1]}" if local.prefix_id else None,
+            "cidr": local.cidr,
             "interface": local.assigned_interface.name if local.assigned_interface_id else None,
         } if local is not None else None,
         "remote_address": s.remote_address or None,
@@ -626,10 +626,7 @@ def routing_context(device) -> dict:
             "group_id": g.group_id,
             "name": g.name or None,
             "virtual_ip": vip.ip_address if vip is not None else None,
-            "cidr": (
-                f"{vip.ip_address}/{str(vip.prefix.cidr).split('/')[-1]}"
-                if vip is not None and vip.prefix_id else None
-            ),
+            "cidr": vip.cidr if vip is not None else None,
             # The subnet the gateway answers for - what an IPv6 RA announces.
             "prefix": str(vip.prefix.cidr) if vip is not None and vip.prefix_id else None,
             "nd_ra": bool(g.nd_ra),

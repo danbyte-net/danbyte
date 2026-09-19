@@ -79,6 +79,9 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const [address, setAddress] = useState(
     ip?.ip_address ?? initial?.address ?? ""
   )
+  const [maskLength, setMaskLength] = useState(
+    ip?.mask_length != null ? String(ip.mask_length) : ""
+  )
   const [statusId, setStatusId] = useState<string | null>(
     seed?.status?.id ?? null
   )
@@ -206,6 +209,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   useEffect(() => {
     if (!ip) return
     setAddress(ip.ip_address)
+    setMaskLength(ip.mask_length != null ? String(ip.mask_length) : "")
     setStatusId(ip.status?.id ?? null)
     setRoleId(ip.role?.id ?? null)
     setDescription(ip.description)
@@ -407,6 +411,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     mutationFn: async () => {
       const payload: IPWritePayload = {
         ip_address: address.trim(),
+        mask_length: maskLength.trim() === "" ? null : Number(maskLength),
         status_id: statusId,
         role_id: roleId,
         assigned_device_id: deviceId,
@@ -616,6 +621,22 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                   </p>
                 )
               )}
+            </Field>
+
+            <Field
+              label="Mask length"
+              hint="Blank uses the prefix's length"
+              error={fieldErrors.mask_length}
+            >
+              <Input
+                type="number"
+                min={0}
+                max={128}
+                placeholder={selectedPrefix?.cidr?.split("/")[1] ?? ""}
+                value={maskLength}
+                onChange={(e) => setMaskLength(e.target.value)}
+                className="w-28 font-mono"
+              />
             </Field>
 
             <div className="grid gap-3 @md:grid-cols-2">

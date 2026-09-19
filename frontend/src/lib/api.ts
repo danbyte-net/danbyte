@@ -828,6 +828,11 @@ export interface IPAddress {
   } | null
   mac_address: string
   dns_name: string
+  /** Mask the address carries on its interface when it differs from the
+   *  prefix's (a /31 link inside an aggregate); null = the prefix's. */
+  mask_length: number | null
+  /** address/length as it goes on the interface; null outside a prefix. */
+  cidr: string | null
   /** Reachability bucket derived from the address: public/private/cgnat/special. */
   scope: string | null
   last_seen: string | null
@@ -2947,7 +2952,9 @@ export interface InterfaceOption {
 }
 
 export interface IPWritePayload {
+  /** May carry a length ("10.0.0.1/31"); it lands in mask_length. */
   ip_address: string
+  mask_length?: number | null
   prefix_id?: string
   status_id?: string | null
   role_id?: string | null

@@ -98,6 +98,11 @@ class FilterTests(_Base):
         self.assertEqual(FILTERS["prefixlen"]("2001:db8::1/64"), 64)
         # An IPAddress row: the length comes from its prefix.
         self.assertEqual(FILTERS["cidr"](self.ip), "10.1.1.5/24")
+        # An address with its own mask renders that, not the prefix's.
+        self.ip.mask_length = 31
+        self.assertEqual(FILTERS["cidr"](self.ip), "10.1.1.5/31")
+        self.assertEqual(FILTERS["netmask"](self.ip), "255.255.255.254")
+        self.ip.mask_length = None
         self.assertEqual(FILTERS["netmask"](self.ip), "255.255.255.0")
         # A bare string with no length is a host.
         self.assertEqual(FILTERS["cidr"]("192.0.2.1"), "192.0.2.1/32")

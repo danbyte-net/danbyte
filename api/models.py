@@ -2586,6 +2586,12 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text=("Hostname / DNS name for this address (its PTR record). "
                    "Auto-filled by reverse-DNS monitoring when enabled."),
     )
+    mask_length = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text=("Prefix length the address is configured with on its "
+                   "interface when it differs from the containing prefix - a "
+                   "/31 link inside an aggregate. Empty = the prefix's length."),
+    )
     last_seen = models.DateTimeField(
         null=True, blank=True,
         help_text=("Last time monitoring observed this IP reachable (up or "
@@ -2625,6 +2631,22 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.ip_address
+
+    @property
+    def prefix_length(self) -> int | None:
+        """The length the address is configured with: its own ``mask_length``
+        when set, else the containing prefix's. None outside any prefix."""
+        if self.mask_length is not None:
+            return self.mask_length
+        if self.prefix_id:
+            return int(str(self.prefix.cidr).split("/")[-1])
+        return None
+
+    @property
+    def cidr(self) -> str | None:
+        """``address/length`` as it goes on an interface, or None."""
+        n = self.prefix_length
+        return f"{self.ip_address}/{n}" if n is not None else None
 
     def save(self, *args, **kwargs):
         # Always keep vrf in sync with the parent prefix - including on a

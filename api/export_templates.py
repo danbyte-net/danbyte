@@ -32,20 +32,20 @@ def provider_context(obj) -> dict:
 # ─── Address filters ─────────────────────────────────────────────────────────
 # A template that writes a router config needs the pieces of an address -
 # the mask for IOS, the length for FRR, the wildcard for an OSPF network
-# statement. An IPAddress row carries a bare address; its length is its
-# prefix's, so the filters accept the row as well as a string.
+# statement. An IPAddress row carries a bare address; its length is its own
+# mask when one is stored, else its prefix's, so the filters accept the row
+# as well as a string.
 
 def _iface_of(value):
     """``ipaddress.ip_interface`` from a string ("10.0.0.1/24", "10.0.0.1")
-    or an IPAddress row (address + its prefix's length, /32 or /128 when it
-    sits in no prefix)."""
+    or an IPAddress row (address + its mask, else its prefix's length, /32 or
+    /128 when it sits in no prefix)."""
     if isinstance(value, (ipaddress.IPv4Interface, ipaddress.IPv6Interface)):
         return value
     addr = getattr(value, "ip_address", None)
     if addr is not None:
-        prefix = getattr(value, "prefix", None) if getattr(value, "prefix_id", None) else None
-        length = str(prefix.cidr).split("/")[-1] if prefix is not None else None
-        return ipaddress.ip_interface(f"{addr}/{length}" if length else addr)
+        length = getattr(value, "prefix_length", None)
+        return ipaddress.ip_interface(f"{addr}/{length}" if length is not None else addr)
     return ipaddress.ip_interface(str(value).strip())
 
 

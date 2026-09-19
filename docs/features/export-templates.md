@@ -80,7 +80,7 @@ prefix; a router config needs the pieces. These filters take a string
 | Filter | `10.0.0.5/24` becomes |
 |---|---|
 | `host` | `10.0.0.5` |
-| `cidr` | `10.0.0.5/24` (an address object gets its prefix's length; a bare string is a host) |
+| `cidr` | `10.0.0.5/24` (an address object gets its own mask length when one is set, else its prefix's; a bare string is a host) |
 | `prefixlen` | `24` |
 | `netmask` | `255.255.255.0` |
 | `wildcard` | `0.0.0.255` |
