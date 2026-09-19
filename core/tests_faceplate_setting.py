@@ -37,3 +37,22 @@ class FaceplateMarkedLitTests(APITestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
         self.assertIs(r.json()["faceplate_group_labels"], True)
+
+    def test_port_labels_default_off_reach_me_and_save(self):
+        me = self.client.get("/api/me/").json()
+        self.assertEqual(me["faceplate_port_labels"], "")
+        self.assertEqual(me["faceplate_port_label_color"], "#ffffff")
+        r = self.client.put(
+            "/api/deployment/email/",
+            {"faceplate_port_labels": "peer_device", "faceplate_port_label_color": "#facc15"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["faceplate_port_labels"], "peer_device")
+        me = self.client.get("/api/me/").json()
+        self.assertEqual(me["faceplate_port_labels"], "peer_device")
+        self.assertEqual(me["faceplate_port_label_color"], "#facc15")
+        r = self.client.put(
+            "/api/deployment/email/", {"faceplate_port_labels": "bogus"}, format="json"
+        )
+        self.assertEqual(r.status_code, 400)

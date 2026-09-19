@@ -22,7 +22,10 @@ import {
   useObservedPorts,
 } from "@/components/device-faceplate"
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
+import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
+import type { PortLabelSource } from "@/lib/api"
 
+import { FaceLabel } from "./text-sprite"
 import { useMaxAnisotropy } from "./texture-quality"
 import {
   TRANSPARENT_ORDER,
@@ -189,6 +192,8 @@ export function DeviceMesh({
   onSelectPort,
   onZoomTo,
   onLegend,
+  portLabelSource = "",
+  portLabelColor = "#ffffff",
 }: {
   rack: SceneRack
   dev: SceneDevice
@@ -224,9 +229,14 @@ export function DeviceMesh({
   /** Report the colours this face puts on screen, so the room's legend keys
    * only those. Near tier only - a far cabinet draws no port colours. */
   onLegend?: LegendReporter
+  /** The deployment's port-label choice and colour, read once by the room
+   * and handed down - a device must not subscribe to /api/me on its own. */
+  portLabelSource?: PortLabelSource
+  portLabelColor?: string
 }) {
   const [hovered, setHovered] = useState(false)
   const [hoveredPort, setHoveredPort] = useState<number | null>(null)
+  const labelSource = effectivePortLabelSource(portLabelSource, dev.port_labels)
   // Shared geometry - the cables layer anchors runs to these same numbers.
   const { y, h, dx, dz, dw, dd, boxH, mountedRear } = deviceBoxM(
     rack,
@@ -528,6 +538,34 @@ export function DeviceMesh({
                     toneMapped={false}
                     depthWrite={false}
                   />
+                  {/* The port's label, fitted inside the marker: the band is
+                      capped by the marker's width and height, so a long label
+                      shrinks rather than spills. */}
+                  {(() => {
+                    const t =
+                      labelSource && defined
+                        ? portLabelText(labelSource, {
+                            label: fp!.label,
+                            hideLabel: fp!.label_hidden,
+                            cableLabel: fp!.cable_label,
+                            peerDevice: fp!.peer?.device,
+                            peerPortLabel: fp!.peer?.port_label,
+                          })
+                        : ""
+                    return t ? (
+                      <FaceLabel
+                        text={t}
+                        position={[0, 0, 0.0005]}
+                        rotation={[0, 0, 0]}
+                        heightM={m.h * boxH * 0.8}
+                        maxWidthM={m.w * dw * 0.9}
+                        align="center"
+                        fontFamily="'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif"
+                        color={fp!.label_color || portLabelColor}
+                        background="rgba(0,0,0,0.55)"
+                      />
+                    ) : null
+                  })()}
                 </mesh>
               </group>
             )

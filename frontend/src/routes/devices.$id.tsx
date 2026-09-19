@@ -1304,6 +1304,7 @@ function DeviceFrontPanel({
               fit="container"
               observed={observed}
               onLegend={onLegend}
+              portLabels={device.port_labels}
             />
             <FaceplateLegend
               className="mt-2"

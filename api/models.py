@@ -1825,6 +1825,15 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=50, choices=AIRFLOW_CHOICES, blank=True, default="",
         help_text="Direction of cooling airflow through the chassis.",
     )
+    # Port labels on this device's faceplate renders: inherit the deployment
+    # setting, or force them shown / hidden here (a patch panel wants them,
+    # a 48-port access switch may not).
+    PORT_LABEL_CHOICES = [("", "Inherit"), ("on", "Shown"), ("off", "Hidden")]
+    port_labels = models.CharField(
+        max_length=8, choices=PORT_LABEL_CHOICES, blank=True, default="",
+        help_text="Port labels on faceplate renders: inherit the deployment "
+                  "setting, or force them shown or hidden on this device.",
+    )
     # ── Geolocation ──────────────────────────────────────────────────────
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True,
@@ -2957,6 +2966,16 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="There is a cable in this port, it just isn't documented "
                   "yet. Counts as connected in port utilization; cleared "
                   "automatically when a real cable is attached.",
+    )
+    hide_label = models.BooleanField(
+        default=False,
+        help_text="Leave this port's marker blank on faceplate renders even "
+                  "when port labels are on.",
+    )
+    label_color = models.CharField(
+        max_length=7, blank=True, default="",
+        help_text="Text colour of this port's label on faceplate renders "
+                  "(#rrggbb); blank uses the deployment's colour.",
     )
     combo_group = models.CharField(
         max_length=64, blank=True, default="",

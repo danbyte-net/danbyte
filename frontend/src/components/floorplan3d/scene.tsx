@@ -39,7 +39,12 @@ import { CableForm } from "@/components/cable-form"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 
-import { CablesLayer, CableTrace3D, useCablePaths } from "./cable-trace-3d"
+import {
+  cableEndsAnchored,
+  CablesLayer,
+  CableTrace3D,
+  useCablePaths,
+} from "./cable-trace-3d"
 import { CameraRig, type FlyToRequest } from "./camera-rig"
 import { Room } from "./room"
 import { RackMesh } from "./rack-mesh"
@@ -79,6 +84,8 @@ export default function FloorScene3D({
   traceCableId,
   showUNumbers = false,
   showNames = false,
+  namesScope = "all",
+  namesAtEdge = false,
   showAirflow = false,
   floorPeek = false,
   showCables = false,
@@ -86,6 +93,8 @@ export default function FloorScene3D({
   showCeiling = false,
   shellMode = "cutaway",
   quality = "auto",
+  cableScale = 1,
+  cableLook = "auto",
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -95,6 +104,10 @@ export default function FloorScene3D({
   /** Overlay toggles - owned by the route's View popover, like the 2D prefs. */
   showUNumbers?: boolean
   showNames?: boolean
+  /** Name plates on every rack, or only the highlighted one. */
+  namesScope?: "all" | "selected"
+  /** Name plates start at the rail edge and run off the gear. */
+  namesAtEdge?: boolean
   showAirflow?: boolean
   /** Lift the raised floor: translucent finished-floor slabs so underfloor
    * trays and cable runs read through the plenum. */
@@ -109,9 +122,15 @@ export default function FloorScene3D({
   shellMode?: ShellMode
   /** Effects budget (shadows, AO, dpr) - per-device, "auto" probes the GPU. */
   quality?: RenderQualitySetting
+  /** Cable jacket multiplier - 1 is life size; per-device, from the View menu. */
+  cableScale?: number
+  /** Tubes, lines, or auto (tubes up to the room's tube limit). */
+  cableLook?: "auto" | "tubes" | "lines"
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
+  // Read once here; every rack and device gets the values as props.
+  const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
   const [selection, setSelection] = useState<Sel | null>(null)
   const [cableSel, setCableSel] = useState<string | null>(null)
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
@@ -499,7 +518,7 @@ export default function FloorScene3D({
       >
         <InvalidatorBridge apiRef={invalidateRef} />
         <InvalidateOnToggle
-          stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
+          stamp={`${showWalls}|${showCables}|${showCeiling}|${showAirflow}|${showNames}|${namesScope}|${namesAtEdge}|${showUNumbers}|${floorPeek}|${shellMode}|${rq}`}
         />
         {/* Light rig: soft ambient + one shadow-casting key light + a dim
             fill, over a procedural studio environment (PMREM'd
@@ -554,6 +573,10 @@ export default function FloorScene3D({
             attention={attention}
             showUNumbers={showUNumbers}
             showNames={showNames}
+            namesScope={namesScope}
+            namesAtEdge={namesAtEdge}
+            portLabelSource={faceplatePortLabels}
+            portLabelColor={faceplatePortLabelColor}
             showAirflow={showAirflow}
             shellMode={shellMode}
             ghosted={focusOn && !!selection && selection.tileId !== t.id}
@@ -643,6 +666,8 @@ export default function FloorScene3D({
             planId={planId}
             scene={data}
             xray={shellMode === "xray"}
+            scale={cableScale}
+            look={cableLook}
             selectedId={cableSel}
             onSelect={(id) => {
               setSelection(null)
@@ -652,7 +677,12 @@ export default function FloorScene3D({
           />
         )}
         {traceCableId && traceCableId !== cableSel && (
-          <CableTrace3D planId={planId} scene={data} cableId={traceCableId} />
+          <CableTrace3D
+            planId={planId}
+            scene={data}
+            cableId={traceCableId}
+            scale={cableScale}
+          />
         )}
         <CameraRig
           target={[w / 2, 0.8, d / 2]}
@@ -1595,6 +1625,19 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
   const followed = (path?.tray_ids ?? [])
     .map((id) => scene.data?.trays.find((t) => t.id === id))
     .filter((t): t is SceneTray => Boolean(t))
+  // An end with no port marker on its device type is drawn at the panel's
+  // centre; say so here rather than let the run look mis-routed.
+  const anchored =
+    scene.data && path ? cableEndsAnchored(scene.data, path) : null
+  const unanchored = anchored
+    ? !anchored[0] && !anchored[1]
+      ? "Both ends have"
+      : !anchored[0]
+        ? "The A end has"
+        : !anchored[1]
+          ? "The B end has"
+          : null
+    : null
   const side = (label: string, terms: Cable["a_terminations"]) => (
     <div className="grid gap-0.5">
       <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
@@ -1644,6 +1687,12 @@ function CableHud({ planId, cableId }: { planId: string; cableId: string }) {
           <div className="mt-2 grid gap-2 text-[12px]">
             {side("A side", c.a_terminations)}
             {side("B side", c.b_terminations)}
+            {unanchored && (
+              <span className="text-[11px] text-muted-foreground">
+                {unanchored} no port marker on the device type, so the run is
+                drawn at the panel centre.
+              </span>
+            )}
             <div className="grid gap-0.5">
               <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                 Routing

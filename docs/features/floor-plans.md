@@ -134,6 +134,18 @@ uploaded blueprint textures it.
   front of it, and painted steel and galvanised tray read as material
   rather than flat grey. On High quality, screen-space ambient occlusion
   adds the interior depth that makes an open cabinet look hollow.
+- **Device names** (View menu, 3D): name plates per device. Underneath,
+  **All racks / Highlighted rack** limits them to the rack you have selected
+  or are focused on, and **Names off the gear** starts each plate at the
+  rail edge so it runs over the frame and past the cabinet instead of
+  covering the faceplate.
+- **Cable thickness** (View menu, 3D): a slider from a quarter to double
+  life size. Real jacket diameters are right up close and vanish across a
+  hall; pick what reads at the distance you work at. Under it, **Auto /
+  Tubes / Lines** picks the renderer: real tubes shaded like the rest of the
+  room, or flat lines of constant on-screen width in the cable's solid
+  colour. Auto draws tubes up to two hundred cables and lines past that.
+  Both saved per device in the browser, like Quality.
 - **Quality** (View menu, 3D): Auto / Low / Medium / High - how much the
   effects may cost. Low drops shadows and caps resolution (software
   rendering survives), Medium adds shadows, High adds ambient occlusion.
@@ -187,11 +199,17 @@ uploaded blueprint textures it.
   trays and dropping into both end racks.
 - **Cables are real geometry**: each run renders as a lit tube whose jacket
   thickness follows its kind (power fatter than copper, copper fatter than
-  fibre), leaves its port with a rounded bend into the cabinet's front-corner
-  channel - never straight down across the faceplates - and rides its trays
+  fibre), leaves its port with a rounded bend into a corner channel just
+  outside the rail - never straight down across the faceplates - and rides its trays
   in a **lane of its own**, so ten runs in one duct read as ten parallel
   runs. Hover glows; click opens the cable card. Past a couple hundred runs
   the layer falls back to simple lines for performance.
+- **Same-rack runs dress at the rail.** A lead between two devices in one
+  cabinet takes the corner channel nearest the two ports (2 cm outside the
+  rail opening, 3 cm in front of the face) and gets a small lane of its own,
+  so ten patch leads down one rail read as ten. Two ports a U apart on the
+  same face still patch directly. An end whose device type has no marker for
+  that port is drawn at the panel's centre, and the cable card says so.
 - **Trays are open baskets** - two side rails and a floor of rungs - and
   runs ride *inside* them, resting on the rungs. **Click a tray to open it**:
   the near rail drops away, the basket tints, and a card lists every cable

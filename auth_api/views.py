@@ -261,6 +261,10 @@ def me_json(request):
         "faceplate_mark_connected_lit": ds.faceplate_mark_connected_lit,
         # Rendered faceplates print the interface prefix before each port group.
         "faceplate_group_labels": ds.faceplate_group_labels,
+        # What every faceplate render prints inside each port marker, and in
+        # which colour. Blank = nothing.
+        "faceplate_port_labels": ds.faceplate_port_labels,
+        "faceplate_port_label_color": ds.faceplate_port_label_color,
         # Whether the in-browser SSH terminal is enabled deployment-wide. The SPA
         # only offers the terminal when this is on; the WS consumer re-checks it
         # (and the connect verb) server-side regardless.

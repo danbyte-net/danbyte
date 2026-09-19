@@ -111,7 +111,19 @@ ports marked connected** makes them draw it lit, like a cabled one. The same
 card's **Show interface prefixes on rendered faceplates** prints the derived
 prefix (`Ethernet1/`) in front of each port group; it is off by default
 because on a dense switch it pushes the panel past its card. Label slots you
-place yourself in the faceplate editor always show. Reserving works two ways: create
+place yourself in the faceplate editor always show. **Port labels** prints
+text inside each port's cage on the rendered faceplate, inside its marker on
+the photo panel, and on the port quads in the 3D room: the port's own label
+(the interface's *Label* field, `A01`, `SS`), the cable's label, the far-end
+device's name, or the far-end port's *label* (a port's name is never printed
+as a label) - and **Label colour** sets the text colour. The text is fitted to the marker and never leaves it, so a long
+label only gets smaller; five characters or fewer stay readable on a dense
+switch. On the rendered faceplate the port number stays, small, above the
+label. A device's **Port labels** field (Inherit / Shown / Hidden) overrides
+the deployment choice for that device - a patch panel wants them, a 48-port
+access switch may not - and an interface's **Hide label on faceplates**
+leaves that one marker blank, while its **Label colour** overrides the
+deployment's colour for that port alone. Reserving works two ways: create
 the cable ahead of time as *Planned* and the port counts as held, or reserve
 the single port directly when the far end isn't known yet. Most useful on
 patch panels and access switches, where "how full is this thing" is the

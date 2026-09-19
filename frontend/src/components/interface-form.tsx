@@ -12,6 +12,7 @@ import {
   type TagOption,
   type VLANOption,
 } from "@/lib/api"
+import { FormColor } from "@/components/forms/color"
 import {
   Field,
   FormCheckbox,
@@ -75,6 +76,8 @@ export function InterfaceForm({
   )
   const [name, setName] = useState(iface?.name ?? "")
   const [label, setLabel] = useState(iface?.label ?? "")
+  const [hideLabel, setHideLabel] = useState(iface?.hide_label ?? false)
+  const [labelColor, setLabelColor] = useState(iface?.label_color ?? "")
   const [type, setType] = useState(iface?.type ?? "")
   const [speed, setSpeed] = useState(iface?.speed ?? "")
   const [mtu, setMtu] = useState(iface?.mtu != null ? String(iface.mtu) : "")
@@ -140,6 +143,8 @@ export function InterfaceForm({
     setStatusId(iface.status?.id ?? null)
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
+    setHideLabel(iface.hide_label ?? false)
+    setLabelColor(iface.label_color ?? "")
     setMarkConnected(iface.mark_connected ?? false)
     setReserved(!!iface.reservation)
     setReserveNote(iface.reservation?.note ?? "")
@@ -266,6 +271,8 @@ export function InterfaceForm({
           : { device_id: deviceId ?? "" }),
         name: name.trim(),
         label: label.trim(),
+        hide_label: hideLabel,
+        label_color: labelColor,
         type,
         speed: speed.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
@@ -483,6 +490,19 @@ export function InterfaceForm({
               mono
               error={fieldErrors.label}
             />
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormColor
+                label="Label colour"
+                hint="Blank uses the deployment's"
+                value={labelColor}
+                onChange={setLabelColor}
+              />
+              <FormCheckbox
+                label="Hide label on faceplates"
+                checked={hideLabel}
+                onChange={setHideLabel}
+              />
+            </div>
           </FormSection>
 
           <FormSection title="Switching" card>
