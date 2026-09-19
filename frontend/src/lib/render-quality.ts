@@ -71,6 +71,30 @@ export function detectRenderQuality(): RenderQuality {
   return detected
 }
 
+const CABLE_SCALE_KEY = "danbyte.floorplan3d.cableScale"
+export const CABLE_SCALE_MIN = 0.5
+export const CABLE_SCALE_MAX = 4
+
+/** How much fatter than life the 3D room draws cables - a per-device
+ * viewing preference like the quality tier, since it is about what reads on
+ * this screen at this distance, not about the plan. 1 = real jacket size. */
+export function storedCableScale(): number {
+  try {
+    const v = Number(window.localStorage.getItem(CABLE_SCALE_KEY))
+    return v >= CABLE_SCALE_MIN && v <= CABLE_SCALE_MAX ? v : 1
+  } catch {
+    return 1
+  }
+}
+
+export function storeCableScale(v: number): void {
+  try {
+    window.localStorage.setItem(CABLE_SCALE_KEY, String(v))
+  } catch {
+    // Storage full/blocked - the session keeps the in-memory choice.
+  }
+}
+
 /** The stored setting, sanitised - anything unrecognised reads as "auto". */
 export function storedQualitySetting(): RenderQualitySetting {
   try {

@@ -154,7 +154,14 @@ import { useTheme } from "@/components/theme-provider"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
-import { storedQualitySetting, storeQualitySetting } from "@/lib/render-quality"
+import {
+  CABLE_SCALE_MAX,
+  CABLE_SCALE_MIN,
+  storeCableScale,
+  storedCableScale,
+  storedQualitySetting,
+  storeQualitySetting,
+} from "@/lib/render-quality"
 import type { RenderQualitySetting } from "@/lib/render-quality"
 import { usePageTitle } from "@/lib/page-title"
 
@@ -376,6 +383,15 @@ function FloorPlanPage() {
   const setQuality3d = (v: RenderQualitySetting) => {
     setQuality3dState(v)
     storeQualitySetting(v)
+  }
+  // Cable thickness in the room - per device too: a fat cable that reads on
+  // a laptop at arm's length is a rope on a 4K wall screen.
+  const [cableScale, setCableScaleState] = useState<number>(() =>
+    storedCableScale()
+  )
+  const setCableScale = (v: number) => {
+    setCableScaleState(v)
+    storeCableScale(v)
   }
   const [highlightCableIds, setHighlightCableIds] = useState<string[]>([])
   // Tile popover: hover-preview (delayed) + click-to-pin.
@@ -1519,6 +1535,23 @@ function FloorPlanPage() {
                     />
                   </div>
                   <div className="px-2 pt-1.5 pb-1">
+                    <div className="mb-1 flex items-baseline justify-between">
+                      <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                        Cable thickness
+                      </span>
+                      <span className="num text-[11px] text-muted-foreground">
+                        {cableScale === 1 ? "life size" : `×${cableScale}`}
+                      </span>
+                    </div>
+                    <Slider
+                      min={CABLE_SCALE_MIN}
+                      max={CABLE_SCALE_MAX}
+                      step={0.25}
+                      value={[cableScale]}
+                      onValueChange={(v) => setCableScale(v[0])}
+                    />
+                  </div>
+                  <div className="px-2 pt-1.5 pb-1">
                     <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                       Quality - this device
                     </span>
@@ -1803,6 +1836,7 @@ function FloorPlanPage() {
                   showCeiling={show3dCeiling}
                   shellMode={shell3d}
                   quality={quality3d}
+                  cableScale={cableScale}
                 />
               </Suspense>
               {show3dHint && (

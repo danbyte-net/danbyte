@@ -134,6 +134,10 @@ uploaded blueprint textures it.
   front of it, and painted steel and galvanised tray read as material
   rather than flat grey. On High quality, screen-space ambient occlusion
   adds the interior depth that makes an open cabinet look hollow.
+- **Cable thickness** (View menu, 3D): a slider from half to four times
+  life size. Real jacket diameters are right up close and vanish across a
+  hall; pick what reads at the distance you work at. Saved per device in the
+  browser, like Quality.
 - **Quality** (View menu, 3D): Auto / Low / Medium / High - how much the
   effects may cost. Low drops shadows and caps resolution (software
   rendering survives), Medium adds shadows, High adds ambient occlusion.

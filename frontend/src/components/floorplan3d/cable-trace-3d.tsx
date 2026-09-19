@@ -410,10 +410,12 @@ export function CableTrace3D({
   planId,
   scene,
   cableId,
+  scale = 1,
 }: {
   planId: string
   scene: ScenePayload
   cableId: string
+  scale?: number
 }) {
   const paths = useCablePaths(planId)
   const cp = paths.data?.cables.find((c) => c.id === cableId)
@@ -423,7 +425,13 @@ export function CableTrace3D({
     [cp, scene, sites]
   )
   if (!points) return null
-  return <MarchingLine points={points} color={cp?.color || "#0ea5e9"} />
+  return (
+    <MarchingLine
+      points={points}
+      color={cp?.color || "#0ea5e9"}
+      scale={scale}
+    />
+  )
 }
 
 // ─── All-cables layer ────────────────────────────────────────────────────────
@@ -438,6 +446,7 @@ export function CablesLayer({
   planId,
   scene,
   xray = false,
+  scale = 1,
   selectedId,
   onSelect,
 }: {
@@ -446,6 +455,8 @@ export function CablesLayer({
   /** X-ray shell mode: cables draw through racks - seeing the runs is the
    * point of opening the room up. Solid/cutaway keep physical occlusion. */
   xray?: boolean
+  /** Jacket multiplier from the View menu - 1 is life size. */
+  scale?: number
   selectedId: string | null
   onSelect: (cableId: string) => void
 }) {
@@ -495,6 +506,7 @@ export function CablesLayer({
               key={cp.id}
               points={points}
               color={cp.color || "#0ea5e9"}
+              scale={scale}
             />
           ))}
       <group ref={group}>
@@ -504,7 +516,7 @@ export function CablesLayer({
               key={cp.id}
               points={points}
               color={cp.color || CABLE_FALLBACK}
-              radius={cableRadiusM(cp.type)}
+              radius={cableRadiusM(cp.type) * scale}
               xray={xray}
               onClick={() => onSelect(cp.id)}
             />
@@ -513,6 +525,7 @@ export function CablesLayer({
               key={cp.id}
               points={points}
               color={cp.color || CABLE_FALLBACK}
+              scale={scale}
               xray={xray}
               onClick={() => onSelect(cp.id)}
             />
@@ -598,11 +611,13 @@ function CableTube({
 function CableLine({
   points,
   color,
+  scale = 1,
   xray = false,
   onClick,
 }: {
   points: [number, number, number][]
   color: string
+  scale?: number
   xray?: boolean
   onClick: () => void
 }) {
@@ -611,7 +626,7 @@ function CableLine({
     <Line
       points={points}
       color={color}
-      lineWidth={hovered ? 5 : 3.5}
+      lineWidth={(hovered ? 5 : 3.5) * scale}
       transparent
       opacity={xray ? 0.55 : hovered ? 1 : 0.8}
       depthTest={!xray}
@@ -652,9 +667,11 @@ const MARCH_HZ = 30
 function MarchingLine({
   points,
   color,
+  scale = 1,
 }: {
   points: [number, number, number][]
   color: string
+  scale?: number
 }) {
   const ref = useRef<Line2>(null)
   const invalidate = useThree((s) => s.invalidate)
@@ -677,7 +694,7 @@ function MarchingLine({
       ref={ref}
       points={points}
       color={color}
-      lineWidth={5}
+      lineWidth={5 * scale}
       dashed
       dashSize={0.25}
       gapSize={0.12}

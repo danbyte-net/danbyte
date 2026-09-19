@@ -91,6 +91,7 @@ export default function FloorScene3D({
   showCeiling = false,
   shellMode = "cutaway",
   quality = "auto",
+  cableScale = 1,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -114,6 +115,8 @@ export default function FloorScene3D({
   shellMode?: ShellMode
   /** Effects budget (shadows, AO, dpr) - per-device, "auto" probes the GPU. */
   quality?: RenderQualitySetting
+  /** Cable jacket multiplier - 1 is life size; per-device, from the View menu. */
+  cableScale?: number
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -648,6 +651,7 @@ export default function FloorScene3D({
             planId={planId}
             scene={data}
             xray={shellMode === "xray"}
+            scale={cableScale}
             selectedId={cableSel}
             onSelect={(id) => {
               setSelection(null)
@@ -657,7 +661,12 @@ export default function FloorScene3D({
           />
         )}
         {traceCableId && traceCableId !== cableSel && (
-          <CableTrace3D planId={planId} scene={data} cableId={traceCableId} />
+          <CableTrace3D
+            planId={planId}
+            scene={data}
+            cableId={traceCableId}
+            scale={cableScale}
+          />
         )}
         <CameraRig
           target={[w / 2, 0.8, d / 2]}
