@@ -257,6 +257,29 @@ function UpdatesSettingsPage() {
             </pre>
           </div>
         )}
+        {info.data && info.data.pending_migrations?.length > 0 && (
+          <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-[13px]">
+            <p className="font-medium">
+              The database is BEHIND the running code.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              This code ships{" "}
+              <span className="num">{info.data.pending_migrations.length}</span>{" "}
+              migration
+              {info.data.pending_migrations.length === 1 ? "" : "s"} the
+              database has not run - new code was started without the migrate
+              step. Pages that read a new column fail until it runs: as the
+              service user, <code>manage.py migrate</code>, then restart every
+              app process (web and workers).
+            </p>
+            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+              {info.data.pending_migrations.slice(0, 8).join("\n")}
+              {info.data.pending_migrations.length > 8
+                ? `\n… and ${info.data.pending_migrations.length - 8} more`
+                : ""}
+            </pre>
+          </div>
+        )}
         {info.data && info.data.self_upgrade_supported === false && (
           <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-[13px]">
             <p className="font-medium">

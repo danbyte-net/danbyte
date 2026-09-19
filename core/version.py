@@ -154,6 +154,48 @@ def migration_drift() -> list[str]:
     return drift
 
 
+_pending_cache: tuple[float, list[str]] | None = None
+_pending_logged = False
+
+
+def pending_migrations() -> list[str]:
+    """Migrations the RUNNING CODE ships that the database has not applied -
+    the mirror of :func:`migration_drift`: new code started against an old
+    schema (a restart without the migrate step, a hand-pulled checkout, a
+    container image without ``MIGRATE_ON_START``). Reads then fail on a
+    column that does not exist. Cached a minute like the drift check."""
+    global _pending_cache, _pending_logged
+    import time
+
+    if _pending_cache is not None and time.monotonic() - _pending_cache[0] < 60:
+        return _pending_cache[1]
+    try:
+        from django.db import connection
+        from django.db.migrations.loader import MigrationLoader
+
+        loader = MigrationLoader(connection, ignore_no_migrations=True)
+        applied = loader.applied_migrations
+        pending = sorted(
+            f"{app}.{name}"
+            for app, name in loader.graph.nodes
+            if (app, name) not in applied
+        )
+    except Exception:  # noqa: BLE001 - a probe must never take the app down
+        return []
+    _pending_cache = (time.monotonic(), pending)
+    if pending and not _pending_logged:
+        _pending_logged = True
+        import logging
+
+        logging.getLogger("core.version").error(
+            "The database is BEHIND the running code: %d migration(s) this "
+            "code ships are not applied (%s). Run `manage.py migrate` and "
+            "restart every app process.",
+            len(pending), ", ".join(pending[:5]),
+        )
+    return pending
+
+
 def system_info() -> dict:
     """Local, network-free runtime facts for the Updates/About page.
 
@@ -178,6 +220,8 @@ def system_info() -> dict:
         # Non-empty = the database is ahead of this process's code (issue
         # #45); the Updates page turns it into a loud banner.
         "migration_drift": migration_drift(),
+        # Non-empty = this code ships migrations the database has not run.
+        "pending_migrations": pending_migrations(),
     }
 
 

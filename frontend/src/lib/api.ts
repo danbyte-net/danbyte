@@ -5477,6 +5477,9 @@ export interface SystemInfo {
   /** Applied migrations this process's code does not ship - a half-finished
    * upgrade (the DB is ahead; restart the app onto the new code). */
   migration_drift: string[]
+  /** Migrations this code ships that the database has not run - new code on
+   * an old schema (the DB is behind; run migrate). */
+  pending_migrations: string[]
 }
 
 /** GET /api/system/updates - current version + the release repo's versions. */

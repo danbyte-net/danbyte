@@ -1178,3 +1178,29 @@ class HealthProbeTests(SimpleTestCase):
             self.assertIsNone(mw.process_request(rf.get("/api/health/")))
             self.assertIsNone(mw.process_request(rf.get("/.well-known/acme-challenge/x")))
             self.assertEqual(mw.process_request(rf.get("/api/version/")).status_code, 301)
+
+
+class DbBehindCodeTests(SimpleTestCase):
+    """The mirror of code_behind_db: new code on a database that never ran
+    its migrations is reported by the health probe and the system info."""
+
+    databases = {"default"}
+
+    def test_health_names_pending_migrations(self):
+        from unittest.mock import patch
+
+        from django.test import Client
+
+        c = Client()
+        body = c.get("/api/health/").json()
+        self.assertFalse(body["db_behind_code"])
+        with patch("core.version.pending_migrations", return_value=["api.0170_ipaddress_mask_length"]):
+            body = c.get("/api/health/").json()
+        self.assertTrue(body["db_behind_code"])
+        self.assertEqual(body["status"], "degraded")
+
+    def test_system_info_lists_them(self):
+        from core.version import pending_migrations, system_info
+
+        self.assertEqual(pending_migrations(), [])
+        self.assertIn("pending_migrations", system_info())

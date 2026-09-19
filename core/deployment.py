@@ -843,16 +843,20 @@ def health(request):
         db_ok = True
     except Exception:  # noqa: BLE001 - any DB error → not ready
         db_ok = False
-    from .version import migration_drift
+    from .version import migration_drift, pending_migrations
 
     code_behind_db = bool(db_ok and migration_drift())
+    db_behind_code = bool(db_ok and pending_migrations())
     return Response(
-        {"status": "ok" if db_ok and not code_behind_db else "degraded",
+        {"status": "ok" if db_ok and not (code_behind_db or db_behind_code) else "degraded",
          "database": db_ok,
          # #45: applied migrations this process's code does not ship - a
          # half-finished upgrade. Still 200: the app IS serving; a probe
          # restart-loop would make the situation worse, not better.
          "code_behind_db": code_behind_db,
+         # The mirror: migrations this code ships that were never run - new
+         # code on an old schema, which fails on the first missing column.
+         "db_behind_code": db_behind_code,
          "version": system_version()["version"]},
         status=200 if db_ok else 503,
     )

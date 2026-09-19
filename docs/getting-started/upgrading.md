@@ -134,6 +134,15 @@ current `/opt` layout.
     startup. The fix is always the same - restart every app process (web
     **and** workers) on the upgraded code.
 
+    The reverse is caught too. New code started against a database that
+    never ran its migrations (a restart without the migrate step, a
+    hand-pulled checkout, a container without `MIGRATE_ON_START`) fails on
+    the first page that reads a new column, with `column … does not exist`.
+    **Settings → Updates** shows *"the database is behind the running code"*
+    with the migrations still to run, `/api/health/` reports
+    `db_behind_code`, and the log names them. Run `manage.py migrate` as the
+    service user and restart the app processes.
+
 === "Offline bundle"
 
     Download the release bundle, unpack, and re-run the installer - it's
