@@ -335,7 +335,13 @@ def _apply_custom_field_scope(request, qs, model_slug: str):
     from customization.scopes import apply_scope_to_queryset
 
     return apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})
-from .views import _build_space_map, _get_active_tenant, _next_available_ips, _subnet_details, reparent_ips_out_of
+from .views import (
+    _build_space_map,
+    _get_active_tenant,
+    _next_available_ips,
+    _subnet_details,
+    reparent_ips_out_of_batch,
+)
 
 
 
@@ -1506,18 +1512,22 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         ids = request.data.get("ids") or []
         if not isinstance(ids, list) or not ids:
             raise ValidationError({"ids": "Provide a non-empty list of prefix IDs."})
-        moved = removed = 0
+        if len(ids) > 1000:
+            raise ValidationError({"ids": "At most 1000 ids per call."})
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
-            for row in _rows:
-                out = reparent_ips_out_of(row)
-                moved += out.get("moved", 0)
-                removed += out.get("removed", 0)
+            # One pass over the whole selection: an address only lands on a
+            # prefix that outlives this call (#215).
+            out = reparent_ips_out_of_batch(_rows)
             deleted, _ = _qs.delete()
             log_bulk_delete(_rows)
         return Response(
-            {"deleted": deleted, "moved": moved, "removed": removed},
+            {
+                "deleted": deleted,
+                "moved": out.get("moved", 0),
+                "removed": out.get("removed", 0),
+            },
             status=drf_status.HTTP_200_OK,
         )
 

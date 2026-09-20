@@ -27,6 +27,26 @@ _SECRET_MODEL_FIELDS = {
 }
 
 
+# Methods that hand out (or overwrite) a stored secret however the row was
+# reached. A model can hold a credential without holding a secret FIELD -
+# DeviceCredential keeps a path and asks the secret store on call - so any
+# snapshot, export or template that walks a row must refuse these by name.
+SECRET_ACCESSORS = frozenset({
+    "resolve_psk", "store_psk", "clear_psk",
+    "resolve_secret", "store_managed_secret", "delete_managed_secret",
+})
+
+
+def model_holds_secret(model) -> bool:
+    """True when this model carries a credential at all: a secret field, or
+    an accessor that reads one out of the secret store."""
+    if model is None:
+        return False
+    if any(hasattr(model, name) for name in SECRET_ACCESSORS):
+        return True
+    return any(is_secret_field(model, f) for f in model._meta.concrete_fields)
+
+
 def is_secret_field(model_or_instance, field) -> bool:
     """True when ``field`` on this model must never leave the server in
     cleartext - not in audit snapshots, exports, or share links."""
