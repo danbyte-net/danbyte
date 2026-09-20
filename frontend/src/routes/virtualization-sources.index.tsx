@@ -365,6 +365,8 @@ const KIND_SPEC = {
     // Proxmox reports a bridge MTU per vNIC; vSphere does not.
     mtu: true,
     hostHardware: false,
+    disks: true,
+    hosts: true,
     apiVersion: false,
     nat: false,
     groups: false,
@@ -384,6 +386,8 @@ const KIND_SPEC = {
     secretLabel: "Password",
     mtu: false,
     hostHardware: true,
+    disks: true,
+    hosts: true,
     apiVersion: false,
     nat: false,
     groups: false,
@@ -404,6 +408,11 @@ const KIND_SPEC = {
     secretLabel: "Password",
     mtu: false,
     hostHardware: false,
+    // An org account sees neither the hypervisor hosts underneath nor a VM's
+    // individual disks - only one aggregate figure - so neither switch has
+    // anything to act on here.
+    disks: false,
+    hosts: false,
     // Cloud Director negotiates its API version, so there is one to pin.
     apiVersion: true,
     nat: true,
@@ -673,12 +682,14 @@ export function SourceDialog({
               checked={verifySsl}
               onChange={setVerifySsl}
             />
-            <FormCheckbox
-              label="Sync disks"
-              hint="Import each VM's virtual disks (name, size, storage)."
-              checked={syncDisks}
-              onChange={setSyncDisks}
-            />
+            {spec.disks && (
+              <FormCheckbox
+                label="Sync disks"
+                hint="Import each VM's virtual disks (name, size, storage)."
+                checked={syncDisks}
+                onChange={setSyncDisks}
+              />
+            )}
             <FormCheckbox
               label="Sync virtual switches & networks"
               hint="Import virtual switches and port-groups/bridges, mapping them to VLANs."
@@ -693,12 +704,14 @@ export function SourceDialog({
                 onChange={setMatchVlans}
               />
             )}
-            <FormCheckbox
-              label="Create hosts as devices"
-              hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs."
-              checked={syncHosts}
-              onChange={setSyncHosts}
-            />
+            {spec.hosts && (
+              <FormCheckbox
+                label="Create hosts as devices"
+                hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs."
+                checked={syncHosts}
+                onChange={setSyncHosts}
+              />
+            )}
             {/* Only offered where the hypervisor actually reports a per-vNIC
                 MTU. vSphere keeps it on the vSwitch or port group, so there is
                 nothing to copy; offering it with a disclaimer read as a

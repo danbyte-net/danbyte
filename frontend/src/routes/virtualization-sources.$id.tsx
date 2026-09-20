@@ -199,6 +199,9 @@ function SourceDetailPage() {
   if (!source) return <p className="text-sm text-muted-foreground">Loading…</p>
 
   const skipped = source.last_sync_skipped ?? []
+  // Only Cloud Director serves a tested-version figure, and it is the only
+  // kind whose rows below differ - so it doubles as the flag for both.
+  const cloudDirector = !!source.api_version_tested
   const rows: KvRow[] = [
     { label: "Platform", value: source.kind_display },
     {
@@ -209,7 +212,7 @@ function SourceDetailPage() {
         </span>
       ),
     },
-    ...(source.api_version_tested
+    ...(cloudDirector
       ? [{ label: "API version", value: <ApiVersion source={source} /> }]
       : []),
     { label: "Mode", value: source.sync_mode },
@@ -234,15 +237,28 @@ function SourceDetailPage() {
       ),
     },
   ]
+  // Cloud Director exposes neither per-VM disks nor the hosts underneath, so
+  // those two rows would report a setting that cannot act.
   const imports: KvRow[] = [
-    { label: "Disks", value: source.sync_disks ? "Yes" : "No" },
+    ...(cloudDirector
+      ? []
+      : [
+          { label: "Disks", value: source.sync_disks ? "Yes" : "No" },
+        ]),
     {
       label: "Switches & networks",
       value: source.sync_networks ? "Yes" : "No",
     },
-    { label: "Hosts as devices", value: source.sync_hosts ? "Yes" : "No" },
+    ...(cloudDirector
+      ? []
+      : [
+          {
+            label: "Hosts as devices",
+            value: source.sync_hosts ? "Yes" : "No",
+          },
+        ]),
     { label: "Platforms", value: source.sync_platforms ? "Yes" : "No" },
-    ...(source.api_version_tested
+    ...(cloudDirector
       ? [
           {
             label: "VM groups",
