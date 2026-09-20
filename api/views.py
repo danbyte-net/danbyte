@@ -91,19 +91,42 @@ def _get_active_tenant(request=None):
             or not request.user.is_authenticated:
         return Tenant.objects.filter(is_active=True).first()
 
+    # Resolved once per request. Every serializer row asks for the active
+    # tenant (the per-row permissions field, site scoping), and each ask cost
+    # a tenant query - a page of a hundred devices ran a hundred of them, a
+    # full list thousands. The answer is keyed on what could change it inside
+    # a request (the session's choice, the token's tenant, the user), so a
+    # tenant switch in the same request still sees its new choice.
+    session = request.session if hasattr(request, "session") else None
+    tok_tid = getattr(getattr(request, "auth", None), "tenant_id", None)
+    key = (
+        request.user.pk,
+        tok_tid,
+        session.get("current_tenant_id") if session else None,
+    )
+    holder = getattr(request, "_request", request)
+    memo = getattr(holder, "_danbyte_active_tenant", None)
+    if memo is not None and memo[0] == key:
+        return memo[1]
+
     from auth_api.permissions import user_tenants
     allowed = user_tenants(request.user)
+    tenant = None
     # An API token is scoped to a tenant - honour it (runners have no session).
-    tok_tid = getattr(getattr(request, "auth", None), "tenant_id", None)
     if tok_tid:
-        t = allowed.filter(pk=tok_tid).first()
-        if t is not None:
-            return t
-    # Session choice, else the profile's home tenant (site-role provisioning
-    # sets it to where the user's grants live, so a multi-tenant user does
-    # not land on an arbitrary first tenant), else the first allowed.
-    from auth_api.permissions import active_tenant
-    return active_tenant(request.user, request.session if hasattr(request, "session") else None)
+        tenant = allowed.filter(pk=tok_tid).first()
+    if tenant is None:
+        # Session choice, else the profile's home tenant (site-role
+        # provisioning sets it to where the user's grants live, so a
+        # multi-tenant user does not land on an arbitrary first tenant), else
+        # the first allowed.
+        from auth_api.permissions import active_tenant
+        tenant = active_tenant(request.user, session)
+    try:
+        holder._danbyte_active_tenant = (key, tenant)
+    except AttributeError:
+        pass
+    return tenant
 
 
 # Back-compat alias so I don't have to touch every call site at once.

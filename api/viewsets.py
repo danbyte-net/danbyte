@@ -3224,11 +3224,14 @@ class DeviceViewSet(
             "role", "rack", "status", "platform", "location", "cluster",
         )
         .prefetch_related("tags")
-        # ip_count + interface_count are shown/served on the list; annotate
-        # (distinct) so each is one query, not a COUNT per row.
+        # ip_count + interface_count are shown/served on the list, as
+        # correlated subqueries. The joined COUNT(DISTINCT) they replaced
+        # multiplied every device's addresses by its interfaces before
+        # grouping - a 48-port switch with ten addresses was 480 rows - and a
+        # page of a hundred devices took a quarter of a second in that join.
         .annotate(
-            ip_count_annotated=Count("ip_addresses", distinct=True),
-            interface_count_annotated=Count("interfaces", distinct=True),
+            ip_count_annotated=_count_of(IPAddress, "assigned_device"),
+            interface_count_annotated=_count_of(Interface, "device"),
         )
         .all().order_by(NATURAL_NAME)
     )
@@ -3303,21 +3306,25 @@ class DeviceViewSet(
 
         devices = self.get_queryset()
         counts = device_port_counts(devices)
-        meta = devices.filter(id__in=counts).select_related(
-            "site", "role", "device_type"
+        # Only what the rows print - whole Device rows (custom fields, photo
+        # markers, every joined catalog) for a hall of devices cost half a
+        # second of transfer and decoding on their own.
+        meta = devices.filter(id__in=counts).values(
+            "id", "name", "site_id", "site__name", "role_id", "role__name",
+            "role__color", "device_type__name",
         )
         rows = []
         for d in meta:
-            row = counts[d.id]
+            row = counts[d["id"]]
             total, conn, res = row["total"], row["connected"], row["reserved"]
             rows.append({
-                "id": str(d.id),
-                "name": d.name,
-                "site": {"id": str(d.site_id), "name": d.site.name}
-                if d.site_id else None,
-                "role": {"name": d.role.name, "color": d.role.color}
-                if d.role_id else None,
-                "device_type": d.device_type.name if d.device_type_id else None,
+                "id": str(d["id"]),
+                "name": d["name"],
+                "site": {"id": str(d["site_id"]), "name": d["site__name"]}
+                if d["site_id"] else None,
+                "role": {"name": d["role__name"], "color": d["role__color"]}
+                if d["role_id"] else None,
+                "device_type": d["device_type__name"],
                 "total": total,
                 "connected": conn,
                 "reserved": res,

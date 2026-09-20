@@ -205,3 +205,60 @@ class VrfListTests(_Base):
         self.assertEqual(rows["vrf-02"]["vlan_count"], 0)
         self.assertEqual(rows["vrf-03"]["vlan_count"], 1)
         self.assertEqual(rows["vrf-03"]["prefix_count"], 0)
+
+
+class DeviceListTests(_Base):
+    """The device list's counts are correlated subqueries, and the active
+    tenant is resolved once per request - not once per row's permissions."""
+
+    def _seed(self):
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        from .models import Interface
+
+        for i in range(20):
+            d = Device.objects.create(tenant=self.tenant, name=f"sw-{i:02d}", site=site)
+            for k in range(i % 4):
+                Interface.objects.create(device=d, name=f"eth{k}")
+            if i % 2:
+                p = Prefix.objects.create(tenant=self.tenant, cidr=f"10.{i}.0.0/24")
+                IPAddress.objects.create(
+                    tenant=self.tenant, ip_address=f"10.{i}.0.1", prefix=p, assigned_device=d
+                )
+
+    def test_page_cost_is_flat_and_counts_match(self):
+        self._seed()
+        small, _ = self._queries("/api/devices/?page_size=5")
+        big, body = self._queries("/api/devices/?page_size=20")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["name"]: r for r in body["results"]}
+        self.assertEqual(rows["sw-03"]["interface_count"], 3)
+        self.assertEqual(rows["sw-03"]["ip_count"], 1)
+        self.assertEqual(rows["sw-04"]["interface_count"], 0)
+        self.assertEqual(rows["sw-04"]["ip_count"], 0)
+
+    def test_a_granted_user_pays_one_tenant_lookup_per_request(self):
+        from auth_api.models import ObjectPermission, UserProfile
+
+        self._seed()
+        user = User.objects.create_user("reader", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="devices", object_types=["device"], actions=["view", "change"]
+        )
+        perm.users.add(user)
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        # The grant lookups touch the tenant table a fixed few times per
+        # request; what must not happen is one more per row.
+        lookups = {}
+        for size in (5, 20):
+            self.client.get(f"/api/devices/?page_size={size}")
+            with CaptureQueriesContext(connection) as ctx:
+                r = self.client.get(f"/api/devices/?page_size={size}")
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertEqual(len(r.json()["results"]), size)
+            lookups[size] = sum(1 for q in ctx.captured_queries if "core_tenant" in q["sql"])
+        self.assertEqual(lookups[5], lookups[20])
+        self.assertLess(lookups[20], 20)
