@@ -601,10 +601,10 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
               label) -> dict:
     """Reconcile one fetched inventory against Danbyte - hypervisor-agnostic.
 
-    ``resources`` is a list of normalised guest dicts (``vmid``, ``name``,
-    ``type``, ``node``, ``status`` + ``maxcpu``/``maxmem``/``maxdisk`` specs);
-    ``details`` maps ``vmid → (iface_data, ip_data)`` fetched before the
-    transaction. ``sync_ifaces``/``sync_ips`` are the hypervisor-specific
+    ``resources`` is a list of normalised guest dicts (``vmid`` or ``ext_id``,
+    ``name``, ``type``, ``node``, ``status`` + ``maxcpu``/``maxmem``/``maxdisk``
+    specs); ``details`` is keyed by whichever of those two the resource
+    carries, and holds the interface/IP data fetched before the transaction. ``sync_ifaces``/``sync_ips`` are the hypervisor-specific
     callables that turn that detail into VMInterface/IPAddress rows. Everything
     else - adoption, spec diffing, the review queue, orphan pruning - is shared.
     """
@@ -639,24 +639,32 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
         # multi-cluster vCenter into one cluster named after the source.
         cluster_cache: dict = {}
 
-        def cluster_for(name: str):
+        def cluster_for(name: str, group_name: str = ""):
             key = name or cluster_name
             if key not in cluster_cache:
-                cluster_cache[key] = _cluster_for(source, key)
+                cluster_cache[key] = _cluster_for(
+                    source, key, group_name=group_name
+                )
             return cluster_cache[key]
 
         seen = set()
         fresh_changes: set = set()  # (guest_id, kind) queued this pass
         for r in resources:
-            vmid = r.get("vmid")
-            if vmid is None:
+            # Whichever identity the hypervisor keys its guests by: an
+            # integer (Proxmox VMID, vCenter MoRef) or a string urn (Cloud
+            # Director, which has no integer of its own). `seen` collects
+            # guest rows rather than ids so the prune below does not have to
+            # know which column this source uses.
+            key = r.get("ext_id") or r.get("vmid")
+            if key is None or key == "":
                 continue
-            seen.add(vmid)
+            lookup = {"ext_id": key} if isinstance(key, str) else {"vmid": key}
             counts["vms"] += 1
             kind = r.get("kind") or ("lxc" if r.get("type") == "lxc" else "qemu")
             guest, _ = VirtGuest.objects.get_or_create(
-                source=source, vmid=vmid, defaults={"kind": kind}
+                source=source, defaults={"kind": kind}, **lookup
             )
+            seen.add(guest.pk)
             guest.kind = kind
             guest.node = r.get("node") or ""
             guest.power_state = r.get("status") or ""
@@ -676,7 +684,9 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             # Each guest carries the cluster it actually runs on; Proxmox
             # reports one for the whole source, so its behaviour is unchanged.
             guest_cluster_name = r.get("cluster") or cluster_name
-            guest_cluster = partial(cluster_for, guest_cluster_name)
+            guest_cluster = partial(
+                cluster_for, guest_cluster_name, r.get("cluster_group") or ""
+            )
             guest_path = placement.PlacementPath(
                 datacenter=r.get("datacenter") or "",
                 cluster=guest_cluster_name,
@@ -687,7 +697,7 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
                 # rather than from IPAM because placement runs before the
                 # addresses are attached, and must not depend on that having
                 # worked.
-                ips=_reported_ips((details.get(vmid) or {}).get("ips")),
+                ips=_reported_ips((details.get(key) or {}).get("ips")),
             )
             place = placement.resolve(
                 guest_path, rules, site_by_name=site_by_name
@@ -701,7 +711,15 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
             _reconcile_guest(source, guest_cluster, guest_cluster_name, guest, r,
                              apply, now, counts, fresh_changes, place, warnings)
             if guest.vm_id:
-                d = details.get(vmid) or {}
+                # The hypervisor's own grouping - a vApp, later a pool or a
+                # folder. Blank-fill, or follow when the sync owns the row.
+                if source.sync_vm_groups and r.get("group"):
+                    counts["vm_groups"] = counts.get("vm_groups", 0) + _link_group(
+                        source, guest_cluster, guest.vm, r["group"],
+                        kind=r.get("group_kind") or "other",
+                        follow=apply and guest.created_vm,
+                    )
+                d = details.get(key) or {}
                 made, seen_ifaces = sync_ifaces(guest, d.get("ifaces"))
                 counts["interfaces"] += made
                 # An interface Danbyte has but the hypervisor doesn't is either
@@ -727,7 +745,7 @@ def _run_pass(source, cluster_name, resources, details, now, counts,
 
         # Guests gone from the hypervisor.
         grace = timedelta(days=source.auto_prune_after_days)
-        for gone in VirtGuest.objects.filter(source=source).exclude(vmid__in=seen):
+        for gone in VirtGuest.objects.filter(source=source).exclude(pk__in=seen):
             if gone.missing_since is None:
                 gone.missing_since = now
                 gone.save(update_fields=["missing_since"])
@@ -939,13 +957,30 @@ def _owned_by_another_source(vm, source) -> bool:
     )
 
 
+def _owned_by_another_guest(vm, source, guest) -> bool:
+    """Is it already tracked by a *different guest of the same source*?
+
+    One hypervisor can hold two machines of the same name - Cloud Director
+    scopes names per vApp, so two vApps may each have a ``web01``. VM names
+    are unique per tenant, so adopting both onto one row would leave two
+    guests writing conflicting specs to it every pass.
+    """
+    from .models import VirtGuest
+
+    return (
+        VirtGuest.objects.filter(vm=vm, source=source)
+        .exclude(pk=guest.pk)
+        .exists()
+    )
+
+
 def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
                      counts, fresh_changes, place=None, warnings=None) -> None:
     """Bring one guest into line with the inventory - applying (auto) or
     queuing a change (review/manual)."""
     from api.models import VirtualMachine
 
-    name = resource.get("name") or f"vm-{guest.vmid}"
+    name = resource.get("name") or f"vm-{guest.key()}"
     specs = _desired_specs(resource)
     # (enum, human label) as the hypervisor reports them; Proxmox sends neither.
     os_info = (resource.get("os_kind") or "", resource.get("os_name") or "")
@@ -968,12 +1003,22 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
                     f"VM name has to be unique"
                 )
             return
+        if adopted is not None and _owned_by_another_guest(adopted, source, guest):
+            # Same hypervisor, same name, two machines - legal in Cloud
+            # Director, where the name is scoped to the vApp.
+            if warnings is not None:
+                warnings.append(
+                    f'"{name}" is the name of more than one machine on this '
+                    f"hypervisor, so only the first was imported - rename "
+                    f"one of them, since a VM name has to be unique here"
+                )
+            return
         if adopted is not None:
             guest.vm = adopted
             guest.created_vm = False
             guest.save(update_fields=["vm", "created_vm"])
             logger.info("adopted existing VM %r for guest %s",
-                        adopted.name, guest.vmid)
+                        adopted.name, guest.key())
             _blank_fill(adopted, specs, source, guest, place, os_info)
             _clear_change(guest, "new_guest")
             return
@@ -1099,7 +1144,7 @@ def _queue_change(guest, kind, detail, now, fresh_changes) -> None:
         row.save(update_fields=["detail", "vm", "last_seen_at"])
     else:
         logger.info("queued %s change for review: %s",
-                    kind, guest.vm.name if guest.vm_id else guest.vmid)
+                    kind, guest.vm.name if guest.vm_id else guest.key())
     fresh_changes.add((guest.id, kind))
 
 
@@ -1121,16 +1166,55 @@ def _prune_changes(source, fresh_changes) -> None:
 _CLUSTER_TYPE = {
     "proxmox": ("Proxmox VE", "proxmox-ve"),
     "vcenter": ("VMware vCenter", "vmware-vcenter"),
+    "vcloud": ("VMware Cloud Director", "vmware-cloud-director"),
 }
 
 
-def _cluster_for(source, name: str):
-    from api.models import Cluster, ClusterType
+def _cluster_type_for(source):
+    """The ClusterType a synced cluster gets.
 
-    existing = Cluster.objects.filter(tenant=source.tenant, name=name).first()
+    A kind missing from the table used to fall through to Proxmox VE, which
+    labelled a VMware cluster "Proxmox VE" and gave no sign anything was
+    wrong. Derive it from the kind's own label instead.
+    """
+    entry = _CLUSTER_TYPE.get(source.kind)
+    if entry:
+        return entry
+    label = dict(source.KIND_CHOICES).get(source.kind) or source.kind
+    return label, (slugify(label)[:100] or source.kind)
+
+
+def _cluster_group_for(source, name: str):
+    """A ClusterGroup for the hypervisor's outermost container - a Cloud
+    Director org. Created on demand, and an operator may rename it freely
+    because the slug is what the lookup uses."""
+    from api.models import ClusterGroup
+
+    slug = slugify(name)[:128] or f"virt-{source.id.hex[:12]}"
+    existing = ClusterGroup.objects.filter(
+        tenant=source.tenant, slug=slug
+    ).first()
     if existing:
         return existing
-    type_name, type_slug = _CLUSTER_TYPE.get(source.kind, _CLUSTER_TYPE["proxmox"])
+    return ClusterGroup.objects.create(
+        tenant=source.tenant, name=name, slug=slug,
+        description=f"Synced from «{source.name}»",
+    )
+
+
+def _cluster_for(source, name: str, *, group_name: str = ""):
+    from api.models import Cluster, ClusterType
+
+    group = _cluster_group_for(source, group_name) if group_name else None
+    existing = Cluster.objects.filter(tenant=source.tenant, name=name).first()
+    if existing:
+        # Blank-fill only: a cluster an operator already filed somewhere
+        # stays where they put it.
+        if group is not None and existing.group_id is None:
+            existing.group = group
+            existing.save(update_fields=["group"])
+        return existing
+    type_name, type_slug = _cluster_type_for(source)
     ctype = ClusterType.objects.filter(
         tenant=source.tenant, name__iexact=type_name
     ).first()
@@ -1139,9 +1223,38 @@ def _cluster_for(source, name: str):
             tenant=source.tenant, name=type_name, slug=type_slug
         )
     return Cluster.objects.create(
-        tenant=source.tenant, name=name, type=ctype,
+        tenant=source.tenant, name=name, type=ctype, group=group,
         description=f"Synced from «{source.name}»",
     )
+
+
+def _link_group(source, cluster, vm, name: str, *, kind: str = "other",
+                follow: bool = False) -> int:
+    """Put a VM in the group the hypervisor puts it in.
+
+    ``follow`` lets a sync-created row in automatic mode move when the
+    hypervisor moves it. Everything else is blank-fill: an operator who
+    grouped a VM by hand keeps that grouping.
+    """
+    from api.models import VirtualMachineGroup
+
+    if vm is None or not name:
+        return 0
+    c = cluster()
+    group, made = VirtualMachineGroup.objects.get_or_create(
+        tenant=source.tenant, cluster=c, name=name,
+        defaults={"kind": kind,
+                  "description": f"Synced from «{source.name}»"},
+    )
+    if made:
+        logger.info("created VM group %r on cluster %r", name, c.name)
+    if vm.group_id == group.id:
+        return 0
+    if vm.group_id is not None and not follow:
+        return 0
+    vm.group = group
+    vm.save(update_fields=["group"])
+    return 1
 
 
 _HYPERVISOR_ROLE = ("Hypervisor", "hypervisor")
@@ -2124,6 +2237,342 @@ def _sync_vcenter_ips(source, guest, guest_nets, *, nets=None, prefixes=None,
                        warnings=warnings, net_vrfs=net_vrfs)
 
 
+# ─── VMware Cloud Director ───────────────────────────────────────────────────
+
+_VCD_POWER = {"POWERED_ON": "running", "POWERED_OFF": "stopped",
+              "SUSPENDED": "suspended", "MIXED": "running"}
+
+
+def _vcloud_ext_id(record: dict) -> str:
+    """Identity for one Cloud Director VM.
+
+    The href's last path segment - ``vm-<uuid>`` - is the handle, because a
+    real appliance sends ``id: null`` on the query record (confirmed against a
+    45-VM sample) and because the urn survives both a rename and a move
+    between vApps. ``id`` is only a fallback for an appliance that omits the
+    href instead.
+    """
+    from urllib.parse import urlsplit
+
+    tail = urlsplit(record.get("href") or "").path.rstrip("/").rsplit("/", 1)[-1]
+    if tail.startswith("vm-"):
+        return tail[:128]
+    raw = record.get("id")
+    return str(raw).strip()[:128] if isinstance(raw, str) and raw.strip() else ""
+
+
+def _vcloud_resource(record: dict) -> dict:
+    """Normalise a Cloud Director ``vm`` query record into the shared shape."""
+    from .vcloud_client import _int
+
+    ext_id = _vcloud_ext_id(record)
+    vapp = (record.get("containerName") or "").strip()
+    # The Org VDC is the closest thing Cloud Director has to a cluster. An
+    # appliance that does not name one leaves guests with nowhere to land
+    # (VirtualMachine.cluster is not nullable), so fall back to the vApp and
+    # finally to the source itself, which _run_pass supplies.
+    vdc = (record.get("vdcName") or "").strip()
+    org = (record.get("orgName") or "").strip()
+    return {
+        "ext_id": ext_id,
+        "kind": "vmware",
+        "type": "vmware",
+        "name": (record.get("name") or "").strip() or f"vm-{ext_id}",
+        "node": "",
+        "cluster": vdc or vapp,
+        # Org → ClusterGroup, vApp → VirtualMachineGroup.
+        "cluster_group": org,
+        "group": vapp,
+        "group_kind": "vapp",
+        # Placement inputs. A Cloud Director estate has no hosts to match on,
+        # so a rule targets the org, the VDC or the vApp.
+        "datacenter": org,
+        "folders": [vapp] if vapp else [],
+        # The query record's guestOs is already a human label, not an enum.
+        "os_kind": "",
+        "os_name": (record.get("guestOs") or "").strip(),
+        "status": _VCD_POWER.get(
+            (record.get("status") or "").upper(),
+            (record.get("status") or "").lower(),
+        ),
+        "maxcpu": _int(record.get("numberOfCpus")),
+        "maxmem": _int(record.get("memoryMB")) * 1024 * 1024,
+        "maxdisk": _int(record.get("totalStorageAllocatedMb")) * 1024 * 1024,
+    }
+
+
+def _vcloud_nics(detail: dict) -> list:
+    """The VM's NICs, out of its ``NetworkConnectionSectionType`` section.
+
+    Cloud Director returns the whole VM representation as a list of typed
+    sections; this is the only one that carries addressing.
+    """
+    from .vcloud_client import _int, _truthy
+
+    sections = (detail or {}).get("section") or []
+    section = next(
+        (s for s in sections
+         if (s or {}).get("_type") == "NetworkConnectionSectionType"),
+        None,
+    )
+    out = []
+    for index, conn in enumerate(
+        (section or {}).get("networkConnection") or []
+    ):
+        conn = conn or {}
+        idx = _int(conn.get("networkConnectionIndex"), index)
+        out.append({
+            "index": idx,
+            "name": f"nic{idx}",
+            "network": (conn.get("network") or "").strip(),
+            "ip": (conn.get("ipAddress") or "").strip(),
+            "external_ip": (conn.get("externalIpAddress") or "").strip(),
+            "mac": (conn.get("macAddress") or "").strip().lower(),
+            "connected": _truthy(conn.get("isConnected")),
+        })
+    return out
+
+
+def _sync_vcloud_interfaces(guest, nics) -> tuple[int, list]:
+    """Cloud Director NICs → VMInterface. Returns (count, what it reported)."""
+    from api.models import VMInterface
+
+    if guest.vm is None or not nics:
+        return 0, []
+    n = 0
+    seen: list = []
+    for nic in nics:
+        name = nic.get("name") or f"nic{nic.get('index', 0)}"
+        mac = (nic.get("mac") or "").lower()
+        # No MTU and no speed in the payload, so those keys stay absent - a
+        # field the hypervisor never states must never read as disagreement.
+        seen.append({"name": name, "mac_address": mac})
+        iface = VMInterface.objects.filter(vm=guest.vm, name=name).first()
+        if iface is None:
+            VMInterface.objects.create(
+                vm=guest.vm, name=name, mac_address=mac, created_interface=True
+            )
+            logger.info("created interface %s/%s (%s)", guest.vm.name, name,
+                        mac or "no mac")
+        elif mac and not iface.mac_address:
+            iface.mac_address = mac
+            iface.save(update_fields=["mac_address"])
+        n += 1
+    return n, seen
+
+
+def _sync_vcloud_ips(source, guest, nics, *, nets=None, prefixes=None,
+                     warnings=None, net_vrfs=None) -> tuple[int, int]:
+    """Cloud Director's per-NIC address → the shared attach path."""
+    entries = [
+        {"mac": nic.get("mac") or "",
+         "ips": [nic["ip"]] if nic.get("ip") else [],
+         "net_key": nic.get("network") or None}
+        for nic in (nics or [])
+    ]
+    return _attach_ips(source, guest, entries, prefixes=prefixes,
+                       warnings=warnings, net_vrfs=net_vrfs)
+
+
+def _sync_networks_vcloud(source, cluster, guest, nics, now) -> int:
+    """Org VDC networks → VirtualSwitch + VirtNetwork, one per named network.
+
+    Cloud Director states no VLAN on a NIC - the tag lives on the backing
+    network pool, which an org-scoped account cannot read - so the network is
+    linked by name and the VLAN stays the operator's to set.
+    """
+    n = 0
+    for nic in (nics or []):
+        network = (nic.get("network") or "").strip()
+        if not network:
+            continue
+        n += _link_network(
+            source, cluster, guest, nic.get("name") or "", network, None,
+            network, now, kind="standard",
+        )
+    return n
+
+
+def _sync_meta_vcloud(guest, meta) -> None:
+    _apply_notes(guest.vm, (meta or {}).get("notes"))
+
+
+def _vcloud_ip_row(source, addr: str, *, prefixes, warnings):
+    """Find or create the IPAM row for an address the sync did not get from a
+    guest - today, a NAT rule's outside address.
+
+    Same rule as everywhere else: an address is only recorded when a prefix
+    already contains it. Sync never invents address space.
+    """
+    from api.models import IPAddress
+
+    try:
+        parsed = ipaddress.ip_address(addr)
+    except ValueError:
+        return None
+    placement = vrf_placement.Placement.from_policy(source)
+    row, note = vrf_placement.existing_row(source.tenant, str(parsed), placement)
+    if note and warnings is not None:
+        warnings.append(note)
+    if row is not None:
+        return row
+    placed = vrf_placement.place(
+        source.tenant, str(parsed), placement, prefixes=prefixes
+    )
+    if not placed.ok:
+        if warnings is not None:
+            warnings.append(f"{parsed}: {placed.detail}")
+        return None
+    try:
+        return IPAddress.objects.create(
+            tenant=source.tenant, ip_address=str(parsed), prefix=placed.prefix,
+            description=f"Synced from «{source.name}»",
+        )
+    except IntegrityError:
+        return None
+
+
+def _sync_vcloud_nat(source, resources, details, now, warnings) -> int:
+    """External addresses → :class:`api.NATRule`, one per translated NIC.
+
+    Opt-in (``sync_nat``): a NAT rule is operator-facing policy, so an estate
+    that documents its edge by hand does not want the sync inventing rows.
+    ``device`` stays blank - the translation happens on the Org VDC edge
+    gateway, which an org-scoped account cannot see and which Danbyte would
+    otherwise have to invent a Device for.
+    """
+    from api.models import NATRule
+
+    from .models import VirtNatLink
+
+    prefixes = vrf_placement.load_prefixes(source.tenant)
+    made = 0
+    for r in resources:
+        for nic in (details.get(r["ext_id"]) or {}).get("ifaces") or []:
+            outside, inside = nic.get("external_ip"), nic.get("ip")
+            if not outside or not inside:
+                continue
+            ext_key = f"{r['ext_id']}:{nic.get('index', 0)}"
+            external = _vcloud_ip_row(
+                source, outside, prefixes=prefixes, warnings=warnings
+            )
+            internal = _vcloud_ip_row(
+                source, inside, prefixes=prefixes, warnings=warnings
+            )
+            if external is None or internal is None:
+                continue
+            link = VirtNatLink.objects.filter(
+                source=source, ext_key=ext_key
+            ).first()
+            name = f"{r['name']} ({nic.get('name') or 'nic'})"[:128]
+            if link is None:
+                rule = NATRule.objects.create(
+                    tenant=source.tenant, name=name, kind="static",
+                    protocol="any", external_ip=external, internal_ip=internal,
+                    description=f"Synced from «{source.name}»",
+                )
+                VirtNatLink.objects.create(
+                    source=source, ext_key=ext_key, rule=rule,
+                    created_rule=True, last_seen_at=now,
+                )
+                made += 1
+                logger.info("created NAT rule %r (%s → %s)", name,
+                            external.ip_address, internal.ip_address)
+                continue
+            rule = link.rule
+            changed = []
+            # Only a rule the sync minted follows the hypervisor; one an
+            # operator edited into place is theirs.
+            if link.created_rule:
+                for field, value in (("external_ip", external),
+                                     ("internal_ip", internal)):
+                    if getattr(rule, f"{field}_id") != value.id:
+                        setattr(rule, field, value)
+                        changed.append(field)
+                if changed:
+                    rule.save(update_fields=changed)
+            link.last_seen_at = now
+            link.save(update_fields=["last_seen_at"])
+    # Translations the hypervisor stopped reporting. Only rows the sync
+    # created are deleted; an adopted rule just loses its link.
+    stale = VirtNatLink.objects.filter(source=source).exclude(last_seen_at=now)
+    for link in stale.select_related("rule"):
+        if link.created_rule and link.rule_id:
+            link.rule.delete()
+    gone, _ = stale.delete()
+    if gone:
+        logger.info("pruned %d stale NAT link(s)", gone)
+    return made
+
+
+def sync_vcloud(source) -> dict:
+    from .vcloud_client import VCloudClient, _truthy, format_version
+
+    now = timezone.now()
+    counts = {"nodes": 0, "vms": 0, "vms_created": 0, "hosts": 0,
+              "interfaces": 0, "ips": 0, "ips_skipped": 0, "disks": 0,
+              "networks": 0, "vm_groups": 0, "nat_rules": 0, "pending": 0}
+    client = VCloudClient(source).login()
+    try:
+        spoken = format_version(client.version)
+        if source.api_version_used != spoken:
+            source.api_version_used = spoken
+            source.save(update_fields=["api_version_used"])
+        warnings = [client.version_note] if client.version_note else []
+
+        records = client.query("vm")
+        resources: list = []
+        details: dict = {}
+        templates = 0
+        for rec in records:
+            if _truthy(rec.get("isVAppTemplate")) and not source.sync_templates:
+                templates += 1
+                continue
+            r = _vcloud_resource(rec)
+            if not r["ext_id"]:
+                logger.warning("skipping a Cloud Director VM with no usable id")
+                continue
+            try:
+                detail = client.get_href(rec.get("href") or "")
+            except VirtAPIError as exc:
+                # One unreadable VM must not cost the whole pass.
+                logger.warning("cloud director vm %r fetch failed: %s",
+                               r["name"], exc)
+                detail = {}
+            nics = _vcloud_nics(detail)
+            resources.append(r)
+            details[r["ext_id"]] = {
+                "ifaces": nics, "ips": nics, "nets": nics, "disks": None,
+                "meta": {"notes": (detail or {}).get("description")},
+            }
+        if templates:
+            logger.info("skipped %d vApp template(s)", templates)
+        # One detail request per VM. Fine for the estates this was built
+        # against; say so rather than let a large one look like a hang.
+        if len(resources) > 500:
+            logger.info("Cloud Director: read %d VM detail records",
+                        len(resources))
+
+        result = _run_pass(
+            source, source.name, resources, details, now, counts,
+            _sync_vcloud_interfaces, _sync_vcloud_ips,
+            sync_nets_fn=_sync_networks_vcloud,
+            sync_meta_fn=_sync_meta_vcloud,
+            extra_warnings=warnings,
+            label="vcloud",
+        )
+        if source.sync_nat:
+            nat_warnings: list = []
+            result["nat_rules"] = _sync_vcloud_nat(
+                source, resources, details, now, nat_warnings
+            )
+            if nat_warnings:
+                source.record_skipped(nat_warnings)
+        return result
+    finally:
+        client.close()
+
+
 def record_virt_failure(source, exc: Exception) -> None:
     source.last_sync_at = timezone.now()
     source.last_sync_status = "failed"
@@ -2157,7 +2606,7 @@ def apply_change(change) -> None:
         specs = {k: detail.get(k) for k in ("vcpus", "memory_mb", "disk_gb")}
         vm = VirtualMachine.objects.create(
             tenant=guest.source.tenant,
-            name=detail.get("name") or f"vm-{guest.vmid}",
+            name=detail.get("name") or f"vm-{guest.key()}",
             cluster=cluster,
             **{k: v for k, v in specs.items() if v is not None},
         )
