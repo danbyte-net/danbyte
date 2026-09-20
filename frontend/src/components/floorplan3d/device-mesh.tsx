@@ -3,12 +3,7 @@ import { useThree } from "@react-three/fiber"
 import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
-import {
-  api,
-  type FacePort,
-  type FacePorts,
-  type ImagePortMarker,
-} from "@/lib/api"
+import { type FacePort, type ImagePortMarker } from "@/lib/api"
 import {
   bayHex,
   EMPTY_LEGEND,
@@ -24,6 +19,7 @@ import {
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
 import type { PortLabelSource } from "@/lib/api"
+import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
 
 import { FaceLabel } from "./text-sprite"
 import { useMaxAnisotropy } from "./texture-quality"
@@ -283,7 +279,9 @@ export function DeviceMesh({
   const wantPorts = showTexture && livePorts && markers.length > 0
   const facePorts = useQuery({
     queryKey: ["device-face-ports", dev.id],
-    queryFn: () => api<FacePorts>(`/api/devices/${dev.id}/face-ports/`),
+    // One bulk request per rack-load, not one per device: every mesh that
+    // asks within the same short window rides the same call.
+    queryFn: () => fetchFacePortsBatched(dev.id),
     enabled: wantPorts,
     staleTime: 30_000,
   })

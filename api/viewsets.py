@@ -3393,9 +3393,36 @@ class DeviceViewSet(
         synthetic entries (marker == the component's own name): the room draws
         deterministic quads for them, and those must resolve here like any
         photo port or they could never start a connection."""
+        device = self.get_object()
+        return Response(self._face_ports_payload(device))
+
+    @action(detail=False, methods=["get"], url_path="face-ports")
+    def face_ports_bulk(self, request):
+        """``?ids=a,b,c`` → ``{device id: {front, rear}}`` for up to 200 devices
+        the caller may view. The 3D room resolves a rack's worth of markers
+        in one request instead of one per device - forty round trips for a
+        full cabinet was what made its photo ports take seconds to light up."""
+        import uuid
+
+        ids = []
+        for raw in (request.query_params.get("ids") or "").split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                ids.append(uuid.UUID(raw))
+            except ValueError:
+                continue
+        ids = ids[:200]
+        if not ids:
+            return Response({})
+        devices = self.get_queryset().filter(pk__in=ids).select_related("device_type")
+        return Response({str(d.id): self._face_ports_payload(d) for d in devices})
+
+    def _face_ports_payload(self, device) -> dict:
+        """The resolved markers of one device - see ``face_ports``."""
         from .models import render_component_name
 
-        device = self.get_object()
         dt = device.device_type
         # A device-level override (special devices) replaces the type's
         # layout wholesale; null inherits.
@@ -3575,7 +3602,7 @@ class DeviceViewSet(
                     "status": None, "module": None,
                     "drift": drift.get(str(comp.id)),
                 })
-        return Response({"front": front, "rear": rear})
+        return {"front": front, "rear": rear}
 
     @action(detail=True, methods=["get"])
     def render(self, request, pk=None):
