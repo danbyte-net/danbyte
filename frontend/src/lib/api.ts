@@ -9108,7 +9108,10 @@ export interface VirtChange {
     | "iface_extra"
     | "iface_change"
   kind_display: string
-  vmid: number
+  /** Null on a hypervisor that keys guests by string. */
+  vmid: number | null
+  /** Whichever identity this guest's hypervisor uses, as text. */
+  guest_key: string
   node: string
   vm: string | null
   vm_name: string

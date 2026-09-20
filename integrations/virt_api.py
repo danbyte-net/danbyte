@@ -138,9 +138,15 @@ class VirtNetworkViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 class VirtChangeSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     source_name = serializers.CharField(source="source.name", read_only=True)
+    #: Null on a hypervisor that keys guests by string - see guest_key.
     vmid = serializers.IntegerField(source="guest.vmid", read_only=True)
+    #: Whichever identity this guest's hypervisor uses, as text.
+    guest_key = serializers.SerializerMethodField()
     node = serializers.CharField(source="guest.node", read_only=True)
     vm_name = serializers.SerializerMethodField()
+
+    def get_guest_key(self, obj) -> str:
+        return str(obj.guest.key() or "")
 
     def get_vm_name(self, obj):
         if obj.vm_id:
@@ -150,7 +156,8 @@ class VirtChangeSerializer(serializers.ModelSerializer):
     class Meta:
         model = VirtChange
         fields = ["id", "source", "source_name", "kind", "kind_display",
-                  "vmid", "node", "vm", "vm_name", "detail", "ignored",
+                  "vmid", "guest_key", "node", "vm", "vm_name", "detail",
+                  "ignored",
                   "last_seen_at"]
         read_only_fields = fields
 
@@ -162,7 +169,7 @@ class VirtChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     tenant_field = "source__tenant"
     http_method_names = ["get", "post"]
     queryset = VirtChange.objects.select_related("source", "guest", "vm").order_by(
-        "kind", "guest__vmid"
+        "kind", "guest__vmid", "guest__ext_id"
     )
     serializer_class = VirtChangeSerializer
     rbac_action_map = {"accept": "change", "ignore": "change"}

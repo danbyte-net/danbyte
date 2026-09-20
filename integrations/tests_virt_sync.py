@@ -3098,6 +3098,22 @@ class VCloudIdentityTests(TestCase):
         self.assertFalse(VirtualMachine.objects.filter(name="edge01").exists())
         self.assertEqual(VirtGuest.objects.count(), 2)
 
+    def test_one_urn_reported_twice_imports_one_machine(self):
+        """Redacted exports collapse every href to a placeholder; a real
+        appliance should never do this, so take the first and say so."""
+        class Doubled(FakeVCloud):
+            records = [
+                _vcd_record(VCD_A, "web01", "web-stack"),
+                _vcd_record(VCD_A, "web01-copy", "other-stack"),
+            ]
+
+        self.sync(Doubled)
+
+        self.assertEqual(VirtGuest.objects.count(), 1)
+        self.assertEqual(
+            [vm.name for vm in VirtualMachine.objects.all()], ["web01"]
+        )
+
     def test_two_machines_of_one_name_are_reported_not_merged(self):
         """Cloud Director scopes a VM name to its vApp; Danbyte does not."""
         class Clashing(FakeVCloud):

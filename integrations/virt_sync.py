@@ -2556,6 +2556,15 @@ def sync_vcloud(source) -> dict:
             if not r["ext_id"]:
                 logger.warning("skipping a Cloud Director VM with no usable id")
                 continue
+            if r["ext_id"] in details:
+                # Two records for one urn cannot both be real. Taking the
+                # second would overwrite the first's detail silently, which
+                # is worse than importing one machine and saying so.
+                logger.warning(
+                    "Cloud Director reported %r twice under the same id",
+                    r["name"],
+                )
+                continue
             try:
                 detail = client.get_href(rec.get("href") or "")
             except VirtAPIError as exc:
