@@ -2446,18 +2446,35 @@ def _sync_vcloud_nat(source, resources, details, now, warnings) -> int:
     from .models import VirtNatLink
 
     prefixes = vrf_placement.load_prefixes(source.tenant)
+    # The same allow-list the address sync honours. An operator who excluded
+    # a guest's network does not want it back as the inside of a NAT rule.
+    allowed = []
+    for cidr in source.sync_allowed_networks or []:
+        try:
+            allowed.append(ipaddress.ip_network(str(cidr), strict=False))
+        except ValueError:
+            continue
     made = 0
     for r in resources:
         for nic in (details.get(r["ext_id"]) or {}).get("ifaces") or []:
             outside, inside = nic.get("external_ip"), nic.get("ip")
             if not outside or not inside:
                 continue
+            if allowed:
+                try:
+                    addr = ipaddress.ip_address(inside)
+                except ValueError:
+                    continue
+                if not any(addr in net for net in allowed):
+                    continue
             ext_key = f"{r['ext_id']}:{nic.get('index', 0)}"
             external = _vcloud_ip_row(
                 source, outside, prefixes=prefixes, warnings=warnings
             )
+            # The inside address has already been through _attach_ips, which
+            # reported it if it could not be placed - do not say it twice.
             internal = _vcloud_ip_row(
-                source, inside, prefixes=prefixes, warnings=warnings
+                source, inside, prefixes=prefixes, warnings=None
             )
             if external is None or internal is None:
                 continue

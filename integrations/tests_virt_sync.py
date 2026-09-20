@@ -3159,6 +3159,15 @@ class VCloudNatTests(TestCase):
 
         self.assertEqual(NATRule.objects.count(), 0)
 
+    def test_an_excluded_inside_address_writes_no_rule(self):
+        """The allow-list is the operator saying that network is noise."""
+        self.source.sync_allowed_networks = ["192.168.0.0/16"]
+        self.source.save(update_fields=["sync_allowed_networks"])
+
+        self.sync()
+
+        self.assertEqual(NATRule.objects.count(), 0)
+
     def test_a_translation_that_goes_away_takes_its_rule_with_it(self):
         self.sync()
 

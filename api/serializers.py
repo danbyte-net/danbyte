@@ -4717,6 +4717,7 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
     def validate(self, attrs):
         """Name the clash on the field, rather than letting the database
         constraint surface as a generic conflict."""
+        attrs = super().validate(attrs)
         cluster = attrs.get(
             "cluster", getattr(self.instance, "cluster", None)
         )
