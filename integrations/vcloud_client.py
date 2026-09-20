@@ -355,6 +355,24 @@ class VCloudClient:
                 "Cloud Director returned non-JSON output."
             ) from exc
 
+    def query_page(self, type_: str, page: int = 1, page_size: int = 1,
+                   **params) -> dict:
+        """One page of a query, decoded - for a probe that wants the ``total``
+        without walking an estate."""
+        r = self._get(
+            f"{self.base}/api/query",
+            params={"type": type_, "page": page, "pageSize": page_size,
+                    "format": "records", **params},
+        )
+        if not r.ok:
+            raise VirtAPIError(
+                f"Cloud Director {type_} query returned {r.status_code}."
+            )
+        try:
+            return r.json() or {}
+        except ValueError as exc:
+            raise VirtAPIError("Cloud Director returned non-JSON output.") from exc
+
     def query(self, type_: str, page_size: int = 128, max_pages: int = 200,
               **params) -> list:
         """Every record of ``type_``, walking Cloud Director's pagination.

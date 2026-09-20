@@ -21,6 +21,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
+import { ClusterVmGroups } from "@/components/cluster-vm-groups"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -148,6 +149,7 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "vms", label: "Virtual machines", count: c.vm_count },
+        { value: "groups", label: "VM groups" },
         { value: "devices", label: "Hosts", count: deviceCount },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -160,6 +162,9 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
       </DetailTab>
       <DetailTab value="vms">
         <ClusterVmsPane clusterId={c.id} />
+      </DetailTab>
+      <DetailTab value="groups">
+        <ClusterVmGroups clusterId={c.id} />
       </DetailTab>
       <DetailTab value="devices">
         <ClusterDevicesPane clusterId={c.id} />

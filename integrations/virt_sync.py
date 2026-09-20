@@ -2494,14 +2494,21 @@ def _sync_vcloud_nat(source, resources, details, now, warnings) -> int:
             link.last_seen_at = now
             link.save(update_fields=["last_seen_at"])
     # Translations the hypervisor stopped reporting. Only rows the sync
-    # created are deleted; an adopted rule just loses its link.
-    stale = VirtNatLink.objects.filter(source=source).exclude(last_seen_at=now)
-    for link in stale.select_related("rule"):
+    # created are deleted; an adopted rule just loses its link. Deleting the
+    # rule cascades the link, so the two cases are handled separately rather
+    # than deleting the queryset out from under itself.
+    stale = list(
+        VirtNatLink.objects.filter(source=source)
+        .exclude(last_seen_at=now)
+        .select_related("rule")
+    )
+    for link in stale:
         if link.created_rule and link.rule_id:
             link.rule.delete()
-    gone, _ = stale.delete()
-    if gone:
-        logger.info("pruned %d stale NAT link(s)", gone)
+        else:
+            link.delete()
+    if stale:
+        logger.info("pruned %d stale NAT link(s)", len(stale))
     return made
 
 
@@ -2567,7 +2574,12 @@ def sync_vcloud(source) -> dict:
                 source, resources, details, now, nat_warnings
             )
             if nat_warnings:
-                source.record_skipped(nat_warnings)
+                # _run_pass has already written its own skipped list, so add
+                # to it rather than replacing it.
+                source.record_skipped(
+                    list(source.last_sync_skipped or []) + nat_warnings
+                )
+                source.save(update_fields=["last_sync_skipped"])
         return result
     finally:
         client.close()

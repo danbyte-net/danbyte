@@ -57,6 +57,40 @@ const PATTERN_HINT: Record<string, string> = {
   ip: "10.0.9.0/24  ·  192.168.110.*",
 }
 
+/** Which Cloud Director API the last pass spoke, against the window this
+ * release was tested in.
+ *
+ * The version is negotiated rather than configured, so "what did it agree
+ * on?" is a question only the page can answer - and an appliance ahead of
+ * Danbyte still syncs, which is worth saying rather than hiding.
+ */
+function ApiVersion({ source }: { source: VirtualizationSource }) {
+  const used = source.api_version_used
+  const tested = source.api_version_tested
+  const pinned = source.api_version
+  if (!used) {
+    return (
+      <span className="text-muted-foreground">
+        {pinned ? `${pinned}, not yet used` : "Negotiated on first sync"}
+      </span>
+    )
+  }
+  const num = (v: string) => {
+    const [maj, min] = v.split(".")
+    return Number(maj || 0) * 1000 + Number(min || 0)
+  }
+  const ahead = num(used) > num(tested)
+  return (
+    <span className="flex items-center gap-2">
+      <Badge variant={ahead ? "warning" : "success"}>{used}</Badge>
+      <span className="text-xs text-muted-foreground">
+        {ahead ? `newer than the tested ${tested}` : `tested to ${tested}`}
+        {pinned ? " · pinned" : ""}
+      </span>
+    </span>
+  )
+}
+
 function SourceDetailPage() {
   const { id } = Route.useParams()
   const [tab, setTab] = useUrlTab<
@@ -138,6 +172,7 @@ function SourceDetailPage() {
         nodes?: number
         online_nodes?: number
         vms?: number
+        detail?: string
         error?: string
       }>(`/api/virtualization-sources/${id}/test/`, {
         method: "POST",
@@ -146,9 +181,16 @@ function SourceDetailPage() {
     onSuccess: (r) => {
       if (!r.ok) return toast.error(r.error || "Probe failed")
       const name = [r.product, r.version].filter(Boolean).join(" ")
-      const parts = [`${r.online_nodes}/${r.nodes} nodes online`]
+      // Cloud Director exposes no hypervisor hosts to an org account, so a
+      // "0/0 nodes online" line would report a problem that is not one.
+      const parts = r.nodes
+        ? [`${r.online_nodes}/${r.nodes} nodes online`]
+        : []
       if (r.vms !== undefined) parts.push(`${r.vms} VMs`)
-      toast.success(`Connected - ${name}, ${parts.join(", ")}`)
+      const summary = parts.length ? `, ${parts.join(", ")}` : ""
+      toast.success(`Connected - ${name}${summary}`, {
+        description: r.detail || undefined,
+      })
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -167,6 +209,9 @@ function SourceDetailPage() {
         </span>
       ),
     },
+    ...(source.api_version_tested
+      ? [{ label: "API version", value: <ApiVersion source={source} /> }]
+      : []),
     { label: "Mode", value: source.sync_mode },
     { label: "Address VRF", value: source.vrf_name || dash },
     {
@@ -197,6 +242,22 @@ function SourceDetailPage() {
     },
     { label: "Hosts as devices", value: source.sync_hosts ? "Yes" : "No" },
     { label: "Platforms", value: source.sync_platforms ? "Yes" : "No" },
+    ...(source.api_version_tested
+      ? [
+          {
+            label: "VM groups",
+            value: source.sync_vm_groups ? "vApps" : "No",
+          },
+          {
+            label: "External addresses",
+            value: source.sync_nat ? "As NAT rules" : "No",
+          },
+          {
+            label: "vApp templates",
+            value: source.sync_templates ? "Imported" : "Skipped",
+          },
+        ]
+      : []),
     {
       label: "Interface MTU",
       value: source.sync_vm_interface_mtu ? "Yes" : "No",

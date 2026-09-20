@@ -365,6 +365,10 @@ const KIND_SPEC = {
     // Proxmox reports a bridge MTU per vNIC; vSphere does not.
     mtu: true,
     hostHardware: false,
+    apiVersion: false,
+    nat: false,
+    groups: false,
+    templates: false,
   },
   vcenter: {
     label: "VMware vCenter",
@@ -380,6 +384,31 @@ const KIND_SPEC = {
     secretLabel: "Password",
     mtu: false,
     hostHardware: true,
+    apiVersion: false,
+    nat: false,
+    groups: false,
+    templates: false,
+  },
+  vcloud: {
+    label: "VMware Cloud Director",
+    short: "Cloud Director",
+    port: 443,
+    namePlaceholder: "cloud.example.com",
+    hostPlaceholder: "vcd.danbyte.lan",
+    hostInfo: "The Cloud Director portal address.",
+    auth: "userpass",
+    idLabel: "Username",
+    idPlaceholder: "sync@my-org",
+    idInfo:
+      "A read-only organization account. The org in the username is what scopes the connection - one source per organization.",
+    secretLabel: "Password",
+    mtu: false,
+    hostHardware: false,
+    // Cloud Director negotiates its API version, so there is one to pin.
+    apiVersion: true,
+    nat: true,
+    groups: true,
+    templates: true,
   },
 } as const
 
@@ -465,6 +494,12 @@ export function SourceDialog({
   const [skipOffline, setSkipOffline] = useState(
     source?.skip_offline_vms ?? false
   )
+  const [apiVersion, setApiVersion] = useState(source?.api_version ?? "")
+  const [syncNat, setSyncNat] = useState(source?.sync_nat ?? false)
+  const [syncGroups, setSyncGroups] = useState(source?.sync_vm_groups ?? true)
+  const [syncTemplates, setSyncTemplates] = useState(
+    source?.sync_templates ?? false
+  )
   const [autoPrune, setAutoPrune] = useState(source?.auto_prune ?? false)
   const [pruneAfter, setPruneAfter] = useState(
     String(source?.auto_prune_after_days ?? 7)
@@ -502,6 +537,10 @@ export function SourceDialog({
         sync_platforms: syncPlatforms,
         sync_vm_interface_mtu: syncMtu,
         skip_offline_vms: skipOffline,
+        api_version: apiVersion.trim(),
+        sync_nat: syncNat,
+        sync_vm_groups: syncGroups,
+        sync_templates: syncTemplates,
         auto_prune: autoPrune,
         auto_prune_after_days: Number(pruneAfter) || 0,
         sync_allowed_networks: allowedNetworks
@@ -586,6 +625,15 @@ export function SourceDialog({
             info={spec.hostInfo}
           />
           <FormText label="API port" value={port} onChange={setPort} />
+          {spec.apiVersion && (
+            <FormText
+              label="API version"
+              value={apiVersion}
+              onChange={setApiVersion}
+              placeholder="negotiate"
+              info="Leave blank and Danbyte asks the appliance what it speaks, then uses the newest version this release was tested against. Pin one only to work around a specific version."
+            />
+          )}
           <FormSelect
             label="Sync mode"
             value={syncMode}
@@ -661,6 +709,30 @@ export function SourceDialog({
                 hint="Copy the hypervisor's MTU onto a VM interface that has none, and report a differing one as drift. Off leaves MTU to you."
                 checked={syncMtu}
                 onChange={setSyncMtu}
+              />
+            )}
+            {spec.groups && (
+              <FormCheckbox
+                label="Sync vApps as VM groups"
+                hint="Mirror the hypervisor's own grouping. A VM you grouped by hand keeps your grouping."
+                checked={syncGroups}
+                onChange={setSyncGroups}
+              />
+            )}
+            {spec.nat && (
+              <FormCheckbox
+                label="Record external addresses as NAT rules"
+                hint="Write a static NAT rule for each translated interface. Off leaves the edge yours to document."
+                checked={syncNat}
+                onChange={setSyncNat}
+              />
+            )}
+            {spec.templates && (
+              <FormCheckbox
+                label="Import vApp templates"
+                hint="Templates are golden images rather than running machines, so they are left out by default."
+                checked={syncTemplates}
+                onChange={setSyncTemplates}
               />
             )}
             <FormCheckbox
