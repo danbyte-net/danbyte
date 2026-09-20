@@ -5384,7 +5384,10 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("cluster", "device", "site", "primary_ip")
+            .select_related("cluster", "device", "site", "primary_ip",
+                            # Serialised inline; a 2,000-row list would
+                            # otherwise fire one query per VM for it.
+                            "group")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
             .prefetch_related("tags", "disks")
