@@ -4,25 +4,30 @@ from __future__ import annotations
 from datetime import timedelta
 from unittest import mock
 
+import requests
 from django.test import TestCase
 from django.utils import timezone
 
 from api.models import (
     VLAN,
     Cluster,
+    ClusterGroup,
     ClusterType,
     Device,
     DeviceRole,
     IPAddress,
+    NATRule,
     Prefix,
     VirtualDisk,
     VirtualMachine,
+    VirtualMachineGroup,
     VirtualSwitch,
     VMInterface,
 )
 from core.models import Organization, Tenant
-from integrations import virt_sync
-from integrations.models import VirtGuest, VirtualizationSource
+from integrations import vcloud_client, virt_sync
+from integrations.models import VirtGuest, VirtNatLink, VirtualizationSource
+from integrations.virt_client import VirtAPIError
 
 CLUSTER_STATUS = [
     {"type": "cluster", "name": "DB-CLUSTER01"},
@@ -2759,3 +2764,661 @@ class VcenterHostNicTests(TestCase):
         self.sync()
         nic.refresh_from_db()
         self.assertEqual(nic.speed, "25G")
+
+
+# ─── VMware Cloud Director ───────────────────────────────────────────────────
+#
+# The reporter's sample is redacted, so the fixtures below reproduce the two
+# things it does prove about a real appliance: the query record's ``id`` is
+# null, and a VM's addressing only arrives from the per-VM detail fetch.
+
+VCD_A = "vm-11111111-1111-1111-1111-111111111111"
+VCD_B = "vm-22222222-2222-2222-2222-222222222222"
+VCD_C = "vm-33333333-3333-3333-3333-333333333333"
+VCD_T = "vm-44444444-4444-4444-4444-444444444444"
+
+VCD_BASE = "https://vcd.example.net/api/vApp"
+
+
+def _vcd_record(urn, name, vapp, **over):
+    rec = {
+        "id": None,
+        "href": f"{VCD_BASE}/{urn}",
+        "name": name,
+        "containerName": vapp,
+        "vdcName": "Prod-VDC",
+        "orgName": "Acme",
+        "status": "POWERED_ON",
+        "isVAppTemplate": "false",
+        "numberOfCpus": 4,
+        "memoryMB": 8192,
+        "totalStorageAllocatedMb": 51200,
+        "guestOs": "Ubuntu Linux (64-bit)",
+    }
+    rec.update(over)
+    return rec
+
+
+VCD_RECORDS = [
+    _vcd_record(VCD_A, "web01", "web-stack"),
+    _vcd_record(VCD_B, "db01", "db-stack", vdcName="DR-VDC",
+                status="POWERED_OFF", numberOfCpus=2, memoryMB=4096),
+    _vcd_record(VCD_C, "edge01", "web-stack"),
+    _vcd_record(VCD_T, "golden-ubuntu", "templates",
+                isVAppTemplate="true"),
+]
+
+
+def _vcd_detail(*conns, description=""):
+    return {
+        "description": description,
+        "section": [
+            {"_type": "GuestCustomizationSectionType"},
+            {"_type": "NetworkConnectionSectionType",
+             "networkConnection": list(conns)},
+        ],
+    }
+
+
+VCD_DETAIL = {
+    VCD_A: _vcd_detail(
+        {"networkConnectionIndex": 0, "network": "lan_2",
+         "ipAddress": "10.77.0.10", "externalIpAddress": "198.51.100.10",
+         "macAddress": "02:20:36:04:21:53", "isConnected": "true"},
+        # A second NIC with no address at all - 23 of the reporter's 45 VMs
+        # have one, so it must not become an empty IPAddress row.
+        {"networkConnectionIndex": 1, "network": "lan_9",
+         "ipAddress": "", "externalIpAddress": "",
+         "macAddress": "02:20:36:04:21:54", "isConnected": "false"},
+        description="the web head",
+    ),
+    VCD_B: _vcd_detail(
+        {"networkConnectionIndex": 0, "network": "lan_2",
+         "ipAddress": "10.77.0.11", "externalIpAddress": "",
+         "macAddress": "02:20:36:04:21:55", "isConnected": "true"},
+    ),
+    VCD_C: _vcd_detail(
+        {"networkConnectionIndex": 0, "network": "lan_2",
+         "ipAddress": "10.77.0.12", "externalIpAddress": "",
+         "macAddress": "02:20:36:04:21:56", "isConnected": "true"},
+    ),
+    VCD_T: _vcd_detail(),
+}
+
+
+class FakeVCloud:
+    """Stand-in for VCloudClient. Serves the fixtures above and records use."""
+
+    records = VCD_RECORDS
+    version = (38, 1)
+    version_note = ""
+
+    def __init__(self, source):
+        self.source = source
+        self.hrefs: list = []
+
+    def login(self):
+        return self
+
+    def query(self, type_, **kw):
+        assert type_ == "vm", type_
+        return list(self.records)
+
+    def query_page(self, type_, **kw):
+        return {"total": len(self.records), "record": list(self.records)[:1]}
+
+    def get_href(self, href):
+        self.hrefs.append(href)
+        urn = href.rsplit("/", 1)[-1]
+        if urn not in VCD_DETAIL:
+            raise AssertionError(f"unexpected href {href}")
+        return VCD_DETAIL[urn]
+
+    def close(self):
+        pass
+
+
+class VCloudSyncTests(TestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vcd", kind="vcloud",
+            host="192.0.2.60", port=443,
+            credentials={"username": "sync@acme", "password": "s"},
+            sync_mode="auto",
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def sync(self, cls=FakeVCloud):
+        with mock.patch("integrations.vcloud_client.VCloudClient", cls):
+            return virt_sync.sync_vcloud(self.source)
+
+    def test_vms_land_in_the_vdc_they_run_in(self):
+        """The Org VDC is the only cluster-shaped thing Cloud Director has."""
+        counts = self.sync()
+
+        self.assertEqual(counts["vms"], 3)  # the template is not one
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").cluster.name, "Prod-VDC"
+        )
+        self.assertEqual(
+            VirtualMachine.objects.get(name="db01").cluster.name, "DR-VDC"
+        )
+        self.assertFalse(Cluster.objects.filter(name=self.source.name).exists())
+
+    def test_the_org_becomes_a_cluster_group(self):
+        self.sync()
+
+        cluster = Cluster.objects.get(name="Prod-VDC")
+        self.assertIsNotNone(cluster.group)
+        self.assertEqual(cluster.group.name, "Acme")
+        # Both VDCs of one org share it rather than minting two.
+        self.assertEqual(
+            Cluster.objects.get(name="DR-VDC").group_id, cluster.group_id
+        )
+        self.assertEqual(ClusterGroup.objects.count(), 1)
+
+    def test_the_cluster_type_is_cloud_director_not_proxmox(self):
+        """_cluster_for used to fall back to Proxmox VE for an unknown kind."""
+        self.sync()
+
+        self.assertEqual(
+            Cluster.objects.get(name="Prod-VDC").type.name,
+            "VMware Cloud Director",
+        )
+        self.assertFalse(
+            ClusterType.objects.filter(name="Proxmox VE").exists()
+        )
+
+    def test_vapps_become_vm_groups(self):
+        self.sync()
+
+        group = VirtualMachineGroup.objects.get(name="web-stack")
+        self.assertEqual(group.kind, "vapp")
+        self.assertEqual(group.cluster.name, "Prod-VDC")
+        self.assertEqual(
+            {vm.name for vm in group.virtual_machines.all()},
+            {"web01", "edge01"},
+        )
+
+    def test_vapp_grouping_is_off_when_the_switch_is(self):
+        self.source.sync_vm_groups = False
+        self.source.save(update_fields=["sync_vm_groups"])
+
+        self.sync()
+
+        self.assertEqual(VirtualMachineGroup.objects.count(), 0)
+        self.assertIsNone(VirtualMachine.objects.get(name="web01").group_id)
+
+    def test_an_operators_own_grouping_is_not_replaced(self):
+        """The hypervisor owns membership only until a human says otherwise."""
+        self.sync()
+        vm = VirtualMachine.objects.get(name="web01")
+        mine = VirtualMachineGroup.objects.create(
+            tenant=self.tenant, cluster=vm.cluster, name="mine", kind="other"
+        )
+        vm.group = mine
+        vm.save(update_fields=["group"])
+
+        # A sync-created row in auto mode follows the hypervisor - but only
+        # back into the vApp it actually reports, which is the point: the
+        # operator moved it, so the next pass must not silently undo that.
+        self.source.sync_mode = "review"
+        self.source.save(update_fields=["sync_mode"])
+        self.sync()
+
+        self.assertEqual(
+            VirtualMachine.objects.get(name="web01").group_id, mine.id
+        )
+
+    def test_templates_are_skipped_unless_asked_for(self):
+        self.sync()
+        self.assertFalse(
+            VirtualMachine.objects.filter(name="golden-ubuntu").exists()
+        )
+
+        self.source.sync_templates = True
+        self.source.save(update_fields=["sync_templates"])
+        self.sync()
+
+        self.assertTrue(
+            VirtualMachine.objects.filter(name="golden-ubuntu").exists()
+        )
+
+    def test_a_string_isVAppTemplate_is_not_truthy(self):
+        """``bool("false")`` is True - the likeliest bug to inherit here.
+
+        Every fixture record carries the STRING "false", so if that were read
+        with bool() the template filter would drop all four VMs.
+        """
+        self.sync()
+
+        self.assertEqual(VirtualMachine.objects.count(), 3)
+
+    def test_interfaces_and_addresses_come_from_the_detail_fetch(self):
+        self.sync()
+
+        web = VirtualMachine.objects.get(name="web01")
+        self.assertEqual(
+            sorted(i.name for i in web.interfaces.all()), ["nic0", "nic1"]
+        )
+        self.assertEqual(
+            IPAddress.objects.get(ip_address="10.77.0.10").assigned_vm_id,
+            web.id,
+        )
+        # The NIC with no address must not invent one.
+        self.assertFalse(
+            IPAddress.objects.filter(
+                assigned_vm_interface__name="nic1"
+            ).exists()
+        )
+
+    def test_a_powered_off_vm_is_never_pruned_for_being_off(self):
+        """skip_offline_vms skips a guest's detail, never its existence.
+
+        The dangerous reading is "not synced this pass" = "gone", which with
+        auto-prune on would delete a VM for being switched off.
+        """
+        self.source.auto_prune = True
+        self.source.auto_prune_after_days = 0
+        self.source.save()
+        self.sync()
+        self.assertTrue(VirtualMachine.objects.filter(name="db01").exists())
+
+        self.source.skip_offline_vms = True
+        self.source.save(update_fields=["skip_offline_vms"])
+        self.sync()
+        self.sync()
+
+        db = VirtualMachine.objects.filter(name="db01").first()
+        self.assertIsNotNone(db)
+        self.assertIsNone(VirtGuest.objects.get(vm=db).missing_since)
+
+
+class VCloudIdentityTests(TestCase):
+    """A real appliance sends ``id: null``, so identity comes from the href."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vcd", kind="vcloud",
+            host="192.0.2.60", port=443,
+            credentials={"username": "sync@acme", "password": "s"},
+            sync_mode="auto",
+        )
+
+    def sync(self, cls=FakeVCloud):
+        with mock.patch("integrations.vcloud_client.VCloudClient", cls):
+            return virt_sync.sync_vcloud(self.source)
+
+    def test_the_guest_is_keyed_by_urn_and_has_no_vmid(self):
+        self.sync()
+
+        guest = VirtGuest.objects.get(vm__name="web01")
+        self.assertEqual(guest.ext_id, VCD_A)
+        self.assertIsNone(guest.vmid)
+        self.assertEqual(guest.key(), VCD_A)
+
+    def test_a_second_pass_does_not_duplicate_anything(self):
+        self.sync()
+        self.sync()
+
+        self.assertEqual(VirtGuest.objects.count(), 3)
+        self.assertEqual(VirtualMachine.objects.count(), 3)
+
+    def test_a_rename_on_the_hypervisor_keeps_the_same_guest(self):
+        self.sync()
+        first = VirtGuest.objects.get(ext_id=VCD_A).id
+
+        class Renamed(FakeVCloud):
+            records = [
+                {**r, "name": "web01-prod"} if r["href"].endswith(VCD_A) else r
+                for r in VCD_RECORDS
+            ]
+
+        self.sync(Renamed)
+
+        self.assertEqual(VirtGuest.objects.get(ext_id=VCD_A).id, first)
+        self.assertEqual(VirtGuest.objects.count(), 3)
+
+    def test_a_guest_that_vanishes_is_pruned_by_row_not_by_vmid(self):
+        self.source.auto_prune = True
+        self.source.auto_prune_after_days = 0
+        self.source.save()
+        self.sync()
+
+        class Fewer(FakeVCloud):
+            records = [r for r in VCD_RECORDS if not r["href"].endswith(VCD_C)]
+
+        self.sync(Fewer)
+
+        self.assertFalse(VirtGuest.objects.filter(ext_id=VCD_C).exists())
+        self.assertFalse(VirtualMachine.objects.filter(name="edge01").exists())
+        self.assertEqual(VirtGuest.objects.count(), 2)
+
+    def test_two_machines_of_one_name_are_reported_not_merged(self):
+        """Cloud Director scopes a VM name to its vApp; Danbyte does not."""
+        class Clashing(FakeVCloud):
+            records = [
+                _vcd_record(VCD_A, "web01", "web-stack"),
+                _vcd_record(VCD_B, "web01", "other-stack"),
+            ]
+
+        self.sync(Clashing)
+
+        self.assertEqual(VirtualMachine.objects.filter(name="web01").count(), 1)
+        self.source.refresh_from_db()
+        self.assertTrue(
+            any("more than one machine" in line
+                for line in self.source.last_sync_skipped),
+            self.source.last_sync_skipped,
+        )
+
+
+class VCloudNatTests(TestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vcd", kind="vcloud",
+            host="192.0.2.60", port=443,
+            credentials={"username": "sync@acme", "password": "s"},
+            sync_mode="auto", sync_nat=True,
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+        Prefix.objects.create(tenant=self.tenant, cidr="198.51.100.0/24")
+
+    def sync(self, cls=FakeVCloud):
+        with mock.patch("integrations.vcloud_client.VCloudClient", cls):
+            return virt_sync.sync_vcloud(self.source)
+
+    def test_an_external_address_becomes_one_nat_rule(self):
+        self.sync()
+
+        rule = NATRule.objects.get()
+        self.assertEqual(rule.external_ip.ip_address, "198.51.100.10")
+        self.assertEqual(rule.internal_ip.ip_address, "10.77.0.10")
+        # The translation happens on an edge gateway Danbyte cannot see, so
+        # no Device is invented for it.
+        self.assertIsNone(rule.device_id)
+
+    def test_resyncing_does_not_pile_up_duplicate_rules(self):
+        self.sync()
+        self.sync()
+
+        self.assertEqual(NATRule.objects.count(), 1)
+        self.assertEqual(VirtNatLink.objects.count(), 1)
+
+    def test_nothing_is_written_while_the_switch_is_off(self):
+        self.source.sync_nat = False
+        self.source.save(update_fields=["sync_nat"])
+
+        self.sync()
+
+        self.assertEqual(NATRule.objects.count(), 0)
+
+    def test_a_translation_that_goes_away_takes_its_rule_with_it(self):
+        self.sync()
+
+        class NoNat(FakeVCloud):
+            pass
+
+        detail = VCD_DETAIL[VCD_A]
+        stripped = {
+            **detail,
+            "section": [
+                detail["section"][0],
+                {"_type": "NetworkConnectionSectionType",
+                 "networkConnection": [
+                     {**detail["section"][1]["networkConnection"][0],
+                      "externalIpAddress": ""},
+                     detail["section"][1]["networkConnection"][1],
+                 ]},
+            ],
+        }
+        with mock.patch.dict(VCD_DETAIL, {VCD_A: stripped}):
+            self.sync(NoNat)
+
+        self.assertEqual(NATRule.objects.count(), 0)
+        self.assertEqual(VirtNatLink.objects.count(), 0)
+
+
+class VCloudVersionTests(TestCase):
+    """The API version is negotiated, so the choosing is its own contract."""
+
+    def test_json_versions_drop_the_deprecated_ones(self):
+        body = (
+            '{"versionInfo": [{"version": "33.0", "deprecated": "true"},'
+            ' {"version": "36.0"}, {"version": "38.1"}]}'
+        )
+        self.assertEqual(
+            vcloud_client.parse_versions(body), [(36, 0), (38, 1)]
+        )
+
+    def test_an_xml_document_parses_too(self):
+        """The endpoint ignores a JSON Accept header on some appliances."""
+        body = (
+            '<SupportedVersions xmlns="http://www.vmware.com/vcloud/versions">'
+            '<VersionInfo deprecated="true"><Version>33.0</Version>'
+            "</VersionInfo>"
+            "<VersionInfo><Version>37.2</Version></VersionInfo>"
+            "<VersionInfo><Version>38.1</Version></VersionInfo>"
+            "</SupportedVersions>"
+        )
+        self.assertEqual(
+            vcloud_client.parse_versions(body), [(37, 2), (38, 1)]
+        )
+
+    def test_the_newest_tested_version_wins(self):
+        chosen, note = vcloud_client.choose_version([(36, 0), (37, 2), (38, 1)])
+        self.assertEqual(chosen, (38, 1))
+        self.assertEqual(note, "")
+
+    def test_an_appliance_ahead_of_danbyte_still_syncs(self):
+        chosen, note = vcloud_client.choose_version([(38, 1), (39, 0)])
+        self.assertEqual(chosen, (38, 1))
+        self.assertIn("39.0", note)
+        self.assertIn("38.1", note)
+
+    def test_an_appliance_below_the_floor_is_refused_by_name(self):
+        with self.assertRaises(VirtAPIError) as caught:
+            vcloud_client.choose_version([(33, 0), (34, 0)])
+        self.assertIn("34.0", str(caught.exception))
+        self.assertIn("36.0", str(caught.exception))
+
+    def test_everything_offered_above_the_ceiling_takes_the_lowest(self):
+        chosen, note = vcloud_client.choose_version([(39, 0), (40, 0)])
+        self.assertEqual(chosen, (39, 0))
+        self.assertIn("newer", note)
+
+    def test_a_string_false_is_not_truthy(self):
+        self.assertFalse(vcloud_client._truthy("false"))
+        self.assertFalse(vcloud_client._truthy("False"))
+        self.assertTrue(vcloud_client._truthy("true"))
+        self.assertTrue(vcloud_client._truthy(True))
+
+
+class _Resp:
+    def __init__(self, status=200, body=None, text=None, headers=None):
+        import json as _json
+
+        self.status_code = status
+        self._body = body
+        self.text = text if text is not None else (
+            _json.dumps(body) if body is not None else ""
+        )
+        self.headers = headers or {}
+
+    @property
+    def ok(self):
+        return 200 <= self.status_code < 300
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("not json")
+        return self._body
+
+
+class _Session:
+    def __init__(self, handler):
+        self.handler = handler
+        self.headers: dict = {}
+        self.verify = True
+        self.calls: list = []
+
+    def _go(self, method, url, kw):
+        self.calls.append((method, url, kw))
+        return self.handler(method, url, kw)
+
+    def get(self, url, **kw):
+        return self._go("GET", url, kw)
+
+    def post(self, url, **kw):
+        return self._go("POST", url, kw)
+
+    def delete(self, url, **kw):
+        return self._go("DELETE", url, kw)
+
+    def close(self):
+        pass
+
+
+class VCloudClientTests(TestCase):
+    """The transport itself: negotiation, pagination and the href guard."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="vcd", kind="vcloud",
+            host="vcd.example.net", port=443,
+            credentials={"username": "sync@acme", "password": "s"},
+        )
+
+    def make_client(self, handler):
+        c = vcloud_client.VCloudClient(self.source)
+        c._http = _Session(handler)
+        return c
+
+    @staticmethod
+    def _default(method, url, kw):
+        if url.endswith("/api/versions"):
+            return _Resp(body={"versionInfo": [{"version": "38.1"},
+                                               {"version": "36.0"}]})
+        if url.endswith("/cloudapi/1.0.0/sessions"):
+            return _Resp(headers={"X-VMWARE-VCLOUD-ACCESS-TOKEN": "tok"})
+        raise AssertionError(f"unexpected {method} {url}")
+
+    def test_login_negotiates_and_carries_a_bearer_token(self):
+        with mock.patch.object(vcloud_client, "assert_public_host"):
+            c = self.make_client(self._default)
+            c.login()
+
+        self.assertEqual(c.version, (38, 1))
+        self.assertEqual(c._http.headers["Authorization"], "Bearer tok")
+
+    def test_a_pinned_version_skips_negotiation_entirely(self):
+        self.source.api_version = "36.0"
+        self.source.save(update_fields=["api_version"])
+
+        with mock.patch.object(vcloud_client, "assert_public_host"):
+            c = self.make_client(self._default)
+            c.login()
+
+        self.assertEqual(c.version, (36, 0))
+        self.assertNotIn(
+            "/api/versions", " ".join(url for _, url, _ in c._http.calls)
+        )
+
+    def test_a_missing_token_is_a_named_failure_not_a_silent_success(self):
+        def handler(method, url, kw):
+            if url.endswith("/api/versions"):
+                return _Resp(body={"versionInfo": [{"version": "38.1"}]})
+            return _Resp()  # 200 with no token header
+
+        with mock.patch.object(vcloud_client, "assert_public_host"), \
+                self.assertRaises(VirtAPIError) as caught:
+            self.make_client(handler).login()
+        self.assertIn("access token", str(caught.exception))
+
+    def test_pagination_walks_pages_and_stops_past_the_end(self):
+        pages = {
+            1: _Resp(body={"record": [{"name": f"vm{i}"} for i in range(2)]}),
+            2: _Resp(body={"record": [{"name": "vm2"}, {"name": "vm3"}]}),
+            3: _Resp(status=400),
+        }
+
+        def handler(method, url, kw):
+            if url.endswith("/api/query"):
+                return pages[kw["params"]["page"]]
+            return self._default(method, url, kw)
+
+        with mock.patch.object(vcloud_client, "assert_public_host"):
+            c = self.make_client(handler)
+            c.login()
+            rows = c.query("vm", page_size=2)
+
+        self.assertEqual([r["name"] for r in rows],
+                         ["vm0", "vm1", "vm2", "vm3"])
+
+    def test_a_short_page_ends_the_walk_without_a_further_request(self):
+        def handler(method, url, kw):
+            if url.endswith("/api/query"):
+                page = kw["params"]["page"]
+                if page > 1:
+                    raise AssertionError("asked for a page it did not need")
+                return _Resp(body={"record": [{"name": "only"}]})
+            return self._default(method, url, kw)
+
+        with mock.patch.object(vcloud_client, "assert_public_host"):
+            c = self.make_client(handler)
+            c.login()
+            self.assertEqual(len(c.query("vm", page_size=128)), 1)
+
+    def test_an_href_is_refetched_on_the_validated_base_not_its_own_host(self):
+        """A record's href names whatever address the appliance publishes.
+
+        Following it verbatim would be a server-side request forgery, so the
+        scheme and host are dropped and only the path is kept.
+        """
+        seen: list = []
+
+        def handler(method, url, kw):
+            if "/api/vApp/" in url:
+                seen.append(url)
+                return _Resp(body={"ok": True})
+            return self._default(method, url, kw)
+
+        with mock.patch.object(vcloud_client, "assert_public_host"):
+            c = self.make_client(handler)
+            c.login()
+            c.get_href("https://attacker.example/api/vApp/vm-1")
+
+        self.assertEqual(seen, ["https://vcd.example.net:443/api/vApp/vm-1"])
+
+    def test_an_href_outside_the_api_tree_is_refused(self):
+        with mock.patch.object(vcloud_client, "assert_public_host"):
+            c = self.make_client(self._default)
+            c.login()
+            with self.assertRaises(VirtAPIError):
+                c.get_href("https://vcd.example.net/latest/meta-data/")
+
+    def test_an_unreachable_appliance_says_which_one(self):
+        def handler(method, url, kw):
+            raise requests.RequestException("no route to host")
+
+        with mock.patch.object(vcloud_client, "assert_public_host"), \
+                self.assertRaises(VirtAPIError) as caught:
+            self.make_client(handler).login()
+        self.assertIn("vcd.example.net:443", str(caught.exception))
+
+    def test_a_blocked_host_never_reaches_the_network(self):
+        from core.ssrf import SSRFError
+
+        with mock.patch.object(
+            vcloud_client, "assert_public_host",
+            side_effect=SSRFError("not public"),
+        ), self.assertRaises(VirtAPIError):
+            self.make_client(self._default).login()

@@ -4714,6 +4714,26 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
         v = getattr(obj, "vm_count_annotated", None)
         return v if v is not None else obj.virtual_machines.count()
 
+    def validate(self, attrs):
+        """Name the clash on the field, rather than letting the database
+        constraint surface as a generic conflict."""
+        cluster = attrs.get(
+            "cluster", getattr(self.instance, "cluster", None)
+        )
+        name = attrs.get("name", getattr(self.instance, "name", ""))
+        if cluster is None or not name:
+            return attrs
+        taken = VirtualMachineGroup.objects.filter(
+            tenant=cluster.tenant, cluster=cluster, name=name
+        )
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        if taken.exists():
+            raise serializers.ValidationError(
+                {"name": f"{cluster.name} already has a group called {name}."}
+            )
+        return attrs
+
     class Meta:
         model = VirtualMachineGroup
         fields = ["id", "name", "kind", "kind_display", "cluster", "cluster_id",
