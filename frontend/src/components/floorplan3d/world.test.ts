@@ -1178,3 +1178,41 @@ describe("occludesSightLine", () => {
     expect(occludesSightLine(cam, target, [0, 1.2, -5], 1)).toBe(false)
   })
 })
+
+describe("filletPath - no repeated points for the tube to kink on", () => {
+  const gaps = (pts: [number, number, number][]) =>
+    pts
+      .slice(1)
+      .map((p, i) =>
+        Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1], p[2] - pts[i][2])
+      )
+
+  it("a port at the rack edge hops 2 cm and still has no repeated point", () => {
+    // Both fillets clamp to half the 2 cm hop, so one ended exactly where
+    // the next began - the barb on short same-rack runs.
+    const path = filletPath(
+      [
+        [0, 0, 0],
+        [0, 0, 0.06],
+        [0.02, 0, 0.06],
+        [0.02, -0.4, 0.06],
+        [0.02, -0.4, 0],
+        [0, -0.4, 0],
+      ],
+      0.06
+    )
+    expect(Math.min(...gaps(path))).toBeGreaterThan(1e-5)
+  })
+
+  it("keeps both port anchors exactly where they are", () => {
+    const ends: [number, number, number][] = [
+      [1, 2, 3],
+      [1, 2, 3.0000001],
+      [4, 5, 6],
+    ]
+    const path = filletPath(ends, 0.06)
+    expect(path[0]).toEqual([1, 2, 3])
+    expect(path[path.length - 1]).toEqual([4, 5, 6])
+    expect(Math.min(...gaps(path))).toBeGreaterThan(1e-5)
+  })
+})

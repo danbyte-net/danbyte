@@ -925,6 +925,29 @@ type V3 = [number, number, number]
  * Endpoints are preserved exactly (a run still starts ON its port quad);
  * collinear vertices pass through untouched. Pure and unit-tested.
  */
+/** Consecutive points closer together than a tenth of a millimetre, dropped;
+ * the first and last are port anchors and always survive.
+ *
+ * Two fillets on a short segment both clamp to half of it and therefore end
+ * and start at the same point - a port at the rack's edge hops 2 cm to its
+ * channel, and that is exactly what happens. A repeated point has no
+ * tangent, so the spline the tube sweeps kinks there and its frame flips:
+ * the cable draws a barb. Straight segments tolerated it, which is why it
+ * only appeared once tubes followed a curve. */
+function dropCoincident(points: V3[], eps = 1e-4): V3[] {
+  if (points.length < 3) return points
+  const far = (a: V3, b: V3) =>
+    Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) >= eps
+  const out: V3[] = [points[0]]
+  for (let i = 1; i < points.length - 1; i++) {
+    if (far(points[i], out[out.length - 1])) out.push(points[i])
+  }
+  const end = points[points.length - 1]
+  if (out.length > 1 && !far(end, out[out.length - 1])) out.pop()
+  out.push(end)
+  return out
+}
+
 export function filletPath(points: V3[], radius = 0.1, steps = 4): V3[] {
   if (points.length < 3) return points
   const out: V3[] = [points[0]]
@@ -970,7 +993,7 @@ export function filletPath(points: V3[], radius = 0.1, steps = 4): V3[] {
     }
   }
   out.push(points[points.length - 1])
-  return out
+  return dropCoincident(out)
 }
 
 /**
