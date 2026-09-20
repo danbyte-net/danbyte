@@ -372,7 +372,6 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
     ``{{ url }}`` and for the default QR. Raises ``jinja2.TemplateError`` on a
     template problem.
     """
-    from jinja2.sandbox import SandboxedEnvironment
 
     url = f"{base_url}{detail_path(obj)}" if base_url else detail_path(obj)
     short_path = short_link_path(obj)
@@ -389,7 +388,12 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
 
     # HTML body: autoescape ON so a field value with markup is escaped, not
     # injected into the label. `date`/`datetime` filters tame raw timestamps.
-    html_env = _register_filters(SandboxedEnvironment(
+    # The same sandbox the export templates use: a secret-bearing field or
+    # PSK accessor is unreachable from any row the template holds, so a
+    # label cannot print what only the reveal verb may disclose (#205).
+    from .export_templates import _template_environment_class
+
+    html_env = _register_filters(_template_environment_class()(
         trim_blocks=True, lstrip_blocks=True, autoescape=True
     ))
     html = html_env.from_string(template.template_html or "").render(**ctx)
@@ -400,7 +404,7 @@ def render_label(template, obj, *, base_url: str = "") -> dict:
         # The QR payload is a scannable string, NOT HTML - render it with
         # autoescape OFF so e.g. a name with `<`/`&` encodes verbatim in the QR
         # instead of as `&lt;`/`&amp;`.
-        qr_env = _register_filters(SandboxedEnvironment(autoescape=False))
+        qr_env = _register_filters(_template_environment_class()(autoescape=False))
         qr = qr_env.from_string(template.qr_content).render(**ctx)
     else:
         # Default QR: the compact short link when the object has a numid (smaller

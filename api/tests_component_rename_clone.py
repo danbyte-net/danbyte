@@ -163,3 +163,38 @@ class RenamePatternBoundsTests(APITestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.t.refresh_from_db()
         self.assertEqual(self.t.name, "x!")
+
+
+class VmInterfaceRenameScopeTests(APITestCase):
+    """The rename probe checks the caller's own rows: a name used only in
+    another tenant is not a collision (#204)."""
+
+    def test_name_used_elsewhere_does_not_block(self):
+        from api.models import Cluster, ClusterType, VirtualMachine, VMInterface
+
+        org = Organization.objects.create(name="O", slug="o")
+        mine = Tenant.objects.create(org=org, name="A", slug="a")
+        other = Tenant.objects.create(org=org, name="B", slug="b")
+
+        def vm(tenant, name):
+            ct = ClusterType.objects.create(tenant=tenant, name="t", slug="t")
+            cl = Cluster.objects.create(tenant=tenant, name="c", type=ct)
+            return VirtualMachine.objects.create(tenant=tenant, name=name, cluster=cl)
+
+        vm_a = vm(mine, "vm-a")
+        vm_b = vm(other, "vm-b")
+        target = VMInterface.objects.create(vm=vm_a, name="net0")
+        VMInterface.objects.create(vm=vm_b, name="eth0")
+        admin = User.objects.create_superuser("root", "r@a.c", "pw")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(mine.id)
+        s.save()
+        r = self.client.post(
+            "/api/vm-interfaces/bulk-rename/",
+            {"ids": [str(target.id)], "find": "net0", "replace": "eth0"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        target.refresh_from_db()
+        self.assertEqual(target.name, "eth0")

@@ -42,6 +42,7 @@ status() {  # <state> <step> <pct>
 }
 restart_services() { systemctl --user restart $SERVICES 2>/dev/null; }
 BACKUP=""
+DEPLOYED=""
 MIGRATED=""
 rollback() {
   if [ -n "$MIGRATED" ]; then
@@ -49,7 +50,16 @@ rollback() {
     restart_services
     return
   fi
-  [ -n "$BACKUP" ] && [ -f "$BACKUP" ] && tar -C "$CODE_DIR" -xzf "$BACKUP" 2>/dev/null
+  # Only a tree the overlay has touched needs restoring, and the status must
+  # say when that did not happen - a "rolled back" that left the new tree in
+  # place on the old dependencies is worse than the failure itself.
+  if [ -n "$DEPLOYED" ]; then
+    if [ -n "$BACKUP" ] && [ -f "$BACKUP" ] && tar -C "$CODE_DIR" -xzf "$BACKUP" 2>"$ERRF"; then
+      ERR="$ERR - the previous code was restored from $BACKUP"
+    else
+      ERR="$ERR - and the previous code could NOT be restored: $(tail -c 200 "$ERRF" 2>/dev/null | tr -c '[:print:]' ' ')"
+    fi
+  fi
   restart_services
 }
 fail() {
@@ -113,13 +123,17 @@ else
   echo "danbyte-upgrade: backup $BACKUP_OUT" >&2
 fi
 
-# Code backup for rollback (skip the heavy, regenerable trees).
+# Code backup for rollback (skip the heavy, regenerable trees). Without it
+# nothing could be put back, so a failure to write it stops the upgrade
+# before the tree is touched - a full backup disk is the usual cause.
 BACKUP="$BACKUP_DIR/code-pre-$VERSION-$(date +%s).tgz"
 tar -C "$CODE_DIR" --exclude=./.venv --exclude=./vendor --exclude=./frontend/node_modules \
-  -czf "$BACKUP" . 2>/dev/null || BACKUP=""
+  -czf "$BACKUP" . 2>"$ERRF" \
+  || { BACKUP=""; fail backup "could not write the rollback archive $BACKUP_DIR (disk full?): $(tail -c 300 "$ERRF" 2>/dev/null | tr -c '[:print:]' ' ')"; }
 
 status running deploy 40
 touch "$MAINT" 2>/dev/null || true   # nginx shows the "updating" page
+DEPLOYED=1
 # Overlay the new tree; keep .env/media (not in the bundle). Excludes the
 # installer entrypoint so it doesn't clutter the code dir.
 step deploy "copying new code failed" \

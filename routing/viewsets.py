@@ -609,7 +609,7 @@ class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin,
     editable_str_fields = ("description",)
     editable_bool_fields = ("bfd",)
     pagination_class = StandardPagination
-    search_fields: tuple = ()
+    text_search_fields: tuple = ()
 
     def get_queryset(self):
         qs = (
@@ -624,7 +624,7 @@ class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin,
         s = p.get("search", "").strip()
         if s:
             q = Q(device__name__icontains=s) | Q(description__icontains=s) | cf_text_q(qs.model, s)
-            for f in self.search_fields:
+            for f in self.text_search_fields:
                 q |= Q(**{f"{f}__icontains": s})
             qs = qs.filter(q)
         for key, field in (
@@ -646,7 +646,7 @@ class OSPFInstanceViewSet(_IGPInstanceViewSet):
         "interfaces__interface__device", "interfaces__area", "interfaces__keychain"
     )
     serializer_class = OSPFInstanceSerializer
-    search_fields = ("process_id", "router_id", "vrf__name")
+    text_search_fields = ("process_id", "router_id", "vrf__name")
     editable_str_fields = ("description", "router_id", "process_id")
     editable_bool_fields = ("bfd", "passive_by_default", "default_originate")
     clone_fields = ("vrf", "process_id", "version", "reference_bandwidth",
@@ -658,7 +658,7 @@ class ISISInstanceViewSet(_IGPInstanceViewSet):
         "interfaces__interface__device", "interfaces__keychain"
     )
     serializer_class = ISISInstanceSerializer
-    search_fields = ("process", "net")
+    text_search_fields = ("process", "net")
     editable_str_fields = ("description", "process", "net")
     clone_fields = ("vrf", "process", "level", "metric_style", "bfd",
                     "authentication", "keychain", "status")
@@ -708,7 +708,7 @@ class EIGRPInstanceViewSet(_IGPInstanceViewSet):
         "interfaces__interface__device", "interfaces__keychain"
     )
     serializer_class = EIGRPInstanceSerializer
-    search_fields = ("name", "router_id", "vrf__name")
+    text_search_fields = ("name", "router_id", "vrf__name")
     editable_str_fields = ("description", "router_id", "name", "k_values")
     editable_bool_fields = ("bfd", "passive_by_default", "stub")
     clone_fields = ("vrf", "asn", "name", "k_values", "variance", "maximum_paths",

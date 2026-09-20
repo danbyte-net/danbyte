@@ -152,6 +152,7 @@ import { QueryError } from "@/components/query-error"
 import { RackPicker } from "@/components/rack-picker"
 import { useTheme } from "@/components/theme-provider"
 import { useMe } from "@/lib/use-me"
+import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
 import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
@@ -403,6 +404,10 @@ function FloorPlanPage() {
   const [cableLook, setCableLookState] = useState<CableLook>(() =>
     storedCableLook()
   )
+  // Port labels on this screen - the viewer's switch over the deployment's
+  // choice, shared with the device page.
+  const { faceplatePortLabels } = useMe()
+  const portLabelsShown = usePortLabelsShown()
   const setCableLook = (v: CableLook) => {
     setCableLookState(v)
     storeCableLook(v)
@@ -1512,6 +1517,14 @@ function FloorPlanPage() {
                     onChange={(v) => setViewPref("show_3d_u", v)}
                     className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
                   />
+                  {faceplatePortLabels && (
+                    <FormCheckbox
+                      label="Port labels"
+                      checked={portLabelsShown}
+                      onChange={setPortLabelsShown}
+                      className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+                    />
+                  )}
                   <FormCheckbox
                     label="Device names"
                     checked={show3dNames}

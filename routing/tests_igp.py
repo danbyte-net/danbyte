@@ -344,3 +344,21 @@ class RenderTests(_Base):
         self.assertIsNone(ctx["by_interface"]["swp1"]["isis"])
         self.assertEqual(ctx["by_interface"]["swp2"]["isis"]["process"], "CORE")
         self.assertEqual(list(ctx["policies"]), ["CONN-OUT"])
+
+
+class RoutingSearchTests(_Base):
+    """``?search=`` on a routing list matches the device name like any other
+    list - the viewsets' own search field list no longer shares its name with
+    the framework's search filter, which re-filtered every hit away (#210)."""
+
+    def test_search_by_device_name(self):
+        OSPFInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process_id="1", router_id="10.0.0.11"
+        )
+        r = self.client.get("/api/routing/ospf-instances/?search=leaf1")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["count"], 1)
+        r = self.client.get("/api/routing/ospf-instances/?search=10.0.0.11")
+        self.assertEqual(r.json()["count"], 1)
+        r = self.client.get("/api/routing/ospf-instances/?search=nothing-here")
+        self.assertEqual(r.json()["count"], 0)

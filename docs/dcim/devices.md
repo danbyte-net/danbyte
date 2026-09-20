@@ -123,7 +123,9 @@ label. A device's **Port labels** field (Inherit / Shown / Hidden) overrides
 the deployment choice for that device - a patch panel wants them, a 48-port
 access switch may not - and an interface's **Hide label on faceplates**
 leaves that one marker blank, while its **Label colour** overrides the
-deployment's colour for that port alone. Reserving works two ways: create
+deployment's colour for that port alone. On top of all that, the **Labels**
+switch in the Panel header (and **Port labels** in the 3D room's View menu)
+clears them off *your* screen only; it is remembered in the browser. Reserving works two ways: create
 the cable ahead of time as *Planned* and the port counts as held, or reserve
 the single port directly when the far end isn't known yet. Most useful on
 patch panels and access switches, where "how full is this thing" is the

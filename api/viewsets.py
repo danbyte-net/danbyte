@@ -215,6 +215,19 @@ from .serializers import (
 )
 
 
+def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
+    """The ``fields`` of a bespoke bulk update, narrowed to what the endpoint
+    writes. The tag keys ride alongside; anything else is a 400, never a
+    silent no-op that reports every matched row as updated (#209) - the
+    contract ComponentBulkMixin already keeps."""
+    unknown = sorted(
+        k for k in fields if k not in allowed and k not in ("add_tag_ids", "remove_tag_ids")
+    )
+    if unknown:
+        raise ValidationError({"fields": f"Unknown field(s): {', '.join(unknown)}."})
+    return {k: fields[k] for k in allowed if k in fields}
+
+
 # Bulk rename patterns: longest accepted, and the per-name match deadline.
 _RENAME_PATTERN_MAX = 256
 _RENAME_MATCH_TIMEOUT = 0.2
@@ -322,7 +335,7 @@ def _apply_custom_field_scope(request, qs, model_slug: str):
     from customization.scopes import apply_scope_to_queryset
 
     return apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})
-from .views import _build_space_map, _get_active_tenant, _next_available_ips, _subnet_details
+from .views import _build_space_map, _get_active_tenant, _next_available_ips, _subnet_details, reparent_ips_out_of
 
 
 
@@ -824,7 +837,10 @@ class ComponentBulkMixin(FieldWriteAllowList):
             filt = {"name": new}
             if scope:
                 filt[scope] = getattr(r, scope)
-            if model.objects.filter(**filt).exclude(pk__in=plan_ids).exists():
+            # The caller's own rows, not the bare manager: a name that only
+            # exists in another tenant is neither a collision nor a fact to
+            # reveal (#204).
+            if self.get_queryset().filter(**filt).exclude(pk__in=plan_ids).exists():
                 raise ValidationError({"name": f"'{new}' already exists here."})
 
         olds = {r.pk: r.name for r, _ in plan}
@@ -880,7 +896,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
             filt = {"name": nn}
             if scope:
                 filt[scope] = getattr(r, scope)
-            if model.objects.filter(**filt).exists():
+            if self.get_queryset().filter(**filt).exists():
                 raise ValidationError(
                     {"name": f"'{nn}' already exists - use find/replace to give "
                              "the clones new names."}
@@ -1483,16 +1499,27 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Bulk delete ─────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        """POST {ids: [...]} → 204. IDs not in tenant are silently skipped."""
+        """POST {ids: [...]} → 200 {deleted, moved, removed}. IDs not in the
+        tenant are silently skipped. Addresses on the prefixes move up to
+        the longest prefix that still contains them, exactly as a single
+        delete does (#207); only addresses nothing else covers fall."""
         ids = request.data.get("ids") or []
         if not isinstance(ids, list) or not ids:
             raise ValidationError({"ids": "Provide a non-empty list of prefix IDs."})
+        moved = removed = 0
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
+            for row in _rows:
+                out = reparent_ips_out_of(row)
+                moved += out.get("moved", 0)
+                removed += out.get("removed", 0)
             deleted, _ = _qs.delete()
             log_bulk_delete(_rows)
-        return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
+        return Response(
+            {"deleted": deleted, "moved": moved, "removed": removed},
+            status=drf_status.HTTP_200_OK,
+        )
 
     # ── Bulk patch ──────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-update")
@@ -1523,21 +1550,21 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 raise ValidationError({key: "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "status_id" in fields:
-            updates["status_id"] = fields["status_id"]
-        if "vrf_id" in fields:
-            updates["vrf_id"] = fields["vrf_id"]
-        if "site_id" in fields:
-            updates["site_id"] = fields["site_id"]
-        if "vlan_id" in fields:
-            updates["vlan_id"] = fields["vlan_id"]
-        if "description" in fields:
-            updates["description"] = fields["description"]
+        updates = _bulk_field_updates(
+            fields, ("status_id", "vrf_id", "site_id", "vlan_id", "description")
+        )
 
         with transaction.atomic():
             _rows = list(qs)
             updated_count = qs.update(**updates) if updates else qs.count()
+            if "vrf_id" in updates:
+                # The addresses and ranges denormalise the VRF and only
+                # re-derive it on their own save; a bulk move re-homes them
+                # like Prefix.save does, or they stay stranded in the old
+                # VRF, invisible and holding its uniqueness slots (#208).
+                moved_ids = [r.pk for r in _rows]
+                IPAddress.objects.filter(prefix_id__in=moved_ids).update(vrf_id=updates["vrf_id"])
+                IPRange.objects.filter(prefix_id__in=moved_ids).update(vrf_id=updates["vrf_id"])
             if updates:
                 log_bulk_update(_rows, updates)
             apply_and_log_bulk_tags(
@@ -1680,13 +1707,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 raise ValidationError({key: "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "status_id" in fields:
-            updates["status_id"] = fields["status_id"]
-        if "role_id" in fields:
-            updates["role_id"] = fields["role_id"]
-        if "description" in fields:
-            updates["description"] = fields["description"]
+        updates = _bulk_field_updates(fields, ("status_id", "role_id", "description"))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -1907,9 +1928,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             raise ValidationError({"fields": "Provide at least one field to update."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "gateway_policy" in fields: updates["gateway_policy"] = fields["gateway_policy"]
-        if "location" in fields: updates["location"] = fields["location"]
+        updates = _bulk_field_updates(fields, ("gateway_policy", "location"))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -2009,11 +2028,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             raise ValidationError({"vrf_id": "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "site_id" in fields: updates["site_id"] = fields["site_id"]
-        if "zone_id" in fields: updates["zone_id"] = fields["zone_id"]
-        if "vrf_id" in fields: updates["vrf_id"] = fields["vrf_id"]
-        if "description" in fields: updates["description"] = fields["description"]
+        updates = _bulk_field_updates(fields, ("site_id", "zone_id", "vrf_id", "description"))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -5395,6 +5410,8 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     )
     serializer_class = VMInterfaceSerializer
     pagination_class = StandardPagination
+    # A name is unique per VM - the bulk rename/clone probe checks within it.
+    bulk_name_scope_field = "vm_id"
     # Tenant is reached through the VM (VMInterface has no direct tenant FK).
     tenant_field = "vm__tenant"
     bulk_str_fields = ("mode", "description")

@@ -2147,7 +2147,11 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="vlans"
     )
-    vlan_id = models.IntegerField()  # 1-4094
+    # 1-4094 at the API boundary (the serializer picks these validators up);
+    # drift reconciliation and scope rules skip anything outside it.
+    vlan_id = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(4094)]
+    )
     name = models.CharField(max_length=255)
     site = models.ForeignKey(
         Site, on_delete=models.SET_NULL, null=True, blank=True

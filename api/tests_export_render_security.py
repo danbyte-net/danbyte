@@ -93,3 +93,24 @@ class ExportRenderSecurityTests(APITestCase):
         t.save()
         r = self.client.get(f"/api/export-templates/{t.id}/render/")
         self.assertEqual(r["Content-Type"], "text/csv; charset=utf-8")
+
+
+class LabelRenderSecurityTests(ExportRenderSecurityTests):
+    """Label templates get the same sandbox and the same subject rule (#205)."""
+
+    def test_label_template_cannot_take_or_print_a_credential(self):
+        from .label_templates import render_label
+        from .models import LabelTemplate
+
+        r = self.client.post(
+            "/api/label-templates/",
+            {"name": "hook", "object_type": "webhook", "template_html": "{{ obj.secret }}"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("object_type", r.json())
+        t = LabelTemplate(tenant=self.tenant, name="hook", object_type="webhook",
+                          template_html="<b>{{ obj.secret }}{{ obj.additional_headers }}</b>")
+        out = render_label(t, self.hook)
+        self.assertNotIn("SIGNING-KEY", out["html"])
+        self.assertNotIn("LEAKED", out["html"])

@@ -150,9 +150,15 @@ def create_restore(backup: Backup, components, *, user=None) -> RestoreRun:
 
 
 def enqueue_restore(run: RestoreRun) -> None:
-    from api.devicetype_import_tasks import _enqueue
+    """Queue the restore; never run it inline (#211). Raises
+    ``QueueUnavailable`` with the run row removed when the queue is down."""
+    from api.devicetype_import_tasks import QueueUnavailable, _enqueue
 
-    _enqueue(run_restore, run, "restore")
+    try:
+        _enqueue(run_restore, run, "restore", inline=False)
+    except QueueUnavailable:
+        run.delete()
+        raise
 
 
 def terminate_other_sessions() -> int:
