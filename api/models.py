@@ -4284,6 +4284,51 @@ class Cluster(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.name
 
 
+class VirtualMachineGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin,
+                          TaggableMixin):
+    """A named set of VMs below a cluster - a vCloud vApp, a Proxmox pool, a
+    vCenter folder.
+
+    The hypervisor owns the membership; Danbyte holds the name so a VM list
+    reads the way the operator's own console groups it. Cloud Director in
+    particular has no flat VM list at all - everything lives in a vApp - so
+    without this a synced estate loses the only structure it had.
+
+    ``kind`` says which of those three a row came from, because the word on
+    screen should match the console the operator is comparing against.
+    """
+
+    KIND_CHOICES = [
+        ("vapp", "vApp"),
+        ("pool", "Resource pool"),
+        ("folder", "Folder"),
+        ("other", "Group"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="vm_groups"
+    )
+    cluster = models.ForeignKey(
+        Cluster, on_delete=models.PROTECT, related_name="vm_groups"
+    )
+    name = models.CharField(max_length=200)
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="other")
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "cluster", "name"],
+                name="uniq_vmgroup_tenant_cluster_name",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A virtual machine running on a cluster (optionally pinned to a host
     device). Gets IPs from IPAM and can be swept by the monitoring engine."""
@@ -4296,6 +4341,15 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     name = models.CharField(max_length=255)
     cluster = models.ForeignKey(
         Cluster, on_delete=models.PROTECT, related_name="virtual_machines"
+    )
+    #: Optional grouping within the cluster. SET_NULL because losing the vApp
+    #: name must never take the VM with it.
+    group = models.ForeignKey(
+        VirtualMachineGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="virtual_machines",
     )
     role = models.ForeignKey(
         "DeviceRole", on_delete=models.SET_NULL, null=True, blank=True,

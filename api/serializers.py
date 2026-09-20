@@ -24,6 +24,7 @@ from .models import (
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
+    VirtualMachineGroup,
     ConsolePort, ConsolePortTemplate, ConsoleServerPort,
     ConsoleServerPortTemplate,
     Contact, ContactAssignment, ContactGroup, ContactRole,
@@ -4686,6 +4687,42 @@ class VirtualSwitchSerializer(serializers.ModelSerializer):
                             "created_at", "updated_at"]
 
 
+class VirtualMachineGroupMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = VirtualMachineGroup
+        fields = ["id", "name", "kind"]
+
+
+class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+    """A vApp / resource pool / folder, as the hypervisor groups its VMs."""
+
+    cluster = ClusterMiniSerializer(read_only=True)
+    cluster_id = TenantScopedPrimaryKeyRelatedField(
+        source="cluster", queryset=Cluster.objects.all(), write_only=True
+    )
+    kind_display = serializers.CharField(
+        source="get_kind_display", read_only=True
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    vm_count = serializers.SerializerMethodField()
+
+    def get_vm_count(self, obj) -> int:
+        v = getattr(obj, "vm_count_annotated", None)
+        return v if v is not None else obj.virtual_machines.count()
+
+    class Meta:
+        model = VirtualMachineGroup
+        fields = ["id", "name", "kind", "kind_display", "cluster", "cluster_id",
+                  "description", "vm_count", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "kind_display", "vm_count",
+                            "created_at", "updated_at"]
+
+
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cluster = ClusterMiniSerializer(read_only=True)
     disks = VirtualDiskSerializer(many=True, read_only=True)
@@ -4718,6 +4755,11 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         ).count()
     cluster_id = TenantScopedPrimaryKeyRelatedField(
         source="cluster", queryset=Cluster.objects.all(), write_only=True
+    )
+    group = VirtualMachineGroupMiniSerializer(read_only=True)
+    group_id = TenantScopedPrimaryKeyRelatedField(
+        source="group", queryset=VirtualMachineGroup.objects.all(),
+        write_only=True, required=False, allow_null=True,
     )
     role = serializers.SerializerMethodField()
     platform = serializers.SerializerMethodField()
@@ -4775,7 +4817,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
 
     class Meta:
         model = VirtualMachine
-        fields = ["id", "name", "cluster", "cluster_id",
+        fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
                   "role", "role_id", "platform", "platform_id",
                   "device", "device_id",
                   "site", "site_id", "status", "status_id",

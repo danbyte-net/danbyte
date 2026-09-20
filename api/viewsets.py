@@ -34,6 +34,7 @@ from .models import (
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     Cable, CableRoute, Circuit, CircuitTermination, CircuitType, Cluster,
     ClusterGroup, ClusterType,
+    VirtualMachineGroup,
     ConsolePort, ConsolePortTemplate, ConsoleServerPort,
     ConsoleServerPortTemplate,
     Contact, ContactAssignment, ContactGroup, ContactRole, Device, DeviceType,
@@ -142,6 +143,8 @@ from .serializers import (
     PowerFeedSerializer,
     ClusterGroupSerializer,
     ClusterGroupMiniSerializer,
+    VirtualMachineGroupSerializer,
+    VirtualMachineGroupMiniSerializer,
     ClusterSerializer,
     ClusterTypeSerializer,
     VirtualSwitchSerializer,
@@ -5287,6 +5290,31 @@ class VirtualSwitchViewSet(TenantScopedViewSet):
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
         return qs
+
+
+class VirtualMachineGroupViewSet(TenantScopedViewSet):
+    """vApps / resource pools / folders. Editable: the sync fills the name, but
+    an operator may group a VM by hand and that grouping is never overwritten."""
+
+    queryset = VirtualMachineGroup.objects.all().order_by(NATURAL_NAME)
+    serializer_class = VirtualMachineGroupSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("cluster")
+        if self.action == "list":
+            qs = qs.annotate(vm_count_annotated=Count("virtual_machines"))
+        if self.request:
+            cluster = self.request.query_params.get("cluster")
+            if cluster:
+                qs = qs.filter(cluster_id=cluster)
+        return qs
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return VirtualMachineGroupMiniSerializer
+        return VirtualMachineGroupSerializer
 
 
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
