@@ -459,40 +459,68 @@ def reparent_ips_into(prefix) -> int:
 
 def reparent_ips_out_of(prefix, *, dry_run: bool = False) -> dict:
     """Before a prefix goes: hand every address on it to the longest prefix
-    that still contains it (same tenant and VRF). Addresses no other prefix
-    covers have nowhere to go and are counted as ``removed`` - they fall with
-    the prefix, as the confirm dialog says. Returns the counts and the prefix
-    most addresses land on."""
-    net = prefix.network
-    ips = list(IPAddress.objects.filter(prefix=prefix).only("id", "ip_address"))
-    if net is None or not ips:
-        return {"moved": 0, "removed": len(ips), "parent": None}
-    candidates = []
-    for p in (
-        Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf).exclude(pk=prefix.pk)
-    ):
-        pn = p.network
-        if pn is None or pn.prefixlen >= net.prefixlen or pn.version != net.version:
-            continue
-        if int(pn.network_address) <= int(net.network_address) and \
-                int(pn.broadcast_address) >= int(net.broadcast_address):
-            candidates.append((pn.prefixlen, p))
-    candidates.sort(key=lambda c: -c[0])  # longest first
+    that still contains it. See :func:`reparent_ips_out_of_batch`."""
+    return reparent_ips_out_of_batch([prefix], dry_run=dry_run)
+
+
+def reparent_ips_out_of_batch(prefixes, *, dry_run: bool = False) -> dict:
+    """Before these prefixes go: hand every address on them to the longest
+    prefix that still contains it **and survives this batch** (same tenant
+    and VRF). A prefix about to be deleted is never a landing place - a
+    parent and its child selected together used to move the child's
+    addresses into the parent and then cascade them away, reporting them as
+    moved (#215). Addresses nothing surviving covers are counted as
+    ``removed`` - they fall with the prefix, as the confirm dialog says.
+    Returns the counts and the prefix most addresses land on.
+
+    One scan of the candidate prefixes per (tenant, VRF) in the batch, and
+    one UPDATE per landing prefix - not per selected row and per address."""
+    going = {p.pk for p in prefixes}
+    if not going:
+        return {"moved": 0, "removed": 0, "parent": None}
+    ips = list(
+        IPAddress.objects.filter(prefix_id__in=going).only(
+            "id", "ip_address", "prefix_id"
+        )
+    )
+    if not ips:
+        return {"moved": 0, "removed": 0, "parent": None}
+
+    source = {p.pk: p for p in prefixes}
+    survivors: dict[tuple, list] = {}
+    for key in {(p.tenant_id, p.vrf_id) for p in prefixes}:
+        rows = []
+        for p in (
+            Prefix.objects.filter(tenant_id=key[0], vrf_id=key[1])
+            .exclude(pk__in=going)
+        ):
+            pn = p.network
+            if pn is not None:
+                rows.append((pn.prefixlen, pn, p))
+        rows.sort(key=lambda r: -r[0])  # longest match first
+        survivors[key] = rows
+
     moved = 0
     landing: dict[str, int] = {}
-    with transaction.atomic():
-        for ip in ips:
-            try:
-                addr = ipaddress.ip_address(ip.ip_address)
-            except ValueError:
-                continue
-            for _, target in candidates:
-                if addr in target.network:
-                    if not dry_run:
-                        IPAddress.objects.filter(pk=ip.pk).update(prefix=target)
-                    moved += 1
-                    landing[str(target.cidr)] = landing.get(str(target.cidr), 0) + 1
-                    break
+    assign: dict = {}
+    for ip in ips:
+        src = source.get(ip.prefix_id)
+        if src is None:
+            continue
+        try:
+            addr = ipaddress.ip_address(ip.ip_address)
+        except ValueError:
+            continue
+        for _, pn, target in survivors.get((src.tenant_id, src.vrf_id), ()):
+            if addr.version == pn.version and addr in pn:
+                assign.setdefault(target.pk, []).append(ip.pk)
+                landing[str(target.cidr)] = landing.get(str(target.cidr), 0) + 1
+                moved += 1
+                break
+    if not dry_run and assign:
+        with transaction.atomic():
+            for target_pk, ip_pks in assign.items():
+                IPAddress.objects.filter(pk__in=ip_pks).update(prefix_id=target_pk)
     parent = max(landing.items(), key=lambda kv: kv[1])[0] if landing else None
     return {"moved": moved, "removed": len(ips) - moved, "parent": parent}
 

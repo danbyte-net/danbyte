@@ -180,6 +180,7 @@ function WebhooksPage() {
     >
       <DataTable
         data={rows}
+        total={query.data?.count}
         columns={columns}
         flexColumn="url"
         tableId="webhooks"

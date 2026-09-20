@@ -1483,6 +1483,7 @@ function DeviceIpsPane({
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="description"
           tableId="device-ips"
@@ -1853,6 +1854,7 @@ function DeviceInterfacesPane({
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           rowStyle={(r) => portTint(r)}
           embedded

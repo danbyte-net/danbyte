@@ -127,6 +127,7 @@ export function TemplatesList() {
         <DataTable
           tableId="check-templates"
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="name"
           exportName="check-templates"

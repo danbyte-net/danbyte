@@ -292,6 +292,7 @@ function VrfVlansTable({ vrfId }: { vrfId: string }) {
   return (
     <DataTable
       data={rows}
+      total={q.data?.count}
       columns={columns}
       flexColumn="description"
       tableId="vlan-embedded"
@@ -324,6 +325,7 @@ function VrfPrefixesTable({ vrfId }: { vrfId: string }) {
   return (
     <DataTable
       data={rows}
+      total={q.data?.count}
       columns={columns}
       flexColumn="description"
       tableId="prefix-embedded"

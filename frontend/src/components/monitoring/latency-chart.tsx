@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/chart"
 import type { ChartConfig } from "@/components/ui/chart"
 import { SeriesLegend } from "./series-legend"
+import { useDateFormat } from "@/lib/datetime"
 
 const WINDOWS: { hours: StatsHours; label: string }[] = [
   { hours: 24, label: "24h" },
@@ -57,6 +58,7 @@ export function LatencyChart({
   templateId: string
   className?: string
 }) {
+  const { formatCustom } = useDateFormat()
   const [hours, setHours] = useState<StatsHours>(24)
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const q = useQuery({
@@ -70,9 +72,9 @@ export function LatencyChart({
   const points = q.data?.points ?? []
   const bucketMs = (q.data?.bucket_seconds ?? 300) * 1000
   const time = (ms: number) =>
-    new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    formatCustom(ms, { hour: "2-digit", minute: "2-digit" })
   const dayTime = (ms: number) =>
-    new Date(ms).toLocaleString([], {
+    formatCustom(ms, {
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -88,7 +90,7 @@ export function LatencyChart({
       label:
         hours === 24
           ? time(from)
-          : new Date(from).toLocaleString([], {
+          : formatCustom(from, {
               month: "short",
               day: "numeric",
               hour: "2-digit",

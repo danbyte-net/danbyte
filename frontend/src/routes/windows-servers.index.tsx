@@ -184,6 +184,7 @@ function WindowsServersPage() {
       ) : (
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           flexColumn="host"
           tableId="windows-servers"

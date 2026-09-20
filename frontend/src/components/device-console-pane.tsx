@@ -250,6 +250,7 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
         ) : (
           <DataTable
             data={portRows}
+            total={ports.data?.count}
             columns={portCols}
             embedded
             searchable
@@ -294,6 +295,7 @@ export function DeviceConsolePane({ deviceId }: { deviceId: string }) {
         ) : (
           <DataTable
             data={serverRows}
+            total={serverPorts.data?.count}
             columns={serverCols}
             embedded
             searchable

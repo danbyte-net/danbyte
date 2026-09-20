@@ -187,6 +187,7 @@ export function ZabbixAdoptionRules({
         <DataTable
           tableId="zabbix-adoption-rules"
           data={rows}
+          total={rules.data?.count}
           columns={columns}
           flexColumn="match"
         />

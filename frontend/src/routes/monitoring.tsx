@@ -27,6 +27,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
 import { EngineHealthBanner } from "@/components/monitoring/engine-health-banner"
 import {
   Card,
@@ -183,6 +184,7 @@ const KIND_PALETTE = [
 
 function MonitoringPage() {
   usePageTitle("Monitoring")
+  const { formatCustom } = useDateFormat()
   const { view } = Route.useSearch()
   const labels = useStatusLabels()
   // Same gate the settings page uses - the tab is hidden without it, and the
@@ -285,16 +287,10 @@ function MonitoringPage() {
     ...p,
     label:
       d?.series_bucket === "day"
-        ? new Date(p.t).toLocaleDateString([], {
-            month: "short",
-            day: "numeric",
-          })
+        ? formatCustom(p.t, { month: "short", day: "numeric" })
         : hours > 24
-          ? new Date(p.t).toLocaleString([], {
-              weekday: "short",
-              hour: "2-digit",
-            })
-          : new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
+          ? formatCustom(p.t, { weekday: "short", hour: "2-digit" })
+          : formatCustom(p.t, { hour: "2-digit" }),
   }))
   const windowLabel =
     hours === 24 ? "24 hours" : hours === 168 ? "7 days" : "30 days"
@@ -302,23 +298,14 @@ function MonitoringPage() {
     ...p,
     label:
       d?.series_bucket === "day"
-        ? new Date(p.t).toLocaleDateString([], {
-            month: "short",
-            day: "numeric",
-          })
+        ? formatCustom(p.t, { month: "short", day: "numeric" })
         : hours > 24
-          ? new Date(p.t).toLocaleString([], {
-              weekday: "short",
-              hour: "2-digit",
-            })
-          : new Date(p.t).toLocaleTimeString([], { hour: "2-digit" }),
+          ? formatCustom(p.t, { weekday: "short", hour: "2-digit" })
+          : formatCustom(p.t, { hour: "2-digit" }),
   }))
   const alertsData = (d?.alerts_series ?? []).map((p) => ({
     ...p,
-    label: new Date(p.t).toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-    }),
+    label: formatCustom(p.t, { month: "short", day: "numeric" }),
   }))
 
   const total = d?.total_checks ?? 0

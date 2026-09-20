@@ -13,6 +13,7 @@ import type {
   UpgradeNotes,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,6 +41,7 @@ export const Route = createFileRoute("/settings/updates")({
 
 function UpdatesSettingsPage() {
   const { canManageDeployment: canManage, isLoading } = useMe()
+  const { formatDate } = useDateFormat()
   const qc = useQueryClient()
   // A container can't upgrade itself; the server refuses and we disable the
   // buttons so it's clear rather than a failed click.
@@ -563,7 +565,7 @@ docker compose -f docker-compose.prod.yml up -d`}
                     )}
                     {r.published_at && (
                       <span className="text-[11px] text-muted-foreground">
-                        {new Date(r.published_at).toLocaleDateString()}
+                        {formatDate(r.published_at)}
                       </span>
                     )}
                     {!r.is_current && (

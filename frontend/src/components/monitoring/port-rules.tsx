@@ -174,6 +174,7 @@ export function PortRulesList() {
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="rule"
           tableId="port-utilization-rules"

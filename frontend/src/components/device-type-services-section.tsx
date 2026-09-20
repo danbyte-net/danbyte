@@ -173,6 +173,7 @@ export function DeviceTypeServicesSection({
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="description"
           embedded

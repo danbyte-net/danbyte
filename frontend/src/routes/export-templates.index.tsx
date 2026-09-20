@@ -169,6 +169,7 @@ function ExportTemplatesPage() {
     >
       <DataTable
         data={rows}
+        total={query.data?.count}
         columns={columns}
         flexColumn="description"
         tableId="export-templates"

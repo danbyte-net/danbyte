@@ -87,8 +87,10 @@ prefix; a router config needs the pieces. These filters take a string
     restriction the list pages apply - so a site-scoped user renders their
     site, not the tenant. A type that carries credentials (webhooks,
     automation targets, device credentials) cannot be a template's subject,
-    and a secret-bearing field or PSK accessor is unreadable from any row a
-    template reaches. Output is always served as a download of an inert type:
+    and a secret-bearing field is unreadable from any row a template reaches.
+    A model's **methods** are refused too - only a `get_…_display()` choice
+    label is callable - so an accessor that opens the secret store cannot be
+    reached through a relation either. Output is always served as a download of an inert type:
     `text/plain`, CSV, JSON, XML or YAML. A template declaring `text/html`
     downloads as plain text.
 | `prefixlen` | `24` |

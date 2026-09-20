@@ -92,3 +92,52 @@ class VlanIdRangeTests(_Base):
         )
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(VLAN.objects.get(name="ok").vlan_id, 4094)
+
+
+class PrefixBulkDeleteBatchTests(_Base):
+    """A prefix about to be deleted is never a landing place (#215)."""
+
+    def test_parent_and_child_together_do_not_report_a_move_that_lost_them(self):
+        grand = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/8")
+        parent = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/16")
+        child = Prefix.objects.create(tenant=self.tenant, cidr="10.0.1.0/24")
+        for h in range(1, 6):
+            IPAddress.objects.create(
+                tenant=self.tenant, ip_address=f"10.0.1.{h}", prefix=child
+            )
+        r = self.client.post(
+            "/api/prefixes/bulk-delete/",
+            {"ids": [str(parent.id), str(child.id)]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        # The /8 survives, so all five land there - and are still alive.
+        self.assertEqual(r.json()["moved"], 5)
+        self.assertEqual(r.json()["removed"], 0)
+        self.assertEqual(IPAddress.objects.filter(prefix=grand).count(), 5)
+
+    def test_nothing_surviving_covers_them_reports_removed(self):
+        parent = Prefix.objects.create(tenant=self.tenant, cidr="10.4.0.0/16")
+        child = Prefix.objects.create(tenant=self.tenant, cidr="10.4.1.0/24")
+        for h in range(1, 4):
+            IPAddress.objects.create(
+                tenant=self.tenant, ip_address=f"10.4.1.{h}", prefix=child
+            )
+        r = self.client.post(
+            "/api/prefixes/bulk-delete/",
+            {"ids": [str(parent.id), str(child.id)]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["moved"], 0)
+        self.assertEqual(r.json()["removed"], 3)
+        self.assertEqual(IPAddress.objects.count(), 0)
+
+    def test_selection_is_capped(self):
+        r = self.client.post(
+            "/api/prefixes/bulk-delete/",
+            {"ids": [str(self.tenant.id)] * 1001},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("ids", r.json())

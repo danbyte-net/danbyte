@@ -127,6 +127,25 @@ export function formatDateTime(value: DateInput, s: DateTimeSettings): string {
   return `${assembleDate(d, s.date_format, tz)} ${assembleTime(d, s.time_style, tz)}`
 }
 
+/** A caller-shaped Intl format - a chart axis wants "14:00" or "3 Feb", not
+ * a full timestamp - rendered in the EFFECTIVE timezone. The options are the
+ * caller's; the zone never is, so an axis and the rows beside it agree on
+ * which hour a point sits in. Bare calendar dates stay on their day. */
+export function formatCustom(
+  value: DateInput,
+  opts: Intl.DateTimeFormatOptions,
+  s: DateTimeSettings
+): string {
+  const d = toDate(value)
+  if (!d) return ""
+  const timeZone = zoneFor(value, s.timezone)
+  try {
+    return new Intl.DateTimeFormat("en-US", { ...opts, timeZone }).format(d)
+  } catch {
+    return new Intl.DateTimeFormat("en-US", opts).format(d)
+  }
+}
+
 /** Today's calendar date as `YYYY-MM-DD` **in the given timezone** - the
  * reference point for "overdue", "due today" and calendar highlighting. Using
  * the effective display zone (not the browser's) keeps a Copenhagen team and a
@@ -159,6 +178,9 @@ export function useDateFormat() {
       formatDate: (v: DateInput) => formatDate(v, s),
       formatTime: (v: DateInput) => formatTime(v, s),
       formatDateTime: (v: DateInput) => formatDateTime(v, s),
+      /** Intl options of your own, the effective timezone regardless. */
+      formatCustom: (v: DateInput, opts: Intl.DateTimeFormatOptions) =>
+        formatCustom(v, opts, s),
     }
   }, [settings])
 }

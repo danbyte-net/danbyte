@@ -13,6 +13,7 @@ inventory, so a template and a playbook read the same shape.
 from __future__ import annotations
 
 import ipaddress
+import re
 from collections.abc import Callable
 
 # key -> fn(obj) -> JSON-able value. Populated by apps at start-up.
@@ -98,9 +99,12 @@ FILTERS = {
 TESTS = {"ipv4": _t_ipv4, "ipv6": _t_ipv6}
 
 
-# Attribute names that hand out a stored secret however the row is reached
-# (the keychain / IPsec PSK accessors read the secret store on call).
-_SECRET_ATTRS = frozenset({"resolve_psk", "store_psk", "clear_psk"})
+# A model method a template may call: Django's choice label, which reads
+# nothing but the row in hand. Everything else a model can DO is refused -
+# a block list of names cannot keep up with the next accessor someone adds,
+# and one of them (DeviceCredential.resolve_secret) read the secret store
+# while the sandbox was busy blocking three other names (#216).
+_SAFE_MODEL_CALL = re.compile(r"^get_\w+_display$")
 
 
 def _template_environment_class():
@@ -118,7 +122,11 @@ def _template_environment_class():
         def is_safe_attribute(self, obj, attr, value):
             if not super().is_safe_attribute(obj, attr, value):
                 return False
-            if attr in _SECRET_ATTRS:
+            from core.secret_fields import SECRET_ACCESSORS
+
+            # However the row was reached - a reverse relation, a list, a
+            # filter - an accessor that opens the secret store is refused.
+            if attr in SECRET_ACCESSORS:
                 return False
             if isinstance(obj, type) and hasattr(obj, "_meta"):
                 return False
@@ -131,8 +139,12 @@ def _template_environment_class():
                 try:
                     field = meta.get_field(attr)
                 except FieldDoesNotExist:
-                    return True
-                return not is_secret_field(obj, field)
+                    field = None
+                if field is not None:
+                    return not is_secret_field(obj, field)
+                # Not a stored field. A property is data and passes; a method
+                # is behaviour and does not, unless it is a choice label.
+                return not callable(value) or bool(_SAFE_MODEL_CALL.match(attr))
             from django.db.models import Manager, QuerySet
 
             if isinstance(obj, (Manager, QuerySet)) and attr in ("model", "raw", "extra", "db", "query"):
@@ -152,11 +164,12 @@ def _env():
 
 
 def has_secret_fields(model) -> bool:
-    """Whether any concrete field of ``model`` is classified secret - such a
-    type is not offered to export templates at all."""
-    from core.secret_fields import is_secret_field
+    """Whether ``model`` carries a credential at all - a secret field, or an
+    accessor that reads one out of the secret store. Such a type is not
+    offered to export or label templates as a subject."""
+    from core.secret_fields import model_holds_secret
 
-    return any(is_secret_field(model, f) for f in model._meta.concrete_fields)
+    return model_holds_secret(model)
 
 
 def _objects_for(template, tenant, user=None):

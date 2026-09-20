@@ -31,6 +31,7 @@ import { TopChanges } from "./top-changes"
 import { MonitoringRail, RAIL_KEYS, railActiveCount } from "./monitoring-rail"
 import type { RailFilters } from "./monitoring-rail"
 import { statusColor, statusLabel, useStatusLabels } from "./status-palette"
+import { useDateFormat } from "@/lib/datetime"
 
 const WINDOWS = ["1", "7", "30", "90"] as const
 const PAGE = 50
@@ -68,6 +69,7 @@ const isoToDay = (iso: string | undefined): string => {
  * live in it, so a view is a link and a saved view is a snapshot of one.
  */
 export function HistoryView() {
+  const { formatCustom } = useDateFormat()
   const search = useSearch({ strict: false })
   const patch = useUrlPatch()
   const labels = useStatusLabels()
@@ -141,14 +143,8 @@ export function HistoryView() {
     ...p,
     label:
       data?.bucket === "day"
-        ? new Date(p.t).toLocaleDateString([], {
-            month: "short",
-            day: "numeric",
-          })
-        : new Date(p.t).toLocaleString([], {
-            weekday: "short",
-            hour: "2-digit",
-          }),
+        ? formatCustom(p.t, { month: "short", day: "numeric" })
+        : formatCustom(p.t, { weekday: "short", hour: "2-digit" }),
   }))
   const present = SERIES_ORDER.filter((s) =>
     (data?.series ?? []).some((p) => (p[s] ?? 0) > 0)

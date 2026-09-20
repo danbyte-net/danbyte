@@ -201,6 +201,7 @@ function RirAggregatesTable({ rirId }: { rirId: string }) {
   return (
     <DataTable
       data={rows}
+      total={q.data?.count}
       columns={columns}
       flexColumn="description"
       embedded

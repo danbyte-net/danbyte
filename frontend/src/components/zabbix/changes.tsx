@@ -310,6 +310,7 @@ export function ZabbixChanges({
         <DataTable
           tableId={`zabbix-changes-${view}`}
           data={rows}
+          total={changes.data?.count}
           columns={columns}
           flexColumn="detail"
         />

@@ -261,6 +261,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
         ) : (
           <DataTable
             data={zones}
+            total={zonesQ.data?.count}
             columns={zoneColumns}
             tableId="dns-zones"
             flexColumn="type"
@@ -272,6 +273,7 @@ export function DnsPanel({ conn }: { conn: WindowsConnection }) {
           <h3 className="mb-2 text-sm font-medium">Drift</h3>
           <DataTable
             data={drifts}
+            total={driftQ.data?.count}
             columns={driftColumns}
             tableId="dns-drifts"
             flexColumn="names"

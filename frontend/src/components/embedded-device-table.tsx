@@ -58,6 +58,7 @@ export function EmbeddedDeviceTable({
   return (
     <DataTable
       data={rows}
+      total={q.data?.count}
       columns={columns}
       flexColumn="type"
       tableId="embedded-devices"

@@ -323,6 +323,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         ) : (
           <DataTable
             data={portRows}
+            total={ports.data?.count}
             columns={portCols}
             embedded
             searchable
@@ -348,6 +349,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         ) : (
           <DataTable
             data={outletRows}
+            total={outlets.data?.count}
             columns={outletCols}
             embedded
             searchable

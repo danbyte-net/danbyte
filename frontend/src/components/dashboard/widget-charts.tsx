@@ -17,6 +17,7 @@ import {
   statusColor,
   statusLabel,
 } from "@/components/monitoring/status-palette"
+import { useDateFormat } from "@/lib/datetime"
 import {
   ChartContainer,
   ChartTooltip,
@@ -371,6 +372,7 @@ export function ObjectCounts({ counts }: { counts: Record<string, number> }) {
 
 /** Recent monitoring status changes - the recent-changes feed. */
 export function RecentActivity({ rows }: { rows: DashActivity[] }) {
+  const { formatCustom } = useDateFormat()
   if (!rows.length) return <Empty hint="No recent changes." />
   return (
     <ul className="divide-y divide-border/60">
@@ -391,7 +393,7 @@ export function RecentActivity({ rows }: { rows: DashActivity[] }) {
             <span className="ml-1 font-mono">{r.ip}</span>
           )}
           <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
-            {new Date(r.at).toLocaleString([], {
+            {formatCustom(r.at, {
               month: "short",
               day: "numeric",
               hour: "2-digit",

@@ -139,6 +139,7 @@ function AutomationTargetsPage() {
         <AutomationExplainer />
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           flexColumn="url"
           tableId="automation-targets"

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
+import { useDateFormat } from "@/lib/datetime"
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -60,6 +61,11 @@ import {
 interface DataTableProps<T> {
   columns: ColumnDef<T, unknown>[]
   data: T[]
+  /** How many rows exist on the server, when `data` is one capped page of
+   * them (an embedded list fetches `page_size=500`). More than `data` holds
+   * and the table says so, rather than looking complete at exactly 500.
+   * Ignored under `serverPagination`, which pages through everything. */
+  total?: number
   /** Field to group rows by (creates a section header per unique value). */
   groupBy?: string
   /** Label used for the columns dropdown. Defaults to "Columns". */
@@ -156,6 +162,7 @@ interface DataTableProps<T> {
 export function DataTable<T>({
   columns,
   data,
+  total,
   groupBy,
   columnsLabel = "Columns",
   renderGroupHeader,
@@ -198,6 +205,8 @@ export function DataTable<T>({
   // Row striping follows the user's global `table_stripes` preference unless
   // a `striped` prop overrides it for this specific table.
   const { values: displayPrefs, setPref } = useUserPrefs()
+  const { formatDateTime } = useDateFormat()
+  const capped = serverPagination ? null : truncationNotice(total, data.length)
   const stripes = striped ?? displayPrefs.table_stripes === true
 
   // ─── Pagination ────────────────────────────────────────────────────────
@@ -456,7 +465,7 @@ export function DataTable<T>({
                           const opts = {
                             name: base,
                             title: exportTitle || prettifyName(base),
-                            generatedAt: new Date().toLocaleString(),
+                            generatedAt: formatDateTime(new Date()),
                           }
                           // A selection always wins; otherwise a server-paged
                           // table exports everything its filters match.
@@ -678,6 +687,12 @@ export function DataTable<T>({
         </Table>
       </div>
 
+      {/* One capped page of a longer list says so - a detail tab that fetches
+          500 rows otherwise looks complete at exactly 500. */}
+      {capped && (
+        <p className="num px-1 text-[11px] text-muted-foreground">{capped}</p>
+      )}
+
       {/* Pager - shown on every flat (non-grouped) list, even single-page ones,
           so the row count + rows-per-page control are always available (the
           selector persists to Settings → Preferences). In `serverPagination`
@@ -773,6 +788,17 @@ export function DataTable<T>({
         )}
     </div>
   )
+}
+
+/** What to say under a table holding one capped page of a longer list, or
+ * null when it holds the lot. `total` is what the server reported; `shown`
+ * is what arrived. */
+export function truncationNotice(
+  total: number | undefined,
+  shown: number
+): string | null {
+  if (total == null || !Number.isFinite(total) || total <= shown) return null
+  return `Showing the first ${shown.toLocaleString()} of ${total.toLocaleString()} - filter or open the full list to see the rest.`
 }
 
 // Turn a file-base name ("ip-ranges") into a heading ("Ip Ranges") for the

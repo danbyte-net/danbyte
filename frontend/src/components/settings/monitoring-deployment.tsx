@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Field, FormCheckbox, FormSelect } from "@/components/forms"
 import { SettingsCard, SettingsGrid } from "@/components/settings/settings-card"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
+import { useDateFormat } from "@/lib/datetime"
 
 /** The deployment half of monitoring: the schedules that are set once for
  * the whole install. Rendered by the Monitoring settings page under its
@@ -25,6 +26,7 @@ export function MonitoringDeploymentCards() {
 
 function ConfigDriftCard() {
   const { data, save, savingKey } = useDeploymentSettings()
+  const { formatDateTime } = useDateFormat()
   const [enabled, setEnabled] = useState(false)
   const [interval, setInterval] = useState<string | null>(null)
 
@@ -72,7 +74,7 @@ function ConfigDriftCard() {
           <span className="text-[11px] text-muted-foreground">
             Last run:{" "}
             <span className="num font-mono">
-              {new Date(data.config_drift_last_run).toLocaleString()}
+              {formatDateTime(data.config_drift_last_run)}
             </span>
           </span>
         ) : undefined

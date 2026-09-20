@@ -114,3 +114,45 @@ class LabelRenderSecurityTests(ExportRenderSecurityTests):
         out = render_label(t, self.hook)
         self.assertNotIn("SIGNING-KEY", out["html"])
         self.assertNotIn("LEAKED", out["html"])
+
+
+class SandboxMethodTests(ExportRenderSecurityTests):
+    """A model's METHODS are behaviour, not data: the sandbox refuses them
+    unless they are a choice label, so a credential accessor reached through
+    a relation cannot be called (#216)."""
+
+    def test_a_credential_accessor_is_unreachable_from_any_row(self):
+        from jinja2.sandbox import SecurityError
+
+        from monitoring.models import DeviceCredential
+
+        from .export_templates import _env, has_secret_fields
+        from .models import Device
+
+        # The model holds its secret in the store, not in a field - it is a
+        # credential type all the same, and never a template's subject.
+        self.assertTrue(has_secret_fields(DeviceCredential))
+        env = _env()
+        dev = Device.objects.first()
+        for code in (
+            "{% for c in d.credentials.all() %}{{ c.resolve_secret() }}{% endfor %}",
+            "{% for c in d.credentials.all() %}{{ c.store_managed_secret('x') }}{% endfor %}",
+        ):
+            try:
+                out = env.from_string(code).render(d=dev)
+            except SecurityError:
+                continue
+            self.assertEqual(out.strip(), "")
+
+    def test_a_choice_label_renders_but_other_methods_do_not(self):
+        from jinja2.sandbox import SecurityError
+
+        from .export_templates import _env
+        from .models import Device
+
+        env = _env()
+        dev = Device.objects.first()
+        self.assertEqual(env.from_string("{{ d.name }}").render(d=dev), dev.name)
+        for code in ("{{ d.delete() }}", "{{ d.save() }}"):
+            with self.assertRaises(SecurityError):
+                env.from_string(code).render(d=dev)

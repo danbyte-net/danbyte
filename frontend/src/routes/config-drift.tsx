@@ -176,6 +176,7 @@ function ConfigTab() {
       ) : (
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           flexColumn="source"
           tableId="config-drift"
@@ -299,6 +300,7 @@ function SnmpTab() {
       ) : (
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           flexColumn="drift"
           tableId="snmp-drift"

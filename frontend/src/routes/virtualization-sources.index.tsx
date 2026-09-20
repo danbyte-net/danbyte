@@ -289,6 +289,7 @@ function VirtualizationSourcesPage() {
       ) : (
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           flexColumn="host"
           tableId="virtualization-sources"

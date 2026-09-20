@@ -617,6 +617,7 @@ function Reservations({
       ) : (
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           tableId="dhcp-reservations"
           flexColumn="name"
@@ -770,6 +771,7 @@ function Leases({
   return (
     <DataTable
       data={rows}
+      total={query.data?.count}
       columns={columns}
       tableId="dhcp-leases"
       flexColumn="hostname"

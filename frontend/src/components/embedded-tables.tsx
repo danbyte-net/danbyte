@@ -87,6 +87,7 @@ function Frame<T>({
   return (
     <DataTable
       data={rows}
+      total={q.data?.count}
       columns={columns}
       flexColumn={flexColumn}
       tableId={tableId}

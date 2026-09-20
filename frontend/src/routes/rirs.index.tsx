@@ -60,6 +60,7 @@ function RirsPage() {
     >
       <DataTable
         data={rows}
+        total={query.data?.count}
         columns={columns}
         flexColumn="description"
         tableId="rirs"

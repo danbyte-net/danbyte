@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +27,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 
 export function SilencesList() {
   const { canDo } = useMe()
+  const { formatDateTime } = useDateFormat()
   const canAdd = canDo("silence", "add")
   const canEdit = canDo("silence", "change")
   const canDelete = canDo("silence", "delete")
@@ -68,8 +70,8 @@ export function SilencesList() {
       header: "Window",
       cell: ({ row }) => (
         <span className="num text-[11px] text-muted-foreground">
-          {new Date(row.original.starts_at).toLocaleString()} →{" "}
-          {new Date(row.original.ends_at).toLocaleString()}
+          {formatDateTime(row.original.starts_at)} →{" "}
+          {formatDateTime(row.original.ends_at)}
         </span>
       ),
     },
@@ -130,6 +132,7 @@ export function SilencesList() {
         <DataTable
           tableId="silences"
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="matches"
         />

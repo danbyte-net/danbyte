@@ -72,6 +72,7 @@ function PluginListPage({ page }: { page: PluginPage }) {
       <DataTable
         columns={columns}
         data={rows}
+        total={query.data?.count}
         tableId={`plugin:${page.plugin}:${page.path}`}
       />
     </ListPageShell>

@@ -182,6 +182,10 @@ can't drift page to page (source of truth:
 - Tables are paged by `DataTable` alone. When the API pages server-side, hand it
   `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
   pager drives the server - don't add a second Prev/Next row.
+- An **embedded** table on a detail page fetches one capped page (`page_size=500`)
+  rather than paging. Hand `DataTable` the server's `total={q.data?.count}` with
+  it: when more rows exist than arrived it says so, instead of a site with 600
+  prefixes showing exactly 500 and looking complete.
 - A list that is a view *of* another list (e.g. `/racks/elevations`) gets the
   shell's `backTo` / `backLabel` breadcrumb rather than its own nav.
 
