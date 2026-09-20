@@ -111,12 +111,23 @@ def enqueue_devicetype_import(tenant, url, *, stack, owning_site, user):
     return run
 
 
-def _enqueue(task, run, label: str) -> None:
+class QueueUnavailable(Exception):
+    """The job queue (Redis) could not take the job."""
+
+
+def _enqueue(task, run, label: str, *, inline: bool = True) -> None:
+    """Queue ``task`` for ``run``. With Redis down a device-type import runs
+    inline - slow but harmless. A backup or restore must not (#211): the
+    request worker is killed at its timeout with the schema half-restored,
+    so those pass ``inline=False`` and get :class:`QueueUnavailable` to
+    turn into a plain error."""
     try:
         import django_rq
 
         django_rq.get_queue("low").enqueue(task, str(run.id), job_timeout=3600)
-    except Exception:  # noqa: BLE001 - Redis down: run inline so it still runs
+    except Exception as exc:  # noqa: BLE001 - Redis down
+        if not inline:
+            raise QueueUnavailable(str(exc)) from exc
         logger.warning("RQ unavailable; running %s inline", label)
         try:
             task(str(run.id))

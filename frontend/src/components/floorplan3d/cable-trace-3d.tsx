@@ -575,14 +575,17 @@ function CableTube({
   const [hovered, setHovered] = useState(false)
   const geometry = useMemo(() => {
     const v = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
-    const path = new THREE.CurvePath<THREE.Vector3>()
-    for (let i = 0; i < v.length - 1; i++)
-      path.add(new THREE.LineCurve3(v[i], v[i + 1]))
     let len = 0
     for (let i = 0; i < v.length - 1; i++) len += v[i].distanceTo(v[i + 1])
-    // The path is already filleted - segments only need to keep up with it.
-    const segments = Math.min(400, Math.max(24, Math.round(len / 0.06)))
-    return new THREE.TubeGeometry(path, segments, radius, 6, false)
+    // A smooth spline THROUGH the filleted points, not straight segments
+    // between them: with the short stubs an in-rack run now has, a fillet
+    // is clamped to a few centimetres and straight chords across it read as
+    // facets. Centripetal keeps the curve from overshooting a tight bend.
+    // Two-centimetre steps and a rounder cross-section keep the sweep
+    // smooth at the thickest slider setting.
+    const path = new THREE.CatmullRomCurve3(v, false, "centripetal")
+    const segments = Math.min(1200, Math.max(48, Math.round(len / 0.02)))
+    return new THREE.TubeGeometry(path, segments, radius, 10, false)
   }, [points, radius])
   useEffect(() => () => geometry.dispose(), [geometry])
   return (

@@ -83,6 +83,7 @@ import {
   type PortLabelFacts,
 } from "@/lib/port-label"
 import type { DevicePortLabels, PortLabelSource } from "@/lib/api"
+import { usePortLabelsShown } from "@/lib/port-labels-pref"
 import { cn } from "@/lib/utils"
 import { TruncatedText } from "@/components/ui/truncated-text"
 
@@ -264,7 +265,12 @@ export function usePortLabelStyle(): {
 } {
   const ctx = React.useContext(PortLabelContext)
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
-  return ctx ?? { source: faceplatePortLabels, color: faceplatePortLabelColor }
+  const shown = usePortLabelsShown()
+  const style = ctx ?? {
+    source: faceplatePortLabels,
+    color: faceplatePortLabelColor,
+  }
+  return shown ? style : { ...style, source: "" }
 }
 
 /** The facts a port offers a label - one shape for a live Interface row and

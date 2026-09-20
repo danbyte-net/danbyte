@@ -215,6 +215,19 @@ from .serializers import (
 )
 
 
+def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
+    """The ``fields`` of a bespoke bulk update, narrowed to what the endpoint
+    writes. The tag keys ride alongside; anything else is a 400, never a
+    silent no-op that reports every matched row as updated (#209) - the
+    contract ComponentBulkMixin already keeps."""
+    unknown = sorted(
+        k for k in fields if k not in allowed and k not in ("add_tag_ids", "remove_tag_ids")
+    )
+    if unknown:
+        raise ValidationError({"fields": f"Unknown field(s): {', '.join(unknown)}."})
+    return {k: fields[k] for k in allowed if k in fields}
+
+
 # Bulk rename patterns: longest accepted, and the per-name match deadline.
 _RENAME_PATTERN_MAX = 256
 _RENAME_MATCH_TIMEOUT = 0.2
@@ -322,7 +335,7 @@ def _apply_custom_field_scope(request, qs, model_slug: str):
     from customization.scopes import apply_scope_to_queryset
 
     return apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})
-from .views import _build_space_map, _get_active_tenant, _next_available_ips, _subnet_details
+from .views import _build_space_map, _get_active_tenant, _next_available_ips, _subnet_details, reparent_ips_out_of
 
 
 
@@ -824,7 +837,10 @@ class ComponentBulkMixin(FieldWriteAllowList):
             filt = {"name": new}
             if scope:
                 filt[scope] = getattr(r, scope)
-            if model.objects.filter(**filt).exclude(pk__in=plan_ids).exists():
+            # The caller's own rows, not the bare manager: a name that only
+            # exists in another tenant is neither a collision nor a fact to
+            # reveal (#204).
+            if self.get_queryset().filter(**filt).exclude(pk__in=plan_ids).exists():
                 raise ValidationError({"name": f"'{new}' already exists here."})
 
         olds = {r.pk: r.name for r, _ in plan}
@@ -880,7 +896,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
             filt = {"name": nn}
             if scope:
                 filt[scope] = getattr(r, scope)
-            if model.objects.filter(**filt).exists():
+            if self.get_queryset().filter(**filt).exists():
                 raise ValidationError(
                     {"name": f"'{nn}' already exists - use find/replace to give "
                              "the clones new names."}
@@ -1483,16 +1499,27 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Bulk delete ─────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
-        """POST {ids: [...]} → 204. IDs not in tenant are silently skipped."""
+        """POST {ids: [...]} → 200 {deleted, moved, removed}. IDs not in the
+        tenant are silently skipped. Addresses on the prefixes move up to
+        the longest prefix that still contains them, exactly as a single
+        delete does (#207); only addresses nothing else covers fall."""
         ids = request.data.get("ids") or []
         if not isinstance(ids, list) or not ids:
             raise ValidationError({"ids": "Provide a non-empty list of prefix IDs."})
+        moved = removed = 0
         with transaction.atomic():
             _qs = self.get_queryset().filter(pk__in=ids)
             _rows = list(_qs)
+            for row in _rows:
+                out = reparent_ips_out_of(row)
+                moved += out.get("moved", 0)
+                removed += out.get("removed", 0)
             deleted, _ = _qs.delete()
             log_bulk_delete(_rows)
-        return Response({"deleted": deleted}, status=drf_status.HTTP_200_OK)
+        return Response(
+            {"deleted": deleted, "moved": moved, "removed": removed},
+            status=drf_status.HTTP_200_OK,
+        )
 
     # ── Bulk patch ──────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-update")
@@ -1523,21 +1550,21 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 raise ValidationError({key: "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "status_id" in fields:
-            updates["status_id"] = fields["status_id"]
-        if "vrf_id" in fields:
-            updates["vrf_id"] = fields["vrf_id"]
-        if "site_id" in fields:
-            updates["site_id"] = fields["site_id"]
-        if "vlan_id" in fields:
-            updates["vlan_id"] = fields["vlan_id"]
-        if "description" in fields:
-            updates["description"] = fields["description"]
+        updates = _bulk_field_updates(
+            fields, ("status_id", "vrf_id", "site_id", "vlan_id", "description")
+        )
 
         with transaction.atomic():
             _rows = list(qs)
             updated_count = qs.update(**updates) if updates else qs.count()
+            if "vrf_id" in updates:
+                # The addresses and ranges denormalise the VRF and only
+                # re-derive it on their own save; a bulk move re-homes them
+                # like Prefix.save does, or they stay stranded in the old
+                # VRF, invisible and holding its uniqueness slots (#208).
+                moved_ids = [r.pk for r in _rows]
+                IPAddress.objects.filter(prefix_id__in=moved_ids).update(vrf_id=updates["vrf_id"])
+                IPRange.objects.filter(prefix_id__in=moved_ids).update(vrf_id=updates["vrf_id"])
             if updates:
                 log_bulk_update(_rows, updates)
             apply_and_log_bulk_tags(
@@ -1680,13 +1707,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 raise ValidationError({key: "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "status_id" in fields:
-            updates["status_id"] = fields["status_id"]
-        if "role_id" in fields:
-            updates["role_id"] = fields["role_id"]
-        if "description" in fields:
-            updates["description"] = fields["description"]
+        updates = _bulk_field_updates(fields, ("status_id", "role_id", "description"))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -1907,9 +1928,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             raise ValidationError({"fields": "Provide at least one field to update."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "gateway_policy" in fields: updates["gateway_policy"] = fields["gateway_policy"]
-        if "location" in fields: updates["location"] = fields["location"]
+        updates = _bulk_field_updates(fields, ("gateway_policy", "location"))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -2009,11 +2028,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             raise ValidationError({"vrf_id": "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = {}
-        if "site_id" in fields: updates["site_id"] = fields["site_id"]
-        if "zone_id" in fields: updates["zone_id"] = fields["zone_id"]
-        if "vrf_id" in fields: updates["vrf_id"] = fields["vrf_id"]
-        if "description" in fields: updates["description"] = fields["description"]
+        updates = _bulk_field_updates(fields, ("site_id", "zone_id", "vrf_id", "description"))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -3224,11 +3239,14 @@ class DeviceViewSet(
             "role", "rack", "status", "platform", "location", "cluster",
         )
         .prefetch_related("tags")
-        # ip_count + interface_count are shown/served on the list; annotate
-        # (distinct) so each is one query, not a COUNT per row.
+        # ip_count + interface_count are shown/served on the list, as
+        # correlated subqueries. The joined COUNT(DISTINCT) they replaced
+        # multiplied every device's addresses by its interfaces before
+        # grouping - a 48-port switch with ten addresses was 480 rows - and a
+        # page of a hundred devices took a quarter of a second in that join.
         .annotate(
-            ip_count_annotated=Count("ip_addresses", distinct=True),
-            interface_count_annotated=Count("interfaces", distinct=True),
+            ip_count_annotated=_count_of(IPAddress, "assigned_device"),
+            interface_count_annotated=_count_of(Interface, "device"),
         )
         .all().order_by(NATURAL_NAME)
     )
@@ -3303,21 +3321,25 @@ class DeviceViewSet(
 
         devices = self.get_queryset()
         counts = device_port_counts(devices)
-        meta = devices.filter(id__in=counts).select_related(
-            "site", "role", "device_type"
+        # Only what the rows print - whole Device rows (custom fields, photo
+        # markers, every joined catalog) for a hall of devices cost half a
+        # second of transfer and decoding on their own.
+        meta = devices.filter(id__in=counts).values(
+            "id", "name", "site_id", "site__name", "role_id", "role__name",
+            "role__color", "device_type__name",
         )
         rows = []
         for d in meta:
-            row = counts[d.id]
+            row = counts[d["id"]]
             total, conn, res = row["total"], row["connected"], row["reserved"]
             rows.append({
-                "id": str(d.id),
-                "name": d.name,
-                "site": {"id": str(d.site_id), "name": d.site.name}
-                if d.site_id else None,
-                "role": {"name": d.role.name, "color": d.role.color}
-                if d.role_id else None,
-                "device_type": d.device_type.name if d.device_type_id else None,
+                "id": str(d["id"]),
+                "name": d["name"],
+                "site": {"id": str(d["site_id"]), "name": d["site__name"]}
+                if d["site_id"] else None,
+                "role": {"name": d["role__name"], "color": d["role__color"]}
+                if d["role_id"] else None,
+                "device_type": d["device_type__name"],
                 "total": total,
                 "connected": conn,
                 "reserved": res,
@@ -3393,9 +3415,36 @@ class DeviceViewSet(
         synthetic entries (marker == the component's own name): the room draws
         deterministic quads for them, and those must resolve here like any
         photo port or they could never start a connection."""
+        device = self.get_object()
+        return Response(self._face_ports_payload(device))
+
+    @action(detail=False, methods=["get"], url_path="face-ports")
+    def face_ports_bulk(self, request):
+        """``?ids=a,b,c`` → ``{device id: {front, rear}}`` for up to 200 devices
+        the caller may view. The 3D room resolves a rack's worth of markers
+        in one request instead of one per device - forty round trips for a
+        full cabinet was what made its photo ports take seconds to light up."""
+        import uuid
+
+        ids = []
+        for raw in (request.query_params.get("ids") or "").split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                ids.append(uuid.UUID(raw))
+            except ValueError:
+                continue
+        ids = ids[:200]
+        if not ids:
+            return Response({})
+        devices = self.get_queryset().filter(pk__in=ids).select_related("device_type")
+        return Response({str(d.id): self._face_ports_payload(d) for d in devices})
+
+    def _face_ports_payload(self, device) -> dict:
+        """The resolved markers of one device - see ``face_ports``."""
         from .models import render_component_name
 
-        device = self.get_object()
         dt = device.device_type
         # A device-level override (special devices) replaces the type's
         # layout wholesale; null inherits.
@@ -3575,7 +3624,7 @@ class DeviceViewSet(
                     "status": None, "module": None,
                     "drift": drift.get(str(comp.id)),
                 })
-        return Response({"front": front, "rear": rear})
+        return {"front": front, "rear": rear}
 
     @action(detail=True, methods=["get"])
     def render(self, request, pk=None):
@@ -5361,6 +5410,8 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
     )
     serializer_class = VMInterfaceSerializer
     pagination_class = StandardPagination
+    # A name is unique per VM - the bulk rename/clone probe checks within it.
+    bulk_name_scope_field = "vm_id"
     # Tenant is reached through the VM (VMInterface has no direct tenant FK).
     tenant_field = "vm__tenant"
     bulk_str_fields = ("mode", "description")

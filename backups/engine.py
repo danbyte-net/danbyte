@@ -214,9 +214,15 @@ def create_backup(*, kind: str, components, target: BackupTarget | None = None,
 
 
 def enqueue_backup(backup: Backup) -> None:
-    from api.devicetype_import_tasks import _enqueue
+    """Queue the backup; never run it inline (#211). Raises
+    ``QueueUnavailable`` with the row removed when the queue is down."""
+    from api.devicetype_import_tasks import QueueUnavailable, _enqueue
 
-    _enqueue(run_backup, backup, "backup")
+    try:
+        _enqueue(run_backup, backup, "backup", inline=False)
+    except QueueUnavailable:
+        backup.delete()
+        raise
 
 
 def run_backup(backup_id: str) -> Backup | None:

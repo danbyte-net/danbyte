@@ -38,6 +38,7 @@ import {
 import { CableForm } from "@/components/cable-form"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
+import { usePortLabelsShown } from "@/lib/port-labels-pref"
 
 import {
   cableEndsAnchored,
@@ -129,8 +130,10 @@ export default function FloorScene3D({
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
-  // Read once here; every rack and device gets the values as props.
+  // Read once here; every rack and device gets the values as props. The
+  // viewer's own switch (View menu) can clear the labels off this screen.
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
+  const portLabelsShown = usePortLabelsShown()
   const [selection, setSelection] = useState<Sel | null>(null)
   const [cableSel, setCableSel] = useState<string | null>(null)
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
@@ -575,7 +578,7 @@ export default function FloorScene3D({
             showNames={showNames}
             namesScope={namesScope}
             namesAtEdge={namesAtEdge}
-            portLabelSource={faceplatePortLabels}
+            portLabelSource={portLabelsShown ? faceplatePortLabels : ""}
             portLabelColor={faceplatePortLabelColor}
             showAirflow={showAirflow}
             shellMode={shellMode}

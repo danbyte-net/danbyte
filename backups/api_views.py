@@ -15,6 +15,7 @@ from rest_framework.decorators import action, api_view, parser_classes, permissi
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
+from api.devicetype_import_tasks import QueueUnavailable
 from auth_api.permissions import can_manage_deployment
 from core.models import DeploymentSettings
 
@@ -166,7 +167,10 @@ class BackupViewSet(viewsets.ReadOnlyModelViewSet):
             )
         except EngineError as exc:
             return Response({"detail": str(exc)}, status=400)
-        enqueue_backup(backup)
+        try:
+            enqueue_backup(backup)
+        except QueueUnavailable:
+            return Response({"detail": _QUEUE_DOWN}, status=503)
         return Response(BackupSerializer(backup).data, status=201)
 
     def destroy(self, request, pk=None):
@@ -232,9 +236,19 @@ class BackupViewSet(viewsets.ReadOnlyModelViewSet):
             run = create_restore(backup, ser.validated_data.get("components") or None, user=request.user)
         except RestoreError as exc:
             return Response({"detail": str(exc)}, status=400)
-        enqueue_restore(run)
+        try:
+            enqueue_restore(run)
+        except QueueUnavailable:
+            return Response({"detail": _QUEUE_DOWN}, status=503)
         return Response(RestoreRunSerializer(run).data, status=201)
 
+
+# A backup or restore is queued work; with the queue down it is refused
+# rather than run inside a request that its own timeout would kill (#211).
+_QUEUE_DOWN = (
+    "The job queue is unreachable (Redis is down or the workers cannot be "
+    "reached). Nothing was changed - start the queue and try again."
+)
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 

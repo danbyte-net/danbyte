@@ -134,6 +134,9 @@ uploaded blueprint textures it.
   front of it, and painted steel and galvanised tray read as material
   rather than flat grey. On High quality, screen-space ambient occlusion
   adds the interior depth that makes an open cabinet look hollow.
+- **Port labels** (View menu, 3D, shown when the deployment prints them):
+  turns the labels on the port quads off for this browser only - the same
+  switch as the device page's Panel header.
 - **Device names** (View menu, 3D): name plates per device. Underneath,
   **All racks / Highlighted rack** limits them to the rack you have selected
   or are focused on, and **Names off the gear** starts each plate at the

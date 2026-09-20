@@ -6960,10 +6960,17 @@ class LabelTemplateSerializer(NumIdModelSerializer):
         return entry["label"] if entry else obj.object_type
 
     def validate_object_type(self, value):
-        from auth_api.object_types import is_registered
+        from auth_api.object_types import is_registered, model_for
+
+        from .export_templates import has_secret_fields
 
         if not is_registered(value):
             raise serializers.ValidationError("Unknown object type.")
+        # A type with a credential field is never a label's subject (#205).
+        if has_secret_fields(model_for(value)):
+            raise serializers.ValidationError(
+                "This type carries credentials and cannot be labelled by template."
+            )
         return value
 
     def _check_jinja(self, value):

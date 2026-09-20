@@ -166,6 +166,8 @@ import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { AssignIpDialog } from "@/components/assign-ip-dialog"
 import type { AssignIpTarget } from "@/components/assign-ip-dialog"
 import { useMe, objCan } from "@/lib/use-me"
+import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
+import { Switch } from "@/components/ui/switch"
 import { DeviceConnectMenu } from "@/components/device-connect-menu"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
 
@@ -1206,6 +1208,8 @@ function DeviceFrontPanel({
   const hasTypeImage = !!frontImg || !!rearImg
   const [side, setSide] = useState<"front" | "rear">("front")
   const [view, setView] = useState<PanelView>("photo")
+  const { faceplatePortLabels } = useMe()
+  const portLabelsShown = usePortLabelsShown()
   const q = useQuery({
     queryKey: ["device-interfaces", deviceId],
     queryFn: () =>
@@ -1266,6 +1270,16 @@ function DeviceFrontPanel({
                 { value: "rear", label: "Rear" },
               ]}
             />
+          )}
+          {faceplatePortLabels && (
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              Labels
+              <Switch
+                checked={portLabelsShown}
+                onCheckedChange={setPortLabelsShown}
+                aria-label="Port labels"
+              />
+            </span>
           )}
         </div>
       }

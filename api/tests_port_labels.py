@@ -75,3 +75,20 @@ class PortLabelDataTests(APITestCase):
         r = self.client.patch(f"/api/interfaces/{self.a.id}/", {"hide_label": True}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(r.json()["hide_label"])
+
+
+class FacePortsBulkTests(PortLabelDataTests):
+    """One request for many devices, scoped like the list - the 3D room's
+    rack-load path."""
+
+    def test_bulk_returns_each_visible_device_once(self):
+        other = Tenant.objects.create(org=self.tenant.org, name="Other", slug="other")
+        foreign = Device.objects.create(tenant=other, name="x", site=Site.objects.create(tenant=other, name="X"))
+        r = self.client.get(
+            f"/api/devices/face-ports/?ids={self.sw.id},{self.srv.id},{foreign.id},not-a-uuid"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(set(body), {str(self.sw.id), str(self.srv.id)})
+        self.assertEqual(body[str(self.sw.id)]["front"][0]["label"], "A01")
+        self.assertEqual(self.client.get("/api/devices/face-ports/").json(), {})

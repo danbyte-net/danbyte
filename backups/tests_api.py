@@ -253,3 +253,28 @@ class RestoreTests(_Base):
         self.assertEqual(r.status_code, 400)
         self.assertIn("newer Danbyte", r.json()["detail"])
         self.assertFalse(RestoreRun.objects.exists())
+
+
+class QueueDownTests(_Base):
+    """With Redis down a backup or restore is refused with 503 and leaves no
+    row behind - never run inline in the request (#211)."""
+
+    def test_backup_refused(self):
+        from backups.models import Backup
+
+        before = Backup.objects.count()
+        with mock.patch("django_rq.get_queue", side_effect=ConnectionError("redis down")):
+            r = self.client.post("/api/backups/", {"components": ["db"]},
+                                 content_type="application/json")
+        self.assertEqual(r.status_code, 503, r.content)
+        self.assertIn("queue", r.json()["detail"].lower())
+        self.assertEqual(Backup.objects.count(), before)
+
+    def test_restore_refused(self):
+        b = self._archive()
+        DeploymentSettings.objects.update_or_create(pk=DeploymentSettings.load().pk, defaults={"deployment_name": "Lab"})
+        with mock.patch("django_rq.get_queue", side_effect=ConnectionError("redis down")):
+            r = self.client.post(f"/api/backups/{b.id}/restore/", {"confirm": "Lab", "components": ["db"]},
+                                 content_type="application/json")
+        self.assertEqual(r.status_code, 503, r.content)
+        self.assertFalse(RestoreRun.objects.exists())
