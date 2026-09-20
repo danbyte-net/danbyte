@@ -3779,11 +3779,30 @@ export type VMStatus =
   | "staged"
   | "decommissioning"
 
+/** A vApp, resource pool or folder - how the hypervisor groups its VMs.
+ * The hypervisor owns membership; a group an operator sets by hand is
+ * never overwritten by a sync. */
+export interface VirtualMachineGroup {
+  id: string
+  numid: number | null
+  name: string
+  kind: "vapp" | "pool" | "folder" | "other"
+  kind_display: string
+  cluster: { id: string; name: string; status: StatusMini | null }
+  description: string
+  vm_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface VirtualMachine {
   id: string
   numid: number | null
   name: string
   cluster: { id: string; name: string; status: StatusMini | null }
+  group: { id: string; name: string; kind: string } | null
   device: { id: string; name: string } | null
   site: { id: string; name: string } | null
   role: {
@@ -9002,7 +9021,7 @@ export interface DnsLiveRecord {
 export interface VirtualizationSource {
   id: string
   name: string
-  kind: "proxmox" | "vcenter"
+  kind: "proxmox" | "vcenter" | "vcloud"
   kind_display: string
   host: string
   port: number
@@ -9022,6 +9041,19 @@ export interface VirtualizationSource {
   sync_vm_interface_mtu: boolean
   /** Powered-off guests are left alone - but still count as present. */
   skip_offline_vms: boolean
+  /** Cloud Director only. The API version to ask for; blank negotiates. */
+  api_version: string
+  /** What the last pass actually spoke. Blank until it has run. */
+  api_version_used: string
+  /** The newest API this release was tested against. Blank off Cloud
+   * Director. Served so the page need not repeat the number. */
+  api_version_tested: string
+  /** Record a guest's external address as a NAT rule. Off by default. */
+  sync_nat: boolean
+  /** Mirror the hypervisor's own VM grouping (a vApp) as a VM group. */
+  sync_vm_groups: boolean
+  /** Import vApp templates as if they were VMs. Off by default. */
+  sync_templates: boolean
   /** Remove a VM that has vanished from the hypervisor. */
   auto_prune: boolean
   /** Days it must stay missing first. 0 = on the next sync. */
@@ -9076,7 +9108,10 @@ export interface VirtChange {
     | "iface_extra"
     | "iface_change"
   kind_display: string
-  vmid: number
+  /** Null on a hypervisor that keys guests by string. */
+  vmid: number | null
+  /** Whichever identity this guest's hypervisor uses, as text. */
+  guest_key: string
   node: string
   vm: string | null
   vm_name: string

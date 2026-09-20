@@ -349,6 +349,7 @@ class IntegrationSettings(TimestampedModel):
     # combined switch on, so nothing changes for them.
     virt_proxmox_enabled = models.BooleanField(default=False)
     virt_vcenter_enabled = models.BooleanField(default=False)
+    virt_vcloud_enabled = models.BooleanField(default=False)
     # Agent access (MCP): an assistant reaching this tenant's data with the
     # permissions of the API token it authenticates with. Writes need the
     # second switch as well, so reading can be on with nothing changeable.
@@ -474,13 +475,17 @@ class WindowsServerConnection(AddressPlacementMixin, TimestampedModel):
 class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     """A hypervisor/cluster API Danbyte syncs virtual machines from.
 
-    ``kind`` picks the client; Proxmox is the first implementation and vCenter
-    slots in behind the same model later. Credentials are kind-shaped -
-    Proxmox: ``{"token_id": "user@realm!name", "secret": "..."}`` - and
-    write-only through the API.
+    ``kind`` picks the client. Credentials are kind-shaped - Proxmox:
+    ``{"token_id": "user@realm!name", "secret": "..."}``; vCenter and Cloud
+    Director: ``{"username": ..., "password": ...}`` - and write-only through
+    the API.
     """
 
-    KIND_CHOICES = [("proxmox", "Proxmox VE"), ("vcenter", "VMware vCenter")]
+    KIND_CHOICES = [
+        ("proxmox", "Proxmox VE"),
+        ("vcenter", "VMware vCenter"),
+        ("vcloud", "VMware Cloud Director"),
+    ]
 
     #: How discovered changes reach the inventory. ``auto`` mirrors the
     #: hypervisor (it becomes the source of truth); ``review`` and ``manual``
@@ -556,6 +561,28 @@ class VirtualizationSource(AddressPlacementMixin, TimestampedModel):
     #: too, because approving a deletion a bad poll invented loses the same
     #: data.
     auto_prune_after_days = models.PositiveSmallIntegerField(default=7)
+
+    # ── Cloud Director ───────────────────────────────────────────────────
+    #: The API version to ask for. Blank negotiates: Danbyte reads what the
+    #: appliance advertises and speaks the newest one it has been tested
+    #: against. Pin it only to work around a specific version's behaviour.
+    api_version = models.CharField(max_length=16, blank=True, default="")
+    #: What the last pass actually spoke, so the source page can say whether
+    #: this appliance is inside the tested window without another API call.
+    api_version_used = models.CharField(max_length=16, blank=True, default="")
+    #: Record a guest's external address as a NAT rule. Off by default: a NAT
+    #: rule is operator-facing policy, not inventory, and an estate that
+    #: models its edge by hand does not want the sync inventing rules.
+    sync_nat = models.BooleanField(default=False)
+    #: Mirror the hypervisor's own VM grouping (a vApp) as a
+    #: :class:`api.VirtualMachineGroup`. On by default - it writes into a
+    #: catalog only the sync owns, and Cloud Director has no structure at all
+    #: without it.
+    sync_vm_groups = models.BooleanField(default=True)
+    #: Import vApp templates as if they were VMs. Off: a template is a golden
+    #: image, not a running machine, and an estate with many of them would
+    #: double its inventory.
+    sync_templates = models.BooleanField(default=False)
 
     last_sync_at = models.DateTimeField(null=True, blank=True)
     last_sync_status = models.CharField(max_length=16, blank=True, default="")
@@ -919,7 +946,13 @@ class VirtGuest(TimestampedModel):
     )
     # Proxmox: the integer VMID. vCenter: the numeric part of the VM MoRef
     # (``vm-1023`` → ``1023``), which is stable for the VM's lifetime.
-    vmid = models.PositiveIntegerField()
+    # NULL on a hypervisor that has no integer id of its own - see ext_id.
+    vmid = models.PositiveIntegerField(null=True, blank=True)
+    #: Identity for a hypervisor that keys guests by string. Cloud Director
+    #: has only a UUID URN, and hashing one into ``vmid`` would not fit: the
+    #: field is 31 bits, so a few thousand guests is a real collision risk.
+    #: Blank on Proxmox and vCenter, which keep using ``vmid``.
+    ext_id = models.CharField(max_length=128, blank=True, default="")
     node = models.CharField(max_length=128, blank=True, default="")
     kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="qemu")
     vm = models.ForeignKey(
@@ -934,15 +967,26 @@ class VirtGuest(TimestampedModel):
     missing_since = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["vmid"]
+        ordering = ["vmid", "ext_id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["source", "vmid"], name="uniq_virtguest_source_vmid"
-            )
+            ),
+            # Conditional so the blank default on the integer-keyed
+            # hypervisors does not collapse every guest into one row.
+            models.UniqueConstraint(
+                fields=["source", "ext_id"],
+                condition=~models.Q(ext_id=""),
+                name="uniq_virtguest_source_ext_id",
+            ),
         ]
 
+    def key(self):
+        """Whichever identity this hypervisor keys the guest by."""
+        return self.ext_id or self.vmid
+
     def __str__(self) -> str:
-        return f"{self.kind}/{self.vmid} on {self.node}"
+        return f"{self.kind}/{self.key()} on {self.node}"
 
 
 class VirtChange(TimestampedModel):
@@ -984,7 +1028,7 @@ class VirtChange(TimestampedModel):
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["kind", "guest__vmid"]
+        ordering = ["kind", "guest__vmid", "guest__ext_id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["guest", "kind"], name="uniq_virtchange_guest_kind"
@@ -1078,6 +1122,44 @@ class VirtNetworkLink(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.vm_interface_id} on {self.network_id}"
+
+
+class VirtNatLink(TimestampedModel):
+    """Which NAT rule the sync wrote for which guest interface.
+
+    :class:`api.NATRule` has no natural key and no ``created_*`` flag, so on
+    the next pass the sync could neither find the rule it wrote nor tell it
+    apart from one an operator typed. This row is that memory: find by
+    ``ext_key``, and prune only what ``created_rule`` says Danbyte minted.
+
+    Pure sync bookkeeping like :class:`VirtNetworkLink` - refreshed each pass,
+    never operator data, so not audited.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source = models.ForeignKey(
+        VirtualizationSource, on_delete=models.CASCADE, related_name="nat_links"
+    )
+    #: ``"<guest identity>:<nic index>"`` - stable across a rename, which an
+    #: address pair is not.
+    ext_key = models.CharField(max_length=160)
+    rule = models.ForeignKey(
+        "api.NATRule", on_delete=models.CASCADE, related_name="virt_nat_links"
+    )
+    #: False when the sync adopted a rule the operator already had, which is
+    #: then never pruned.
+    created_rule = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "ext_key"], name="uniq_virtnatlink_source_key"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.ext_key} \u2192 {self.rule_id}"
 
 
 class DnsRecord(TimestampedModel):

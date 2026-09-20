@@ -214,15 +214,24 @@ export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
         id: "vm",
         header: "VM",
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="font-medium">
-            {row.original.vm_name || `vmid ${row.original.vmid}`}
-            <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-              {row.original.vmid}
-              {row.original.node ? ` · ${row.original.node}` : ""}
+        cell: ({ row }) => {
+          // A Cloud Director guest is keyed by a 39-character urn, which is
+          // not something to print beside every row - there the name is the
+          // identity, and there is no node either.
+          const id = row.original.vmid == null ? "" : String(row.original.vmid)
+          const node = row.original.node
+          return (
+            <span className="font-medium">
+              {row.original.vm_name || row.original.guest_key}
+              {(id || node) && (
+                <span className="ml-2 font-mono text-[11px] text-muted-foreground">
+                  {id}
+                  {node ? ` · ${node}` : ""}
+                </span>
+              )}
             </span>
-          </span>
-        ),
+          )
+        },
       },
       {
         id: "kind",

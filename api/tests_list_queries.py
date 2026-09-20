@@ -207,6 +207,47 @@ class VrfListTests(_Base):
         self.assertEqual(rows["vrf-03"]["prefix_count"], 0)
 
 
+class VirtualMachineListTests(_Base):
+    """The VM list serialises cluster, site, host, primary IP, disks and now
+    the VM group inline. Every one of those is a chance to fire a query per
+    row on a page of a few thousand machines."""
+
+    def _seed(self):
+        from .models import (
+            Cluster,
+            ClusterType,
+            VirtualMachineGroup,
+        )
+
+        ctype = ClusterType.objects.create(
+            tenant=self.tenant, name="Cloud Director", slug="cd"
+        )
+        cluster = Cluster.objects.create(
+            tenant=self.tenant, name="VDC", type=ctype
+        )
+        groups = [
+            VirtualMachineGroup.objects.create(
+                tenant=self.tenant, cluster=cluster, name=f"vapp-{i}",
+                kind="vapp",
+            )
+            for i in range(5)
+        ]
+        for i in range(20):
+            VirtualMachine.objects.create(
+                tenant=self.tenant, name=f"vm-{i:02d}", cluster=cluster,
+                group=groups[i % 5],
+            )
+
+    def test_page_cost_is_flat_with_groups_on_every_row(self):
+        self._seed()
+        small, _ = self._queries("/api/virtual-machines/?page_size=5")
+        big, body = self._queries("/api/virtual-machines/?page_size=20")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["name"]: r for r in body["results"]}
+        self.assertEqual(rows["vm-03"]["group"]["name"], "vapp-3")
+        self.assertEqual(rows["vm-07"]["group"]["name"], "vapp-2")
+
+
 class DeviceListTests(_Base):
     """The device list's counts are correlated subqueries, and the active
     tenant is resolved once per request - not once per row's permissions."""

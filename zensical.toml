@@ -127,6 +127,7 @@ nav = [
     { "Windows DHCP & DNS sync" = "features/windows-sync.md" },
     { "Proxmox VE sync"   = "features/virt-proxmox.md" },
     { "VMware vCenter sync" = "features/virt-vcenter.md" },
+    { "VMware Cloud Director sync" = "features/virt-vcloud.md" },
   ] },
   { "Administration" = [
     "access/index.md",

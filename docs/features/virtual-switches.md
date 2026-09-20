@@ -117,5 +117,6 @@ physical device interfaces and VM interfaces on shared VLAN rails.
 ## See also
 
 - [Virtual machines](virtual-machines.md) · [Clusters](clusters.md)
-- [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md)
+- [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md) ·
+  [VMware Cloud Director sync](virt-vcloud.md)
 - [VLANs](ipam-objects.md#vlans) - what the networks map onto.

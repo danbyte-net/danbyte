@@ -21,6 +21,8 @@ SITE_PATHS: dict[str, str] = {
     "rack": "site",
     "cluster": "site",
     "virtualmachine": "site",
+    # A group belongs to exactly one cluster, so it inherits that cluster's site.
+    "virtualmachinegroup": "cluster__site",
     "powerpanel": "site",
     "location": "site",
     # Indirect (one hop).

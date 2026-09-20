@@ -70,7 +70,12 @@ def enqueue_due_syncs() -> dict:
 def run_virt_sync(source_id: str) -> dict:
     """RQ job: sync one virtualization source (Proxmox or vCenter)."""
     from .models import VirtualizationSource
-    from .virt_sync import record_virt_failure, sync_proxmox, sync_vcenter
+    from .virt_sync import (
+        record_virt_failure,
+        sync_proxmox,
+        sync_vcenter,
+        sync_vcloud,
+    )
 
     source = VirtualizationSource.objects.filter(id=source_id).first()
     if source is None or not source.enabled:
@@ -79,7 +84,11 @@ def run_virt_sync(source_id: str) -> dict:
     # other's schedule alone.
     if not integration_enabled(source.tenant, f"virt_{source.kind}"):
         return {"skipped": "toggle-off"}
-    engine = sync_vcenter if source.kind == "vcenter" else sync_proxmox
+    # A table, not a chain of ternaries: a fourth hypervisor is a row.
+    engine = {
+        "vcenter": sync_vcenter,
+        "vcloud": sync_vcloud,
+    }.get(source.kind, sync_proxmox)
     from .synclog import capture_sync_log, text_of
 
     # Everything this run logs is also stored on the source row, so a user can

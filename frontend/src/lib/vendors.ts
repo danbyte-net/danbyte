@@ -53,6 +53,12 @@ export const VENDORS: Record<string, Vendor | undefined> = {
     short: "vCenter",
     owner: "Broadcom Inc.",
   },
+  vcloud: {
+    key: "vcloud",
+    display: "VMware Cloud Director",
+    short: "Cloud Director",
+    owner: "Broadcom Inc.",
+  },
   windows: {
     key: "windows",
     display: "Windows Server®",

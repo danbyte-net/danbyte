@@ -17,6 +17,7 @@ KEYS = {
     "dns": "dns_sync_enabled",
     "virt_proxmox": "virt_proxmox_enabled",
     "virt_vcenter": "virt_vcenter_enabled",
+    "virt_vcloud": "virt_vcloud_enabled",
     "ai": "ai_access_enabled",
     "ai_writes": "ai_writes_enabled",
     "ai_chat": "ai_chat_enabled",
@@ -26,7 +27,9 @@ KEYS = {
 #: Umbrella keys, true when any of their members is. A page that serves both
 #: hypervisors stays reachable while either one is on, so splitting the
 #: switch did not have to touch every viewset that guards it.
-ANY_OF = {"virtualization": ("virt_proxmox", "virt_vcenter")}
+ANY_OF = {
+    "virtualization": ("virt_proxmox", "virt_vcenter", "virt_vcloud"),
+}
 
 
 def integration_enabled(tenant, key: str) -> bool:

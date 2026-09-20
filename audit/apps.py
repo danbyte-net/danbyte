@@ -91,6 +91,7 @@ AUDITED_MODELS = [
     "api.ClusterGroup",
     "api.Cluster",
     "api.VirtualMachine",
+    "api.VirtualMachineGroup",
     "api.VMInterface",
     "api.VirtualDisk",
     "api.VirtualSwitch",

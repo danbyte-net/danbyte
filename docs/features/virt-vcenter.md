@@ -210,6 +210,7 @@ Three things are deliberately not drift:
 
 ## See also
 
-- [Proxmox VE sync](virt-proxmox.md) - the sibling connector.
+- [Proxmox VE sync](virt-proxmox.md) ·
+  [VMware Cloud Director sync](virt-vcloud.md) - the sibling connectors.
 - [External sync](external-sync.md) - toggles, allowlist, where things live.
 - [Virtual machines](virtual-machines.md) · [Clusters](clusters.md) · [Virtual switches](virtual-switches.md) - the objects a sync fills in.

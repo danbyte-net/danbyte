@@ -342,11 +342,98 @@ function VirtualizationSourcesPage() {
   )
 }
 
-/** The hypervisors Danbyte can sync, in the order they are offered. */
-const KINDS = [
-  { value: "proxmox", label: "Proxmox VE" },
-  { value: "vcenter", label: "VMware vCenter" },
-]
+/** What each hypervisor needs from this dialog, in the order they are offered.
+ *
+ * Every place the form differs by backend reads a field here. The alternative
+ * - a `kind === "vcenter"` ternary in each of the nine spots that differ -
+ * turns into a nested ternary the moment there is a third hypervisor.
+ */
+const KIND_SPEC = {
+  proxmox: {
+    label: "Proxmox VE",
+    short: "Proxmox",
+    port: 8006,
+    namePlaceholder: "DB-CLUSTER01",
+    hostPlaceholder: "10.0.0.11",
+    hostInfo: "Any cluster node works - the API answers cluster-wide.",
+    auth: "token",
+    idLabel: "API token id",
+    idPlaceholder: "danbyte@pam!sync",
+    idInfo:
+      "Datacenter → Permissions → API Tokens. The PVEAuditor role is enough for read sync.",
+    secretLabel: "Token secret",
+    // Proxmox reports a bridge MTU per vNIC; vSphere does not.
+    mtu: true,
+    hostHardware: false,
+    disks: true,
+    hosts: true,
+    apiVersion: false,
+    nat: false,
+    groups: false,
+    templates: false,
+  },
+  vcenter: {
+    label: "VMware vCenter",
+    short: "vCenter",
+    port: 443,
+    namePlaceholder: "vcenter.example.com",
+    hostPlaceholder: "vcenter.danbyte.lan",
+    hostInfo: "The vCenter Server FQDN or IP.",
+    auth: "userpass",
+    idLabel: "Username",
+    idPlaceholder: "administrator@vsphere.local",
+    idInfo: "A read-only vCenter SSO user is enough for inventory sync.",
+    secretLabel: "Password",
+    mtu: false,
+    hostHardware: true,
+    disks: true,
+    hosts: true,
+    apiVersion: false,
+    nat: false,
+    groups: false,
+    templates: false,
+  },
+  vcloud: {
+    label: "VMware Cloud Director",
+    short: "Cloud Director",
+    port: 443,
+    namePlaceholder: "cloud.example.com",
+    hostPlaceholder: "vcd.danbyte.lan",
+    hostInfo: "The Cloud Director portal address.",
+    auth: "userpass",
+    idLabel: "Username",
+    idPlaceholder: "sync@my-org",
+    idInfo:
+      "A read-only organization account. The org in the username is what scopes the connection - one source per organization.",
+    secretLabel: "Password",
+    mtu: false,
+    hostHardware: false,
+    // An org account sees neither the hypervisor hosts underneath nor a VM's
+    // individual disks - only one aggregate figure - so neither switch has
+    // anything to act on here.
+    disks: false,
+    hosts: false,
+    // Cloud Director negotiates its API version, so there is one to pin.
+    apiVersion: true,
+    nat: true,
+    groups: true,
+    templates: true,
+  },
+} as const
+
+type KindKey = keyof typeof KIND_SPEC
+
+const KINDS = (Object.keys(KIND_SPEC) as KindKey[]).map((value) => ({
+  value,
+  label: KIND_SPEC[value].label,
+}))
+
+/** Ports the dialog itself filled in, so changing kind may replace one. */
+const DEFAULT_PORTS = KINDS.map((k) => String(KIND_SPEC[k.value].port))
+
+function specFor(kind: string) {
+  return kind in KIND_SPEC ? KIND_SPEC[kind as KindKey] : KIND_SPEC.proxmox
+}
 
 export function SourceDialog({
   source,
@@ -371,11 +458,10 @@ export function SourceDialog({
   // least one kind here; the fallback is belt to those braces.
   const firstKind = kinds.length > 0 ? kinds[0].value : "proxmox"
   const [kind, setKind] = useState<string>(source?.kind ?? firstKind)
-  const isVcenter = kind === "vcenter"
-  const defaultPort = isVcenter ? 443 : 8006
+  const spec = specFor(kind)
   const [name, setName] = useState(source?.name ?? "")
   const [host, setHost] = useState(source?.host ?? "")
-  const [port, setPort] = useState(String(source?.port ?? defaultPort))
+  const [port, setPort] = useState(String(source?.port ?? spec.port))
   const [verifySsl, setVerifySsl] = useState(source?.verify_ssl ?? false)
   const [tokenId, setTokenId] = useState("")
   const [secret, setSecret] = useState("")
@@ -385,9 +471,9 @@ export function SourceDialog({
   // On create, switching kind swaps the conventional default API port unless the
   // operator has typed a non-default one.
   function changeKind(next: string | null) {
-    const k = next ?? "proxmox"
-    if (!isEdit && (port === "" || port === "8006" || port === "443")) {
-      setPort(String(k === "vcenter" ? 443 : 8006))
+    const k = next ?? firstKind
+    if (!isEdit && (port === "" || DEFAULT_PORTS.includes(port))) {
+      setPort(String(specFor(k).port))
     }
     setKind(k)
   }
@@ -417,6 +503,12 @@ export function SourceDialog({
   const [skipOffline, setSkipOffline] = useState(
     source?.skip_offline_vms ?? false
   )
+  const [apiVersion, setApiVersion] = useState(source?.api_version ?? "")
+  const [syncNat, setSyncNat] = useState(source?.sync_nat ?? false)
+  const [syncGroups, setSyncGroups] = useState(source?.sync_vm_groups ?? true)
+  const [syncTemplates, setSyncTemplates] = useState(
+    source?.sync_templates ?? false
+  )
   const [autoPrune, setAutoPrune] = useState(source?.auto_prune ?? false)
   const [pruneAfter, setPruneAfter] = useState(
     String(source?.auto_prune_after_days ?? 7)
@@ -442,7 +534,7 @@ export function SourceDialog({
         name: name.trim(),
         kind,
         host: host.trim(),
-        port: Number(port) || defaultPort,
+        port: Number(port) || spec.port,
         verify_ssl: verifySsl,
         sync_mode: syncMode,
         poll_interval_minutes: Number(interval) || 10,
@@ -454,6 +546,10 @@ export function SourceDialog({
         sync_platforms: syncPlatforms,
         sync_vm_interface_mtu: syncMtu,
         skip_offline_vms: skipOffline,
+        api_version: apiVersion.trim(),
+        sync_nat: syncNat,
+        sync_vm_groups: syncGroups,
+        sync_templates: syncTemplates,
         auto_prune: autoPrune,
         auto_prune_after_days: Number(pruneAfter) || 0,
         sync_allowed_networks: allowedNetworks
@@ -464,7 +560,7 @@ export function SourceDialog({
         vrf_mode: vrfMode,
         enabled,
       }
-      if (isVcenter) {
+      if (spec.auth === "userpass") {
         if (username.trim()) body.username = username.trim()
         if (password) body.password = password
       } else {
@@ -489,19 +585,28 @@ export function SourceDialog({
     onError: (e) => apiErrorToast(e),
   })
 
-  const credsValid = isVcenter
-    ? username.trim() && password
-    : tokenId.trim() && secret
-  const valid = name.trim() && host.trim() && (isEdit || credsValid)
-
-  const kindLabel = isVcenter ? "vCenter" : "Proxmox"
+  // Which pair of credential fields is on screen; the rest of the pair's
+  // wording comes from the descriptor.
+  const cred =
+    spec.auth === "userpass"
+      ? {
+          id: username,
+          setId: setUsername,
+          secret: password,
+          setSecret: setPassword,
+        }
+      : { id: tokenId, setId: setTokenId, secret, setSecret }
+  const valid =
+    name.trim() &&
+    host.trim() &&
+    (isEdit || (cred.id.trim() && cred.secret))
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent size="3xl">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? `Edit ${kindLabel} source` : `Add ${kindLabel} source`}
+            {isEdit ? `Edit ${spec.short} source` : `Add ${spec.short} source`}
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -510,7 +615,7 @@ export function SourceDialog({
             value={name}
             onChange={setName}
             required
-            placeholder={isVcenter ? "vcenter.example.com" : "DB-CLUSTER01"}
+            placeholder={spec.namePlaceholder}
           />
           {!isEdit && kinds.length > 1 && (
             <FormSelect
@@ -525,14 +630,19 @@ export function SourceDialog({
             value={host}
             onChange={setHost}
             required
-            placeholder={isVcenter ? "vcenter.danbyte.lan" : "10.0.0.11"}
-            info={
-              isVcenter
-                ? "The vCenter Server FQDN or IP."
-                : "Any cluster node works - the API answers cluster-wide."
-            }
+            placeholder={spec.hostPlaceholder}
+            info={spec.hostInfo}
           />
           <FormText label="API port" value={port} onChange={setPort} />
+          {spec.apiVersion && (
+            <FormText
+              label="API version"
+              value={apiVersion}
+              onChange={setApiVersion}
+              placeholder="negotiate"
+              info="Leave blank and Danbyte asks the appliance what it speaks, then uses the newest version this release was tested against. Pin one only to work around a specific version."
+            />
+          )}
           <FormSelect
             label="Sync mode"
             value={syncMode}
@@ -549,61 +659,37 @@ export function SourceDialog({
             value={interval}
             onChange={setInterval}
           />
-          {isVcenter ? (
-            <>
-              <FormText
-                label="Username"
-                value={username}
-                onChange={setUsername}
-                mono
-                placeholder={
-                  isEdit ? "(unchanged)" : "administrator@vsphere.local"
-                }
-                info="A read-only vCenter SSO user is enough for inventory sync."
-                required={!isEdit}
-              />
-              <FormText
-                label="Password"
-                value={password}
-                onChange={setPassword}
-                type="password"
-                placeholder={isEdit ? "(unchanged)" : ""}
-                required={!isEdit}
-              />
-            </>
-          ) : (
-            <>
-              <FormText
-                label="API token id"
-                value={tokenId}
-                onChange={setTokenId}
-                mono
-                placeholder={isEdit ? "(unchanged)" : "danbyte@pam!sync"}
-                info="Datacenter → Permissions → API Tokens. The PVEAuditor role is enough for read sync."
-                required={!isEdit}
-              />
-              <FormText
-                label="Token secret"
-                value={secret}
-                onChange={setSecret}
-                type="password"
-                placeholder={isEdit ? "(unchanged)" : ""}
-                required={!isEdit}
-              />
-            </>
-          )}
+          <FormText
+            label={spec.idLabel}
+            value={cred.id}
+            onChange={cred.setId}
+            mono
+            placeholder={isEdit ? "(unchanged)" : spec.idPlaceholder}
+            info={spec.idInfo}
+            required={!isEdit}
+          />
+          <FormText
+            label={spec.secretLabel}
+            value={cred.secret}
+            onChange={cred.setSecret}
+            type="password"
+            placeholder={isEdit ? "(unchanged)" : ""}
+            required={!isEdit}
+          />
           <div className="flex flex-col justify-end gap-2 pb-1">
             <FormCheckbox
               label="Verify TLS certificate"
               checked={verifySsl}
               onChange={setVerifySsl}
             />
-            <FormCheckbox
-              label="Sync disks"
-              hint="Import each VM's virtual disks (name, size, storage)."
-              checked={syncDisks}
-              onChange={setSyncDisks}
-            />
+            {spec.disks && (
+              <FormCheckbox
+                label="Sync disks"
+                hint="Import each VM's virtual disks (name, size, storage)."
+                checked={syncDisks}
+                onChange={setSyncDisks}
+              />
+            )}
             <FormCheckbox
               label="Sync virtual switches & networks"
               hint="Import virtual switches and port-groups/bridges, mapping them to VLANs."
@@ -618,22 +704,48 @@ export function SourceDialog({
                 onChange={setMatchVlans}
               />
             )}
-            <FormCheckbox
-              label="Create hosts as devices"
-              hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs."
-              checked={syncHosts}
-              onChange={setSyncHosts}
-            />
-            {/* vSphere has no MTU on a VM's vNIC - it is a property of the
-                vSwitch or port group - so there is nothing for this to copy on
-                a vCenter source. Offering it with a disclaimer read as a
+            {spec.hosts && (
+              <FormCheckbox
+                label="Create hosts as devices"
+                hint="Add each hypervisor node as a Device, so VMs link to their host and bridge uplinks find its NICs."
+                checked={syncHosts}
+                onChange={setSyncHosts}
+              />
+            )}
+            {/* Only offered where the hypervisor actually reports a per-vNIC
+                MTU. vSphere keeps it on the vSwitch or port group, so there is
+                nothing to copy; offering it with a disclaimer read as a
                 setting that was simply not working. */}
-            {!isVcenter && (
+            {spec.mtu && (
               <FormCheckbox
                 label="Sync interface MTU"
                 hint="Copy the hypervisor's MTU onto a VM interface that has none, and report a differing one as drift. Off leaves MTU to you."
                 checked={syncMtu}
                 onChange={setSyncMtu}
+              />
+            )}
+            {spec.groups && (
+              <FormCheckbox
+                label="Sync vApps as VM groups"
+                hint="Mirror the hypervisor's own grouping. A VM you grouped by hand keeps your grouping."
+                checked={syncGroups}
+                onChange={setSyncGroups}
+              />
+            )}
+            {spec.nat && (
+              <FormCheckbox
+                label="Record external addresses as NAT rules"
+                hint="Write a static NAT rule for each translated interface. Off leaves the edge yours to document."
+                checked={syncNat}
+                onChange={setSyncNat}
+              />
+            )}
+            {spec.templates && (
+              <FormCheckbox
+                label="Import vApp templates"
+                hint="Templates are golden images rather than running machines, so they are left out by default."
+                checked={syncTemplates}
+                onChange={setSyncTemplates}
               />
             )}
             <FormCheckbox
@@ -672,7 +784,7 @@ export function SourceDialog({
               rows={3}
               placeholder={"10.0.9.0/24\n192.168.110.0/24"}
             />
-            {isVcenter && syncHosts && (
+            {spec.hostHardware && syncHosts && (
               <FormCheckbox
                 label="Read host hardware"
                 hint="Fill in model, vendor and serial from vSphere. Creates a device type and manufacturer on demand, so it is separate from the switch above."

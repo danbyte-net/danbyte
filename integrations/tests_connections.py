@@ -222,6 +222,68 @@ class ConnectionApiTests(APITestCase):
         self.assertEqual(body["product"], "Proxmox VE")
         self.assertEqual(body["version"], "8.2.2")
 
+    def test_cloud_director_probe_says_which_api_it_agreed_on(self):
+        """The version is negotiated, so the probe has to report it.
+
+        A vCenter probe can say nothing useful about versions; this one has
+        to, because nobody configured what it spoke.
+        """
+        self._login(self.admin)
+        self._enable(virt_vcloud_enabled=True)
+        src = self._source("vcloud", "192.0.2.60")
+        client = mock.MagicMock()
+        client.version = (38, 1)
+        client.version_note = ""
+        client.query_page.return_value = {"total": 45}
+        with mock.patch("integrations.vcloud_client.VCloudClient",
+                        return_value=client):
+            res = self.client.post(f"/api/virtualization-sources/{src.id}/test/")
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(body["product"], "VMware Cloud Director")
+        self.assertEqual(body["version"], "38.1")
+        self.assertEqual(body["vms"], 45)
+        # An org account sees no hypervisor hosts, so the page must not be
+        # handed a "0/0 nodes online" line to render.
+        self.assertEqual(body["nodes"], 0)
+        src.refresh_from_db()
+        self.assertEqual(src.api_version_used, "38.1")
+
+    def test_a_cloud_director_source_needs_the_cloud_director_switch(self):
+        self._login(self.admin)
+        self._enable(virt_proxmox_enabled=True, virt_vcloud_enabled=False)
+        res = self.client.post("/api/virtualization-sources/", {
+            "name": "vcd", "kind": "vcloud", "host": "192.0.2.60", "port": 443,
+            "username": "sync@acme", "password": "s",
+        }, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("off for this tenant", str(res.json()["kind"]))
+
+    def test_cloud_director_credentials_are_write_only(self):
+        self._login(self.admin)
+        self._enable(virt_vcloud_enabled=True)
+        res = self.client.post("/api/virtualization-sources/", {
+            "name": "vcd", "kind": "vcloud", "host": "192.0.2.60", "port": 443,
+            "username": "sync@acme", "password": "s", "api_version": "36.0",
+        }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        body = res.json()
+        self.assertNotIn("password", body)
+        self.assertNotIn("credentials", body)
+        self.assertTrue(body["credentials_set"])
+        self.assertEqual(body["api_version"], "36.0")
+        self.assertEqual(body["api_version_tested"], "38.1")
+
+    def test_a_cloud_director_source_needs_a_password(self):
+        self._login(self.admin)
+        self._enable(virt_vcloud_enabled=True)
+        res = self.client.post("/api/virtualization-sources/", {
+            "name": "vcd", "kind": "vcloud", "host": "192.0.2.60",
+            "username": "sync@acme",
+        }, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Cloud Director", str(res.json()["password"]))
+
     # ─── Tenant isolation ────────────────────────────────────────────────
 
     def test_other_tenants_connections_invisible(self):

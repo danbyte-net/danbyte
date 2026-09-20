@@ -24,6 +24,7 @@ type IntegrationSettings = {
   dns_sync_enabled: boolean
   virt_proxmox_enabled: boolean
   virt_vcenter_enabled: boolean
+  virt_vcloud_enabled: boolean
   ai_access_enabled: boolean
   ai_writes_enabled: boolean
   ai_chat_enabled: boolean
@@ -62,6 +63,16 @@ const CARDS: IntegrationCard[] = [
     info: "Reads over the vSphere API with a read-only account. Danbyte never writes to the hypervisor.",
     description:
       "Import clusters, hosts, virtual machines, their interfaces and guest IPs into the existing cluster and VM inventory.",
+    configure: { to: "/virtualization-sources", label: "Sources" },
+  },
+  {
+    key: "virt_vcloud_enabled",
+    label: "Cloud Director sync",
+    vendor: "vcloud",
+    names: ["vcloud"],
+    info: "Reads over the Cloud Director API with an organization-scoped account. The API version is negotiated, and Danbyte never writes to the hypervisor.",
+    description:
+      "Import organizations, VDCs, vApps, virtual machines, their interfaces and addresses into the existing cluster and VM inventory.",
     configure: { to: "/virtualization-sources", label: "Sources" },
   },
   {

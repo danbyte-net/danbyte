@@ -224,7 +224,9 @@ class VirtualizationSourceSerializer(
     secret = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
-    # vCenter credentials: SSO username + password.
+    # vCenter and Cloud Director credentials: username + password. Cloud
+    # Director's username carries the org (``read_user@my-org``), which is
+    # what scopes the connection to one organization.
     username = serializers.CharField(write_only=True, required=False, allow_blank=True)
     password = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
@@ -232,6 +234,17 @@ class VirtualizationSourceSerializer(
     credentials_set = serializers.SerializerMethodField()
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     pending_count = serializers.SerializerMethodField()
+    #: The newest API this release was tested against, so the source page can
+    #: say whether an appliance is inside that window without duplicating the
+    #: number in the frontend.
+    api_version_tested = serializers.SerializerMethodField()
+
+    def get_api_version_tested(self, obj) -> str:
+        if obj.kind != "vcloud":
+            return ""
+        from .vcloud_client import TESTED_API_VERSION, format_version
+
+        return format_version(TESTED_API_VERSION)
 
     def get_credentials_set(self, obj) -> bool:
         creds = obj.credentials or {}
@@ -265,7 +278,7 @@ class VirtualizationSourceSerializer(
 
         existing = (self.instance.credentials or {}) if self.instance else {}
 
-        if kind == "vcenter":
+        if kind in ("vcenter", "vcloud"):
             if password:
                 attrs["credentials"] = {
                     "username": username or existing.get("username", ""),
@@ -276,8 +289,9 @@ class VirtualizationSourceSerializer(
                 creds["username"] = username
                 attrs["credentials"] = creds
             elif self.instance is None:
+                label = ("Cloud Director" if kind == "vcloud" else "vCenter")
                 raise serializers.ValidationError(
-                    {"password": "A vCenter username and password are required."}
+                    {"password": f"A {label} username and password are required."}
                 )
         else:  # proxmox
             if secret:
@@ -332,6 +346,8 @@ class VirtualizationSourceSerializer(
                   "sync_disks", "sync_networks", "match_existing_vlans", "sync_hosts",
                   "sync_host_hardware", "sync_platforms",
                   "sync_vm_interface_mtu", "skip_offline_vms",
+                  "api_version", "api_version_used", "api_version_tested",
+                  "sync_nat", "sync_vm_groups", "sync_templates",
                   "auto_prune", "auto_prune_after_days",
                   "sync_allowed_networks",
                   *AddressPlacementSerializerMixin.PLACEMENT_FIELDS,
@@ -339,6 +355,7 @@ class VirtualizationSourceSerializer(
                   "last_sync_error", "last_sync_log",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "kind_display", "credentials_set",
+                            "api_version_used", "api_version_tested",
                             "pending_count", "last_sync_at", "last_sync_status",
                             "last_sync_log",
                             "last_sync_error", "created_at", "updated_at",
@@ -364,6 +381,8 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         from .virt_client import VCenterClient, VirtAPIError, proxmox_get
 
         source = self.get_object()
+        if source.kind == "vcloud":
+            return self._test_vcloud(source)
         if source.kind == "vcenter":
             client = VCenterClient(source)
             try:
@@ -400,6 +419,45 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             "online_nodes": sum(1 for n in nodes if n.get("status") == "online"),
         })
 
+    def _test_vcloud(self, source):
+        """Reach Cloud Director, and report which API version it agreed on.
+
+        The version matters more here than anywhere else: it is negotiated,
+        not configured, so an operator needs to see what was chosen before
+        they trust a sync that used it.
+        """
+        from .vcloud_client import (
+            TESTED_API_VERSION,
+            VCloudClient,
+            format_version,
+        )
+        from .virt_client import VirtAPIError
+
+        client = VCloudClient(source)
+        try:
+            client.login()
+            page = client.query_page("vm")
+        except VirtAPIError as exc:
+            return Response({"ok": False, "error": str(exc)}, status=502)
+        finally:
+            client.close()
+        spoken = format_version(client.version)
+        if source.api_version_used != spoken:
+            source.api_version_used = spoken
+            source.save(update_fields=["api_version_used"])
+        return Response({
+            "ok": True,
+            "product": "VMware Cloud Director",
+            "version": spoken,
+            "tested_version": format_version(TESTED_API_VERSION),
+            "detail": client.version_note,
+            # Cloud Director has no hypervisor hosts an org-scoped account
+            # can see, so there is no node count to report.
+            "nodes": 0,
+            "online_nodes": 0,
+            "vms": int(page.get("total") or 0),
+        })
+
     @action(detail=True, methods=["get"], url_path="discovered")
     def discovered(self, request, pk=None):
         """What this source actually contains, for authoring placement rules.
@@ -414,6 +472,8 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         source = self.get_object()
         out = {"datacenter": [], "cluster": [], "folder": [], "host": []}
         try:
+            if source.kind == "vcloud":
+                return Response({"ok": True, **self._discovered_vcloud(source)})
             if source.kind == "vcenter":
                 client = VCenterClient(source)
                 try:
@@ -450,6 +510,34 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         except VirtAPIError as exc:
             return Response({"ok": False, "error": str(exc)}, status=502)
         return Response({"ok": True, **out})
+
+    def _discovered_vcloud(self, source):
+        """Org / Org VDC / vApp names, read off the VM query.
+
+        An org-scoped account cannot list VDCs or vApps directly, but every VM
+        record names all three - so this is both the only way and the cheapest
+        one. There are no hosts to offer.
+        """
+        from .vcloud_client import VCloudClient
+
+        client = VCloudClient(source)
+        try:
+            client.login()
+            records = client.query("vm")
+        finally:
+            client.close()
+
+        def names(field):
+            return sorted(
+                {(r.get(field) or "").strip() for r in records} - {""}
+            )
+
+        return {
+            "datacenter": names("orgName"),
+            "cluster": names("vdcName"),
+            "folder": names("containerName"),
+            "host": [],
+        }
 
     @action(detail=True, methods=["post"])
     def sync(self, request, pk=None):

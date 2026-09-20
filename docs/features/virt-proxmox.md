@@ -130,7 +130,8 @@ Rules:
 
 ## See also
 
-- [VMware vCenter sync](virt-vcenter.md) - the sibling connector.
+- [VMware vCenter sync](virt-vcenter.md) ·
+  [VMware Cloud Director sync](virt-vcloud.md) - the sibling connectors.
 - [External sync](external-sync.md) - toggles, allowlist, where things live.
 - [Virtual machines](virtual-machines.md) · [Clusters](clusters.md) · [Virtual switches](virtual-switches.md) - the objects a sync fills in.
 
