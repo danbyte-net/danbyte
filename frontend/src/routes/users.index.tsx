@@ -97,6 +97,7 @@ function UsersPage() {
     >
       <DataTable
         data={rows}
+        total={query.data?.count}
         columns={columns}
         flexColumn="email"
         tableId="users"

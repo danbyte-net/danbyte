@@ -276,6 +276,7 @@ function VlanPrefixesTable({
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="description"
           tableId="prefix-embedded"

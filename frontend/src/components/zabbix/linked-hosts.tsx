@@ -175,6 +175,7 @@ export function ZabbixLinkedHosts({
         <DataTable
           tableId="zabbix-links"
           data={rows}
+          total={links.data?.count}
           columns={columns}
           flexColumn="host"
         />

@@ -296,6 +296,7 @@ export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
       ) : (
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           tableId="virt-changes"
           flexColumn="detail"

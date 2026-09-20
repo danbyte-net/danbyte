@@ -183,6 +183,7 @@ export function ChannelsList() {
         <DataTable
           tableId="channels"
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="channel"
         />

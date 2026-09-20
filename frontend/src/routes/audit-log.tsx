@@ -251,6 +251,7 @@ function AuditLogPage() {
       >
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           // The table holds one 50-row page; an audit export must not be
           // silently truncated to it.

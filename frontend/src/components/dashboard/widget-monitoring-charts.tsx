@@ -21,6 +21,7 @@ import {
   countAxisWidth,
 } from "@/components/ui/chart"
 import type { ChartConfig } from "@/components/ui/chart"
+import { useDateFormat } from "@/lib/datetime"
 
 // Seven-day monitoring charts for the dashboard, from the payload the page
 // already fetches - the same data the Monitoring overview draws over its
@@ -49,10 +50,11 @@ export function AlertsPerDay({
 }: {
   rows: DashboardData["alerts_per_day"]
 }) {
+  const { formatCustom } = useDateFormat()
   if (!rows.length) return <Empty hint="No alerts this week." />
   const data = rows.map((p) => ({
     ...p,
-    label: new Date(p.t).toLocaleDateString([], {
+    label: formatCustom(p.t, {
       month: "short",
       day: "numeric",
     }),
@@ -103,11 +105,12 @@ export function LatencyWeek({
 }: {
   rows: DashboardData["latency_series"]
 }) {
+  const { formatCustom } = useDateFormat()
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   if (!rows.length) return <Empty hint="No latency recorded this week." />
   const data = rows.map((p) => ({
     ...p,
-    label: new Date(p.t).toLocaleString([], {
+    label: formatCustom(p.t, {
       weekday: "short",
       hour: "2-digit",
     }),

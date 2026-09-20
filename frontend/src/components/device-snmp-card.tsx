@@ -20,6 +20,7 @@ import {
 } from "@/components/snmp-binding-control"
 import { SnmpVrfControl } from "@/components/snmp-vrf-control"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
 import { apiErrorToast } from "@/lib/api-toast"
 
 // Friendly labels for the system-group OIDs we poll. Anything unmapped falls
@@ -106,6 +107,7 @@ function useObservedLinks(deviceId: string) {
  */
 export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
   const qc = useQueryClient()
+  const { formatDateTime } = useDateFormat()
   const { canDo } = useMe()
   const canPoll = canDo("device", "change")
 
@@ -319,9 +321,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
       {state?.polled_at && (
         <p className="text-[11px] text-muted-foreground">
           Last polled{" "}
-          <span className="num">
-            {new Date(state.polled_at).toLocaleString()}
-          </span>
+          <span className="num">{formatDateTime(state.polled_at)}</span>
           {state.profile_name ? ` · ${state.profile_name}` : ""}
         </p>
       )}

@@ -11,6 +11,7 @@ import {
   type NetBoxTypeTotals,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -114,6 +115,7 @@ const failureColumns: ColumnDef<string, unknown>[] = [
 
 function NetBoxImportPage() {
   const { canManage, isLoading } = useMe()
+  const { formatDateTime } = useDateFormat()
   const qc = useQueryClient()
 
   // ── connect ──
@@ -375,7 +377,7 @@ function NetBoxImportPage() {
                     </Badge>
                   )}
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {new Date(h.created_at).toLocaleString()}
+                    {formatDateTime(h.created_at)}
                   </span>
                 </button>
               ))}

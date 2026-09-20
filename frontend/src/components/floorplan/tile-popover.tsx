@@ -28,6 +28,7 @@ import {
 import { tileName, utilizationColor } from "@/components/floorplan/floor-canvas"
 import { FaceplateView } from "@/components/device-faceplate"
 import type { FaceplateSide } from "@/lib/faceplate-layout"
+import { useDateFormat } from "@/lib/datetime"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
@@ -37,6 +38,14 @@ type LiveTile = FloorPlanLiveState["tiles"][string]
 export type LinkedDetail = Partial<Rack> & Partial<Device>
 
 /** Which link kinds carry enough detail to be worth fetching. */
+/** A field's `render` is called as a plain function, so it cannot hold a
+ * hook - the timestamp gets its own component to read the viewer's timezone
+ * from. */
+function Stamp({ iso }: { iso: string }) {
+  const { formatDateTime } = useDateFormat()
+  return <span className="num text-[11px]">{formatDateTime(iso)}</span>
+}
+
 const DETAIL_ENDPOINT: Record<string, string> = {
   rack: "/api/racks",
   device: "/api/devices",
@@ -341,20 +350,12 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
   created: {
     label: "Created",
     render: ({ tile }) =>
-      tile.created_at ? (
-        <span className="num text-[11px]">
-          {new Date(tile.created_at).toLocaleString()}
-        </span>
-      ) : null,
+      tile.created_at ? <Stamp iso={tile.created_at} /> : null,
   },
   updated: {
     label: "Updated",
     render: ({ tile }) =>
-      tile.updated_at ? (
-        <span className="num text-[11px]">
-          {new Date(tile.updated_at).toLocaleString()}
-        </span>
-      ) : null,
+      tile.updated_at ? <Stamp iso={tile.updated_at} /> : null,
   },
 
   // ── The linked rack/device. These trigger the lazy fetch; each renders null

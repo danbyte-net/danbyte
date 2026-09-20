@@ -209,6 +209,7 @@ function Body({ location: l }: { location: Location }) {
             <div className="p-3">
               <DataTable
                 data={rows}
+                total={prefixes.data?.count}
                 columns={columns}
                 tableId="location-prefixes"
                 flexColumn="description"

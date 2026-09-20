@@ -803,6 +803,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
       ) : (
         <DataTable
           data={rows}
+          total={rules.data?.count}
           columns={ruleColumns}
           tableId="placement-rules"
           flexColumn="pattern"

@@ -142,6 +142,7 @@ export function AlertRulesList() {
         <DataTable
           tableId="alert-rules"
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="matches"
         />

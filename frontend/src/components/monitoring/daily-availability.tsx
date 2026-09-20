@@ -7,6 +7,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { ChartConfig } from "@/components/ui/chart"
+import { useDateFormat } from "@/lib/datetime"
 
 const CONFIG = {
   uptime: { label: "Availability", color: "var(--color-emerald-500)" },
@@ -33,13 +34,12 @@ export function DailyAvailability({
   days: DayAvailability[]
   className?: string
 }) {
+  const { formatCustom } = useDateFormat()
   if (days.length === 0) return null
   const data = days.map((d) => ({
     ...d,
-    label: new Date(`${d.date}T00:00:00`).toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-    }),
+    // The bare date formats on its own calendar day, never shifted by a zone.
+    label: formatCustom(d.date, { month: "short", day: "numeric" }),
     // A day with nothing measured sits at the floor so it reads as a gap.
     uptime: d.uptime_pct ?? 0,
   }))

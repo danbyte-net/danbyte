@@ -584,6 +584,7 @@ function AssignmentsTab({ cert }: { cert: Certificate }) {
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="notes"
           tableId="certificate-assignments"
@@ -659,6 +660,7 @@ function BindingsTab({ certificateId }: { certificateId: string }) {
   return (
     <DataTable
       data={rows}
+      total={q.data?.count}
       columns={columns}
       flexColumn="endpoint"
       tableId="certificate-bindings"

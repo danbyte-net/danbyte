@@ -118,6 +118,7 @@ export function ChangeLogPanel({
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={COLUMNS}
           flexColumn="changes"
           embedded

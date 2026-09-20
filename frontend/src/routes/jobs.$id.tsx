@@ -9,6 +9,7 @@ import type { JobDetail } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
+import { useDateFormat } from "@/lib/datetime"
 import { StateBadge, fmtDuration } from "./jobs.index"
 import { usePageTitle } from "@/lib/page-title"
 
@@ -149,9 +150,9 @@ function Body({ job }: { job: JobDetail }) {
                   </span>
                 </Field>
               )}
-              <Field label="Enqueued">{fmtTs(job.enqueued_at)}</Field>
-              <Field label="Started">{fmtTs(job.started_at)}</Field>
-              <Field label="Ended">{fmtTs(job.ended_at)}</Field>
+              <Field label="Enqueued">{<Ts iso={job.enqueued_at} />}</Field>
+              <Field label="Started">{<Ts iso={job.started_at} />}</Field>
+              <Field label="Ended">{<Ts iso={job.ended_at} />}</Field>
               <Field label="Duration">
                 <span className="font-mono tabular-nums">
                   {fmtDuration(job.duration)}
@@ -250,11 +251,14 @@ function Block({
   )
 }
 
-function fmtTs(iso: string | null) {
+/** A component, not a helper that formats: the timestamp has to be rendered
+ * in the viewer's configured timezone, which only a hook knows. */
+function Ts({ iso }: { iso: string | null }) {
+  const { formatDateTime } = useDateFormat()
   if (!iso) return <span className="text-muted-foreground">-</span>
   return (
     <span className="font-mono text-[12px]" title={iso}>
-      {new Date(iso).toLocaleString()}
+      {formatDateTime(iso)}
     </span>
   )
 }

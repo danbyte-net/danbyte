@@ -113,6 +113,7 @@ function VirtualSwitchesPage() {
       ) : (
         <DataTable
           data={rows}
+          total={query.data?.count}
           columns={columns}
           tableId="virtual-switches"
           flexColumn="name"

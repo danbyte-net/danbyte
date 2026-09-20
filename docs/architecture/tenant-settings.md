@@ -34,6 +34,14 @@ back to the server's `TIME_ZONE`). `/api/me/` exposes the **resolved** values
 as `datetime` - the SPA's single read point for date/time formatting
 (`frontend/src/lib/datetime.ts`, `useDateFormat()`).
 
+**Nothing formats a date on its own.** `new Date(x).toLocaleString()` renders
+in the *browser's* timezone, which is a different instant from every other
+screen. Reach for `TimeCell`, the `useDateFormat()` hook, or the plain
+helpers; `formatCustom(value, opts)` takes Intl options of your own (a chart
+axis wants `14:00`, not a full timestamp) and still applies the effective
+timezone. A test (`frontend/src/lib/-raw-dates.test.ts`) fails the build if a
+raw call comes back.
+
 **What site email affects (v1)** - only sends that are about a single
 site-bound object resolve the site layer: per-object monitoring alerts and
 prefix-utilization warnings (`notify_event(..., site_id=…)`), plus the

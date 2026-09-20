@@ -299,6 +299,7 @@ function TargetRuns({ targetId }: { targetId: string }) {
   return (
     <DataTable
       data={rows}
+      total={query.data?.count}
       columns={columns}
       flexColumn="detail"
       tableId="embedded-deploy-runs"

@@ -14,6 +14,7 @@ import { KvCard, mono, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { usePageTitle } from "@/lib/page-title"
+import { useDateFormat } from "@/lib/datetime"
 
 export const Route = createFileRoute("/audit-log_/$id")({
   // `from` carries the filtered list href so Back can return to it.
@@ -37,6 +38,7 @@ function ChangeLogDetail() {
   const { from } = Route.useSearch()
   const back = useReturnTo(from)
   const nav = useNavigate()
+  const { formatDateTime } = useDateFormat()
   const q = useQuery({
     queryKey: ["changelog-entry", id],
     queryFn: () => api<ChangeLogEntry>(`/api/changelog/${id}/`),
@@ -79,9 +81,7 @@ function ChangeLogDetail() {
     {
       label: "Time",
       value: (
-        <span className="num text-[13px]">
-          {new Date(e.timestamp).toLocaleString()}
-        </span>
+        <span className="num text-[13px]">{formatDateTime(e.timestamp)}</span>
       ),
     },
     { label: "User", value: e.user_name || "system" },

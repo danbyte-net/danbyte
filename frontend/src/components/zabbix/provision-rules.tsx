@@ -200,6 +200,7 @@ export function ZabbixProvisionRules({
         <DataTable
           tableId="zabbix-provision-rules"
           data={rows}
+          total={rules.data?.count}
           columns={columns}
           flexColumn="templates"
         />

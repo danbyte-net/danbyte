@@ -584,6 +584,7 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
         ) : (
           <DataTable
             data={rows}
+            total={q.data?.count}
             columns={columns}
             flexColumn="check"
             tableId="compliance-rules"

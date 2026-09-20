@@ -213,6 +213,7 @@ export function ServicesPane({
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="description"
           embedded

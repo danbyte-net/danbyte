@@ -426,6 +426,7 @@ function SiteLocationsTable({ siteId }: { siteId: string }) {
   return (
     <DataTable
       data={rows}
+      total={q.data?.count}
       columns={columns}
       tableId="site-locations-embedded"
       flexColumn="name"
@@ -501,6 +502,7 @@ function SitePrefixesTable({
       ) : (
         <DataTable
           data={rows}
+          total={q.data?.count}
           columns={columns}
           flexColumn="description"
           tableId="prefix-embedded"
@@ -576,6 +578,7 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
         ) : (
           <DataTable
             data={placedRows}
+            total={placed.data?.count}
             columns={columns}
             flexColumn="primary_ip"
           />

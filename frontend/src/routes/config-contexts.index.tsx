@@ -135,6 +135,7 @@ function ConfigContextsPage() {
     >
       <DataTable
         data={rows}
+        total={query.data?.count}
         columns={columns}
         flexColumn="criteria"
         tableId="config-contexts"

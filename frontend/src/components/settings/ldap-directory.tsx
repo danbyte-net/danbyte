@@ -576,6 +576,7 @@ function GroupMappings({
     >
       <DataTable
         data={rows}
+        total={mappings.data?.count}
         columns={columns}
         tableId={`${endpoints.cacheKey}-mappings`}
         flexColumn="directoryGroup"

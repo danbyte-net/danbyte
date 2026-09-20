@@ -203,6 +203,7 @@ export function ZabbixMaintenanceList({
         <DataTable
           tableId="zabbix-maintenance"
           data={rows}
+          total={rows_.data?.count}
           columns={columns}
           flexColumn="event"
         />

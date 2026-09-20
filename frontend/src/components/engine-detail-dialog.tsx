@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormCheckbox, FormText } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDateFormat } from "@/lib/datetime"
 
 const STATUS_TONE: Record<string, string> = {
   up: "text-emerald-600 dark:text-emerald-400",
@@ -33,6 +34,7 @@ export function EngineDetailDialog({
   onClose: () => void
 }) {
   const qc = useQueryClient()
+  const { formatDateTime } = useDateFormat()
   const open = !!engine
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -124,7 +126,7 @@ export function EngineDetailDialog({
             label="Last seen"
             value={
               engine?.last_seen_at
-                ? new Date(engine.last_seen_at).toLocaleString()
+                ? formatDateTime(engine.last_seen_at)
                 : "never"
             }
           />
@@ -213,7 +215,7 @@ export function EngineDetailDialog({
                       </span>
                     </td>
                     <td className="px-2 py-1 text-right text-muted-foreground">
-                      {new Date(r.at).toLocaleString()}
+                      {formatDateTime(r.at)}
                     </td>
                   </tr>
                 ))}
