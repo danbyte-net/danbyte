@@ -21,8 +21,8 @@ only place you need to set a site.
 | **Status** | From your status catalog. |
 | **Description**, **tags** | Notes and labels. |
 
-Its detail page lists the **virtual machines** on it (with a count on the tab),
-plus Journal and Change log.
+Its detail page lists the **virtual machines** on it (with a count on the tab)
+and its **VM groups**, plus Journal and Change log.
 
 ### Site, and the VMs on it
 
@@ -56,9 +56,9 @@ A **cluster type** records the platform: *VMware vCenter*, *Proxmox VE*,
 and description, and it's yours to define: following the **zero pre-filled
 data** rule, none ship with the product.
 
-A [sync](external-sync.md) creates the one type it needs on demand (*Proxmox
-VE* or *VMware vCenter*) so importing works on a fresh install, and reuses it
-afterwards.
+A [sync](external-sync.md) creates the one type it needs on demand - *Proxmox
+VE*, *VMware vCenter* or *VMware Cloud Director* - so importing works on a
+fresh install, and reuses it afterwards.
 
 ## Cluster groups
 
@@ -67,6 +67,26 @@ tenant of the platform, for example *Production*, *Lab*, *DR*. Like cluster
 types it's a name, slug and description, and it never gates access; it's
 navigation and reporting metadata only.
 
+A [Cloud Director sync](virt-vcloud.md) creates one per **organization**, so
+the VDCs of one org sit together.
+
+## VM groups
+
+A **VM group** is a set of virtual machines *below* a cluster - a Cloud
+Director **vApp** today, and the same shape a Proxmox resource pool or a
+vCenter folder would take. It carries a name, a kind, a description, tags and
+custom fields, and it never gates access.
+
+It exists because some platforms have no flat VM list at all: in Cloud
+Director every machine lives in a vApp, so without this the structure an
+operator reads their own console by would be lost on import.
+
+The hypervisor owns membership only until you say otherwise. A
+[sync](virt-vcloud.md#vapps-and-vm-groups) fills a VM's group when it is
+blank, and follows the hypervisor for machines it created itself; a VM you
+move into a group of your own keeps your grouping. Deleting a group leaves
+its VMs alone.
+
 !!! warning "Delete order"
     A cluster type or group that's still referenced can't be deleted. Move the
     clusters off it first.
@@ -74,5 +94,6 @@ navigation and reporting metadata only.
 ## See also
 
 - [Virtual machines](virtual-machines.md) - what runs on a cluster.
+- [VMware Cloud Director sync](virt-vcloud.md) - what fills VM groups in.
 - [Virtual switches & topology](virtual-switches.md) - a cluster's networking.
 - [Sites](../dcim/index.md) - the physical location a cluster points at.

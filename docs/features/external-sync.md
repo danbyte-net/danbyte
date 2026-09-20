@@ -13,6 +13,8 @@ Each connector has its own page:
   networks, over the Proxmox API.
 - **[VMware vCenter](virt-vcenter.md)** - clusters, VMs, disks, switches and
   port-groups, over the vSphere REST API.
+- **[VMware Cloud Director](virt-vcloud.md)** - organizations, VDCs, vApps,
+  VMs and their addresses, over the Cloud Director API.
 
 Everything is agentless. This page covers the ground rules they all share.
 
@@ -20,9 +22,9 @@ Everything is agentless. This page covers the ground rules they all share.
 
 Every integration ships **off**. A tenant admin enables them under
 **Settings → Integrations** - one card each for DHCP sync, DNS sync, and one
-per hypervisor: **Proxmox VE sync** and **vCenter sync** are separate
-switches, so an install running both can stop one without touching the
-other's sources. (Upgrading from the single combined switch turns both on if
+per hypervisor: **Proxmox VE sync**, **vCenter sync** and **Cloud Director
+sync** are separate switches, so an install running more than one can stop
+one without touching the others' sources. (Upgrading from the single combined switch turns both on if
 it was on, so nothing changes.) A toggle governs the **sync machinery
 only**: while it's
 off, the connection pages, drift views and scheduled syncs are hidden and

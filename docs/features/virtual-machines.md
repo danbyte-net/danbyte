@@ -20,6 +20,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **Power** | Read-only, from the hypervisor - see [Power state](#power-state). |
 | **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
 | **Cluster** | The [cluster](clusters.md) it runs on. |
+| **Group** | The [VM group](clusters.md#vm-groups) it belongs to, where the platform has one - a Cloud Director vApp, for instance. |
 | **Host device** | The physical host *inside* that cluster - see [Placement](#placement-site-and-host-device). |
 | **Site** | Its own location, independent of the cluster's - see [Placement](#placement-site-and-host-device). |
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
@@ -159,5 +160,6 @@ overwritten, and never deleted by a sync.
 
 - [Clusters](clusters.md) - where VMs run.
 - [Virtual switches & topology](virtual-switches.md) - how VMs reach the network.
-- [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md)
+- [Proxmox VE sync](virt-proxmox.md) · [VMware vCenter sync](virt-vcenter.md) ·
+  [VMware Cloud Director sync](virt-vcloud.md)
 - [Devices](../dcim/devices.md) - the physical counterpart.
