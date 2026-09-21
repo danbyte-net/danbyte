@@ -215,9 +215,17 @@ one - `49.0001.0000.0000.0011.00`), an optional router ID, the level (1, 2,
 1-2), metric style, BFD, area authentication with a keychain, and
 redistribution. One per device and process. All of it sits on the
 instance card of the device's Routing tab (`net …`, `router-id …`, `level
-…`) and in its edit dialog; knobs Danbyte does not name - overload bit,
-SPF timers, multi-topology - go in the instance's `extra` and reach the
-template as `inst.extra.<key>`.
+…`) and in its edit dialog.
+
+**Timers & LSP** on the same dialog: `lsp-gen-interval`, `spf-interval`,
+`lsp-mtu`, the five `spf-delay-ietf` values (all or none), log adjacency
+changes, and **default-information originate** per family (off, when a
+default exists, always). Redistribution rows on IS-IS carry a **family**
+and a **level**; a blank level means the instance's own. Knobs Danbyte
+still does not name - overload bit, multi-topology - go in the instance's
+`extra` and reach the template as `inst.extra.<key>`. The template gets the
+level as FRR spells it (`inst.level_frr` is `level-2-only`), so it keeps no
+mapping of its own.
 
 Interfaces enrol with their **families** (`ipv4`, `ipv6` - FRR needs `ip
 router isis` per family), a level override, metric (and an L2 metric when
@@ -306,7 +314,45 @@ gateway's own prefix. The render hands all of it to the SVI loop (see
 An L2VPN's page lists the VTEPs carrying it; a VLAN's page lists the
 L2VPNs terminating on it. The `l2vpn-evpn` address family on the BGP
 instance and its sessions is what carries the overlay's routes - nothing
-else is needed on the BGP side.
+else is needed on the BGP side. A fabric session usually also turns on
+**extended next-hop** (RFC 5549, IPv4 over an IPv6 next hop) and **TTL
+security** (GTSM); both are knobs on a session or its peer group.
+
+### Multihoming: Ethernet segments
+
+A server plugged into two leaves is one **Ethernet segment**: the LAG on
+each leaf, sharing one identity. **Routing → Ethernet segments** is that
+catalog. A segment is named either by a full ten-octet **ESI** (type 0) or
+by an **es-id** and a **system MAC** (type 3, which is what FRR's `evpn mh
+es-id` / `es-sys-mac` take), carries the **DF preference** that decides who
+forwards BUM traffic, and lists its **member interfaces** - on different
+devices, which is the point: the segment page is where a reviewer sees that
+`leaf1 bond1` and `leaf2 bond1` are the same server. An interface's page
+shows the segment it is in.
+
+Each fabric-facing port on a multihomed leaf is marked **EVPN MH uplink**
+on the interface form (`evpn mh uplink`): FRR watches those to decide
+whether the leaf has lost the fabric and should stop forwarding for its
+segments. The render hands a template `by_interface[port].es`,
+`by_interface[port].evpn_mh_uplink`, the device's `ethernet_segments` and
+`es_count` - a device with any segment is a multihomed leaf.
+
+## MPLS: LDP and L3VPN
+
+A provider router runs **LDP** for its label distribution: one instance per
+device under the device's Routing tab, with the router ID, an optional
+transport address (blank = the router ID), whether to allocate labels for
+**host routes only** (all an L3VPN needs, and a far smaller label table) or
+every route, and the interfaces LDP speaks on. LDP has no VRF - labels are
+for the global table.
+
+The VPN side of an L3VPN sits on the customer VRF's own **BGP instance**:
+**Export to VPN** / **Import from VPN**, a **label export** (`auto` or a
+number) and a **next-hop export** address. The RD and the route targets
+come from the [VRF](ipam-objects.md#vrfs), so nothing is typed twice, and
+the `vpnv4-unicast` family on the PE's global instance carries the routes
+to the other PEs. The [FRR template](routing-templates.md#frr) prints all
+of it.
 
 ## Rendering a config
 

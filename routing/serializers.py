@@ -46,8 +46,10 @@ from .models import (
     CommunityListRule,
     EIGRPInstance,
     EIGRPInterface,
+    EthernetSegment,
     ISISInstance,
     ISISInterface,
+    LDPInstance,
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
@@ -779,7 +781,9 @@ class BGPInstanceSerializer(
         fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id", "asn", "asn_id",
                   "router_id", "cluster_id", "graceful_restart",
                   "distance_ebgp", "distance_ibgp", "distance_local",
-                  "bestpath_multipath_relax", "bfd",
+                  "bestpath_multipath_relax",
+                  "vpn_export", "vpn_import", "vpn_label_export", "vpn_nexthop_export",
+                  "bfd",
                   "bfd_profile", "bfd_profile_id", "address_families", "session_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
@@ -1395,3 +1399,110 @@ class VTEPSerializer(
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
         validators = []
+
+
+# ─── EVPN multihoming ────────────────────────────────────────────────────────
+
+
+class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    """A segment and the LAG interfaces, on different leaves, that share it.
+
+    Interfaces are set as a whole (``interface_ids``): the segment is the
+    thing a reviewer looks at to see that leaf1 swp5 and leaf2 swp5 are the
+    same server, so it owns the list rather than each port pointing at it.
+    """
+
+    cf_model = "ethernetsegment"
+
+    interfaces = InterfaceMiniSerializer(many=True, read_only=True)
+    interface_ids = TenantScopedPrimaryKeyRelatedField(
+        source="interfaces", queryset=Interface.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    device_count = serializers.SerializerMethodField()
+
+    def get_device_count(self, obj) -> int:
+        return len({i.device_id for i in obj.interfaces.all()})
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = EthernetSegment(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in EthernetSegment._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in EthernetSegment._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        for f in ("esi", "sys_mac"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        return attrs
+
+    class Meta:
+        model = EthernetSegment
+        fields = ["id", "numid", "name", "esi", "es_id", "sys_mac", "df_preference",
+                  "interfaces", "interface_ids", "device_count", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "device_count", "created_at", "updated_at"]
+
+
+# ─── MPLS / LDP ──────────────────────────────────────────────────────────────
+
+
+class LDPInstanceSerializer(
+    _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
+):
+    cf_model = "ldpinstance"
+
+    device = DeviceMiniSerializer(read_only=True)
+    site = SiteMiniSerializer(source="device.site", read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    interfaces = InterfaceMiniSerializer(many=True, read_only=True)
+    interface_ids = TenantScopedPrimaryKeyRelatedField(
+        source="interfaces", queryset=Interface.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = LDPInstance(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in LDPInstance._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in LDPInstance._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        for f in ("router_id", "transport_address"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        # Every port must be the instance's own device's.
+        device = attrs.get("device", getattr(self.instance, "device", None))
+        taken = LDPInstance.objects.filter(device=device)
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        if device is not None and taken.exists():
+            raise serializers.ValidationError(
+                {"device_id": f"{device.name} already runs LDP - edit that instance."}
+            )
+        for iface in attrs.get("interfaces", []):
+            if device is not None and iface.device_id != device.id:
+                raise serializers.ValidationError(
+                    {"interface_ids": f"{iface.name} is not on {device.name}."}
+                )
+        return attrs
+
+    class Meta:
+        model = LDPInstance
+        fields = ["id", "numid", "device", "device_id", "site", "router_id",
+                  "transport_address", "label_allocation", "interfaces", "interface_ids",
+                  "bfd", "bfd_profile", "bfd_profile_id",
+                  "status", "status_id", "description", "extra",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]

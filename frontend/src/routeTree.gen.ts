@@ -68,6 +68,7 @@ import { Route as FiberCablesRouteImport } from './routes/fiber-cables'
 import { Route as FiberRouteImport } from './routes/fiber'
 import { Route as FhrpGroupsRouteImport } from './routes/fhrp-groups'
 import { Route as ExportTemplatesRouteImport } from './routes/export-templates'
+import { Route as EthernetSegmentsRouteImport } from './routes/ethernet-segments'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as DeviceTypesRouteImport } from './routes/device-types'
 import { Route as DeployRunsRouteImport } from './routes/deploy-runs'
@@ -167,6 +168,7 @@ import { Route as FloorplansIndexRouteImport } from './routes/floorplans.index'
 import { Route as FloorTileTypesIndexRouteImport } from './routes/floor-tile-types.index'
 import { Route as FhrpGroupsIndexRouteImport } from './routes/fhrp-groups.index'
 import { Route as ExportTemplatesIndexRouteImport } from './routes/export-templates.index'
+import { Route as EthernetSegmentsIndexRouteImport } from './routes/ethernet-segments.index'
 import { Route as EigrpInstancesIndexRouteImport } from './routes/eigrp-instances.index'
 import { Route as DnsZonesIndexRouteImport } from './routes/dns-zones.index'
 import { Route as DnsRecordsIndexRouteImport } from './routes/dns-records.index'
@@ -343,6 +345,8 @@ import { Route as FhrpGroupsNewRouteImport } from './routes/fhrp-groups.new'
 import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
 import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
 import { Route as ExportTemplatesIdRouteImport } from './routes/export-templates.$id'
+import { Route as EthernetSegmentsNewRouteImport } from './routes/ethernet-segments.new'
+import { Route as EthernetSegmentsIdRouteImport } from './routes/ethernet-segments.$id'
 import { Route as DnsZonesIdRouteImport } from './routes/dns-zones.$id'
 import { Route as DnsRecordsIdRouteImport } from './routes/dns-records.$id'
 import { Route as DnsNamesNameRouteImport } from './routes/dns-names.$name'
@@ -456,6 +460,7 @@ import { Route as GroupsIdEditRouteImport } from './routes/groups.$id_.edit'
 import { Route as FloorTileTypesIdEditRouteImport } from './routes/floor-tile-types.$id_.edit'
 import { Route as FhrpGroupsIdEditRouteImport } from './routes/fhrp-groups.$id_.edit'
 import { Route as ExportTemplatesIdEditRouteImport } from './routes/export-templates.$id_.edit'
+import { Route as EthernetSegmentsIdEditRouteImport } from './routes/ethernet-segments.$id_.edit'
 import { Route as DevicesIdEditRouteImport } from './routes/devices.$id_.edit'
 import { Route as DevicesIdComplianceRouteImport } from './routes/devices.$id_.compliance'
 import { Route as DeviceTypesIdEditRouteImport } from './routes/device-types.$id_.edit'
@@ -780,6 +785,11 @@ const FhrpGroupsRoute = FhrpGroupsRouteImport.update({
 const ExportTemplatesRoute = ExportTemplatesRouteImport.update({
   id: '/export-templates',
   path: '/export-templates',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EthernetSegmentsRoute = EthernetSegmentsRouteImport.update({
+  id: '/ethernet-segments',
+  path: '/ethernet-segments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevicesRoute = DevicesRouteImport.update({
@@ -1277,6 +1287,11 @@ const ExportTemplatesIndexRoute = ExportTemplatesIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ExportTemplatesRoute,
+} as any)
+const EthernetSegmentsIndexRoute = EthernetSegmentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => EthernetSegmentsRoute,
 } as any)
 const EigrpInstancesIndexRoute = EigrpInstancesIndexRouteImport.update({
   id: '/eigrp-instances/',
@@ -2160,6 +2175,16 @@ const ExportTemplatesIdRoute = ExportTemplatesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ExportTemplatesRoute,
 } as any)
+const EthernetSegmentsNewRoute = EthernetSegmentsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
+const EthernetSegmentsIdRoute = EthernetSegmentsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
 const DnsZonesIdRoute = DnsZonesIdRouteImport.update({
   id: '/dns-zones/$id',
   path: '/dns-zones/$id',
@@ -2725,6 +2750,11 @@ const ExportTemplatesIdEditRoute = ExportTemplatesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => ExportTemplatesRoute,
 } as any)
+const EthernetSegmentsIdEditRoute = EthernetSegmentsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
 const DevicesIdEditRoute = DevicesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2906,6 +2936,7 @@ export interface FileRoutesByFullPath {
   '/deploy-runs': typeof DeployRunsRoute
   '/device-types': typeof DeviceTypesRouteWithChildren
   '/devices': typeof DevicesRouteWithChildren
+  '/ethernet-segments': typeof EthernetSegmentsRouteWithChildren
   '/export-templates': typeof ExportTemplatesRouteWithChildren
   '/fhrp-groups': typeof FhrpGroupsRouteWithChildren
   '/fiber': typeof FiberRoute
@@ -3025,6 +3056,8 @@ export interface FileRoutesByFullPath {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
+  '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -3201,6 +3234,7 @@ export interface FileRoutesByFullPath {
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
   '/eigrp-instances/': typeof EigrpInstancesIndexRoute
+  '/ethernet-segments/': typeof EthernetSegmentsIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -3300,6 +3334,7 @@ export interface FileRoutesByFullPath {
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
+  '/ethernet-segments/$id/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id/edit': typeof FloorTileTypesIdEditRoute
@@ -3437,6 +3472,8 @@ export interface FileRoutesByTo {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
+  '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -3613,6 +3650,7 @@ export interface FileRoutesByTo {
   '/dns-records': typeof DnsRecordsIndexRoute
   '/dns-zones': typeof DnsZonesIndexRoute
   '/eigrp-instances': typeof EigrpInstancesIndexRoute
+  '/ethernet-segments': typeof EthernetSegmentsIndexRoute
   '/export-templates': typeof ExportTemplatesIndexRoute
   '/fhrp-groups': typeof FhrpGroupsIndexRoute
   '/floor-tile-types': typeof FloorTileTypesIndexRoute
@@ -3712,6 +3750,7 @@ export interface FileRoutesByTo {
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
+  '/ethernet-segments/$id/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id/edit': typeof FloorTileTypesIdEditRoute
@@ -3798,6 +3837,7 @@ export interface FileRoutesById {
   '/deploy-runs': typeof DeployRunsRoute
   '/device-types': typeof DeviceTypesRouteWithChildren
   '/devices': typeof DevicesRouteWithChildren
+  '/ethernet-segments': typeof EthernetSegmentsRouteWithChildren
   '/export-templates': typeof ExportTemplatesRouteWithChildren
   '/fhrp-groups': typeof FhrpGroupsRouteWithChildren
   '/fiber': typeof FiberRoute
@@ -3917,6 +3957,8 @@ export interface FileRoutesById {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
+  '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -4093,6 +4135,7 @@ export interface FileRoutesById {
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
   '/eigrp-instances/': typeof EigrpInstancesIndexRoute
+  '/ethernet-segments/': typeof EthernetSegmentsIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -4192,6 +4235,7 @@ export interface FileRoutesById {
   '/device-types/$id_/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id_/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id_/edit': typeof DevicesIdEditRoute
+  '/ethernet-segments/$id_/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id_/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id_/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id_/edit': typeof FloorTileTypesIdEditRoute
@@ -4279,6 +4323,7 @@ export interface FileRouteTypes {
     | '/deploy-runs'
     | '/device-types'
     | '/devices'
+    | '/ethernet-segments'
     | '/export-templates'
     | '/fhrp-groups'
     | '/fiber'
@@ -4398,6 +4443,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/ethernet-segments/$id'
+    | '/ethernet-segments/new'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -4574,6 +4621,7 @@ export interface FileRouteTypes {
     | '/dns-records/'
     | '/dns-zones/'
     | '/eigrp-instances/'
+    | '/ethernet-segments/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -4673,6 +4721,7 @@ export interface FileRouteTypes {
     | '/device-types/$id/edit'
     | '/devices/$id/compliance'
     | '/devices/$id/edit'
+    | '/ethernet-segments/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
     | '/floor-tile-types/$id/edit'
@@ -4810,6 +4859,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/ethernet-segments/$id'
+    | '/ethernet-segments/new'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -4986,6 +5037,7 @@ export interface FileRouteTypes {
     | '/dns-records'
     | '/dns-zones'
     | '/eigrp-instances'
+    | '/ethernet-segments'
     | '/export-templates'
     | '/fhrp-groups'
     | '/floor-tile-types'
@@ -5085,6 +5137,7 @@ export interface FileRouteTypes {
     | '/device-types/$id/edit'
     | '/devices/$id/compliance'
     | '/devices/$id/edit'
+    | '/ethernet-segments/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
     | '/floor-tile-types/$id/edit'
@@ -5170,6 +5223,7 @@ export interface FileRouteTypes {
     | '/deploy-runs'
     | '/device-types'
     | '/devices'
+    | '/ethernet-segments'
     | '/export-templates'
     | '/fhrp-groups'
     | '/fiber'
@@ -5289,6 +5343,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/ethernet-segments/$id'
+    | '/ethernet-segments/new'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -5465,6 +5521,7 @@ export interface FileRouteTypes {
     | '/dns-records/'
     | '/dns-zones/'
     | '/eigrp-instances/'
+    | '/ethernet-segments/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -5564,6 +5621,7 @@ export interface FileRouteTypes {
     | '/device-types/$id_/edit'
     | '/devices/$id_/compliance'
     | '/devices/$id_/edit'
+    | '/ethernet-segments/$id_/edit'
     | '/export-templates/$id_/edit'
     | '/fhrp-groups/$id_/edit'
     | '/floor-tile-types/$id_/edit'
@@ -5650,6 +5708,7 @@ export interface RootRouteChildren {
   DeployRunsRoute: typeof DeployRunsRoute
   DeviceTypesRoute: typeof DeviceTypesRouteWithChildren
   DevicesRoute: typeof DevicesRouteWithChildren
+  EthernetSegmentsRoute: typeof EthernetSegmentsRouteWithChildren
   ExportTemplatesRoute: typeof ExportTemplatesRouteWithChildren
   FhrpGroupsRoute: typeof FhrpGroupsRouteWithChildren
   FiberRoute: typeof FiberRoute
@@ -6228,6 +6287,13 @@ declare module '@tanstack/react-router' {
       path: '/export-templates'
       fullPath: '/export-templates'
       preLoaderRoute: typeof ExportTemplatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ethernet-segments': {
+      id: '/ethernet-segments'
+      path: '/ethernet-segments'
+      fullPath: '/ethernet-segments'
+      preLoaderRoute: typeof EthernetSegmentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/devices': {
@@ -6922,6 +6988,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/export-templates/'
       preLoaderRoute: typeof ExportTemplatesIndexRouteImport
       parentRoute: typeof ExportTemplatesRoute
+    }
+    '/ethernet-segments/': {
+      id: '/ethernet-segments/'
+      path: '/'
+      fullPath: '/ethernet-segments/'
+      preLoaderRoute: typeof EthernetSegmentsIndexRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
     }
     '/eigrp-instances/': {
       id: '/eigrp-instances/'
@@ -8155,6 +8228,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesIdRouteImport
       parentRoute: typeof ExportTemplatesRoute
     }
+    '/ethernet-segments/new': {
+      id: '/ethernet-segments/new'
+      path: '/new'
+      fullPath: '/ethernet-segments/new'
+      preLoaderRoute: typeof EthernetSegmentsNewRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
+    '/ethernet-segments/$id': {
+      id: '/ethernet-segments/$id'
+      path: '/$id'
+      fullPath: '/ethernet-segments/$id'
+      preLoaderRoute: typeof EthernetSegmentsIdRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
     '/dns-zones/$id': {
       id: '/dns-zones/$id'
       path: '/dns-zones/$id'
@@ -8946,6 +9033,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesIdEditRouteImport
       parentRoute: typeof ExportTemplatesRoute
     }
+    '/ethernet-segments/$id_/edit': {
+      id: '/ethernet-segments/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ethernet-segments/$id/edit'
+      preLoaderRoute: typeof EthernetSegmentsIdEditRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
     '/devices/$id_/edit': {
       id: '/devices/$id_/edit'
       path: '/$id/edit'
@@ -9516,6 +9610,23 @@ const DevicesRouteChildren: DevicesRouteChildren = {
 
 const DevicesRouteWithChildren =
   DevicesRoute._addFileChildren(DevicesRouteChildren)
+
+interface EthernetSegmentsRouteChildren {
+  EthernetSegmentsIdRoute: typeof EthernetSegmentsIdRoute
+  EthernetSegmentsNewRoute: typeof EthernetSegmentsNewRoute
+  EthernetSegmentsIndexRoute: typeof EthernetSegmentsIndexRoute
+  EthernetSegmentsIdEditRoute: typeof EthernetSegmentsIdEditRoute
+}
+
+const EthernetSegmentsRouteChildren: EthernetSegmentsRouteChildren = {
+  EthernetSegmentsIdRoute: EthernetSegmentsIdRoute,
+  EthernetSegmentsNewRoute: EthernetSegmentsNewRoute,
+  EthernetSegmentsIndexRoute: EthernetSegmentsIndexRoute,
+  EthernetSegmentsIdEditRoute: EthernetSegmentsIdEditRoute,
+}
+
+const EthernetSegmentsRouteWithChildren =
+  EthernetSegmentsRoute._addFileChildren(EthernetSegmentsRouteChildren)
 
 interface ExportTemplatesRouteChildren {
   ExportTemplatesIdRoute: typeof ExportTemplatesIdRoute
@@ -10398,6 +10509,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeployRunsRoute: DeployRunsRoute,
   DeviceTypesRoute: DeviceTypesRouteWithChildren,
   DevicesRoute: DevicesRouteWithChildren,
+  EthernetSegmentsRoute: EthernetSegmentsRouteWithChildren,
   ExportTemplatesRoute: ExportTemplatesRouteWithChildren,
   FhrpGroupsRoute: FhrpGroupsRouteWithChildren,
   FiberRoute: FiberRoute,

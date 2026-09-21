@@ -2945,6 +2945,10 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "behind it, not on it. The escape hatch when the automatic uplink "
         "detection misreads a topology.",
     )
+    #: ``evpn mh uplink``: a fabric-facing port on an EVPN multihomed leaf.
+    #: FRR tracks these to decide whether the leaf is isolated from the
+    #: fabric and should stop being a designated forwarder.
+    evpn_mh_uplink = models.BooleanField(default=False)
     type = models.CharField(
         max_length=64, blank=True, default="", choices=INTERFACE_TYPE_CHOICES,
         help_text="Physical/logical media type, e.g. 10gbase-x-sfpp.",

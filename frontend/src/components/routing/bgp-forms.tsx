@@ -565,6 +565,10 @@ export function BGPInstanceForm({
   const [clusterId, setClusterId] = useState(item?.cluster_id ?? "")
   const [gr, setGr] = useState(item?.graceful_restart ?? false)
   const [relax, setRelax] = useState(item?.bestpath_multipath_relax ?? false)
+  const [vpnExport, setVpnExport] = useState(item?.vpn_export ?? false)
+  const [vpnImport, setVpnImport] = useState(item?.vpn_import ?? false)
+  const [vpnLabel, setVpnLabel] = useState(item?.vpn_label_export ?? "")
+  const [vpnNexthop, setVpnNexthop] = useState(item?.vpn_nexthop_export ?? "")
   const [distE, setDistE] = useState(numText(item?.distance_ebgp))
   const [distI, setDistI] = useState(numText(item?.distance_ibgp))
   const [distL, setDistL] = useState(numText(item?.distance_local))
@@ -615,6 +619,10 @@ export function BGPInstanceForm({
           cluster_id: clusterId.trim(),
           graceful_restart: gr,
           bestpath_multipath_relax: relax,
+          vpn_export: vrfId ? vpnExport : false,
+          vpn_import: vrfId ? vpnImport : false,
+          vpn_label_export: vrfId ? vpnLabel.trim() : "",
+          vpn_nexthop_export: vrfId ? vpnNexthop.trim() : "",
           distance_ebgp: numOrNull(distE),
           distance_ibgp: numOrNull(distI),
           distance_local: numOrNull(distL),
@@ -748,6 +756,44 @@ export function BGPInstanceForm({
           onChange={setCustomFields}
         />
       </FormSection>
+      {vrfId && (
+        <FormSection title="MPLS L3VPN" card>
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormCheckbox
+              label="Export to VPN"
+              checked={vpnExport}
+              onChange={setVpnExport}
+              info="The VRF's unicast routes leave for the VPN table with its export route targets."
+            />
+            <FormCheckbox
+              label="Import from VPN"
+              checked={vpnImport}
+              onChange={setVpnImport}
+              info="VPN routes matching the import route targets land in this VRF."
+            />
+          </div>
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormText
+              label="Label export"
+              mono
+              value={vpnLabel}
+              onChange={setVpnLabel}
+              placeholder="auto"
+              info="auto or a label number"
+              error={fieldErrors.vpn_label_export}
+            />
+            <FormText
+              label="Next-hop export"
+              mono
+              value={vpnNexthop}
+              onChange={setVpnNexthop}
+              placeholder="10.51.255.1"
+              info="The next hop the exported VPN routes carry; blank = the platform default."
+              error={fieldErrors.vpn_nexthop_export}
+            />
+          </div>
+        </FormSection>
+      )}
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

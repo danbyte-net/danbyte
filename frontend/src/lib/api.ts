@@ -2136,6 +2136,8 @@ export interface Interface {
   /** Excluded from SNMP drift - never compared, never flagged stale. */
   snmp_ignore: boolean
   is_uplink?: boolean
+  /** `evpn mh uplink`: fabric-facing on an EVPN multihomed leaf. */
+  evpn_mh_uplink?: boolean
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
   type: string
   type_display: string
@@ -2221,6 +2223,7 @@ export interface InterfaceWritePayload {
   snmp_name?: string
   snmp_ignore?: boolean
   is_uplink?: boolean
+  evpn_mh_uplink?: boolean
   mgmt_only?: boolean
   mark_connected?: boolean
   hide_label?: boolean
@@ -4383,6 +4386,48 @@ export interface BFDProfile extends BFDProfileMini {
   updated_at: string
 }
 
+/** A multihomed server's LAG, seen from every leaf it lands on: the
+ * interfaces are on different devices by design. Identified by a full ESI
+ * (type 0) or an es-id plus a system MAC (type 3). */
+export interface EthernetSegment {
+  id: string
+  numid: number | null
+  name: string
+  esi: string
+  es_id: number | null
+  sys_mac: string
+  df_preference: number | null
+  interfaces: { id: string; name: string; device: DeviceMini }[]
+  device_count: number
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** `mpls ldp` on one device. */
+export interface LDPInstance {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  site: { id: string; name: string } | null
+  router_id: string
+  /** Blank = the router ID. */
+  transport_address: string
+  label_allocation: "all" | "host-routes"
+  interfaces: { id: string; name: string; device: DeviceMini }[]
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface BGPPeerKnobs {
   address_families: AfiSafi[]
   import_policy: { id: string; name: string } | null
@@ -4453,6 +4498,14 @@ export interface BGPInstance {
   distance_ibgp: number | null
   distance_local: number | null
   bestpath_multipath_relax: boolean
+  /** Per-VRF instance (MPLS L3VPN): the unicast routes leave for and
+   * arrive from the VPN table. */
+  vpn_export: boolean
+  vpn_import: boolean
+  /** "" | "auto" | a label number. */
+  vpn_label_export: string
+  /** An address, or "" for the platform default. */
+  vpn_nexthop_export: string
   bfd: boolean
   bfd_profile: BFDProfileMini | null
   address_families: BGPAddressFamily[]

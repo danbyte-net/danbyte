@@ -44,6 +44,7 @@ const ROUTE_TYPES: Record<string, string> = {
   "isis-instances": "IS-IS instance",
   "eigrp-instances": "EIGRP instance",
   vteps: "VTEP",
+  "ethernet-segments": "Ethernet segment",
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

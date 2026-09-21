@@ -20,7 +20,9 @@ from .models import (
     Community,
     CommunityList,
     EIGRPInstance,
+    EthernetSegment,
     ISISInstance,
+    LDPInstance,
     OSPFInstance,
     PrefixList,
     RoutingKeychain,
@@ -364,6 +366,15 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
             "local": inst.distance_local,
         } if inst.distance_ebgp is not None else None,
         "bestpath_multipath_relax": inst.bestpath_multipath_relax,
+        # MPLS L3VPN leaking for a per-VRF instance; None when nothing is set,
+        # so a template tests one key.
+        "vpn": {
+            "export": inst.vpn_export,
+            "import": inst.vpn_import,
+            "label_export": inst.vpn_label_export or None,
+            "nexthop_export": inst.vpn_nexthop_export or None,
+        } if (inst.vpn_export or inst.vpn_import or inst.vpn_label_export
+              or inst.vpn_nexthop_export) else None,
         "bfd": inst.bfd,
         "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "address_families": afs,
@@ -501,6 +512,39 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
             inst.redistributions.all(), policies, level=inst.level
         ),
         "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
+        "description": inst.description or "",
+        "extra": inst.extra or {},
+    }
+
+
+def es_dict(seg: EthernetSegment) -> dict:
+    """One Ethernet segment: its identity and every port that shares it,
+    on every device - so a template can also name the peer leaf."""
+    return {
+        "id": str(seg.id),
+        "name": seg.name,
+        "esi": seg.esi or None,
+        "es_id": seg.es_id,
+        "sys_mac": seg.sys_mac or None,
+        "df_preference": seg.df_preference,
+        "members": sorted(
+            ({"device": i.device.name, "interface": i.name}
+             for i in seg.interfaces.all()),
+            key=lambda m: (m["device"], m["interface"]),
+        ),
+        "description": seg.description or "",
+    }
+
+
+def ldp_dict(inst: LDPInstance) -> dict:
+    return {
+        "id": str(inst.id),
+        "router_id": inst.router_id or None,
+        "transport_address": inst.transport_address or inst.router_id or None,
+        "label_allocation": inst.label_allocation,
+        "interfaces": sorted(i.name for i in inst.interfaces.all()),
+        "bfd": inst.bfd,
+        "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "description": inst.description or "",
         "extra": inst.extra or {},
     }
@@ -713,6 +757,16 @@ def routing_context(device) -> dict:
                         "prefix": r["prefix"]}
         return None
 
+    # Ethernet segments this device takes part in, keyed by its own port.
+    es_by_iface: dict[str, dict] = {}
+    for seg in (
+        EthernetSegment.objects.filter(interfaces__device=device)
+        .prefetch_related("interfaces__device").distinct()
+    ):
+        row = es_dict(seg)
+        for iface in seg.interfaces.all():
+            if iface.device_id == device.id:
+                es_by_iface[iface.name] = row
     by_interface: dict[str, dict] = {}
     for iface in device.interfaces.all():
         rows = fhrp.get(iface.name, [])
@@ -720,9 +774,16 @@ def routing_context(device) -> dict:
             "vrf": iface.vrf.name if iface.vrf_id else None,
             "ospf": None, "isis": None, "eigrp": None,
             "fhrp": rows, "gateway": _gateway(rows), "nd": _nd(rows),
+            "es": es_by_iface.get(iface.name),
+            "evpn_mh_uplink": bool(iface.evpn_mh_uplink),
         }
     blank = {"vrf": None, "ospf": None, "isis": None, "eigrp": None, "fhrp": [],
-             "gateway": None, "nd": None}
+             "gateway": None, "nd": None, "es": None, "evpn_mh_uplink": False}
+    ldp_row = (
+        LDPInstance.objects.filter(device=device)
+        .select_related("bfd_profile").prefetch_related("interfaces").first()
+    )
+    ldp = ldp_dict(ldp_row) if ldp_row is not None else None
     for o in ospf:
         for row in o["interfaces"]:
             by_interface.setdefault(row["interface"], dict(blank))
@@ -747,6 +808,14 @@ def routing_context(device) -> dict:
         "eigrp": eigrp,
         "by_interface": dict(sorted(by_interface.items())),
         "vtep": vtep,
+        "ldp": ldp,
+        # The segments this leaf is part of, once each, and how many - a
+        # device with any is a multihomed leaf and turns `evpn mh` on.
+        "ethernet_segments": sorted(
+            {r["name"]: r for r in es_by_iface.values()}.values(),
+            key=lambda r: r["name"],
+        ),
+        "es_count": len({r["name"] for r in es_by_iface.values()}),
         **_policies_closure(device.tenant_id, referenced_policies),
         "communities": [
             {"id": str(c.id), "value": c.value, "kind": c.kind, "name": c.name}

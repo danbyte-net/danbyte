@@ -350,9 +350,42 @@ interface {{ i.name }}{% if i.vrf %} vrf {{ i.vrf.name }}{% endif %}
  ip ospf network {{ r.ospf.network_type }}
 {% endif %}
 {% endif %}
+{% if r and r.es %}
+{% if r.es.esi %}
+ evpn mh es-id {{ r.es.esi }}
+{% else %}
+ evpn mh es-id {{ r.es.es_id }}
+ evpn mh es-sys-mac {{ r.es.sys_mac }}
+{% endif %}
+{% if r.es.df_preference %}
+ evpn mh es-df-pref {{ r.es.df_preference }}
+{% endif %}
+{% endif %}
+{% if r and r.evpn_mh_uplink %}
+ evpn mh uplink
+{% endif %}
 exit
 !
 {% endfor %}
+{% if routing.ldp %}
+mpls ldp
+{% if routing.ldp.router_id %}
+ router-id {{ routing.ldp.router_id }}
+{% endif %}
+ address-family ipv4
+{% if routing.ldp.transport_address %}
+  discovery transport-address {{ routing.ldp.transport_address }}
+{% endif %}
+{% if routing.ldp.label_allocation == "host-routes" %}
+  label local allocate host-routes
+{% endif %}
+{% for name in routing.ldp.interfaces %}
+  interface {{ name }}
+{% endfor %}
+ exit-address-family
+exit
+!
+{% endif %}
 {% for inst in routing.isis %}
 router isis {{ inst.process }}
  net {{ inst.net }}
@@ -466,6 +499,28 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% endfor %}
 {% for af in inst.address_families %}
  address-family {{ af.afi_safi | replace("-", " ") }}
+{% if inst.vpn and inst.vrf and af.afi_safi == "ipv4-unicast" %}
+{% set vrf = routing.vrfs | selectattr("name", "equalto", inst.vrf) | first %}
+  rd vpn export {{ vrf.rd }}
+{% for rt in vrf.import_targets %}
+  rt vpn import {{ rt }}
+{% endfor %}
+{% for rt in vrf.export_targets %}
+  rt vpn export {{ rt }}
+{% endfor %}
+{% if inst.vpn.label_export %}
+  label vpn export {{ inst.vpn.label_export }}
+{% endif %}
+{% if inst.vpn.nexthop_export %}
+  nexthop vpn export {{ inst.vpn.nexthop_export }}
+{% endif %}
+{% if inst.vpn.import %}
+  import vpn
+{% endif %}
+{% if inst.vpn.export %}
+  export vpn
+{% endif %}
+{% endif %}
 {% for n in af.networks %}
   network {{ n }}
 {% endfor %}

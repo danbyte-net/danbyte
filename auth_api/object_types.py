@@ -127,6 +127,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.EIGRPInterface", "EIGRP interfaces", "Routing"),
     ("routing.VTEP", "VTEPs", "Routing"),
     ("routing.VTEPMembership", "VTEP memberships", "Routing"),
+    ("routing.EthernetSegment", "Ethernet segments", "Routing"),
+    ("routing.LDPInstance", "LDP instances", "Routing"),
     ("zabbix.ZabbixConnection", "Zabbix connections", "Monitoring"),
     ("zabbix.ZabbixHostLink", "Zabbix host links", "Monitoring"),
     ("zabbix.ZabbixChange", "Zabbix pending changes", "Monitoring"),

@@ -99,6 +99,7 @@ export function InterfaceForm({
   const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
   const [snmpIgnore, setSnmpIgnore] = useState(iface?.snmp_ignore ?? false)
   const [isUplink, setIsUplink] = useState(iface?.is_uplink ?? false)
+  const [evpnUplink, setEvpnUplink] = useState(iface?.evpn_mh_uplink ?? false)
   const [duplex, setDuplex] = useState(iface?.duplex ?? "")
   const [poeMode, setPoeMode] = useState(iface?.poe_mode ?? "")
   const [poeType, setPoeType] = useState(iface?.poe_type ?? "")
@@ -152,6 +153,7 @@ export function InterfaceForm({
     setSnmpName(iface.snmp_name ?? "")
     setSnmpIgnore(iface.snmp_ignore ?? false)
     setIsUplink(iface.is_uplink ?? false)
+    setEvpnUplink(iface.evpn_mh_uplink ?? false)
     setDuplex(iface.duplex)
     setPoeMode(iface.poe_mode)
     setPoeType(iface.poe_type)
@@ -285,6 +287,7 @@ export function InterfaceForm({
         snmp_name: snmpName.trim(),
         snmp_ignore: snmpIgnore,
         is_uplink: isUplink,
+        evpn_mh_uplink: evpnUplink,
         duplex,
         poe_mode: poeMode,
         poe_type: poeType,
@@ -639,6 +642,12 @@ export function InterfaceForm({
                 label="Uplink"
                 checked={isUplink}
                 onChange={setIsUplink}
+              />
+              <FormCheckbox
+                label="EVPN MH uplink"
+                hint="evpn mh uplink - fabric-facing on a multihomed leaf"
+                checked={evpnUplink}
+                onChange={setEvpnUplink}
               />
             </div>
             {reserved && !iface?.cable && (

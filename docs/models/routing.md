@@ -52,7 +52,7 @@ prefix through another next hop (ECMP) is not.
 
 | Model | Fields | Unique |
 |---|---|---|
-| `BGPInstance` | `device`, `vrf` (null = global), `asn` FK → `ASN`, `router_id`, `cluster_id`, `graceful_restart`, `distance_ebgp`/`distance_ibgp`/`distance_local` (all three or none), `bestpath_multipath_relax`, `bfd`, `status` (scope `routinginstance`), `description`, `extra` JSON | `(device, vrf)`, nulls not distinct |
+| `BGPInstance` | `device`, `vrf` (null = global), `asn` FK → `ASN`, `router_id`, `cluster_id`, `graceful_restart`, `distance_ebgp`/`distance_ibgp`/`distance_local` (all three or none), `bestpath_multipath_relax`, MPLS L3VPN on a per-VRF instance: `vpn_export`, `vpn_import`, `vpn_label_export` (`auto` or a number), `vpn_nexthop_export`; `bfd`, `status` (scope `routinginstance`), `description`, `extra` JSON | `(device, vrf)`, nulls not distinct |
 | `BGPAddressFamily` | `instance`, `afi_safi`, `networks` JSON [CIDR], `maximum_paths`, `maximum_paths_ibgp`, `import_policy`, `export_policy`, `extra` | `(instance, afi_safi)` |
 | `Redistribution` | one parent (`bgp_af`; OSPF/IS-IS instances follow), `source`, `policy`, `metric`, `level` + `family` (IS-IS only; blank = the instance's level, IPv4), `extra` | - |
 | `BGPPeerGroup` | catalog + the shared knobs; `remote_asn` int, `remote_asn_mode` (`asn`/`external`/`internal`), `local_asn` FK, `update_source` text | `(tenant, name)` |
@@ -95,6 +95,18 @@ session → group → instance.
 | `VTEP` | `device` OneToOne, `source_interface` (same device), `source_ip`, `anycast_ip` (assigned to the device), `anycast_gateway_mac` (normalised lower-case), `arp_suppression`, `status` (`vtep`), `description`, `extra` | `device` |
 | `VTEPMembership` | `vtep`, `l2vpn` (VXLAN type), `vlan` (at the device's site), `rd`, `ingress_replication`, `mcast_group`, `extra` | `(vtep, l2vpn)` |
 
+| `EthernetSegment` | catalog; `esi` (type 0, ten octets) **or** `es_id` + `sys_mac` (type 3, normalised), `df_preference`, `interfaces` M2M → `api.Interface` - the LAG on each leaf that shares the segment, so the ports are on different devices by design | `(tenant, name)` |
+| `api.Interface.evpn_mh_uplink` | `evpn mh uplink` on a fabric-facing port of a multihomed leaf | - |
+
+## MPLS
+
+| Model | Fields | Unique |
+|---|---|---|
+| `LDPInstance` | `device` (one per device; `vrf` must stay null - LDP labels the global table), `router_id`, `transport_address` (blank = the router id), `label_allocation` (`host-routes`/`all`), `interfaces` M2M (same device), `bfd`, `status`, `description`, `extra` | `device` |
+
+The VPN side of an L3VPN sits on the per-VRF `BGPInstance` (`vpn_*`); the RD
+and route targets come from the VRF.
+
 `resolve_membership_vlan(m)` is the leaf's VLAN for a VNI: own `vlan`, else
 the L2VPN's termination at the device's site, else its sole VLAN
 termination. `FHRPGroup` gains the `anycast` protocol for the shared SVI
@@ -113,7 +125,11 @@ instance's `distance` as one object or `None`, a session's
 `remote_asn_effective` (the number a running config shows - the local AS for
 `internal`) and `route_reflector_client_from_group` (the group already says
 it, so print it once), and `used_bfd_profiles` (only the profiles this device
-names; `bfd_profiles` stays the whole catalog). It is registered through
+names; `bfd_profiles` stays the whole catalog). Multihoming and MPLS:
+`by_interface[<port>].es` (the segment this port is in, with every member
+on every device), `by_interface[<port>].evpn_mh_uplink`,
+`ethernet_segments` + `es_count` per device, `ldp` (one block or `None`),
+and a per-VRF BGP instance's `vpn` object or `None`. It is registered through
 `api.export_templates.register_context_provider("routing", …)` from the app's
 `ready()`, so `api` never imports `routing`.
 

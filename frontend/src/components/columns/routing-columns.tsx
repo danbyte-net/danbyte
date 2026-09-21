@@ -10,6 +10,7 @@ import type {
   Community,
   CommunityList,
   EIGRPInstance,
+  EthernetSegment,
   ISISInstance,
   OSPFArea,
   OSPFInstance,
@@ -1796,6 +1797,108 @@ export function buildBFDProfileColumns<T extends BFDProfile = BFDProfile>(
         header: "Echo",
         cell: ({ row }) =>
           row.original.echo ? <Badge variant="secondary">echo</Badge> : dash,
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── Ethernet segments ───────────────────────────────────────────────────────
+
+/** How the segment is written on the box: the full ESI, or the es-id and
+ * system MAC the type-3 ESI is derived from. */
+export function segmentIdentity(r: {
+  esi: string
+  es_id: number | null
+  sys_mac: string
+}): string {
+  if (r.esi) return r.esi
+  if (r.es_id != null || r.sys_mac)
+    return `es-id ${r.es_id ?? "-"} · ${r.sys_mac || "-"}`
+  return ""
+}
+
+/** "leaf1:Po10" for each member port. */
+export function segmentMembers(r: EthernetSegment): string[] {
+  return r.interfaces.map((i) => `${i.device.name}:${i.name}`)
+}
+
+export type EthernetSegmentColumnId =
+  | "numid"
+  | "name"
+  | "identity"
+  | "df_preference"
+  | "device_count"
+  | "interfaces"
+  | "description"
+  | "tags"
+const ETHERNET_SEGMENT_ORDER: EthernetSegmentColumnId[] = [
+  "numid",
+  "name",
+  "identity",
+  "df_preference",
+  "device_count",
+  "interfaces",
+  "description",
+  "tags",
+]
+
+export function buildEthernetSegmentColumns<
+  T extends EthernetSegment = EthernetSegment,
+>(opts: CommonOpts<T, EthernetSegmentColumnId> = {}): ColumnDef<T, unknown>[] {
+  return assemble<T, EthernetSegmentColumnId>(
+    ETHERNET_SEGMENT_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      name: () =>
+        nameColumn<T>("/ethernet-segments/$id", "routing.ethernetsegment"),
+      identity: () => ({
+        id: "identity",
+        accessorFn: (r) => segmentIdentity(r),
+        header: "Identity",
+        cell: ({ row }) => {
+          const v = segmentIdentity(row.original)
+          return v ? <span className="font-mono text-xs">{v}</span> : dash
+        },
+      }),
+      df_preference: () => ({
+        id: "df_preference",
+        accessorKey: "df_preference",
+        header: ({ column }) => <SortHeader column={column} label="DF pref" />,
+        cell: ({ row }) =>
+          row.original.df_preference != null ? (
+            <span className="num text-xs">{row.original.df_preference}</span>
+          ) : (
+            dash
+          ),
+      }),
+      device_count: () => ({
+        id: "device_count",
+        accessorKey: "device_count",
+        header: ({ column }) => <SortHeader column={column} label="Devices" />,
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.device_count}</span>
+        ),
+      }),
+      interfaces: () => ({
+        id: "interfaces",
+        accessorFn: (r) => segmentMembers(r).join(" "),
+        header: "Interfaces",
+        cell: ({ row }) => {
+          const members = segmentMembers(row.original)
+          if (members.length === 0) return dash
+          if (members.length > 4)
+            return (
+              <span className="num text-xs text-muted-foreground">
+                {members.length} interfaces
+              </span>
+            )
+          return (
+            <span className="font-mono text-xs">{members.join(", ")}</span>
+          )
+        },
       }),
       description: () => descriptionColumn<T>(),
       tags: tags<T>(opts),

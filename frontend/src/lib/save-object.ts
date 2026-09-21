@@ -118,6 +118,8 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "routing.routingpolicy",
   "routing.routingkeychain",
   "routing.bfdprofile",
+  "routing.ethernetsegment",
+  "routing.ldpinstance",
   "routing.staticroute",
   "routing.bgpinstance",
   "routing.bgpaddressfamily",

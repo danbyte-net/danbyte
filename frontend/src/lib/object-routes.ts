@@ -30,6 +30,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "routing.prefixlist": "/prefix-lists/$id",
   "routing.community": "/communities/$id",
   "routing.bfdprofile": "/bfd-profiles/$id",
+  "routing.ethernetsegment": "/ethernet-segments/$id",
   "routing.communitylist": "/community-lists/$id",
   "routing.aspathlist": "/as-path-lists/$id",
   "routing.routingpolicy": "/routing-policies/$id",

@@ -101,6 +101,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/isis-instances": "features/routing/",
   "/eigrp-instances": "features/routing/",
   "/vteps": "features/routing/",
+  "/ethernet-segments": "features/routing/",
   "/monitoring": "features/monitoring/",
   "/monitoring-engines": "features/monitoring/",
   "/watched-endpoints": "features/monitoring/",

@@ -6,6 +6,7 @@ import type {
   Community,
   CommunityList,
   CommunityListRule,
+  EthernetSegment,
   OSPFArea,
   PrefixList,
   PrefixListRule,
@@ -22,14 +23,18 @@ import {
   buildBGPPeerGroupColumns,
   buildCommunityColumns,
   buildCommunityListColumns,
+  buildEthernetSegmentColumns,
   buildOSPFAreaColumns,
   buildPrefixListColumns,
   buildRoutingKeychainColumns,
   buildRoutingPolicyColumns,
+  segmentIdentity,
 } from "@/components/columns/routing-columns"
 
 import type { RoutingDetailSpec } from "./catalog-detail"
 import { EmbeddedBGPSessionTable } from "@/components/embedded-tables"
+import { DataTable } from "@/components/data-table"
+import { dash } from "@/components/cells/dash"
 
 import { knobRows, remoteAsnText } from "./bgp-bits"
 import type { RoutingListSpec } from "./catalog-page"
@@ -38,6 +43,7 @@ import {
   communityListRuleColumns,
   policyRuleColumns,
   prefixListRuleColumns,
+  segmentMemberColumns,
 } from "./rule-columns"
 
 // The list and detail specs of the six routing catalogs - one place, so a
@@ -145,6 +151,105 @@ export const bfdProfileDetail: RoutingDetailSpec<BFDProfile> = {
     },
     { label: "Multiplier", value: <span className="num">{r.multiplier}</span> },
     { label: "Echo mode", value: r.echo ? "On" : "Off" },
+  ],
+}
+
+export const ethernetSegmentList: RoutingListSpec<EthernetSegment> = {
+  title: "Ethernet segments",
+  objectType: "ethernetsegment",
+  endpoint: "/api/routing/ethernet-segments/",
+  queryKey: "ethernet-segments",
+  tableId: "ethernet-segments",
+  newTo: "/ethernet-segments/new",
+  addLabel: "Add segment",
+  searchPlaceholder: "Filter segments…",
+  searchText: (r) =>
+    `${r.name} ${r.esi} ${r.sys_mac} ${r.es_id ?? ""} ${r.description} ${r.interfaces.map((i) => `${i.device.name}:${i.name}`).join(" ")}`,
+  flexColumn: "description",
+  label: (r) => r.name,
+  columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
+    buildEthernetSegmentColumns({
+      humanIds,
+      actions: {
+        editTo: "/ethernet-segments/$id/edit",
+        editParams: (r) => ({ id: r.id }),
+        canEdit: () => canEdit,
+        onDelete,
+        canDelete: () => canDelete,
+      },
+    }),
+}
+
+export const ethernetSegmentDetail: RoutingDetailSpec<EthernetSegment> = {
+  objectType: "ethernetsegment",
+  appLabel: "routing.ethernetsegment",
+  endpoint: "/api/routing/ethernet-segments/",
+  queryKey: "ethernet-segment",
+  backTo: "/ethernet-segments",
+  backLabel: "Ethernet segments",
+  editTo: "/ethernet-segments/$id/edit",
+  title: (r) => r.name,
+  subtitle: (r) =>
+    `${segmentIdentity(r) || "no identity"} · ${r.device_count} devices`,
+  overview: (r) => [
+    ...(r.esi
+      ? [
+          {
+            label: "ESI",
+            value: <span className="font-mono">{r.esi}</span>,
+            copy: r.esi,
+          },
+        ]
+      : [
+          {
+            label: "ES-ID",
+            value:
+              r.es_id != null ? (
+                <span className="num font-mono">{r.es_id}</span>
+              ) : (
+                dash
+              ),
+          },
+          {
+            label: "System MAC",
+            value: r.sys_mac ? (
+              <span className="font-mono">{r.sys_mac}</span>
+            ) : (
+              dash
+            ),
+            ...(r.sys_mac ? { copy: r.sys_mac } : {}),
+          },
+        ]),
+    {
+      label: "DF preference",
+      value:
+        r.df_preference != null ? (
+          <span className="num">{r.df_preference}</span>
+        ) : (
+          dash
+        ),
+    },
+    { label: "Devices", value: <span className="num">{r.device_count}</span> },
+  ],
+  related: [
+    {
+      value: "interfaces",
+      label: "Interfaces",
+      count: (r) => r.interfaces.length,
+      render: (r) =>
+        r.interfaces.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No member interfaces yet - edit the segment to add some.
+          </p>
+        ) : (
+          <DataTable
+            data={r.interfaces}
+            columns={segmentMemberColumns()}
+            tableId="ethernet-segment-interfaces"
+            enableExport={false}
+          />
+        ),
+    },
   ],
 }
 

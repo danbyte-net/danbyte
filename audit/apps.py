@@ -129,6 +129,8 @@ AUDITED_MODELS = [
     "routing.EIGRPInterface",
     "routing.VTEP",
     "routing.VTEPMembership",
+    "routing.EthernetSegment",
+    "routing.LDPInstance",
     "zabbix.ZabbixConnection",
     "zabbix.ZabbixProvisionRule",
     "zabbix.ZabbixAdoptionRule",

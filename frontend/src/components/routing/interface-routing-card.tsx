@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import type {
   BGPSession,
   EIGRPInstance,
+  EthernetSegment,
   ISISInstance,
   OSPFInstance,
   Paginated,
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/dialog"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { segmentIdentity } from "@/components/columns/routing-columns"
 
 import {
   EIGRPInterfaceForm,
@@ -30,18 +32,22 @@ import {
 } from "./igp-forms"
 
 // What routes over this port: the OSPF, IS-IS and EIGRP instances it is
-// enrolled in and the unnumbered BGP sessions on it. Reads the device's
-// instances (the same queries the Routing tab makes), so a row shows its
-// instance and the instance's defaults. Every instance the port is not in
-// yet is an Enrol button, so a port joins a process from its own page.
-// Draws nothing while the device runs no routing at all.
+// enrolled in, the unnumbered BGP sessions on it, and the EVPN Ethernet
+// segment it is a member of. Reads the device's instances (the same
+// queries the Routing tab makes), so a row shows its instance and the
+// instance's defaults. Every instance the port is not in yet is an Enrol
+// button, so a port joins a process from its own page. Draws nothing while
+// the device runs no routing at all.
 
 export function InterfaceRoutingCard({
   interfaceId,
   deviceId,
+  evpnMhUplink,
 }: {
   interfaceId: string
   deviceId: string
+  /** The port faces the multihomed fabric's uplinks, not a server. */
+  evpnMhUplink?: boolean
 }) {
   const { canDo } = useMe()
   const qc = useQueryClient()
@@ -79,6 +85,14 @@ export function InterfaceRoutingCard({
         `/api/routing/bgp-sessions/?device=${deviceId}&page_size=200`
       ),
   })
+  const segments = useQuery({
+    queryKey: ["ethernet-segments", "interface", interfaceId],
+    queryFn: () =>
+      api<Paginated<EthernetSegment>>(
+        `/api/routing/ethernet-segments/?interface=${interfaceId}`
+      ),
+  })
+  const es = segments.data?.results ?? []
   const o = (ospf.data?.results ?? []).flatMap((inst) =>
     inst.interfaces
       .filter((row) => row.interface.id === interfaceId)
@@ -122,7 +136,16 @@ export function InterfaceRoutingCard({
         }))
       : []),
   ]
-  if (o.length + i.length + e.length + b.length + joinable.length === 0)
+  if (
+    o.length +
+      i.length +
+      e.length +
+      b.length +
+      es.length +
+      joinable.length +
+      (evpnMhUplink ? 1 : 0) ===
+    0
+  )
     return null
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["ospf-instances"] })
@@ -234,6 +257,26 @@ export function InterfaceRoutingCard({
         </Link>
       ),
     })),
+    ...es.map<KvRow>((seg) => ({
+      label: "Ethernet segment",
+      value: (
+        <span className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/ethernet-segments/$id"
+            params={{ id: seg.id }}
+            className="link font-mono"
+          >
+            {seg.name}
+          </Link>
+          {segmentIdentity(seg) && (
+            <span className="font-mono text-muted-foreground">
+              {segmentIdentity(seg)}
+            </span>
+          )}
+        </span>
+      ),
+    })),
+    ...(evpnMhUplink ? [{ label: "EVPN MH uplink", value: "Yes" }] : []),
   ]
   if (joinable.length > 0) {
     rows.push({

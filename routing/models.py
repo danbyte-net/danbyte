@@ -570,6 +570,15 @@ class BGPInstance(_DeviceInstance):
     #: ``bgp bestpath as-path multipath-relax`` - ECMP across differing paths
     #: of equal length, which every leaf-spine fabric turns on.
     bestpath_multipath_relax = models.BooleanField(default=False)
+    # ── MPLS L3VPN, on a per-VRF instance. The VRF carries the RD and route
+    # targets; these say whether and how this table is leaked into the VPN
+    # family (``rd vpn export``, ``rt vpn import/export`` come from the VRF).
+    vpn_export = models.BooleanField(default=False)
+    vpn_import = models.BooleanField(default=False)
+    #: ``label vpn export auto`` or a fixed label number. Blank = not set.
+    vpn_label_export = models.CharField(max_length=8, blank=True, default="")
+    #: ``nexthop vpn export <address>``. Blank = not set.
+    vpn_nexthop_export = models.CharField(max_length=45, blank=True, default="")
 
     class Meta:
         ordering = ["device__name", "vrf__name"]
@@ -583,6 +592,19 @@ class BGPInstance(_DeviceInstance):
     def __str__(self) -> str:
         table = self.vrf.name if self.vrf_id else "global"
         return f"{self.device.name} · AS{self.asn.asn} · {table}"
+
+    def clean(self):
+        super().clean()
+        label = (self.vpn_label_export or "").strip().lower()
+        if label and label != "auto" and not label.isdigit():
+            raise ValidationError(
+                {"vpn_label_export": "'auto' or a label number."}
+            )
+        self.vpn_label_export = label
+        if self.vpn_nexthop_export:
+            self.vpn_nexthop_export = normalize_address(
+                self.vpn_nexthop_export, "vpn_nexthop_export"
+            )
 
 
 class BGPAddressFamily(models.Model):
@@ -1412,3 +1434,114 @@ def resolve_membership_vlan(m: VTEPMembership):
     if len(terms) == 1:
         return terms[0].vlan
     return None
+
+
+# ─── EVPN multihoming ────────────────────────────────────────────────────────
+
+_MAC_RE = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
+_ESI_RE = re.compile(r"^([0-9a-f]{2}:){9}[0-9a-f]{2}$")
+
+
+def normalize_mac(value: str, field: str) -> str:
+    raw = (value or "").strip().lower().replace("-", ":").replace(".", "")
+    if raw and ":" not in raw and len(raw) == 12:
+        raw = ":".join(raw[i:i + 2] for i in range(0, 12, 2))
+    if raw and not _MAC_RE.match(raw):
+        raise ValidationError({field: "A MAC address, like 44:38:39:ff:00:01."})
+    return raw
+
+
+class EthernetSegment(_Catalog):
+    """One EVPN Ethernet segment: the LAG on each of two or more leaves that
+    a multihomed server plugs into.
+
+    FRR names a segment either by a full 10-byte ESI (type 0) or by a type-3
+    pair of ``es-id`` + ``es-sys-mac``; a segment stores one or the other.
+    The interfaces that share it live on different devices, which is the
+    whole point - the segment is the thing the reviewer looks at to see that
+    leaf1 swp5 and leaf2 swp5 are the same server.
+    """
+
+    #: Type-0: the full ESI, ten octets. Blank when es_id + sys_mac is used.
+    esi = models.CharField(max_length=32, blank=True, default="")
+    #: Type-3: ``evpn mh es-id N`` and ``evpn mh es-sys-mac``.
+    es_id = models.PositiveIntegerField(null=True, blank=True)
+    sys_mac = models.CharField(max_length=17, blank=True, default="")
+    #: ``evpn mh es-df-pref``: who forwards BUM traffic for the segment.
+    df_preference = models.PositiveIntegerField(null=True, blank=True)
+    interfaces = models.ManyToManyField(
+        "api.Interface", blank=True, related_name="ethernet_segments"
+    )
+
+    class Meta(_Catalog.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_ethernetsegment_tenant_name"
+            ),
+        ]
+
+    def clean(self):
+        self.esi = (self.esi or "").strip().lower()
+        if self.esi and not _ESI_RE.match(self.esi):
+            raise ValidationError(
+                {"esi": "Ten colon-separated octets, like 00:11:22:33:44:55:66:77:88:99."}
+            )
+        self.sys_mac = normalize_mac(self.sys_mac, "sys_mac")
+        typed = self.es_id is not None or bool(self.sys_mac)
+        if self.esi and typed:
+            raise ValidationError(
+                {"esi": "Give either a full ESI or an es-id with a system MAC, not both."}
+            )
+        if not self.esi and not (self.es_id is not None and self.sys_mac):
+            raise ValidationError(
+                {"es_id": "A segment needs a full ESI, or both an es-id and a system MAC."}
+            )
+        if self.es_id is not None and not 1 <= self.es_id <= 16777215:
+            raise ValidationError({"es_id": "1 to 16777215."})
+
+
+# ─── MPLS / LDP ──────────────────────────────────────────────────────────────
+
+
+class LDPInstance(_DeviceInstance):
+    """``mpls ldp`` on a provider router - one per device.
+
+    LDP has no VRF: labels are for the global table, and the VPN side of an
+    L3VPN lives on the per-VRF BGP instance (``vpn_export`` and friends).
+    """
+
+    LABEL_CHOICES = [
+        ("all", "All routes"),
+        ("host-routes", "Host routes only"),
+    ]
+
+    #: ``discovery transport-address``. Blank = the router-id.
+    transport_address = models.CharField(max_length=45, blank=True, default="")
+    #: ``label local allocate host-routes``: only /32s get a label, which is
+    #: all an L3VPN needs and keeps the label table small.
+    label_allocation = models.CharField(
+        max_length=12, choices=LABEL_CHOICES, default="host-routes"
+    )
+    interfaces = models.ManyToManyField(
+        "api.Interface", blank=True, related_name="ldp_instances"
+    )
+
+    class Meta:
+        ordering = ["device__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device"], name="uniq_ldpinstance_device"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device.name} · LDP"
+
+    def clean(self):
+        super().clean()
+        if self.vrf_id:
+            raise ValidationError({"vrf": "LDP runs in the global table."})
+        if self.transport_address:
+            self.transport_address = normalize_address(
+                self.transport_address, "transport_address"
+            )

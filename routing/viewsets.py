@@ -35,8 +35,10 @@ from .models import (
     CommunityListRule,
     EIGRPInstance,
     EIGRPInterface,
+    EthernetSegment,
     ISISInstance,
     ISISInterface,
+    LDPInstance,
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
@@ -67,8 +69,10 @@ from .serializers import (
     CommunitySerializer,
     EIGRPInstanceSerializer,
     EIGRPInterfaceSerializer,
+    EthernetSegmentSerializer,
     ISISInstanceSerializer,
     ISISInterfaceSerializer,
+    LDPInstanceSerializer,
     OSPFAreaMiniSerializer,
     OSPFAreaSerializer,
     OSPFInstanceSerializer,
@@ -802,3 +806,66 @@ class VTEPMembershipViewSet(_RuleViewSet):
             if v:
                 qs = qs.filter(l2vpn_id=v)
         return qs
+
+
+# ─── EVPN multihoming / MPLS ─────────────────────────────────────────────────
+
+class EthernetSegmentViewSet(_CatalogViewSet):
+    """Filter with ``?device=`` (segments with a port on that device) and
+    ``?interface=``."""
+
+    queryset = EthernetSegment.objects.all().order_by(NATURAL_NAME)
+    serializer_class = EthernetSegmentSerializer
+    clone_fields = ("df_preference", "description")
+
+    def _search(self, qs, s):
+        return super()._search(qs, s) | qs.filter(
+            Q(esi__icontains=s) | Q(sys_mac__icontains=s)
+        )
+
+    def get_queryset(self):
+        qs = super().get_queryset().prefetch_related("interfaces__device")
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        device = p.get("device")
+        if device:
+            qs = qs.filter(interfaces__device_id=device)
+        iface = p.get("interface")
+        if iface:
+            qs = qs.filter(interfaces__id=iface)
+        return qs.distinct()
+
+
+class LDPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """One per device. Filter with ``?device=``, ``?site=``, ``?status=``."""
+
+    editable_str_fields = ("description", "router_id", "transport_address")
+    editable_bool_fields = ("bfd",)
+    queryset = LDPInstance.objects.all().order_by("device__name")
+    serializer_class = LDPInstanceSerializer
+    pagination_class = StandardPagination
+    clone_fields = ("label_allocation", "bfd", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device__site", "status", "bfd_profile")
+            .prefetch_related("tags", "interfaces__device")
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(device__name__icontains=s) | Q(router_id__icontains=s)
+                | Q(description__icontains=s) | cf_text_q(qs.model, s)
+            )
+        for key, field in (
+            ("device", "device_id"), ("status", "status_id"), ("site", "device__site_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        return qs.distinct()

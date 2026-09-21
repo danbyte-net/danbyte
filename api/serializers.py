@@ -3251,7 +3251,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     class Meta:
         model = Interface
-        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink", "type",
+        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink",
+                  "evpn_mh_uplink", "type",
                   "type_display",
                   "speed", "mtu",
                   "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected", "custom_fields",
