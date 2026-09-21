@@ -89,6 +89,78 @@ class _Base(APITestCase):
         s.save()
 
 
+class LinkPeerTests(_Base):
+    """Each interface in the render context carries its cable's far end, so a
+    template can write `description to spine1 swp1` the way the running
+    config has it, without reaching a model method the sandbox refuses."""
+
+    def _peer(self):
+        from api.models import Cable, CableTermination
+
+        spine = Device.objects.create(
+            tenant=self.tenant, name="spine1", device_type=self.dev.device_type,
+            site=self.dev.site,
+        )
+        far = Interface.objects.create(
+            device=spine, name="swp1", description="to ams-r1",
+            custom_fields={"frr_name": "Gi3"},
+        )
+        cable = Cable.objects.create(tenant=self.tenant, label="C-1")
+        CableTermination.objects.create(cable=cable, end="A", interface=self.eth0)
+        CableTermination.objects.create(cable=cable, end="B", interface=far)
+        return far
+
+    def test_the_far_end_is_a_plain_dict_on_each_interface(self):
+        self._peer()
+        Interface.objects.create(device=self.dev, name="eth1")  # uncabled
+        t = ExportTemplate.objects.create(
+            tenant=self.tenant, name="peers", object_type="device",
+            template_code=(
+                "{% for i in interfaces %}{{ i.name }}:"
+                "{% if i.link_peer %} to {{ i.link_peer.device }} "
+                "{{ i.link_peer.custom_fields.frr_name }} "
+                "({{ i.link_peer.interface }}){% else %} -{% endif %}|"
+                "{% endfor %}"
+            ),
+        )
+
+        r = self.client.get(f"/api/devices/{self.dev.id}/render/?template={t.id}")
+
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            r.json()["output"].strip("|\n").split("|"),
+            ["eth0: to spine1 Gi3 (swp1)", "eth1: -"],
+        )
+
+    def test_the_far_end_cannot_reach_its_row(self):
+        """The dict is the whole surface: no `.device.credentials` behind it."""
+        from api.export_templates import device_render_interfaces
+
+        self._peer()
+        peer = device_render_interfaces(self.dev)[0].link_peer
+        self.assertEqual(
+            set(peer), {"device", "interface", "description", "custom_fields"}
+        )
+        self.assertIsInstance(peer["device"], str)
+
+    def test_a_page_of_ports_costs_no_query_per_port(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from api.export_templates import device_render_interfaces
+
+        self._peer()
+        for i in range(8):
+            Interface.objects.create(device=self.dev, name=f"eth{i + 1}")
+        with CaptureQueriesContext(connection) as ctx:
+            rows = device_render_interfaces(self.dev)
+            [r.link_peer for r in rows]
+        self.assertEqual(len(rows), 9)
+        # Interfaces, terminations, cables, far terminations, far interfaces,
+        # far devices: six IN queries whatever the port count.
+        self.assertLessEqual(len(ctx.captured_queries), 6)
+
+
 class FilterTests(_Base):
     def test_address_pieces_from_strings_and_rows(self):
         self.assertEqual(FILTERS["netmask"]("10.0.0.0/8"), "255.0.0.0")

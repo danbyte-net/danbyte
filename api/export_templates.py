@@ -223,18 +223,57 @@ def safe_mime_type(declared: str | None) -> str:
     return base if base in INERT_MIME_TYPES else "text/plain"
 
 
+def link_peer_of(iface) -> dict | None:
+    """The far end of ``iface``'s cable, as a template may read it.
+
+    ``{"device", "interface", "description", "custom_fields"}`` - the peer's
+    name, its port, and its own fields (a ``frr_name`` custom field, say), or
+    ``None`` when the port is uncabled or the cable ends off-device. Read-only
+    by construction: it is a plain dict, so a template cannot reach the peer
+    row or anything hanging off it.
+    """
+    for term in iface.terminations.all():
+        for other in term.cable.terminations.all():
+            if other.pk == term.pk:
+                continue
+            peer = other.interface
+            if peer is None:
+                return None
+            return {
+                "device": peer.device.name,
+                "interface": peer.name,
+                "description": peer.description or "",
+                "custom_fields": dict(peer.custom_fields or {}),
+            }
+    return None
+
+
+#: What ``link_peer_of`` reads, so a device's ports cost one query, not one
+#: per port.
+LINK_PEER_PREFETCH = "terminations__cable__terminations__interface__device"
+
+
+def device_render_interfaces(device) -> list:
+    """The device's interfaces with ``link_peer`` attached to each."""
+    rows = list(device.interfaces.prefetch_related(LINK_PEER_PREFETCH))
+    for iface in rows:
+        iface.link_peer = link_peer_of(iface)
+    return rows
+
+
 def render_device_config(template, device, tenant) -> str:
     """Render an export template for a single device - the per-device
     intended-config generator. Context: ``device``, its merged ``config_context``,
-    ``interfaces``, ``ip_addresses`` (and ``objects``/``count`` for parity),
-    plus every registered provider's key (``routing``)."""
+    ``interfaces`` (each with ``link_peer``, the cable's far end),
+    ``ip_addresses`` (and ``objects``/``count`` for parity), plus every
+    registered provider's key (``routing``)."""
     from .config_context import render_config_context
 
     tmpl = _env().from_string(template.template_code or "")
     return tmpl.render(
         device=device,
         config_context=render_config_context(device)["rendered"],
-        interfaces=list(device.interfaces.all()),
+        interfaces=device_render_interfaces(device),
         ip_addresses=list(device.ip_addresses.all()),
         objects=[device],
         count=1,
