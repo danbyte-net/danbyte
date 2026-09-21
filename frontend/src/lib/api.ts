@@ -4397,11 +4397,17 @@ export interface BGPPeerKnobs {
   hold_time: number | null
   keychain: { id: string; name: string; algorithm: string } | null
   default_originate: boolean | null
+  /** `default-originate route-map <policy>`. */
+  default_originate_policy: { id: string; name: string } | null
   maximum_prefix: number | null
   allowas_in: number | null
   as_override: boolean | null
   remove_private_as: boolean | null
   soft_reconfiguration: boolean | null
+  /** RFC 5549 - IPv4 routes over an IPv6 next hop. */
+  capability_extended_nexthop: boolean | null
+  /** GTSM hop count; null = off. */
+  ttl_security_hops: number | null
   extra: Record<string, unknown>
 }
 
@@ -4410,6 +4416,9 @@ export interface Redistribution {
   source: "connected" | "static" | "bgp" | "ospf" | "isis" | "eigrp" | "kernel"
   policy: { id: string; name: string } | null
   metric: number | null
+  /** IS-IS only; blank = the instance's own level / IPv4. */
+  level: "" | "1" | "2" | "1-2"
+  family: "" | "ipv4" | "ipv6"
   extra: Record<string, unknown>
 }
 
@@ -4439,6 +4448,11 @@ export interface BGPInstance {
   router_id: string
   cluster_id: string
   graceful_restart: boolean
+  /** `distance bgp <ebgp> <ibgp> <local>` - all three or none. */
+  distance_ebgp: number | null
+  distance_ibgp: number | null
+  distance_local: number | null
+  bestpath_multipath_relax: boolean
   bfd: boolean
   bfd_profile: BFDProfileMini | null
   address_families: BGPAddressFamily[]
@@ -4493,6 +4507,9 @@ export interface BGPSessionEffective {
   as_override: boolean | null
   remove_private_as: boolean | null
   soft_reconfiguration: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  capability_extended_nexthop: boolean | null
+  ttl_security_hops: number | null
   extra: Record<string, unknown>
   remote_asn_mode: RemoteAsnMode
   remote_asn: number | null
@@ -4624,6 +4641,20 @@ export interface ISISInstance extends IGPInstanceBase {
   metric_style: "wide" | "narrow" | "transition"
   authentication: "none" | "text" | "md5"
   keychain: { id: string; name: string; algorithm: string } | null
+  /** Timers and LSP settings; null = the platform default. */
+  lsp_gen_interval: number | null
+  spf_interval: number | null
+  lsp_mtu: number | null
+  /** spf-delay-ietf: all five or none. */
+  spf_init_delay: number | null
+  spf_short_delay: number | null
+  spf_long_delay: number | null
+  spf_holddown: number | null
+  spf_time_to_learn: number | null
+  log_adjacency_changes: boolean
+  /** default-information originate, per family. */
+  default_originate_ipv4: "" | "on" | "always"
+  default_originate_ipv6: "" | "on" | "always"
   interfaces: ISISInterface[]
 }
 

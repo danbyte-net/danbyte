@@ -80,6 +80,10 @@ export function knobRows(
     },
     { label: "eBGP multihop", value: numOr(k.ebgp_multihop, unset) },
     { label: "Default originate", value: onOff(k.default_originate, unset) },
+    {
+      label: "Default originate policy",
+      value: nameOr(k.default_originate_policy, unset, "/routing-policies/$id"),
+    },
     { label: "Maximum prefix", value: numOr(k.maximum_prefix, unset) },
     { label: "Allowas-in", value: numOr(k.allowas_in, unset) },
     { label: "AS override", value: onOff(k.as_override, unset) },
@@ -93,6 +97,11 @@ export function knobRows(
       label: "Route reflector client",
       value: onOff(k.route_reflector_client, unset),
     },
+    {
+      label: "Extended next-hop",
+      value: onOff(k.capability_extended_nexthop, unset),
+    },
+    { label: "TTL security hops", value: numOr(k.ttl_security_hops, unset) },
     {
       label: "Send community",
       value: k.send_community ? (

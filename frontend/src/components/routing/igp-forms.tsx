@@ -94,18 +94,42 @@ interface RedistDraft {
   source: string
   policyId: string | null
   metric: string
+  /** IS-IS only: the level and family the row redistributes into. */
+  level: string
+  family: string
 }
 
 const NONE = "__none__"
+
+/** IS-IS level words, blank = the instance's own level. */
+const REDIST_LEVELS = [
+  { value: NONE, label: "Instance" },
+  { value: "1", label: "Level 1" },
+  { value: "2", label: "Level 2" },
+  { value: "1-2", label: "Level 1-2" },
+]
+/** default-information originate, per family. */
+const DEFAULT_ORIGINATE = [
+  { value: NONE, label: "No" },
+  { value: "on", label: "When a default exists" },
+  { value: "always", label: "Always" },
+]
+const REDIST_FAMILIES = [
+  { value: "ipv4", label: "IPv4" },
+  { value: "ipv6", label: "IPv6" },
+]
 
 function RedistributeSection({
   rows,
   onChange,
   error,
+  isis = false,
 }: {
   rows: RedistDraft[]
   onChange: (rows: RedistDraft[]) => void
   error?: string
+  /** IS-IS redistributes per level and family; the other IGPs do not. */
+  isis?: boolean
 }) {
   const policies = usePickList<{ id: string; name: string }>(
     "routing-policies",
@@ -124,6 +148,12 @@ function RedistributeSection({
         onChange={onChange}
         headers={[
           { label: "Source", width: "w-32" },
+          ...(isis
+            ? [
+                { label: "Family", width: "w-24" },
+                { label: "Level", width: "w-28" },
+              ]
+            : []),
           { label: "Policy", width: "w-48" },
           { label: "Metric", width: "w-24" },
         ]}
@@ -132,6 +162,8 @@ function RedistributeSection({
           source: "connected",
           policyId: null,
           metric: "",
+          level: "",
+          family: "ipv4",
         })}
         addLabel="Add source"
         emptyText="Nothing redistributed."
@@ -143,6 +175,24 @@ function RedistributeSection({
             options={SOURCES}
             width="w-32"
           />,
+          ...(isis
+            ? [
+                <CellSelect
+                  key="fam"
+                  value={r.family || "ipv4"}
+                  onChange={(v) => update({ family: v })}
+                  options={REDIST_FAMILIES}
+                  width="w-24"
+                />,
+                <CellSelect
+                  key="lvl"
+                  value={r.level || NONE}
+                  onChange={(v) => update({ level: v === NONE ? "" : v })}
+                  options={REDIST_LEVELS}
+                  width="w-28"
+                />,
+              ]
+            : []),
           <CellSelect
             key="pol"
             value={r.policyId ?? NONE}
@@ -168,6 +218,8 @@ const redistFrom = (
     source: string
     policy: { id: string } | null
     metric: number | null
+    level?: string
+    family?: string
   }[]
 ) =>
   rows.map((r, i) => ({
@@ -175,12 +227,15 @@ const redistFrom = (
     source: r.source,
     policyId: r.policy?.id ?? null,
     metric: numText(r.metric),
+    level: r.level ?? "",
+    family: r.family ?? "",
   }))
-const redistPayload = (rows: RedistDraft[]) =>
+const redistPayload = (rows: RedistDraft[], isis = false) =>
   rows.map((r) => ({
     source: r.source,
     policy_id: r.policyId || null,
     metric: numOrNull(r.metric),
+    ...(isis ? { level: r.level, family: r.family || "ipv4" } : {}),
   }))
 
 // ─── OSPF area ───────────────────────────────────────────────────────────────
@@ -734,6 +789,23 @@ export function ISISInstanceForm({
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
     item?.custom_fields ?? {}
   )
+  // Timers and LSP settings. Blank = the platform default, so a template
+  // prints nothing for it.
+  const [lspGen, setLspGen] = useState(numText(item?.lsp_gen_interval))
+  const [spfInterval, setSpfInterval] = useState(numText(item?.spf_interval))
+  const [lspMtu, setLspMtu] = useState(numText(item?.lsp_mtu))
+  const [spfInit, setSpfInit] = useState(numText(item?.spf_init_delay))
+  const [spfShort, setSpfShort] = useState(numText(item?.spf_short_delay))
+  const [spfLong, setSpfLong] = useState(numText(item?.spf_long_delay))
+  const [spfHold, setSpfHold] = useState(numText(item?.spf_holddown))
+  const [spfLearn, setSpfLearn] = useState(numText(item?.spf_time_to_learn))
+  const [logAdj, setLogAdj] = useState(item?.log_adjacency_changes ?? false)
+  const [defV4, setDefV4] = useState<string | null>(
+    item?.default_originate_ipv4 || NONE
+  )
+  const [defV6, setDefV6] = useState<string | null>(
+    item?.default_originate_ipv6 || NONE
+  )
   const vrfs = useVrfs()
   const statuses = useInstanceStatuses()
   useEffect(() => {
@@ -774,7 +846,18 @@ export function ISISInstanceForm({
           bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           status_id: statusId,
           description: description.trim(),
-          redistributions: redistPayload(redist),
+          redistributions: redistPayload(redist, true),
+          lsp_gen_interval: numOrNull(lspGen),
+          spf_interval: numOrNull(spfInterval),
+          lsp_mtu: numOrNull(lspMtu),
+          spf_init_delay: numOrNull(spfInit),
+          spf_short_delay: numOrNull(spfShort),
+          spf_long_delay: numOrNull(spfLong),
+          spf_holddown: numOrNull(spfHold),
+          spf_time_to_learn: numOrNull(spfLearn),
+          log_adjacency_changes: logAdj,
+          default_originate_ipv4: defV4 === NONE ? "" : (defV4 ?? ""),
+          default_originate_ipv6: defV6 === NONE ? "" : (defV6 ?? ""),
           tag_ids: tagIds,
           custom_fields: customFields,
         })
@@ -889,10 +972,98 @@ export function ISISInstanceForm({
           onChange={setCustomFields}
         />
       </FormSection>
+      <FormSection title="Timers & LSP" card>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="LSP gen interval"
+            type="number"
+            value={lspGen}
+            onChange={setLspGen}
+            placeholder="platform default"
+            error={fieldErrors.lsp_gen_interval}
+          />
+          <FormText
+            label="SPF interval"
+            type="number"
+            value={spfInterval}
+            onChange={setSpfInterval}
+            placeholder="platform default"
+            error={fieldErrors.spf_interval}
+          />
+          <FormText
+            label="LSP MTU"
+            type="number"
+            value={lspMtu}
+            onChange={setLspMtu}
+            placeholder="platform default"
+            error={fieldErrors.lsp_mtu}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-5">
+          <FormText
+            label="SPF init delay"
+            type="number"
+            value={spfInit}
+            onChange={setSpfInit}
+            info="spf-delay-ietf takes all five values or none."
+            error={fieldErrors.spf_init_delay}
+          />
+          <FormText
+            label="Short delay"
+            type="number"
+            value={spfShort}
+            onChange={setSpfShort}
+            error={fieldErrors.spf_short_delay}
+          />
+          <FormText
+            label="Long delay"
+            type="number"
+            value={spfLong}
+            onChange={setSpfLong}
+            error={fieldErrors.spf_long_delay}
+          />
+          <FormText
+            label="Holddown"
+            type="number"
+            value={spfHold}
+            onChange={setSpfHold}
+            error={fieldErrors.spf_holddown}
+          />
+          <FormText
+            label="Time to learn"
+            type="number"
+            value={spfLearn}
+            onChange={setSpfLearn}
+            error={fieldErrors.spf_time_to_learn}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormSelect
+            label="Default route IPv4"
+            value={defV4}
+            onChange={setDefV4}
+            options={DEFAULT_ORIGINATE}
+          />
+          <FormSelect
+            label="Default route IPv6"
+            value={defV6}
+            onChange={setDefV6}
+            options={DEFAULT_ORIGINATE}
+          />
+          <div className="flex items-end pb-1">
+            <FormCheckbox
+              label="Log adjacency changes"
+              checked={logAdj}
+              onChange={setLogAdj}
+            />
+          </div>
+        </div>
+      </FormSection>
       <RedistributeSection
         rows={redist}
         onChange={setRedist}
         error={fieldErrors.redistributions}
+        isis
       />
       <FormFooter
         onCancel={onCancel}

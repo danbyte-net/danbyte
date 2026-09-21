@@ -342,7 +342,9 @@ class BGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
     queryset = BGPInstance.objects.all()
     serializer_class = BGPInstanceSerializer
     pagination_class = StandardPagination
-    clone_fields = ("vrf", "asn", "cluster_id", "graceful_restart", "bfd", "status")
+    clone_fields = ("vrf", "asn", "cluster_id", "graceful_restart", "bfd", "status",
+                    "distance_ebgp", "distance_ibgp", "distance_local",
+                    "bestpath_multipath_relax")
 
     def get_queryset(self):
         qs = (
@@ -448,7 +450,9 @@ class BGPPeerGroupViewSet(_CatalogViewSet):
                     "update_source", "address_families", "import_policy",
                     "export_policy", "bfd", "ebgp_multihop", "next_hop_self",
                     "route_reflector_client", "send_community", "keepalive",
-                    "hold_time", "keychain", "extra")
+                    "hold_time", "keychain", "capability_extended_nexthop",
+                    "ttl_security_hops", "default_originate",
+                    "default_originate_policy", "extra")
 
     def get_queryset(self):
         qs = (
@@ -478,7 +482,9 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
                     "local_asn", "local_address", "address_families",
                     "import_policy", "export_policy", "bfd", "ebgp_multihop",
                     "next_hop_self", "route_reflector_client", "send_community",
-                    "keepalive", "hold_time", "keychain", "status", "extra")
+                    "keepalive", "hold_time", "keychain", "status",
+                    "capability_extended_nexthop", "ttl_security_hops",
+                    "default_originate", "default_originate_policy", "extra")
 
     def get_queryset(self):
         qs = (
@@ -661,7 +667,11 @@ class ISISInstanceViewSet(_IGPInstanceViewSet):
     text_search_fields = ("process", "net")
     editable_str_fields = ("description", "process", "net")
     clone_fields = ("vrf", "process", "level", "metric_style", "bfd",
-                    "authentication", "keychain", "status")
+                    "authentication", "keychain", "status",
+                    "lsp_gen_interval", "spf_interval", "lsp_mtu",
+                    "spf_init_delay", "spf_short_delay", "spf_long_delay",
+                    "spf_holddown", "spf_time_to_learn", "log_adjacency_changes",
+                    "default_originate_ipv4", "default_originate_ipv6")
 
 
 class OSPFInterfaceViewSet(_RuleViewSet):

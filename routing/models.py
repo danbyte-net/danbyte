@@ -563,6 +563,13 @@ class BGPInstance(_DeviceInstance):
     )
     cluster_id = models.CharField(max_length=64, blank=True, default="")
     graceful_restart = models.BooleanField(default=False)
+    #: ``distance bgp <ebgp> <ibgp> <local>`` - all three or none.
+    distance_ebgp = models.PositiveSmallIntegerField(null=True, blank=True)
+    distance_ibgp = models.PositiveSmallIntegerField(null=True, blank=True)
+    distance_local = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: ``bgp bestpath as-path multipath-relax`` - ECMP across differing paths
+    #: of equal length, which every leaf-spine fabric turns on.
+    bestpath_multipath_relax = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["device__name", "vrf__name"]
@@ -648,6 +655,12 @@ class Redistribution(models.Model):
         related_name="redistributions",
     )
     metric = models.PositiveIntegerField(null=True, blank=True)
+    #: IS-IS only: ``redistribute <family> <source> level-<n>``. Blank = the
+    #: instance's own level and IPv4.
+    level = models.CharField(max_length=3, blank=True, default="")
+    family = models.CharField(
+        max_length=4, choices=FAMILY_CHOICES, blank=True, default=""
+    )
     extra = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -699,6 +712,16 @@ class _PeerKnobs(models.Model):
     hold_time = models.PositiveSmallIntegerField(null=True, blank=True)
     #: ``neighbor X default-originate``.
     default_originate = models.BooleanField(null=True, blank=True)
+    #: ``neighbor X default-originate route-map <policy>``.
+    default_originate_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="%(class)s_default_originates",
+    )
+    #: RFC 5549 - IPv4 routes over an IPv6 next hop. Every unnumbered EVPN
+    #: fabric session carries it.
+    capability_extended_nexthop = models.BooleanField(null=True, blank=True)
+    #: GTSM (RFC 5082) hop count; null = off.
+    ttl_security_hops = models.PositiveSmallIntegerField(null=True, blank=True)
     #: ``neighbor X maximum-prefix N`` - the session drops past it.
     maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
     #: ``neighbor X allowas-in N`` - times the local AS may appear in a path.
@@ -723,8 +746,10 @@ class _PeerKnobs(models.Model):
 PEER_KNOBS = (
     "address_families", "import_policy", "export_policy", "bfd", "bfd_profile",
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
-    "keepalive", "hold_time", "keychain", "default_originate", "maximum_prefix",
+    "keepalive", "hold_time", "keychain", "default_originate",
+    "default_originate_policy", "maximum_prefix",
     "allowas_in", "as_override", "remove_private_as", "soft_reconfiguration",
+    "capability_extended_nexthop", "ttl_security_hops",
 )
 
 
@@ -1083,6 +1108,35 @@ class ISISInstance(_DeviceInstance):
         RoutingKeychain, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="isis_instances",
     )
+    # ── Timers and LSP settings. Null = the platform default, and a template
+    # prints nothing, so a stanza only carries what an operator set.
+    lsp_gen_interval = models.PositiveSmallIntegerField(null=True, blank=True)
+    spf_interval = models.PositiveSmallIntegerField(null=True, blank=True)
+    lsp_mtu = models.PositiveIntegerField(null=True, blank=True)
+    #: ``spf-delay-ietf init-delay A short-delay B long-delay C holddown D
+    #: time-to-learn E`` - five values that only make sense together; the
+    #: render context folds them into one object.
+    spf_init_delay = models.PositiveIntegerField(null=True, blank=True)
+    spf_short_delay = models.PositiveIntegerField(null=True, blank=True)
+    spf_long_delay = models.PositiveIntegerField(null=True, blank=True)
+    spf_holddown = models.PositiveIntegerField(null=True, blank=True)
+    spf_time_to_learn = models.PositiveIntegerField(null=True, blank=True)
+    log_adjacency_changes = models.BooleanField(default=False)
+    #: ``default-information originate <family> <level> [always]``.
+    DEFAULT_ORIGINATE_CHOICES = [
+        ("", "No"),
+        ("on", "When a default exists"),
+        ("always", "Always"),
+    ]
+    default_originate_ipv4 = models.CharField(
+        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default=""
+    )
+    default_originate_ipv6 = models.CharField(
+        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default=""
+    )
+
+    #: The words FRR uses for each level, for a template that prints them.
+    LEVEL_FRR = {"1": "level-1", "2": "level-2-only", "1-2": "level-1-2"}
 
     class Meta:
         ordering = ["device__name", "process"]

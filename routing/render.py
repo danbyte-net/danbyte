@@ -214,7 +214,7 @@ def _name(obj) -> str | None:
 def session_dict(s, policies: set[str]) -> dict:
     """One neighbour with every knob resolved (session → group → instance)."""
     eff = s.effective()
-    for key in ("import_policy", "export_policy"):
+    for key in ("import_policy", "export_policy", "default_originate_policy"):
         if eff[key] is not None:
             policies.add(eff[key].name)
     local = s.local_address if s.local_address_id else None
@@ -224,6 +224,12 @@ def session_dict(s, policies: set[str]) -> dict:
         "peer_group": s.peer_group.name if s.peer_group_id else None,
         "remote_asn": eff["remote_asn"],
         "remote_asn_mode": eff["remote_asn_mode"],
+        # The number a running config shows: "internal" is the local AS,
+        # "external" has no single number, and "asn" is the number itself.
+        "remote_asn_effective": (
+            eff["local_asn"] if eff["remote_asn_mode"] == "internal"
+            else eff["remote_asn"]
+        ),
         "kind": eff["kind"],
         "local_asn": eff["local_asn"],
         "local_address": {
@@ -248,11 +254,20 @@ def session_dict(s, policies: set[str]) -> dict:
         "hold_time": eff["hold_time"],
         "keychain": _name(eff["keychain"]),
         "default_originate": bool(eff["default_originate"]),
+        "default_originate_policy": _name(eff["default_originate_policy"]),
         "maximum_prefix": eff["maximum_prefix"],
         "allowas_in": eff["allowas_in"],
         "as_override": bool(eff["as_override"]),
         "remove_private_as": bool(eff["remove_private_as"]),
         "soft_reconfiguration": bool(eff["soft_reconfiguration"]),
+        "capability_extended_nexthop": bool(eff["capability_extended_nexthop"]),
+        "ttl_security_hops": eff["ttl_security_hops"],
+        # True when the group already says it, so a template can print the
+        # line once at group level and skip it per session.
+        "route_reflector_client_from_group": bool(
+            s.peer_group_id and s.peer_group.route_reflector_client
+            and s.route_reflector_client is None
+        ),
         "description": s.description or "",
         "extra": eff["extra"],
     }
@@ -302,6 +317,8 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
     for s in inst.sessions.all():
         if s.peer_group_id and s.peer_group.name not in groups:
             g = s.peer_group
+            if g.default_originate_policy_id:
+                policies.add(g.default_originate_policy.name)
             groups[g.name] = {
                 "name": g.name,
                 "remote_asn": g.remote_asn,
@@ -322,11 +339,15 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
                 "hold_time": g.hold_time,
                 "keychain": _name(g.keychain) if g.keychain_id else None,
                 "default_originate": bool(g.default_originate),
+                "default_originate_policy": _name(g.default_originate_policy)
+                if g.default_originate_policy_id else None,
                 "maximum_prefix": g.maximum_prefix,
                 "allowas_in": g.allowas_in,
                 "as_override": bool(g.as_override),
                 "remove_private_as": bool(g.remove_private_as),
                 "soft_reconfiguration": bool(g.soft_reconfiguration),
+                "capability_extended_nexthop": bool(g.capability_extended_nexthop),
+                "ttl_security_hops": g.ttl_security_hops,
                 "extra": g.extra or {},
             }
     return {
@@ -336,6 +357,13 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
         "router_id": inst.router_id or None,
         "cluster_id": inst.cluster_id or None,
         "graceful_restart": inst.graceful_restart,
+        # One object or None: `distance bgp` takes all three at once.
+        "distance": {
+            "ebgp": inst.distance_ebgp,
+            "ibgp": inst.distance_ibgp,
+            "local": inst.distance_local,
+        } if inst.distance_ebgp is not None else None,
+        "bestpath_multipath_relax": inst.bestpath_multipath_relax,
         "bfd": inst.bfd,
         "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "address_families": afs,
@@ -346,17 +374,26 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
     }
 
 
-def _redistribute(rows, policies: set[str]) -> list[dict]:
+def _redistribute(rows, policies: set[str], *, level: str = "") -> list[dict]:
+    """``level``/``family`` are IS-IS words; a row that leaves them blank
+    inherits the instance's level and speaks IPv4, and ``level_frr`` is the
+    keyword FRR wants for whichever applies."""
     out = []
     for r in rows:
         if r.policy_id:
             policies.add(r.policy.name)
-        out.append({
+        row = {
             "source": r.source,
             "policy": r.policy.name if r.policy_id else None,
             "metric": r.metric,
-            **(r.extra or {}),
-        })
+        }
+        if level:  # an IS-IS instance; OSPF and EIGRP have no levels
+            lvl = r.level or level
+            row["level"] = lvl
+            row["level_frr"] = ISISInstance.LEVEL_FRR.get(lvl)
+            row["family"] = r.family or "ipv4"
+        row.update(r.extra or {})
+        out.append(row)
     return out
 
 
@@ -409,6 +446,7 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
             "interface": row.interface.name,
             "families": list(row.families or ["ipv4"]),
             "level": row.level or inst.level,
+            "level_frr": ISISInstance.LEVEL_FRR.get(row.level or inst.level),
             "metric": row.metric,
             "metric_l2": row.metric_l2,
             "network_type": row.network_type or None,
@@ -429,12 +467,39 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
         "net": inst.net,
         "router_id": inst.router_id or None,
         "level": inst.level,
+        # The keyword FRR wants (`is-type level-2-only`), so a template does
+        # not keep its own mapping of Danbyte's short values.
+        "level_frr": ISISInstance.LEVEL_FRR.get(inst.level),
         "metric_style": inst.metric_style,
         "bfd": inst.bfd,
         "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
         "authentication": inst.authentication if inst.authentication != "none" else None,
         "keychain": inst.keychain.name if inst.keychain_id else None,
-        "redistribute": _redistribute(inst.redistributions.all(), policies),
+        "lsp_gen_interval": inst.lsp_gen_interval,
+        "spf_interval": inst.spf_interval,
+        "lsp_mtu": inst.lsp_mtu,
+        # One object or None: the five values only mean anything together.
+        "spf_delay_ietf": {
+            "init_delay": inst.spf_init_delay,
+            "short_delay": inst.spf_short_delay,
+            "long_delay": inst.spf_long_delay,
+            "holddown": inst.spf_holddown,
+            "time_to_learn": inst.spf_time_to_learn,
+        } if any(v is not None for v in (
+            inst.spf_init_delay, inst.spf_short_delay, inst.spf_long_delay,
+            inst.spf_holddown, inst.spf_time_to_learn,
+        )) else None,
+        "log_adjacency_changes": inst.log_adjacency_changes,
+        # {"ipv4": "always", "ipv6": "on"} - only the families that originate.
+        "default_originate": {
+            fam: mode for fam, mode in (
+                ("ipv4", inst.default_originate_ipv4),
+                ("ipv6", inst.default_originate_ipv6),
+            ) if mode
+        },
+        "redistribute": _redistribute(
+            inst.redistributions.all(), policies, level=inst.level
+        ),
         "interfaces": sorted(ifaces, key=lambda i: i["interface"]),
         "description": inst.description or "",
         "extra": inst.extra or {},
@@ -700,4 +765,31 @@ def routing_context(device) -> dict:
     # by that name, so a template does not search the lists.
     out["keychain_by_name"] = {k["name"]: k for k in out["keychains"]}
     out["bfd_profile_by_name"] = {p["name"]: p for p in out["bfd_profiles"]}
+    # The profiles this device actually names, in the order the full list has
+    # them. `bfd_profiles` stays the tenant's whole catalog, so a template
+    # that prints every profile keeps working; one that wants only the
+    # profiles in use loops this instead of rendering a `wan` profile on a
+    # box with nothing but fabric ports.
+    used = _used_bfd_profile_names(out)
+    out["used_bfd_profiles"] = [p for p in out["bfd_profiles"] if p["name"] in used]
     return out
+
+
+def _used_bfd_profile_names(block: dict) -> set[str]:
+    """Every ``bfd_profile`` value named anywhere in a rendered routing block."""
+    found: set[str] = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            name = node.get("bfd_profile")
+            if isinstance(name, str) and name:
+                found.add(name)
+            for key, value in node.items():
+                if key not in ("bfd_profiles", "bfd_profile_by_name"):
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(block)
+    return found

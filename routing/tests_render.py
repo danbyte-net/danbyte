@@ -278,7 +278,7 @@ class FabricTemplateTests(APITestCase):
             "interface Ethernet1/49\n description to spine1\n ip address 10.0.1.1/31\n ip router isis UNDERLAY\n isis network point-to-point\n isis bfd",
             "interface Loopback0\n ip address 10.255.0.11/32\n ip router isis UNDERLAY\n isis passive",
             "interface Vlan100 vrf TENANT-A",
-            "router isis UNDERLAY\n net 49.0001.0000.0011.0000.00\n is-type level-2\n metric-style wide\n area-password md5 <FABRIC>",
+            "router isis UNDERLAY\n net 49.0001.0000.0011.0000.00\n is-type level-2-only\n metric-style wide\n area-password md5 <FABRIC>",
             "router bgp 65100\n bgp router-id 10.255.0.11\n neighbor SPINES peer-group\n neighbor SPINES remote-as internal\n neighbor SPINES update-source Loopback0\n neighbor SPINES bfd\n neighbor SPINES password <FABRIC>\n neighbor 10.255.0.1 peer-group SPINES",
             " address-family l2vpn evpn\n  neighbor SPINES activate\n  neighbor 10.255.0.1 activate\n  neighbor 10.255.0.1 route-map EVPN-EXPORT out",
             "  advertise-all-vni\n  vni 10100\n   route-target import 65100:10100\n   route-target export 65100:10100\n  exit-vni",
@@ -288,6 +288,8 @@ class FabricTemplateTests(APITestCase):
             self.assertIn(line, out, out)
         spine = self._render("frr", self.spine)
         self.assertIn(" bgp cluster-id 10.255.0.0", spine)
-        self.assertIn(" neighbor 10.255.0.11 remote-as internal", spine)
+        # An ungrouped internal session prints the AS number, the way the
+        # running config has it - not the word "internal".
+        self.assertIn(" neighbor 10.255.0.11 remote-as 65100", spine)
         self.assertIn("  neighbor 10.255.0.11 route-reflector-client", spine)
         self.assertNotIn("vni", spine.split("router bgp")[1].split("exit")[0])

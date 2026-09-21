@@ -346,6 +346,85 @@ class RenderTests(_Base):
         self.assertEqual(list(ctx["policies"]), ["CONN-OUT"])
 
 
+class FabricKnobTests(_Base):
+    """The IS-IS stanza a fabric router runs is more than net + level: timers,
+    LSP settings and default-information are first-class, and the context
+    speaks FRR's level words so a template keeps no mapping of its own."""
+
+    def test_isis_timers_and_defaults_reach_the_context(self):
+        isis = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="CORE",
+            net="49.0001.0000.0000.0011.00", level="2",
+            lsp_gen_interval=1, spf_interval=1, lsp_mtu=4352,
+            spf_init_delay=50, spf_short_delay=200, spf_long_delay=5000,
+            spf_holddown=5000, spf_time_to_learn=500,
+            log_adjacency_changes=True, default_originate_ipv4="always",
+        )
+        isis.interfaces.create(interface=self.swp2)
+        isis.redistributions.create(source="bgp", policy=self.policy, level="2")
+        isis.redistributions.create(source="connected", family="ipv6")
+
+        i = routing_context(self.leaf)["isis"][0]
+
+        self.assertEqual(i["level_frr"], "level-2-only")
+        self.assertEqual(i["interfaces"][0]["level_frr"], "level-2-only")
+        self.assertEqual(i["lsp_gen_interval"], 1)
+        self.assertEqual(i["lsp_mtu"], 4352)
+        self.assertEqual(
+            i["spf_delay_ietf"],
+            {"init_delay": 50, "short_delay": 200, "long_delay": 5000,
+             "holddown": 5000, "time_to_learn": 500},
+        )
+        self.assertTrue(i["log_adjacency_changes"])
+        self.assertEqual(i["default_originate"], {"ipv4": "always"})
+        by_source = {r["source"]: r for r in i["redistribute"]}
+        self.assertEqual(by_source["bgp"]["level_frr"], "level-2-only")
+        self.assertEqual(by_source["bgp"]["policy"], "CONN-OUT")
+        self.assertEqual(by_source["bgp"]["family"], "ipv4")
+        # A row with no level of its own inherits the instance's.
+        self.assertEqual(by_source["connected"]["level"], "2")
+        self.assertEqual(by_source["connected"]["family"], "ipv6")
+
+    def test_an_unset_instance_renders_nothing_extra(self):
+        isis = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="CORE",
+            net="49.0001.0000.0000.0011.00",
+        )
+        isis.interfaces.create(interface=self.swp2)
+
+        i = routing_context(self.leaf)["isis"][0]
+
+        self.assertIsNone(i["spf_delay_ietf"])
+        self.assertIsNone(i["lsp_gen_interval"])
+        self.assertEqual(i["default_originate"], {})
+        self.assertEqual(i["level_frr"], "level-1-2")
+
+    def test_spf_delay_is_all_five_values_or_none(self):
+        res = self._post("/api/routing/isis-instances/", {
+            "device_id": str(self.leaf.id), "process": "CORE",
+            "net": "49.0001.0000.0000.0011.00",
+            "spf_init_delay": 50, "spf_short_delay": 200,
+        })
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("all five", str(res.json()))
+
+    def test_only_the_bfd_profiles_a_device_names_are_in_used(self):
+        from routing.models import BFDProfile
+
+        fabric = BFDProfile.objects.create(tenant=self.tenant, name="fabric")
+        BFDProfile.objects.create(tenant=self.tenant, name="wan")
+        isis = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="CORE",
+            net="49.0001.0000.0000.0011.00", bfd=True, bfd_profile=fabric,
+        )
+        isis.interfaces.create(interface=self.swp2)
+
+        ctx = routing_context(self.leaf)
+
+        self.assertEqual([p["name"] for p in ctx["bfd_profiles"]], ["fabric", "wan"])
+        self.assertEqual([p["name"] for p in ctx["used_bfd_profiles"]], ["fabric"])
+
+
 class RoutingSearchTests(_Base):
     """``?search=`` on a routing list matches the device name like any other
     list - the viewsets' own search field list no longer shares its name with
