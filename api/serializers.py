@@ -380,13 +380,44 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
             elif filt is True:
                 out[action] = True  # granted, no constraints/site → all rows
             else:
-                # Site- and constraint-aware: one indexed pk lookup per row.
-                out[action] = (
-                    type(obj)._default_manager.filter(pk=obj.pk)
-                    .filter(filt)
-                    .exists()
+                # Site- and constraint-aware. Resolved for the whole page at
+                # once: a site-scoped grant always yields a Q, so this branch
+                # is the normal case for exactly the users it used to cost two
+                # queries per row (#218).
+                out[action] = obj.pk in self._rbac_allowed_pks(
+                    request, obj, action, filt
                 )
         return out
+
+    def _rbac_allowed_pks(self, request, obj, action, filt) -> set:
+        """The pks on this page that ``filt`` admits for ``action``.
+
+        One ``pk__in`` query per page per action, cached on the request and
+        keyed by the list being serialised. A detail view has no parent list,
+        so it still costs the single lookup it always did.
+        """
+        model = type(obj)
+        cache = getattr(request, "_rbac_allowed_pks_cache", None)
+        if cache is None:
+            cache = request._rbac_allowed_pks_cache = {}
+        parent = getattr(self, "parent", None)
+        rows = getattr(parent, "instance", None) if parent is not None else None
+        if rows is None:
+            page = [obj]
+        else:
+            try:
+                page = list(rows)
+            except TypeError:  # a single instance, not a list
+                page = [rows]
+        pks = [r.pk for r in page if isinstance(r, model)] or [obj.pk]
+        key = (model._meta.label_lower, action, id(parent), len(pks))
+        if key not in cache:
+            cache[key] = set(
+                model._default_manager.filter(pk__in=pks)
+                .filter(filt)
+                .values_list("pk", flat=True)
+            )
+        return cache[key]
 
 
 class TaggableSerializerMixin:

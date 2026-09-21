@@ -277,6 +277,52 @@ class DeviceListTests(_Base):
         self.assertEqual(rows["sw-04"]["interface_count"], 0)
         self.assertEqual(rows["sw-04"]["ip_count"], 0)
 
+    def test_a_site_scoped_user_pays_one_permission_query_per_page(self):
+        """A site-scoped grant always yields a Q, so the per-row lookup was
+        the normal case for exactly those users: 2 queries per row (#218)."""
+        from auth_api.models import ObjectPermission, UserProfile
+
+        hq = Site.objects.create(tenant=self.tenant, name="HQ")
+        branch = Site.objects.create(tenant=self.tenant, name="Branch")
+        for i in range(12):
+            Device.objects.create(
+                tenant=self.tenant, name=f"d-{i:02d}",
+                site=hq if i % 2 else branch,
+            )
+        user = User.objects.create_user("scoped", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        view = ObjectPermission.objects.create(
+            name="see", object_types=["device"], actions=["view"]
+        )
+        view.users.add(user)
+        edit = ObjectPermission.objects.create(
+            name="edit-hq", object_types=["device"], actions=["change", "delete"]
+        )
+        edit.users.add(user)
+        edit.sites.set([hq])
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+        small, _ = self._queries("/api/devices/?page_size=4")
+        big, body = self._queries("/api/devices/?page_size=12")
+
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["name"]: r["permissions"] for r in body["results"]}
+        self.assertEqual(len(rows), 12)
+        for name, perms in rows.items():
+            at_hq = int(name[2:]) % 2 == 1
+            self.assertEqual(perms["change"], at_hq, name)
+            self.assertEqual(perms["delete"], at_hq, name)
+        # The detail view agrees with the list.
+        one = Device.objects.get(name="d-01")
+        detail = self.client.get(f"/api/devices/{one.id}/").json()
+        self.assertTrue(detail["permissions"]["change"])
+        other = Device.objects.get(name="d-02")
+        detail = self.client.get(f"/api/devices/{other.id}/").json()
+        self.assertFalse(detail["permissions"]["change"])
+
     def test_a_granted_user_pays_one_tenant_lookup_per_request(self):
         from auth_api.models import ObjectPermission, UserProfile
 
