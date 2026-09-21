@@ -69,6 +69,7 @@ const SPEC_FIELDS: {
   label: string
   fmt: (v: unknown) => string
 }[] = [
+  { key: "name", label: "Name", fmt: (v) => String(v) },
   { key: "vcpus", label: "vCPU", fmt: (v) => String(v) },
   {
     key: "memory_mb",
