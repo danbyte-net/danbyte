@@ -4444,6 +4444,10 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     #: Virtualization sync must not record this NIC's guest-reported IPs
     #: (e.g. a Docker bridge that asserts a new address per container).
     sync_ignore_ips = models.BooleanField(default=False)
+    #: What the guest calls this NIC over SNMP (``ether1``) when it differs
+    #: from the hypervisor's name (``nic0``), so the SNMP interfaces a
+    #: virtual router reports can be read against the NICs Danbyte holds.
+    snmp_name = models.CharField(max_length=128, blank=True, default="")
     mac_address = models.CharField(max_length=17, blank=True)
     mtu = models.IntegerField(null=True, blank=True)
     # Virtual NICs have a real link speed: a VMXNET3 negotiates 10G where an

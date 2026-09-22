@@ -3929,6 +3929,8 @@ export interface VMInterface {
   enabled: boolean
   /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
   sync_ignore_ips: boolean
+  /** The guest's own SNMP name for this NIC, when it differs. */
+  snmp_name: string
   mac_address: string
   mtu: number | null
   speed: string
@@ -3952,6 +3954,7 @@ export interface VMInterfaceWritePayload {
   parent_id?: string | null
   enabled?: boolean
   sync_ignore_ips?: boolean
+  snmp_name?: string
   mac_address?: string
   mtu?: number | null
   speed?: string
