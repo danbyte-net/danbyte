@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Plus, X } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
   BFDProfile,
   Community,
+  EthernetSegment,
   InterfaceOption,
   Paginated,
   RoutingKeychain,
@@ -26,6 +28,8 @@ import {
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { DevicePicker } from "@/components/device-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 import {
   ROUTING_OBJECT_TYPES,
@@ -146,6 +150,252 @@ export function BFDProfileForm({
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Create profile"}
+      />
+    </form>
+  )
+}
+
+// ─── Ethernet segment ────────────────────────────────────────────────────────
+
+const ESI_KINDS = [
+  { value: "type3", label: "Type 3: es-id + system MAC" },
+  { value: "type0", label: "Type 0: full ESI" },
+]
+
+type SegmentMember = EthernetSegment["interfaces"][number]
+
+/** The member ports live on different devices by design, so they are
+ * picked one device at a time: a device, one of its ports, Add. */
+function SegmentMembersField({
+  value,
+  onChange,
+  error,
+}: {
+  value: SegmentMember[]
+  onChange: (v: SegmentMember[]) => void
+  error?: string
+}) {
+  const [device, setDevice] = useState<{ id: string; name: string } | null>(
+    null
+  )
+  const [ifaceId, setIfaceId] = useState<string | null>(null)
+  const interfaces = useQuery({
+    queryKey: ["interfaces-picker", device?.id ?? null],
+    queryFn: () =>
+      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${device!.id}`),
+    enabled: !!device,
+  })
+  const chosen = new Set(value.map((m) => m.id))
+  const options = (interfaces.data?.results ?? [])
+    .filter((i) => !chosen.has(i.id))
+    .map((i) => ({ value: i.id, label: i.name }))
+  const add = () => {
+    const iface = interfaces.data?.results.find((i) => i.id === ifaceId)
+    if (!device || !iface || chosen.has(iface.id)) return
+    onChange([...value, { id: iface.id, name: iface.name, device }])
+    setIfaceId(null)
+  }
+  return (
+    <div className="grid gap-2">
+      <div className="grid gap-3 @md:grid-cols-[1fr_1fr_auto]">
+        <DevicePicker
+          label="Device"
+          value={device?.id ?? null}
+          onChange={(id) => {
+            if (!id) setDevice(null)
+            setIfaceId(null)
+          }}
+          onPickLabel={(id, name) => setDevice({ id, name })}
+        />
+        <FormCombobox
+          label="Interface"
+          value={ifaceId}
+          onChange={setIfaceId}
+          options={options}
+          placeholder={device ? "Pick an interface" : "Pick a device first"}
+          disabled={!device}
+          searchPlaceholder="Search interfaces…"
+          emptyText="No interfaces left on this device."
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="self-end"
+          disabled={!ifaceId}
+          onClick={add}
+        >
+          <Plus className="h-3.5 w-3.5" /> Add
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {value.length === 0 && (
+          <span className="text-xs text-muted-foreground">
+            No member interfaces yet.
+          </span>
+        )}
+        {value.map((m) => (
+          <Badge key={m.id} variant="secondary" className="gap-1 font-mono">
+            {m.device.name}:{m.name}
+            <button
+              type="button"
+              onClick={() => onChange(value.filter((v) => v.id !== m.id))}
+              className="-mr-0.5 inline-flex h-3 w-3 items-center justify-center hover:text-destructive"
+              aria-label={`Remove ${m.device.name}:${m.name}`}
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </Badge>
+        ))}
+      </div>
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
+  )
+}
+
+export function EthernetSegmentForm({
+  item,
+  onSaved,
+  onCancel,
+}: {
+  item?: EthernetSegment
+  onSaved: (v: EthernetSegment) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const [name, setName] = useState(item?.name ?? "")
+  const [kind, setKind] = useState<string | null>(
+    item?.esi ? "type0" : "type3"
+  )
+  const [esi, setEsi] = useState(item?.esi ?? "")
+  const [esId, setEsId] = useState(numText(item?.es_id))
+  const [sysMac, setSysMac] = useState(item?.sys_mac ?? "")
+  const [dfPreference, setDfPreference] = useState(
+    numText(item?.df_preference)
+  )
+  const [members, setMembers] = useState<SegmentMember[]>(
+    item?.interfaces ?? []
+  )
+  const [description, setDescription] = useState(item?.description ?? "")
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(
+    item?.custom_fields ?? {}
+  )
+  const { mutation, fieldErrors } = useRoutingSave<EthernetSegment>({
+    objectType: ROUTING_OBJECT_TYPES.ethernetsegment,
+    endpoint: "/api/routing/ethernet-segments/",
+    queryKey: "ethernet-segments",
+    id: item?.id,
+    label: (v) => v.name,
+    onSaved,
+  })
+  const full = kind === "type0"
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate({
+          name: name.trim(),
+          esi: full ? esi.trim() : "",
+          es_id: full ? null : numOrNull(esId),
+          sys_mac: full ? "" : sysMac.trim(),
+          df_preference: numOrNull(dfPreference),
+          interface_ids: members.map((m) => m.id),
+          description: description.trim(),
+          tag_ids: tagIds,
+          custom_fields: customFields,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="Segment" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Name"
+            required
+            mono
+            autoFocus={!isEdit}
+            value={name}
+            onChange={setName}
+            placeholder="srv01-bond0"
+            error={fieldErrors.name}
+          />
+          <FormSelect
+            label="Identity"
+            value={kind}
+            onChange={setKind}
+            options={ESI_KINDS}
+            info="A type-3 ESI is derived from the es-id and the system MAC every leaf shares; a type-0 ESI is written out in full."
+          />
+        </div>
+        {full ? (
+          <FormText
+            label="ESI"
+            required
+            mono
+            value={esi}
+            onChange={setEsi}
+            placeholder="00:11:22:33:44:55:66:77:88:99"
+            error={fieldErrors.esi}
+          />
+        ) : (
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormText
+              label="ES-ID"
+              required
+              type="number"
+              value={esId}
+              onChange={setEsId}
+              placeholder="1"
+              error={fieldErrors.es_id}
+            />
+            <FormText
+              label="System MAC"
+              required
+              mono
+              value={sysMac}
+              onChange={setSysMac}
+              placeholder="00:1c:73:00:00:01"
+              error={fieldErrors.sys_mac}
+            />
+          </div>
+        )}
+        <FormText
+          label="DF preference"
+          type="number"
+          value={dfPreference}
+          onChange={setDfPreference}
+          info="Designated-forwarder election preference; higher wins."
+          error={fieldErrors.df_preference}
+        />
+      </FormSection>
+      <FormSection title="Interfaces" card>
+        <SegmentMembersField
+          value={members}
+          onChange={setMembers}
+          error={fieldErrors.interface_ids}
+        />
+      </FormSection>
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTags value={tagIds} onChange={setTagIds} label="Tags" />
+        <CustomFieldInputs
+          model="ethernetsegment"
+          value={customFields}
+          onChange={setCustomFields}
+        />
+      </FormSection>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create segment"}
       />
     </form>
   )

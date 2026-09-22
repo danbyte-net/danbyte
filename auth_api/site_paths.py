@@ -70,6 +70,7 @@ SITE_PATHS: dict[str, str] = {
     "eigrpinstance": "device__site",
     "eigrpinterface": "instance__device__site",
     "vtep": "device__site",
+    "ldpinstance": "device__site",
     "vtepmembership": "vtep__device__site",
 }
 

@@ -127,6 +127,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.EIGRPInterface", "EIGRP interfaces", "Routing"),
     ("routing.VTEP", "VTEPs", "Routing"),
     ("routing.VTEPMembership", "VTEP memberships", "Routing"),
+    ("routing.EthernetSegment", "Ethernet segments", "Routing"),
+    ("routing.LDPInstance", "LDP instances", "Routing"),
     ("zabbix.ZabbixConnection", "Zabbix connections", "Monitoring"),
     ("zabbix.ZabbixHostLink", "Zabbix host links", "Monitoring"),
     ("zabbix.ZabbixChange", "Zabbix pending changes", "Monitoring"),
@@ -241,6 +243,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("customization.CustomFieldGroup", "Custom field groups", "Customize"),
     ("api.ConfigContext", "Config contexts", "Customize"),
     ("api.ExportTemplate", "Export templates", "Customize"),
+    ("api.ConfigBundle", "Config bundles", "Customize"),
     ("api.LabelTemplate", "Label templates", "Customize"),
     ("api.DocumentCategory", "Document categories", "Customize"),
     # Documents (files/links) attach to any object; their own view/add/change/

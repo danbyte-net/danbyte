@@ -232,7 +232,7 @@ router bgp {{ inst.asn }}
     description {{ s.description }}
 {% endif %}
 {% if s.keychain %}
-    password 0 <{{ s.keychain }}>
+    password 0 <keychain:{{ s.keychain }}>
 {% endif %}
 {% for af in s.address_families if not s.peer_group %}
     address-family {{ af | replace("-", " ") }}
@@ -287,8 +287,14 @@ ip route {{ r.prefix }} {{ r.next_hop or r.next_hop_interface }}{% if r.distance
 ```
 
 The keychain and BGP password lines print a placeholder: Danbyte never
-puts a secret in a rendered config. A runner that pushes the config swaps
-it for `POST /api/routing/keychains/<id>/reveal-psk/`, an audited read.
+puts a secret in a rendered config. The placeholder is a **contract**:
+`<keychain:NAME>`, exactly that shape, with `NAME` the keychain's name
+(`routing.keychain_by_name[NAME].placeholder` carries it ready-made). A
+tool that pushes the config replaces every match of `<keychain:([^<>\s]+)>`
+with the key - from `POST /api/routing/keychains/<id>/reveal-psk/`, an
+audited read that needs the `reveal` permission, or from its own store.
+Nothing else in a render looks like it, and the shape does not change
+between releases.
 
 ## FRR
 
@@ -350,16 +356,73 @@ interface {{ i.name }}{% if i.vrf %} vrf {{ i.vrf.name }}{% endif %}
  ip ospf network {{ r.ospf.network_type }}
 {% endif %}
 {% endif %}
+{% if r and r.es %}
+{% if r.es.esi %}
+ evpn mh es-id {{ r.es.esi }}
+{% else %}
+ evpn mh es-id {{ r.es.es_id }}
+ evpn mh es-sys-mac {{ r.es.sys_mac }}
+{% endif %}
+{% if r.es.df_preference %}
+ evpn mh es-df-pref {{ r.es.df_preference }}
+{% endif %}
+{% endif %}
+{% if r and r.evpn_mh_uplink %}
+ evpn mh uplink
+{% endif %}
 exit
 !
 {% endfor %}
+{% if routing.ldp %}
+mpls ldp
+{% if routing.ldp.router_id %}
+ router-id {{ routing.ldp.router_id }}
+{% endif %}
+ address-family ipv4
+{% if routing.ldp.transport_address %}
+  discovery transport-address {{ routing.ldp.transport_address }}
+{% endif %}
+{% if routing.ldp.label_allocation == "host-routes" %}
+  label local allocate host-routes
+{% endif %}
+{% for name in routing.ldp.interfaces %}
+  interface {{ name }}
+{% endfor %}
+ exit-address-family
+exit
+!
+{% endif %}
 {% for inst in routing.isis %}
 router isis {{ inst.process }}
  net {{ inst.net }}
- is-type level-{{ inst.level }}
+ is-type {{ inst.level_frr }}
  metric-style {{ inst.metric_style }}
+{% if inst.lsp_gen_interval %}
+ lsp-gen-interval {{ inst.lsp_gen_interval }}
+{% endif %}
+{% if inst.spf_interval %}
+ spf-interval {{ inst.spf_interval }}
+{% endif %}
+{% if inst.spf_delay_ietf %}
+{% set d = inst.spf_delay_ietf %}
+ spf-delay-ietf init-delay {{ d.init_delay }} short-delay {{ d.short_delay }} long-delay {{ d.long_delay }} holddown {{ d.holddown }} time-to-learn {{ d.time_to_learn }}
+{% endif %}
+{% if inst.lsp_mtu %}
+ lsp-mtu {{ inst.lsp_mtu }}
+{% endif %}
+{% if inst.log_adjacency_changes %}
+ log-adjacency-changes
+{% endif %}
+{% for fam, mode in inst.default_originate.items() %}
+ default-information originate {{ fam }} {{ inst.level_frr }}{% if mode == "always" %} always{% endif %}
+
+{% endfor %}
+{% for rd in inst.redistribute %}
+ redistribute {{ rd.family }} {{ rd.source }} {{ rd.level_frr }}{% if rd.policy %} route-map {{ rd.policy }}{% endif %}
+
+{% endfor %}
 {% if inst.keychain %}
- area-password md5 <{{ inst.keychain }}>
+ area-password md5 <keychain:{{ inst.keychain }}>
 {% endif %}
 exit
 !
@@ -382,6 +445,12 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% if inst.cluster_id %}
  bgp cluster-id {{ inst.cluster_id }}
 {% endif %}
+{% if inst.distance %}
+ distance bgp {{ inst.distance.ebgp }} {{ inst.distance.ibgp }} {{ inst.distance.local }}
+{% endif %}
+{% if inst.bestpath_multipath_relax %}
+ bgp bestpath as-path multipath-relax
+{% endif %}
 {% for g in inst.peer_groups %}
  neighbor {{ g.name }} peer-group
 {% if g.remote_asn_mode in ("internal", "external") %}
@@ -395,8 +464,14 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% if g.bfd %}
  neighbor {{ g.name }} bfd
 {% endif %}
+{% if g.capability_extended_nexthop %}
+ neighbor {{ g.name }} capability extended-nexthop
+{% endif %}
+{% if g.ttl_security_hops %}
+ neighbor {{ g.name }} ttl-security hops {{ g.ttl_security_hops }}
+{% endif %}
 {% if g.keychain %}
- neighbor {{ g.name }} password <{{ g.keychain }}>
+ neighbor {{ g.name }} password <keychain:{{ g.keychain }}>
 {% endif %}
 {% endfor %}
 {% for s in inst.sessions %}
@@ -407,15 +482,21 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% elif s.peer_group %}
  neighbor {{ who }} peer-group {{ s.peer_group }}
 {% else %}
- neighbor {{ who }} remote-as {{ s.remote_asn_mode if s.remote_asn_mode in ("internal", "external") else s.remote_asn }}
+ neighbor {{ who }} remote-as {{ s.remote_asn_effective }}
 {% if s.update_source %}
  neighbor {{ who }} update-source {{ s.update_source }}
 {% endif %}
 {% if s.bfd %}
  neighbor {{ who }} bfd
 {% endif %}
+{% if s.capability_extended_nexthop %}
+ neighbor {{ who }} capability extended-nexthop
+{% endif %}
+{% if s.ttl_security_hops %}
+ neighbor {{ who }} ttl-security hops {{ s.ttl_security_hops }}
+{% endif %}
 {% if s.keychain %}
- neighbor {{ who }} password <{{ s.keychain }}>
+ neighbor {{ who }} password <keychain:{{ s.keychain }}>
 {% endif %}
 {% endif %}
 {% if s.description %}
@@ -424,6 +505,28 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% endfor %}
 {% for af in inst.address_families %}
  address-family {{ af.afi_safi | replace("-", " ") }}
+{% if inst.vpn and inst.vrf and af.afi_safi == "ipv4-unicast" %}
+{% set vrf = routing.vrfs | selectattr("name", "equalto", inst.vrf) | first %}
+  rd vpn export {{ vrf.rd }}
+{% for rt in vrf.import_targets %}
+  rt vpn import {{ rt }}
+{% endfor %}
+{% for rt in vrf.export_targets %}
+  rt vpn export {{ rt }}
+{% endfor %}
+{% if inst.vpn.label_export %}
+  label vpn export {{ inst.vpn.label_export }}
+{% endif %}
+{% if inst.vpn.nexthop_export %}
+  nexthop vpn export {{ inst.vpn.nexthop_export }}
+{% endif %}
+{% if inst.vpn.import %}
+  import vpn
+{% endif %}
+{% if inst.vpn.export %}
+  export vpn
+{% endif %}
+{% endif %}
 {% for n in af.networks %}
   network {{ n }}
 {% endfor %}
@@ -439,6 +542,10 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% if g.route_reflector_client %}
   neighbor {{ g.name }} route-reflector-client
 {% endif %}
+{% if g.default_originate %}
+  neighbor {{ g.name }} default-originate{% if g.default_originate_policy %} route-map {{ g.default_originate_policy }}{% endif %}
+
+{% endif %}
 {% if g.send_community in ("both", "extended") and af.afi_safi != "l2vpn-evpn" %}
   neighbor {{ g.name }} send-community extended
 {% endif %}
@@ -446,8 +553,12 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
 {% for s in inst.sessions if af.afi_safi in s.address_families %}
 {% set who = s.remote_address or s.interface %}
   neighbor {{ who }} activate
-{% if s.route_reflector_client and not s.peer_group %}
+{% if s.route_reflector_client and not s.route_reflector_client_from_group %}
   neighbor {{ who }} route-reflector-client
+{% endif %}
+{% if s.default_originate and not s.peer_group %}
+  neighbor {{ who }} default-originate{% if s.default_originate_policy %} route-map {{ s.default_originate_policy }}{% endif %}
+
 {% endif %}
 {% if s.send_community in ("both", "extended") and not s.peer_group and af.afi_safi != "l2vpn-evpn" %}
   neighbor {{ who }} send-community extended

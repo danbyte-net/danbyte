@@ -526,6 +526,7 @@ function VMInterfaceForm({
   const [enabled, setEnabled] = useState(iface?.enabled ?? true)
   const [ignoreIps, setIgnoreIps] = useState(iface?.sync_ignore_ips ?? false)
   const [mac, setMac] = useState(iface?.mac_address ?? "")
+  const [snmpName, setSnmpName] = useState(iface?.snmp_name ?? "")
   const [mtu, setMtu] = useState(iface?.mtu != null ? String(iface.mtu) : "")
   const [speed, setSpeed] = useState(iface?.speed ?? "")
   const [description, setDescription] = useState(iface?.description ?? "")
@@ -562,6 +563,7 @@ function VMInterfaceForm({
         parent_id: parentId,
         enabled,
         sync_ignore_ips: ignoreIps,
+        snmp_name: snmpName.trim(),
         // A tunnel/loopback has no meaningful MAC or link speed (#140).
         mac_address: kind === "tunnel" || kind === "loopback" ? "" : mac.trim(),
         mtu: mtu.trim() === "" ? null : Number(mtu),
@@ -656,6 +658,15 @@ function VMInterfaceForm({
               onChange={setSpeed}
               placeholder="10G, 1G, 25G…"
               error={fieldErrors.speed}
+            />
+            <FormText
+              label="SNMP name"
+              value={snmpName}
+              onChange={setSnmpName}
+              mono
+              placeholder="ether1"
+              info="What the guest calls this NIC over SNMP when it differs from the hypervisor's name, so the SNMP card can read them against each other."
+              error={fieldErrors.snmp_name}
             />
           </>
         )}

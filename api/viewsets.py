@@ -60,7 +60,7 @@ from .models import (
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
-    Region, Location, ConfigContext, ExportTemplate, LabelTemplate,
+    Region, Location, ConfigBundle, ConfigContext, ExportTemplate, LabelTemplate,
     Document, DocumentCategory,
     materialize_device_components, resolve_config_template,
     sync_positional_interface_names,
@@ -133,6 +133,7 @@ from .serializers import (
     LocationSerializer,
     LocationMiniSerializer,
     ConfigContextSerializer,
+    ConfigBundleSerializer,
     ExportTemplateSerializer,
     LabelTemplateSerializer,
     DocumentSerializer,
@@ -3639,33 +3640,202 @@ class DeviceViewSet(
                 })
         return {"front": front, "rear": rear}
 
-    @action(detail=True, methods=["get"])
-    def render(self, request, pk=None):
-        """Render an export template for this device → intended config text.
-        `?template=<export-template-id>` (must be object_type=device). With no
-        template param, falls back to the device's bound config template
-        (device → role → platform resolution).
-        """
-        from jinja2 import TemplateError
-
-        from .export_templates import render_device_config
+    def _render_target(self, request, device):
+        """What ``?template=`` / ``?bundle=`` name for this device: a
+        ``(template, bundle)`` pair with exactly one set, or an error text."""
+        from .config_bundles import BundleLookupError, resolve_bundle
         from .models import ExportTemplate, resolve_config_template
         from .views import _get_active_tenant
 
         tenant = _get_active_tenant(request)
+        bundle_param = request.query_params.get("bundle")
+        if bundle_param:
+            try:
+                return None, resolve_bundle(tenant, device, bundle_param), ""
+            except BundleLookupError as exc:
+                return None, None, str(exc)
         tid = request.query_params.get("template")
         tmpl = ExportTemplate.objects.filter(
             id=tid, tenant=tenant
         ).first() if (tid and tenant) else None
         if tmpl is None and not tid:
-            tmpl = resolve_config_template(self.get_object())
+            tmpl = resolve_config_template(device)
         if tmpl is None:
-            return Response({"detail": "Unknown template."}, status=drf_status.HTTP_400_BAD_REQUEST)
+            return None, None, "Unknown template."
+        return tmpl, None, ""
+
+    @action(detail=True, methods=["get"])
+    def render(self, request, pk=None):
+        """Render this device's intended config.
+
+        ``?template=<export-template-id>`` renders one file (the device's
+        bound config template when omitted) and answers ``{output, template,
+        path, sha256, pushed, drift, diff}``. ``?bundle=<id|name|role>``
+        renders every file of a bundle as ``{bundle, files: {path: {...}}}``;
+        add ``&archive=tar`` for a tarball. ``pushed``/``drift``/``diff`` say
+        how the render compares with what a push tool last recorded.
+        """
+        from django.http import HttpResponse
+        from jinja2 import TemplateError
+
+        from .config_bundles import (
+            attach_push_state,
+            render_bundle,
+            render_file,
+            tar_of,
+        )
+
+        device = self.get_object()
+        tmpl, bundle, error = self._render_target(request, device)
+        if error:
+            return Response({"detail": error}, status=drf_status.HTTP_400_BAD_REQUEST)
         try:
-            output = render_device_config(tmpl, self.get_object(), tmpl.tenant)
+            if bundle is not None:
+                files = attach_push_state(device, render_bundle(bundle, device))
+            else:
+                row = render_file(tmpl, device)
+                files = attach_push_state(device, {row["path"]: row})
         except (TemplateError, ValueError) as exc:
             return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
-        return Response({"output": output, "template": tmpl.name})
+        if request.query_params.get("archive") == "tar":
+            resp = HttpResponse(tar_of(files, device.name), content_type="application/x-tar")
+            resp["Content-Disposition"] = f'attachment; filename="{device.name}.tar"'
+            return resp
+        if bundle is not None:
+            return Response({"bundle": bundle.name, "files": files})
+        return Response(next(iter(files.values())))
+
+    @action(detail=False, methods=["get"], url_path="render")
+    def render_many(self, request):
+        """Render one template or bundle for many devices in one call.
+
+        ``?template=<id>`` or ``?bundle=<id|name|role>``, narrowed by the
+        device list's own filters (``?role=<id>``, ``?site=``, ``?platform=``,
+        ``?search=``) plus ``?role_slug=leaf`` for a tool that knows roles
+        by name. Answers ``{devices: {id: {name, files: {path: {sha256,
+        drift, output}}}}, skipped: {id: reason}}``. ``&hashes=1`` leaves the
+        text out, for a tool that only wants to know what changed. Capped at
+        500 devices.
+        """
+        from jinja2 import TemplateError
+
+        from .config_bundles import (
+            MAX_BULK_DEVICES,
+            attach_push_state,
+            render_bundle,
+            render_file,
+        )
+
+        qs = self.get_queryset().select_related("role", "platform", "site")
+        p = request.query_params
+        if p.get("role_slug"):
+            qs = qs.filter(role__slug=p["role_slug"])
+        qs = qs.order_by("name")
+        total = qs.count()
+        if total > MAX_BULK_DEVICES:
+            return Response(
+                {"detail": f"{total} devices match; the cap is {MAX_BULK_DEVICES}. "
+                           f"Narrow it with role, site, platform or search."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        hashes_only = p.get("hashes") in ("1", "true")
+        out: dict = {}
+        skipped: dict = {}
+        for device in qs:
+            tmpl, bundle, error = self._render_target(request, device)
+            if error:
+                skipped[str(device.id)] = error
+                continue
+            try:
+                if bundle is not None:
+                    files = render_bundle(bundle, device)
+                else:
+                    row = render_file(tmpl, device)
+                    files = {row["path"]: row}
+            except (TemplateError, ValueError) as exc:
+                skipped[str(device.id)] = str(exc)
+                continue
+            attach_push_state(device, files)
+            if hashes_only:
+                for row in files.values():
+                    row.pop("output", None)
+                    row.pop("diff", None)
+            out[str(device.id)] = {"name": device.name, "files": files}
+        return Response({"devices": out, "skipped": skipped})
+
+    @action(detail=True, methods=["post"], url_path="config-pushed")
+    def config_pushed(self, request, pk=None):
+        """A push tool records what it just put on this device.
+
+        Body: ``{"files": [{"path", "sha256", "output"?, "template"?}],
+        "bundle"?: name, "source"?: "ansible", "note"?: "..."}`` - or the
+        single-file shorthand ``{"path", "sha256", "output"?}``. ``output``
+        is kept for a later diff when it is under 1 MB; the hash always is.
+        """
+        import hashlib
+
+        from django.utils import timezone
+
+        from integrations.models import ConfigPush
+
+        from .config_bundles import MAX_PUSH_OUTPUT
+        from .models import ExportTemplate
+        from .views import _get_active_tenant
+
+        device = self.get_object()
+        tenant = _get_active_tenant(request)
+        data = request.data or {}
+        rows = data.get("files")
+        if rows is None:
+            rows = [data]
+        if not isinstance(rows, list) or not rows:
+            return Response({"files": "A list of files."}, status=drf_status.HTTP_400_BAD_REQUEST)
+        if len(rows) > 50:
+            return Response({"files": "At most 50 files per push."},
+                            status=drf_status.HTTP_400_BAD_REQUEST)
+        now = timezone.now()
+        made = []
+        for i, row in enumerate(rows):
+            if not isinstance(row, dict):
+                return Response({"files": f"Entry {i} is not an object."},
+                                status=drf_status.HTTP_400_BAD_REQUEST)
+            path = str(row.get("path") or "").strip()
+            output = row.get("output")
+            output = output if isinstance(output, str) else ""
+            digest = str(row.get("sha256") or "").strip().lower()
+            if not digest and output:
+                digest = hashlib.sha256(output.encode()).hexdigest()
+            if not path or len(digest) != 64:
+                return Response(
+                    {"files": f"Entry {i} needs a path and a sha256 (or the output)."},
+                    status=drf_status.HTTP_400_BAD_REQUEST,
+                )
+            if output and hashlib.sha256(output.encode()).hexdigest() != digest:
+                return Response(
+                    {"files": f"Entry {i}: the sha256 does not match the output."},
+                    status=drf_status.HTTP_400_BAD_REQUEST,
+                )
+            tmpl = None
+            if row.get("template") and tenant is not None:
+                tmpl = ExportTemplate.objects.filter(
+                    id=row["template"], tenant=tenant
+                ).first()
+            made.append(ConfigPush(
+                tenant=device.tenant, device=device, path=path[:255],
+                template=tmpl, bundle=str(data.get("bundle") or "")[:128],
+                sha256=digest,
+                output=output if len(output) <= MAX_PUSH_OUTPUT else "",
+                pushed_by=request.user if request.user.is_authenticated else None,
+                source=str(data.get("source") or "")[:64],
+                note=str(data.get("note") or "")[:255],
+                pushed_at=now,
+            ))
+        ConfigPush.objects.bulk_create(made)
+        return Response(
+            {"recorded": [{"path": m.path, "sha256": m.sha256} for m in made],
+             "pushed_at": now.isoformat()},
+            status=drf_status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["get"])
     def inventory(self, request, pk=None):
@@ -7456,6 +7626,25 @@ class ConfigContextViewSet(TenantScopedViewSet):
 
 
 # ─── Export templates ────────────────────────────────────────────────────────
+class ConfigBundleViewSet(TenantScopedViewSet):
+    """Filter with ``?role=<id>`` (bundles bound to that role) and ``?search=``."""
+
+    queryset = ConfigBundle.objects.all().order_by(NATURAL_NAME)
+    serializer_class = ConfigBundleSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset().prefetch_related("templates", "roles")
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s)
+            role = self.request.query_params.get("role")
+            if role:
+                qs = qs.filter(roles__id=role)
+        return qs.distinct()
+
+
 class ExportTemplateViewSet(TenantScopedViewSet):
     queryset = ExportTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = ExportTemplateSerializer

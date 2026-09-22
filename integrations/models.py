@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 from api.vrf_placement import PINNED, VRF_MODE_CHOICES
@@ -183,6 +184,51 @@ class DeployRun(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.target_name} · {self.status}"
+
+
+class ConfigPush(TimestampedModel):
+    """What a push tool last put on a device, one row per file path.
+
+    The counterpart of :class:`DeviceConfigState`, which compares intended
+    against what is *running*: this compares the current render against what
+    was last *pushed*, so a device page can say "the model changed since the
+    last push" before anyone touches the box. The tool records the file it
+    pushed (its hash, and the text for a diff); Danbyte never pushes.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="config_pushes"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="config_pushes"
+    )
+    #: The file, as a bundle keys it (``/etc/frr/frr.conf``). A single
+    #: template's push uses that template's bundle path.
+    path = models.CharField(max_length=255)
+    template = models.ForeignKey(
+        "api.ExportTemplate", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    bundle = models.CharField(max_length=128, blank=True, default="")
+    sha256 = models.CharField(max_length=64)
+    #: The pushed text, so a later render can be diffed against it. Bounded
+    #: by the API; blank when the tool sent only the hash.
+    output = models.TextField(blank=True, default="")
+    pushed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    source = models.CharField(max_length=64, blank=True, default="")
+    note = models.CharField(max_length=255, blank=True, default="")
+    pushed_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-pushed_at"]
+        indexes = [models.Index(fields=["device", "path", "-pushed_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.device_id} {self.path} @ {self.pushed_at:%Y-%m-%d %H:%M}"
 
 
 class DeviceConfigState(TimestampedModel):

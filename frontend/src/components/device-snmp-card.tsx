@@ -468,7 +468,7 @@ function VlanLink({
 }
 
 /** Observed IPs - each links to its IP detail page when Danbyte records it. */
-function IpLinks({
+export function IpLinks({
   ips,
   idByAddr,
 }: {
@@ -500,7 +500,7 @@ function IpLinks({
 }
 
 /** A MAC that links to its `/macs/<mac>` object page, or "-" when absent. */
-function MacLink({ mac }: { mac: string }) {
+export function MacLink({ mac }: { mac: string }) {
   if (!mac) return <Muted />
   return (
     <Link to="/macs/$mac" params={{ mac }} className="link font-mono">

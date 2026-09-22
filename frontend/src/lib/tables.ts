@@ -84,6 +84,12 @@ export const TABLES: TableMeta[] = [
     ioType: "bfdprofile",
   },
   {
+    id: "ethernet-segments",
+    label: "Ethernet segments",
+    area: "Routing",
+    ioType: "ethernetsegment",
+  },
+  {
     id: "bgp-sessions",
     label: "BGP sessions",
     area: "Routing",

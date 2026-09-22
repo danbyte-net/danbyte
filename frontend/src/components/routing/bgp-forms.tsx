@@ -134,6 +134,9 @@ interface KnobState {
   asOverride: string | null
   removePrivateAs: string | null
   softReconfiguration: string | null
+  defaultOriginatePolicyId: string | null
+  extendedNexthop: string | null
+  ttlSecurityHops: string
 }
 
 function knobsFrom(k?: Partial<BGPPeerGroup> | Partial<BGPSession>): KnobState {
@@ -156,6 +159,9 @@ function knobsFrom(k?: Partial<BGPPeerGroup> | Partial<BGPSession>): KnobState {
     asOverride: triFrom(k?.as_override),
     removePrivateAs: triFrom(k?.remove_private_as),
     softReconfiguration: triFrom(k?.soft_reconfiguration),
+    defaultOriginatePolicyId: k?.default_originate_policy?.id ?? null,
+    extendedNexthop: triFrom(k?.capability_extended_nexthop),
+    ttlSecurityHops: numText(k?.ttl_security_hops),
   }
 }
 
@@ -179,6 +185,10 @@ function knobsPayload(k: KnobState) {
     as_override: triTo(k.asOverride),
     remove_private_as: triTo(k.removePrivateAs),
     soft_reconfiguration: triTo(k.softReconfiguration),
+    default_originate_policy_id:
+      k.defaultOriginate === "off" ? null : k.defaultOriginatePolicyId,
+    capability_extended_nexthop: triTo(k.extendedNexthop),
+    ttl_security_hops: numOrNull(k.ttlSecurityHops),
   }
 }
 
@@ -297,6 +307,18 @@ function KnobFields({
           options={TRI}
           noneLabel={none}
         />
+        {k.defaultOriginate === "on" && (
+          <FormCombobox
+            label="Default originate policy"
+            value={k.defaultOriginatePolicyId}
+            onChange={(v) => set({ defaultOriginatePolicyId: v })}
+            options={policies.map((p) => ({ value: p.id, label: p.label }))}
+            noneLabel="-"
+            placeholder="-"
+            info="Conditional: the default is only sent while this policy matches something."
+            error={errors.default_originate_policy_id}
+          />
+        )}
         <FormText
           label="Maximum prefix"
           type="number"
@@ -335,6 +357,24 @@ function KnobFields({
           onChange={(v) => set({ softReconfiguration: v })}
           options={TRI}
           noneLabel={none}
+        />
+      </div>
+      <div className="grid gap-3 @md:grid-cols-3">
+        <FormSelect
+          label="Extended next-hop"
+          value={k.extendedNexthop}
+          onChange={(v) => set({ extendedNexthop: v })}
+          options={TRI}
+          noneLabel={none}
+          info="RFC 5549: IPv4 routes over an IPv6 next hop. Every unnumbered EVPN fabric session carries it."
+        />
+        <FormText
+          label="TTL security hops"
+          type="number"
+          value={k.ttlSecurityHops}
+          onChange={(v) => set({ ttlSecurityHops: v })}
+          info="GTSM (RFC 5082). Blank = off."
+          error={errors.ttl_security_hops}
         />
       </div>
       <BFDFields
@@ -524,6 +564,14 @@ export function BGPInstanceForm({
   const [routerId, setRouterId] = useState(item?.router_id ?? "")
   const [clusterId, setClusterId] = useState(item?.cluster_id ?? "")
   const [gr, setGr] = useState(item?.graceful_restart ?? false)
+  const [relax, setRelax] = useState(item?.bestpath_multipath_relax ?? false)
+  const [vpnExport, setVpnExport] = useState(item?.vpn_export ?? false)
+  const [vpnImport, setVpnImport] = useState(item?.vpn_import ?? false)
+  const [vpnLabel, setVpnLabel] = useState(item?.vpn_label_export ?? "")
+  const [vpnNexthop, setVpnNexthop] = useState(item?.vpn_nexthop_export ?? "")
+  const [distE, setDistE] = useState(numText(item?.distance_ebgp))
+  const [distI, setDistI] = useState(numText(item?.distance_ibgp))
+  const [distL, setDistL] = useState(numText(item?.distance_local))
   const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
   const [bfdProfileId, setBfdProfileId] = useState<string | null>(
     item?.bfd_profile?.id ?? null
@@ -570,6 +618,14 @@ export function BGPInstanceForm({
           router_id: routerId.trim(),
           cluster_id: clusterId.trim(),
           graceful_restart: gr,
+          bestpath_multipath_relax: relax,
+          vpn_export: vrfId ? vpnExport : false,
+          vpn_import: vrfId ? vpnImport : false,
+          vpn_label_export: vrfId ? vpnLabel.trim() : "",
+          vpn_nexthop_export: vrfId ? vpnNexthop.trim() : "",
+          distance_ebgp: numOrNull(distE),
+          distance_ibgp: numOrNull(distI),
+          distance_local: numOrNull(distL),
           bfd: bfd === "on",
           bfd_profile_id: bfd === "on" ? bfdProfileId : null,
           status_id: statusId,
@@ -649,6 +705,36 @@ export function BGPInstanceForm({
             checked={gr}
             onChange={setGr}
           />
+          <FormCheckbox
+            label="Multipath relax"
+            hint="bestpath as-path multipath-relax"
+            checked={relax}
+            onChange={setRelax}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="Distance eBGP"
+            type="number"
+            value={distE}
+            onChange={setDistE}
+            info="distance bgp takes all three values or none."
+            error={fieldErrors.distance_ebgp}
+          />
+          <FormText
+            label="Distance iBGP"
+            type="number"
+            value={distI}
+            onChange={setDistI}
+            error={fieldErrors.distance_ibgp}
+          />
+          <FormText
+            label="Distance local"
+            type="number"
+            value={distL}
+            onChange={setDistL}
+            error={fieldErrors.distance_local}
+          />
         </div>
         <BFDFields
           on={bfd}
@@ -670,6 +756,44 @@ export function BGPInstanceForm({
           onChange={setCustomFields}
         />
       </FormSection>
+      {vrfId && (
+        <FormSection title="MPLS L3VPN" card>
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormCheckbox
+              label="Export to VPN"
+              checked={vpnExport}
+              onChange={setVpnExport}
+              info="The VRF's unicast routes leave for the VPN table with its export route targets."
+            />
+            <FormCheckbox
+              label="Import from VPN"
+              checked={vpnImport}
+              onChange={setVpnImport}
+              info="VPN routes matching the import route targets land in this VRF."
+            />
+          </div>
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormText
+              label="Label export"
+              mono
+              value={vpnLabel}
+              onChange={setVpnLabel}
+              placeholder="auto"
+              info="auto or a label number"
+              error={fieldErrors.vpn_label_export}
+            />
+            <FormText
+              label="Next-hop export"
+              mono
+              value={vpnNexthop}
+              onChange={setVpnNexthop}
+              placeholder="10.51.255.1"
+              info="The next hop the exported VPN routes carry; blank = the platform default."
+              error={fieldErrors.vpn_nexthop_export}
+            />
+          </div>
+        </FormSection>
+      )}
       <FormFooter
         onCancel={onCancel}
         submitting={mutation.isPending}

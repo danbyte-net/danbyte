@@ -47,6 +47,8 @@ export const ROUTING_OBJECT_TYPES = {
   eigrpinterface: "routing.eigrpinterface",
   vtep: "routing.vtep",
   vtepmembership: "routing.vtepmembership",
+  ethernetsegment: "routing.ethernetsegment",
+  ldpinstance: "routing.ldpinstance",
 } as const
 
 /** Save a routing object through the plan-aware helper; invalidates the

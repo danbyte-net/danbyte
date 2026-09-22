@@ -230,37 +230,49 @@ function VirtualizationSourcesPage() {
       {
         id: "actions",
         enableHiding: false,
-        cell: ({ row }) => (
-          <RowActions
-            onEdit={canEdit ? () => setEditing(row.original) : undefined}
-            onDelete={canDelete ? () => setDeleting(row.original) : undefined}
-            extra={
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  disabled={test.isPending}
-                  onClick={() => test.mutate(row.original)}
-                >
-                  <Plug className="h-3.5 w-3.5" /> Test
-                </Button>
-                {canEdit && (
+        cell: ({ row }) => {
+          // The mutation is shared by every row, so its pending flag must be
+          // read against the row that started it - otherwise one sync turns
+          // every row's button into "Syncing…" and reads as syncing them all.
+          const syncing =
+            syncNow.isPending && syncNow.variables?.id === row.original.id
+          const testing =
+            test.isPending && test.variables?.id === row.original.id
+          return (
+            <RowActions
+              onEdit={canEdit ? () => setEditing(row.original) : undefined}
+              onDelete={
+                canDelete ? () => setDeleting(row.original) : undefined
+              }
+              extra={
+                <>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs"
-                    disabled={syncNow.isPending}
-                    onClick={() => syncNow.mutate(row.original)}
+                    disabled={testing}
+                    onClick={() => test.mutate(row.original)}
                   >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    {syncNow.isPending ? "Syncing…" : "Sync"}
+                    <Plug className="h-3.5 w-3.5" />
+                    {testing ? "Testing…" : "Test"}
                   </Button>
-                )}
-              </>
-            }
-          />
-        ),
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={syncing}
+                      onClick={() => syncNow.mutate(row.original)}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {syncing ? "Syncing…" : "Sync"}
+                    </Button>
+                  )}
+                </>
+              }
+            />
+          )
+        },
       },
     ],
     [canEdit, canDelete, del, test, syncNow]

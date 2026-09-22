@@ -27,7 +27,7 @@ const STATUS: Record<
 }
 
 // One unified-diff line, tinted by its +/- prefix.
-function DiffLine({ line }: { line: string }) {
+export function DiffLine({ line }: { line: string }) {
   const add = line.startsWith("+") && !line.startsWith("+++")
   const del = line.startsWith("-") && !line.startsWith("---")
   const hunk = line.startsWith("@@")

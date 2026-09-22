@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import type {
   ASPathListRule,
   CommunityListRule,
+  EthernetSegment,
   PrefixListRule,
   RoutingPolicyRule,
 } from "@/lib/api"
@@ -250,5 +251,43 @@ export function policyRuleColumns(): ColumnDef<RoutingPolicyRule, unknown>[] {
       },
     },
     description(),
+  ]
+}
+
+/** The member ports of an Ethernet segment - one per leaf, each linked to
+ * its device and its own page. */
+export function segmentMemberColumns(): ColumnDef<
+  EthernetSegment["interfaces"][number],
+  unknown
+>[] {
+  return [
+    {
+      id: "device",
+      accessorFn: (r) => r.device.name,
+      header: "Device",
+      cell: ({ row }) => (
+        <Link
+          to="/devices/$id"
+          params={{ id: row.original.device.id }}
+          className="link text-xs font-medium"
+        >
+          {row.original.device.name}
+        </Link>
+      ),
+    },
+    {
+      id: "interface",
+      accessorKey: "name",
+      header: "Interface",
+      cell: ({ row }) => (
+        <Link
+          to="/interfaces/$id"
+          params={{ id: row.original.id }}
+          className="link font-mono text-xs"
+        >
+          {row.original.name}
+        </Link>
+      ),
+    },
   ]
 }

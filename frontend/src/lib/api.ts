@@ -2136,6 +2136,8 @@ export interface Interface {
   /** Excluded from SNMP drift - never compared, never flagged stale. */
   snmp_ignore: boolean
   is_uplink?: boolean
+  /** `evpn mh uplink`: fabric-facing on an EVPN multihomed leaf. */
+  evpn_mh_uplink?: boolean
   /** Media type slug (e.g. 10gbase-x-sfpp), or "" if unset. */
   type: string
   type_display: string
@@ -2221,6 +2223,7 @@ export interface InterfaceWritePayload {
   snmp_name?: string
   snmp_ignore?: boolean
   is_uplink?: boolean
+  evpn_mh_uplink?: boolean
   mgmt_only?: boolean
   mark_connected?: boolean
   hide_label?: boolean
@@ -3926,6 +3929,8 @@ export interface VMInterface {
   enabled: boolean
   /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
   sync_ignore_ips: boolean
+  /** The guest's own SNMP name for this NIC, when it differs. */
+  snmp_name: string
   mac_address: string
   mtu: number | null
   speed: string
@@ -3949,6 +3954,7 @@ export interface VMInterfaceWritePayload {
   parent_id?: string | null
   enabled?: boolean
   sync_ignore_ips?: boolean
+  snmp_name?: string
   mac_address?: string
   mtu?: number | null
   speed?: string
@@ -4383,6 +4389,48 @@ export interface BFDProfile extends BFDProfileMini {
   updated_at: string
 }
 
+/** A multihomed server's LAG, seen from every leaf it lands on: the
+ * interfaces are on different devices by design. Identified by a full ESI
+ * (type 0) or an es-id plus a system MAC (type 3). */
+export interface EthernetSegment {
+  id: string
+  numid: number | null
+  name: string
+  esi: string
+  es_id: number | null
+  sys_mac: string
+  df_preference: number | null
+  interfaces: { id: string; name: string; device: DeviceMini }[]
+  device_count: number
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** `mpls ldp` on one device. */
+export interface LDPInstance {
+  id: string
+  numid: number | null
+  device: DeviceMini
+  site: { id: string; name: string } | null
+  router_id: string
+  /** Blank = the router ID. */
+  transport_address: string
+  label_allocation: "all" | "host-routes"
+  interfaces: { id: string; name: string; device: DeviceMini }[]
+  bfd: boolean
+  bfd_profile: BFDProfileMini | null
+  status: StatusMini | null
+  description: string
+  extra: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface BGPPeerKnobs {
   address_families: AfiSafi[]
   import_policy: { id: string; name: string } | null
@@ -4397,11 +4445,17 @@ export interface BGPPeerKnobs {
   hold_time: number | null
   keychain: { id: string; name: string; algorithm: string } | null
   default_originate: boolean | null
+  /** `default-originate route-map <policy>`. */
+  default_originate_policy: { id: string; name: string } | null
   maximum_prefix: number | null
   allowas_in: number | null
   as_override: boolean | null
   remove_private_as: boolean | null
   soft_reconfiguration: boolean | null
+  /** RFC 5549 - IPv4 routes over an IPv6 next hop. */
+  capability_extended_nexthop: boolean | null
+  /** GTSM hop count; null = off. */
+  ttl_security_hops: number | null
   extra: Record<string, unknown>
 }
 
@@ -4410,6 +4464,9 @@ export interface Redistribution {
   source: "connected" | "static" | "bgp" | "ospf" | "isis" | "eigrp" | "kernel"
   policy: { id: string; name: string } | null
   metric: number | null
+  /** IS-IS only; blank = the instance's own level / IPv4. */
+  level: "" | "1" | "2" | "1-2"
+  family: "" | "ipv4" | "ipv6"
   extra: Record<string, unknown>
 }
 
@@ -4439,6 +4496,19 @@ export interface BGPInstance {
   router_id: string
   cluster_id: string
   graceful_restart: boolean
+  /** `distance bgp <ebgp> <ibgp> <local>` - all three or none. */
+  distance_ebgp: number | null
+  distance_ibgp: number | null
+  distance_local: number | null
+  bestpath_multipath_relax: boolean
+  /** Per-VRF instance (MPLS L3VPN): the unicast routes leave for and
+   * arrive from the VPN table. */
+  vpn_export: boolean
+  vpn_import: boolean
+  /** "" | "auto" | a label number. */
+  vpn_label_export: string
+  /** An address, or "" for the platform default. */
+  vpn_nexthop_export: string
   bfd: boolean
   bfd_profile: BFDProfileMini | null
   address_families: BGPAddressFamily[]
@@ -4493,6 +4563,9 @@ export interface BGPSessionEffective {
   as_override: boolean | null
   remove_private_as: boolean | null
   soft_reconfiguration: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  capability_extended_nexthop: boolean | null
+  ttl_security_hops: number | null
   extra: Record<string, unknown>
   remote_asn_mode: RemoteAsnMode
   remote_asn: number | null
@@ -4624,6 +4697,20 @@ export interface ISISInstance extends IGPInstanceBase {
   metric_style: "wide" | "narrow" | "transition"
   authentication: "none" | "text" | "md5"
   keychain: { id: string; name: string; algorithm: string } | null
+  /** Timers and LSP settings; null = the platform default. */
+  lsp_gen_interval: number | null
+  spf_interval: number | null
+  lsp_mtu: number | null
+  /** spf-delay-ietf: all five or none. */
+  spf_init_delay: number | null
+  spf_short_delay: number | null
+  spf_long_delay: number | null
+  spf_holddown: number | null
+  spf_time_to_learn: number | null
+  log_adjacency_changes: boolean
+  /** default-information originate, per family. */
+  default_originate_ipv4: "" | "on" | "always"
+  default_originate_ipv6: "" | "on" | "always"
   interfaces: ISISInterface[]
 }
 
@@ -7902,6 +7989,11 @@ export interface ExportTemplate {
   mime_type: string
   file_extension: string
   as_attachment: boolean
+  /** Where a bundle render lands this file on the device; blank falls back
+   * to `<name>.<file_extension>`. Only meaningful for device templates. */
+  target_path: string
+  /** Read-only: `target_path`, or `<name>.<file_extension>` when blank. */
+  bundle_path: string
   created_at: string
   updated_at: string
 }
@@ -7914,6 +8006,69 @@ export interface ExportTemplateWritePayload {
   mime_type?: string
   file_extension?: string
   as_attachment?: boolean
+  target_path?: string
+}
+
+// ─── Config bundles ────────────────────────────────────────────────────
+/** A device template as it appears inside a bundle. */
+export interface ConfigBundleTemplate {
+  id: string
+  name: string
+  object_type: string
+  target_path: string
+  bundle_path: string
+}
+
+/** The set of files a device role needs, rendered together. */
+export interface ConfigBundle {
+  id: string
+  numid: number | null
+  name: string
+  description: string
+  templates: ConfigBundleTemplate[]
+  roles: { id: string; name: string; slug: string; color: string }[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ConfigBundleWritePayload {
+  name: string
+  description?: string
+  template_ids: string[]
+  role_ids: string[]
+}
+
+/** What a push tool last put on the box for one rendered file. */
+export interface DeviceRenderPushed {
+  sha256: string
+  at: string
+  by: string
+  source: string
+  note: string
+  has_output: boolean
+}
+
+/** One rendered file from GET /api/devices/<id>/render/. */
+export interface DeviceRenderFile {
+  path: string
+  template: string
+  template_id: string
+  output: string
+  sha256: string
+  pushed: DeviceRenderPushed | null
+  /** null = never pushed; true = the render differs from the last push. */
+  drift: boolean | null
+  /** Unified diff against the last push; may be empty. */
+  diff: string
+}
+
+/** GET /api/devices/<id>/render/?template=<id> */
+export type DeviceRenderResult = DeviceRenderFile
+
+/** GET /api/devices/<id>/render/?bundle=<id|name|role> */
+export interface DeviceBundleRenderResult {
+  bundle: string
+  files: Record<string, DeviceRenderFile>
 }
 
 // ─── Bulk import ───────────────────────────────────────────────────────

@@ -46,8 +46,10 @@ from .models import (
     CommunityListRule,
     EIGRPInstance,
     EIGRPInterface,
+    EthernetSegment,
     ISISInstance,
     ISISInterface,
+    LDPInstance,
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
@@ -637,8 +639,13 @@ class RedistributionSerializer(_ChildRowSerializer):
     class Meta:
         model = Redistribution
         fields = ["id", "bgp_af_id", "ospf_instance_id", "isis_instance_id", "eigrp_instance_id",
-                  "source", "policy", "policy_id", "metric", "extra"]
+                  "source", "policy", "policy_id", "metric", "level", "family", "extra"]
         read_only_fields = ["id"]
+
+    def validate_level(self, value):
+        if value and value not in dict(ISISInstance.LEVEL_CHOICES):
+            raise serializers.ValidationError("One of 1, 2 or 1-2.")
+        return value
 
 
 class BGPAddressFamilySerializer(_ParentRefMixin, _ChildRowSerializer):
@@ -758,12 +765,25 @@ class BGPInstanceSerializer(
         _run_clean(probe)
         if "router_id" in attrs:
             attrs["router_id"] = probe.router_id
+        # `distance bgp` takes all three numbers or none.
+        distances = [
+            probe.distance_ebgp, probe.distance_ibgp, probe.distance_local
+        ]
+        if any(d is not None for d in distances) and None in distances:
+            raise serializers.ValidationError(
+                {"distance_ebgp": "distance bgp needs the eBGP, iBGP and local "
+                                  "values together."}
+            )
         return attrs
 
     class Meta:
         model = BGPInstance
         fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id", "asn", "asn_id",
-                  "router_id", "cluster_id", "graceful_restart", "bfd",
+                  "router_id", "cluster_id", "graceful_restart",
+                  "distance_ebgp", "distance_ibgp", "distance_local",
+                  "bestpath_multipath_relax",
+                  "vpn_export", "vpn_import", "vpn_label_export", "vpn_nexthop_export",
+                  "bfd",
                   "bfd_profile", "bfd_profile_id", "address_families", "session_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
@@ -807,6 +827,11 @@ class _PeerKnobFields(serializers.Serializer):
         source="bfd_profile", queryset=BFDProfile.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    default_originate_policy = RoutingPolicyMiniSerializer(read_only=True)
+    default_originate_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="default_originate_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     def validate_address_families(self, value):
         try:
@@ -820,8 +845,10 @@ _KNOB_FIELDS = [
     "export_policy", "export_policy_id", "bfd", "bfd_profile", "bfd_profile_id",
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
     "keepalive", "hold_time", "keychain", "keychain_id", "extra",
-    "default_originate", "maximum_prefix", "allowas_in", "as_override",
+    "default_originate", "default_originate_policy", "default_originate_policy_id",
+    "maximum_prefix", "allowas_in", "as_override",
     "remove_private_as", "soft_reconfiguration",
+    "capability_extended_nexthop", "ttl_security_hops",
 ]
 
 
@@ -907,9 +934,13 @@ class BGPSessionSerializer(
         eff = obj.effective()
         return {
             **{k: v for k, v in eff.items()
-               if k not in ("import_policy", "export_policy", "keychain", "bfd_profile")},
+               if k not in ("import_policy", "export_policy", "keychain", "bfd_profile",
+                            "default_originate_policy")},
             "bfd_profile": BFDProfileMiniSerializer(eff["bfd_profile"]).data
             if eff["bfd_profile"] else None,
+            "default_originate_policy": RoutingPolicyMiniSerializer(
+                eff["default_originate_policy"]
+            ).data if eff["default_originate_policy"] else None,
             "import_policy": RoutingPolicyMiniSerializer(eff["import_policy"]).data
             if eff["import_policy"] else None,
             "export_policy": RoutingPolicyMiniSerializer(eff["export_policy"]).data
@@ -1184,11 +1215,34 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    _SPF = ("spf_init_delay", "spf_short_delay", "spf_long_delay",
+            "spf_holddown", "spf_time_to_learn")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # `spf-delay-ietf` takes all five values or none; a partial set is
+        # not a stanza FRR accepts, so it is not one Danbyte stores.
+        merged = {
+            f: attrs.get(f, getattr(self.instance, f, None)) for f in self._SPF
+        }
+        given = [f for f, v in merged.items() if v is not None]
+        if given and len(given) != len(self._SPF):
+            missing = ", ".join(f for f in self._SPF if f not in given)
+            raise serializers.ValidationError(
+                {missing.split(", ")[0]:
+                 f"spf-delay-ietf needs all five values; missing {missing}."}
+            )
+        return attrs
+
     class Meta:
         model = ISISInstance
         fields = ["id", "numid", "device", "device_id", "site", "vrf", "vrf_id",
                   "process", "net", "router_id", "level", "metric_style", "bfd",
                   "bfd_profile", "bfd_profile_id", "authentication", "keychain", "keychain_id",
+                  "lsp_gen_interval", "spf_interval", "lsp_mtu",
+                  "spf_init_delay", "spf_short_delay", "spf_long_delay",
+                  "spf_holddown", "spf_time_to_learn", "log_adjacency_changes",
+                  "default_originate_ipv4", "default_originate_ipv6",
                   "redistributions", "interfaces", "interface_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
@@ -1345,3 +1399,110 @@ class VTEPSerializer(
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
         validators = []
+
+
+# ─── EVPN multihoming ────────────────────────────────────────────────────────
+
+
+class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    """A segment and the LAG interfaces, on different leaves, that share it.
+
+    Interfaces are set as a whole (``interface_ids``): the segment is the
+    thing a reviewer looks at to see that leaf1 swp5 and leaf2 swp5 are the
+    same server, so it owns the list rather than each port pointing at it.
+    """
+
+    cf_model = "ethernetsegment"
+
+    interfaces = InterfaceMiniSerializer(many=True, read_only=True)
+    interface_ids = TenantScopedPrimaryKeyRelatedField(
+        source="interfaces", queryset=Interface.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    device_count = serializers.SerializerMethodField()
+
+    def get_device_count(self, obj) -> int:
+        return len({i.device_id for i in obj.interfaces.all()})
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = EthernetSegment(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in EthernetSegment._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in EthernetSegment._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        for f in ("esi", "sys_mac"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        return attrs
+
+    class Meta:
+        model = EthernetSegment
+        fields = ["id", "numid", "name", "esi", "es_id", "sys_mac", "df_preference",
+                  "interfaces", "interface_ids", "device_count", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "device_count", "created_at", "updated_at"]
+
+
+# ─── MPLS / LDP ──────────────────────────────────────────────────────────────
+
+
+class LDPInstanceSerializer(
+    _BFDProfileFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
+):
+    cf_model = "ldpinstance"
+
+    device = DeviceMiniSerializer(read_only=True)
+    site = SiteMiniSerializer(source="device.site", read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    interfaces = InterfaceMiniSerializer(many=True, read_only=True)
+    interface_ids = TenantScopedPrimaryKeyRelatedField(
+        source="interfaces", queryset=Interface.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = LDPInstance(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in LDPInstance._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in LDPInstance._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        for f in ("router_id", "transport_address"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        # Every port must be the instance's own device's.
+        device = attrs.get("device", getattr(self.instance, "device", None))
+        taken = LDPInstance.objects.filter(device=device)
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        if device is not None and taken.exists():
+            raise serializers.ValidationError(
+                {"device_id": f"{device.name} already runs LDP - edit that instance."}
+            )
+        for iface in attrs.get("interfaces", []):
+            if device is not None and iface.device_id != device.id:
+                raise serializers.ValidationError(
+                    {"interface_ids": f"{iface.name} is not on {device.name}."}
+                )
+        return attrs
+
+    class Meta:
+        model = LDPInstance
+        fields = ["id", "numid", "device", "device_id", "site", "router_id",
+                  "transport_address", "label_allocation", "interfaces", "interface_ids",
+                  "bfd", "bfd_profile", "bfd_profile_id",
+                  "status", "status_id", "description", "extra",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]

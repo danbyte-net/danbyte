@@ -181,6 +181,15 @@ export DANBYTE_TOKEN=dbt_xxxxxxxxxxxxxxxxxxxxxxxx
 | `GET /api/inventory/ansible/` | Native Ansible dynamic inventory - **devices and virtual machines** as hosts, `ansible_host` (primary IP), `danbyte` metadata (`danbyte.kind` = `device` or `virtual_machine`, `danbyte.custom_fields`, `danbyte.interfaces`; VMs also carry `cluster`, `cluster_group`, host `device`, `vcpus`/`memory_mb`/`disk_gb`, and each VM interface's `speed`), merged `config_context`, and `role_<slug>` / `site_<name>` / `platform_<slug>` / `status_<slug>` / `tag_<slug>` / `cf_<name>` groups - plus `cluster_<name>` / `cluster_group_<name>` for VMs and the `all_devices` / `all_vms` catch-alls. Filter with `?status=active&site=AMS&role=leaf&has_primary_ip=1`, and scope to one kind with `?kind=device` or `?kind=vm`. Host names are expected unique across devices and VMs; on a collision the device wins. |
 | `POST /api/devices/<id>/config-state/` | Report a device's config. Send `actual_config` + a `template` id and **Danbyte renders the intent** (config context + IPAM) and diffs it → `status` ∈ `in_sync \| drift \| unknown`, the unified `diff`, and a history snapshot on change. (Or send `intended_config` yourself if the runner does the templating.) |
 
+A runner that lets **Danbyte render the config it pushes** has two more:
+`GET /api/devices/render/?bundle=role&role_slug=leaf` renders every file of
+a [bundle](export-templates.md#bundles-every-file-a-device-needs) for every
+matching device in one call, and `POST /api/devices/<id>/config-pushed/`
+records what it put on the box so the device page can show *changed since
+last push* before the next drift report. Keys are never in a render; the
+`<keychain:NAME>` placeholder is the [contract](export-templates.md#secrets-in-a-render)
+the runner substitutes.
+
 ## Ansible demo
 
 `inventory.py` proxies Danbyte's inventory:

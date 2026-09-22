@@ -26,7 +26,12 @@ from api.models import (
 )
 from core.models import Organization, Tenant
 from integrations import vcloud_client, virt_sync
-from integrations.models import VirtGuest, VirtNatLink, VirtualizationSource
+from integrations.models import (
+    VirtChange,
+    VirtGuest,
+    VirtNatLink,
+    VirtualizationSource,
+)
 from integrations.virt_client import VirtAPIError
 
 CLUSTER_STATUS = [
@@ -3082,6 +3087,66 @@ class VCloudIdentityTests(TestCase):
 
         self.assertEqual(VirtGuest.objects.get(ext_id=VCD_A).id, first)
         self.assertEqual(VirtGuest.objects.count(), 3)
+
+    def test_a_rename_on_the_hypervisor_renames_a_sync_created_vm(self):
+        """The vApp used to follow a rename and the VM did not (#98)."""
+        self.sync()
+
+        class Renamed(FakeVCloud):
+            records = [
+                {**r, "name": "web01-prod"} if r["href"].endswith(VCD_A) else r
+                for r in VCD_RECORDS
+            ]
+
+        self.sync(Renamed)
+
+        self.assertTrue(VirtualMachine.objects.filter(name="web01-prod").exists())
+        self.assertFalse(VirtualMachine.objects.filter(name="web01").exists())
+
+    def test_a_rename_in_review_mode_is_proposed_not_applied(self):
+        self.sync()
+        self.source.sync_mode = "review"
+        self.source.save(update_fields=["sync_mode"])
+
+        class Renamed(FakeVCloud):
+            records = [
+                {**r, "name": "web01-prod"} if r["href"].endswith(VCD_A) else r
+                for r in VCD_RECORDS
+            ]
+
+        self.sync(Renamed)
+
+        self.assertTrue(VirtualMachine.objects.filter(name="web01").exists())
+        change = VirtChange.objects.get(
+            guest__ext_id=VCD_A, kind="spec_change"
+        )
+        self.assertEqual(
+            change.detail["name"], {"danbyte": "web01", "hypervisor": "web01-prod"}
+        )
+        virt_sync.apply_change(change)
+        self.assertTrue(VirtualMachine.objects.filter(name="web01-prod").exists())
+
+    def test_a_rename_onto_a_taken_name_is_reported_not_forced(self):
+        self.sync()
+        VirtualMachine.objects.create(
+            tenant=self.tenant, name="edge01-new",
+            cluster=VirtualMachine.objects.get(name="web01").cluster,
+        )
+
+        class Renamed(FakeVCloud):
+            records = [
+                {**r, "name": "edge01-new"} if r["href"].endswith(VCD_C) else r
+                for r in VCD_RECORDS
+            ]
+
+        self.sync(Renamed)
+
+        self.assertTrue(VirtualMachine.objects.filter(name="edge01").exists())
+        self.source.refresh_from_db()
+        self.assertTrue(
+            any("rename was not applied" in w for w in self.source.last_sync_skipped),
+            self.source.last_sync_skipped,
+        )
 
     def test_a_guest_that_vanishes_is_pruned_by_row_not_by_vmid(self):
         self.source.auto_prune = True

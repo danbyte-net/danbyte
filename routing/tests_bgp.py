@@ -312,6 +312,63 @@ class SessionTests(_Base):
         self.assertEqual(r.status_code, 400)
 
 
+class FabricKnobTests(_Base):
+    """The session capabilities an EVPN fabric turns on everywhere, and the
+    instance-level distance and multipath settings a provider PE runs."""
+
+    def test_capabilities_resolve_session_to_group_and_reach_the_context(self):
+        inst = self._instance()
+        inst.distance_ebgp, inst.distance_ibgp, inst.distance_local = 120, 200, 200
+        inst.bestpath_multipath_relax = True
+        inst.save()
+        have_default = RoutingPolicy.objects.create(
+            tenant=self.tenant, name="HAVE-DEFAULT"
+        )
+        group = BGPPeerGroup.objects.create(
+            tenant=self.tenant, name="FABRIC", remote_asn_mode="internal",
+            capability_extended_nexthop=True, ttl_security_hops=1,
+            route_reflector_client=True,
+        )
+        BGPSession.objects.create(
+            tenant=self.tenant, instance=inst, peer_group=group,
+            remote_address="10.0.0.1", local_address=self.ip_leaf,
+            default_originate=True, default_originate_policy=have_default,
+        )
+        BGPSession.objects.create(
+            tenant=self.tenant, instance=inst, remote_address="10.0.0.2",
+            remote_asn=65000, ttl_security_hops=2, route_reflector_client=False,
+        )
+
+        b = routing_context(self.leaf)["bgp"][0]
+
+        self.assertEqual(b["distance"], {"ebgp": 120, "ibgp": 200, "local": 200})
+        self.assertTrue(b["bestpath_multipath_relax"])
+        by_addr = {s["remote_address"]: s for s in b["sessions"]}
+        grouped, own = by_addr["10.0.0.1"], by_addr["10.0.0.2"]
+        self.assertTrue(grouped["capability_extended_nexthop"])
+        self.assertEqual(grouped["ttl_security_hops"], 1)
+        # "internal" prints as the local AS number, the way a running config has it.
+        self.assertEqual(grouped["remote_asn_effective"], self.as65001.asn)
+        self.assertEqual(own["remote_asn_effective"], 65000)
+        self.assertEqual(grouped["default_originate_policy"], "HAVE-DEFAULT")
+        # The group says it; the session did not - a template prints it once.
+        self.assertTrue(grouped["route_reflector_client_from_group"])
+        self.assertFalse(own["route_reflector_client_from_group"])
+        self.assertFalse(own["capability_extended_nexthop"])
+        self.assertEqual(own["ttl_security_hops"], 2)
+        self.assertEqual(b["peer_groups"][0]["ttl_security_hops"], 1)
+        # A policy named only by default-originate still lands in the closure.
+        self.assertIn("HAVE-DEFAULT", routing_context(self.leaf)["policies"])
+
+    def test_distance_takes_all_three_or_none(self):
+        res = self._post("/api/routing/bgp-instances/", {
+            "device_id": str(self.spine.id), "asn_id": str(self.as65001.id),
+            "distance_ebgp": 120,
+        })
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("together", str(res.json()))
+
+
 class RenderTests(_Base):
     def test_bgp_block_and_policy_closure(self):
         inst = self._instance()

@@ -957,6 +957,17 @@ def _owned_by_another_source(vm, source) -> bool:
     )
 
 
+def _name_taken(source, name: str, vm) -> bool:
+    """Does another VM in this tenant already carry ``name``?"""
+    from api.models import VirtualMachine
+
+    return (
+        VirtualMachine.objects.filter(tenant=source.tenant, name=name)
+        .exclude(pk=vm.pk)
+        .exists()
+    )
+
+
 def _owned_by_another_guest(vm, source, guest) -> bool:
     """Is it already tracked by a *different guest of the same source*?
 
@@ -1053,11 +1064,26 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
         if value is not None and getattr(vm, field) not in (None, 0) \
                 and getattr(vm, field) != value:
             diffs[field] = {"danbyte": getattr(vm, field), "hypervisor": value}
+    # A rename is drift like any other spec. It used to be read only at
+    # adoption, so a guest renamed on the hypervisor kept its old name here
+    # for good - the vApp it sat in followed the rename and the VM did not.
+    if resource.get("name") and vm.name != name:
+        if _name_taken(source, name, vm):
+            if warnings is not None:
+                warnings.append(
+                    f'"{vm.name}" was renamed to "{name}" on the hypervisor, '
+                    f"but another VM here already has that name, so the "
+                    f"rename was not applied"
+                )
+        else:
+            diffs["name"] = {"danbyte": vm.name, "hypervisor": name}
     if diffs:
         if apply and guest.created_vm:
             for field, pair in diffs.items():
                 setattr(vm, field, pair["hypervisor"])
             vm.save(update_fields=list(diffs))
+            if "name" in diffs:
+                logger.info("renamed VM %r to %r", diffs["name"]["danbyte"], name)
             _clear_change(guest, "spec_change")
         else:
             _queue_change(guest, "spec_change", diffs, now, fresh_changes)
@@ -2657,7 +2683,18 @@ def apply_change(change) -> None:
         if vm is not None:
             fields = []
             for field, pair in (change.detail or {}).items():
-                setattr(vm, field, pair.get("hypervisor"))
+                wanted = pair.get("hypervisor")
+                # The name may have been taken since the change was queued;
+                # applying it would fail the whole accept on a constraint.
+                if field == "name" and (
+                    not wanted or _name_taken(guest.source, wanted, vm)
+                ):
+                    logger.warning(
+                        "not renaming %r to %r: the name is taken",
+                        vm.name, wanted,
+                    )
+                    continue
+                setattr(vm, field, wanted)
                 fields.append(field)
             if fields:
                 vm.save(update_fields=fields)

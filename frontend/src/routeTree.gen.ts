@@ -68,6 +68,7 @@ import { Route as FiberCablesRouteImport } from './routes/fiber-cables'
 import { Route as FiberRouteImport } from './routes/fiber'
 import { Route as FhrpGroupsRouteImport } from './routes/fhrp-groups'
 import { Route as ExportTemplatesRouteImport } from './routes/export-templates'
+import { Route as EthernetSegmentsRouteImport } from './routes/ethernet-segments'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as DeviceTypesRouteImport } from './routes/device-types'
 import { Route as DeployRunsRouteImport } from './routes/deploy-runs'
@@ -78,6 +79,7 @@ import { Route as ContactRolesRouteImport } from './routes/contact-roles'
 import { Route as ContactGroupsRouteImport } from './routes/contact-groups'
 import { Route as ConfigDriftRouteImport } from './routes/config-drift'
 import { Route as ConfigContextsRouteImport } from './routes/config-contexts'
+import { Route as ConfigBundlesRouteImport } from './routes/config-bundles'
 import { Route as ComplianceRouteImport } from './routes/compliance'
 import { Route as CommunityListsRouteImport } from './routes/community-lists'
 import { Route as CommunitiesRouteImport } from './routes/communities'
@@ -167,6 +169,7 @@ import { Route as FloorplansIndexRouteImport } from './routes/floorplans.index'
 import { Route as FloorTileTypesIndexRouteImport } from './routes/floor-tile-types.index'
 import { Route as FhrpGroupsIndexRouteImport } from './routes/fhrp-groups.index'
 import { Route as ExportTemplatesIndexRouteImport } from './routes/export-templates.index'
+import { Route as EthernetSegmentsIndexRouteImport } from './routes/ethernet-segments.index'
 import { Route as EigrpInstancesIndexRouteImport } from './routes/eigrp-instances.index'
 import { Route as DnsZonesIndexRouteImport } from './routes/dns-zones.index'
 import { Route as DnsRecordsIndexRouteImport } from './routes/dns-records.index'
@@ -182,6 +185,7 @@ import { Route as ContactsIndexRouteImport } from './routes/contacts.index'
 import { Route as ContactRolesIndexRouteImport } from './routes/contact-roles.index'
 import { Route as ContactGroupsIndexRouteImport } from './routes/contact-groups.index'
 import { Route as ConfigContextsIndexRouteImport } from './routes/config-contexts.index'
+import { Route as ConfigBundlesIndexRouteImport } from './routes/config-bundles.index'
 import { Route as CommunityListsIndexRouteImport } from './routes/community-lists.index'
 import { Route as CommunitiesIndexRouteImport } from './routes/communities.index'
 import { Route as ClustersIndexRouteImport } from './routes/clusters.index'
@@ -343,6 +347,8 @@ import { Route as FhrpGroupsNewRouteImport } from './routes/fhrp-groups.new'
 import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
 import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
 import { Route as ExportTemplatesIdRouteImport } from './routes/export-templates.$id'
+import { Route as EthernetSegmentsNewRouteImport } from './routes/ethernet-segments.new'
+import { Route as EthernetSegmentsIdRouteImport } from './routes/ethernet-segments.$id'
 import { Route as DnsZonesIdRouteImport } from './routes/dns-zones.$id'
 import { Route as DnsRecordsIdRouteImport } from './routes/dns-records.$id'
 import { Route as DnsNamesNameRouteImport } from './routes/dns-names.$name'
@@ -364,6 +370,8 @@ import { Route as ContactGroupsNewRouteImport } from './routes/contact-groups.ne
 import { Route as ContactGroupsIdRouteImport } from './routes/contact-groups.$id'
 import { Route as ConfigContextsNewRouteImport } from './routes/config-contexts.new'
 import { Route as ConfigContextsIdRouteImport } from './routes/config-contexts.$id'
+import { Route as ConfigBundlesNewRouteImport } from './routes/config-bundles.new'
+import { Route as ConfigBundlesIdRouteImport } from './routes/config-bundles.$id'
 import { Route as ComplianceRulesNewRouteImport } from './routes/compliance-rules.new'
 import { Route as ComplianceRulesIdRouteImport } from './routes/compliance-rules.$id'
 import { Route as CommunityListsNewRouteImport } from './routes/community-lists.new'
@@ -456,6 +464,7 @@ import { Route as GroupsIdEditRouteImport } from './routes/groups.$id_.edit'
 import { Route as FloorTileTypesIdEditRouteImport } from './routes/floor-tile-types.$id_.edit'
 import { Route as FhrpGroupsIdEditRouteImport } from './routes/fhrp-groups.$id_.edit'
 import { Route as ExportTemplatesIdEditRouteImport } from './routes/export-templates.$id_.edit'
+import { Route as EthernetSegmentsIdEditRouteImport } from './routes/ethernet-segments.$id_.edit'
 import { Route as DevicesIdEditRouteImport } from './routes/devices.$id_.edit'
 import { Route as DevicesIdComplianceRouteImport } from './routes/devices.$id_.compliance'
 import { Route as DeviceTypesIdEditRouteImport } from './routes/device-types.$id_.edit'
@@ -466,6 +475,7 @@ import { Route as ContactsIdEditRouteImport } from './routes/contacts.$id_.edit'
 import { Route as ContactRolesIdEditRouteImport } from './routes/contact-roles.$id_.edit'
 import { Route as ContactGroupsIdEditRouteImport } from './routes/contact-groups.$id_.edit'
 import { Route as ConfigContextsIdEditRouteImport } from './routes/config-contexts.$id_.edit'
+import { Route as ConfigBundlesIdEditRouteImport } from './routes/config-bundles.$id_.edit'
 import { Route as ComplianceRulesIdEditRouteImport } from './routes/compliance-rules.$id_.edit'
 import { Route as CommunityListsIdEditRouteImport } from './routes/community-lists.$id_.edit'
 import { Route as CommunitiesIdEditRouteImport } from './routes/communities.$id_.edit'
@@ -782,6 +792,11 @@ const ExportTemplatesRoute = ExportTemplatesRouteImport.update({
   path: '/export-templates',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EthernetSegmentsRoute = EthernetSegmentsRouteImport.update({
+  id: '/ethernet-segments',
+  path: '/ethernet-segments',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DevicesRoute = DevicesRouteImport.update({
   id: '/devices',
   path: '/devices',
@@ -830,6 +845,11 @@ const ConfigDriftRoute = ConfigDriftRouteImport.update({
 const ConfigContextsRoute = ConfigContextsRouteImport.update({
   id: '/config-contexts',
   path: '/config-contexts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfigBundlesRoute = ConfigBundlesRouteImport.update({
+  id: '/config-bundles',
+  path: '/config-bundles',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComplianceRoute = ComplianceRouteImport.update({
@@ -1278,6 +1298,11 @@ const ExportTemplatesIndexRoute = ExportTemplatesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ExportTemplatesRoute,
 } as any)
+const EthernetSegmentsIndexRoute = EthernetSegmentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
 const EigrpInstancesIndexRoute = EigrpInstancesIndexRouteImport.update({
   id: '/eigrp-instances/',
   path: '/eigrp-instances/',
@@ -1352,6 +1377,11 @@ const ConfigContextsIndexRoute = ConfigContextsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ConfigContextsRoute,
+} as any)
+const ConfigBundlesIndexRoute = ConfigBundlesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConfigBundlesRoute,
 } as any)
 const CommunityListsIndexRoute = CommunityListsIndexRouteImport.update({
   id: '/',
@@ -2160,6 +2190,16 @@ const ExportTemplatesIdRoute = ExportTemplatesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ExportTemplatesRoute,
 } as any)
+const EthernetSegmentsNewRoute = EthernetSegmentsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
+const EthernetSegmentsIdRoute = EthernetSegmentsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
 const DnsZonesIdRoute = DnsZonesIdRouteImport.update({
   id: '/dns-zones/$id',
   path: '/dns-zones/$id',
@@ -2264,6 +2304,16 @@ const ConfigContextsIdRoute = ConfigContextsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => ConfigContextsRoute,
+} as any)
+const ConfigBundlesNewRoute = ConfigBundlesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ConfigBundlesRoute,
+} as any)
+const ConfigBundlesIdRoute = ConfigBundlesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ConfigBundlesRoute,
 } as any)
 const ComplianceRulesNewRoute = ComplianceRulesNewRouteImport.update({
   id: '/compliance-rules/new',
@@ -2725,6 +2775,11 @@ const ExportTemplatesIdEditRoute = ExportTemplatesIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => ExportTemplatesRoute,
 } as any)
+const EthernetSegmentsIdEditRoute = EthernetSegmentsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
 const DevicesIdEditRoute = DevicesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2774,6 +2829,11 @@ const ConfigContextsIdEditRoute = ConfigContextsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
   getParentRoute: () => ConfigContextsRoute,
+} as any)
+const ConfigBundlesIdEditRoute = ConfigBundlesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ConfigBundlesRoute,
 } as any)
 const ComplianceRulesIdEditRoute = ComplianceRulesIdEditRouteImport.update({
   id: '/compliance-rules/$id_/edit',
@@ -2896,6 +2956,7 @@ export interface FileRoutesByFullPath {
   '/communities': typeof CommunitiesRouteWithChildren
   '/community-lists': typeof CommunityListsRouteWithChildren
   '/compliance': typeof ComplianceRoute
+  '/config-bundles': typeof ConfigBundlesRouteWithChildren
   '/config-contexts': typeof ConfigContextsRouteWithChildren
   '/config-drift': typeof ConfigDriftRoute
   '/contact-groups': typeof ContactGroupsRouteWithChildren
@@ -2906,6 +2967,7 @@ export interface FileRoutesByFullPath {
   '/deploy-runs': typeof DeployRunsRoute
   '/device-types': typeof DeviceTypesRouteWithChildren
   '/devices': typeof DevicesRouteWithChildren
+  '/ethernet-segments': typeof EthernetSegmentsRouteWithChildren
   '/export-templates': typeof ExportTemplatesRouteWithChildren
   '/fhrp-groups': typeof FhrpGroupsRouteWithChildren
   '/fiber': typeof FiberRoute
@@ -3004,6 +3066,8 @@ export interface FileRoutesByFullPath {
   '/community-lists/new': typeof CommunityListsNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
+  '/config-bundles/$id': typeof ConfigBundlesIdRoute
+  '/config-bundles/new': typeof ConfigBundlesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/$id': typeof ContactGroupsIdRoute
@@ -3025,6 +3089,8 @@ export interface FileRoutesByFullPath {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
+  '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -3186,6 +3252,7 @@ export interface FileRoutesByFullPath {
   '/clusters/': typeof ClustersIndexRoute
   '/communities/': typeof CommunitiesIndexRoute
   '/community-lists/': typeof CommunityListsIndexRoute
+  '/config-bundles/': typeof ConfigBundlesIndexRoute
   '/config-contexts/': typeof ConfigContextsIndexRoute
   '/contact-groups/': typeof ContactGroupsIndexRoute
   '/contact-roles/': typeof ContactRolesIndexRoute
@@ -3201,6 +3268,7 @@ export interface FileRoutesByFullPath {
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
   '/eigrp-instances/': typeof EigrpInstancesIndexRoute
+  '/ethernet-segments/': typeof EthernetSegmentsIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -3290,6 +3358,7 @@ export interface FileRoutesByFullPath {
   '/communities/$id/edit': typeof CommunitiesIdEditRoute
   '/community-lists/$id/edit': typeof CommunityListsIdEditRoute
   '/compliance-rules/$id/edit': typeof ComplianceRulesIdEditRoute
+  '/config-bundles/$id/edit': typeof ConfigBundlesIdEditRoute
   '/config-contexts/$id/edit': typeof ConfigContextsIdEditRoute
   '/contact-groups/$id/edit': typeof ContactGroupsIdEditRoute
   '/contact-roles/$id/edit': typeof ContactRolesIdEditRoute
@@ -3300,6 +3369,7 @@ export interface FileRoutesByFullPath {
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
+  '/ethernet-segments/$id/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id/edit': typeof FloorTileTypesIdEditRoute
@@ -3416,6 +3486,8 @@ export interface FileRoutesByTo {
   '/community-lists/new': typeof CommunityListsNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
+  '/config-bundles/$id': typeof ConfigBundlesIdRoute
+  '/config-bundles/new': typeof ConfigBundlesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/$id': typeof ContactGroupsIdRoute
@@ -3437,6 +3509,8 @@ export interface FileRoutesByTo {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
+  '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -3598,6 +3672,7 @@ export interface FileRoutesByTo {
   '/clusters': typeof ClustersIndexRoute
   '/communities': typeof CommunitiesIndexRoute
   '/community-lists': typeof CommunityListsIndexRoute
+  '/config-bundles': typeof ConfigBundlesIndexRoute
   '/config-contexts': typeof ConfigContextsIndexRoute
   '/contact-groups': typeof ContactGroupsIndexRoute
   '/contact-roles': typeof ContactRolesIndexRoute
@@ -3613,6 +3688,7 @@ export interface FileRoutesByTo {
   '/dns-records': typeof DnsRecordsIndexRoute
   '/dns-zones': typeof DnsZonesIndexRoute
   '/eigrp-instances': typeof EigrpInstancesIndexRoute
+  '/ethernet-segments': typeof EthernetSegmentsIndexRoute
   '/export-templates': typeof ExportTemplatesIndexRoute
   '/fhrp-groups': typeof FhrpGroupsIndexRoute
   '/floor-tile-types': typeof FloorTileTypesIndexRoute
@@ -3702,6 +3778,7 @@ export interface FileRoutesByTo {
   '/communities/$id/edit': typeof CommunitiesIdEditRoute
   '/community-lists/$id/edit': typeof CommunityListsIdEditRoute
   '/compliance-rules/$id/edit': typeof ComplianceRulesIdEditRoute
+  '/config-bundles/$id/edit': typeof ConfigBundlesIdEditRoute
   '/config-contexts/$id/edit': typeof ConfigContextsIdEditRoute
   '/contact-groups/$id/edit': typeof ContactGroupsIdEditRoute
   '/contact-roles/$id/edit': typeof ContactRolesIdEditRoute
@@ -3712,6 +3789,7 @@ export interface FileRoutesByTo {
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
+  '/ethernet-segments/$id/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id/edit': typeof FloorTileTypesIdEditRoute
@@ -3788,6 +3866,7 @@ export interface FileRoutesById {
   '/communities': typeof CommunitiesRouteWithChildren
   '/community-lists': typeof CommunityListsRouteWithChildren
   '/compliance': typeof ComplianceRoute
+  '/config-bundles': typeof ConfigBundlesRouteWithChildren
   '/config-contexts': typeof ConfigContextsRouteWithChildren
   '/config-drift': typeof ConfigDriftRoute
   '/contact-groups': typeof ContactGroupsRouteWithChildren
@@ -3798,6 +3877,7 @@ export interface FileRoutesById {
   '/deploy-runs': typeof DeployRunsRoute
   '/device-types': typeof DeviceTypesRouteWithChildren
   '/devices': typeof DevicesRouteWithChildren
+  '/ethernet-segments': typeof EthernetSegmentsRouteWithChildren
   '/export-templates': typeof ExportTemplatesRouteWithChildren
   '/fhrp-groups': typeof FhrpGroupsRouteWithChildren
   '/fiber': typeof FiberRoute
@@ -3896,6 +3976,8 @@ export interface FileRoutesById {
   '/community-lists/new': typeof CommunityListsNewRoute
   '/compliance-rules/$id': typeof ComplianceRulesIdRoute
   '/compliance-rules/new': typeof ComplianceRulesNewRoute
+  '/config-bundles/$id': typeof ConfigBundlesIdRoute
+  '/config-bundles/new': typeof ConfigBundlesNewRoute
   '/config-contexts/$id': typeof ConfigContextsIdRoute
   '/config-contexts/new': typeof ConfigContextsNewRoute
   '/contact-groups/$id': typeof ContactGroupsIdRoute
@@ -3917,6 +3999,8 @@ export interface FileRoutesById {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
+  '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
   '/export-templates/new': typeof ExportTemplatesNewRoute
   '/fhrp-groups/$id': typeof FhrpGroupsIdRoute
@@ -4078,6 +4162,7 @@ export interface FileRoutesById {
   '/clusters/': typeof ClustersIndexRoute
   '/communities/': typeof CommunitiesIndexRoute
   '/community-lists/': typeof CommunityListsIndexRoute
+  '/config-bundles/': typeof ConfigBundlesIndexRoute
   '/config-contexts/': typeof ConfigContextsIndexRoute
   '/contact-groups/': typeof ContactGroupsIndexRoute
   '/contact-roles/': typeof ContactRolesIndexRoute
@@ -4093,6 +4178,7 @@ export interface FileRoutesById {
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
   '/eigrp-instances/': typeof EigrpInstancesIndexRoute
+  '/ethernet-segments/': typeof EthernetSegmentsIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
   '/floor-tile-types/': typeof FloorTileTypesIndexRoute
@@ -4182,6 +4268,7 @@ export interface FileRoutesById {
   '/communities/$id_/edit': typeof CommunitiesIdEditRoute
   '/community-lists/$id_/edit': typeof CommunityListsIdEditRoute
   '/compliance-rules/$id_/edit': typeof ComplianceRulesIdEditRoute
+  '/config-bundles/$id_/edit': typeof ConfigBundlesIdEditRoute
   '/config-contexts/$id_/edit': typeof ConfigContextsIdEditRoute
   '/contact-groups/$id_/edit': typeof ContactGroupsIdEditRoute
   '/contact-roles/$id_/edit': typeof ContactRolesIdEditRoute
@@ -4192,6 +4279,7 @@ export interface FileRoutesById {
   '/device-types/$id_/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id_/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id_/edit': typeof DevicesIdEditRoute
+  '/ethernet-segments/$id_/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id_/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id_/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id_/edit': typeof FloorTileTypesIdEditRoute
@@ -4269,6 +4357,7 @@ export interface FileRouteTypes {
     | '/communities'
     | '/community-lists'
     | '/compliance'
+    | '/config-bundles'
     | '/config-contexts'
     | '/config-drift'
     | '/contact-groups'
@@ -4279,6 +4368,7 @@ export interface FileRouteTypes {
     | '/deploy-runs'
     | '/device-types'
     | '/devices'
+    | '/ethernet-segments'
     | '/export-templates'
     | '/fhrp-groups'
     | '/fiber'
@@ -4377,6 +4467,8 @@ export interface FileRouteTypes {
     | '/community-lists/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
+    | '/config-bundles/$id'
+    | '/config-bundles/new'
     | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/$id'
@@ -4398,6 +4490,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/ethernet-segments/$id'
+    | '/ethernet-segments/new'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -4559,6 +4653,7 @@ export interface FileRouteTypes {
     | '/clusters/'
     | '/communities/'
     | '/community-lists/'
+    | '/config-bundles/'
     | '/config-contexts/'
     | '/contact-groups/'
     | '/contact-roles/'
@@ -4574,6 +4669,7 @@ export interface FileRouteTypes {
     | '/dns-records/'
     | '/dns-zones/'
     | '/eigrp-instances/'
+    | '/ethernet-segments/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -4663,6 +4759,7 @@ export interface FileRouteTypes {
     | '/communities/$id/edit'
     | '/community-lists/$id/edit'
     | '/compliance-rules/$id/edit'
+    | '/config-bundles/$id/edit'
     | '/config-contexts/$id/edit'
     | '/contact-groups/$id/edit'
     | '/contact-roles/$id/edit'
@@ -4673,6 +4770,7 @@ export interface FileRouteTypes {
     | '/device-types/$id/edit'
     | '/devices/$id/compliance'
     | '/devices/$id/edit'
+    | '/ethernet-segments/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
     | '/floor-tile-types/$id/edit'
@@ -4789,6 +4887,8 @@ export interface FileRouteTypes {
     | '/community-lists/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
+    | '/config-bundles/$id'
+    | '/config-bundles/new'
     | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/$id'
@@ -4810,6 +4910,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/ethernet-segments/$id'
+    | '/ethernet-segments/new'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -4971,6 +5073,7 @@ export interface FileRouteTypes {
     | '/clusters'
     | '/communities'
     | '/community-lists'
+    | '/config-bundles'
     | '/config-contexts'
     | '/contact-groups'
     | '/contact-roles'
@@ -4986,6 +5089,7 @@ export interface FileRouteTypes {
     | '/dns-records'
     | '/dns-zones'
     | '/eigrp-instances'
+    | '/ethernet-segments'
     | '/export-templates'
     | '/fhrp-groups'
     | '/floor-tile-types'
@@ -5075,6 +5179,7 @@ export interface FileRouteTypes {
     | '/communities/$id/edit'
     | '/community-lists/$id/edit'
     | '/compliance-rules/$id/edit'
+    | '/config-bundles/$id/edit'
     | '/config-contexts/$id/edit'
     | '/contact-groups/$id/edit'
     | '/contact-roles/$id/edit'
@@ -5085,6 +5190,7 @@ export interface FileRouteTypes {
     | '/device-types/$id/edit'
     | '/devices/$id/compliance'
     | '/devices/$id/edit'
+    | '/ethernet-segments/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
     | '/floor-tile-types/$id/edit'
@@ -5160,6 +5266,7 @@ export interface FileRouteTypes {
     | '/communities'
     | '/community-lists'
     | '/compliance'
+    | '/config-bundles'
     | '/config-contexts'
     | '/config-drift'
     | '/contact-groups'
@@ -5170,6 +5277,7 @@ export interface FileRouteTypes {
     | '/deploy-runs'
     | '/device-types'
     | '/devices'
+    | '/ethernet-segments'
     | '/export-templates'
     | '/fhrp-groups'
     | '/fiber'
@@ -5268,6 +5376,8 @@ export interface FileRouteTypes {
     | '/community-lists/new'
     | '/compliance-rules/$id'
     | '/compliance-rules/new'
+    | '/config-bundles/$id'
+    | '/config-bundles/new'
     | '/config-contexts/$id'
     | '/config-contexts/new'
     | '/contact-groups/$id'
@@ -5289,6 +5399,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/ethernet-segments/$id'
+    | '/ethernet-segments/new'
     | '/export-templates/$id'
     | '/export-templates/new'
     | '/fhrp-groups/$id'
@@ -5450,6 +5562,7 @@ export interface FileRouteTypes {
     | '/clusters/'
     | '/communities/'
     | '/community-lists/'
+    | '/config-bundles/'
     | '/config-contexts/'
     | '/contact-groups/'
     | '/contact-roles/'
@@ -5465,6 +5578,7 @@ export interface FileRouteTypes {
     | '/dns-records/'
     | '/dns-zones/'
     | '/eigrp-instances/'
+    | '/ethernet-segments/'
     | '/export-templates/'
     | '/fhrp-groups/'
     | '/floor-tile-types/'
@@ -5554,6 +5668,7 @@ export interface FileRouteTypes {
     | '/communities/$id_/edit'
     | '/community-lists/$id_/edit'
     | '/compliance-rules/$id_/edit'
+    | '/config-bundles/$id_/edit'
     | '/config-contexts/$id_/edit'
     | '/contact-groups/$id_/edit'
     | '/contact-roles/$id_/edit'
@@ -5564,6 +5679,7 @@ export interface FileRouteTypes {
     | '/device-types/$id_/edit'
     | '/devices/$id_/compliance'
     | '/devices/$id_/edit'
+    | '/ethernet-segments/$id_/edit'
     | '/export-templates/$id_/edit'
     | '/fhrp-groups/$id_/edit'
     | '/floor-tile-types/$id_/edit'
@@ -5640,6 +5756,7 @@ export interface RootRouteChildren {
   CommunitiesRoute: typeof CommunitiesRouteWithChildren
   CommunityListsRoute: typeof CommunityListsRouteWithChildren
   ComplianceRoute: typeof ComplianceRoute
+  ConfigBundlesRoute: typeof ConfigBundlesRouteWithChildren
   ConfigContextsRoute: typeof ConfigContextsRouteWithChildren
   ConfigDriftRoute: typeof ConfigDriftRoute
   ContactGroupsRoute: typeof ContactGroupsRouteWithChildren
@@ -5650,6 +5767,7 @@ export interface RootRouteChildren {
   DeployRunsRoute: typeof DeployRunsRoute
   DeviceTypesRoute: typeof DeviceTypesRouteWithChildren
   DevicesRoute: typeof DevicesRouteWithChildren
+  EthernetSegmentsRoute: typeof EthernetSegmentsRouteWithChildren
   ExportTemplatesRoute: typeof ExportTemplatesRouteWithChildren
   FhrpGroupsRoute: typeof FhrpGroupsRouteWithChildren
   FiberRoute: typeof FiberRoute
@@ -6230,6 +6348,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ethernet-segments': {
+      id: '/ethernet-segments'
+      path: '/ethernet-segments'
+      fullPath: '/ethernet-segments'
+      preLoaderRoute: typeof EthernetSegmentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/devices': {
       id: '/devices'
       path: '/devices'
@@ -6298,6 +6423,13 @@ declare module '@tanstack/react-router' {
       path: '/config-contexts'
       fullPath: '/config-contexts'
       preLoaderRoute: typeof ConfigContextsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/config-bundles': {
+      id: '/config-bundles'
+      path: '/config-bundles'
+      fullPath: '/config-bundles'
+      preLoaderRoute: typeof ConfigBundlesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/compliance': {
@@ -6923,6 +7055,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesIndexRouteImport
       parentRoute: typeof ExportTemplatesRoute
     }
+    '/ethernet-segments/': {
+      id: '/ethernet-segments/'
+      path: '/'
+      fullPath: '/ethernet-segments/'
+      preLoaderRoute: typeof EthernetSegmentsIndexRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
     '/eigrp-instances/': {
       id: '/eigrp-instances/'
       path: '/eigrp-instances'
@@ -7027,6 +7166,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/config-contexts/'
       preLoaderRoute: typeof ConfigContextsIndexRouteImport
       parentRoute: typeof ConfigContextsRoute
+    }
+    '/config-bundles/': {
+      id: '/config-bundles/'
+      path: '/'
+      fullPath: '/config-bundles/'
+      preLoaderRoute: typeof ConfigBundlesIndexRouteImport
+      parentRoute: typeof ConfigBundlesRoute
     }
     '/community-lists/': {
       id: '/community-lists/'
@@ -8155,6 +8301,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesIdRouteImport
       parentRoute: typeof ExportTemplatesRoute
     }
+    '/ethernet-segments/new': {
+      id: '/ethernet-segments/new'
+      path: '/new'
+      fullPath: '/ethernet-segments/new'
+      preLoaderRoute: typeof EthernetSegmentsNewRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
+    '/ethernet-segments/$id': {
+      id: '/ethernet-segments/$id'
+      path: '/$id'
+      fullPath: '/ethernet-segments/$id'
+      preLoaderRoute: typeof EthernetSegmentsIdRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
     '/dns-zones/$id': {
       id: '/dns-zones/$id'
       path: '/dns-zones/$id'
@@ -8301,6 +8461,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/config-contexts/$id'
       preLoaderRoute: typeof ConfigContextsIdRouteImport
       parentRoute: typeof ConfigContextsRoute
+    }
+    '/config-bundles/new': {
+      id: '/config-bundles/new'
+      path: '/new'
+      fullPath: '/config-bundles/new'
+      preLoaderRoute: typeof ConfigBundlesNewRouteImport
+      parentRoute: typeof ConfigBundlesRoute
+    }
+    '/config-bundles/$id': {
+      id: '/config-bundles/$id'
+      path: '/$id'
+      fullPath: '/config-bundles/$id'
+      preLoaderRoute: typeof ConfigBundlesIdRouteImport
+      parentRoute: typeof ConfigBundlesRoute
     }
     '/compliance-rules/new': {
       id: '/compliance-rules/new'
@@ -8946,6 +9120,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportTemplatesIdEditRouteImport
       parentRoute: typeof ExportTemplatesRoute
     }
+    '/ethernet-segments/$id_/edit': {
+      id: '/ethernet-segments/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ethernet-segments/$id/edit'
+      preLoaderRoute: typeof EthernetSegmentsIdEditRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
     '/devices/$id_/edit': {
       id: '/devices/$id_/edit'
       path: '/$id/edit'
@@ -9015,6 +9196,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/config-contexts/$id/edit'
       preLoaderRoute: typeof ConfigContextsIdEditRouteImport
       parentRoute: typeof ConfigContextsRoute
+    }
+    '/config-bundles/$id_/edit': {
+      id: '/config-bundles/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/config-bundles/$id/edit'
+      preLoaderRoute: typeof ConfigBundlesIdEditRouteImport
+      parentRoute: typeof ConfigBundlesRoute
     }
     '/compliance-rules/$id_/edit': {
       id: '/compliance-rules/$id_/edit'
@@ -9373,6 +9561,24 @@ const CommunityListsRouteWithChildren = CommunityListsRoute._addFileChildren(
   CommunityListsRouteChildren,
 )
 
+interface ConfigBundlesRouteChildren {
+  ConfigBundlesIdRoute: typeof ConfigBundlesIdRoute
+  ConfigBundlesNewRoute: typeof ConfigBundlesNewRoute
+  ConfigBundlesIndexRoute: typeof ConfigBundlesIndexRoute
+  ConfigBundlesIdEditRoute: typeof ConfigBundlesIdEditRoute
+}
+
+const ConfigBundlesRouteChildren: ConfigBundlesRouteChildren = {
+  ConfigBundlesIdRoute: ConfigBundlesIdRoute,
+  ConfigBundlesNewRoute: ConfigBundlesNewRoute,
+  ConfigBundlesIndexRoute: ConfigBundlesIndexRoute,
+  ConfigBundlesIdEditRoute: ConfigBundlesIdEditRoute,
+}
+
+const ConfigBundlesRouteWithChildren = ConfigBundlesRoute._addFileChildren(
+  ConfigBundlesRouteChildren,
+)
+
 interface ConfigContextsRouteChildren {
   ConfigContextsIdRoute: typeof ConfigContextsIdRoute
   ConfigContextsNewRoute: typeof ConfigContextsNewRoute
@@ -9516,6 +9722,23 @@ const DevicesRouteChildren: DevicesRouteChildren = {
 
 const DevicesRouteWithChildren =
   DevicesRoute._addFileChildren(DevicesRouteChildren)
+
+interface EthernetSegmentsRouteChildren {
+  EthernetSegmentsIdRoute: typeof EthernetSegmentsIdRoute
+  EthernetSegmentsNewRoute: typeof EthernetSegmentsNewRoute
+  EthernetSegmentsIndexRoute: typeof EthernetSegmentsIndexRoute
+  EthernetSegmentsIdEditRoute: typeof EthernetSegmentsIdEditRoute
+}
+
+const EthernetSegmentsRouteChildren: EthernetSegmentsRouteChildren = {
+  EthernetSegmentsIdRoute: EthernetSegmentsIdRoute,
+  EthernetSegmentsNewRoute: EthernetSegmentsNewRoute,
+  EthernetSegmentsIndexRoute: EthernetSegmentsIndexRoute,
+  EthernetSegmentsIdEditRoute: EthernetSegmentsIdEditRoute,
+}
+
+const EthernetSegmentsRouteWithChildren =
+  EthernetSegmentsRoute._addFileChildren(EthernetSegmentsRouteChildren)
 
 interface ExportTemplatesRouteChildren {
   ExportTemplatesIdRoute: typeof ExportTemplatesIdRoute
@@ -10388,6 +10611,7 @@ const rootRouteChildren: RootRouteChildren = {
   CommunitiesRoute: CommunitiesRouteWithChildren,
   CommunityListsRoute: CommunityListsRouteWithChildren,
   ComplianceRoute: ComplianceRoute,
+  ConfigBundlesRoute: ConfigBundlesRouteWithChildren,
   ConfigContextsRoute: ConfigContextsRouteWithChildren,
   ConfigDriftRoute: ConfigDriftRoute,
   ContactGroupsRoute: ContactGroupsRouteWithChildren,
@@ -10398,6 +10622,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeployRunsRoute: DeployRunsRoute,
   DeviceTypesRoute: DeviceTypesRouteWithChildren,
   DevicesRoute: DevicesRouteWithChildren,
+  EthernetSegmentsRoute: EthernetSegmentsRouteWithChildren,
   ExportTemplatesRoute: ExportTemplatesRouteWithChildren,
   FhrpGroupsRoute: FhrpGroupsRouteWithChildren,
   FiberRoute: FiberRoute,

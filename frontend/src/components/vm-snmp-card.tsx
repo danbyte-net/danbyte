@@ -4,12 +4,19 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type DeviceSnmp, type SnmpInterface } from "@/lib/api"
+import {
+  api,
+  type DeviceSnmp,
+  type Paginated,
+  type SnmpInterface,
+  type VMInterface,
+} from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
+import { IpLinks, MacLink } from "@/components/device-snmp-card"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard, mono, dash, type KvRow } from "@/components/kv-card"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -35,6 +42,25 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
     queryKey: ["vm-snmp", vmId],
     queryFn: () => api<DeviceSnmp>(`${base}/snmp/`),
   })
+  // The VM's own NICs, so an SNMP row can be read against the interface
+  // Danbyte holds: by the hypervisor's name (`nic0`) or by the guest's SNMP
+  // name set on the interface (`ether1`). Its addresses give the ARP table
+  // something to link to.
+  const nics = useQuery({
+    queryKey: ["vm-interfaces", vmId],
+    queryFn: () =>
+      api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
+  })
+  const { ifaceByName, ipIdByAddr } = useMemo(() => {
+    const byName = new Map<string, { id: string; name: string }>()
+    const ips = new Map<string, string>()
+    for (const i of nics.data?.results ?? []) {
+      byName.set(i.name.toLowerCase(), { id: i.id, name: i.name })
+      if (i.snmp_name) byName.set(i.snmp_name.toLowerCase(), { id: i.id, name: i.name })
+      for (const ip of i.ip_addresses) ips.set(ip.ip_address, ip.id)
+    }
+    return { ifaceByName: byName, ipIdByAddr: ips }
+  }, [nics.data])
 
   const poll = useMutation({
     mutationFn: () =>
@@ -58,6 +84,21 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
         cell: ({ row }) => (
           <span className="font-mono text-xs">{row.original.name}</span>
         ),
+      },
+      {
+        id: "danbyte",
+        header: "Interface",
+        cell: ({ row }) => {
+          const hit =
+            ifaceByName.get((row.original.name || "").toLowerCase()) ??
+            ifaceByName.get((row.original.descr || "").toLowerCase())
+          // A VM interface has no page of its own; the name is the mapping.
+          return hit ? (
+            <span className="font-mono text-xs">{hit.name}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">-</span>
+          )
+        },
       },
       {
         id: "status",
@@ -96,7 +137,33 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
         ),
       },
     ],
-    []
+    [ifaceByName]
+  )
+  const arpColumns = useMemo<ColumnDef<DeviceSnmp["arp"][number]>[]>(
+    () => [
+      {
+        id: "ip",
+        header: "IP address",
+        cell: ({ row }) => (
+          <IpLinks ips={[row.original.ip]} idByAddr={ipIdByAddr} />
+        ),
+      },
+      {
+        id: "mac",
+        header: "MAC",
+        cell: ({ row }) => <MacLink mac={row.original.mac} />,
+      },
+      {
+        id: "if",
+        header: "ifIndex",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs text-muted-foreground">
+            {row.original.if_index || "-"}
+          </span>
+        ),
+      },
+    ],
+    [ipIdByAddr]
   )
 
   if (snmp.isLoading)
@@ -195,10 +262,18 @@ export function VmSnmpCard({ vmId }: { vmId: string }) {
       )}
 
       {state.arp.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {state.arp.length} ARP entr{state.arp.length === 1 ? "y" : "ies"}{" "}
-          observed.
-        </p>
+        <section>
+          <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+            ARP table
+          </h2>
+          <DataTable
+            data={state.arp}
+            columns={arpColumns}
+            tableId="vm-snmp-arp"
+            flexColumn="if"
+            embedded
+          />
+        </section>
       )}
     </div>
   )

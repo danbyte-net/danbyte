@@ -5,6 +5,7 @@ import { api } from "@/lib/api"
 import type {
   InterfaceOption,
   L2VPN,
+  LDPInstance,
   Paginated,
   Status,
   VLANMini,
@@ -16,6 +17,7 @@ import {
   FormCombobox,
   FormFooter,
   FormSection,
+  FormSelect,
   FormStatusSelect,
   FormTags,
   FormText,
@@ -23,11 +25,13 @@ import {
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 
-import { ROUTING_OBJECT_TYPES, useRoutingSave } from "./form-bits"
+import { BFDFields, ROUTING_OBJECT_TYPES, useRoutingSave } from "./form-bits"
+import { MultiPick } from "./multi-pick"
 
 // The overlay on a device: its VTEP (one per device) and the VNIs it
-// carries. Both are edited from the VTEP card on the Routing tab, so the
-// device is known and the pickers list its own loopbacks and addresses.
+// carries, and the LDP process (one per device) that hands MPLS labels
+// out. All are edited from their card on the Routing tab, so the device is
+// known and the pickers list its own loopbacks, ports and addresses.
 
 function useDeviceInterfaces(deviceId: string) {
   return useQuery({
@@ -353,6 +357,176 @@ export function VTEPMembershipForm({
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Add VNI"}
+      />
+    </form>
+  )
+}
+
+// ─── LDP ─────────────────────────────────────────────────────────────────────
+
+const LABEL_ALLOCATION = [
+  { value: "host-routes", label: "Host routes only" },
+  { value: "all", label: "All routes" },
+]
+
+export function LDPInstanceForm({
+  item,
+  device,
+  onSaved,
+  onCancel,
+}: {
+  item?: LDPInstance | null
+  device: { id: string; name: string }
+  onSaved: (v: LDPInstance) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const [routerId, setRouterId] = useState(item?.router_id ?? "")
+  const [transport, setTransport] = useState(item?.transport_address ?? "")
+  const [allocation, setAllocation] = useState<string | null>(
+    item?.label_allocation ?? "host-routes"
+  )
+  const [interfaceIds, setInterfaceIds] = useState<string[]>(
+    item?.interfaces.map((i) => i.id) ?? []
+  )
+  const [bfd, setBfd] = useState<string | null>(item?.bfd ? "on" : "off")
+  const [bfdProfileId, setBfdProfileId] = useState<string | null>(
+    item?.bfd_profile?.id ?? null
+  )
+  const [statusId, setStatusId] = useState<string | null>(
+    item?.status?.id ?? null
+  )
+  const [description, setDescription] = useState(item?.description ?? "")
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(
+    item?.custom_fields ?? {}
+  )
+  const interfaces = useDeviceInterfaces(device.id)
+  const statuses = useQuery({
+    queryKey: ["statuses", "routinginstance"],
+    queryFn: () =>
+      api<Paginated<Status>>(
+        "/api/statuses/?available_to=routinginstance&picker=1"
+      ),
+    staleTime: 5 * 60_000,
+  })
+  useEffect(() => {
+    if (isEdit || statusId || !statuses.data) return
+    const d = statuses.data.results.find((st) =>
+      st.default_for.includes("routinginstance")
+    )
+    if (d) setStatusId(d.id)
+  }, [isEdit, statusId, statuses.data])
+  const { mutation, fieldErrors } = useRoutingSave<LDPInstance>({
+    objectType: ROUTING_OBJECT_TYPES.ldpinstance,
+    endpoint: "/api/routing/ldp-instances/",
+    queryKey: "ldp-instances",
+    id: item?.id,
+    label: (v) => `LDP on ${v.device.name}`,
+    onSaved,
+  })
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate({
+          device_id: device.id,
+          router_id: routerId.trim(),
+          transport_address: transport.trim(),
+          label_allocation: allocation,
+          interface_ids: interfaceIds,
+          bfd: bfd === "on",
+          bfd_profile_id: bfd === "on" ? bfdProfileId : null,
+          status_id: statusId,
+          description: description.trim(),
+          tag_ids: tagIds,
+          custom_fields: customFields,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="LDP" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Router ID"
+            mono
+            autoFocus={!isEdit}
+            value={routerId}
+            onChange={setRouterId}
+            placeholder="10.51.255.1"
+            error={fieldErrors.router_id}
+          />
+          <FormText
+            label="Transport address"
+            mono
+            value={transport}
+            onChange={setTransport}
+            placeholder="10.51.255.1"
+            info="Blank = the router ID"
+            error={fieldErrors.transport_address}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormSelect
+            label="Label allocation"
+            value={allocation}
+            onChange={setAllocation}
+            options={LABEL_ALLOCATION}
+            info="Which FECs get a label: only /32 loopbacks, or every prefix in the table."
+            error={fieldErrors.label_allocation}
+          />
+          <FormStatusSelect
+            value={statusId}
+            onChange={setStatusId}
+            options={statuses.data?.results ?? []}
+            error={fieldErrors.status_id}
+          />
+        </div>
+        <div className="grid gap-1">
+          <span className="text-xs font-medium">Interfaces</span>
+          <MultiPick
+            options={(interfaces.data?.results ?? []).map((i) => ({
+              id: i.id,
+              label: i.name,
+            }))}
+            value={interfaceIds}
+            onChange={setInterfaceIds}
+            placeholder="Add interface"
+            searchPlaceholder="Search interfaces…"
+            emptyText="No interfaces on this device."
+          />
+          {fieldErrors.interface_ids && (
+            <p className="text-[11px] text-destructive">
+              {fieldErrors.interface_ids}
+            </p>
+          )}
+        </div>
+        <BFDFields
+          on={bfd}
+          onChange={setBfd}
+          profileId={bfdProfileId}
+          onProfileChange={setBfdProfileId}
+          errors={fieldErrors}
+        />
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTags value={tagIds} onChange={setTagIds} label="Tags" />
+        <CustomFieldInputs
+          model="ldpinstance"
+          value={customFields}
+          onChange={setCustomFields}
+        />
+      </FormSection>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create LDP instance"}
       />
     </form>
   )

@@ -563,6 +563,22 @@ class BGPInstance(_DeviceInstance):
     )
     cluster_id = models.CharField(max_length=64, blank=True, default="")
     graceful_restart = models.BooleanField(default=False)
+    #: ``distance bgp <ebgp> <ibgp> <local>`` - all three or none.
+    distance_ebgp = models.PositiveSmallIntegerField(null=True, blank=True)
+    distance_ibgp = models.PositiveSmallIntegerField(null=True, blank=True)
+    distance_local = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: ``bgp bestpath as-path multipath-relax`` - ECMP across differing paths
+    #: of equal length, which every leaf-spine fabric turns on.
+    bestpath_multipath_relax = models.BooleanField(default=False)
+    # ── MPLS L3VPN, on a per-VRF instance. The VRF carries the RD and route
+    # targets; these say whether and how this table is leaked into the VPN
+    # family (``rd vpn export``, ``rt vpn import/export`` come from the VRF).
+    vpn_export = models.BooleanField(default=False)
+    vpn_import = models.BooleanField(default=False)
+    #: ``label vpn export auto`` or a fixed label number. Blank = not set.
+    vpn_label_export = models.CharField(max_length=8, blank=True, default="")
+    #: ``nexthop vpn export <address>``. Blank = not set.
+    vpn_nexthop_export = models.CharField(max_length=45, blank=True, default="")
 
     class Meta:
         ordering = ["device__name", "vrf__name"]
@@ -576,6 +592,19 @@ class BGPInstance(_DeviceInstance):
     def __str__(self) -> str:
         table = self.vrf.name if self.vrf_id else "global"
         return f"{self.device.name} · AS{self.asn.asn} · {table}"
+
+    def clean(self):
+        super().clean()
+        label = (self.vpn_label_export or "").strip().lower()
+        if label and label != "auto" and not label.isdigit():
+            raise ValidationError(
+                {"vpn_label_export": "'auto' or a label number."}
+            )
+        self.vpn_label_export = label
+        if self.vpn_nexthop_export:
+            self.vpn_nexthop_export = normalize_address(
+                self.vpn_nexthop_export, "vpn_nexthop_export"
+            )
 
 
 class BGPAddressFamily(models.Model):
@@ -648,6 +677,12 @@ class Redistribution(models.Model):
         related_name="redistributions",
     )
     metric = models.PositiveIntegerField(null=True, blank=True)
+    #: IS-IS only: ``redistribute <family> <source> level-<n>``. Blank = the
+    #: instance's own level and IPv4.
+    level = models.CharField(max_length=3, blank=True, default="")
+    family = models.CharField(
+        max_length=4, choices=FAMILY_CHOICES, blank=True, default=""
+    )
     extra = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -699,6 +734,16 @@ class _PeerKnobs(models.Model):
     hold_time = models.PositiveSmallIntegerField(null=True, blank=True)
     #: ``neighbor X default-originate``.
     default_originate = models.BooleanField(null=True, blank=True)
+    #: ``neighbor X default-originate route-map <policy>``.
+    default_originate_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="%(class)s_default_originates",
+    )
+    #: RFC 5549 - IPv4 routes over an IPv6 next hop. Every unnumbered EVPN
+    #: fabric session carries it.
+    capability_extended_nexthop = models.BooleanField(null=True, blank=True)
+    #: GTSM (RFC 5082) hop count; null = off.
+    ttl_security_hops = models.PositiveSmallIntegerField(null=True, blank=True)
     #: ``neighbor X maximum-prefix N`` - the session drops past it.
     maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
     #: ``neighbor X allowas-in N`` - times the local AS may appear in a path.
@@ -723,8 +768,10 @@ class _PeerKnobs(models.Model):
 PEER_KNOBS = (
     "address_families", "import_policy", "export_policy", "bfd", "bfd_profile",
     "ebgp_multihop", "next_hop_self", "route_reflector_client", "send_community",
-    "keepalive", "hold_time", "keychain", "default_originate", "maximum_prefix",
+    "keepalive", "hold_time", "keychain", "default_originate",
+    "default_originate_policy", "maximum_prefix",
     "allowas_in", "as_override", "remove_private_as", "soft_reconfiguration",
+    "capability_extended_nexthop", "ttl_security_hops",
 )
 
 
@@ -1083,6 +1130,35 @@ class ISISInstance(_DeviceInstance):
         RoutingKeychain, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="isis_instances",
     )
+    # ── Timers and LSP settings. Null = the platform default, and a template
+    # prints nothing, so a stanza only carries what an operator set.
+    lsp_gen_interval = models.PositiveSmallIntegerField(null=True, blank=True)
+    spf_interval = models.PositiveSmallIntegerField(null=True, blank=True)
+    lsp_mtu = models.PositiveIntegerField(null=True, blank=True)
+    #: ``spf-delay-ietf init-delay A short-delay B long-delay C holddown D
+    #: time-to-learn E`` - five values that only make sense together; the
+    #: render context folds them into one object.
+    spf_init_delay = models.PositiveIntegerField(null=True, blank=True)
+    spf_short_delay = models.PositiveIntegerField(null=True, blank=True)
+    spf_long_delay = models.PositiveIntegerField(null=True, blank=True)
+    spf_holddown = models.PositiveIntegerField(null=True, blank=True)
+    spf_time_to_learn = models.PositiveIntegerField(null=True, blank=True)
+    log_adjacency_changes = models.BooleanField(default=False)
+    #: ``default-information originate <family> <level> [always]``.
+    DEFAULT_ORIGINATE_CHOICES = [
+        ("", "No"),
+        ("on", "When a default exists"),
+        ("always", "Always"),
+    ]
+    default_originate_ipv4 = models.CharField(
+        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default=""
+    )
+    default_originate_ipv6 = models.CharField(
+        max_length=6, choices=DEFAULT_ORIGINATE_CHOICES, blank=True, default=""
+    )
+
+    #: The words FRR uses for each level, for a template that prints them.
+    LEVEL_FRR = {"1": "level-1", "2": "level-2-only", "1-2": "level-1-2"}
 
     class Meta:
         ordering = ["device__name", "process"]
@@ -1358,3 +1434,114 @@ def resolve_membership_vlan(m: VTEPMembership):
     if len(terms) == 1:
         return terms[0].vlan
     return None
+
+
+# ─── EVPN multihoming ────────────────────────────────────────────────────────
+
+_MAC_RE = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
+_ESI_RE = re.compile(r"^([0-9a-f]{2}:){9}[0-9a-f]{2}$")
+
+
+def normalize_mac(value: str, field: str) -> str:
+    raw = (value or "").strip().lower().replace("-", ":").replace(".", "")
+    if raw and ":" not in raw and len(raw) == 12:
+        raw = ":".join(raw[i:i + 2] for i in range(0, 12, 2))
+    if raw and not _MAC_RE.match(raw):
+        raise ValidationError({field: "A MAC address, like 44:38:39:ff:00:01."})
+    return raw
+
+
+class EthernetSegment(_Catalog):
+    """One EVPN Ethernet segment: the LAG on each of two or more leaves that
+    a multihomed server plugs into.
+
+    FRR names a segment either by a full 10-byte ESI (type 0) or by a type-3
+    pair of ``es-id`` + ``es-sys-mac``; a segment stores one or the other.
+    The interfaces that share it live on different devices, which is the
+    whole point - the segment is the thing the reviewer looks at to see that
+    leaf1 swp5 and leaf2 swp5 are the same server.
+    """
+
+    #: Type-0: the full ESI, ten octets. Blank when es_id + sys_mac is used.
+    esi = models.CharField(max_length=32, blank=True, default="")
+    #: Type-3: ``evpn mh es-id N`` and ``evpn mh es-sys-mac``.
+    es_id = models.PositiveIntegerField(null=True, blank=True)
+    sys_mac = models.CharField(max_length=17, blank=True, default="")
+    #: ``evpn mh es-df-pref``: who forwards BUM traffic for the segment.
+    df_preference = models.PositiveIntegerField(null=True, blank=True)
+    interfaces = models.ManyToManyField(
+        "api.Interface", blank=True, related_name="ethernet_segments"
+    )
+
+    class Meta(_Catalog.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_ethernetsegment_tenant_name"
+            ),
+        ]
+
+    def clean(self):
+        self.esi = (self.esi or "").strip().lower()
+        if self.esi and not _ESI_RE.match(self.esi):
+            raise ValidationError(
+                {"esi": "Ten colon-separated octets, like 00:11:22:33:44:55:66:77:88:99."}
+            )
+        self.sys_mac = normalize_mac(self.sys_mac, "sys_mac")
+        typed = self.es_id is not None or bool(self.sys_mac)
+        if self.esi and typed:
+            raise ValidationError(
+                {"esi": "Give either a full ESI or an es-id with a system MAC, not both."}
+            )
+        if not self.esi and not (self.es_id is not None and self.sys_mac):
+            raise ValidationError(
+                {"es_id": "A segment needs a full ESI, or both an es-id and a system MAC."}
+            )
+        if self.es_id is not None and not 1 <= self.es_id <= 16777215:
+            raise ValidationError({"es_id": "1 to 16777215."})
+
+
+# ─── MPLS / LDP ──────────────────────────────────────────────────────────────
+
+
+class LDPInstance(_DeviceInstance):
+    """``mpls ldp`` on a provider router - one per device.
+
+    LDP has no VRF: labels are for the global table, and the VPN side of an
+    L3VPN lives on the per-VRF BGP instance (``vpn_export`` and friends).
+    """
+
+    LABEL_CHOICES = [
+        ("all", "All routes"),
+        ("host-routes", "Host routes only"),
+    ]
+
+    #: ``discovery transport-address``. Blank = the router-id.
+    transport_address = models.CharField(max_length=45, blank=True, default="")
+    #: ``label local allocate host-routes``: only /32s get a label, which is
+    #: all an L3VPN needs and keeps the label table small.
+    label_allocation = models.CharField(
+        max_length=12, choices=LABEL_CHOICES, default="host-routes"
+    )
+    interfaces = models.ManyToManyField(
+        "api.Interface", blank=True, related_name="ldp_instances"
+    )
+
+    class Meta:
+        ordering = ["device__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device"], name="uniq_ldpinstance_device"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device.name} · LDP"
+
+    def clean(self):
+        super().clean()
+        if self.vrf_id:
+            raise ValidationError({"vrf": "LDP runs in the global table."})
+        if self.transport_address:
+            self.transport_address = normalize_address(
+                self.transport_address, "transport_address"
+            )

@@ -705,7 +705,11 @@ function InterfaceOverview({
           {bundle && <KvCard title="Bundle" rows={bundle} />}
           <KvCard title="Switching" rows={switching} />
           <KvCard title="Relationships" rows={relationships} />
-          <InterfaceRoutingCard interfaceId={i.id} deviceId={i.device.id} />
+          <InterfaceRoutingCard
+            interfaceId={i.id}
+            deviceId={i.device.id}
+            evpnMhUplink={i.evpn_mh_uplink}
+          />
           {i.ip_addresses.length > 0 && (
             // The addresses at a glance - the IP tab stays where they're
             // assigned and removed.

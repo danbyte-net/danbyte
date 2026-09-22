@@ -43,7 +43,7 @@ from .models import (
     NATRule,
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
-    ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
+    ConfigBundle, ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
     RackTypeAccessory, RearPort,
@@ -380,13 +380,44 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
             elif filt is True:
                 out[action] = True  # granted, no constraints/site → all rows
             else:
-                # Site- and constraint-aware: one indexed pk lookup per row.
-                out[action] = (
-                    type(obj)._default_manager.filter(pk=obj.pk)
-                    .filter(filt)
-                    .exists()
+                # Site- and constraint-aware. Resolved for the whole page at
+                # once: a site-scoped grant always yields a Q, so this branch
+                # is the normal case for exactly the users it used to cost two
+                # queries per row (#218).
+                out[action] = obj.pk in self._rbac_allowed_pks(
+                    request, obj, action, filt
                 )
         return out
+
+    def _rbac_allowed_pks(self, request, obj, action, filt) -> set:
+        """The pks on this page that ``filt`` admits for ``action``.
+
+        One ``pk__in`` query per page per action, cached on the request and
+        keyed by the list being serialised. A detail view has no parent list,
+        so it still costs the single lookup it always did.
+        """
+        model = type(obj)
+        cache = getattr(request, "_rbac_allowed_pks_cache", None)
+        if cache is None:
+            cache = request._rbac_allowed_pks_cache = {}
+        parent = getattr(self, "parent", None)
+        rows = getattr(parent, "instance", None) if parent is not None else None
+        if rows is None:
+            page = [obj]
+        else:
+            try:
+                page = list(rows)
+            except TypeError:  # a single instance, not a list
+                page = [rows]
+        pks = [r.pk for r in page if isinstance(r, model)] or [obj.pk]
+        key = (model._meta.label_lower, action, id(parent), len(pks))
+        if key not in cache:
+            cache[key] = set(
+                model._default_manager.filter(pk__in=pks)
+                .filter(filt)
+                .values_list("pk", flat=True)
+            )
+        return cache[key]
 
 
 class TaggableSerializerMixin:
@@ -3220,7 +3251,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     class Meta:
         model = Interface
-        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink", "type",
+        fields = ["id", "device", "device_id", "name", "label", "snmp_name", "snmp_ignore", "is_uplink",
+                  "evpn_mh_uplink", "type",
                   "type_display",
                   "speed", "mtu",
                   "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected", "custom_fields",
@@ -4930,7 +4962,7 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = VMInterface
         fields = ["id", "vm", "vm_id", "name", "enabled", "kind",
-                  "parent", "parent_id", "mac_address",
+                  "parent", "parent_id", "mac_address", "snmp_name",
                   "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",
                   "vlan", "vlan_id", "mode", "mode_display",
@@ -6989,8 +7021,64 @@ class ExportTemplateSerializer(NumIdModelSerializer):
         model = ExportTemplate
         fields = ["id", "name", "object_type", "object_type_label", "description",
                   "template_code", "mime_type", "file_extension", "as_attachment",
+                  "target_path", "bundle_path",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "object_type_label", "created_at", "updated_at"]
+        read_only_fields = ["id", "object_type_label", "bundle_path",
+                            "created_at", "updated_at"]
+
+
+class ExportTemplateMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = ExportTemplate
+        fields = ["id", "name", "object_type", "target_path", "bundle_path"]
+
+
+class ConfigBundleSerializer(NumIdModelSerializer):
+    """The files a device role needs, as the templates that render them."""
+
+    templates = ExportTemplateMiniSerializer(many=True, read_only=True)
+    template_ids = TenantScopedPrimaryKeyRelatedField(
+        source="templates", queryset=ExportTemplate.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    roles = serializers.SerializerMethodField()
+    role_ids = TenantScopedPrimaryKeyRelatedField(
+        source="roles", queryset=DeviceRole.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_roles(self, obj):
+        return [
+            {"id": str(r.id), "name": r.name, "slug": r.slug, "color": r.color}
+            for r in obj.roles.all()
+        ]
+
+    def validate_template_ids(self, value):
+        wrong = [t.name for t in value if t.object_type != "device"]
+        if wrong:
+            raise serializers.ValidationError(
+                f"Only device templates go in a bundle; not {', '.join(wrong)}."
+            )
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        paths: dict[str, str] = {}
+        for t in attrs.get("templates", []):
+            if t.bundle_path in paths:
+                raise serializers.ValidationError(
+                    {"template_ids": f"{paths[t.bundle_path]} and {t.name} both land "
+                                     f"at {t.bundle_path}; give one a target path."}
+                )
+            paths[t.bundle_path] = t.name
+        return attrs
+
+    class Meta:
+        model = ConfigBundle
+        fields = ["id", "numid", "name", "description", "templates", "template_ids",
+                  "roles", "role_ids", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
 
 
 class LabelTemplateSerializer(NumIdModelSerializer):

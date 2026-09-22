@@ -35,8 +35,10 @@ from .models import (
     CommunityListRule,
     EIGRPInstance,
     EIGRPInterface,
+    EthernetSegment,
     ISISInstance,
     ISISInterface,
+    LDPInstance,
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
@@ -67,8 +69,10 @@ from .serializers import (
     CommunitySerializer,
     EIGRPInstanceSerializer,
     EIGRPInterfaceSerializer,
+    EthernetSegmentSerializer,
     ISISInstanceSerializer,
     ISISInterfaceSerializer,
+    LDPInstanceSerializer,
     OSPFAreaMiniSerializer,
     OSPFAreaSerializer,
     OSPFInstanceSerializer,
@@ -342,7 +346,9 @@ class BGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
     queryset = BGPInstance.objects.all()
     serializer_class = BGPInstanceSerializer
     pagination_class = StandardPagination
-    clone_fields = ("vrf", "asn", "cluster_id", "graceful_restart", "bfd", "status")
+    clone_fields = ("vrf", "asn", "cluster_id", "graceful_restart", "bfd", "status",
+                    "distance_ebgp", "distance_ibgp", "distance_local",
+                    "bestpath_multipath_relax")
 
     def get_queryset(self):
         qs = (
@@ -448,7 +454,9 @@ class BGPPeerGroupViewSet(_CatalogViewSet):
                     "update_source", "address_families", "import_policy",
                     "export_policy", "bfd", "ebgp_multihop", "next_hop_self",
                     "route_reflector_client", "send_community", "keepalive",
-                    "hold_time", "keychain", "extra")
+                    "hold_time", "keychain", "capability_extended_nexthop",
+                    "ttl_security_hops", "default_originate",
+                    "default_originate_policy", "extra")
 
     def get_queryset(self):
         qs = (
@@ -478,7 +486,9 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
                     "local_asn", "local_address", "address_families",
                     "import_policy", "export_policy", "bfd", "ebgp_multihop",
                     "next_hop_self", "route_reflector_client", "send_community",
-                    "keepalive", "hold_time", "keychain", "status", "extra")
+                    "keepalive", "hold_time", "keychain", "status",
+                    "capability_extended_nexthop", "ttl_security_hops",
+                    "default_originate", "default_originate_policy", "extra")
 
     def get_queryset(self):
         qs = (
@@ -661,7 +671,11 @@ class ISISInstanceViewSet(_IGPInstanceViewSet):
     text_search_fields = ("process", "net")
     editable_str_fields = ("description", "process", "net")
     clone_fields = ("vrf", "process", "level", "metric_style", "bfd",
-                    "authentication", "keychain", "status")
+                    "authentication", "keychain", "status",
+                    "lsp_gen_interval", "spf_interval", "lsp_mtu",
+                    "spf_init_delay", "spf_short_delay", "spf_long_delay",
+                    "spf_holddown", "spf_time_to_learn", "log_adjacency_changes",
+                    "default_originate_ipv4", "default_originate_ipv6")
 
 
 class OSPFInterfaceViewSet(_RuleViewSet):
@@ -792,3 +806,66 @@ class VTEPMembershipViewSet(_RuleViewSet):
             if v:
                 qs = qs.filter(l2vpn_id=v)
         return qs
+
+
+# ─── EVPN multihoming / MPLS ─────────────────────────────────────────────────
+
+class EthernetSegmentViewSet(_CatalogViewSet):
+    """Filter with ``?device=`` (segments with a port on that device) and
+    ``?interface=``."""
+
+    queryset = EthernetSegment.objects.all().order_by(NATURAL_NAME)
+    serializer_class = EthernetSegmentSerializer
+    clone_fields = ("df_preference", "description")
+
+    def _search(self, qs, s):
+        return super()._search(qs, s) | qs.filter(
+            Q(esi__icontains=s) | Q(sys_mac__icontains=s)
+        )
+
+    def get_queryset(self):
+        qs = super().get_queryset().prefetch_related("interfaces__device")
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        device = p.get("device")
+        if device:
+            qs = qs.filter(interfaces__device_id=device)
+        iface = p.get("interface")
+        if iface:
+            qs = qs.filter(interfaces__id=iface)
+        return qs.distinct()
+
+
+class LDPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+    """One per device. Filter with ``?device=``, ``?site=``, ``?status=``."""
+
+    editable_str_fields = ("description", "router_id", "transport_address")
+    editable_bool_fields = ("bfd",)
+    queryset = LDPInstance.objects.all().order_by("device__name")
+    serializer_class = LDPInstanceSerializer
+    pagination_class = StandardPagination
+    clone_fields = ("label_allocation", "bfd", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device__site", "status", "bfd_profile")
+            .prefetch_related("tags", "interfaces__device")
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(device__name__icontains=s) | Q(router_id__icontains=s)
+                | Q(description__icontains=s) | cf_text_q(qs.model, s)
+            )
+        for key, field in (
+            ("device", "device_id"), ("status", "status_id"), ("site", "device__site_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        return qs.distinct()
