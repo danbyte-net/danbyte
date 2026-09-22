@@ -3,7 +3,9 @@ import { type ReactNode } from "react"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -17,10 +19,19 @@ export interface SelectOption {
   label: ReactNode
 }
 
+/** A labelled run of options, rendered after the flat `options`. */
+export interface SelectOptionGroup {
+  label: string
+  options: SelectOption[]
+}
+
 export interface FormSelectProps extends Base {
   value: string | null
   onChange: (v: string | null) => void
   options: SelectOption[]
+  /** Extra options under a heading each - a second catalog in the same
+   * select (templates, then bundles). Values must be unique across all. */
+  groups?: SelectOptionGroup[]
   /** When true, prepends a "(keep)" sentinel - used in bulk-edit dialogs. */
   allowKeep?: boolean
   /** When set, prepends a NULL sentinel with this label (e.g. "Global"). */
@@ -49,6 +60,7 @@ export function FormSelect({
   value,
   onChange,
   options,
+  groups,
   allowKeep,
   noneLabel,
   placeholder,
@@ -56,7 +68,9 @@ export function FormSelect({
   ...field
 }: FormSelectProps) {
   const stringValue = value === null || value === undefined ? NONE : value
-  const selected = options.find((o) => o.value === stringValue)
+  const selected =
+    options.find((o) => o.value === stringValue) ??
+    groups?.flatMap((g) => g.options).find((o) => o.value === stringValue)
 
   return (
     <Field {...field}>
@@ -84,6 +98,16 @@ export function FormSelect({
             <SelectItem key={o.value} value={o.value}>
               {o.label}
             </SelectItem>
+          ))}
+          {groups?.map((g) => (
+            <SelectGroup key={g.label}>
+              <SelectLabel>{g.label}</SelectLabel>
+              {g.options.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
         </SelectContent>
       </Select>

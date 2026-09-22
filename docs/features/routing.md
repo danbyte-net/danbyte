@@ -91,8 +91,12 @@ the same arrangement an SSID's or an IPsec profile's pre-shared key uses.
 Without a store the key is refused rather than stored in the clear. A
 keychain's page shows **Stored** with a reveal button (an audited action
 behind the `reveal` grant on keychains) or **Not set**; the rendered config
-never carries the key - it says `key_set` and the runner fetches the key
-through `POST /api/routing/keychains/<id>/reveal-psk/`.
+never carries the key. Where a template needs one it prints the
+placeholder `<keychain:NAME>` (`routing.keychain_by_name[NAME].placeholder`
+carries it ready-made); that shape is a promise, and a push tool replaces
+every match with the key from `POST /api/routing/keychains/<id>/reveal-psk/`
+or its own store - see [secrets in a
+render](export-templates.md#secrets-in-a-render).
 
 ## BFD
 

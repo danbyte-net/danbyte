@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils"
 export interface IdOption {
   id: string
   name: string
+  /** A short mono detail beside the name - a file path, say - shown on the
+   * chip and in the list so two same-named rows stay tellable apart. */
+  hint?: string
 }
 
 /** A generic id/name multi-select: chosen items render as removable chips, and
@@ -86,6 +89,9 @@ export function IdMultiSelect({
           className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-foreground"
         >
           {o.name}
+          {o.hint && (
+            <span className="font-mono text-muted-foreground">{o.hint}</span>
+          )}
           <button
             type="button"
             onClick={() => toggle(o.id)}
@@ -166,6 +172,11 @@ export function IdMultiSelect({
                         {on && <Check className="h-2.5 w-2.5" />}
                       </span>
                       <span className="truncate text-xs">{o.name}</span>
+                      {o.hint && (
+                        <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
+                          {o.hint}
+                        </span>
+                      )}
                     </CommandItem>
                   )
                 })}

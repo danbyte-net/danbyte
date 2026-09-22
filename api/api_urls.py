@@ -7,6 +7,7 @@ just register a viewset on the router.
 from __future__ import annotations
 
 from django.urls import include, path
+from django.views.decorators.cache import cache_page
 from django.views.generic import RedirectView
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -186,6 +187,7 @@ from .viewsets import (
     ClusterGroupViewSet,
     ClusterTypeViewSet,
     ClusterViewSet,
+    ConfigBundleViewSet,
     ConfigContextViewSet,
     ConsolePortTemplateViewSet,
     ConsolePortViewSet,
@@ -300,6 +302,7 @@ router.register(r"regions",       RegionViewSet,      basename="region")
 router.register(r"locations",     LocationViewSet,    basename="location")
 router.register(r"config-contexts", ConfigContextViewSet, basename="config-context")
 router.register(r"export-templates", ExportTemplateViewSet, basename="export-template")
+router.register(r"config-bundles", ConfigBundleViewSet, basename="config-bundle")
 router.register(r"label-templates", LabelTemplateViewSet, basename="label-template")
 router.register(r"documents",     DocumentViewSet,    basename="document")
 router.register(r"document-categories", DocumentCategoryViewSet, basename="document-category")
@@ -481,7 +484,10 @@ router.register(r"tenant-ldap-group-mappings", TenantLDAPGroupMappingViewSet, ba
 urlpatterns = [
     # OpenAPI schema + interactive reference. /api/ lands on the docs so hitting
     # the API root gives the object-grouped reference, not the raw router index.
-    path("schema/", SpectacularAPIView.as_view(), name="schema"),
+    # Generating the schema walks every viewset and takes well over a minute
+    # on this API; it only changes with the code, so one copy an hour is
+    # plenty for the people who write templates against it.
+    path("schema/", cache_page(60 * 60)(SpectacularAPIView.as_view()), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("docs/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("", RedirectView.as_view(pattern_name="docs", permanent=False), name="api-root"),

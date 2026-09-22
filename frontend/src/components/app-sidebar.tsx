@@ -24,6 +24,7 @@ import {
   Fingerprint,
   Filter,
   Folder,
+  FolderArchive,
   Gauge,
   FolderTree,
   GitBranch,
@@ -994,6 +995,12 @@ const sections: NavSection[] = [
             url: "/export-templates",
             icon: GitPullRequestArrow,
             objectType: "exporttemplate",
+          },
+          {
+            title: "Config bundles",
+            url: "/config-bundles",
+            icon: FolderArchive,
+            objectType: "configbundle",
           },
           {
             title: "Label templates",

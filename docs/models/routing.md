@@ -129,7 +129,9 @@ names; `bfd_profiles` stays the whole catalog). Multihoming and MPLS:
 `by_interface[<port>].es` (the segment this port is in, with every member
 on every device), `by_interface[<port>].evpn_mh_uplink`,
 `ethernet_segments` + `es_count` per device, `ldp` (one block or `None`),
-and a per-VRF BGP instance's `vpn` object or `None`. It is registered through
+and a per-VRF BGP instance's `vpn` object or `None`. `keychains[].placeholder`
+is `<keychain:NAME>`, the contract form a push tool substitutes
+(`routing.render.KEYCHAIN_PLACEHOLDER_RE`). It is registered through
 `api.export_templates.register_context_provider("routing", …)` from the app's
 `ready()`, so `api` never imports `routing`.
 

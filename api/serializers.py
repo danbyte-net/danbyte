@@ -43,7 +43,7 @@ from .models import (
     NATRule,
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
-    ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
+    ConfigBundle, ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
     RackTypeAccessory, RearPort,
@@ -7021,8 +7021,64 @@ class ExportTemplateSerializer(NumIdModelSerializer):
         model = ExportTemplate
         fields = ["id", "name", "object_type", "object_type_label", "description",
                   "template_code", "mime_type", "file_extension", "as_attachment",
+                  "target_path", "bundle_path",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "object_type_label", "created_at", "updated_at"]
+        read_only_fields = ["id", "object_type_label", "bundle_path",
+                            "created_at", "updated_at"]
+
+
+class ExportTemplateMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = ExportTemplate
+        fields = ["id", "name", "object_type", "target_path", "bundle_path"]
+
+
+class ConfigBundleSerializer(NumIdModelSerializer):
+    """The files a device role needs, as the templates that render them."""
+
+    templates = ExportTemplateMiniSerializer(many=True, read_only=True)
+    template_ids = TenantScopedPrimaryKeyRelatedField(
+        source="templates", queryset=ExportTemplate.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    roles = serializers.SerializerMethodField()
+    role_ids = TenantScopedPrimaryKeyRelatedField(
+        source="roles", queryset=DeviceRole.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_roles(self, obj):
+        return [
+            {"id": str(r.id), "name": r.name, "slug": r.slug, "color": r.color}
+            for r in obj.roles.all()
+        ]
+
+    def validate_template_ids(self, value):
+        wrong = [t.name for t in value if t.object_type != "device"]
+        if wrong:
+            raise serializers.ValidationError(
+                f"Only device templates go in a bundle; not {', '.join(wrong)}."
+            )
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        paths: dict[str, str] = {}
+        for t in attrs.get("templates", []):
+            if t.bundle_path in paths:
+                raise serializers.ValidationError(
+                    {"template_ids": f"{paths[t.bundle_path]} and {t.name} both land "
+                                     f"at {t.bundle_path}; give one a target path."}
+                )
+            paths[t.bundle_path] = t.name
+        return attrs
+
+    class Meta:
+        model = ConfigBundle
+        fields = ["id", "numid", "name", "description", "templates", "template_ids",
+                  "roles", "role_ids", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
 
 
 class LabelTemplateSerializer(NumIdModelSerializer):

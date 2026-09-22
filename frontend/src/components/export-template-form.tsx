@@ -61,6 +61,7 @@ export function ExportTemplateForm({
   const [asAttachment, setAsAttachment] = useState(
     template?.as_attachment ?? true
   )
+  const [targetPath, setTargetPath] = useState(template?.target_path ?? "")
   const [preview, setPreview] = useState<string | null>(null)
   const [sampleId, setSampleId] = useState<string | null>(null)
   // Client-side required-field errors, merged with the DRF field errors.
@@ -75,6 +76,7 @@ export function ExportTemplateForm({
     setMimeType(template.mime_type)
     setExt(template.file_extension)
     setAsAttachment(template.as_attachment)
+    setTargetPath(template.target_path)
     setSampleId(null)
     setPreview(null)
     setClientErrors({})
@@ -146,6 +148,9 @@ export function ExportTemplateForm({
         mime_type: mimeType.trim() || "text/plain",
         file_extension: ext.trim() || "txt",
         as_attachment: asAttachment,
+        // Only a device template lands in a bundle; the path means nothing
+        // on any other type, so it is not carried over when the type changes.
+        target_path: objectType === "device" ? targetPath.trim() : "",
       }
       return saveObject<ExportTemplate>({
         objectType: "api.exporttemplate",
@@ -269,6 +274,17 @@ export function ExportTemplateForm({
             error={fieldErrors.file_extension}
           />
         </div>
+        {objectType === "device" && (
+          <FormText
+            label="Target path"
+            mono
+            placeholder="/etc/frr/frr.conf"
+            info="Where a bundle's render puts this file. Blank uses the template's name and extension."
+            value={targetPath}
+            onChange={setTargetPath}
+            error={fieldErrors.target_path}
+          />
+        )}
         <FormCheckbox
           label="As download"
           checked={asAttachment}

@@ -11,6 +11,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.cluster": "/clusters/$id",
   "api.clustergroup": "/cluster-groups/$id",
   "api.clustertype": "/cluster-types/$id",
+  "api.configbundle": "/config-bundles/$id",
   "api.configcontext": "/config-contexts/$id",
   "api.contact": "/contacts/$id",
   "api.contactgroup": "/contact-groups/$id",

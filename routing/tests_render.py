@@ -208,6 +208,7 @@ class RoutingContextTests(_Base):
         self.assertEqual(ctx["keychains"][0], {
             "id": ctx["keychains"][0]["id"], "name": "ISIS-KEY",
             "algorithm": "md5", "key_set": False,
+            "placeholder": "<keychain:ISIS-KEY>",
         })
         self.assertEqual(ctx["policies"], {})
         self.assertEqual(ctx["communities"], [])
@@ -333,7 +334,7 @@ class FabricTemplateTests(APITestCase):
             "router isis UNDERLAY\n  net 49.0001.0000.0011.0000.00",
             "router bgp 65100\n  router-id 10.255.0.11",
             "  template peer SPINES\n    remote-as 65100\n    update-source Loopback0\n    bfd",
-            "  neighbor 10.255.0.1\n    inherit peer SPINES\n    description to spine1\n    password 0 <FABRIC>",
+            "  neighbor 10.255.0.1\n    inherit peer SPINES\n    description to spine1\n    password 0 <keychain:FABRIC>",
             "  vrf TENANT-A\n    address-family ipv4 unicast\n      redistribute connected",
             "vrf context TENANT-A\n  ip route 0.0.0.0/0 10.100.0.254",
             "ip prefix-list LOOPBACKS seq 10 permit 10.255.0.0/24 ge 32 le 32",
@@ -341,6 +342,19 @@ class FabricTemplateTests(APITestCase):
         ):
             self.assertIn(line, out, out)
         self.assertNotIn("psk", out.lower())
+
+    def test_the_keychain_placeholder_is_the_contract_form(self):
+        """A push tool substitutes `<keychain:NAME>`; the doc templates must
+        print exactly that, and the regex must find every one of them."""
+        from .render import KEYCHAIN_PLACEHOLDER_RE, keychain_placeholder
+
+        for name in ("nxos", "frr"):
+            out = self._render(name, self.leaf)
+            found = KEYCHAIN_PLACEHOLDER_RE.findall(out)
+            self.assertEqual(set(found), {"FABRIC"}, (name, found))
+            self.assertIn(keychain_placeholder("FABRIC"), out)
+            # No bare `<FABRIC>`-style leftovers from the old convention.
+            self.assertNotIn("<FABRIC>", out)
 
     def test_frr_template_renders_a_leaf_and_a_spine(self):
         out = self._render("frr", self.leaf)
@@ -350,8 +364,8 @@ class FabricTemplateTests(APITestCase):
             "interface Ethernet1/49\n description to spine1\n ip address 10.0.1.1/31\n ip router isis UNDERLAY\n isis network point-to-point\n isis bfd",
             "interface Loopback0\n ip address 10.255.0.11/32\n ip router isis UNDERLAY\n isis passive",
             "interface Vlan100 vrf TENANT-A",
-            "router isis UNDERLAY\n net 49.0001.0000.0011.0000.00\n is-type level-2-only\n metric-style wide\n area-password md5 <FABRIC>",
-            "router bgp 65100\n bgp router-id 10.255.0.11\n neighbor SPINES peer-group\n neighbor SPINES remote-as internal\n neighbor SPINES update-source Loopback0\n neighbor SPINES bfd\n neighbor SPINES password <FABRIC>\n neighbor 10.255.0.1 peer-group SPINES",
+            "router isis UNDERLAY\n net 49.0001.0000.0011.0000.00\n is-type level-2-only\n metric-style wide\n area-password md5 <keychain:FABRIC>",
+            "router bgp 65100\n bgp router-id 10.255.0.11\n neighbor SPINES peer-group\n neighbor SPINES remote-as internal\n neighbor SPINES update-source Loopback0\n neighbor SPINES bfd\n neighbor SPINES password <keychain:FABRIC>\n neighbor 10.255.0.1 peer-group SPINES",
             " address-family l2vpn evpn\n  neighbor SPINES activate\n  neighbor 10.255.0.1 activate\n  neighbor 10.255.0.1 route-map EVPN-EXPORT out",
             "  advertise-all-vni\n  vni 10100\n   route-target import 65100:10100\n   route-target export 65100:10100\n  exit-vni",
             "router bgp 65100 vrf TENANT-A\n bgp router-id 10.255.0.11\n address-family ipv4 unicast\n  redistribute connected\n  redistribute static\n exit-address-family\n address-family l2vpn evpn\n  advertise ipv4 unicast",

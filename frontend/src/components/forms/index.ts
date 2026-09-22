@@ -16,7 +16,7 @@ export type { FormDateProps } from "./date"
 export { FormTextarea } from "./textarea"
 export type { FormTextareaProps } from "./textarea"
 export { FormSelect } from "./select"
-export type { FormSelectProps, SelectOption } from "./select"
+export type { FormSelectProps, SelectOption, SelectOptionGroup } from "./select"
 export { FormCombobox } from "./combobox"
 export type { FormComboboxProps } from "./combobox"
 export type {

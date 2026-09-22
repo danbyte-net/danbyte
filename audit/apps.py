@@ -49,6 +49,7 @@ AUDITED_MODELS = [
     "api.Location",
     "api.ConfigContext",
     "api.ExportTemplate",
+    "api.ConfigBundle",
     "api.LabelTemplate",
     "api.Document",
     "api.DocumentCategory",

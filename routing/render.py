@@ -8,6 +8,8 @@ an earlier slice keeps working because keys are only ever added.
 """
 from __future__ import annotations
 
+import re
+
 from django.db.models import F
 
 from api.models import FHRPGroupAssignment
@@ -200,12 +202,26 @@ def bfd_profile_dict(p: BFDProfile) -> dict:
     }
 
 
+#: What a rendered config carries where a key belongs. A push tool replaces
+#: every match with the key from ``POST /api/routing/keychains/<id>/reveal-psk/``
+#: (or its own store). The shape is a contract: it does not change between
+#: releases, and nothing else in a render looks like it.
+KEYCHAIN_PLACEHOLDER = "<keychain:{name}>"
+KEYCHAIN_PLACEHOLDER_RE = re.compile(r"<keychain:([^<>\s]+)>")
+
+
+def keychain_placeholder(name: str) -> str:
+    return KEYCHAIN_PLACEHOLDER.format(name=name)
+
+
 def keychain_dict(k: RoutingKeychain) -> dict:
     return {
         "id": str(k.id),
         "name": k.name,
         "algorithm": k.algorithm,
         "key_set": k.psk_set,
+        # Never the key. This is what a template prints in its place.
+        "placeholder": keychain_placeholder(k.name),
     }
 
 

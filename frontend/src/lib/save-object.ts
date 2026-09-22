@@ -51,6 +51,7 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.cluster",
   "api.clustergroup",
   "api.clustertype",
+  "api.configbundle",
   "api.configcontext",
   "api.consoleport",
   "api.consoleserverport",

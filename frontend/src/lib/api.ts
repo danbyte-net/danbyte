@@ -7986,6 +7986,11 @@ export interface ExportTemplate {
   mime_type: string
   file_extension: string
   as_attachment: boolean
+  /** Where a bundle render lands this file on the device; blank falls back
+   * to `<name>.<file_extension>`. Only meaningful for device templates. */
+  target_path: string
+  /** Read-only: `target_path`, or `<name>.<file_extension>` when blank. */
+  bundle_path: string
   created_at: string
   updated_at: string
 }
@@ -7998,6 +8003,69 @@ export interface ExportTemplateWritePayload {
   mime_type?: string
   file_extension?: string
   as_attachment?: boolean
+  target_path?: string
+}
+
+// ─── Config bundles ────────────────────────────────────────────────────
+/** A device template as it appears inside a bundle. */
+export interface ConfigBundleTemplate {
+  id: string
+  name: string
+  object_type: string
+  target_path: string
+  bundle_path: string
+}
+
+/** The set of files a device role needs, rendered together. */
+export interface ConfigBundle {
+  id: string
+  numid: number | null
+  name: string
+  description: string
+  templates: ConfigBundleTemplate[]
+  roles: { id: string; name: string; slug: string; color: string }[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ConfigBundleWritePayload {
+  name: string
+  description?: string
+  template_ids: string[]
+  role_ids: string[]
+}
+
+/** What a push tool last put on the box for one rendered file. */
+export interface DeviceRenderPushed {
+  sha256: string
+  at: string
+  by: string
+  source: string
+  note: string
+  has_output: boolean
+}
+
+/** One rendered file from GET /api/devices/<id>/render/. */
+export interface DeviceRenderFile {
+  path: string
+  template: string
+  template_id: string
+  output: string
+  sha256: string
+  pushed: DeviceRenderPushed | null
+  /** null = never pushed; true = the render differs from the last push. */
+  drift: boolean | null
+  /** Unified diff against the last push; may be empty. */
+  diff: string
+}
+
+/** GET /api/devices/<id>/render/?template=<id> */
+export type DeviceRenderResult = DeviceRenderFile
+
+/** GET /api/devices/<id>/render/?bundle=<id|name|role> */
+export interface DeviceBundleRenderResult {
+  bundle: string
+  files: Record<string, DeviceRenderFile>
 }
 
 // ─── Bulk import ───────────────────────────────────────────────────────

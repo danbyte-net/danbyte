@@ -236,6 +236,24 @@ function TemplateOverview({ template: t }: { template: ExportTemplate }) {
       label: "MIME type",
       value: <span className="font-mono text-[13px]">{t.mime_type}</span>,
     },
+    ...(t.object_type === "device"
+      ? [
+          {
+            label: "Target path",
+            value: (
+              <span className="font-mono text-[13px]">
+                {t.bundle_path}
+                {!t.target_path && (
+                  <span className="ml-2 font-sans text-xs text-muted-foreground">
+                    from name and extension
+                  </span>
+                )}
+              </span>
+            ),
+            copy: t.bundle_path,
+          } satisfies KvRow,
+        ]
+      : []),
     {
       label: "Delivery",
       value: t.as_attachment

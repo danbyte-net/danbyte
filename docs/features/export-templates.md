@@ -164,6 +164,77 @@ The binding is used in two places:
 
 See [Config drift](iac-runner.md) for the full intended-vs-actual loop.
 
+## Bundles: every file a device needs
+
+FRR is one of several files a router runs on - `frr.conf`,
+`/etc/network/interfaces`, a systemd `.link` unit, `nft.conf`, a WireGuard
+config. A **config bundle** (**Customize → Config bundles**) names the
+device templates that produce them and the **device roles** it applies to,
+so "push from Danbyte" is one call that returns every file with its path.
+
+Each template says where its file lands with a **Target path**
+(`/etc/frr/frr.conf`); a template without one is keyed by its name and
+extension. Two templates in one bundle cannot land at the same path.
+
+```
+GET /api/devices/<id>/render/?bundle=leaf-files       → {bundle, files: {path: {…}}}
+GET /api/devices/<id>/render/?bundle=role             → the bundle bound to the device's role
+GET /api/devices/<id>/render/?bundle=role&archive=tar → a tarball, paths kept relative
+```
+
+Every rendered file carries its `sha256`, so a tool can skip what has not
+changed. `bundle=role` is an error rather than a guess when the role has no
+bundle or more than one. The device's **Config → Render** box offers bundles
+beside single templates and shows each file on its own tab.
+
+### Many devices at once
+
+```
+GET /api/devices/render/?bundle=role&role_slug=leaf
+GET /api/devices/render/?template=<id>&site=<id>&hashes=1
+```
+
+renders one template or bundle for every device the list filters select
+(`role`, `role_slug`, `site`, `platform`, `search`), answering
+`{devices: {id: {name, files}}, skipped: {id: reason}}` - a device the bundle
+does not apply to is skipped and named, not fatal. `hashes=1` leaves the text
+out for a tool that only wants to know what moved. Capped at 500 devices;
+narrow the filter past that.
+
+### What was last pushed
+
+Danbyte never pushes a config. The tool that does can say what it pushed:
+
+```
+POST /api/devices/<id>/config-pushed/
+{"files": [{"path": "/etc/frr/frr.conf", "sha256": "…", "output": "…"}],
+ "bundle": "leaf-files", "source": "ansible", "note": "change 4711"}
+```
+
+(or the single-file shorthand `{"path", "sha256", "output"}`). The hash is
+always kept; the text is kept when it is under 1 MB, for the diff. From then
+on every render of that path also answers `pushed` (hash, when, by whom),
+`drift` - `true` when the current render differs from the last push, `false`
+when it matches, `null` when nothing was ever pushed - and `diff`, the
+unified diff against the pushed text. The Render box shows the same as a
+badge per file (*Matches last push*, *Changed since last push*, *Never
+pushed*) with a **Diff vs last push** view.
+
+This is the other half of [config drift](iac-runner.md): drift compares the
+intended config against what is **running** on the box; a push record
+compares the current render against what was last **sent**, so a model
+change shows up before anyone reads the box. Recording a push needs `change`
+on the device.
+
+### Secrets in a render
+
+A render never contains a key. Where a template needs one it prints
+`<keychain:NAME>`, exactly that shape, with `NAME` the keychain's name - a
+[contract](routing-templates.md#nx-os-style) a push tool can rely on: replace
+every match of `<keychain:([^<>\s]+)>` with the key from
+`POST /api/routing/keychains/<id>/reveal-psk/` (an audited read behind the
+`reveal` permission) or from its own store.
+
 ## Permissions and audit
 
 Export templates are managed by users with the **Customize** permission group, and

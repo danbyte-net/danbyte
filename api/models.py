@@ -6768,6 +6768,10 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     mime_type = models.CharField(max_length=64, blank=True, default="text/plain")
     file_extension = models.CharField(max_length=16, blank=True, default="txt")
     as_attachment = models.BooleanField(default=True)
+    #: Where the rendered file lands on the device (``/etc/frr/frr.conf``).
+    #: What a bundle keys its files by; blank falls back to the template's
+    #: name and extension.
+    target_path = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["name"]
@@ -6776,6 +6780,11 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
                 fields=["tenant", "name"], name="uniq_exporttemplate_tenant_name"
             )
         ]
+
+    @property
+    def bundle_path(self) -> str:
+        """The path this file is keyed by in a bundle render."""
+        return self.target_path or f"{self.name}.{self.file_extension or 'txt'}"
 
     def __str__(self) -> str:
         return self.name
@@ -6872,6 +6881,43 @@ class LabelTemplate(NumIdMixin, TimestampedModel):
             LabelTemplate.objects.filter(
                 tenant=self.tenant, object_type=self.object_type, is_default=True
             ).exclude(pk=self.pk).update(is_default=False)
+
+
+class ConfigBundle(NumIdMixin, TimestampedModel):
+    """The set of files a device needs, rendered together.
+
+    FRR is one of several files a router runs on - ``frr.conf``,
+    ``/etc/network/interfaces``, a systemd ``.link`` unit, ``nft.conf``, a
+    WireGuard config. A bundle names the templates that produce them, and
+    the device roles it applies to, so "push from Danbyte" is one call that
+    returns every file with its path.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="config_bundles"
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="")
+    templates = models.ManyToManyField(
+        ExportTemplate, blank=True, related_name="bundles"
+    )
+    #: The roles this bundle renders for. ``?bundle=role`` on a device picks
+    #: the bundle bound to its role.
+    roles = models.ManyToManyField(
+        "DeviceRole", blank=True, related_name="config_bundles"
+    )
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_configbundle_tenant_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 def resolve_config_template(device):

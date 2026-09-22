@@ -17,6 +17,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/import": "features/import-export/",
   "/label-templates": "features/label-templates/",
   "/export-templates": "features/export-templates/",
+  "/config-bundles": "features/export-templates/",
   "/tenants": "models/tenant/",
   "/sites": "features/regions-locations/",
   "/locations": "features/regions-locations/",

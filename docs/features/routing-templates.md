@@ -232,7 +232,7 @@ router bgp {{ inst.asn }}
     description {{ s.description }}
 {% endif %}
 {% if s.keychain %}
-    password 0 <{{ s.keychain }}>
+    password 0 <keychain:{{ s.keychain }}>
 {% endif %}
 {% for af in s.address_families if not s.peer_group %}
     address-family {{ af | replace("-", " ") }}
@@ -287,8 +287,14 @@ ip route {{ r.prefix }} {{ r.next_hop or r.next_hop_interface }}{% if r.distance
 ```
 
 The keychain and BGP password lines print a placeholder: Danbyte never
-puts a secret in a rendered config. A runner that pushes the config swaps
-it for `POST /api/routing/keychains/<id>/reveal-psk/`, an audited read.
+puts a secret in a rendered config. The placeholder is a **contract**:
+`<keychain:NAME>`, exactly that shape, with `NAME` the keychain's name
+(`routing.keychain_by_name[NAME].placeholder` carries it ready-made). A
+tool that pushes the config replaces every match of `<keychain:([^<>\s]+)>`
+with the key - from `POST /api/routing/keychains/<id>/reveal-psk/`, an
+audited read that needs the `reveal` permission, or from its own store.
+Nothing else in a render looks like it, and the shape does not change
+between releases.
 
 ## FRR
 
@@ -416,7 +422,7 @@ router isis {{ inst.process }}
 
 {% endfor %}
 {% if inst.keychain %}
- area-password md5 <{{ inst.keychain }}>
+ area-password md5 <keychain:{{ inst.keychain }}>
 {% endif %}
 exit
 !
@@ -465,7 +471,7 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
  neighbor {{ g.name }} ttl-security hops {{ g.ttl_security_hops }}
 {% endif %}
 {% if g.keychain %}
- neighbor {{ g.name }} password <{{ g.keychain }}>
+ neighbor {{ g.name }} password <keychain:{{ g.keychain }}>
 {% endif %}
 {% endfor %}
 {% for s in inst.sessions %}
@@ -490,7 +496,7 @@ router bgp {{ inst.asn }}{% if inst.vrf %} vrf {{ inst.vrf }}{% endif %}
  neighbor {{ who }} ttl-security hops {{ s.ttl_security_hops }}
 {% endif %}
 {% if s.keychain %}
- neighbor {{ who }} password <{{ s.keychain }}>
+ neighbor {{ who }} password <keychain:{{ s.keychain }}>
 {% endif %}
 {% endif %}
 {% if s.description %}

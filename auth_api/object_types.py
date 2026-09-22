@@ -243,6 +243,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("customization.CustomFieldGroup", "Custom field groups", "Customize"),
     ("api.ConfigContext", "Config contexts", "Customize"),
     ("api.ExportTemplate", "Export templates", "Customize"),
+    ("api.ConfigBundle", "Config bundles", "Customize"),
     ("api.LabelTemplate", "Label templates", "Customize"),
     ("api.DocumentCategory", "Document categories", "Customize"),
     # Documents (files/links) attach to any object; their own view/add/change/
