@@ -238,6 +238,82 @@ class IOEndpointTests(APITestCase):
         self.assertEqual(res.json()["created"], 0)
         self.assertEqual(res.json()["updated"], 1)
 
+    def _sheet(self, n_rows, blank_every=0):
+        import io as _io
+
+        from openpyxl import Workbook
+
+        wb = Workbook(write_only=True)
+        ws = wb.create_sheet()
+        ws.append(["name", "slug"])
+        for i in range(n_rows):
+            if blank_every and i % blank_every == 0:
+                ws.append([None, None])
+            else:
+                ws.append([f"site-{i}", f"site-{i}"])
+        buf = _io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        buf.name = "sites.xlsx"
+        return buf
+
+    def test_an_oversized_sheet_is_refused_without_reading_it_all(self):
+        """The cap used to be checked after the whole sheet was in memory, so
+        a small compressed file held a worker for most of a minute (#225)."""
+        from unittest import mock
+
+        from api import io_views
+
+        seen = {"n": 0}
+        real = io_views.TooManyRows
+
+        with mock.patch.object(io_views, "MAX_IMPORT_ROWS", 50), \
+                mock.patch.object(io_views, "MAX_IMPORT_SCANNED_ROWS", 200):
+            from openpyxl.worksheet._read_only import ReadOnlyWorksheet
+
+            original = ReadOnlyWorksheet._cells_by_row
+
+            def counting(self, *a, **kw):
+                for row in original(self, *a, **kw):
+                    seen["n"] += 1
+                    yield row
+
+            with mock.patch.object(ReadOnlyWorksheet, "_cells_by_row", counting):
+                res = self.client.post(
+                    "/api/io/site/import/", {"file": self._sheet(5000), "dry_run": "1"}
+                )
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("Too many rows", res.json()["detail"])
+        self.assertGreater(seen["n"], 0, "the row counter did not see the reader")
+        self.assertLess(seen["n"], 100, "the reader kept going past the cap")
+        self.assertIs(real, io_views.TooManyRows)
+
+    def test_blank_rows_do_not_count_against_the_cap(self):
+        from unittest import mock
+
+        from api import io_views
+
+        with mock.patch.object(io_views, "MAX_IMPORT_ROWS", 50), \
+                mock.patch.object(io_views, "MAX_IMPORT_SCANNED_ROWS", 200):
+            res = self.client.post(
+                "/api/io/site/import/",
+                {"file": self._sheet(80, blank_every=2), "dry_run": "1"},
+            )
+        # 40 real rows among 80: under the cap of 50.
+        self.assertNotEqual(res.json().get("detail", ""), "Too many rows (max 50).")
+
+    def test_a_file_over_the_size_limit_is_refused_unread(self):
+        from unittest import mock
+
+        from api import io_views
+
+        with mock.patch.object(io_views, "MAX_IMPORT_BYTES", 100):
+            res = self.client.post(
+                "/api/io/site/import/", {"file": self._sheet(50), "dry_run": "1"}
+            )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("larger than", res.json()["detail"])
+
     def test_register_object_type_is_discoverable(self):
         from auth_api.object_types import is_registered, registry_payload
 
