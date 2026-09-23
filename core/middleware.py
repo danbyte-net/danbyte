@@ -9,8 +9,17 @@ _IDLE_CACHE_TTL = 60  # seconds - a settings change takes effect within a minute
 
 def idle_timeout_minutes() -> int:
     """The configured session idle timeout, cached briefly to keep this off the
-    per-request hot path. 0 = disabled."""
-    val = cache.get(_IDLE_CACHE_KEY)
+    per-request hot path. 0 = disabled.
+
+    Every authenticated request reads this, so the cache is only a shortcut:
+    if Redis is down or stalled, the value comes from the database and the
+    request carries on. It used to fail with it - a Redis restart was a whole
+    web outage although sessions live in the database (#230).
+    """
+    try:
+        val = cache.get(_IDLE_CACHE_KEY)
+    except Exception:  # noqa: BLE001 - the cache is an optimisation here
+        val = None
     if val is None:
         from core.models import DeploymentSettings
 
@@ -18,7 +27,10 @@ def idle_timeout_minutes() -> int:
             val = int(DeploymentSettings.load().session_idle_timeout_minutes or 0)
         except Exception:  # noqa: BLE001 - never let this break a request
             val = 0
-        cache.set(_IDLE_CACHE_KEY, val, _IDLE_CACHE_TTL)
+        try:
+            cache.set(_IDLE_CACHE_KEY, val, _IDLE_CACHE_TTL)
+        except Exception:  # noqa: BLE001
+            pass
     return val
 
 

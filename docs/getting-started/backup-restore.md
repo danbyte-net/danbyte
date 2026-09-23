@@ -94,6 +94,12 @@ Row actions: **Steps** (what the run did), **Download**, **Restore…**,
 **Protect** / **Unprotect**, **Delete**. A protected backup cannot be
 deleted or pruned.
 
+Uploads and downloads go through nginx's buffers: nginx receives the whole
+upload before Danbyte reads it, and takes the whole download before sending
+it on, so a slow link never holds a web worker past its timeout. nginx needs
+free space for one archive in its temporary directory
+(`/var/lib/nginx` on Debian and Ubuntu).
+
 Backups run in the RQ worker (`danbyte-workers`); a queued backup that
 never starts means the workers are down - see [Jobs](../features/jobs.md).
 

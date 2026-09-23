@@ -315,12 +315,34 @@ the app writes log files there **in addition to** the systemd journal:
 
 | Where | What |
 |---|---|
-| `/var/log/danbyte/danbyte.log` | Application log - Django, workers, monitoring/LDAP (rotated 10 MB × 5) |
+| `/var/log/danbyte/danbyte.log` | Application log - Django, workers, monitoring/LDAP |
 | `/var/log/danbyte/gunicorn-{access,error}.log` | The web server's request + error logs |
 | `journalctl --user -fu danbyte-web` | Per-service process output, still in the journal |
 
 `make logs` follows the journal; `make logs-file` tails the files. Leave
 `DANBYTE_LOG_DIR` unset in dev to keep logs on the console only.
+
+**Rotation.** Every web and background process writes `danbyte.log`, so the
+processes do not rotate it themselves: the installer puts
+`/etc/logrotate.d/danbyte` in place (from `deploy/logrotate/danbyte`), which
+rotates every `*.log` there at 10 MB, keeps five, and uses `copytruncate` so
+no process needs a signal. Without that file the app falls back to rotating
+`danbyte.log` itself - which loses lines between processes - and gunicorn
+keeps its logs in the journal, because an access log nothing rotates only
+grows.
+
+### Web workers
+
+gunicorn starts twice the CPU count plus one sync workers, capped at **8**.
+Each holds a database connection, and RQ workers and daphne hold theirs, so
+past that a large host ran out of Postgres's default 100 connections. Set
+`WEB_CONCURRENCY` in `.env` to go higher, and raise `max_connections` in
+Postgres with it. `GUNICORN_TIMEOUT` (default 60 s) is how long one request
+may run before its worker is replaced.
+
+A stalled or restarting Redis no longer takes the web tier down: the one
+cache read every request makes falls back to the database, and Redis calls
+give up after two seconds.
 
 ### Rotating secrets
 

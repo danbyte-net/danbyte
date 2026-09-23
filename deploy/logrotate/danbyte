@@ -1,0 +1,14 @@
+# /etc/logrotate.d/danbyte - rotates Danbyte's own log files.
+# Installed by scripts/install.sh (@@LOG_DIR@@ and @@USER@@ filled in).
+# copytruncate: every gunicorn worker, RQ worker and daphne keeps its file
+# open and appends; nothing has to be signalled to reopen after a rotation.
+@@LOG_DIR@@/*.log {
+    su @@USER@@ @@USER@@
+    size 10M
+    rotate 5
+    compress
+    delaycompress
+    copytruncate
+    missingok
+    notifempty
+}

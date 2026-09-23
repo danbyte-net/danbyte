@@ -71,7 +71,12 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_request_buffering off;
+        # Take the whole upload to disk before gunicorn sees it, and buffer
+        # the whole download: a sync worker is killed after GUNICORN_TIMEOUT,
+        # so a transfer running at the client's speed died after a minute
+        # (#229). Needs free space for one archive in nginx's temp dir.
+        proxy_request_buffering on;
+        proxy_max_temp_file_size 10g;
         proxy_read_timeout 600s;
         client_max_body_size 8g;
     }
