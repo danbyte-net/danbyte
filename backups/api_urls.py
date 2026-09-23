@@ -4,7 +4,7 @@ from __future__ import annotations
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import api_views
+from . import api_views, housekeeping_api
 
 router = DefaultRouter()
 router.register("targets", api_views.BackupTargetViewSet, basename="backup-target")
@@ -15,5 +15,6 @@ router.register("", api_views.BackupViewSet, basename="backup")
 urlpatterns = [
     path("status/", api_views.backups_status, name="backups-status"),
     path("upload/", api_views.backup_upload, name="backups-upload"),
+    path("housekeeping/", housekeeping_api.housekeeping_view, name="backups-housekeeping"),
     path("", include(router.urls)),
 ]

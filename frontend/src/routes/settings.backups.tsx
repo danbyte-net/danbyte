@@ -71,6 +71,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SimpleTable } from "@/components/ui/simple-table"
+import { HousekeepingCard } from "@/components/settings/housekeeping-card"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
@@ -189,6 +190,7 @@ function BackupsSettingsPage() {
       <SettingsGrid>
         <TargetsCard kinds={status.data?.storage_kinds ?? []} />
         <SchedulesCard />
+        <HousekeepingCard />
       </SettingsGrid>
       <div className="mt-4 space-y-4">
         <BackupsCard status={status.data} />

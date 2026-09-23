@@ -390,6 +390,20 @@ class DeploymentSettings(TimestampedModel):
         help_text="Days to keep change-log / audit entries before pruning. "
         "0 = keep forever.",
     )
+    # ── Housekeeping (core.housekeeping, run daily and after every upgrade) ──
+    #: Before-upgrade database backups and code rollback archives kept each.
+    upgrade_backups_keep = models.PositiveSmallIntegerField(
+        default=3,
+        help_text="Before-upgrade backups and code rollback archives to keep. "
+        "Older ones are deleted after each upgrade and daily.",
+    )
+    #: Rotated log files (danbyte.log.1, gunicorn-access.log.2.gz, ...) older
+    #: than this are deleted. The live files are logrotate's to size.
+    log_retention_days = models.PositiveSmallIntegerField(
+        default=30,
+        help_text="Days to keep rotated log files in the log directory. "
+        "0 = keep forever.",
+    )
     favicon = models.ImageField(
         upload_to="branding/",
         null=True,

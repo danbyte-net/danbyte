@@ -185,6 +185,9 @@ done
 [ -n "$ok" ] || fail healthcheck "app did not come back healthy after restart (/api/health/ never returned 200 for hosts: $HOSTS)"
 
 rm -f "$MAINT" "$ERRF"   # healthy again - drop the "updating" page
+# Surplus before-upgrade backups and other leftovers, kept to the numbers in
+# Settings -> Backups. Best effort.
+"$PY" manage.py housekeeping >/dev/null 2>&1 || true
 status done done 100
 echo "upgrade: now on $VERSION"
 "$PY" manage.py upgrade_notes 2>/dev/null || true   # steps an admin still has to do

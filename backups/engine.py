@@ -330,9 +330,17 @@ def run_backup(backup_id: str) -> Backup | None:
 PRE_UPGRADE_KEEP = 3
 
 
-def prune_pre_upgrade(keep: int = PRE_UPGRADE_KEEP) -> int:
+def prune_pre_upgrade(keep: int | None = None) -> int:
     """Keep the newest ``keep`` successful, unprotected pre-upgrade backups
-    and delete the rest. Returns how many were removed."""
+    and delete the rest. Returns how many were removed. ``keep`` defaults to
+    the deployment's housekeeping setting."""
+    if keep is None:
+        from core.models import DeploymentSettings
+
+        try:
+            keep = int(DeploymentSettings.load().upgrade_backups_keep)
+        except Exception:  # noqa: BLE001 - settings unreadable: the old default
+            keep = PRE_UPGRADE_KEEP
     rows = list(
         Backup.objects.filter(kind="pre_upgrade", status="success", protected=False)
         .order_by("-finished_at", "-created_at")

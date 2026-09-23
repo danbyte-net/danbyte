@@ -86,7 +86,7 @@ who made it. Kinds:
 |--------------------|-----------------------------------------------------------|
 | Manual             | *Back up now*, or `manage.py backup_now`                  |
 | Scheduled          | a schedule                                                |
-| Before upgrade     | the upgrade scripts, before migrating (the newest three are kept) |
+| Before upgrade     | the upgrade scripts, before migrating (the newest three are kept - see [Housekeeping](#housekeeping)) |
 | Before restore     | every restore, of the state it is about to replace (protected) |
 | Uploaded           | *Upload backup*                                           |
 
@@ -102,6 +102,37 @@ free space for one archive in its temporary directory
 
 Backups run in the RQ worker (`danbyte-workers`); a queued backup that
 never starts means the workers are down - see [Jobs](../features/jobs.md).
+
+## Housekeeping
+
+An install collects files nothing else removes. The **Housekeeping** card on
+**Settings → Backups** shows what is stale, how much space it takes, and the
+size of the backups, log, wheel and media folders; **Clean up now** removes it.
+The same pass runs every night (the `danbyte-prune` timer) and at the end of
+every upgrade.
+
+| What | Kept |
+|---|---|
+| Before-upgrade backups | the newest **Upgrade backups kept** (default 3) |
+| Code rollback archives (`code-pre-<version>-<time>.tgz`, from bundle upgrades) | the same number, newest first |
+| Wheels in `vendor/wheels` that no installed package came from | none - a bundle brings its own |
+| The downloaded upgrade bundle, after a failed attempt | an hour, for a retry |
+| Backup and restore work folders a killed job left | a day |
+| Rotated log files (`*.log.1`, `*.log.2.gz`, ...) | **Rotated logs kept** days (default 30; 0 = forever) |
+
+The live log files are logrotate's to size; the systemd journal is the
+server's (`journalctl --disk-usage`, and `SystemMaxUse` in `journald.conf`).
+Manual, scheduled and uploaded backups are never touched here - schedules have
+their own retention, and the rest are yours.
+
+!!! note "Installs upgraded with bundles before 0.16.12"
+    A bundle upgrade used to copy the new release over the old one without
+    removing anything, and to pack the bundle and the media folder into every
+    rollback archive. The first housekeeping run after upgrading removes the
+    old archives and wheels; stale build files in `frontend/dist` and
+    `staticfiles` go with the next bundle upgrade, which now replaces those
+    folders whole. To see it without removing anything:
+    `manage.py housekeeping --dry-run`.
 
 ## Restore
 

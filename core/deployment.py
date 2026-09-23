@@ -58,6 +58,15 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     vault_token_set = serializers.SerializerMethodField()
+
+    def validate_upgrade_backups_keep(self, value):
+        # The run that just finished prunes with this number, so 0 would
+        # delete the backup the upgrade had just made.
+        if value < 1:
+            raise serializers.ValidationError(
+                "Keep at least one: an upgrade prunes right after making its own."
+            )
+        return value
     # Key Vault app-registration secret for the secret store (write-only).
     azure_client_secret = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
@@ -86,6 +95,8 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "outbound_proxy",
             "deployment_name",
             "changelog_retention_days",
+            "upgrade_backups_keep",
+            "log_retention_days",
             "favicon_url",
             "login_logo_url",
             "ssrf_allowlist",
