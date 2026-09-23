@@ -216,3 +216,47 @@ def next_free_mac(rng, tenant) -> str | None:
             if c not in taken:
                 return ":".join(c[i : i + 2] for i in range(0, 12, 2))
     return None
+
+
+# ─── uniqueness inside an owned range ────────────────────────────────────────
+
+
+def owning_range(tenant, mac, *, lock: bool = False):
+    """The tenant's own custom range ``mac`` falls in (longest prefix wins),
+    or ``None``. ``lock`` takes the range row ``FOR UPDATE``, which is what
+    serialises two saves allocating from the same range."""
+    from .models import OuiPrefix
+
+    key = hexkey(mac)
+    if len(key) != 12:
+        return None
+    qs = OuiPrefix.objects.filter(
+        tenant=tenant, source="custom", prefix__in=[key[:n] for n in range(2, 12)]
+    ).order_by("-bits")
+    if lock:
+        qs = qs.select_for_update()
+    return qs.first()
+
+
+def mac_in_use(tenant, mac, *, exclude_pk=None, interface_id=None) -> bool:
+    """Is ``mac`` already on another MAC object or another NIC in ``tenant``?
+
+    The interface a MAC object is being assigned to may already carry the
+    address - that is the same NIC, not a second one. An IP address's MAC
+    pairing is the same host's address too, so it never counts.
+    """
+    from .models import Interface, MACAddress, VMInterface
+
+    pretty = ":".join(hexkey(mac)[i:i + 2] for i in range(0, 12, 2))
+    others = MACAddress.objects.filter(tenant=tenant, mac_address=pretty)
+    if exclude_pk is not None:
+        others = others.exclude(pk=exclude_pk)
+    if others.exists():
+        return True
+    nics = Interface.objects.filter(device__tenant=tenant, mac_address=pretty)
+    if interface_id is not None:
+        nics = nics.exclude(pk=interface_id)
+    if nics.exists():
+        return True
+    return VMInterface.objects.filter(vm__tenant=tenant, mac_address=pretty).exists()
+
