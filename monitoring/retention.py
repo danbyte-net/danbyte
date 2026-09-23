@@ -51,8 +51,12 @@ def prune(now=None) -> dict:
     transitions_deleted = _prune_older_than(
         StateTransition, "at", now - timedelta(days=transition_days)
     )
+    from .rollups import prune as prune_rollups
+
+    rollups_deleted = prune_rollups(now)
     return {
         "results_deleted": results_deleted,
+        "hourly_rollups_deleted": rollups_deleted,
         "transitions_deleted": transitions_deleted,
         "result_retention_days": result_days,
         "transition_retention_days": transition_days,

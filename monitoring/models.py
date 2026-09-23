@@ -912,6 +912,19 @@ class MonitoringSettings(TimestampedModel):
         help_text="How many sub-minute checks the fast lane runs for this tenant "
         "(0 = none; the rest run at their fallback interval).",
     )
+    # ── Latency spikes (rollups) ──────────────────────────────────────────
+    #: A probe is a spike when it is slower than max(factor × the check's own
+    #: 7-day median, median + floor). Per check, never against the estate: an
+    #: SSH login is slow next to a ping and that is not a spike.
+    spike_factor = models.FloatField(
+        default=3.0,
+        help_text="A probe slower than this many times its check's 7-day "
+        "median latency counts as a spike.",
+    )
+    #: Per kind, the least a probe must exceed its median by before it can be
+    #: a spike - so a 1 ms ping going to 3 ms is not news. {"icmp": 5, ...};
+    #: kinds left out use the built-in floors in monitoring.rollups.
+    spike_floor_ms = models.JSONField(default=dict, blank=True)
     # Grouping: when one batch opens many alerts (e.g. a switch dies), send one
     # digest per channel instead of a storm of individual messages.
     group_notifications = models.BooleanField(
@@ -1781,6 +1794,91 @@ class Silence(TimestampedModel):
     def is_active(self, now=None) -> bool:
         now = now or timezone.now()
         return self.starts_at <= now < self.ends_at
+
+
+class _CheckRollup(models.Model):
+    """What one check did over one bucket of time, kept after the raw rows go.
+
+    Seconds are stored per status, not as an up/down verdict: whether
+    degraded counts as up, or stale as unmeasured, is a reading of these
+    numbers (monitoring.rollups.classify), so a rule can change without
+    rewriting history. Latency is this check's own - never mixed with other
+    kinds - with the spikes counted against its own baseline.
+
+    Keyed on the address and template rather than the CheckState row, which
+    is recreated when a policy rematerialises; both are SET_NULL so the
+    history outlives a deleted address or template.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="+", db_index=False
+    )
+    target_ip = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, related_name="+",
+        db_index=False,
+    )
+    template = models.ForeignKey(
+        CheckTemplate, on_delete=models.SET_NULL, null=True, related_name="+",
+        db_index=False,
+    )
+    kind = models.CharField(max_length=32)
+    bucket = models.DateTimeField()
+    up_s = models.FloatField(default=0)
+    down_s = models.FloatField(default=0)
+    degraded_s = models.FloatField(default=0)
+    stale_s = models.FloatField(default=0)
+    #: Unknown and skipped: time nobody measured.
+    unknown_s = models.FloatField(default=0)
+    #: Entries into down or stale from anything else.
+    incidents = models.PositiveIntegerField(default=0)
+    samples = models.PositiveIntegerField(default=0)
+    lat_min = models.FloatField(null=True)
+    lat_avg = models.FloatField(null=True)
+    lat_p50 = models.FloatField(null=True)
+    lat_p95 = models.FloatField(null=True)
+    lat_p99 = models.FloatField(null=True)
+    lat_max = models.FloatField(null=True)
+    spikes = models.PositiveIntegerField(default=0)
+    #: The bucket is over and was computed after it ended. An open bucket is
+    #: refreshed on every run.
+    closed = models.BooleanField(default=False)
+
+    class Meta:
+        abstract = True
+
+
+class CheckRollupHourly(_CheckRollup):
+    """One check, one hour. Kept MONITORING_ROLLUP_HOURLY_RETENTION_DAYS."""
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_ip", "template", "bucket"],
+                name="uniq_rolluphourly_ip_template_bucket",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "bucket"]),
+            models.Index(fields=["target_ip", "template", "-bucket"]),
+        ]
+
+
+class CheckRollupDaily(_CheckRollup):
+    """One check, one UTC day. Never pruned - one row per check per day is
+    the durable record an SLA period is computed from."""
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_ip", "template", "bucket"],
+                name="uniq_rollupdaily_ip_template_bucket",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "bucket"]),
+            models.Index(fields=["target_ip", "template", "-bucket"]),
+        ]
 
 
 class StateTransition(models.Model):

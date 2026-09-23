@@ -642,6 +642,11 @@ MONITORING_RESULT_RETENTION_DAYS = int(
 MONITORING_TRANSITION_RETENTION_DAYS = int(
     os.getenv("MONITORING_TRANSITION_RETENTION_DAYS", "365")
 )
+# Hourly check rollups (monitoring/rollups.py) are kept this long; daily
+# rollups are kept for good - they are what an SLA period is read from.
+MONITORING_ROLLUP_HOURLY_RETENTION_DAYS = int(
+    os.getenv("MONITORING_ROLLUP_HOURLY_RETENTION_DAYS", "30")
+)
 # Change-log (audit) retention - kept long by default; 0 disables pruning.
 CHANGELOG_RETENTION_DAYS = int(os.getenv("CHANGELOG_RETENTION_DAYS", "730"))
 

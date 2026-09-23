@@ -1609,8 +1609,8 @@ def _annotate_silenced(tenant, alerts):
     """Set ``_silenced`` on each firing alert covered by an active silence."""
     from django.utils import timezone
 
-    from .alerts import _ip_matches
     from .models import Silence
+    from .notify import silence_covers
 
     firing = [a for a in alerts if a.status == "firing"]
     if not firing:
@@ -1619,23 +1619,11 @@ def _annotate_silenced(tenant, alerts):
     silences = list(
         Silence.objects.filter(
             tenant=tenant, starts_at__lte=now, ends_at__gt=now
-        ).select_related("match_prefix")
+        ).select_related("match_prefix").prefetch_related("match_devices")
     )
-    if not silences:
-        return
     for a in firing:
-        ip = a.target_ip
-        for s in silences:
-            if s.match_kinds and a.kind not in s.match_kinds:
-                continue
-            if s.match_statuses and a.check_status not in s.match_statuses:
-                continue
-            if s.match_ip_id and s.match_ip_id != a.target_ip_id:
-                continue
-            if not _ip_matches(s, ip):
-                continue
+        if any(silence_covers(s, a) for s in silences):
             a._silenced = True
-            break
 
 
 @extend_schema(

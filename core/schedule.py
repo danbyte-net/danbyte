@@ -70,6 +70,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Expand check assignments into per-IP checks",
     ),
     ScheduledTask(
+        unit="danbyte-rollups",
+        commands=("rollup_checks",),
+        every=5 * MINUTE,
+        label="Roll check history into hourly and daily records",
+    ),
+    ScheduledTask(
         unit="danbyte-dispatch",
         commands=("dispatch_checks",),
         every=MINUTE,

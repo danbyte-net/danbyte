@@ -887,6 +887,31 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             )
         return cleaned
 
+    def validate_spike_factor(self, value):
+        if not 1.0 < value <= 100.0:
+            raise serializers.ValidationError("Must be above 1 and at most 100.")
+        return value
+
+    def validate_spike_floor_ms(self, value):
+        """{kind: ms}: known check kinds, non-negative numbers."""
+        from .models import CheckKind
+
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Expected {kind: milliseconds}.")
+        kinds = set(CheckKind.values)
+        cleaned = {}
+        for kind, ms in value.items():
+            if kind not in kinds:
+                raise serializers.ValidationError(f"«{kind}» is not a check kind.")
+            try:
+                ms = float(ms)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(f"«{kind}»: expected a number.") from None
+            if not 0 <= ms <= 60_000:
+                raise serializers.ValidationError(f"«{kind}»: 0 to 60000 ms.")
+            cleaned[kind] = ms
+        return cleaned
+
     class Meta:
         model = MonitoringSettings
         fields = [
@@ -912,6 +937,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "default_engine", "outpost_repo_url", "outpost_repo_token",
             "outpost_repo_token_set", "updated_at",
             "arp_source_devices", "arp_source_devices_detail",
+            "spike_factor", "spike_floor_ms",
         ]
         read_only_fields = ["updated_at"]
 

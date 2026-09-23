@@ -230,3 +230,4 @@ have working defaults, so the feature runs with none of them set.
 | `MONITORING_WEBHOOK_TIMEOUT` | `5` | Per-channel webhook POST timeout (seconds). |
 | `MONITORING_RESULT_RETENTION_DAYS` | `30` | Delete `CheckResult` rows older than this (daily prune). Raw results run ~600k rows/day on a busy install (~2.4 GB heap at 17 days) - raise only with the disk to match; the rolled-up state + transitions carry the long-term story. |
 | `MONITORING_TRANSITION_RETENTION_DAYS` | `365` | Delete `StateTransition` rows older than this. |
+| `MONITORING_ROLLUP_HOURLY_RETENTION_DAYS` | `30` | Delete hourly check rollups older than this. Daily rollups are never pruned. See [Rollups](../features/monitoring.md#rollups). |

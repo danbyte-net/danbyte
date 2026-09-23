@@ -515,7 +515,8 @@ and the **mean time to recovery (MTTR)**.
 
 ### History
 
-Status changes are kept for a year, results for thirty days. The history API
+Status changes are kept for a year, results for thirty days. Both are also
+folded into [rollups](#rollups) that outlive them. The history API
 reads the changes back filtered by anything an address is - the same
 dimensions the list pages filter on - and returns facet counts and a bucketed
 series alongside the rows, so one call feeds a rail, a chart and a table:
@@ -552,6 +553,53 @@ series alongside the rows, so one call feeds a rail, a chart and a table:
 - `…/stats/?hours=24|168|720` picks the results-chart window; beyond three
   days the buckets are days. 720 hours is the ceiling because results are
   pruned after thirty days.
+
+### Rollups {#rollups}
+
+Every five minutes the `danbyte-rollups` timer (`manage.py rollup_checks`)
+writes one hourly record per check, and once a day has ended, one daily record.
+Each record holds:
+
+- the seconds spent up, down, degraded, stale and unknown;
+- the incidents that began in the bucket;
+- the probe count;
+- that check's own latency: min, average, p50, p95, p99 and max;
+- **spikes**, the probes slower than the check's usual latency.
+
+Hourly records are kept 30 days (`MONITORING_ROLLUP_HOURLY_RETENTION_DAYS`).
+Daily records are never pruned, so an availability figure for last year can
+still be read after the raw results and status changes behind it are gone.
+
+A spike is a probe slower than both *factor × baseline* and *baseline + floor*.
+The baseline is the median of the check's hourly p50 over the previous seven
+days. The factor defaults to 3 and the floor depends on the kind:
+
+| Kind | Floor |
+|---|---|
+| ICMP | 5 ms |
+| TCP, UDP | 20 ms |
+| HTTP, SSH, Telnet, SNMP, TLS | 50 ms |
+
+Both the factor (`spike_factor`) and the per-kind floors (`spike_floor_ms`)
+are monitoring settings. A new check has no baseline, so it records no spikes
+for its first hour.
+
+Availability is read from the recorded seconds with one set of counting
+rules:
+
+- *degraded* counts as up;
+- *stale* counts as unmeasured, not down, so a blind probe is not charged as
+  an outage;
+- *unknown* is unmeasured.
+
+Availability is up ÷ (up + down). **Coverage** is the measured time ÷ all
+time. A 99.99 % figure measured over three days of a thirty-day month shows
+10 % coverage beside it.
+
+A new install starts recording from its first run. To build records from the
+history already on disk, run `manage.py rollup_checks --backfill 90`. Daily
+records go back as far as status changes do. Latency goes back only as far as
+raw results, which is thirty days by default.
 
 Facet counts are computed with every filter applied *except* the facet's own,
 so ticking a second value in one facet never zeroes its neighbours. All of it
@@ -1025,8 +1073,8 @@ Check history is high-volume (hundreds of thousands of raw results per day on a
 busy install), so Danbyte automatically prunes old results (default **30 days**,
 `MONITORING_RESULT_RETENTION_DAYS`) and old status-change records (default 365
 days, kept longer as an audit timeline) on a schedule. The rolled-up per-check
-state and the status-change timeline carry the long-term story; raw results only
-need to cover the sparkline/history windows.
+state, the status-change timeline and the [rollups](#rollups) carry the
+long-term story; raw results only need to cover the sparkline/history windows.
 
 ## Email digest
 
