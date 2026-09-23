@@ -21,9 +21,10 @@ outside the filter scope).
 """
 from __future__ import annotations
 
+import uuid
 from collections import deque
 
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -36,7 +37,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Cable, Device
+from .models import Cable, CableTermination, Device
 from .views import _get_active_tenant
 from auth_api import rbac
 
@@ -103,10 +104,17 @@ _DEVICE_POINT_ATTRS = tuple(a for a in _POINT_ATTRS if a not in _NON_DEVICE_POIN
 
 
 def _cables_qs(tenant):
+    # Total orders (id / created_at tie-breaks) so a narrowed load visits the
+    # cables it shares with a whole-tenant load in the same order (#223).
     return (
         Cable.objects.filter(tenant=tenant)
+        .order_by("-created_at", "id")
         .select_related("status")
         .prefetch_related(
+            Prefetch(
+                "terminations",
+                queryset=CableTermination.objects.order_by("end", "created_at", "id"),
+            ),
             *[f"terminations__{a}__device" for a in _DEVICE_POINT_ATTRS],
             # The bundle a port belongs to rides on the edge (and on a run's
             # origin) - joined here so neither walks it per cable.
@@ -123,10 +131,16 @@ def _physical_links(tenant):
 
     Returns ``[(cable, dev_a, port_a, kind_a, dev_b, port_b, kind_b)]``.
     """
+    return _links_from_cables(_cables_qs(tenant))
+
+
+def _links_from_cables(cables):
+    """The hops of ``cables`` (``_cables_qs`` rows, in its order) - see
+    ``_physical_links``."""
     from types import SimpleNamespace
 
     links = []
-    for cab in _cables_qs(tenant):
+    for cab in cables:
         a_ends, b_ends = [], []
         for t in cab.terminations.all():
             kind, obj = _term_point(t)
@@ -283,14 +297,151 @@ def viewable_device_ids(user, tenant):
 
 def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
                  collapse=True, scope_q=None):
-    links = _physical_links(tenant)
+    opts = {"device_filter_q": device_filter_q, "focus_id": focus_id,
+            "depth": depth, "collapse": collapse, "scope_q": scope_q}
+    if _wants_narrowing(device_filter_q, focus_id, scope_q):
+        return _narrowed_graph(tenant, **opts)
+    graph, _ = _graph_from_links(tenant, _physical_links(tenant), **opts)
+    return graph
+
+
+# ─── Narrowed cable loading (#223) ──────────────────────────────────────────
+#
+# A focused or filtered map returns a handful of devices, but building it from
+# every cable in the tenant made it cost O(tenant cables). The narrowed loader
+# fetches only the cables the returned graph can depend on and feeds them to
+# the same assembly, in the same order, so the result is identical:
+#
+# * every cable on a *returned* device (its ports, edges and pass-through
+#   status need all of them) - for a focus, grown ring by ring until the BFS
+#   neighbourhood is fully loaded;
+# * pass-through closure: a loaded cable landing on a front port pulls in the
+#   cables on its rear port, one landing on a rear port pulls in the cables on
+#   every front port mapped to it. That covers every panel walk from, and
+#   every walk ending at, a returned device, whatever its strand position.
+#
+# Ports carry at most one cable (per-point unique constraints), so no other
+# cable can compete for a walk's hop or a collapsed edge's dedup key.
+
+
+def _wants_narrowing(device_filter_q, focus_id, scope_q):
+    """True when the graph is bounded to a device set (focus, filter or RBAC
+    scope) - the unbounded full map still reads the whole table. A focus id
+    that is not a UUID keeps the old path (and its error behaviour)."""
+    if focus_id:
+        try:
+            uuid.UUID(str(focus_id))
+        except ValueError:
+            return False
+        return True
+    return bool(device_filter_q) or scope_q is not None
+
+
+def _terminations_touching(tenant, devices, rear_ids, fronts_of_rear_ids):
+    """``(cable_id, front_port's rear_port_id, rear_port_id)`` for every end
+    of this tenant's cables that have an end on ``devices`` (ids or a
+    ``values("id")`` queryset; circuit ids match circuit ends), on a rear port
+    in ``rear_ids``, or on a front port mapped to a rear port in
+    ``fronts_of_rear_ids``. Light queries - no cable rows are built."""
+    # One indexable lookup per point kind, UNIONed - an OR across them makes
+    # the planner scan every termination in the tenant.
+    ends = CableTermination.objects.filter(cable__tenant=tenant).order_by()
+    parts = []
+    if devices is not None:
+        parts += [
+            ends.filter(**{f"{attr}__device_id__in": devices})
+            for attr in _DEVICE_POINT_ATTRS
+        ]
+        parts.append(ends.filter(circuit_termination__circuit_id__in=devices))
+    if rear_ids:
+        parts.append(ends.filter(rear_port_id__in=rear_ids))
+    if fronts_of_rear_ids:
+        parts.append(ends.filter(front_port__rear_port_id__in=fronts_of_rear_ids))
+    if not parts:
+        return []
+    parts = [p.values_list("cable_id", flat=True) for p in parts]
+    touching = set(parts[0].union(*parts[1:]))
+    if not touching:
+        return []
+    # Every end of those cables: their far ends drive the pass-through
+    # closure. (Ids materialised first - nested, the planner may re-run the
+    # union per row.)
+    return list(
+        ends.filter(cable_id__in=touching)
+        .values_list("cable_id", "front_port__rear_port_id", "rear_port_id")
+    )
+
+
+def _narrowed_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
+                    collapse=True, scope_q=None):
+    opts = {"device_filter_q": device_filter_q, "focus_id": focus_id,
+            "depth": depth, "collapse": collapse, "scope_q": scope_q}
+    if focus_id:
+        pending = {str(focus_id)}
+    else:
+        base = Device.objects.filter(tenant=tenant)
+        if device_filter_q is not None:
+            base = base.filter(device_filter_q)
+        if scope_q is not None:
+            base = base.filter(scope_q)
+        pending = base.values("id")
+    cable_ids: set = set()
+    cables: dict = {}
+    loaded: set = set()  # device/circuit ids whose every cable is loaded
+    asked_rear: set = set()
+    asked_fronts_of: set = set()
+    rear_ids: set = set()
+    fronts_of: set = set()
+    while True:
+        rows = _terminations_touching(tenant, pending, rear_ids, fronts_of)
+        if focus_id and pending is not None:
+            loaded |= pending
+        pending = None
+        rear_ids, fronts_of = set(), set()
+        for cid, front_rear_id, rear_id in rows:
+            cable_ids.add(cid)
+            if front_rear_id is not None and front_rear_id not in asked_rear:
+                asked_rear.add(front_rear_id)
+                rear_ids.add(front_rear_id)
+            if rear_id is not None and rear_id not in asked_fronts_of:
+                asked_fronts_of.add(rear_id)
+                fronts_of.add(rear_id)
+        if rear_ids or fronts_of:
+            continue  # finish the pass-through closure first
+        new_ids = cable_ids - cables.keys()
+        if new_ids:
+            for cab in _cables_qs(tenant).filter(id__in=new_ids):
+                cables[cab.id] = cab
+        # _cables_qs order: created_at desc, then id (uuid byte order).
+        ordered = sorted(cables.values(), key=lambda c: c.id.int)
+        ordered.sort(key=lambda c: c.created_at, reverse=True)
+        graph, keep = _graph_from_links(
+            tenant, _links_from_cables(ordered), narrowed=True, **opts
+        )
+        if not focus_id:
+            return graph
+        # The BFS is exact once every device it reached is fully loaded.
+        missing = keep - loaded
+        if not missing:
+            return graph
+        pending = missing
+
+
+def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
+                      depth=1, collapse=True, scope_q=None, narrowed=False):
+    """Assemble ``{nodes, edges}`` from physical ``links``. Returns the graph
+    and, for a focus, the BFS neighbourhood (ids) it kept - else None."""
+    keep = None
     # Remove hidden devices before panel-collapse walks are assembled. Filtering
     # only final endpoints allowed an otherwise visible edge to retain a hidden
     # patch panel's name in via.
     if scope_q is not None:
-        allowed_ids = set(
-            _devices_qs(tenant).filter(scope_q).values_list("id", flat=True)
-        )
+        allowed = _devices_qs(tenant).filter(scope_q)
+        if narrowed:
+            allowed = allowed.filter(
+                id__in={link[i].id for link in links for i in (1, 4)}
+            )
+        allowed_ids = set(allowed.values_list("id", flat=True))
         links = [
             link for link in links
             if link[1].id in allowed_ids and link[4].id in allowed_ids
@@ -384,16 +535,17 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
     edge_list = list(edges.values())
 
     # Scope: filtered devices, or the focus device's N-hop neighbourhood.
-    base = _devices_qs(tenant)
-    if device_filter_q is not None:
-        base = base.filter(device_filter_q)
-    # RBAC row/site scope - a Site-A viewer's graph must contain only devices
-    # they may view (applied to *both* the filtered and focus paths).
-    if scope_q is not None:
-        base = base.filter(scope_q)
-    in_scope = {str(d.id): d for d in base}
-
-    if focus_id:
+    if not focus_id:
+        base = _devices_qs(tenant)
+        if device_filter_q is not None:
+            base = base.filter(device_filter_q)
+        # RBAC row/site scope - a Site-A viewer's graph must contain only
+        # devices they may view (applied to *both* the filtered and focus
+        # paths).
+        if scope_q is not None:
+            base = base.filter(scope_q)
+        in_scope = {str(d.id): d for d in base}
+    else:
         adj: dict[str, set] = {}
         for e in edge_list:
             s = e["source"][4:]
@@ -459,7 +611,7 @@ def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
             ports.append({"name": name, "kind": kind})
         nodes.append(_device_node(d, ports, panel=panel))
 
-    return {"nodes": nodes, "edges": edge_list}
+    return {"nodes": nodes, "edges": edge_list}, keep
 
 
 @extend_schema(
