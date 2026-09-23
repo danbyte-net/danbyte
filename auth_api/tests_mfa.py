@@ -195,6 +195,36 @@ class BruteForceGuardTests(TestCase):
         r = _post(self.c, "/api/auth/login/", username="bob", password="pw12345!")
         self.assertEqual(r.status_code, 429)
 
+    def test_one_clients_failures_do_not_lock_out_another_user(self):
+        """Behind a second proxy every user shares the proxy's address; ten
+        wrong passwords from anyone used to lock out everyone (#226)."""
+        self.profile.require_mfa = False
+        self.profile.save()
+        User.objects.create_user("mallory", password="m-pass-1!")
+        proxy = {"HTTP_X_FORWARDED_FOR": "10.9.9.9"}  # the shared proxy hop
+        for _ in range(LOGIN_MAX_FAILURES + 2):
+            self.c.post("/api/auth/login/", data=json.dumps(
+                {"username": "mallory", "password": "wrong"}),
+                content_type="application/json", **proxy)
+        bob = Client()
+        r = bob.post("/api/auth/login/", data=json.dumps(
+            {"username": "bob", "password": "pw12345!"}),
+            content_type="application/json", **proxy)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_rotating_addresses_cannot_brute_force_one_account(self):
+        from .login_api import LOGIN_MAX_ACCOUNT_FAILURES
+
+        for i in range(LOGIN_MAX_ACCOUNT_FAILURES):
+            self.c.post("/api/auth/login/", data=json.dumps(
+                {"username": "bob", "password": "wrong"}),
+                content_type="application/json",
+                HTTP_X_FORWARDED_FOR=f"198.51.100.{i % 250}")
+        r = Client().post("/api/auth/login/", data=json.dumps(
+            {"username": "bob", "password": "pw12345!"}),
+            content_type="application/json", HTTP_X_FORWARDED_FOR="203.0.113.7")
+        self.assertEqual(r.status_code, 429)
+
     def test_login_success_clears_counter(self):
         self.profile.require_mfa = False  # plain login so success logs in
         self.profile.save()
