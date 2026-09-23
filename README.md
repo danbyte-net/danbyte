@@ -85,7 +85,8 @@ real sample network (sites, racks, cabling, IP space, monitoring), yours for
 </tr>
 <tr>
 <td><img src="https://danbyte.net/readme/racks-3d.webp" alt="Racks in 3D"><br><sub><b>Racks in 3D</b> - walk the hall, trace a cable from any port</sub></td>
-<td><img src="https://danbyte.net/readme/faceplate.webp" alt="Link-state faceplate"><br><sub><b>Faceplates</b> from the real device photo, lit with live status</sub></td>
+<td><img width="1069" height="344" alt="image" src="https://github.com/user-attachments/assets/cb491695-ae31-4c49-b201-be110e8b7212" />
+<br><sub><b>Faceplates</b> from the real device photo, lit with live status, and labels</sub></td>
 </tr>
 <tr>
 <td><img src="https://danbyte.net/readme/floorplan.webp" alt="Floor plan"><br><sub><b>Floor plans</b> - racks, tiles and cameras on a real footprint</sub></td>
