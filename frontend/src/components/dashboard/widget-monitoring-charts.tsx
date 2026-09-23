@@ -1,17 +1,7 @@
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  XAxis,
-  YAxis,
-} from "recharts"
-
-import { useState } from "react"
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import type { DashboardData } from "@/lib/api"
-import { SeriesLegend } from "@/components/monitoring/series-legend"
+import { LatencyByKindChart } from "@/components/monitoring/latency-by-kind"
 import {
   ChartContainer,
   ChartLegend,
@@ -30,11 +20,6 @@ import { useDateFormat } from "@/lib/datetime"
 const ALERTS = {
   opened: { label: "Opened", color: "var(--color-red-500)" },
   resolved: { label: "Resolved", color: "var(--color-emerald-500)" },
-} satisfies ChartConfig
-
-const LATENCY = {
-  p50: { label: "Median", color: "var(--chart-1)" },
-  p95: { label: "95th percentile", color: "var(--chart-3)" },
 } satisfies ChartConfig
 
 function Empty({ hint }: { hint: string }) {
@@ -94,81 +79,23 @@ export function AlertsPerDay({
   )
 }
 
-const LATENCY_SERIES = (["p50", "p95"] as const).map((k) => ({
-  key: k,
-  label: LATENCY[k].label,
-  color: LATENCY[k].color,
-}))
-
 export function LatencyWeek({
-  rows,
+  kinds,
 }: {
-  rows: DashboardData["latency_series"]
+  kinds: DashboardData["latency_by_kind"]
 }) {
   const { formatCustom } = useDateFormat()
-  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
-  if (!rows.length) return <Empty hint="No latency recorded this week." />
-  const data = rows.map((p) => ({
-    ...p,
-    label: formatCustom(p.t, {
-      weekday: "short",
-      hour: "2-digit",
-    }),
-  }))
   return (
-    <div className="flex h-full flex-col">
-      <ChartContainer
-        config={LATENCY}
-        className="aspect-auto min-h-[140px] w-full flex-1"
-      >
-        <LineChart
-          accessibilityLayer
-          data={data}
-          margin={{ left: 0, right: 8, top: 4 }}
-        >
-          <CartesianGrid vertical={false} />
-          <XAxis
-            dataKey="label"
-            tickLine={false}
-            axisLine={false}
-            tickMargin={6}
-            minTickGap={32}
-          />
-          <YAxis
-            tickLine={false}
-            axisLine={false}
-            width={56}
-            tickFormatter={(v: number) => `${v} ms`}
-          />
-          <ChartTooltip
-            cursor={false}
-            content={<ChartTooltipContent indicator="line" />}
-          />
-          <Line
-            dataKey="p95"
-            type="monotone"
-            stroke="var(--color-p95)"
-            strokeWidth={2}
-            dot={false}
-            connectNulls
-            hide={hidden.has("p95")}
-          />
-          <Line
-            dataKey="p50"
-            type="monotone"
-            stroke="var(--color-p50)"
-            strokeWidth={2}
-            dot={false}
-            connectNulls
-            hide={hidden.has("p50")}
-          />
-        </LineChart>
-      </ChartContainer>
-      <SeriesLegend
-        items={LATENCY_SERIES}
-        hidden={hidden}
-        onChange={setHidden}
-      />
-    </div>
+    <LatencyByKindChart
+      kinds={kinds}
+      formatLabel={(t) =>
+        formatCustom(t, {
+          weekday: "short",
+          hour: "2-digit",
+        })
+      }
+      empty={<Empty hint="No latency recorded this week." />}
+      chartClassName="min-h-[140px] flex-1"
+    />
   )
 }

@@ -64,7 +64,7 @@ import {
 import type { ConfigTab } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 import { SourceBadge } from "@/components/monitoring/source-badge"
-import { SeriesLegend } from "@/components/monitoring/series-legend"
+import { LatencyByKindChart } from "@/components/monitoring/latency-by-kind"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
@@ -157,16 +157,6 @@ const STATUS_ORDER: CheckStatus[] = [
   "unknown",
 ]
 
-const LATENCY_CONFIG = {
-  p50: { label: "Median", color: "var(--chart-1)" },
-  p95: { label: "95th percentile", color: "var(--chart-3)" },
-} satisfies ChartConfig
-const LATENCY_SERIES = (["p50", "p95"] as const).map((k) => ({
-  key: k,
-  label: LATENCY_CONFIG[k].label,
-  color: LATENCY_CONFIG[k].color,
-}))
-
 const ALERTS_CONFIG = {
   opened: { label: "Opened", color: "var(--color-red-500)" },
   resolved: { label: "Resolved", color: "var(--color-emerald-500)" },
@@ -213,9 +203,6 @@ function MonitoringPage() {
   useEffect(() => setMounted(true), [])
 
   const [hours, setHours] = useState<StatsHours>(24)
-  const [hiddenLatency, setHiddenLatency] = useState<Set<string>>(
-    () => new Set()
-  )
   const stats = useQuery({
     queryKey: ["monitoring-stats", hours],
     queryFn: () =>
@@ -294,15 +281,12 @@ function MonitoringPage() {
   }))
   const windowLabel =
     hours === 24 ? "24 hours" : hours === 168 ? "7 days" : "30 days"
-  const latencyData = (d?.latency_series ?? []).map((p) => ({
-    ...p,
-    label:
-      d?.series_bucket === "day"
-        ? formatCustom(p.t, { month: "short", day: "numeric" })
-        : hours > 24
-          ? formatCustom(p.t, { weekday: "short", hour: "2-digit" })
-          : formatCustom(p.t, { hour: "2-digit" }),
-  }))
+  const latencyLabel = (t: string) =>
+    d?.series_bucket === "day"
+      ? formatCustom(t, { month: "short", day: "numeric" })
+      : hours > 24
+        ? formatCustom(t, { weekday: "short", hour: "2-digit" })
+        : formatCustom(t, { hour: "2-digit" })
   const alertsData = (d?.alerts_series ?? []).map((p) => ({
     ...p,
     label: formatCustom(p.t, { month: "short", day: "numeric" }),
@@ -552,71 +536,24 @@ function MonitoringPage() {
                 <CardHeader>
                   <CardTitle>Latency</CardTitle>
                   <CardDescription>
-                    Median and 95th percentile across every check, per{" "}
+                    Median and 95th percentile per check kind, per{" "}
                     {d.series_bucket === "day" ? "day" : "bucket"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {!mounted || latencyData.length === 0 ? (
-                    <Placeholder
-                      h="h-[200px]"
-                      hint={`No latency recorded in the last ${windowLabel}.`}
-                    />
+                  {!mounted ? (
+                    <Placeholder h="h-[200px]" hint="" />
                   ) : (
-                    <ChartContainer
-                      config={LATENCY_CONFIG}
-                      className="aspect-auto h-[200px] w-full"
-                    >
-                      <LineChart
-                        accessibilityLayer
-                        data={latencyData}
-                        margin={{ left: 0, right: 12 }}
-                      >
-                        <CartesianGrid vertical={false} />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                          tickMargin={8}
-                          minTickGap={32}
+                    <LatencyByKindChart
+                      kinds={d.latency_by_kind ?? []}
+                      formatLabel={latencyLabel}
+                      empty={
+                        <Placeholder
+                          h="h-[200px]"
+                          hint={`No latency recorded in the last ${windowLabel}.`}
                         />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          width={56}
-                          tickFormatter={(v: number) => `${v} ms`}
-                        />
-                        <ChartTooltip
-                          cursor={false}
-                          content={<ChartTooltipContent indicator="line" />}
-                        />
-                        <Line
-                          dataKey="p95"
-                          type="monotone"
-                          stroke="var(--color-p95)"
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                          hide={hiddenLatency.has("p95")}
-                        />
-                        <Line
-                          dataKey="p50"
-                          type="monotone"
-                          stroke="var(--color-p50)"
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                          hide={hiddenLatency.has("p50")}
-                        />
-                      </LineChart>
-                    </ChartContainer>
-                  )}
-                  {latencyData.length > 0 && (
-                    <SeriesLegend
-                      items={LATENCY_SERIES}
-                      hidden={hiddenLatency}
-                      onChange={setHiddenLatency}
-                      className="mt-2"
+                      }
+                      chartClassName="h-[200px]"
                     />
                   )}
                 </CardContent>

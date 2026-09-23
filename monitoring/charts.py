@@ -158,6 +158,35 @@ def latency_percentiles(qs, since, until, bucket_s: int) -> list[dict]:
     ]
 
 
+def latency_by_kind(qs, since, until, bucket_s: int) -> list[dict]:
+    """``[{kind, samples, series: [{t, p50, p95}]}]``, the busiest kind first.
+
+    The estate-wide line in :func:`latency_percentiles` mixes a 1 ms ping with
+    a 300 ms HTTPS fetch, and whichever kind has more checks sets the curve.
+    Split by kind, each line means something. One query, like its sibling."""
+    rows = (
+        qs.filter(timestamp__gte=since, timestamp__lte=until, latency_ms__isnull=False)
+        .annotate(b=_bucket("timestamp", bucket_s))
+        .values("kind", "b")
+        .annotate(
+            n=Count("id"),
+            p50=Percentile("latency_ms", 0.5),
+            p95=Percentile("latency_ms", 0.95),
+        )
+        .order_by("kind", "b")
+    )
+    out: dict = {}
+    for r in rows:
+        k = out.setdefault(r["kind"], {"kind": r["kind"], "samples": 0, "series": []})
+        k["samples"] += r["n"]
+        k["series"].append({
+            "t": _iso(r["b"]),
+            "p50": round(r["p50"], 2) if r["p50"] is not None else None,
+            "p95": round(r["p95"], 2) if r["p95"] is not None else None,
+        })
+    return sorted(out.values(), key=lambda k: (-k["samples"], k["kind"]))
+
+
 def transition_heatmap(qs, tz: ZoneInfo) -> list[dict]:
     """``[{dow, hour, n}]`` - when changes happen, in the viewer's week.
     ``dow`` is 0 = Monday."""

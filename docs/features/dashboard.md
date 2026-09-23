@@ -30,8 +30,8 @@ The page is a mosaic of tiles:
   log) and **Recent activity** (latest monitoring status changes).
 - **Monitoring widgets** - **Availability** (seven days, time reachable over
   time measured, as a gauge), **Alerts per day** (opened against resolved, the
-  last seven days), **Latency** (the estate's median and 95th percentile per
-  hour over the week), **Flapping** (the checks currently flagged, with a
+  last seven days), **Latency** (median and 95th percentile per hour over
+  the week, one check kind at a time, busiest first), **Flapping** (the checks currently flagged, with a
   link to confirm them) and **Status history** (the status strips of the
   addresses and devices you pick - the same strip and availability figure
   their Monitoring tabs draw, over 1h to 90d, refreshed every minute; pick

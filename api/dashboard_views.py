@@ -440,10 +440,18 @@ def _monitoring_charts(request, user, tenant) -> dict:
     resolved per day, and the estate's p50/p95 latency per hour. Site-aware
     like the flapping list."""
     try:
-        from monitoring.charts import alerts_per_day, latency_percentiles, viewer_tz
+        from monitoring.charts import (
+            alerts_per_day,
+            latency_by_kind,
+            latency_percentiles,
+            viewer_tz,
+        )
         from monitoring.models import CheckResult
     except Exception:  # noqa: BLE001
-        return {"availability_7d": None, "alerts_per_day": [], "latency_series": []}
+        return {
+            "availability_7d": None, "alerts_per_day": [], "latency_series": [],
+            "latency_by_kind": [],
+        }
     from datetime import timedelta
 
     from django.db.models import Count
@@ -453,7 +461,10 @@ def _monitoring_charts(request, user, tenant) -> dict:
 
     q = rbac.row_filter(user, tenant, "ipaddress", "view")
     if q is None:
-        return {"availability_7d": None, "alerts_per_day": [], "latency_series": []}
+        return {
+            "availability_7d": None, "alerts_per_day": [], "latency_series": [],
+            "latency_by_kind": [],
+        }
     ip_filter = None if q is True else IPAddress.objects.filter(tenant=tenant).filter(q)
     now = timezone.now()
     since = now - timedelta(days=7)
@@ -470,6 +481,7 @@ def _monitoring_charts(request, user, tenant) -> dict:
         "availability_7d": round(100.0 * up / (up + down), 2) if (up + down) else None,
         "alerts_per_day": alerts_per_day(tenant, since, now, tz, ip_filter),
         "latency_series": latency_percentiles(results, since, now, 3600),
+        "latency_by_kind": latency_by_kind(results, since, now, 3600),
     }
 
 

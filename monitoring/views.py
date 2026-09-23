@@ -1218,7 +1218,13 @@ def stats_view(request):
     availability = round(100.0 * up_n / (up_n + down_n), 2) if (up_n + down_n) else None
     from datetime import timedelta
 
-    from .charts import alerts_per_day, bucket_seconds, latency_percentiles, viewer_tz
+    from .charts import (
+        alerts_per_day,
+        bucket_seconds,
+        latency_by_kind,
+        latency_percentiles,
+        viewer_tz,
+    )
 
     since = timezone.now() - timedelta(hours=hours)
     scoped_results = _scope_ip_keyed(
@@ -1246,6 +1252,11 @@ def stats_view(request):
             # The estate's latency per bucket - p50 says how it feels, p95
             # says who is suffering.
             "latency_series": latency_percentiles(
+                scoped_results, since, timezone.now(), bucket_seconds(hours)
+            ),
+            # The same, one line per check kind: a ping and an HTTPS fetch
+            # do not belong on one curve.
+            "latency_by_kind": latency_by_kind(
                 scoped_results, since, timezone.now(), bucket_seconds(hours)
             ),
             # Opened against resolved, per day over the window (a day at

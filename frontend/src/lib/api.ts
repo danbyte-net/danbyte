@@ -5768,6 +5768,13 @@ export interface MonitoringSeriesPoint {
  * result-retention ceiling - older rows are pruned. */
 export type StatsHours = 24 | 168 | 720
 
+/** One check kind's latency over a window, per bucket. */
+export interface LatencyByKind {
+  kind: string
+  samples: number
+  series: { t: string; p50: number | null; p95: number | null }[]
+}
+
 export interface MonitoringStats {
   by_status: Partial<Record<CheckStatus, number>>
   by_kind: Partial<Record<CheckKind, number>>
@@ -5782,6 +5789,8 @@ export interface MonitoringStats {
   availability_pct: number | null
   /** The estate's p50/p95 latency per bucket over the window. */
   latency_series: { t: string; p50: number | null; p95: number | null }[]
+  /** The same per check kind, the busiest kind first. */
+  latency_by_kind: LatencyByKind[]
   /** Alerts opened against resolved, per day. */
   alerts_series: { t: string; opened: number; resolved: number }[]
   /** Sub-minute checks in view, and the lane's own pulse. */
@@ -6477,6 +6486,7 @@ export interface DashboardData {
   availability_7d: number | null
   alerts_per_day: { t: string; opened: number; resolved: number }[]
   latency_series: { t: string; p50: number | null; p95: number | null }[]
+  latency_by_kind: LatencyByKind[]
 }
 
 export type ComplianceCheck =

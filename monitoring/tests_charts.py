@@ -15,6 +15,7 @@ from core.models import Organization, Tenant
 
 from .charts import (
     alerts_per_day,
+    latency_by_kind,
     latency_percentiles,
     latency_series,
     per_day,
@@ -91,6 +92,23 @@ class LatencyTests(_Base):
         )
         self.assertEqual(b["p50"], 3.0)
         self.assertGreater(b["p95"], 50)
+
+    def test_by_kind_keeps_pings_and_web_checks_apart(self):
+        for i in range(3):
+            self.result(self.t0 + timedelta(minutes=i), latency=1.0)
+        https = CheckTemplate.objects.create(
+            tenant=self.tenant, name="HTTPS", slug="https", kind=CheckKind.HTTP
+        )
+        CheckResult.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=https, kind="http",
+            status="up", latency_ms=300.0, timestamp=self.t0,
+        )
+        out = latency_by_kind(
+            CheckResult.objects.filter(tenant=self.tenant), self.t0, self.t0 + timedelta(hours=1), 3600
+        )
+        self.assertEqual([(k["kind"], k["samples"]) for k in out], [("icmp", 3), ("http", 1)])
+        self.assertEqual(out[0]["series"][0]["p95"], 1.0)
+        self.assertEqual(out[1]["series"][0]["p50"], 300.0)
 
 
 class TransitionChartTests(_Base):

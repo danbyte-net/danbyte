@@ -462,8 +462,8 @@ export const CATALOG: WidgetDef[] = [
     fit: "stretch",
     title: "Latency",
     description:
-      "Median and 95th percentile across every check, hourly, seven days",
-    render: (d) => <LatencyWeek rows={d.latency_series} />,
+      "Median and 95th percentile per check kind, hourly, seven days",
+    render: (d) => <LatencyWeek kinds={d.latency_by_kind ?? []} />,
   },
   {
     id: "flapping",

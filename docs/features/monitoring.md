@@ -635,9 +635,10 @@ exactly like an automatic scan.
   reachable - definitions, alert channels), charts (status distribution,
   checks by type, results over the last 24 hours, 7 days or 30 days - hourly
   up to three days, daily beyond; 30 days is the ceiling because results are
-  pruned after that), **Latency** (the estate's median and 95th percentile
-  per bucket - the median says how it feels, the 95th says who is
-  suffering), **Alerts** (opened against resolved per day - whether you are
+  pruned after that), **Latency** (median and 95th percentile per bucket,
+  one check kind at a time, since a ping and an HTTPS fetch do not share a
+  scale - the median says how it feels, the 95th says who is suffering;
+  `latency_by_kind` in the stats payload), **Alerts** (opened against resolved per day - whether you are
   keeping up), **Recent changes** (the latest status changes grouped by the
   hour they landed in, with who answered), a **Flapping now** count (see
   below), and the monitoring settings.
