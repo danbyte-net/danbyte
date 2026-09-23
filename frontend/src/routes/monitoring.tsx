@@ -64,13 +64,17 @@ import {
 import type { ConfigTab } from "@/components/monitoring/configuration"
 import { CertKeyHealthCard } from "@/components/monitoring/cert-key-health"
 import { SourceBadge } from "@/components/monitoring/source-badge"
+import { ExploreView } from "@/components/monitoring/explore-view"
 import { LatencyByKindChart } from "@/components/monitoring/latency-by-kind"
+import { LatencyView } from "@/components/monitoring/latency-view"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
   | "overview"
   | "history"
   | "checks"
+  | "explore"
+  | "latency"
   | "flapping"
   | "templates"
   | "configuration"
@@ -109,6 +113,7 @@ const FILTER_KEYS = [
   "flapping",
   "dow",
   "hour",
+  "group_by",
 ] as const
 type FilterKey = (typeof FILTER_KEYS)[number]
 
@@ -123,6 +128,8 @@ const VIEWS: MonitoringView[] = [
   "overview",
   "history",
   "checks",
+  "explore",
+  "latency",
   "flapping",
   "templates",
   "configuration",
@@ -310,6 +317,8 @@ function MonitoringPage() {
             { value: "overview", label: "Overview" },
             { value: "history", label: "History" },
             { value: "checks", label: "Checks" },
+            { value: "explore", label: "Explore" },
+            { value: "latency", label: "Latency" },
             ...(flaps.length > 0
               ? [{ value: "flapping", label: "Flapping", count: flaps.length }]
               : []),
@@ -335,6 +344,7 @@ function MonitoringPage() {
           view === "configuration" ||
           view === "history" ||
           view === "checks" ||
+          view === "explore" ||
           view === "flapping"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
@@ -345,6 +355,8 @@ function MonitoringPage() {
         {view === "history" && <HistoryView />}
 
         {view === "checks" && <ChecksList />}
+        {view === "explore" && <ExploreView />}
+        {view === "latency" && <LatencyView />}
         {view === "flapping" && <ChecksList flappingOnly />}
 
         {view === "templates" && (

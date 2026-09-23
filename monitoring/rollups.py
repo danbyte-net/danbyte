@@ -131,15 +131,18 @@ def _spike_rules(tenant_id) -> tuple[float, dict]:
     return factor, floors
 
 
-def baselines(tenant_id, before: datetime) -> dict:
+def baselines(tenant_id, before: datetime, pairs=None) -> dict:
     """``{(ip_id, template_id): median latency}`` over the week before
-    ``before``, from the hourly rollups - each check's own normal."""
+    ``before``, from the hourly rollups - each check's own normal.
+    ``pairs=(ip_ids, template_ids)`` narrows it to a page of checks."""
+    qs = CheckRollupHourly.objects.filter(
+        tenant_id=tenant_id, bucket__gte=before - BASELINE_WINDOW,
+        bucket__lt=before, lat_p50__isnull=False,
+    )
+    if pairs is not None:
+        qs = qs.filter(target_ip_id__in=pairs[0], template_id__in=pairs[1])
     rows = (
-        CheckRollupHourly.objects.filter(
-            tenant_id=tenant_id, bucket__gte=before - BASELINE_WINDOW,
-            bucket__lt=before, lat_p50__isnull=False,
-        )
-        .values("target_ip_id", "template_id")
+        qs.values("target_ip_id", "template_id")
         .annotate(m=Percentile("lat_p50", 0.5))
     )
     return {(str(r["target_ip_id"]), str(r["template_id"])): r["m"] for r in rows}

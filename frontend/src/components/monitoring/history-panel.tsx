@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
+import { availabilityTone as tier, fmtPct } from "./availability"
 import { DailyAvailability } from "./daily-availability"
 import { StatusStrip, fmtSpan } from "./status-strip"
 import type { StripScope } from "./status-strip"
@@ -343,18 +344,6 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
       </div>
     </Section>
   )
-}
-
-function fmtPct(p: number | null | undefined): string {
-  return p == null ? "-" : `${p.toFixed(p >= 99.95 ? 2 : 1)}%`
-}
-
-// The same tiers as the daily bars: three nines, two nines, less.
-function tier(p: number | null | undefined): string {
-  if (p == null) return "text-muted-foreground"
-  if (p >= 99.9) return "text-emerald-600 dark:text-emerald-400"
-  if (p >= 99) return "text-amber-600 dark:text-amber-400"
-  return "text-red-600 dark:text-red-400"
 }
 
 function StripRow({

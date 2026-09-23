@@ -664,15 +664,77 @@ exactly like an automatic scan.
   status in one click; the rail's Status facet combines several. Columns -
   status, address with DNS name, device, site, check, type, source, latency,
   since, last checked - sort on the server, so a click reorders the whole
-  list, not the page in hand. **7 days** adds a status strip per row. Saved
-  views and export work as on History; the dashboard donut's slices land here
-  with the status set.
+  list, not the page in hand. Three more columns come from the
+  [rollups](#rollups) and cover the last seven days:
+    - availability, with the coverage beside it when part of the week went
+      unmeasured;
+    - p95 latency;
+    - the check's baseline.
+
+  **7 days** adds a status strip per row. Saved views and export work as on
+  History; the dashboard donut's slices land here with the status set. A
+  check's name opens [its own page](#check-page).
+- **Explore** - the checks grouped by one dimension: site, role, device type,
+  platform, device, prefix, VRF, check or type. The window runs from 24 hours
+  to a year. Each row shows:
+    - the number of checks;
+    - availability, with coverage;
+    - incidents;
+    - time to recover (down time per incident);
+    - latency p50 / p95, separately for each check kind.
+
+  The worst availability comes first. A group's name opens the Checks list
+  filtered to that group.
+- **Latency** - one check kind at a time; the tabs show each kind's p95.
+  For the chosen window it shows:
+    - the median and 95th percentile, with the spikes per bucket as bars;
+    - the checks **furthest from their baseline** (window p95 ÷ baseline,
+      so 2.0x is twice as slow as usual);
+    - the checks with the **most spikes**.
 - **Flapping** - shown while anything is flagged: the Checks list pinned to
   flapping checks, with row selection and a bulk **Confirm not flapping**.
   Every row carries its **last 24 hours** to scale - the alternation itself
   is the picture, so you can see whether the bouncing is settling before you
   confirm; a block opens to its exact times and the alerts it raised.
 - **Templates** - your reusable check library.
+
+### The check page {#check-page}
+
+Each check has its own page at `/monitoring/checks/<id>`. The hero shows the
+status and the address, device and kind, with availability, p95 and baseline
+in the stat rail.
+
+The **Overview** tab holds:
+
+- the check's details;
+- the window's figures:
+    - availability and coverage;
+    - incidents and time to recover;
+    - p50 / p95 / p99;
+    - the spike threshold and the spike count;
+- a bar chart of availability per day, or per hour for the 24-hour window;
+- latency against the check's baseline (dashed) and spike threshold
+  (dotted), with spikes as bars;
+- the raw-probe latency chart.
+
+The window runs from 24 hours to a year.
+
+**Status changes** pages every change the check made in the last year.
+**Results** shows its recent raw results.
+
+Percentiles over a window are the sample-weighted mean of each bucket's
+percentiles. That is close to, but not exactly, the percentile of every
+probe in the window.
+
+The same figures are available from the API:
+
+- `GET /api/monitoring/checks/<id>/?days=` - one check;
+- `GET /api/monitoring/explore/?group_by=&days=` - grouped figures;
+- `GET /api/monitoring/latency/?kind=&days=` - the Latency view;
+- `GET /api/monitoring/checks/?with=figures&days=` - the list with figures.
+
+`hours=` (up to 48) can replace `days=`. All four are site-scoped like the
+Checks list.
 
 ### The Settings tab
 

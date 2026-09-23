@@ -1934,11 +1934,7 @@ def checks_list_view(request):
             )
         )
     qs = qs.order_by(*order_map.get(ordering, order_map["-last_checked"]))
-    qs = qs.select_related(
-        "target_ip", "target_ip__site", "target_ip__prefix", "target_ip__prefix__site",
-        "target_ip__assigned_device", "target_ip__assigned_device__site",
-        "template", "engine",
-    )
+    qs = qs.select_related(*CHECK_ROW_RELATED)
     rows, total, page, page_size = paginate(qs, params)
 
     # ``strip=<days>`` adds status-over-time segments per row - two queries
@@ -1957,47 +1953,18 @@ def checks_list_view(request):
             tenant.id, [(r.target_ip_id, r.template_id) for r in rows], since, until
         )
 
-    def site_of(ip):
-        site = ip.site if ip.site_id else (
-            ip.prefix.site if ip.prefix_id and ip.prefix.site_id else (
-                ip.assigned_device.site
-                if ip.assigned_device_id and ip.assigned_device.site_id else None
-            )
-        )
-        return {"id": str(site.id), "name": site.name} if site is not None else None
-
     results = []
     for st in rows:
-        ip = st.target_ip
-        device = ip.assigned_device if ip.assigned_device_id else None
-        row = {
-            "id": str(st.id),
-            "target_ip": {
-                "id": str(ip.id), "ip_address": ip.ip_address, "dns_name": ip.dns_name,
-            },
-            "template": {"id": str(st.template_id), "name": st.template.name},
-            "kind": st.kind,
-            "status": st.status,
-            "last_latency_ms": st.last_latency_ms,
-            "last_checked": st.last_checked,
-            "since": st.since,
-            "consecutive_fail": st.consecutive_fail,
-            "source": st.source,
-            "engine": (
-                {"id": str(st.engine_id), "name": st.engine.name} if st.engine_id else None
-            ),
-            "flapping_since": st.flapping_since,
-            "flap_count": st.flap_count,
-            "interval_ms": st.interval_ms,
-            "device": {"id": str(device.id), "name": device.name} if device else None,
-            "site": site_of(ip),
-            "prefix": (
-                {"id": str(ip.prefix_id), "cidr": ip.prefix.cidr} if ip.prefix_id else None
-            ),
-        }
+        row = check_row(st)
         if segments:
             row["segments"] = segments.get((str(st.target_ip_id), str(st.template_id)), [])
         results.append(row)
+    # ``with=figures`` adds the window's availability, coverage, incidents and
+    # latency per row, from the rollups - one query per rollup slice.
+    if "figures" in (params.get("with") or "").split(","):
+        from .figures import window_from_params
+
+        _add_figures(tenant, rows, results, window_from_params(params))
     source_counts = {
         r["source"]: r["n"]
         for r in base.values("source").annotate(n=Count("id")).order_by()
@@ -2029,6 +1996,76 @@ def checks_list_view(request):
         body["since"] = since
         body["until"] = until
     return Response(body)
+
+
+CHECK_ROW_RELATED = (
+    "target_ip", "target_ip__site", "target_ip__prefix", "target_ip__prefix__site",
+    "target_ip__assigned_device", "target_ip__assigned_device__site",
+    "template", "engine",
+)
+
+
+def _site_of(ip):
+    site = ip.site if ip.site_id else (
+        ip.prefix.site if ip.prefix_id and ip.prefix.site_id else (
+            ip.assigned_device.site
+            if ip.assigned_device_id and ip.assigned_device.site_id else None
+        )
+    )
+    return {"id": str(site.id), "name": site.name} if site is not None else None
+
+
+def check_row(st) -> dict:
+    """One check as the checks list, the check page and the latency page show
+    it. ``st`` needs CHECK_ROW_RELATED selected and ``source`` annotated."""
+    ip = st.target_ip
+    device = ip.assigned_device if ip.assigned_device_id else None
+    return {
+        "id": str(st.id),
+        "target_ip": {
+            "id": str(ip.id), "ip_address": ip.ip_address, "dns_name": ip.dns_name,
+        },
+        "template": {"id": str(st.template_id), "name": st.template.name},
+        "kind": st.kind,
+        "status": st.status,
+        "last_latency_ms": st.last_latency_ms,
+        "last_checked": st.last_checked,
+        "since": st.since,
+        "consecutive_fail": st.consecutive_fail,
+        "source": getattr(st, "source", None),
+        "engine": (
+            {"id": str(st.engine_id), "name": st.engine.name} if st.engine_id else None
+        ),
+        "flapping_since": st.flapping_since,
+        "flap_count": st.flap_count,
+        "interval_ms": st.interval_ms,
+        "device": {"id": str(device.id), "name": device.name} if device else None,
+        "site": _site_of(ip),
+        "prefix": (
+            {"id": str(ip.prefix_id), "cidr": ip.prefix.cidr} if ip.prefix_id else None
+        ),
+    }
+
+
+def _add_figures(tenant, states, rows, win) -> None:
+    """Window figures and baseline onto each row, keyed by its check."""
+    from .figures import figures, sums
+    from .rollups import baselines
+
+    ips = {st.target_ip_id for st in states}
+    tmpls = {st.template_id for st in states}
+    if not ips:
+        return
+    got = sums(
+        win,
+        lambda qs: qs.filter(tenant=tenant, target_ip_id__in=ips, template_id__in=tmpls),
+        ("target_ip_id", "template_id"),
+    )
+    base = baselines(tenant.id, win.until, pairs=(ips, tmpls))
+    for st, row in zip(states, rows, strict=True):
+        key = (st.target_ip_id, st.template_id)
+        row["figures"] = figures(got.get(key, {}))
+        row["baseline_ms"] = base.get((str(key[0]), str(key[1])))
 
 
 @extend_schema(

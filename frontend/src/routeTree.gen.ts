@@ -450,6 +450,7 @@ import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-grou
 import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
 import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
 import { Route as OspfAreasIdEditRouteImport } from './routes/ospf-areas.$id_.edit'
+import { Route as MonitoringChecksIdRouteImport } from './routes/monitoring_.checks.$id'
 import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
 import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
 import { Route as MaintenanceIdEditRouteImport } from './routes/maintenance.$id_.edit'
@@ -2705,6 +2706,11 @@ const OspfAreasIdEditRoute = OspfAreasIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => OspfAreasRoute,
 } as any)
+const MonitoringChecksIdRoute = MonitoringChecksIdRouteImport.update({
+  id: '/monitoring_/checks/$id',
+  path: '/monitoring/checks/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModuleTypesIdEditRoute = ModuleTypesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -3384,6 +3390,7 @@ export interface FileRoutesByFullPath {
   '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
+  '/monitoring/checks/$id': typeof MonitoringChecksIdRoute
   '/ospf-areas/$id/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
@@ -3804,6 +3811,7 @@ export interface FileRoutesByTo {
   '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
+  '/monitoring/checks/$id': typeof MonitoringChecksIdRoute
   '/ospf-areas/$id/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
@@ -4294,6 +4302,7 @@ export interface FileRoutesById {
   '/maintenance/$id_/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id_/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id_/edit': typeof ModuleTypesIdEditRoute
+  '/monitoring_/checks/$id': typeof MonitoringChecksIdRoute
   '/ospf-areas/$id_/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id_/edit': typeof PermissionsIdEditRoute
@@ -4785,6 +4794,7 @@ export interface FileRouteTypes {
     | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
+    | '/monitoring/checks/$id'
     | '/ospf-areas/$id/edit'
     | '/p/$slug/$'
     | '/permissions/$id/edit'
@@ -5205,6 +5215,7 @@ export interface FileRouteTypes {
     | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
+    | '/monitoring/checks/$id'
     | '/ospf-areas/$id/edit'
     | '/p/$slug/$'
     | '/permissions/$id/edit'
@@ -5694,6 +5705,7 @@ export interface FileRouteTypes {
     | '/maintenance/$id_/edit'
     | '/manufacturers/$id_/edit'
     | '/module-types/$id_/edit'
+    | '/monitoring_/checks/$id'
     | '/ospf-areas/$id_/edit'
     | '/p/$slug/$'
     | '/permissions/$id_/edit'
@@ -5920,6 +5932,7 @@ export interface RootRouteChildren {
   DeviceRolesIdEditRoute: typeof DeviceRolesIdEditRoute
   IpsIdEditRoute: typeof IpsIdEditRoute
   MaintenanceIdEditRoute: typeof MaintenanceIdEditRoute
+  MonitoringChecksIdRoute: typeof MonitoringChecksIdRoute
   PSlugSplatRoute: typeof PSlugSplatRoute
   PlatformGroupsIdEditRoute: typeof PlatformGroupsIdEditRoute
   PlatformsIdEditRoute: typeof PlatformsIdEditRoute
@@ -9022,6 +9035,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OspfAreasIdEditRouteImport
       parentRoute: typeof OspfAreasRoute
     }
+    '/monitoring_/checks/$id': {
+      id: '/monitoring_/checks/$id'
+      path: '/monitoring/checks/$id'
+      fullPath: '/monitoring/checks/$id'
+      preLoaderRoute: typeof MonitoringChecksIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/module-types/$id_/edit': {
       id: '/module-types/$id_/edit'
       path: '/$id/edit'
@@ -10775,6 +10795,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeviceRolesIdEditRoute: DeviceRolesIdEditRoute,
   IpsIdEditRoute: IpsIdEditRoute,
   MaintenanceIdEditRoute: MaintenanceIdEditRoute,
+  MonitoringChecksIdRoute: MonitoringChecksIdRoute,
   PSlugSplatRoute: PSlugSplatRoute,
   PlatformGroupsIdEditRoute: PlatformGroupsIdEditRoute,
   PlatformsIdEditRoute: PlatformsIdEditRoute,

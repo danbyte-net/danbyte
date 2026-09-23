@@ -7,6 +7,7 @@ from __future__ import annotations
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .explore_views import check_detail_view, explore_view, latency_view
 from .history_views import (
     device_timeline_view,
     device_transitions_view,
@@ -213,6 +214,9 @@ urlpatterns = [
     path("check-runs/<str:run_id>/", check_run_view, name="monitoring-check-run"),
     path("status/", bulk_status_view, name="monitoring-bulk-status"),
     path("checks/", checks_list_view, name="monitoring-checks-list"),
+    path("checks/<uuid:state_id>/", check_detail_view, name="monitoring-check-detail"),
+    path("explore/", explore_view, name="monitoring-explore"),
+    path("latency/", latency_view, name="monitoring-latency"),
     path("transitions/", transitions_view, name="monitoring-transitions"),
     path("timeline/", timeline_batch_view, name="monitoring-timeline-batch"),
     path("flapping/", flapping_view, name="monitoring-flapping"),

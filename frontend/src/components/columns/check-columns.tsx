@@ -10,6 +10,7 @@ import { FlappingPill } from "@/components/monitoring/flapping-pill"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { StatusStrip } from "@/components/monitoring/status-strip"
 import { FastBadge } from "@/components/monitoring/fast-badge"
+import { AvailabilityCell, fmtMs } from "@/components/monitoring/availability"
 
 export type CheckColumnId =
   | "status"
@@ -23,6 +24,11 @@ export type CheckColumnId =
   | "latency"
   | "since"
   | "last_checked"
+  | "availability"
+  | "p95"
+  | "baseline"
+  | "ratio"
+  | "spikes"
 
 /** Column id → the `ordering` key the checks endpoint sorts by. Every
  * sortable column is here; the strip is not. */
@@ -49,9 +55,12 @@ export function checkColumns(
     label?: string
     /** A wide strip, for a view where the run itself is the picture. */
     wide?: boolean
-  } | null
-): ColumnDef<CheckListRow>[] {
-  const cols: ColumnDef<CheckListRow>[] = [
+  } | null,
+  /** Adds the rollup columns - rows must come from `?with=figures`.
+   * `offenders` adds the latency page's two: p95 against baseline, spikes. */
+  figures?: { label: string; offenders?: boolean } | null
+): ColumnDef<CheckListRow & { ratio?: number | null }>[] {
+  const cols: ColumnDef<CheckListRow & { ratio?: number | null }>[] = [
     {
       id: "status",
       accessorFn: (r) => r.status,
@@ -125,7 +134,15 @@ export function checkColumns(
       id: "check",
       accessorFn: (r) => r.template.name,
       header: ({ column }) => <SortHeader column={column} label="Check" />,
-      cell: ({ row }) => row.original.template.name,
+      cell: ({ row }) => (
+        <Link
+          to="/monitoring/checks/$id"
+          params={{ id: row.original.id }}
+          className="link"
+        >
+          {row.original.template.name}
+        </Link>
+      ),
     },
     {
       id: "kind",
@@ -178,6 +195,63 @@ export function checkColumns(
         </span>
       ),
     })
+  }
+  if (figures) {
+    cols.push(
+      {
+        id: "availability",
+        enableSorting: false,
+        accessorFn: (r) => r.figures?.availability ?? -1,
+        header: `Availability ${figures.label}`,
+        cell: ({ row }) => <AvailabilityCell figures={row.original.figures} />,
+      },
+      {
+        id: "p95",
+        enableSorting: false,
+        accessorFn: (r) => r.figures?.p95 ?? -1,
+        header: `p95 ${figures.label}`,
+        cell: ({ row }) => (
+          <span className="num text-muted-foreground">
+            {fmtMs(row.original.figures?.p95)}
+          </span>
+        ),
+      },
+      {
+        id: "baseline",
+        enableSorting: false,
+        accessorFn: (r) => r.baseline_ms ?? -1,
+        header: "Baseline",
+        cell: ({ row }) => (
+          <span className="num text-muted-foreground">
+            {fmtMs(row.original.baseline_ms)}
+          </span>
+        ),
+      }
+    )
+    if (figures.offenders)
+      cols.push(
+        {
+          id: "ratio",
+          enableSorting: false,
+          accessorFn: (r) => r.ratio ?? -1,
+          header: "Against baseline",
+          cell: ({ row }) =>
+            row.original.ratio == null ? (
+              dash
+            ) : (
+              <span className="num">{row.original.ratio.toFixed(1)}x</span>
+            ),
+        },
+        {
+          id: "spikes",
+          enableSorting: false,
+          accessorFn: (r) => r.figures?.spikes ?? 0,
+          header: "Spikes",
+          cell: ({ row }) => (
+            <span className="num">{row.original.figures?.spikes ?? 0}</span>
+          ),
+        }
+      )
   }
   cols.push(
     {

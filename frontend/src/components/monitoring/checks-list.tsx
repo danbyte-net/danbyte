@@ -120,6 +120,9 @@ export function ChecksList({
     p.set("page_size", String(PAGE))
     if (strip) p.set("strip", String(stripDays))
     if (flapping) p.set("flapping", flapping)
+    // Window figures from the rollups: one query for the page.
+    p.set("with", "figures")
+    p.set("days", "7")
     return p.toString()
   }, [rail, status, q, ordering, page, strip, stripDays, flapping])
 
@@ -144,7 +147,8 @@ export function ChecksList({
             label: flappingOnly ? "24 hours" : "7 days",
             wide: flappingOnly,
           }
-        : null
+        : null,
+      flappingOnly ? null : { label: "7d" }
     )
     return flappingOnly ? [selectionColumn<CheckListRow>(), ...cols] : cols
   }, [strip, data?.since, data?.until, flappingOnly])
@@ -263,6 +267,7 @@ export function ChecksList({
             all.set("page", String(p))
             all.set("page_size", "200")
             all.delete("strip")
+            all.delete("with")
             const r = await api<CheckListResponse>(
               `/api/monitoring/checks/?${all}`
             )

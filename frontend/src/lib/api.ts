@@ -5737,6 +5737,102 @@ export interface CheckListRow {
   prefix: { id: string; cidr: string } | null
   /** Present when the list was asked for `?strip=<days>`. */
   segments?: StatusSegment[]
+  /** Present when the list was asked for `?with=figures`. */
+  figures?: CheckFigures
+  /** The check's usual latency: the median of its hourly p50 over a week. */
+  baseline_ms?: number | null
+}
+
+/** What a window of rollups says about one check or a group of them.
+ * Percentages are 0-100; `availability` is null when nothing was measured. */
+export interface CheckFigures {
+  availability: number | null
+  /** Measured time over all time in the window. */
+  coverage: number | null
+  up_s: number
+  down_s: number
+  unmeasured_s: number
+  incidents: number
+  mttr_s: number | null
+  samples: number
+  spikes: number
+  p50: number | null
+  p95: number | null
+  p99: number | null
+  max: number | null
+}
+
+export interface FiguresWindow {
+  since: string
+  until: string
+  /** Daily points (a days window) or hourly (an hours window). */
+  daily: boolean
+}
+
+export interface CheckDetail extends CheckListRow {
+  template_kind: string
+  window: FiguresWindow
+  figures: CheckFigures
+  series: (CheckFigures & { t: string })[]
+  baseline_ms: number | null
+  spike_threshold_ms: number | null
+}
+
+export type ExploreDimension =
+  | "site"
+  | "role"
+  | "device_type"
+  | "platform"
+  | "device"
+  | "prefix"
+  | "vrf"
+  | "template"
+  | "kind"
+
+export interface ExploreRow extends CheckFigures {
+  /** The group's id (or kind); null for checks with no value, e.g. no site. */
+  key: string | null
+  name: string | null
+  color: string | null
+  checks: number
+  /** Latency per check kind - never averaged across kinds. */
+  latency: {
+    kind: string
+    samples: number
+    p50: number | null
+    p95: number | null
+    spikes: number
+  }[]
+}
+
+export interface ExploreResponse {
+  group_by: ExploreDimension
+  window: FiguresWindow
+  rows: ExploreRow[]
+}
+
+export interface LatencyOffender extends CheckListRow {
+  figures: CheckFigures
+  baseline_ms: number | null
+  /** Window p95 over the baseline; 1.0 is normal. */
+  ratio: number | null
+}
+
+export interface LatencyPageResponse {
+  window: FiguresWindow
+  kinds: {
+    kind: string
+    samples: number
+    p50: number | null
+    p95: number | null
+    p99: number | null
+    max: number | null
+    spikes: number
+  }[]
+  kind: string | null
+  series: (CheckFigures & { t: string })[]
+  slowest: LatencyOffender[]
+  spikiest: LatencyOffender[]
 }
 
 export interface CheckListResponse {
