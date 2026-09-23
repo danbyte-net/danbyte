@@ -89,11 +89,15 @@ server {
         expires 7d;
     }
 
-    # ── Uploaded media (device-type images, …), straight from MEDIA_ROOT.
+    # ── Uploaded media, through Django. Documents, image attachments and
+    #    floor plans are private to whoever can view their object, so the
+    #    folder is not served from disk: a guessed filename used to be enough
+    #    to download a document without logging in (#227).
     location /media/ {
-        alias @@MEDIA_ROOT@@/;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
         access_log off;
-        expires 7d;
     }
 
     # ── Documentation (Zensical, :8001).

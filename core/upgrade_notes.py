@@ -66,6 +66,37 @@ location /.well-known/acme-challenge/ {
 # then: sudo nginx -t && sudo systemctl reload nginx"""
 
 
+_NGINX_MEDIA = """\
+# in /etc/nginx/sites-available/danbyte.conf, replace the /media/ block:
+location /media/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    access_log off;
+}
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _media_proxied() -> bool:
+    """True when the site's nginx config already hands /media/ to Danbyte.
+
+    Reads the config if it can; a config it cannot find or read says
+    nothing, so the note stays up rather than being hidden on a guess.
+    """
+    import re
+    from pathlib import Path
+
+    for path in (Path("/etc/nginx/sites-enabled/danbyte.conf"),
+                 Path("/etc/nginx/sites-available/danbyte.conf")):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        block = re.search(r"location\s+/media/\s*\{([^}]*)\}", text)
+        return bool(block and "proxy_pass" in block.group(1))
+    return False
+
+
 def _tls_unit_installed() -> bool:
     from .site_tls import UNIT_FILE
 
@@ -74,6 +105,23 @@ def _tls_unit_installed() -> bool:
 
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.16.12-nginx-media",
+        version="0.16.12",
+        title="Send /media/ through Danbyte instead of serving it from disk",
+        body=(
+            "Uploaded documents, image attachments and floor plans are now "
+            "served only to users who can view their object. An nginx config "
+            "rendered before this release serves the folder straight from disk; "
+            "the upgrade already closed the private folders to it, so until you "
+            "change the block those files answer 403 rather than leaking - and "
+            "images on object pages stay broken."
+        ),
+        snippet=_NGINX_MEDIA,
+        docs="getting-started/upgrading/",
+        platforms=("systemd",),
+        check=_media_proxied,
+    ),
     UpgradeNote(
         id="0.16.0-tls-unit",
         version="0.16.0",

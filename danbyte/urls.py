@@ -2,9 +2,10 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
+from api.media_views import serve_media
 from core.site_tls_api import acme_challenge
 
 urlpatterns = [
@@ -26,6 +27,9 @@ if settings.DEBUG and settings.STATICFILES_DIRS:
     urlpatterns += static(
         settings.STATIC_URL, document_root=settings.STATICFILES_DIRS[0]
     )
-# Serve uploaded media (device-type rack images). In production nginx should
-# front /media/ directly; this keeps the dev runserver working too.
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Uploaded media, always through Django: public folders to anyone, the rest
+# only to a user who can view the owning object (api.media_views, #227).
+# nginx proxies /media/ here rather than serving the folder from disk.
+urlpatterns += [
+    re_path(r"^media/(?P<path>.+)$", serve_media, name="media"),
+]

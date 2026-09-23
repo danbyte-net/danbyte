@@ -532,9 +532,14 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # admin + DRF. (An entry pointing at a missing dir raises staticfiles.W004.)
 STATICFILES_DIRS: list = []
 
-# Uploaded media (device-type rack images, …).
+# Uploaded media (device-type rack images, …). Served through
+# api.media_views, never straight from disk: a new upload and the folders
+# made for it are closed to other users, so a web server reading the folder
+# directly cannot serve a private file even from an old config (#227).
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+FILE_UPLOAD_PERMISSIONS = 0o640
+FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
 # Where the default backup target writes - the same sibling directory the
 # upgrade scripts used for their pre-upgrade dumps (#27).
 DANBYTE_BACKUP_DIR = Path(os.getenv("DANBYTE_BACKUP_DIR", str(BASE_DIR.parent / "danbyte-backups")))
