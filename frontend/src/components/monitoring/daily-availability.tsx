@@ -43,9 +43,14 @@ export function DailyAvailability({
     // A day with nothing measured sits at the floor so it reads as a gap.
     uptime: d.uptime_pct ?? 0,
   }))
-  const floor = Math.min(
-    95,
-    ...days.map((d) => d.uptime_pct ?? 100).map((v) => Math.floor(v))
+  // Below the worst day by a margin: a floor at the worst day's own value
+  // drew that day as an empty slot, indistinguishable from "not measured".
+  const floor = Math.max(
+    0,
+    Math.min(
+      95,
+      ...days.map((d) => d.uptime_pct ?? 100).map((v) => Math.floor(v) - 5)
+    )
   )
   return (
     <div className={className}>
