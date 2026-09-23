@@ -136,7 +136,11 @@ is deliberately short - the template body is the content, and there is no
 ## Preview and download
 
 - While editing a template, the **Run preview** pane renders it against your live
-  objects so you can see the output before saving.
+  objects so you can see the output before saving. The preview loops over the
+  first 200 rows only; `count` still says how many the real render will see.
+- A render loops over at most **50,000** rows - the same bound as the list
+  export. Past it the render is refused with the row count; use the list
+  export for a whole large table.
 - From the template list, each row has a **Render & download** action that
   produces the file (saved as an attachment when you enabled that option). The
   same action sits in the header of the template's own page.

@@ -7661,7 +7661,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
                 qs = qs.filter(object_type=ot)
         return qs
 
-    def _render(self, request):
+    def _render(self, request, *, preview=False):
         from jinja2 import TemplateError
 
         from .export_templates import render_export_template
@@ -7670,14 +7670,17 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         tmpl = self.get_object()
         tenant = _get_active_tenant(request)
         try:
-            return render_export_template(tmpl, tenant, request.user), tmpl
+            return render_export_template(
+                tmpl, tenant, request.user, preview=preview
+            ), tmpl
         except (ValueError, TemplateError) as exc:
             return None, exc
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
-        """Render and return the text as JSON (for the editor preview pane)."""
-        out, info = self._render(request)
+        """Render and return the text as JSON (for the editor preview pane).
+        Over the first rows only; ``count`` in the template stays the total."""
+        out, info = self._render(request, preview=True)
         if out is None:
             return Response({"detail": str(info)}, status=drf_status.HTTP_400_BAD_REQUEST)
         return Response({"output": out})
