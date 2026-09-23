@@ -48,11 +48,10 @@ def claim_and_build_work(engine, now=None, limit: int = WORK_BATCH) -> list[dict
     """Claim this engine's due checks (``in_flight``, so nothing double-runs) and
     build the work payload. Shared by the HTTPS-pull ``/work`` endpoint and the
     SSH driver - both transports hand the Outpost the same shape."""
-    from datetime import timedelta
-
     from django.utils import timezone
 
-    from .worker import _resolved_from_state, effective_interval
+    from .scheduler import claim_states
+    from .worker import _resolved_from_state
 
     now = now or timezone.now()
     due = CheckState.objects.filter(
@@ -62,13 +61,11 @@ def claim_and_build_work(engine, now=None, limit: int = WORK_BATCH) -> list[dict
     # /fast-work; an older agent gets them here at the fallback interval.
     if getattr(engine, "agent_fast", False):
         due = due.filter(interval_ms__isnull=True)
-    due = list(due[:limit])
+    # Claimed conditionally, so an agent's retried or overlapping pull cannot
+    # hand the same check out twice (#221).
+    due = claim_states(list(due[:limit]), now)
     checks = []
     for s in due:
-        s.in_flight = True
-        s.in_flight_since = now
-        interval = effective_interval(s) or 300
-        s.next_run = now + timedelta(seconds=interval)
         rc = _resolved_from_state(s)
         checks.append(
             {
@@ -79,10 +76,6 @@ def claim_and_build_work(engine, now=None, limit: int = WORK_BATCH) -> list[dict
                 "secret_params": rc.secret_params,
                 "timeout_ms": rc.timeout_ms,
             }
-        )
-    if due:
-        CheckState.objects.bulk_update(
-            due, ["in_flight", "in_flight_since", "next_run"], batch_size=2000
         )
     return checks
 

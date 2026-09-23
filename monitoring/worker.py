@@ -304,6 +304,27 @@ def _finalise(
     results: list[CheckResult] = []
     transitions: list[StateTransition] = []
 
+    # Write guard: only the claim this job was handed may write back. If the
+    # row has since been reclaimed - the reaper gave up on a slow job and a
+    # new one took it - this job's in-memory copy is stale, and writing it
+    # would overwrite the newer run's counters and verdict (#220).
+    claimed_at = {s.id: s.in_flight_since for s in states}
+    current = dict(
+        CheckState.objects.filter(id__in=list(claimed_at))
+        .values_list("id", "in_flight_since")
+    )
+    keep = [
+        (s, oc) for s, oc in zip(states, outcomes, strict=True)
+        if s.id in current and current[s.id] == claimed_at[s.id]
+    ]
+    if len(keep) != len(states):
+        log.info(
+            "finalise: dropped %d result(s) for checks reclaimed since this "
+            "job took them", len(states) - len(keep),
+        )
+    states = [s for s, _ in keep]
+    outcomes = [oc for _, oc in keep]
+
     for state, oc in zip(states, outcomes):
         results.append(
             CheckResult(

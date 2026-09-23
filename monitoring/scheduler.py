@@ -20,7 +20,7 @@ from datetime import timedelta
 
 import django_rq
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from api.models import IPAddress
@@ -347,6 +347,41 @@ def _unclaimed_driver_states(now) -> list:
     return [s for s in states if not driver_claims_kind(s.engine, s.kind)]
 
 
+def claim_states(due: list, now) -> list:
+    """Claim these due states for exactly one dispatcher, and return the ones
+    this caller won.
+
+    Selecting due rows and then writing ``in_flight=True`` over them is two
+    statements: two dispatchers (the beat and a "Check now" click, or an
+    Outpost's retried pull) could both select the same rows before either
+    write landed, and both would run them (#221). The claim is taken under
+    ``SELECT ... FOR UPDATE SKIP LOCKED`` and re-checks ``in_flight=False``
+    on the locked row, so a row another dispatcher is claiming is skipped,
+    and one it has already claimed no longer matches.
+    """
+    if not due:
+        return []
+    by_id = {s.id: s for s in due}
+    with transaction.atomic():
+        won = set(
+            CheckState.objects.select_for_update(skip_locked=True, of=("self",))
+            .filter(pk__in=list(by_id), in_flight=False)
+            .values_list("pk", flat=True)
+        )
+        claimed = [s for pk, s in by_id.items() if pk in won]
+        for s in claimed:
+            s.in_flight = True
+            s.in_flight_since = now
+            s.next_run = now + timedelta(seconds=effective_interval(s) or 300)
+        CheckState.objects.bulk_update(
+            claimed, ["in_flight", "in_flight_since", "next_run"], batch_size=2000
+        )
+    lost = len(due) - len(claimed)
+    if lost:
+        log.info("claim: %d due check(s) already taken by another dispatcher", lost)
+    return claimed
+
+
 def dispatch(now=None, sync: bool = False) -> dict:
     """Enqueue worker jobs for every due check. ``sync=True`` runs them inline
     (for tests / a no-worker box) instead of via RQ."""
@@ -386,18 +421,14 @@ def dispatch(now=None, sync: bool = False) -> dict:
     if not due:
         return {"due": 0, "jobs": 0, "reaped": reaped, "claimed": claimed}
 
-    # Claim the due states up front so a second tick can't double-dispatch them;
-    # stamp the claim time (the reaper uses it) and push next_run forward
-    # tentatively. The worker resets in_flight on completion; if it dies, the
-    # reaper reclaims the row once the in-flight deadline passes.
-    for s in due:
-        s.in_flight = True
-        s.in_flight_since = now
-        interval = effective_interval(s) or 300
-        s.next_run = now + timedelta(seconds=interval)
-    CheckState.objects.bulk_update(
-        due, ["in_flight", "in_flight_since", "next_run"], batch_size=2000
-    )
+    # Claim the due states up front so a second dispatcher can't run them
+    # too; stamp the claim time (the reaper, and the worker's write guard,
+    # use it) and push next_run forward tentatively. The worker resets
+    # in_flight on completion; if it dies, the reaper reclaims the row once
+    # the in-flight deadline passes.
+    due = claim_states(due, now)
+    if not due:
+        return {"due": 0, "jobs": 0, "reaped": reaped, "claimed": claimed}
 
     queue = None if sync else django_rq.get_queue("default")
     jobs = 0

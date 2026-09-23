@@ -1374,12 +1374,19 @@ def bulk_check_now_view(request):
     for ip in ips:
         materialise_ip(ip, now=now, prefix_index=index)
     states = CheckState.objects.filter(tenant=tenant, target_ip__in=ips)
+    # Progress tracks every selected check, including one a worker is running
+    # right now - it finishes on its own and counts as done like the rest.
     armed_ids = [str(i) for i in states.values_list("id", flat=True)]
-    armed = states.update(next_run=now, in_flight=False)
+    # Arm only what nobody holds. Clearing in_flight on a running check handed
+    # it to a second worker, and whichever finished last overwrote the other's
+    # verdict - a down host could read "up" with its alert still firing (#220).
+    armed = states.filter(in_flight=False).update(next_run=now)
+    running = len(armed_ids) - armed
     result = dispatch()  # enqueue onto the worker (claims them: in_flight=True)
     run_id = _seed_check_run(armed_ids, tenant, request.user)
     return Response(
-        {"targets": len(ips), "checks": armed, "jobs": result["jobs"], "run_id": run_id}
+        {"targets": len(ips), "checks": armed, "already_running": running,
+         "jobs": result["jobs"], "run_id": run_id}
     )
 
 
