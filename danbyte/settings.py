@@ -554,6 +554,11 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # admin + DRF. (An entry pointing at a missing dir raises staticfiles.W004.)
 STATICFILES_DIRS: list = []
 
+# A request body Django will read into memory. The 2.5 MB default refused a
+# large topology view before it reached validation; a saved view is bounded
+# at 8 MB by its serializer, and file uploads stream to disk regardless.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
 # Uploaded media (device-type rack images, …). Served through
 # api.media_views, never straight from disk: a new upload and the folders
 # made for it are closed to other users, so a web server reading the folder

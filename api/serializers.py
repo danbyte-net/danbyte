@@ -3709,12 +3709,42 @@ class TopologyViewSerializer(NumIdModelSerializer):
     # this grew out of.
     POSITION_STYLES = ("stencil", "hierarchy", "flat")
 
+    #: Nodes one arrangement or one hidden group may hold. The real bound is
+    #: MAX_STATE_BYTES; this only keeps a single list sane. It used to be
+    #: 5,000, which a large map passed on its own (the save failed with "max
+    #: 5000").
+    MAX_NODES = 50_000
+    #: A saved view, serialised. Big enough for every style's arrangement of
+    #: a very large map, small enough that loading a view stays instant.
+    MAX_STATE_BYTES = 8 * 1024 * 1024
+    #: The groups the map's eye toggles hide by (topology/hidden.ts).
+    HIDDEN_GROUPS = ("sites", "locations", "roles", "kinds", "devices")
+
+    def _ids(self, value, label):
+        if not isinstance(value, list) or len(value) > self.MAX_NODES:
+            raise serializers.ValidationError(
+                f"{label} must be a list of at most {self.MAX_NODES} names"
+            )
+        if any(not isinstance(x, str) for x in value):
+            raise serializers.ValidationError(f"{label} must be a list of names")
+
     def validate_state(self, v):
+        import json
+
         if not isinstance(v, dict):
             raise serializers.ValidationError("state must be an object")
+        size = len(json.dumps(v, separators=(",", ":")))
+        if size > self.MAX_STATE_BYTES:
+            raise serializers.ValidationError(
+                f"This view is {size // (1024 * 1024)} MB; a saved view can be "
+                f"at most {self.MAX_STATE_BYTES // (1024 * 1024)} MB. Re-layout "
+                f"a style you do not use to drop its arrangement."
+            )
         pos = v.get("positions", {})
-        if not isinstance(pos, dict) or len(pos) > 5000:
-            raise serializers.ValidationError("positions must be an object (≤5000 nodes)")
+        if not isinstance(pos, dict) or len(pos) > self.MAX_NODES:
+            raise serializers.ValidationError(
+                f"positions must be an object (at most {self.MAX_NODES} nodes)"
+            )
         by_style = v.get("positions_by_style", {})
         if not isinstance(by_style, dict):
             raise serializers.ValidationError(
@@ -3725,9 +3755,10 @@ class TopologyViewSerializer(NumIdModelSerializer):
                 raise serializers.ValidationError(
                     f"positions_by_style: unknown view style '{style}'"
                 )
-            if not isinstance(entry, dict) or len(entry) > 5000:
+            if not isinstance(entry, dict) or len(entry) > self.MAX_NODES:
                 raise serializers.ValidationError(
-                    f"positions_by_style.{style} must be an object (≤5000 nodes)"
+                    f"positions_by_style.{style} must be an object "
+                    f"(at most {self.MAX_NODES} nodes)"
                 )
         # Labelled backdrop boxes, per style like the arrangements. Bounded so
         # a view can never become a payload nobody can load.
@@ -3743,12 +3774,21 @@ class TopologyViewSerializer(NumIdModelSerializer):
                 raise serializers.ValidationError(
                     f"zones_by_style.{style} must be a list (≤200 zones)"
                 )
-        # Nodes the author took off this map by hand.
+        # What the author took off this map: since 0.16.0 an object of groups
+        # (sites, roles, link families, single cards); before, a flat list of
+        # node ids. The server only accepted the list, so every view saved
+        # with the grouped form was refused as "hidden must be a list".
         hidden = v.get("hidden", [])
-        if not isinstance(hidden, list) or len(hidden) > 5000:
-            raise serializers.ValidationError("hidden must be a list (≤5000 ids)")
-        if any(not isinstance(x, str) for x in hidden):
-            raise serializers.ValidationError("hidden must be a list of node ids")
+        if isinstance(hidden, dict):
+            unknown = sorted(set(hidden) - set(self.HIDDEN_GROUPS))
+            if unknown:
+                raise serializers.ValidationError(
+                    f"hidden: unknown group(s) {', '.join(unknown)}"
+                )
+            for group, names in hidden.items():
+                self._ids(names, f"hidden.{group}")
+        else:
+            self._ids(hidden, "hidden")
         return v
 
     class Meta:
