@@ -514,7 +514,7 @@ def sync_proxmox(source) -> dict:
     # cluster/status needs Sys.Audit on / - a narrowly-scoped token may be
     # denied it while still seeing VMs. Fall back to /nodes + the source name.
     try:
-        status = proxmox_get(source, "cluster/status") or []
+        status = _dict_rows(proxmox_get(source, "cluster/status"))
     except VirtAPIError:
         status = []
     cluster_name = next(
@@ -528,11 +528,11 @@ def sync_proxmox(source) -> dict:
     if not node_rows:
         node_rows = [
             {"name": n.get("node"), "online": n.get("status") == "online"}
-            for n in (proxmox_get(source, "nodes") or [])
+            for n in _dict_rows(proxmox_get(source, "nodes"))
         ]
     nodes = [n["name"] for n in node_rows]
     resources = [
-        r for r in (proxmox_get(source, "cluster/resources?type=vm") or [])
+        r for r in _dict_rows(proxmox_get(source, "cluster/resources?type=vm"))
         if r.get("template") not in (1, True)  # VM templates aren't inventory
     ]
 
@@ -553,6 +553,10 @@ def sync_proxmox(source) -> dict:
         except VirtAPIError as exc:
             logger.warning("config fetch %s/%s failed: %s", node, vmid, exc)
             cfg = {}
+        if not isinstance(cfg, dict):
+            logger.warning("config for %s/%s is %s, not an object - skipped",
+                           node, vmid, type(cfg).__name__)
+            cfg = {}
         # Readable platform from the config's ostype (issue #57) - QEMU's
         # short enum via the fixed table, LXC's distro names title-cased.
         # Rides the same match-existing-before-minting path as vCenter.
@@ -563,7 +567,7 @@ def sync_proxmox(source) -> dict:
                 agent = proxmox_get(
                     source, f"nodes/{node}/qemu/{vmid}/agent/network-get-interfaces"
                 )
-                agent_ifaces = (agent or {}).get("result", [])
+                agent_ifaces = _agent_interfaces(agent, f"{node}/{vmid}")
             except VirtAPIError:
                 pass  # agent not installed/running - IPs just stay unknown
         details[vmid] = {"ifaces": cfg, "ips": agent_ifaces,
@@ -1095,6 +1099,40 @@ def _reconcile_guest(source, cluster, cluster_name, guest, resource, apply, now,
     _blank_fill(vm, specs, source, guest, place, os_info)
 
 
+def _dict_rows(value) -> list:
+    """The dict entries of an API list, and nothing else.
+
+    A hypervisor API is someone else's contract, and it moves between
+    versions: a list that is usually objects can arrive as a string, an
+    error text, or a list with a stray scalar in it. Iterating that and
+    calling ``.get`` on each element is how one odd guest-agent reply used to
+    fail the whole sync with "'str' object has no attribute 'get'" (#232).
+    """
+    if isinstance(value, dict):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    return [row for row in value if isinstance(row, dict)]
+
+
+def _agent_interfaces(agent, guest_label: str) -> list:
+    """The interface list out of a Proxmox guest-agent reply.
+
+    Normally ``{"result": [..]}``; some versions hand the list back bare,
+    and an agent that errors answers with something else again. Anything
+    that is not a list of interface objects reads as "no addresses" for this
+    guest - logged, never fatal to the pass.
+    """
+    rows = agent.get("result") if isinstance(agent, dict) else agent
+    good = _dict_rows(rows)
+    if rows not in (None, [], {}) and not good:
+        logger.warning(
+            "%s: guest agent returned %s, not an interface list - skipping "
+            "its addresses", guest_label, type(rows).__name__,
+        )
+    return good
+
+
 def _reported_ips(entries) -> list:
     """Flatten the hypervisor's per-interface address lists into addresses.
 
@@ -1103,9 +1141,18 @@ def _reported_ips(entries) -> list:
     matches against these strings.
     """
     out = []
-    for entry in entries or []:
-        for addr in entry.get("ips") or []:
-            addr = (addr or "").strip()
+    for entry in _dict_rows(entries):
+        addrs = entry.get("ips")
+        if addrs is None:
+            # A Proxmox guest-agent row, before _sync_ips normalises it: the
+            # addresses are objects under "ip-addresses". Reading only "ips"
+            # meant an address rule never matched a Proxmox guest.
+            addrs = [
+                a.get("ip-address")
+                for a in _dict_rows(entry.get("ip-addresses"))
+            ]
+        for addr in addrs if isinstance(addrs, list) else []:
+            addr = (addr or "").strip() if isinstance(addr, str) else ""
             if addr and addr not in out:
                 out.append(addr)
     return out
@@ -1698,14 +1745,14 @@ def _sync_ips(source, guest, agent_ifaces, *, nets=None, prefixes=None,
         )
     entries = [
         {
-            "mac": entry.get("hardware-address") or "",
-            "ips": [i.get("ip-address") or ""
-                    for i in (entry.get("ip-addresses") or [])],
+            "mac": str(entry.get("hardware-address") or ""),
+            "ips": [str(i.get("ip-address") or "")
+                    for i in _dict_rows(entry.get("ip-addresses"))],
             "net_key": net_key_by_mac.get(
-                (entry.get("hardware-address") or "").lower()
+                str(entry.get("hardware-address") or "").lower()
             ),
         }
-        for entry in (agent_ifaces or [])
+        for entry in _dict_rows(agent_ifaces)
     ]
     return _attach_ips(source, guest, entries, prefixes=prefixes,
                        warnings=warnings, net_vrfs=net_vrfs)

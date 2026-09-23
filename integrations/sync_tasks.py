@@ -90,6 +90,7 @@ def run_virt_sync(source_id: str) -> dict:
         "vcloud": sync_vcloud,
     }.get(source.kind, sync_proxmox)
     from .synclog import capture_sync_log, text_of
+    from .virt_client import VirtAPIError
 
     # Everything this run logs is also stored on the source row, so a user can
     # copy it off the source page instead of needing shell/container access.
@@ -100,6 +101,16 @@ def run_virt_sync(source_id: str) -> dict:
             record_virt_failure(source, exc)
             logger.warning("virt sync %s failed: %s", source.name, exc)
             result = {"error": str(exc)}
+            if not isinstance(exc, VirtAPIError):
+                # Not the hypervisor refusing us - a fault in Danbyte. Keep
+                # where it happened in the copyable sync log: a bare
+                # "'str' object has no attribute 'get'" is not a bug report
+                # anyone can act on (#232).
+                import traceback
+
+                where = "".join(traceback.format_exception(exc, limit=-4)).rstrip()
+                logger.warning("virt sync %s traceback:\n%s", source.name, where)
+                result["internal"] = True
     # Rolling history, not just the last run: keep the newest ~100 lines so
     # the page still shows what led up to a failure several runs back.
     fresh = text_of(log)
