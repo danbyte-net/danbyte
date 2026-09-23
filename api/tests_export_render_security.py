@@ -95,6 +95,51 @@ class ExportRenderSecurityTests(APITestCase):
         self.assertEqual(r["Content-Type"], "text/csv; charset=utf-8")
 
 
+class PskSubjectTests(APITestCase):
+    """An SSID sheet or a VPN report is inventory with a key attached, not a
+    credential: the key lives in the secret store and the sandbox refuses the
+    accessor that reads it. 0.16.9 refused all three as subjects (#219)."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self.client.force_login(self.admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_psk_types_are_legal_subjects_and_credentials_are_not(self):
+        for slug, ok in (("wirelesslan", True), ("ipsecprofile", True),
+                         ("routingkeychain", True), ("devicecredential", False)):
+            for url in ("/api/export-templates/", "/api/label-templates/"):
+                with self.subTest(slug=slug, url=url):
+                    body = {"name": f"{slug}-{url[5:10]}", "object_type": slug,
+                            "template_code": "{{ count }}"}
+                    if "label" in url:
+                        body.update({"width_mm": 50, "height_mm": 25})
+                    r = self.client.post(url, body, format="json")
+                    if ok:
+                        self.assertEqual(r.status_code, 201, r.content)
+                    else:
+                        self.assertEqual(r.status_code, 400, r.content)
+                        self.assertIn("object_type", r.json())
+
+    def test_the_key_stays_unreachable_from_the_row(self):
+        from routing.models import RoutingKeychain
+
+        k = RoutingKeychain.objects.create(tenant=self.tenant, name="FABRIC")
+        env = _env()
+        for code in ("{{ k.resolve_psk() }}", "{{ k.store_psk('x') }}"):
+            with self.subTest(code=code):
+                try:
+                    out = env.from_string(code).render(k=k)
+                except SecurityError:
+                    continue
+                self.assertEqual(out.strip(), "")
+        self.assertEqual(env.from_string("{{ k.name }}").render(k=k), "FABRIC")
+
+
 class LabelRenderSecurityTests(ExportRenderSecurityTests):
     """Label templates get the same sandbox and the same subject rule (#205)."""
 

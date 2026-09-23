@@ -147,6 +147,13 @@ status running migrate 60
 step migrate "database migration failed" "$PY" manage.py migrate --noinput
 MIGRATED=1
 "$PY" manage.py rebuild_search_index >/dev/null 2>&1 || true
+# Private uploads are served only through Django since 0.16.12 (#227). Close
+# their folders to other users, so a web server still reading media/ straight
+# from disk - an nginx config rendered before this release - gets 403, not the
+# file. Best effort: a folder that does not exist yet is simply skipped.
+for d in documents image-attachments floor-plans oui-imports outpost-releases script-outputs; do
+  [ -d "$CODE_DIR/media/$d" ] && chmod -R o-rwx "$CODE_DIR/media/$d" 2>/dev/null || true
+done
 
 status running frontend 75
 step frontend "frontend build failed" \
@@ -178,6 +185,9 @@ done
 [ -n "$ok" ] || fail healthcheck "app did not come back healthy after restart (/api/health/ never returned 200 for hosts: $HOSTS)"
 
 rm -f "$MAINT" "$ERRF"   # healthy again - drop the "updating" page
+# Surplus before-upgrade backups and other leftovers, kept to the numbers in
+# Settings -> Backups. Best effort.
+"$PY" manage.py housekeeping >/dev/null 2>&1 || true
 status done done 100
 echo "upgrade: now on $VERSION"
 "$PY" manage.py upgrade_notes 2>/dev/null || true   # steps an admin still has to do

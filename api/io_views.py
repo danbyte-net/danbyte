@@ -37,6 +37,18 @@ from .io import io_for, io_types
 from .views import _get_active_tenant
 
 MAX_IMPORT_ROWS = 5000
+#: An import file larger than this is refused before it is opened. XLSX is
+#: zipped XML, so a small file can hold a very large sheet; the row cap below
+#: is what really bounds the work, this only stops the obviously absurd.
+MAX_IMPORT_BYTES = 25 * 1024 * 1024
+#: Rows scanned, blank ones included, before giving up. Spreadsheets often
+#: carry thousands of formatted-but-empty rows, so blank rows do not count
+#: against MAX_IMPORT_ROWS - but they cannot run forever either.
+MAX_IMPORT_SCANNED_ROWS = MAX_IMPORT_ROWS * 4
+
+
+class TooManyRows(ValueError):
+    """The import has more rows than the cap; raised while reading."""
 MAX_XLSX_EXPORT_ROWS = 50000
 
 
@@ -254,17 +266,29 @@ def _parse_upload(request):
     if upload is not None:
         from openpyxl import load_workbook
 
+        if upload.size and upload.size > MAX_IMPORT_BYTES:
+            raise TooManyRows(
+                f"The file is larger than {MAX_IMPORT_BYTES // (1024 * 1024)} MB."
+            )
         wb = load_workbook(upload, read_only=True, data_only=True)
         ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
+        # Stream the sheet and stop at the cap. It used to be list()-ed whole
+        # before the cap was checked, so a few MB of compressed rows held a
+        # web worker for most of a minute only to be refused (#225).
+        rows = ws.iter_rows(values_only=True)
+        first = next(rows, None)
+        if first is None:
             return []
-        headers = [(str(h).strip() if h is not None else "") for h in rows[0]]
+        headers = [(str(h).strip() if h is not None else "") for h in first]
         out = []
-        for r in rows[1:]:
+        for scanned, r in enumerate(rows, start=1):
+            if scanned > MAX_IMPORT_SCANNED_ROWS:
+                raise TooManyRows(f"Too many rows (max {MAX_IMPORT_ROWS}).")
             d = {h: ("" if v is None else str(v)) for h, v in zip(headers, r)}
             if any(v != "" for v in d.values()):
                 out.append(d)
+                if len(out) > MAX_IMPORT_ROWS:
+                    raise TooManyRows(f"Too many rows (max {MAX_IMPORT_ROWS}).")
         return out
 
     data = request.data or {}
@@ -328,6 +352,8 @@ def io_import_view(request, slug):
 
     try:
         rows = _parse_upload(request)
+    except TooManyRows as exc:
+        return Response({"detail": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001
         return Response({"detail": f"Couldn't parse file: {exc}"}, status=400)
     if not rows:

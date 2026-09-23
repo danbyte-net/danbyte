@@ -37,12 +37,30 @@ SECRET_ACCESSORS = frozenset({
 })
 
 
+#: The accessors that make a row a *credential* - a login whose every field
+#: is sensitive (DeviceCredential). The PSK trio above is different: it hangs
+#: a key off an ordinary inventory row (an SSID, an IPsec profile, a routing
+#: keychain) whose other fields are exactly what a report is for, and the
+#: key itself is only reachable through that accessor, which a sandbox
+#: refuses by name.
+CREDENTIAL_ACCESSORS = frozenset({
+    "resolve_secret", "store_managed_secret", "delete_managed_secret",
+})
+
+
 def model_holds_secret(model) -> bool:
-    """True when this model carries a credential at all: a secret field, or
-    an accessor that reads one out of the secret store."""
+    """True when rows of this model must not be a template's subject: a
+    secret field on the row, or a credential kept in the secret store.
+
+    Inheriting the PSK accessors from ``SecretBackedPSK`` is not enough. That
+    classified WirelessLAN, IPSecProfile and RoutingKeychain as credentials
+    in 0.16.9 and broke every SSID sheet and VPN report on upgrade (#219);
+    none of them holds the key on the row, and the sandbox refuses the
+    accessor that would read it.
+    """
     if model is None:
         return False
-    if any(hasattr(model, name) for name in SECRET_ACCESSORS):
+    if any(hasattr(model, name) for name in CREDENTIAL_ACCESSORS):
         return True
     return any(is_secret_field(model, f) for f in model._meta.concrete_fields)
 

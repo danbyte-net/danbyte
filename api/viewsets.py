@@ -4495,6 +4495,53 @@ class MACAddressViewSet(TenantScopedViewSet):
             qs = qs.filter(mac_address__icontains=search.lower())
         return restrict_for_view(self, qs)
 
+    def _refuse_duplicate_in_owned_range(self, serializer):
+        """A MAC inside a range this tenant owns is handed out once.
+
+        The next-free probe writes nothing, so two operators with the dialog
+        open got the same address and both saved it (#222). The table itself
+        allows one MAC on several interfaces - a virtual MAC can be shared -
+        so this applies only inside an owned range, under a lock on the range
+        row so two saves at the same moment are decided one after the other.
+        """
+        from .oui import mac_in_use, next_free_mac, owning_range
+
+        tenant = self._tenant_or_403()
+        data = serializer.validated_data
+        instance = serializer.instance
+        mac = data.get("mac_address", getattr(instance, "mac_address", ""))
+        iface = data.get(
+            "assigned_interface", getattr(instance, "assigned_interface", None)
+        )
+        rng = owning_range(tenant, mac, lock=True)
+        if rng is None:
+            return
+        if mac_in_use(
+            tenant, mac,
+            exclude_pk=instance.pk if instance is not None else None,
+            interface_id=iface.pk if iface is not None else None,
+        ):
+            nxt = next_free_mac(rng, tenant)
+            hint = f" The next free address is {nxt}." if nxt else " The range is full."
+            raise ValidationError({"mac_address": (
+                f"{mac} is already in use, and it is in the "
+                f"{rng.display_prefix} range this organisation hands out once.{hint}"
+            )})
+
+    def perform_create(self, serializer):
+        from django.db import transaction
+
+        with transaction.atomic():
+            self._refuse_duplicate_in_owned_range(serializer)
+            super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        from django.db import transaction
+
+        with transaction.atomic():
+            self._refuse_duplicate_in_owned_range(serializer)
+            super().perform_update(serializer)
+
 
 class CableViewSet(TenantScopedViewSet):
     queryset = (
@@ -7661,7 +7708,7 @@ class ExportTemplateViewSet(TenantScopedViewSet):
                 qs = qs.filter(object_type=ot)
         return qs
 
-    def _render(self, request):
+    def _render(self, request, *, preview=False):
         from jinja2 import TemplateError
 
         from .export_templates import render_export_template
@@ -7670,14 +7717,17 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         tmpl = self.get_object()
         tenant = _get_active_tenant(request)
         try:
-            return render_export_template(tmpl, tenant, request.user), tmpl
+            return render_export_template(
+                tmpl, tenant, request.user, preview=preview
+            ), tmpl
         except (ValueError, TemplateError) as exc:
             return None, exc
 
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
-        """Render and return the text as JSON (for the editor preview pane)."""
-        out, info = self._render(request)
+        """Render and return the text as JSON (for the editor preview pane).
+        Over the first rows only; ``count`` in the template stays the total."""
+        out, info = self._render(request, preview=True)
         if out is None:
             return Response({"detail": str(info)}, status=drf_status.HTTP_400_BAD_REQUEST)
         return Response({"output": out})

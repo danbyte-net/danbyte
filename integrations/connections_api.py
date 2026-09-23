@@ -547,5 +547,8 @@ class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         source = self.get_object()
         result = run_virt_sync(str(source.id))
         if "error" in result:
-            return Response({"ok": False, **result}, status=502)
+            # 502 says "the hypervisor failed us"; a fault in Danbyte itself
+            # is a 500, or the operator goes looking in the wrong place (#232).
+            status = 500 if result.get("internal") else 502
+            return Response({"ok": False, **result}, status=status)
         return Response({"ok": True, **result})

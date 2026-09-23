@@ -2016,6 +2016,12 @@ class DocumentCategory(TimestampedModel):
         return self.name
 
 
+def _document_path(instance, filename):
+    """``documents/<random>/<original name>``. The download keeps the name;
+    the random folder means a guessed name reaches nothing (#227)."""
+    return f"documents/{uuid.uuid4().hex}/{filename}"
+
+
 class Document(TimestampedModel):
     """A file OR an external link attached to ANY object (device, rack, site,
     circuit, prefix, …).
@@ -2059,7 +2065,7 @@ class Document(TimestampedModel):
         DocumentCategory, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="documents",
     )
-    file = models.FileField(upload_to="documents/", blank=True, null=True)
+    file = models.FileField(upload_to=_document_path, blank=True, null=True)
     url = models.URLField(max_length=2048, blank=True, default="")
     supersedes = models.ForeignKey(
         "self", on_delete=models.SET_NULL, null=True, blank=True,

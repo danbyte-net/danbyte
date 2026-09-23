@@ -358,6 +358,8 @@ class SavedViewTests(_Base):
             {"zones_by_style": {"flat": "nope"}},
             {"hidden": "nope"},
             {"hidden": [1, 2]},
+            {"hidden": {"racks": []}},
+            {"hidden": {"devices": [1]}},
         ):
             resp = self.client.post(
                 "/api/topology-views/",
@@ -365,6 +367,49 @@ class SavedViewTests(_Base):
                 format="json",
             )
             self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_the_grouped_hidden_shape_the_map_saves_is_accepted(self):
+        """Since 0.16.0 the map saves hidden as groups; the server refused
+        anything but a flat list, so saving such a view always failed."""
+        hidden = {"sites": ["AMS"], "locations": [], "roles": ["leaf"],
+                  "kinds": ["Discovered"], "devices": ["dev:abc"]}
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "grouped", "state": {"hidden": hidden}}, format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        state = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]
+        self.assertEqual(state["hidden"], hidden)
+
+    def test_a_map_bigger_than_five_thousand_nodes_saves(self):
+        positions = {f"dev:{i:08x}-0000-0000-0000-000000000000": [i, i * 2]
+                     for i in range(12_000)}
+        state = {
+            "positions_by_style": {"stencil": positions, "hierarchy": positions},
+            "positions": positions,
+            "hidden": {"devices": list(positions)[:7_000]},
+        }
+        resp = self.client.post(
+            "/api/topology-views/", {"name": "big", "state": state}, format="json",
+        )
+        self.assertEqual(resp.status_code, 201, str(resp.content)[:300])
+
+    def test_an_absurd_view_is_refused_by_size_with_a_way_out(self):
+        from unittest import mock
+
+        from api.serializers import TopologyViewSerializer
+
+        with mock.patch.object(TopologyViewSerializer, "MAX_STATE_BYTES", 1000):
+            resp = self.client.post(
+                "/api/topology-views/",
+                {"name": "huge", "state": {"positions": {
+                    f"dev:{i}": [i, i] for i in range(200)}}},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("Re-layout", str(resp.json()))
 
 
 class PassThroughAndCrashTests(_Base):

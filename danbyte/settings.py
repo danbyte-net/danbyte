@@ -196,6 +196,10 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD", "danbyte"),
         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
         "PORT": os.getenv("DB_PORT", "5432"),
+        # A dropped connection is noticed before a request uses it, and a
+        # database that does not answer fails the request in 10 s, not never.
+        "CONN_HEALTH_CHECKS": True,
+        "OPTIONS": {"connect_timeout": 10},
     }
 }
 
@@ -205,6 +209,10 @@ CACHES = {
         "LOCATION": os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            # Explicit, so a stalled Redis costs a request two seconds rather
+            # than whatever the installed client stack defaults to (#230).
+            "SOCKET_CONNECT_TIMEOUT": 2,
+            "SOCKET_TIMEOUT": 2,
         },
     }
 }
@@ -488,18 +496,32 @@ LOGGING = {
 }
 
 # Production file logging: when DANBYTE_LOG_DIR is set and writable (the
-# installer points it at /var/log/danbyte), mirror every logger to a rotating
+# installer points it at /var/log/danbyte), mirror every logger to
 # danbyte.log there - in addition to the console, which systemd still captures
 # in the journal. Silently skipped in dev, where the directory doesn't exist.
+#
+# Every gunicorn worker, RQ worker and daphne writes this one file, and
+# RotatingFileHandler is not safe across processes: one rotates, the rest keep
+# writing into the renamed file, and their lines end up in a backup that is
+# later deleted (#231). With the shipped logrotate config (copytruncate)
+# every process just appends and rotation happens outside them. Without it,
+# keep the old handler so the file cannot grow without bound.
 _log_dir = os.getenv("DANBYTE_LOG_DIR", "").strip()
 if _log_dir and os.path.isdir(_log_dir) and os.access(_log_dir, os.W_OK):
-    LOGGING["handlers"]["file"] = {
-        "class": "logging.handlers.RotatingFileHandler",
-        "filename": os.path.join(_log_dir, "danbyte.log"),
-        "maxBytes": 10 * 1024 * 1024,
-        "backupCount": 5,
-        "formatter": "verbose",
-    }
+    if os.path.exists("/etc/logrotate.d/danbyte"):
+        LOGGING["handlers"]["file"] = {
+            "class": "logging.handlers.WatchedFileHandler",
+            "filename": os.path.join(_log_dir, "danbyte.log"),
+            "formatter": "verbose",
+        }
+    else:
+        LOGGING["handlers"]["file"] = {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(_log_dir, "danbyte.log"),
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+            "formatter": "verbose",
+        }
     for _logger in LOGGING["loggers"].values():
         _logger["handlers"].append("file")
 
@@ -532,9 +554,19 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # admin + DRF. (An entry pointing at a missing dir raises staticfiles.W004.)
 STATICFILES_DIRS: list = []
 
-# Uploaded media (device-type rack images, …).
+# A request body Django will read into memory. The 2.5 MB default refused a
+# large topology view before it reached validation; a saved view is bounded
+# at 8 MB by its serializer, and file uploads stream to disk regardless.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
+# Uploaded media (device-type rack images, …). Served through
+# api.media_views, never straight from disk: a new upload and the folders
+# made for it are closed to other users, so a web server reading the folder
+# directly cannot serve a private file even from an old config (#227).
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+FILE_UPLOAD_PERMISSIONS = 0o640
+FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
 # Where the default backup target writes - the same sibling directory the
 # upgrade scripts used for their pre-upgrade dumps (#27).
 DANBYTE_BACKUP_DIR = Path(os.getenv("DANBYTE_BACKUP_DIR", str(BASE_DIR.parent / "danbyte-backups")))

@@ -90,6 +90,14 @@ if [ -f "$APP/.env" ] && ! grep -qE '^DANBYTE_LOG_DIR=' "$APP/.env"; then
   printf '\nDANBYTE_LOG_DIR=%s\n' "$LOG_DIR" >> "$APP/.env"
   echo "  added DANBYTE_LOG_DIR=$LOG_DIR"
 fi
+# Rotation for the log files. The app writes them from many processes and
+# rotates nothing itself when this exists; without it, it falls back to a
+# size-capped handler and gunicorn keeps its logs in the journal (#231).
+if [ -d /etc/logrotate.d ]; then
+  sed -e "s#@@LOG_DIR@@#$LOG_DIR#g" -e "s#@@USER@@#$SERVICE_USER#g" \
+    "$APP/deploy/logrotate/danbyte" > /etc/logrotate.d/danbyte
+  chmod 644 /etc/logrotate.d/danbyte
+fi
 
 if [ "$MOVE" -eq 1 ]; then
   step "Repointing nginx roots ($OLD_HOME → $NEW_HOME)"

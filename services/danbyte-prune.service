@@ -1,5 +1,5 @@
 [Unit]
-Description=Danbyte monitoring retention (prune old check results)
+Description=Danbyte retention (check results, change log, housekeeping)
 After=network.target
 Wants=danbyte-infra.service
 
@@ -9,6 +9,7 @@ WorkingDirectory=%h/danbyte
 Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/danbyte/.venv/bin/python manage.py prune_check_results
 ExecStart=%h/danbyte/.venv/bin/python manage.py prune_changelog
+ExecStart=%h/danbyte/.venv/bin/python manage.py housekeeping
 
 # Triggered daily by danbyte-prune.timer.
 # Logs: journalctl --user -fu danbyte-prune

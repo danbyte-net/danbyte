@@ -172,7 +172,16 @@ def has_secret_fields(model) -> bool:
     return model_holds_secret(model)
 
 
-def _objects_for(template, tenant, user=None):
+#: Rows one render may loop over - the same bound the XLSX export has. Past
+#: it the render is refused with the count, rather than loading the table
+#: into a web worker and building the whole output as one string (#224).
+MAX_TEMPLATE_ROWS = 50000
+#: The editor's preview renders at most this many rows; ``count`` still says
+#: how many the real render would see.
+PREVIEW_ROWS = 200
+
+
+def _objects_for(template, tenant, user=None, *, limit=None):
     """The rows a template may loop over: the type's rows in the tenant,
     narrowed to what ``user`` may view - the same row/site restriction a
     list request applies, so a site-scoped user renders their site, not the
@@ -192,19 +201,49 @@ def _objects_for(template, tenant, user=None):
     if user is None:
         return []
     qs = rbac.restrict_queryset(qs, user, tenant, template.object_type, "view")
-    return list(qs)
+    total = qs.count()
+    if limit is None and total > MAX_TEMPLATE_ROWS:
+        raise ValueError(
+            f"{total} {model._meta.verbose_name_plural} is more than one render "
+            f"can take ({MAX_TEMPLATE_ROWS}). Use the list export for the whole "
+            f"table, or a template on a narrower type."
+        )
+    # Every to-one relation joined in one go: a template that prints
+    # {{ obj.site.name }} otherwise costs a query per row.
+    fks = [
+        f.name for f in model._meta.concrete_fields
+        if f.is_relation and f.many_to_one
+    ]
+    qs = qs.select_related(*fks)
+    if limit is not None:
+        qs = qs[:limit]
+    rows = list(qs.iterator(chunk_size=500)) if limit is None else list(qs)
+    return _Rows(rows, total)
 
 
-def render_export_template(template, tenant, user=None) -> str:
+class _Rows(list):
+    """The rows a template loops over, plus the true total when the list was
+    cut short (a preview), so ``count`` never lies."""
+
+    def __init__(self, rows, total):
+        super().__init__(rows)
+        self.total = total
+
+
+def render_export_template(template, tenant, user=None, *, preview=False) -> str:
     """Render the template against its object type, over the rows ``user``
-    may view. Raises ``ValueError`` on a bad object type and
-    ``jinja2.TemplateError`` on a template problem."""
-    objects = _objects_for(template, tenant, user)
+    may view. Raises ``ValueError`` on a bad object type or too many rows,
+    and ``jinja2.TemplateError`` on a template problem. ``preview`` renders
+    the first ``PREVIEW_ROWS`` only - the editor refreshes on every change."""
+    objects = _objects_for(
+        template, tenant, user, limit=PREVIEW_ROWS if preview else None
+    )
     if objects is None:
         raise ValueError(f"Unknown object type: {template.object_type}")
 
+    total = getattr(objects, "total", len(objects))
     tmpl = _env().from_string(template.template_code or "")
-    return tmpl.render(objects=objects, queryset=objects, count=len(objects))
+    return tmpl.render(objects=objects, queryset=objects, count=total)
 
 
 # Output types a render may be served as. Anything else (text/html above

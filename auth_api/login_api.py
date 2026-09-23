@@ -38,6 +38,10 @@ SESSION_KEY = "mfa_pending"
 # Password login: per-IP failure counter in the cache, then lock out.
 LOGIN_MAX_FAILURES = 10
 LOGIN_WINDOW = 900  # seconds the failure counter + lockout live
+#: Failures for one account from every address together before that account
+#: is locked. Higher than the per-client limit: it exists so rotating source
+#: addresses cannot brute-force one account, not to catch a mistyped password.
+LOGIN_MAX_ACCOUNT_FAILURES = 30
 # MFA: cap wrong codes per pending login (the 6-digit OTP is otherwise brute-
 # forceable within its TTL), and rate-limit email resends.
 MAX_MFA_ATTEMPTS = 5
@@ -83,20 +87,42 @@ def _client_ip(request) -> str:
     return request.META.get("REMOTE_ADDR") or "unknown"
 
 
-def _login_locked(request) -> bool:
-    return (cache.get(f"login-fail:{_client_ip(request)}") or 0) >= LOGIN_MAX_FAILURES
+def _login_keys(request, username: str) -> tuple[str, str]:
+    """The two counters a login attempt feeds.
+
+    One per client *and* account: a wrong password from one person never
+    locks out another. That used to be per client address alone, and behind a
+    second proxy every user shares the proxy's address, so ten wrong
+    passwords from anyone locked everyone out (#226). The other is per
+    account across all addresses, so rotating source addresses - or a proxy
+    depth set too high, which lets a client choose its own address - still
+    cannot brute-force one account.
+    """
+    user = (username or "").strip().lower()[:150]
+    return (f"login-fail:{_client_ip(request)}:{user}", f"login-fail-user:{user}")
 
 
-def _record_login_failure(request) -> None:
-    key = f"login-fail:{_client_ip(request)}"
-    try:
-        cache.incr(key)
-    except ValueError:
-        cache.set(key, 1, LOGIN_WINDOW)
+def _login_locked(request, username: str) -> bool:
+    pair, account = _login_keys(request, username)
+    return (
+        (cache.get(pair) or 0) >= LOGIN_MAX_FAILURES
+        or (cache.get(account) or 0) >= LOGIN_MAX_ACCOUNT_FAILURES
+    )
 
 
-def _clear_login_failures(request) -> None:
-    cache.delete(f"login-fail:{_client_ip(request)}")
+def _record_login_failure(request, username: str) -> None:
+    for key in _login_keys(request, username):
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, LOGIN_WINDOW)
+
+
+def _clear_login_failures(request, username: str) -> None:
+    # A good password clears this client's count for the account, not the
+    # account-wide one: success from one place must not reset a spray from
+    # everywhere else.
+    cache.delete(_login_keys(request, username)[0])
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -185,26 +211,27 @@ def _begin_email_challenge(request, user) -> None:
 def login_api(request):
     if request.user.is_authenticated:
         return JsonResponse({"ok": True})
-    # IP-based lockout after repeated password failures (brute-force guard).
-    if _login_locked(request):
-        return JsonResponse(
-            {"detail": "Too many failed attempts. Try again later."}, status=429
-        )
     data = _json(request)
     if data is None:
         return HttpResponseBadRequest("invalid JSON")
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
+    # Lockout after repeated password failures (brute-force guard), per
+    # client and account - see _login_keys.
+    if _login_locked(request, username):
+        return JsonResponse(
+            {"detail": "Too many failed attempts. Try again later."}, status=429
+        )
     user = authenticate(request, username=username, password=password)
     if user is None:
-        _record_login_failure(request)
+        _record_login_failure(request, username)
         return JsonResponse(
             {"detail": "Invalid username or password."}, status=400
         )
     if not user.is_active:
         return JsonResponse({"detail": "This account is disabled."}, status=400)
 
-    _clear_login_failures(request)
+    _clear_login_failures(request, username)
     profile = _profile(user)
     methods = _methods(profile, user)
     # require_mfa with no usable factor can't be enforced (e.g. no email, no

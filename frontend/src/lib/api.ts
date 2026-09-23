@@ -6845,6 +6845,10 @@ export interface DeploymentSettings {
   outbound_proxy: string
   deployment_name: string
   changelog_retention_days: number
+  /** Before-upgrade backups and code rollback archives kept, each. */
+  upgrade_backups_keep: number
+  /** Days rotated log files are kept; 0 = forever. */
+  log_retention_days: number
   /** Absolute URL of the custom favicon; null = the Danbyte default. */
   favicon_url: string | null
   /** Absolute URL of the custom login-page logo; null = the Danbyte logo. */

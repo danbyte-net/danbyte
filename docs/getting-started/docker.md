@@ -147,6 +147,7 @@ commented list). The essentials:
 | `ALLOWED_HOSTS` | Hosts/IPs served (no scheme/port). |
 | `CSRF_TRUSTED_ORIGINS` | Origins allowed to POST (scheme + host [+ port]). |
 | `DANBYTE_HTTPS` | `True` when TLS terminates in front - enables secure cookies + HSTS. |
+| `DANBYTE_TRUSTED_PROXY_DEPTH` | Proxies appending to `X-Forwarded-For`, counting the stack's own nginx: `1` direct (default), `2` with one proxy in front. Finds the client address for the login lockout. |
 | `HTTP_PORT` | Published host port (default `8080`). |
 | `RQ_WORKERS` | Worker pool size. |
 
@@ -216,7 +217,17 @@ server {
 ALLOWED_HOSTS=danbyte.example.com
 CSRF_TRUSTED_ORIGINS=https://danbyte.example.com
 DANBYTE_HTTPS=True
+# The host nginx is a second hop in X-Forwarded-For, in front of the stack's.
+DANBYTE_TRUSTED_PROXY_DEPTH=2
 ```
+
+`DANBYTE_TRUSTED_PROXY_DEPTH` tells the login lockout where the client's
+address sits in `X-Forwarded-For`. It has to match the real number of
+proxies: too low and every user shares the front proxy's address, too high
+and a client can name any address it likes. Failures are counted per client
+*and* account, plus a higher per-account ceiling across all addresses, so a
+wrong value is never a way to lock everyone out or to brute-force one
+account.
 
 ### WebSocket troubleshooting
 

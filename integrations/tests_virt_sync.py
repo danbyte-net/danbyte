@@ -666,6 +666,75 @@ class ProxmoxSyncTests(TestCase):
         self.assertEqual(sw.uplink_interfaces.count(), 2)
 
 
+class ProxmoxOddShapeTests(TestCase):
+    """One odd reply from a Proxmox API must not fail the whole pass (#232).
+
+    A guest-agent ``result`` that is a string was iterated character by
+    character and every character asked for ``.get`` - "'str' object has no
+    attribute 'get'", and no VM synced at all.
+    """
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.source = VirtualizationSource.objects.create(
+            tenant=self.tenant, name="pve", kind="proxmox", host="192.0.2.10",
+            credentials={"token_id": "a@pam!t", "secret": "s"}, sync_mode="auto",
+        )
+        Prefix.objects.create(tenant=self.tenant, cidr="10.77.0.0/24")
+
+    def _sync_with(self, agent_reply, config_reply=None):
+        def get(source, path):
+            if path.endswith("agent/network-get-interfaces"):
+                return agent_reply
+            if config_reply is not None and path == "nodes/pve1/qemu/100/config":
+                return config_reply
+            return fake_get(source, path)
+
+        with mock.patch.object(virt_sync, "proxmox_get", side_effect=get):
+            return virt_sync.sync_proxmox(self.source)
+
+    def test_a_string_agent_result_skips_that_guests_addresses_only(self):
+        counts = self._sync_with({"result": "guest agent not running"})
+        self.assertEqual(counts["vms"], 2)
+        self.assertTrue(VirtualMachine.objects.filter(name="router-vm").exists())
+        self.assertEqual(counts["ips"], 0)
+
+    def test_an_error_object_or_a_bare_string_is_not_fatal_either(self):
+        for reply in ("error", {"result": {"error": "x"}}, ["eth0", 7]):
+            with self.subTest(reply=reply):
+                counts = self._sync_with(reply)
+                self.assertEqual(counts["vms"], 2)
+
+    def test_a_bare_interface_list_is_read_like_the_wrapped_one(self):
+        counts = self._sync_with(AGENT["result"])
+        self.assertGreater(counts["ips"], 0)
+
+    def test_a_config_that_is_not_an_object_is_skipped(self):
+        counts = self._sync_with(AGENT, config_reply="locked")
+        self.assertEqual(counts["vms"], 2)
+
+    def test_an_internal_fault_is_a_500_with_a_traceback_in_the_log(self):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+
+        from integrations.models import IntegrationSettings
+
+        IntegrationSettings.objects.create(tenant=self.tenant, virt_proxmox_enabled=True)
+        admin = get_user_model().objects.create_superuser("a", "a@x.y", "x")
+        client = APIClient()
+        client.force_login(admin)
+        sess = client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+        with mock.patch.object(virt_sync, "sync_proxmox", side_effect=AttributeError("boom")):
+            res = client.post(f"/api/virtualization-sources/{self.source.id}/sync/")
+        self.assertEqual(res.status_code, 500, res.content)
+        self.source.refresh_from_db()
+        self.assertIn("traceback", self.source.last_sync_log)
+        self.assertIn("AttributeError", self.source.last_sync_log)
+
+
 class ProxmoxModeTests(TestCase):
     """Review/manual modes queue changes; accept applies, ignore dismisses."""
 

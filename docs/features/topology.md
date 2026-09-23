@@ -371,6 +371,10 @@ the views select; **Save** updates it in place after you rearrange;
 left-to-right layout. Views are plain API objects
 (`/api/topology-views/`), change-logged like everything else.
 
+A view can hold up to 50,000 positioned or hidden cards per list and 8 MB in
+all. A map that outgrows that is refused with its size; **Re-layout** a style
+you do not use to drop its arrangement and save again.
+
 Arrangements are kept **per view** - Wiring, Hierarchy and Flat each remember
 their own. The cards are different sizes in each, so one shared set of
 coordinates would hand Hierarchy the spacing you tuned for Flat. Arrange a view,

@@ -57,6 +57,19 @@ location ^~ /api/backups/ {
 }
 # then: sudo nginx -t && sudo systemctl reload nginx"""
 
+_NGINX_BACKUPS_BUFFER = """\
+# in the /api/backups/ block, replace "proxy_request_buffering off;" with:
+    proxy_request_buffering on;
+    proxy_max_temp_file_size 10g;
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+_LOGROTATE = """\
+# as root, from the app directory (adjust the user and log dir to yours):
+sudo sed -e 's#@@LOG_DIR@@#/var/log/danbyte#g' -e 's#@@USER@@#danbyte#g' \\
+    deploy/logrotate/danbyte | sudo tee /etc/logrotate.d/danbyte >/dev/null
+# then, as the service user:
+systemctl --user restart danbyte-web danbyte-workers danbyte-ws danbyte-fastlane"""
+
 _NGINX_ACME = """\
 # in the :80 server, before the redirect:
 location /.well-known/acme-challenge/ {
@@ -64,6 +77,61 @@ location /.well-known/acme-challenge/ {
     proxy_set_header Host $host;
 }
 # then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+_NGINX_MEDIA = """\
+# in /etc/nginx/sites-available/danbyte.conf, replace the /media/ block:
+location /media/ {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    access_log off;
+}
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _media_proxied() -> bool:
+    """True when the site's nginx config already hands /media/ to Danbyte.
+
+    Reads the config if it can; a config it cannot find or read says
+    nothing, so the note stays up rather than being hidden on a guess.
+    """
+    import re
+    from pathlib import Path
+
+    for path in (Path("/etc/nginx/sites-enabled/danbyte.conf"),
+                 Path("/etc/nginx/sites-available/danbyte.conf")):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        block = re.search(r"location\s+/media/\s*\{([^}]*)\}", text)
+        return bool(block and "proxy_pass" in block.group(1))
+    return False
+
+
+def _backups_buffered() -> bool:
+    """True when the site's nginx no longer streams backup uploads through."""
+    from pathlib import Path
+
+    for path in (Path("/etc/nginx/sites-enabled/danbyte.conf"),
+                 Path("/etc/nginx/sites-available/danbyte.conf")):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        return "proxy_request_buffering off" not in text
+    return False
+
+
+def _logrotate_installed() -> bool:
+    """Done when the config exists, or when nothing writes log files at all."""
+    import os
+    from pathlib import Path
+
+    if not os.getenv("DANBYTE_LOG_DIR", "").strip():
+        return True
+    return Path("/etc/logrotate.d/danbyte").exists()
 
 
 def _tls_unit_installed() -> bool:
@@ -74,6 +142,55 @@ def _tls_unit_installed() -> bool:
 
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.16.12-logrotate",
+        version="0.16.12",
+        title="Install the logrotate config for /var/log/danbyte",
+        body=(
+            "danbyte.log is written by every web and background process, and "
+            "the handler that rotated it was not safe across processes: lines "
+            "were lost to rotated files. With the shipped logrotate config the "
+            "processes just append, rotation happens outside them, and the "
+            "gunicorn access and error logs appear next to danbyte.log."
+        ),
+        snippet=_LOGROTATE,
+        docs="getting-started/upgrading/",
+        platforms=("systemd",),
+        check=_logrotate_installed,
+    ),
+    UpgradeNote(
+        id="0.16.12-nginx-backups-buffer",
+        version="0.16.12",
+        title="Let nginx buffer backup uploads and downloads",
+        body=(
+            "A backup upload streamed to Danbyte at the browser's speed, and "
+            "the web worker was stopped after a minute, so any archive that "
+            "took longer to upload failed with a 500. nginx now takes the "
+            "whole file first. It needs free space for one archive in its "
+            "temporary directory."
+        ),
+        snippet=_NGINX_BACKUPS_BUFFER,
+        docs="getting-started/backup-restore/",
+        platforms=("systemd",),
+        check=_backups_buffered,
+    ),
+    UpgradeNote(
+        id="0.16.12-nginx-media",
+        version="0.16.12",
+        title="Send /media/ through Danbyte instead of serving it from disk",
+        body=(
+            "Uploaded documents, image attachments and floor plans are now "
+            "served only to users who can view their object. An nginx config "
+            "rendered before this release serves the folder straight from disk; "
+            "the upgrade already closed the private folders to it, so until you "
+            "change the block those files answer 403 rather than leaking - and "
+            "images on object pages stay broken."
+        ),
+        snippet=_NGINX_MEDIA,
+        docs="getting-started/upgrading/",
+        platforms=("systemd",),
+        check=_media_proxied,
+    ),
     UpgradeNote(
         id="0.16.0-tls-unit",
         version="0.16.0",

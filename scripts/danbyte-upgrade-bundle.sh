@@ -127,7 +127,11 @@ fi
 # nothing could be put back, so a failure to write it stops the upgrade
 # before the tree is touched - a full backup disk is the usual cause.
 BACKUP="$BACKUP_DIR/code-pre-$VERSION-$(date +%s).tgz"
+# media/ is not touched by an upgrade (and the pre-upgrade backup holds it),
+# and the bundle being applied sits in the code dir: both used to ride along
+# in every archive, which is how these grew to gigabytes.
 tar -C "$CODE_DIR" --exclude=./.venv --exclude=./vendor --exclude=./frontend/node_modules \
+  --exclude=./media --exclude=./.upgrade-bundle.tar.gz \
   -czf "$BACKUP" . 2>"$ERRF" \
   || { BACKUP=""; fail backup "could not write the rollback archive $BACKUP_DIR (disk full?): $(tail -c 300 "$ERRF" 2>/dev/null | tr -c '[:print:]' ' ')"; }
 
@@ -135,9 +139,12 @@ status running deploy 40
 touch "$MAINT" 2>/dev/null || true   # nginx shows the "updating" page
 DEPLOYED=1
 # Overlay the new tree; keep .env/media (not in the bundle). Excludes the
-# installer entrypoint so it doesn't clutter the code dir.
+# installer entrypoint so it doesn't clutter the code dir. The trees the
+# bundle ships whole are replaced, not overlaid: an overlay never removes a
+# file, so every release added its own wheelhouse, build chunks and hashed
+# static files on top of the last one's.
 step deploy "copying new code failed" \
-  sh -c "tar -C '$SRC' --exclude=./install.sh -cf - . | tar -C '$CODE_DIR' -xf -"
+  sh -c "for d in vendor/wheels frontend/dist staticfiles; do [ -d '$SRC/'\$d ] && rm -rf '$CODE_DIR/'\$d; done; tar -C '$SRC' --exclude=./install.sh -cf - . | tar -C '$CODE_DIR' -xf -"
 
 status running deps 60
 "$CODE_DIR/vendor/python/bin/python3" -m venv "$CODE_DIR/.venv" >/dev/null 2>&1 || true
@@ -149,6 +156,13 @@ status running migrate 75
 step migrate "database migration failed" "$PY" manage.py migrate --noinput
 MIGRATED=1
 "$PY" manage.py rebuild_search_index >/dev/null 2>&1 || true
+# Private uploads are served only through Django since 0.16.12 (#227). Close
+# their folders to other users, so a web server still reading media/ straight
+# from disk - an nginx config rendered before this release - gets 403, not the
+# file. Best effort: a folder that does not exist yet is simply skipped.
+for d in documents image-attachments floor-plans oui-imports outpost-releases script-outputs; do
+  [ -d "$CODE_DIR/media/$d" ] && chmod -R o-rwx "$CODE_DIR/media/$d" 2>/dev/null || true
+done
 
 status running static 85
 "$PY" manage.py collectstatic --noinput >/dev/null 2>&1 || true
@@ -179,6 +193,9 @@ done
 
 rm -f "$MAINT" "$TARBALL" "$ERRF"
 rm -rf "$TMP"
+# Old rollback archives, surplus before-upgrade backups, wheels from earlier
+# releases - kept to the numbers in Settings -> Backups. Best effort.
+"$PY" manage.py housekeeping >/dev/null 2>&1 || true
 status done done 100
 echo "upgrade: now on $VERSION (from bundle)"
 "$PY" manage.py upgrade_notes 2>/dev/null || true   # steps an admin still has to do

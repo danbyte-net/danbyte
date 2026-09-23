@@ -127,6 +127,12 @@ on the MAC page, and follows the MAC on an interface page. **Next free in
 range** in the Add MAC dialog hands out the lowest address in one of your
 ranges that no interface, VM interface, IP pairing, or MAC object already uses.
 
+An address inside one of your own ranges is handed out **once**. The button
+only proposes an address, so two people with the dialog open can be offered
+the same one; whoever saves second is refused with the next free address.
+Outside your ranges a MAC may sit on several interfaces - a VRRP or anycast
+gateway MAC does - so that rule applies to owned ranges only.
+
 ### First-class MAC objects
 
 Beyond the derived view, a MAC can be a **real object** you manage - with its own

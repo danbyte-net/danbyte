@@ -293,6 +293,15 @@ DANBYTE_UNITS="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-workers danb
 as_user systemctl --user enable $DANBYTE_UNITS >/dev/null 2>&1 || true
 as_user systemctl --user restart $DANBYTE_UNITS
 
+# Rotation for the log files. The app writes them from many processes and
+# rotates nothing itself when this exists; without it, it falls back to a
+# size-capped handler and gunicorn keeps its logs in the journal (#231).
+if [ -d /etc/logrotate.d ]; then
+  sed -e "s#@@LOG_DIR@@#$LOG_DIR#g" -e "s#@@USER@@#$SERVICE_USER#g" \
+    "$APP/deploy/logrotate/danbyte" > /etc/logrotate.d/danbyte
+  chmod 644 /etc/logrotate.d/danbyte
+fi
+
 # ── 10. nginx + TLS ──────────────────────────────────────────────────────────
 if [ "$DO_NGINX" -eq 1 ]; then
   step "nginx + TLS (self-signed) for $HOST"

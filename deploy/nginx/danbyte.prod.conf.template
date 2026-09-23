@@ -89,11 +89,15 @@ server {
         expires 7d;
     }
 
-    # ── Uploaded media (device-type images, …), straight from MEDIA_ROOT.
+    # ── Uploaded media, through Django. Documents, image attachments and
+    #    floor plans are private to whoever can view their object, so the
+    #    folder is not served from disk: a guessed filename used to be enough
+    #    to download a document without logging in (#227).
     location /media/ {
-        alias @@MEDIA_ROOT@@/;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
         access_log off;
-        expires 7d;
     }
 
     # ── Documentation (Zensical, :8001).
@@ -114,7 +118,12 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_request_buffering off;
+        # Take the whole upload to disk before gunicorn sees it, and buffer
+        # the whole download: a sync worker is killed after GUNICORN_TIMEOUT,
+        # so a transfer running at the client's speed died after a minute
+        # (#229). Needs free space for one archive in nginx's temp dir.
+        proxy_request_buffering on;
+        proxy_max_temp_file_size 10g;
         proxy_read_timeout 600s;
         client_max_body_size 8g;
     }

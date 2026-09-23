@@ -138,9 +138,9 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
     ),
     ScheduledTask(
         unit="danbyte-prune",
-        commands=("prune_check_results", "prune_changelog"),
+        commands=("prune_check_results", "prune_changelog", "housekeeping"),
         at=("04:17",),
-        label="Retention - drop old check results and changelog rows",
+        label="Retention - old check results, changelog rows and stale files",
     ),
     ScheduledTask(
         unit="danbyte-backups",
