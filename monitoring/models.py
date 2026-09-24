@@ -3584,6 +3584,15 @@ class SlaPeriod(models.TextChoices):
     ROLLING_90 = "rolling_90", "Last 90 days"
 
 
+def default_burn_alerts() -> list[dict]:
+    """The SRE workbook's page and ticket rules for a 30-day budget: 2 % of it
+    in an hour, and 5 % in six hours."""
+    return [
+        {"name": "fast", "long_min": 60, "short_min": 5, "burn": 14.4, "on": True},
+        {"name": "slow", "long_min": 360, "short_min": 30, "burn": 6.0, "on": True},
+    ]
+
+
 class SlaAgreement(TimestampedModel):
     """The contract: a target over a period, and how the time is counted."""
 
@@ -3662,6 +3671,13 @@ class SlaAgreement(TimestampedModel):
     #: At risk once budget burns faster than this (1.0 = on pace to spend it
     #: exactly); null = only the warning line / budget share decides.
     alert_burn_rate = models.FloatField(null=True, blank=True)
+    #: Burn-rate alerts over a long and a short window together (SRE
+    #: multi-window): fires while both burn at or above ``burn``, resolves as
+    #: soon as either drops below. See monitoring.sla_burn.
+    burn_alerts = models.JSONField(default=default_burn_alerts, blank=True)
+    #: What sla_burn last saw per rule - burn per window, firing, notified.
+    #: Written with .update() every minute, so never audited or revisioned.
+    burn_state = models.JSONField(default=dict, blank=True, editable=False)
     #: Alert when less than this share of the time was measured.
     alert_coverage_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     #: Emailed the period's report when it freezes.

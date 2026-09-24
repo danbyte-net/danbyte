@@ -9809,6 +9809,27 @@ export interface SlaFigures {
   period_end: string
 }
 
+export interface SlaBurnRule {
+  name: string
+  long_min: number
+  short_min: number
+  burn: number
+  on: boolean
+}
+
+export interface SlaBurnState {
+  /** Burn over each window; null when nothing in it was measured. 1e9 = a
+   * 100 % target with any down time. */
+  long: number | null
+  short: number | null
+  long_min: number
+  short_min: number
+  threshold: number
+  firing: boolean
+  since: string | null
+  at: string
+}
+
 export interface SlaAgreement {
   id: string
   name: string
@@ -9840,6 +9861,8 @@ export interface SlaAgreement {
   notify_channels: string[]
   /** At risk once budget burns this many times faster than time passes. */
   alert_burn_rate: number | null
+  /** Multi-window burn-rate alerts: fire while both windows burn >= burn. */
+  burn_alerts: SlaBurnRule[]
   /** Alert when less than this share of the time was measured. */
   alert_coverage_pct: string | null
   /** Emailed each period's report when it freezes. */
@@ -9855,6 +9878,8 @@ export interface SlaAgreement {
     computed_at: string
     figures: SlaFigures
     limited: { hidden_members: number } | null
+    /** Each burn rule as last evaluated; null for a limited viewer. */
+    burn: Record<string, SlaBurnState> | null
   } | null
   created_at: string
   updated_at: string

@@ -7,6 +7,7 @@ import type {
   HolidayCalendar,
   Paginated,
   SlaAgreement,
+  SlaBurnRule,
   SlaPeriod,
 } from "@/lib/api"
 import {
@@ -29,6 +30,7 @@ import { Input } from "@/components/ui/input"
 import { TimePicker } from "@/components/ui/time-picker"
 import { useSaveObject } from "@/lib/save-object"
 import { PERIOD_LABEL } from "./sla-figure"
+import { BurnRulesEditor, DEFAULT_BURN_RULES } from "./sla-burn-rules"
 
 const DAYS = [
   ["mon", "Monday"],
@@ -103,6 +105,9 @@ export function SlaAgreementForm({
   const [channels, setChannels] = useState<string[]>(a?.notify_channels ?? [])
   const [burn, setBurn] = useState(
     a?.alert_burn_rate != null ? String(a.alert_burn_rate) : ""
+  )
+  const [burnRules, setBurnRules] = useState<SlaBurnRule[]>(
+    a?.burn_alerts.length ? a.burn_alerts : DEFAULT_BURN_RULES
   )
   const [coverageAlert, setCoverageAlert] = useState(
     a?.alert_coverage_pct ?? ""
@@ -186,6 +191,7 @@ export function SlaAgreementForm({
           aggregation,
           notify_channels: channels,
           alert_burn_rate: burn ? Number(burn) : null,
+          burn_alerts: burnRules,
           alert_coverage_pct: coverageAlert || null,
           latency_objectives: Object.fromEntries(
             Object.entries(objectives)
@@ -484,7 +490,7 @@ export function SlaAgreementForm({
           <div className="grid gap-3">
             <Field
               label="Alert channels"
-              info="At risk, breached, coverage low and a missed latency objective - each at most once per period."
+              info="At risk, breached, coverage low and a missed latency objective - each at most once per period. Burn-rate alerts when they start and stop."
               error={fieldErrors.notify_channels}
             >
               <CheckList
@@ -498,6 +504,13 @@ export function SlaAgreementForm({
                 className="max-h-32"
                 empty="No notification channels yet."
               />
+            </Field>
+            <Field
+              label="Burn-rate alerts"
+              info="Alert while the budget burns this many times faster than the target allows, over both windows. The long window proves it is real, the short one that it is still happening."
+              error={fieldErrors.burn_alerts}
+            >
+              <BurnRulesEditor value={burnRules} onChange={setBurnRules} />
             </Field>
             <div className="grid gap-3 @md:grid-cols-2">
               <FormText

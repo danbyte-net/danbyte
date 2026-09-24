@@ -35,6 +35,7 @@ import {
 } from "./sla-analysis-charts"
 import type { BreakdownKind } from "./sla-analysis-charts"
 import { DayDrill, MemberPanel } from "./sla-drill"
+import { BurnNow } from "./sla-burn-rules"
 
 type FilterKey = "group" | "site" | "member" | "kind" | "redundancy"
 type Filters = Record<FilterKey, string[]>
@@ -417,11 +418,16 @@ export function SlaAnalysisView({
                 {f.incidents}
               </Figure>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Target {fmtSla(f.target)}
-              {prev?.availability != null &&
-                ` · the window before: ${fmtSla(prev.availability)}`}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+              <p className="text-[11px] text-muted-foreground">
+                Target {fmtSla(f.target)}
+                {prev?.availability != null &&
+                  ` · the window before: ${fmtSla(prev.availability)}`}
+              </p>
+              {!useRange && period === "current" && (
+                <BurnNow burn={a.current?.burn} />
+              )}
+            </div>
 
             <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
               <AnalysisCard

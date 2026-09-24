@@ -262,6 +262,38 @@ day.
 
 A new agreement does not alert about periods that ended before it existed.
 
+### Burn-rate alerts
+
+The alerts above look at the whole period, so a sharp outage early in a month
+can spend much of the budget before anything tells you. **Burn-rate alerts**
+watch the last hour or hours instead.
+
+A burn rate says how fast the budget is being spent: 1x spends it exactly by
+the period's end, 10x spends it in a tenth of the period. A rule compares two
+windows and fires only while **both** burn at or above its threshold. The long
+window shows the burn is real; the short one shows it is still happening, so
+the alert clears a few minutes after the outage ends.
+
+| Rule | Windows | Threshold | Meaning (30-day budget) |
+|---|---|---|---|
+| **Fast** | 1 h and 5 min | 14.4x | 2 % of the budget gone in an hour. Page someone. |
+| **Slow** | 6 h and 30 min | 6x | 5 % gone in six hours. Look at it today. |
+
+Both rules are on for every agreement. Change the windows and thresholds, or
+switch a rule off, under **Burn-rate alerts** on the form. Each rule sends one
+message when it starts firing and one when it stops. PagerDuty gets a trigger
+and a matching resolve. A rule that starts firing again within an hour of its
+last message stays quiet.
+
+The Overview shows **Burn now** beside the target for the current period:
+each rule's two windows, and a badge while it fires. Outside service hours
+nothing is measured, so nothing burns. Viewers with a limited view do not see
+burn rates, because they cover the whole agreement.
+
+The `danbyte-sla-burn` timer (`manage.py sla_burn`) checks the rules every
+minute. **At risk above burn rate** stays as it was: the pace over the whole
+period, sent once per period as *SLA at risk*.
+
 ## Reports
 
 The agreement page downloads the selected period's report as **PDF** or
@@ -331,6 +363,7 @@ incidents, and the per-day figures are not shown.
 | `…/sla-agreements/<id>/periods/` | Every stored period |
 | `…/sla-agreements/<id>/revisions/` | The rules over time |
 | `POST …/sla-agreements/<id>/recompute/` | Recompute now |
+| `burn_alerts` on an agreement | Up to four rules: `{name, long_min, short_min, burn, on}`; `current.burn` has each rule's last result |
 | `/api/monitoring/sla-check-groups/` | Groups; `items` are written inline |
 | `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once |
 | `/api/monitoring/sla-exclusions/` | Excluded time |

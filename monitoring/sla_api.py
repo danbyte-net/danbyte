@@ -123,7 +123,7 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             "count_stale_as", "count_unknown_as", "exclude_maintenance",
             "min_outage_seconds", "aggregation", "latency_objectives", "status",
             "effective_from", "revision", "group_count", "member_count", "current",
-            "notify_channels", "alert_burn_rate", "alert_coverage_pct",
+            "notify_channels", "alert_burn_rate", "burn_alerts", "alert_coverage_pct",
             "report_recipients", "report_format",
             "created_at", "updated_at",
         ]
@@ -144,8 +144,19 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
         res = getattr(obj, "_current", None)
         if res is None:
             return None
+        body = _viewer_figures(self.context.get("request"), obj, res)
+        # Burn is over the whole agreement: a limited viewer does not get it.
+        burn = obj.burn_state or None if body["limited"] is None else None
         return {"period_key": res.period_key, "computed_at": res.computed_at,
-                **_viewer_figures(self.context.get("request"), obj, res)}
+                "burn": burn, **body}
+
+    def validate_burn_alerts(self, value):
+        from .sla_burn import validate_rules
+
+        try:
+            return validate_rules(value)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e)) from None
 
     def validate_alert_burn_rate(self, value):
         if value is not None and value <= 0:

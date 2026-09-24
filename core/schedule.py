@@ -82,6 +82,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Recompute SLA figures; close and freeze finished periods",
     ),
     ScheduledTask(
+        unit="danbyte-sla-burn",
+        commands=("sla_burn",),
+        every=MINUTE,
+        label="SLA burn-rate alerts",
+    ),
+    ScheduledTask(
         unit="danbyte-dispatch",
         commands=("dispatch_checks",),
         every=MINUTE,
