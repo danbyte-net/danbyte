@@ -76,7 +76,7 @@ server {
         # so a transfer running at the client's speed died after a minute
         # (#229). Needs free space for one archive in nginx's temp dir.
         proxy_request_buffering on;
-        proxy_max_temp_file_size 10g;
+        proxy_max_temp_file_size 10240m;
         proxy_read_timeout 600s;
         client_max_body_size 8g;
     }
@@ -100,14 +100,21 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+    # Every block that reaches Django says the request came in over HTTPS:
+    # without it Django redirects to the same https:// URL, which comes back
+    # through the same block, forever (#240).
     location /static/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
-    # ── Uploaded media (device-type images, …) - Django serves /media/ itself.
+    # ── Uploaded media - Django serves /media/ itself, checking access.
     location /media/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # ── Presence WebSocket (Django Channels, :8000). Needs the upgrade headers.
