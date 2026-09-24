@@ -139,11 +139,24 @@ export function formatCustom(
   const d = toDate(value)
   if (!d) return ""
   const timeZone = zoneFor(value, s.timezone)
+  opts = withClock(opts, s.time_style)
   try {
     return new Intl.DateTimeFormat("en-US", { ...opts, timeZone }).format(d)
   } catch {
     return new Intl.DateTimeFormat("en-US", opts).format(d)
   }
+}
+
+/** An hour in a caller's options follows the effective clock unless the
+ * caller pinned one: "19:00" on 24-hour, "07 PM" on 12-hour. A bare 24-hour
+ * hour gets its minutes, or an axis would read "19". */
+function withClock(
+  opts: Intl.DateTimeFormatOptions,
+  style: TimeStyle
+): Intl.DateTimeFormatOptions {
+  if (!opts.hour || opts.hour12 !== undefined || opts.hourCycle) return opts
+  if (style === "12h") return { ...opts, hour12: true }
+  return { ...opts, hourCycle: "h23", minute: opts.minute ?? "2-digit" }
 }
 
 /** Today's calendar date as `YYYY-MM-DD` **in the given timezone** - the
