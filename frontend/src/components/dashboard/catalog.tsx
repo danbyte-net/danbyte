@@ -19,6 +19,14 @@ import { StatusHistoryWidget } from "./widget-status-history"
 import type { StatusHistoryConfig } from "./widget-status-history"
 import { AlertsPerDay, LatencyWeek } from "./widget-monitoring-charts"
 import { MyTasksWidget } from "./widget-tasks"
+import {
+  AvailabilityByGroupWidget,
+  CoverageWidget,
+  SlaHeadlineWidget,
+  SlaTableWidget,
+  TopOffendersWidget,
+  UpcomingMaintenanceWidget,
+} from "./widget-sla"
 
 // Lazy - pulls in the floor-plan canvas only when the widget is actually shown.
 const FloorplanWidget = lazy(() =>
@@ -61,6 +69,12 @@ export type WidgetId =
   | "map"
   | "floorplan"
   | "status-history"
+  | "sla-headline"
+  | "sla-table"
+  | "availability-by-group"
+  | "top-offenders"
+  | "coverage"
+  | "upcoming-maintenance"
 
 import type { WidgetMeta } from "@/lib/dashboard-layout"
 
@@ -75,6 +89,9 @@ export type WidgetCtx = {
   config?: Record<string, unknown>
   setConfig: (c: Record<string, unknown>) => void
   editing: boolean
+  /** The named dashboard's scope and frame as query params ("site=…&frame=30d")
+   * for widgets that fetch their own data; empty on the home dashboard. */
+  scope?: string
 }
 
 export interface WidgetDef {
@@ -155,6 +172,32 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
     span: { w: 3, h: 2 },
     min: { w: 2, h: 1 },
     max: { w: 6, h: 4 },
+  },
+  "sla-headline": {
+    span: { w: 2, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 3, h: 3 },
+  },
+  "sla-table": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 5 },
+  },
+  "availability-by-group": {
+    span: { w: 2, h: 3 },
+    min: { w: 2, h: 2 },
+    max: { w: 4, h: 6 },
+  },
+  "top-offenders": {
+    span: { w: 3, h: 3 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 5 },
+  },
+  coverage: { span: { w: 2, h: 2 }, min: { w: 2, h: 2 }, max: { w: 3, h: 4 } },
+  "upcoming-maintenance": {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 5 },
   },
 }
 
@@ -454,7 +497,7 @@ export const CATALOG: WidgetDef[] = [
     id: "alerts-per-day",
     fit: "stretch",
     title: "Alerts per day",
-    description: "Opened against resolved, the last seven days",
+    description: "Opened against resolved, per day over the time frame",
     render: (d) => <AlertsPerDay rows={d.alerts_per_day} />,
   },
   {
@@ -462,7 +505,7 @@ export const CATALOG: WidgetDef[] = [
     fit: "stretch",
     title: "Latency",
     description:
-      "Median and 95th percentile per check kind, hourly, seven days",
+      "Median and 95th percentile per check kind over the time frame",
     render: (d) => <LatencyWeek kinds={d.latency_by_kind ?? []} />,
   },
   {
@@ -518,6 +561,63 @@ export const CATALOG: WidgetDef[] = [
         onChange={(c) => ctx?.setConfig({ ...c })}
       />
     ),
+  },
+  {
+    id: "sla-headline",
+    fit: "center",
+    multi: true,
+    title: "SLA",
+    description: "One agreement against its target, with its error budget",
+    render: (_d, ctx) => (
+      <SlaHeadlineWidget
+        config={ctx?.config}
+        editing={!!ctx?.editing}
+        setConfig={(c) => ctx?.setConfig(c)}
+      />
+    ),
+  },
+  {
+    id: "sla-table",
+    fit: "scroll",
+    title: "SLAs",
+    description: "Every agreement this period, with the budget left",
+    render: () => <SlaTableWidget />,
+  },
+  {
+    id: "availability-by-group",
+    fit: "scroll",
+    multi: true,
+    title: "Availability by group",
+    description: "Per site, role, type or check kind, worst first",
+    render: (_d, ctx) => (
+      <AvailabilityByGroupWidget
+        config={ctx?.config}
+        editing={!!ctx?.editing}
+        setConfig={(c) => ctx?.setConfig(c)}
+        scope={ctx?.scope}
+      />
+    ),
+  },
+  {
+    id: "top-offenders",
+    fit: "scroll",
+    title: "Slowest against normal",
+    description: "Checks furthest above their own usual latency",
+    render: (_d, ctx) => <TopOffendersWidget scope={ctx?.scope} />,
+  },
+  {
+    id: "coverage",
+    fit: "center",
+    title: "Coverage",
+    description: "How much of the time was actually measured",
+    render: (_d, ctx) => <CoverageWidget scope={ctx?.scope} />,
+  },
+  {
+    id: "upcoming-maintenance",
+    fit: "scroll",
+    title: "Maintenance",
+    description: "Maintenance and outages not yet closed",
+    render: () => <UpcomingMaintenanceWidget />,
   },
 ]
 

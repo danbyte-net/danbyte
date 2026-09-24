@@ -179,6 +179,7 @@ import { Route as DhcpLeasesIndexRouteImport } from './routes/dhcp-leases.index'
 import { Route as DevicesIndexRouteImport } from './routes/devices.index'
 import { Route as DeviceTypesIndexRouteImport } from './routes/device-types.index'
 import { Route as DeviceRolesIndexRouteImport } from './routes/device-roles.index'
+import { Route as DashboardsIndexRouteImport } from './routes/dashboards.index'
 import { Route as CustomFieldsIndexRouteImport } from './routes/custom-fields.index'
 import { Route as CustomFieldGroupsIndexRouteImport } from './routes/custom-field-groups.index'
 import { Route as ContactsIndexRouteImport } from './routes/contacts.index'
@@ -358,6 +359,7 @@ import { Route as DeviceTypesNewRouteImport } from './routes/device-types.new'
 import { Route as DeviceTypesIdRouteImport } from './routes/device-types.$id'
 import { Route as DeviceRolesNewRouteImport } from './routes/device-roles.new'
 import { Route as DeviceRolesIdRouteImport } from './routes/device-roles.$id'
+import { Route as DashboardsIdRouteImport } from './routes/dashboards.$id'
 import { Route as CustomFieldsNewRouteImport } from './routes/custom-fields.new'
 import { Route as CustomFieldsIdRouteImport } from './routes/custom-fields.$id'
 import { Route as CustomFieldGroupsNewRouteImport } from './routes/custom-field-groups.new'
@@ -1352,6 +1354,11 @@ const DeviceRolesIndexRoute = DeviceRolesIndexRouteImport.update({
   path: '/device-roles/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardsIndexRoute = DashboardsIndexRouteImport.update({
+  id: '/dashboards/',
+  path: '/dashboards/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CustomFieldsIndexRoute = CustomFieldsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -2249,6 +2256,11 @@ const DeviceRolesIdRoute = DeviceRolesIdRouteImport.update({
   path: '/device-roles/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardsIdRoute = DashboardsIdRouteImport.update({
+  id: '/dashboards/$id',
+  path: '/dashboards/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CustomFieldsNewRoute = CustomFieldsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -3104,6 +3116,7 @@ export interface FileRoutesByFullPath {
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
+  '/dashboards/$id': typeof DashboardsIdRoute
   '/device-roles/$id': typeof DeviceRolesIdRoute
   '/device-roles/new': typeof DeviceRolesNewRoute
   '/device-types/$id': typeof DeviceTypesIdRoute
@@ -3283,6 +3296,7 @@ export interface FileRoutesByFullPath {
   '/contacts/': typeof ContactsIndexRoute
   '/custom-field-groups/': typeof CustomFieldGroupsIndexRoute
   '/custom-fields/': typeof CustomFieldsIndexRoute
+  '/dashboards/': typeof DashboardsIndexRoute
   '/device-roles/': typeof DeviceRolesIndexRoute
   '/device-types/': typeof DeviceTypesIndexRoute
   '/devices/': typeof DevicesIndexRoute
@@ -3528,6 +3542,7 @@ export interface FileRoutesByTo {
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
+  '/dashboards/$id': typeof DashboardsIdRoute
   '/device-roles/$id': typeof DeviceRolesIdRoute
   '/device-roles/new': typeof DeviceRolesNewRoute
   '/device-types/$id': typeof DeviceTypesIdRoute
@@ -3707,6 +3722,7 @@ export interface FileRoutesByTo {
   '/contacts': typeof ContactsIndexRoute
   '/custom-field-groups': typeof CustomFieldGroupsIndexRoute
   '/custom-fields': typeof CustomFieldsIndexRoute
+  '/dashboards': typeof DashboardsIndexRoute
   '/device-roles': typeof DeviceRolesIndexRoute
   '/device-types': typeof DeviceTypesIndexRoute
   '/devices': typeof DevicesIndexRoute
@@ -4022,6 +4038,7 @@ export interface FileRoutesById {
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
+  '/dashboards/$id': typeof DashboardsIdRoute
   '/device-roles/$id': typeof DeviceRolesIdRoute
   '/device-roles/new': typeof DeviceRolesNewRoute
   '/device-types/$id': typeof DeviceTypesIdRoute
@@ -4201,6 +4218,7 @@ export interface FileRoutesById {
   '/contacts/': typeof ContactsIndexRoute
   '/custom-field-groups/': typeof CustomFieldGroupsIndexRoute
   '/custom-fields/': typeof CustomFieldsIndexRoute
+  '/dashboards/': typeof DashboardsIndexRoute
   '/device-roles/': typeof DeviceRolesIndexRoute
   '/device-types/': typeof DeviceTypesIndexRoute
   '/devices/': typeof DevicesIndexRoute
@@ -4517,6 +4535,7 @@ export interface FileRouteTypes {
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
+    | '/dashboards/$id'
     | '/device-roles/$id'
     | '/device-roles/new'
     | '/device-types/$id'
@@ -4696,6 +4715,7 @@ export interface FileRouteTypes {
     | '/contacts/'
     | '/custom-field-groups/'
     | '/custom-fields/'
+    | '/dashboards/'
     | '/device-roles/'
     | '/device-types/'
     | '/devices/'
@@ -4941,6 +4961,7 @@ export interface FileRouteTypes {
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
+    | '/dashboards/$id'
     | '/device-roles/$id'
     | '/device-roles/new'
     | '/device-types/$id'
@@ -5120,6 +5141,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/custom-field-groups'
     | '/custom-fields'
+    | '/dashboards'
     | '/device-roles'
     | '/device-types'
     | '/devices'
@@ -5434,6 +5456,7 @@ export interface FileRouteTypes {
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
+    | '/dashboards/$id'
     | '/device-roles/$id'
     | '/device-roles/new'
     | '/device-types/$id'
@@ -5613,6 +5636,7 @@ export interface FileRouteTypes {
     | '/contacts/'
     | '/custom-field-groups/'
     | '/custom-fields/'
+    | '/dashboards/'
     | '/device-roles/'
     | '/device-types/'
     | '/devices/'
@@ -5889,6 +5913,7 @@ export interface RootRouteChildren {
   ClustersNewRoute: typeof ClustersNewRoute
   ComplianceRulesIdRoute: typeof ComplianceRulesIdRoute
   ComplianceRulesNewRoute: typeof ComplianceRulesNewRoute
+  DashboardsIdRoute: typeof DashboardsIdRoute
   DeviceRolesIdRoute: typeof DeviceRolesIdRoute
   DeviceRolesNewRoute: typeof DeviceRolesNewRoute
   DnsNamesNameRoute: typeof DnsNamesNameRoute
@@ -5928,6 +5953,7 @@ export interface RootRouteChildren {
   ClusterGroupsIndexRoute: typeof ClusterGroupsIndexRoute
   ClusterTypesIndexRoute: typeof ClusterTypesIndexRoute
   ClustersIndexRoute: typeof ClustersIndexRoute
+  DashboardsIndexRoute: typeof DashboardsIndexRoute
   DeviceRolesIndexRoute: typeof DeviceRolesIndexRoute
   DhcpLeasesIndexRoute: typeof DhcpLeasesIndexRoute
   DhcpReservationsIndexRoute: typeof DhcpReservationsIndexRoute
@@ -7175,6 +7201,13 @@ declare module '@tanstack/react-router' {
       path: '/device-roles'
       fullPath: '/device-roles/'
       preLoaderRoute: typeof DeviceRolesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboards/': {
+      id: '/dashboards/'
+      path: '/dashboards'
+      fullPath: '/dashboards/'
+      preLoaderRoute: typeof DashboardsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/custom-fields/': {
@@ -8428,6 +8461,13 @@ declare module '@tanstack/react-router' {
       path: '/device-roles/$id'
       fullPath: '/device-roles/$id'
       preLoaderRoute: typeof DeviceRolesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboards/$id': {
+      id: '/dashboards/$id'
+      path: '/dashboards/$id'
+      fullPath: '/dashboards/$id'
+      preLoaderRoute: typeof DashboardsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/custom-fields/new': {
@@ -10776,6 +10816,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClustersNewRoute: ClustersNewRoute,
   ComplianceRulesIdRoute: ComplianceRulesIdRoute,
   ComplianceRulesNewRoute: ComplianceRulesNewRoute,
+  DashboardsIdRoute: DashboardsIdRoute,
   DeviceRolesIdRoute: DeviceRolesIdRoute,
   DeviceRolesNewRoute: DeviceRolesNewRoute,
   DnsNamesNameRoute: DnsNamesNameRoute,
@@ -10815,6 +10856,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClusterGroupsIndexRoute: ClusterGroupsIndexRoute,
   ClusterTypesIndexRoute: ClusterTypesIndexRoute,
   ClustersIndexRoute: ClustersIndexRoute,
+  DashboardsIndexRoute: DashboardsIndexRoute,
   DeviceRolesIndexRoute: DeviceRolesIndexRoute,
   DhcpLeasesIndexRoute: DhcpLeasesIndexRoute,
   DhcpReservationsIndexRoute: DhcpReservationsIndexRoute,

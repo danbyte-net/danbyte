@@ -177,3 +177,19 @@ class LatencyTests(_Base):
         body = self.client.get("/api/monitoring/latency/?kind=http").json()
         self.assertEqual(body["kind"], "http")
         self.assertEqual(len(body["kinds"]), 2)
+
+
+class SlaScopeTests(_Base):
+    def test_explore_narrows_to_an_agreements_members(self):
+        from decimal import Decimal
+
+        from .models import SlaAgreement, SlaCheckGroup, SlaMember
+
+        a = SlaAgreement.objects.create(tenant=self.tenant, name="Gold", target_pct=Decimal("99"))
+        g = SlaCheckGroup.objects.create(tenant=self.tenant, agreement=a, name="All")
+        SlaMember.objects.create(
+            tenant=self.tenant, agreement=a, group=g, object_type="api.ipaddress",
+            object_id=self.ip_b.id,
+        )
+        r = self.client.get(f"/api/monitoring/explore/?group_by=site&sla={a.id}")
+        self.assertEqual([x["name"] for x in r.json()["rows"]], ["Bravo"])

@@ -6559,8 +6559,11 @@ export interface DashRecentIp {
 }
 export interface DashboardData {
   counts: Record<string, number>
-  /** Admin-set default widget layout for new users (empty = built-in). */
-  default_widgets?: string[]
+  /** The tenant's new-user layout: {v: 2, items} or a legacy id list. */
+  default_widgets?: unknown
+  /** The scope and frame a named dashboard asked for (echoed back). */
+  scope?: Partial<Record<DashboardScopeKey, string[]>>
+  frame_hours?: number
   recent_activity: DashActivity[]
   recent_prefixes: DashRecentPrefix[]
   recent_devices: DashRecentDevice[]
@@ -10012,4 +10015,33 @@ export interface SlaStatusEntry {
 export interface SlaStatusResponse {
   frame: AvailabilityFrame
   results: Record<string, SlaStatusEntry>
+}
+
+// ─── Named dashboards ───────────────────────────────────────────────────────
+
+export type DashboardScopeKey =
+  | "site"
+  | "region"
+  | "role"
+  | "device_type"
+  | "tag"
+  | "sla"
+
+export interface NamedDashboard {
+  id: string
+  name: string
+  description: string
+  owner_name: string
+  /** The caller owns it - only then can they change it. */
+  mine: boolean
+  visibility: "private" | "tenant" | "groups"
+  groups: number[]
+  layout:
+    | { v: 2; items: import("@/lib/dashboard-layout").DashItem[] }
+    | Record<string, never>
+  scope: Partial<Record<DashboardScopeKey, string[]>>
+  frame: "24h" | "7d" | "30d" | "90d"
+  refresh_seconds: number
+  created_at: string
+  updated_at: string
 }

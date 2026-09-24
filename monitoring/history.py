@@ -146,6 +146,14 @@ def apply_target_filters(qs, params):
         )
     if tags:
         qs = qs.distinct()
+    agreements = _csv(params, "sla")
+    if agreements:
+        # The addresses standing for an agreement's current members. The
+        # queryset is already the caller's tenant, so a foreign agreement id
+        # matches nothing.
+        from .sla import member_ip_ids
+
+        qs = qs.filter(target_ip_id__in=member_ip_ids(agreements))
     search = (params.get("search") or params.get("q") or "").strip()
     if search:
         qs = qs.filter(

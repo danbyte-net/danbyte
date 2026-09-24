@@ -182,6 +182,68 @@ def _by(qs, field, label_field=None, color_field=None, limit=None):
     return out[:limit] if limit else out
 
 
+#: What a dashboard's scope may name, as query params: comma-separated ids
+#: (tag: slugs). Every widget reading this payload inherits it.
+SCOPE_KEYS = ("site", "region", "role", "device_type", "tag", "sla")
+#: Monitoring chart windows, in hours.
+FRAMES = {"24h": 24, "7d": 168, "30d": 720, "90d": 2160}
+
+
+def _scope_params(params) -> dict:
+    out = {}
+    for key in SCOPE_KEYS:
+        vals = [v.strip() for v in (params.get(key) or "").split(",") if v.strip()]
+        if vals:
+            out[key] = vals
+    return out
+
+
+def _apply_scope(scope, devices, ips, prefixes, tenant):
+    """Narrow the three base querysets to a dashboard's scope. A device
+    matches by its own site, role, type and tags; an address by its own
+    site, its prefix's or its device's, and its device's role and type; a
+    prefix by its site and tags. An SLA scope is its members' addresses."""
+    sites = list(scope.get("site", []))
+    if scope.get("region"):
+        from .viewsets import _region_and_descendant_ids
+
+        region_ids = []
+        for r in scope["region"]:
+            region_ids.extend(_region_and_descendant_ids(r))
+        sites += [str(pk) for pk in Site.objects.filter(
+            tenant=tenant, region_id__in=region_ids).values_list("pk", flat=True)]
+        if not sites:
+            sites = ["00000000-0000-0000-0000-000000000000"]
+    if sites:
+        devices = devices.filter(site_id__in=sites)
+        ips = ips.filter(
+            Q(site_id__in=sites) | Q(prefix__site_id__in=sites)
+            | Q(assigned_device__site_id__in=sites)
+        )
+        prefixes = prefixes.filter(site_id__in=sites)
+    if scope.get("role"):
+        devices = devices.filter(role_id__in=scope["role"])
+        ips = ips.filter(assigned_device__role_id__in=scope["role"])
+    if scope.get("device_type"):
+        devices = devices.filter(device_type_id__in=scope["device_type"])
+        ips = ips.filter(assigned_device__device_type_id__in=scope["device_type"])
+    for slug in scope.get("tag", []):
+        devices = devices.filter(tags__slug=slug)
+        ips = ips.filter(Q(tags__slug=slug) | Q(assigned_device__tags__slug=slug))
+        prefixes = prefixes.filter(tags__slug=slug)
+    if scope.get("tag"):
+        devices, ips, prefixes = devices.distinct(), ips.distinct(), prefixes.distinct()
+    if scope.get("sla"):
+        try:
+            from monitoring.sla import member_ip_ids
+        except Exception:  # noqa: BLE001
+            member_ip_ids = None
+        member_ips = member_ip_ids(scope["sla"]) if member_ip_ids else set()
+        ips = ips.filter(pk__in=member_ips)
+        devices = devices.filter(ip_addresses__in=member_ips).distinct()
+    return devices, ips, prefixes
+
+
 def _empty_dashboard() -> dict:
     """Full-shape payload with everything zeroed/empty. Returned when the user
     has no active tenant (e.g. a freshly created account before a tenant is
@@ -232,6 +294,14 @@ def dashboard_view(request):
     prefixes = _scoped(Prefix, "prefix", tenant=tenant)
     ips = _scoped(IPAddress, "ipaddress", tenant=tenant)
     devices = _scoped(Device, "device", tenant=tenant)
+    scope = _scope_params(request.query_params)
+    if scope:
+        devices, ips, prefixes = _apply_scope(scope, devices, ips, prefixes, tenant)
+    hours = FRAMES.get(request.query_params.get("frame") or "", 168)
+    # The addresses monitoring widgets read: the caller's viewable ones, and
+    # within a scope only the scope's. None = every address in the tenant.
+    ip_q = rbac.row_filter(u, tenant, "ipaddress", "view")
+    ip_filter = ips if (scope or (ip_q is not None and ip_q is not True)) else None
 
     counts = {
         "prefixes": prefixes.count(),
@@ -302,13 +372,13 @@ def dashboard_view(request):
         for slug in ("device", "prefix", "ipaddress")
     )
     monitoring = (
-        _monitoring_block(tenant) if can_see_monitoring
+        _monitoring_block(tenant, ip_filter) if can_see_monitoring
         else {"check_by_status": [], "alerts_by_severity": [],
               "reachable_pct": None}
     )
-    monitoring["flapping"] = _flapping(u, tenant) if can_see_monitoring else []
+    monitoring["flapping"] = _flapping(u, tenant, ip_filter) if can_see_monitoring else []
     monitoring.update(
-        _monitoring_charts(request, u, tenant) if can_see_monitoring
+        _monitoring_charts(request, u, tenant, ip_filter, hours) if can_see_monitoring
         else {"availability_7d": None, "alerts_per_day": [], "latency_series": []}
     )
 
@@ -316,7 +386,7 @@ def dashboard_view(request):
         {
             "counts": counts,
             "recent_activity": (
-                _recent_activity(tenant) if can_see_monitoring else []
+                _recent_activity(tenant, ip_filter) if can_see_monitoring else []
             ),
             "recent_prefixes": _recent_prefixes(prefixes),
             "recent_devices": _recent_devices(devices),
@@ -333,16 +403,21 @@ def dashboard_view(request):
             "device_by_manufacturer": device_by_manufacturer,
             # Admin-set default widget layout for new users (empty = built-in).
             "default_widgets": _default_widgets(tenant),
+            "scope": scope,
+            "frame_hours": hours,
             **monitoring,
         }
     )
 
 
-def _default_widgets(tenant) -> list:
+def _default_widgets(tenant):
     from core.models import TenantSettings
 
     row = TenantSettings.objects.filter(tenant=tenant).first()
-    return list(row.default_dashboard_widgets or []) if row else []
+    # The layout as saved: a v2 {"v": 2, "items": [...]} (what the dashboard
+    # writes) or a legacy id list. list() of the dict gave ["v", "items"], so
+    # the new-user default never applied.
+    return (row.default_dashboard_widgets or []) if row else []
 
 
 def _recent_prefixes(prefixes, limit: int = 8) -> list:
@@ -393,14 +468,17 @@ def _recent_ips(ips, limit: int = 8) -> list:
     ]
 
 
-def _recent_activity(tenant, limit: int = 10) -> list:
+def _recent_activity(tenant, ip_filter=None, limit: int = 10) -> list:
     """Latest monitoring status changes - a changelog-style feed."""
     try:
         from monitoring.models import StateTransition
     except Exception:  # noqa: BLE001
         return []
+    qs = StateTransition.objects.filter(tenant=tenant)
+    if ip_filter is not None:
+        qs = qs.filter(target_ip__in=ip_filter)
     rows = (
-        StateTransition.objects.filter(tenant=tenant)
+        qs
         .select_related("target_ip", "template")
         .order_by("-at")[:limit]
     )
@@ -417,7 +495,7 @@ def _recent_activity(tenant, limit: int = 10) -> list:
     ]
 
 
-def _flapping(user, tenant, limit: int = 8) -> list:
+def _flapping(user, tenant, ip_filter=None, limit: int = 8) -> list:
     """The checks currently flagged as flapping, noisiest first - the
     dashboard's "go and look" list. Site-aware like the IP lists: a viewer
     walled off from a site does not learn which of its hosts bounce."""
@@ -431,10 +509,12 @@ def _flapping(user, tenant, limit: int = 8) -> list:
     if q is None:
         return []
     viewable = None if q is True else IPAddress.objects.filter(tenant=tenant).filter(q)
+    if ip_filter is not None:
+        viewable = ip_filter
     return flapping_ips(tenant, limit=limit, viewable_ips=viewable)
 
 
-def _monitoring_charts(request, user, tenant) -> dict:
+def _monitoring_charts(request, user, tenant, scoped_ips=None, hours: int = 168) -> dict:
     """Seven days for the dashboard's widgets: availability (time-weighted
     from the result buckets, up over up-plus-down), alerts opened against
     resolved per day, and the estate's p50/p95 latency per hour. Site-aware
@@ -466,8 +546,11 @@ def _monitoring_charts(request, user, tenant) -> dict:
             "latency_by_kind": [],
         }
     ip_filter = None if q is True else IPAddress.objects.filter(tenant=tenant).filter(q)
+    if scoped_ips is not None:
+        ip_filter = scoped_ips
     now = timezone.now()
-    since = now - timedelta(days=7)
+    since = now - timedelta(hours=hours)
+    bucket = 3600 if hours <= 168 else 86400
     results = CheckResult.objects.filter(tenant=tenant, timestamp__gte=since)
     if ip_filter is not None:
         results = results.filter(target_ip__in=ip_filter)
@@ -480,12 +563,12 @@ def _monitoring_charts(request, user, tenant) -> dict:
     return {
         "availability_7d": round(100.0 * up / (up + down), 2) if (up + down) else None,
         "alerts_per_day": alerts_per_day(tenant, since, now, tz, ip_filter),
-        "latency_series": latency_percentiles(results, since, now, 3600),
-        "latency_by_kind": latency_by_kind(results, since, now, 3600),
+        "latency_series": latency_percentiles(results, since, now, bucket),
+        "latency_by_kind": latency_by_kind(results, since, now, bucket),
     }
 
 
-def _monitoring_block(tenant) -> dict:
+def _monitoring_block(tenant, ip_filter=None) -> dict:
     """Check + alert rollups; isolated so a monitoring import issue can't break
     the IPAM/DCIM half of the dashboard."""
     try:
@@ -502,6 +585,8 @@ def _monitoring_block(tenant) -> dict:
         "unknown": "var(--color-zinc-400)",
     }
     states = CheckState.objects.filter(tenant=tenant)
+    if ip_filter is not None:
+        states = states.filter(target_ip__in=ip_filter)
     by_status = {
         r["status"]: r["n"]
         for r in states.values("status").annotate(n=Count("id"))
@@ -522,6 +607,8 @@ def _monitoring_block(tenant) -> dict:
         "info": "var(--color-sky-500)",
     }
     alerts = Alert.objects.filter(tenant=tenant, status="firing")
+    if ip_filter is not None:
+        alerts = alerts.filter(target_ip__in=ip_filter)
     alerts_by_severity = [
         {"key": r["severity"], "name": _titilise(r["severity"]), "count": r["n"],
          "color": sev_colors.get(r["severity"], "var(--chart-1)")}

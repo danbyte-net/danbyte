@@ -262,6 +262,29 @@ def _addresses(members, objects) -> dict:
     return out
 
 
+def member_ip_ids(agreement_ids) -> set:
+    """The addresses whose checks count for these agreements' members now -
+    what a dashboard or view scoped to an SLA narrows to."""
+    import uuid as _uuid
+
+    from .models import SlaAgreement
+
+    ids = []
+    for raw in agreement_ids:
+        try:
+            ids.append(_uuid.UUID(str(raw)))
+        except ValueError:
+            continue
+    now = timezone.now()
+    out: set = set()
+    for agreement in SlaAgreement.objects.filter(pk__in=ids):
+        members = resolve_members(agreement, now - timedelta(seconds=1), now)
+        objects = _objects(members)
+        for ips in _addresses(members, objects).values():
+            out.update(ips)
+    return out
+
+
 def _name(o, object_type) -> str:
     if o is None:
         return "(deleted)"

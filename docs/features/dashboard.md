@@ -64,7 +64,7 @@ otherwise. In edit mode each tile gets a drag grip and a remove button.
 | **Drag the corner grip** | Resize - also snapping to cells. Each widget has sensible min/max sizes, so the changelog can go full-width (or near full-screen) while a small gauge can't be stretched into empty border. |
 | **× on a widget** | Removes that widget. |
 | **Reset** | Drops *your* layout: you fall back to the tenant's admin-set default when one exists, else the built-in layout. |
-| **Set as new-user default** *(admins)* | Saves your current layout as the starting dashboard for new users of the tenant. |
+| **Set as new-user default** *(admins)* | Saves your current layout as the starting dashboard for new users of the tenant. (Until 0.17 a layout saved this way was ignored and new users got the built-in one.) |
 
 Widgets cope with their given size: lists and tables scroll inside the tile,
 charts sit centred, and the map / floor plan stretch to fill.
@@ -75,6 +75,65 @@ charts sit centred, and the map / floor plan stretch to fill.
     existed is picked up from the browser and adopted automatically - nothing
     resets. New users start from the tenant's admin-set default (if one is
     set), otherwise the built-in layout.
+
+## Named dashboards
+
+Besides your own dashboard, you can build named ones: "Aarhus DC", "Core
+SLA", the NOC wall. The dashboard title is a switcher. It lists your own
+dashboard, every named one you can see, and **All dashboards**
+(`/dashboards`), where **New dashboard** starts one.
+
+A named dashboard has its own layout and settings:
+
+| Setting | What it does |
+|---|---|
+| **Who sees it** | Only you, everyone in the tenant, or chosen groups. You can share with groups you are in; someone who manages users can share with any group. |
+| **Time frame** | 24 hours, 7, 30 or 90 days, for the monitoring charts and the figure widgets. |
+| **Refresh** | When opened, or every 30 seconds up to 15 minutes. |
+| **Scope** | Sites, regions, device roles, device types, tags and SLAs. Widgets that support it show only what matches. Empty means everything. |
+
+Only the owner can edit a named dashboard. Anyone who can see one can
+**Duplicate** it into a private copy of their own, or pick **Open as my
+dashboard**, so that the Dashboard link opens it instead of their own layout.
+**Stop opening this one**, or **My dashboard** in the switcher, goes back.
+
+Every widget loads its data with the **viewer's** permissions, never the
+owner's. A shared dashboard shows each viewer only what they could already
+see.
+
+A scope narrows what the widgets count:
+
+- **Devices** match on their own site, role, type and tags.
+- **Addresses** match on their site, their prefix's site or their device's
+  site, and on their device's role and type.
+- **Prefixes** match on their site and tags.
+- An **SLA** scope means the addresses of that agreement's members.
+- **Monitoring widgets** (check status, alerts, availability, latency,
+  flapping, recent activity) follow the scoped addresses.
+- The **figure widgets** below take the whole scope.
+- **Counts of VLANs, VRFs, cables, interfaces, BGP sessions and static
+  routes** stay tenant-wide.
+
+### TV mode
+
+**TV** shows the dashboard full screen with nothing else on the page, for a
+wall display. To cycle through several dashboards, give the URL a list:
+`/dashboards/<id>?tv=1&cycle=<id1>,<id2>,<id3>&every=60`. Each dashboard
+stays up for `every` seconds, 10 at the least.
+
+### Widgets for SLAs and monitoring figures
+
+| Widget | What it shows |
+|---|---|
+| **SLA** | One agreement's figure against its target. A bar shows the error budget spent, with a mark for how much of the period has gone. Pick the agreement while editing; add the widget more than once for several. |
+| **SLAs** | Every active agreement with this period's figure and budget left. |
+| **Availability by group** | Availability per site, role, device type or check type, worst first. |
+| **Slowest against normal** | The checks furthest above their own usual latency. |
+| **Coverage** | How much of the time was measured, overall and per check type. |
+| **Maintenance** | Maintenance and outage events not yet closed, soonest first. |
+
+The figure widgets read the [rollups](monitoring.md#rollups), so they cover
+the whole time frame even beyond the raw results' thirty days.
 
 ## Related
 

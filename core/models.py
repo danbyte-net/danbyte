@@ -787,6 +787,54 @@ class DeploymentSettings(TimestampedModel):
         return obj
 
 
+class Dashboard(TimestampedModel):
+    """A named dashboard: a widget layout with a scope and a time frame.
+
+    The home dashboard (``/``) stays each user's own layout; these are the
+    extra boards - "Aarhus DC", "Core SLA", the NOC wall. Private by default;
+    ``visibility`` shares it with the tenant or with named groups. Only the
+    owner edits it, and every widget loads its data with the *viewer's*
+    permissions, so a shared board never shows more than its viewer could
+    see anyway.
+
+    ``scope`` narrows every widget that reads the dashboard payload or the
+    monitoring figures: ``{"site": [ids], "region": [...], "role": [...],
+    "device_type": [...], "tag": [slugs], "sla": [agreement ids]}``.
+    """
+
+    from django.conf import settings as _settings
+
+    VISIBILITY = [("private", "Only me"), ("tenant", "Everyone in the tenant"),
+                  ("groups", "Chosen groups")]
+    FRAMES = [("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days"),
+              ("90d", "90 days")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="dashboards"
+    )
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=255, blank=True, default="")
+    owner = models.ForeignKey(
+        _settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboards"
+    )
+    visibility = models.CharField(max_length=8, choices=VISIBILITY, default="private")
+    groups = models.ManyToManyField("auth.Group", blank=True, related_name="dashboards")
+    #: The same {v: 2, items: [...]} layout the home dashboard stores.
+    layout = models.JSONField(default=dict, blank=True)
+    scope = models.JSONField(default=dict, blank=True)
+    frame = models.CharField(max_length=4, choices=FRAMES, default="7d")
+    #: Seconds between refreshes; 0 = only when opened.
+    refresh_seconds = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["tenant", "owner"])]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class SavedFilter(TimestampedModel):
     """A named set of list-page filters - "my racks in Aarhus", "decommissioning
     switches" - so a view an operator rebuilds every morning is one click.

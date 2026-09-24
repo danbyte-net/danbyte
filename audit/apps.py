@@ -191,6 +191,7 @@ AUDITED_MODELS = [
     "core.SiteCertificate",
     "core.TenantSettings",
     "core.SiteSettings",
+    "core.Dashboard",
     "integrations.NetBoxImportRun",
     "integrations.WindowsServerConnection",
     "integrations.VirtualizationSource",

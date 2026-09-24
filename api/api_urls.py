@@ -79,6 +79,7 @@ from core import (
     tenant_settings as tenant_settings_mod,
 )
 from core.bookmarks import BookmarkFolderViewSet, BookmarkViewSet
+from core.dashboards import DashboardViewSet
 from core.saved_filters import SavedFilterViewSet
 from customization.api_views import customization_meta, object_labels
 from integrations.api import (
@@ -450,6 +451,7 @@ router.register(r"changelog",     ChangeLogViewSet,   basename="changelog")
 router.register(r"bookmarks",     BookmarkViewSet,    basename="bookmark")
 router.register(r"bookmark-folders", BookmarkFolderViewSet, basename="bookmark-folder")
 router.register(r"saved-filters", SavedFilterViewSet, basename="saved-filter")
+router.register(r"dashboards", DashboardViewSet, basename="dashboard")
 router.register(r"api-tokens",    ApiTokenViewSet,    basename="api-token")
 router.register(r"webhooks",      WebhookViewSet,     basename="webhook")
 router.register(r"automation-targets", AutomationTargetViewSet, basename="automation-target")

@@ -51,6 +51,9 @@ const UNMIGRATED_FORMS = new Set<string>([
   // editing floor-plan tiles both write positions as you move things.
   "components/floorplan3d/scene.tsx",
   "routes/floorplans.$id.tsx",
+  // A dashboard's board saves its layout as widgets are dragged and resized;
+  // its settings form goes through useSaveObject.
+  "components/dashboard/named-board.tsx",
   // Uploads a file to a generic attachment endpoint.
   "components/object-documents.tsx",
   // Row action, not the object's form: flips `monitored` on one service.

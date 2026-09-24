@@ -113,3 +113,47 @@ class ScopeAggregateTests(APITestCase):
             want[_classify_ip_scope(a)] += 1
         got = {row["name"]: row["count"] for row in _ip_by_scope(IPAddress.objects.filter(tenant=tenant))}
         self.assertEqual(got, want)
+
+
+class DashboardScopeParamTests(APITestCase):
+    """A named dashboard's scope narrows the payload; the new-user default
+    layout survives the trip."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        from api.models import Device, DeviceRole, DeviceType, Manufacturer, Site
+        from api.test_utils import status_for
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="M", slug="m")
+        dt = DeviceType.objects.create(tenant=self.tenant, manufacturer=mfr, model="X")
+        role = DeviceRole.objects.create(tenant=self.tenant, name="R", slug="r")
+        self.a = Site.objects.create(tenant=self.tenant, name="A")
+        b = Site.objects.create(tenant=self.tenant, name="B")
+        for n, site in (("a1", self.a), ("a2", self.a), ("b1", b)):
+            Device.objects.create(tenant=self.tenant, name=n, site=site, device_type=dt,
+                                  role=role, status=status_for(self.tenant))
+        admin = User.objects.create_superuser("admin", "a@b.c", "pw")
+        self.client.force_login(admin)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_site_scope_narrows_devices(self):
+        body = self.client.get(f"/api/dashboard/?site={self.a.id}&frame=30d").json()
+        self.assertEqual(body["counts"]["devices"], 2)
+        self.assertEqual(body["scope"], {"site": [str(self.a.id)]})
+        self.assertEqual(body["frame_hours"], 720)
+        self.assertEqual(self.client.get("/api/dashboard/").json()["counts"]["devices"], 3)
+
+    def test_v2_default_layout_is_returned_whole(self):
+        from core.models import TenantSettings
+
+        layout = {"v": 2, "items": [{"id": "alerts-per-day", "x": 0, "y": 0, "w": 2, "h": 2}]}
+        TenantSettings.objects.update_or_create(
+            tenant=self.tenant, defaults={"default_dashboard_widgets": layout}
+        )
+        self.assertEqual(self.client.get("/api/dashboard/").json()["default_widgets"], layout)

@@ -9,6 +9,7 @@
 
 export const DOCS_LINKS: Record<string, string> = {
   "/": "features/dashboard/",
+  "/dashboards": "features/dashboard/",
   "/search": "features/search-and-macs/",
   "/jobs": "features/jobs/",
   "/audit-log": "features/change-log/",
