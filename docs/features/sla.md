@@ -245,7 +245,7 @@ compare like for like.
 
 | Chart | What it shows | Click |
 |---|---|---|
-| **Availability over time** | Availability per day or hour against the dashed target line | A day opens it by the hour: who was down, which check, the incidents, and down time per check type |
+| **Availability over time** | Availability per day or hour against the dashed target line. While the window runs, the last bar is today (or this hour) in progress, drawn half filled | A day opens it by the hour: who was down, which check, the incidents, and down time per check type |
 | **Error budget** | Budget spent so far (steps) against the pace that would spend it exactly by the period's end (dashed); the red line is the whole budget | - |
 | **Where the down time went** | Down time and availability per member, check group, site or check type | A row narrows the whole page to it |
 | **When outages happen** | Down time by weekday and hour, in the agreement's timezone. A nightly job or a Monday change window shows up as a stripe. Hover a cell for its down time | - |

@@ -136,7 +136,7 @@ export function AvailabilityOverTime({
                 if (p.forecast)
                   return `Forecast ${fmtSla(p.availability)}, like the last 7 days`
                 const soFar = p.current
-                  ? `${data.bucket === "day" ? "Today" : "This hour"} so far · `
+                  ? `${data.bucket === "day" ? "Today" : "This hour"}, in progress · `
                   : ""
                 return (
                   soFar +

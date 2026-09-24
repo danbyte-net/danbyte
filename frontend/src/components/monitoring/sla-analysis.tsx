@@ -530,8 +530,8 @@ export function SlaAnalysisView({
                     d.bucket === "day" && "Click a day to see it by the hour",
                     d.period_end > d.until &&
                       (d.bucket === "day"
-                        ? "today is so far"
-                        : "this hour is so far"),
+                        ? "today in progress"
+                        : "this hour in progress"),
                   ]
                     .filter(Boolean)
                     .join(" · ") || undefined
