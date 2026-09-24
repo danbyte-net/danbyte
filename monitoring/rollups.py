@@ -275,6 +275,11 @@ def _count_spikes(tenant_id, since, until, base, kind_of, factor, floors) -> dic
 
 #: How far back a run looks for buckets a missed run left unwritten.
 CATCH_UP = {HOUR: timedelta(hours=6), DAY: timedelta(days=2)}
+#: Days written before the latency histogram existed are rebuilt a few at a
+#: time, but only this far back: well inside the 30 days raw results are
+#: kept, so a rebuilt day always has every raw result it had.
+HISTOGRAM_REACH = timedelta(days=27)
+HISTOGRAM_DAYS_PER_RUN = 3
 
 
 def refresh(now: datetime | None = None) -> dict:
@@ -303,7 +308,30 @@ def refresh(now: datetime | None = None) -> dict:
             if not CheckRollupDaily.objects.filter(tenant_id=t, bucket=day, closed=True).exists():
                 out["daily"] += roll(t, DAY, day, day + DAY, now=now)
             day += DAY
+        out["histogram_days"] = out.get("histogram_days", 0) + _fill_histograms(t, now)
     return out
+
+
+def _fill_histograms(tenant_id, now: datetime) -> int:
+    """Rebuild recent days whose rows have latency but no histogram - the
+    rows written before 0.17 - so latency objectives read the past too.
+    A few days per run, oldest first; once none are left this is one query.
+    Returns the days rebuilt."""
+    today = _floor(now, DAY)
+    since = today - HISTOGRAM_REACH
+    missing = {
+        _floor(b, DAY)
+        for model in (CheckRollupDaily, CheckRollupHourly)
+        for b in model.objects.filter(
+            tenant_id=tenant_id, bucket__gte=since, bucket__lt=today, closed=True,
+            lat_p50__isnull=False, lat_hist_n=0,
+        ).order_by("bucket").values_list("bucket", flat=True).distinct()[:500]
+    }
+    days = sorted(missing)[:HISTOGRAM_DAYS_PER_RUN]
+    for day in days:
+        roll(tenant_id, HOUR, day, day + DAY, now=now)
+        roll(tenant_id, DAY, day, day + DAY, now=now)
+    return len(days)
 
 
 def backfill(days: int, now: datetime | None = None) -> dict:

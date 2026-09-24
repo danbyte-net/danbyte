@@ -241,10 +241,10 @@ and a breached one sends its own alert. Tick **Objectives count in the
 state** to make the agreement's state the worst of availability and its
 objectives. The availability alerts still speak about availability.
 
-The counts come from a histogram the rollups keep from 0.17 on. After
-upgrading, `manage.py rollup_checks --backfill 29` fills in the last 29 days
-from the raw results; older periods have no histogram and show no data for an
-objective.
+The counts come from a histogram the rollups keep from 0.17 on. After an
+upgrade, the rollup timer fills it in for the last 27 days by itself, a few
+days per run, from the raw results; periods older than that show no data for
+an objective.
 
 **p95 latency alert** is the simpler, older setting: a p95 in milliseconds per
 check kind over the period. Above it sends an alert and draws a red line in

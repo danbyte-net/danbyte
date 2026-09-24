@@ -8,10 +8,11 @@ from django.contrib.auth.models import User
 from django.core import mail
 from rest_framework.test import APITestCase
 
-from . import sla, sla_objectives
+from . import rollups, sla, sla_objectives
 from .models import CheckRollupDaily, SlaPeriodResult
 from .sla_report import report_csv, report_html
 from .tests_rollups import H11
+from .tests_rollups import NOW as NOW_R
 from .tests_rollups import _Base as _RollupBase
 from .tests_sla import NOW
 from .tests_sla_notify import A, _Alerting
@@ -30,6 +31,38 @@ class HistogramTests(_RollupBase):
         self.result(H11 + timedelta(minutes=1), 8, agg={"samples": 10, "min_ms": 2, "max_ms": 30})
         row = self.hour()
         self.assertEqual((row.lat_hist_n, row.lat_le_10, row.lat_le_5), (10, 10, 0))
+
+
+class AutomaticFillTests(_RollupBase):
+    """Rows written before the histogram are rebuilt by the rollup timer."""
+
+    def old_day(self, days_ago):
+        day = (NOW_R - timedelta(days=days_ago)).replace(hour=0, minute=0)
+        self.result(day + timedelta(hours=3), 12)
+        CheckRollupDaily.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=self.ping, kind="icmp",
+            bucket=day, up_s=86400, samples=1, lat_p50=12, lat_p95=12, closed=True,
+        )
+        return day
+
+    def test_a_pre_histogram_day_is_filled_in(self):
+        day = self.old_day(5)
+        out = rollups.refresh(now=NOW_R)
+        self.assertEqual(out["histogram_days"], 1)
+        row = CheckRollupDaily.objects.get(bucket=day)
+        self.assertEqual((row.lat_hist_n, row.lat_le_20, row.lat_le_10), (1, 1, 0))
+        # Done: the next run has nothing left.
+        self.assertEqual(rollups.refresh(now=NOW_R)["histogram_days"], 0)
+
+    def test_a_few_days_per_run_and_never_past_the_reach(self):
+        for d in (4, 5, 6, 7, 40):
+            self.old_day(d)
+        self.assertEqual(rollups.refresh(now=NOW_R)["histogram_days"], 3)
+        self.assertEqual(rollups.refresh(now=NOW_R)["histogram_days"], 1)
+        self.assertEqual(rollups.refresh(now=NOW_R)["histogram_days"], 0)
+        far = CheckRollupDaily.objects.get(bucket=(NOW_R - timedelta(days=40)).replace(
+            hour=0, minute=0))
+        self.assertEqual(far.lat_hist_n, 0)  # its raw results may be gone
 
 
 class _Objectives(_Alerting):

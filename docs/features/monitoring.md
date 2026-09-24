@@ -567,7 +567,9 @@ Each record holds:
 - **spikes**, the probes slower than the check's usual latency;
 - a latency histogram: how many probes answered within 1, 2, 5, 10, 20, 50,
   100, 200, 500, 1000, 2000 and 5000 ms. The
-  [SLA latency objectives](sla.md#latency-objectives) read it.
+  [SLA latency objectives](sla.md#latency-objectives) read it. Records from
+  before 0.17 have none; the timer rebuilds the last 27 days of them by
+  itself after an upgrade, three days per run.
 
 Hourly records are kept 30 days (`MONITORING_ROLLUP_HOURLY_RETENTION_DAYS`).
 Daily records are never pruned, so an availability figure for last year can
