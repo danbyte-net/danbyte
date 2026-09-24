@@ -14,6 +14,10 @@ import type {
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVmColumns } from "@/components/columns/vm-columns"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
@@ -70,6 +74,7 @@ function VirtualMachinesPage() {
     refetchInterval: 60_000,
   })
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
+  const sla = useSlaStatus("vm", vmIds)
 
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
@@ -77,6 +82,7 @@ function VirtualMachinesPage() {
         selection: true,
         humanIds,
         monitoring,
+        sla: { entries: sla.entries, frame: sla.frame },
         actions: {
           editTo: "/virtual-machines/$id/edit",
           editParams: (vm) => ({ id: vm.id }),
@@ -85,7 +91,15 @@ function VirtualMachinesPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds, monitoring]
+    [
+      handleDelete,
+      canEdit,
+      canDelete,
+      humanIds,
+      monitoring,
+      sla.entries,
+      sla.frame,
+    ]
   )
 
   const allRows = query.data?.results ?? []
@@ -114,6 +128,7 @@ function VirtualMachinesPage() {
       }}
       actions={
         <>
+          <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="virtualmachine" />
           {canAdd && (
             <Button size="sm" asChild>

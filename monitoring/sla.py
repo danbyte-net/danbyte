@@ -50,13 +50,16 @@ MAX_INCIDENTS = 500
 
 
 def agreement_tz(agreement) -> str:
-    if agreement.timezone:
-        return agreement.timezone
+    return agreement.timezone or agreement_tz_for_tenant(agreement.tenant)
+
+
+def agreement_tz_for_tenant(tenant) -> str:
+    """The tenant's display timezone - an agreement without its own uses it."""
     try:
         from core.effective_settings import effective_datetime_values
 
-        tz = effective_datetime_values(agreement.tenant).get("timezone")
-    except Exception:  # noqa: BLE001 - a settings hiccup must not stop figures
+        tz = effective_datetime_values(tenant).get("timezone")
+    except Exception:  # noqa: BLE001
         tz = None
     return tz or settings.TIME_ZONE or "UTC"
 

@@ -925,6 +925,14 @@ class MonitoringSettings(TimestampedModel):
     #: a spike - so a 1 ms ping going to 3 ms is not news. {"icmp": 5, ...};
     #: kinds left out use the built-in floors in monitoring.rollups.
     spike_floor_ms = models.JSONField(default=dict, blank=True)
+    #: The window list pages' Availability column covers unless a viewer
+    #: picks another: 24h, 7d, 30d, 90d, or month/quarter/year to date.
+    availability_frame = models.CharField(
+        max_length=4, default="30d",
+        choices=[("24h", "24 hours"), ("7d", "7 days"), ("30d", "30 days"),
+                 ("90d", "90 days"), ("mtd", "Month to date"),
+                 ("qtd", "Quarter to date"), ("ytd", "Year to date")],
+    )
     # Grouping: when one batch opens many alerts (e.g. a switch dies), send one
     # digest per channel instead of a storm of individual messages.
     group_notifications = models.BooleanField(

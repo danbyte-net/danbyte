@@ -199,7 +199,9 @@ class ExclusionTests(_Base):
         self.assertIn("frozen", str(r.json()))
 
 
-class FiguresScopeTests(_Base):
+class _WithFigures(_Base):
+    """Two devices in one agreement, b1 down the last hour, computed."""
+
     def setUp(self):
         super().setUp()
         a = self.agreement()
@@ -219,6 +221,9 @@ class FiguresScopeTests(_Base):
         )
         r = self.client.post(f"{A}{a['id']}/recompute/")
         self.assertEqual(r.status_code, 200, r.content)
+
+
+class FiguresScopeTests(_WithFigures):
 
     def test_everything_for_an_unscoped_viewer(self):
         body = self.client.get(f"{A}{self.agreement_id}/figures/").json()
@@ -266,3 +271,67 @@ class FiguresScopeTests(_Base):
             403,
         )
         self.assertEqual(SlaCheckGroup.objects.count(), 1)
+
+
+class StatusColumnTests(_WithFigures):
+    """The list columns' batch: SLA figure per member, availability for all."""
+
+    def post(self, **body):
+        return self.client.post("/api/monitoring/sla-status/", body, format="json")
+
+    def test_sla_and_availability_per_device(self):
+        from .models import CheckRollupHourly
+        from .rollups import HOUR, _floor
+
+        CheckRollupHourly.objects.create(
+            tenant=self.tenant, target_ip=self.dev_a.primary_ip, template=self.ping,
+            kind="icmp", bucket=_floor(timezone.now(), HOUR), up_s=3000, down_s=600,
+        )
+        r = self.post(kind="device", ids=[str(self.dev_a.id), str(self.dev_b.id)], frame="7d")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(body["frame"], "7d")
+        a = body["results"][str(self.dev_a.id)]
+        b = body["results"][str(self.dev_b.id)]
+        self.assertAlmostEqual(a["availability"]["availability"], 100 * 3000 / 3600, places=2)
+        self.assertEqual(a["lowest"]["agreement"]["name"], "Gold")
+        self.assertEqual(a["lowest"]["state"], "ok")
+        self.assertEqual(b["lowest"]["state"], "breached")
+        self.assertIsNone(b["availability"])
+
+    def test_default_frame_is_the_tenant_setting(self):
+        from .models import MonitoringSettings
+
+        MonitoringSettings.objects.update_or_create(
+            tenant=self.tenant, defaults={"availability_frame": "mtd"}
+        )
+        body = self.post(kind="ip", ids=[str(self.dev_a.primary_ip_id)]).json()
+        self.assertEqual(body["frame"], "mtd")
+
+    def test_hidden_objects_and_agreements_stay_out(self):
+        viewer = User.objects.create_user("v2", password="x")
+        UserProfile.objects.create(user=viewer, role="custom").tenants.add(self.tenant)
+        dev_perm = ObjectPermission.objects.create(
+            name="dev", object_types=["device"], actions=["view"]
+        )
+        dev_perm.users.add(viewer)
+        dev_perm.tenants.add(self.tenant)
+        dev_perm.sites.add(self.site_a)
+        self.login(viewer)
+        body = self.post(kind="device", ids=[str(self.dev_a.id), str(self.dev_b.id)]).json()
+        self.assertEqual(list(body["results"]), [str(self.dev_a.id)])
+        # No SLA permission: no agreements named.
+        self.assertEqual(body["results"][str(self.dev_a.id)]["sla"], [])
+
+
+class FrameTests(APITestCase):
+    def test_to_date_frames(self):
+        from datetime import UTC, datetime
+
+        from .figures import frame_window
+
+        now = datetime(2026, 8, 20, 12, tzinfo=UTC)
+        self.assertEqual(frame_window("mtd", "UTC", now).since.day, 1)
+        self.assertEqual(frame_window("qtd", "UTC", now).since.month, 7)
+        self.assertEqual(frame_window("ytd", "UTC", now).since.month, 1)
+        self.assertFalse(frame_window("24h", "UTC", now).daily)

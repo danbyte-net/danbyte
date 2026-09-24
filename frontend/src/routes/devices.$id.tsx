@@ -170,6 +170,7 @@ import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
 import { Switch } from "@/components/ui/switch"
 import { DeviceConnectMenu } from "@/components/device-connect-menu"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 
 const DEVICE_TABS = [
   "overview",
@@ -430,7 +431,10 @@ function Body({ device: d }: { device: Device }) {
         </PendingFieldsProvider>
       </DetailTab>
       <DetailTab value="monitoring">
-        <DeviceChecksPanel deviceId={d.id} />
+        <div className="space-y-6">
+          <ObjectSlaPanel objectType="api.device" objectId={d.id} />
+          <DeviceChecksPanel deviceId={d.id} />
+        </div>
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">

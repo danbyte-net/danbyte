@@ -151,6 +151,28 @@ exclusion cannot touch a frozen period.
 After a change to members, groups or exclusions, the figure is recomputed
 straight away. **Recompute** does the same by hand.
 
+## On lists and object pages
+
+The device, virtual machine and IP address lists have two columns:
+
+- **SLA** - the object's figure in its agreement's current period, coloured
+  against that agreement's target. An object in several agreements shows the
+  strictest one, the one furthest below its target. Hovering lists all of
+  them, with the budget left and the worst check. An object in no agreement
+  shows a dash, never a failing figure. The rail filters by state: on
+  target, at risk, breached, or no SLA.
+- **Availability** - plain uptime over a time frame, from every check on the
+  object's addresses, whether it is in an agreement or not. The frame is
+  picked on the list's toolbar and remembered in your browser. It defaults to
+  the tenant's **Availability window**, set in the monitoring settings (24
+  hours, 7/30/90 days, or month, quarter or year to date).
+
+The **Monitoring** tab of a device, virtual machine or IP address opens with
+the agreements the object is in, and has an **Add to SLA** button. It asks
+for the agreement, the check group and an optional redundancy group. The
+device list's selection bar has the same button, for many devices at once.
+An addition shows in the figure straight away.
+
 ## Who sees what
 
 One permission, **SLA agreements**, covers an agreement together with its
@@ -174,3 +196,4 @@ incidents, and the per-day figures are not shown.
 | `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once |
 | `/api/monitoring/sla-exclusions/` | Excluded time |
 | `/api/monitoring/holiday-calendars/` | Shared holiday calendars |
+| `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |

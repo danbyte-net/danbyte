@@ -45,6 +45,7 @@ import {
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 
 export const Route = createFileRoute("/ips/$id")({ component: IPDetail })
 
@@ -587,6 +588,9 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       </DetailTab>
 
       <DetailTab value="monitoring">
+        <div className="mb-6">
+          <ObjectSlaPanel objectType="api.ipaddress" objectId={ip.id} />
+        </div>
         <IpMonitoring
           ip={{
             id: ip.id,

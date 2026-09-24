@@ -19,6 +19,11 @@ import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
+import {
+  availabilityColumn,
+  slaColumn,
+  type SlaColumnOpts,
+} from "@/components/columns/sla-column"
 
 // The one source of truth for "a table of virtual machines". Every surface
 // that lists VMs - /virtual-machines and the cluster detail page's VM pane -
@@ -41,6 +46,8 @@ export type VmColumnId =
   | "cluster"
   | "status"
   | "monitoring"
+  | "sla"
+  | "availability"
   | "power"
   | "vcpus"
   | "memory"
@@ -59,6 +66,8 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "cluster",
   "status",
   "monitoring",
+  "sla",
+  "availability",
   "power",
   "vcpus",
   "memory",
@@ -88,6 +97,8 @@ export interface VmColumnOpts<T extends VirtualMachine = VirtualMachine> {
   /** Bulk monitoring roll-ups keyed by VM id; the column only exists when a
    * page fetched them, exactly as on the device list. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
 }
 
 export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
@@ -95,6 +106,10 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
 ): ColumnDef<T, unknown>[] {
   const omit = new Set(opts.omit ?? [])
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   // The "#" column only exists where the deployment enables human ids.
   if (!opts.humanIds) omit.add("numid")
   const keep = (id: VmColumnId) =>
@@ -160,6 +175,8 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
         },
       },
     }),
+    sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     monitoring: () => ({
       id: "monitoring",
       accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),

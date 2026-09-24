@@ -10,6 +10,11 @@ import {
 } from "@/components/columns/monitoring-facet"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import {
+  availabilityColumn,
+  slaColumn,
+  type SlaColumnOpts,
+} from "@/components/columns/sla-column"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -56,6 +61,8 @@ export type DeviceColumnId =
   | "ips"
   | "ports"
   | "monitoring"
+  | "sla"
+  | "availability"
   | "primary_ip"
   | "secondary_ip"
   | "oob_ip"
@@ -76,6 +83,8 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "ips",
   "ports",
   "monitoring",
+  "sla",
+  "availability",
   "primary_ip",
   "secondary_ip",
   "oob_ip",
@@ -105,6 +114,8 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   planned?: Map<string, PlannedTargetRow>
   /** Monitoring status per device id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
   /** Port utilization % per device id (null = has ports table entry but no
    * ports) - enables the "Ports" bar column. One roll-up request per table. */
   portUtil?: Map<string, number>
@@ -142,6 +153,10 @@ export function buildDeviceColumns<T extends Device = Device>(
   // Monitoring column only where the page fetched bulk status.
   if (!opts.humanIds) omit.add("numid")
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   if (!opts.portUtil) omit.add("ports")
   const keep = (id: DeviceColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
@@ -396,6 +411,8 @@ export function buildDeviceColumns<T extends Device = Device>(
         facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]),
       },
     }),
+    sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     primary_ip: () =>
       ipDesignation("primary_ip", "Primary IP", (r) => r.primary_ip),
     secondary_ip: () =>

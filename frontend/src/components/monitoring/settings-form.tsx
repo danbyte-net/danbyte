@@ -3,11 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { MonitoringSettings, Paginated, VRFOption } from "@/lib/api"
+import type {
+  AvailabilityFrame,
+  MonitoringSettings,
+  Paginated,
+  VRFOption,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormText } from "@/components/forms/text"
 import { FormSelect } from "@/components/forms/select"
+import { FRAME_LABEL } from "@/components/monitoring/sla-status"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import {
@@ -131,6 +137,7 @@ export function MonitoringSettingsForm() {
           escalate_after_minutes: Number(draft.escalate_after_minutes),
           flap_threshold: Number(draft.flap_threshold),
           flap_window_minutes: Number(draft.flap_window_minutes),
+          availability_frame: draft.availability_frame,
           fast_lane_max_checks: Number(draft.fast_lane_max_checks),
           auto_clear_flapping: draft.auto_clear_flapping,
           auto_clear_flapping_after_minutes: Number(
@@ -198,6 +205,18 @@ export function MonitoringSettingsForm() {
               hint="No contact this long → offline alert (0 = 3× its poll interval)"
               value={draft.engine_offline_after_minutes}
               onChange={(v) => set("engine_offline_after_minutes", v)}
+            />
+            <FormSelect
+              label="Availability window"
+              hint="What list pages' Availability column covers"
+              value={draft.availability_frame}
+              onChange={(v: string | null) =>
+                v && set("availability_frame", v as AvailabilityFrame)
+              }
+              options={Object.entries(FRAME_LABEL).map(([value, label]) => ({
+                value,
+                label,
+              }))}
             />
           </div>
         </Section>

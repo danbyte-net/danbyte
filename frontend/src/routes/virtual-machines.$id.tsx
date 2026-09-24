@@ -38,6 +38,7 @@ import { ConfigContextPanel } from "@/components/config-context-panel"
 import { ServicesPane } from "@/components/services-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -228,6 +229,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <ServicesPane parent={{ kind: "vm", id: vm.id }} />
       </DetailTab>
       <DetailTab value="monitoring">
+        <div className="mb-6">
+          <ObjectSlaPanel objectType="api.virtualmachine" objectId={vm.id} />
+        </div>
         {vm.primary_ip ? (
           <IpMonitoring
             ip={{

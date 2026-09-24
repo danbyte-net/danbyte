@@ -17,9 +17,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from api.models import DeviceRole, DeviceType, Platform, Site
@@ -611,6 +614,9 @@ class SlaMemberViewSet(TenantScopedViewSet):
                     made = True
                 created += made
                 skipped += not made
+        if created and group.agreement.status == "active":
+            # So the object's page shows it in the figure straight away.
+            sla.refresh_agreement(group.agreement)
         return Response({"created": created, "skipped": skipped})
 
 
@@ -670,3 +676,119 @@ class SlaExclusionViewSet(TenantScopedViewSet):
         ).exists():
             raise ValidationError("It touches a frozen period; it stays.")
         super().perform_destroy(instance)
+
+
+# ─── status for list columns ────────────────────────────────────────────────
+
+#: List kinds → (member object type, RBAC slug, rollup field of the address
+#: that ties a check to the object).
+STATUS_KINDS = {
+    "device": ("api.device", "device", "target_ip__assigned_device_id"),
+    "vm": ("api.virtualmachine", "virtualmachine", "target_ip__assigned_vm_id"),
+    "ip": ("api.ipaddress", "ipaddress", "target_ip_id"),
+}
+MAX_STATUS_IDS = 5000
+
+
+@extend_schema(
+    summary="SLA figures and availability for many objects - the list columns",
+    tags=["monitoring"],
+    request=OpenApiTypes.OBJECT,
+    responses=OpenApiResponse(response=OpenApiTypes.OBJECT),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def sla_status_view(request):
+    """``{kind: device|vm|ip, ids: [...], frame?}`` → per id:
+
+    * ``sla`` - each agreement the object is in, with its figure in the
+      agreement's current period (read from the stored result, never
+      recomputed here), and ``lowest``, the strictest of them;
+    * ``availability`` - plain availability over ``frame`` from the rollups,
+      every check on the object's addresses, SLA or not.
+
+    Objects the caller cannot view are left out; agreements are only listed
+    to a caller with view on SLA agreements."""
+    from api.views import _get_active_tenant
+
+    from .figures import FRAMES, figures, frame_window, sums
+    from .models import MonitoringSettings
+
+    tenant = _get_active_tenant(request)
+    kind = request.data.get("kind")
+    if kind not in STATUS_KINDS:
+        raise ValidationError({"kind": f"One of: {', '.join(STATUS_KINDS)}."})
+    ids = request.data.get("ids") or []
+    if not isinstance(ids, list) or len(ids) > MAX_STATUS_IDS:
+        raise ValidationError({"ids": f"A list of up to {MAX_STATUS_IDS} ids."})
+    frame = request.data.get("frame")
+    if tenant is None:
+        return Response({"frame": frame, "results": {}})
+    if frame not in FRAMES:
+        s = MonitoringSettings.objects.filter(tenant=tenant).only("availability_frame").first()
+        frame = s.availability_frame if s else "30d"
+    otype, slug, field = STATUS_KINDS[kind]
+
+    from django.apps import apps
+
+    model = apps.get_model(otype)
+    q = rbac.row_filter(request.user, tenant, slug, "view")
+    if q is None:
+        return Response({"frame": frame, "results": {}})
+    valid = []
+    for raw in ids:
+        try:
+            valid.append(uuid.UUID(str(raw)))
+        except ValueError:
+            continue
+    visible = model.objects.filter(tenant=tenant, pk__in=valid)
+    if q is not True:
+        visible = visible.filter(q)
+    keep = {str(pk) for pk in visible.values_list("pk", flat=True)}
+    out = {i: {"sla": [], "lowest": None, "availability": None} for i in keep}
+    if not keep:
+        return Response({"frame": frame, "results": {}})
+
+    win = frame_window(frame, sla.agreement_tz_for_tenant(tenant))
+    got = sums(
+        win,
+        lambda qs: qs.filter(tenant=tenant, **{f"{field}__in": keep}),
+        (field,),
+    )
+    for (key,), row in got.items():
+        f = figures(row)
+        out[str(key)]["availability"] = {"availability": f["availability"],
+                                         "coverage": f["coverage"]}
+
+    if rbac.has_action(request.user, tenant, "slaagreement", "view"):
+        results = SlaPeriodResult.objects.filter(
+            tenant=tenant, state__in=("open", "rolling"), agreement__status="active",
+        ).select_related("agreement")
+        for res in results:
+            a = res.agreement
+            for u in res.units:
+                if not u.get("member") or u["object_type"] != otype or u["object_id"] not in keep:
+                    continue
+                target = float(a.target_pct)
+                warning = float(a.warning_pct) if a.warning_pct is not None else None
+                av = u["availability"]
+                state = (
+                    "no_data" if av is None else "breached" if av < target
+                    else "at_risk" if warning is not None and av < warning else "ok"
+                )
+                out[u["object_id"]]["sla"].append({
+                    "agreement": {"id": str(a.id), "name": a.name},
+                    "period_key": res.period_key, "target": target,
+                    "availability": av, "coverage": u["coverage"], "state": state,
+                    "down_s": u["down_s"], "worst_item": u.get("worst_item"),
+                    "budget_left_s": round((1 - target / 100) * (res.figures.get(
+                        "full_service_s") or 0) - u["down_s"]),
+                })
+        for entry in out.values():
+            if entry["sla"]:
+                # The strictest: furthest below (or least above) its target.
+                entry["lowest"] = min(
+                    entry["sla"],
+                    key=lambda x: (x["availability"] is None, (x["availability"] or 0) - x["target"]),
+                )
+    return Response({"frame": frame, "results": out})

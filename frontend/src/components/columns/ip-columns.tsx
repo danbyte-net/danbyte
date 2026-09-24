@@ -21,6 +21,11 @@ import {
   actionsColumn,
   type ActionsColumnOpts,
 } from "@/components/columns/actions-column"
+import {
+  availabilityColumn,
+  slaColumn,
+  type SlaColumnOpts,
+} from "@/components/columns/sla-column"
 
 // The one source of truth for "a table of IP addresses". Every surface that
 // lists IPs - the prefix IPs pane, the device IPs pane, embedded IP tables -
@@ -44,6 +49,8 @@ export type IpColumnId =
   | "assigned"
   | "switch"
   | "switch_interface"
+  | "sla"
+  | "availability"
   | "description"
   | "tags"
   | "updated"
@@ -60,6 +67,8 @@ const CANONICAL_ORDER: IpColumnId[] = [
   "assigned",
   "switch",
   "switch_interface",
+  "sla",
+  "availability",
   "description",
   "tags",
   "updated",
@@ -96,6 +105,8 @@ export interface IpColumnOpts<T> {
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
 }
 
 /** Facet bucket through `getIp`: a row that carries no IP (a free address
@@ -122,6 +133,10 @@ export function buildIpColumns<T = IPAddress>(
   const getIp =
     opts.getIp ?? ((r: T) => r as unknown as IPAddress | null | undefined)
   const omit = new Set(opts.omit ?? [])
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   const keep = (id: IpColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -406,6 +421,8 @@ export function buildIpColumns<T = IPAddress>(
         return sw ? <DeviceCell device={sw} className="text-xs" /> : dash
       },
     }),
+    sla: () => slaColumn<T>(opts.sla!, (r) => getIp(r)?.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => getIp(r)?.id),
     switch_interface: () => ({
       id: "switch_interface",
       accessorFn: (r) => getIp(r)?.switch_interface?.name ?? "",

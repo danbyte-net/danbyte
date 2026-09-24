@@ -5442,6 +5442,8 @@ export interface MonitoringSettings {
   escalate_after_minutes: number
   flap_threshold: number
   flap_window_minutes: number
+  /** The list pages' Availability column window, unless a viewer picks. */
+  availability_frame: AvailabilityFrame
   /** Off: a flapping state stays until an operator confirms the host is
    * fine. On: it clears itself after the settle time of quiet. */
   auto_clear_flapping: boolean
@@ -9975,4 +9977,39 @@ export interface SlaPeriodSummary {
   period_end: string
   figures: SlaFigures
   limited: { hidden_members: number } | null
+}
+
+export type AvailabilityFrame =
+  | "24h"
+  | "7d"
+  | "30d"
+  | "90d"
+  | "mtd"
+  | "qtd"
+  | "ytd"
+
+/** One object's figure in one agreement's current period. */
+export interface SlaStatusAgreement {
+  agreement: { id: string; name: string }
+  period_key: string
+  target: number
+  availability: number | null
+  coverage: number | null
+  state: SlaState
+  down_s: number
+  worst_item: string | null
+  budget_left_s: number
+}
+
+export interface SlaStatusEntry {
+  sla: SlaStatusAgreement[]
+  /** The strictest of `sla`: furthest below its target. */
+  lowest: SlaStatusAgreement | null
+  /** Plain availability over the frame, SLA or not. */
+  availability: { availability: number | null; coverage: number | null } | null
+}
+
+export interface SlaStatusResponse {
+  frame: AvailabilityFrame
+  results: Record<string, SlaStatusEntry>
 }

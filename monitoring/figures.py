@@ -55,6 +55,29 @@ def window(*, days: int | None = None, hours: int | None = None, now=None) -> Wi
     return Window(since, now, tuple(parts))
 
 
+FRAMES = ("24h", "7d", "30d", "90d", "mtd", "qtd", "ytd")
+
+
+def frame_window(frame: str, tz: str = "UTC", now=None) -> Window:
+    """A named frame: the last 24 hours / N days, or month, quarter or year
+    to date in ``tz`` (counted in whole days, as the daily rollups are)."""
+    from zoneinfo import ZoneInfo
+
+    now = now or timezone.now()
+    if frame == "24h":
+        return window(hours=24, now=now)
+    if frame in ("7d", "30d", "90d"):
+        return window(days=int(frame[:-1]), now=now)
+    today = now.astimezone(ZoneInfo(tz or "UTC")).date()
+    if frame == "mtd":
+        start = today.replace(day=1)
+    elif frame == "qtd":
+        start = today.replace(month=3 * ((today.month - 1) // 3) + 1, day=1)
+    else:
+        start = today.replace(month=1, day=1)
+    return window(days=(today - start).days + 1, now=now)
+
+
 def window_from_params(params, now=None) -> Window:
     hours = params.get("hours")
     if hours and str(hours).isdigit():

@@ -26,6 +26,7 @@ from .sla_api import (
     SlaCheckGroupViewSet,
     SlaExclusionViewSet,
     SlaMemberViewSet,
+    sla_status_view,
 )
 from .viewsets import (
     AcmeOrderViewSet,
@@ -229,6 +230,7 @@ urlpatterns = [
     path("checks/<uuid:state_id>/", check_detail_view, name="monitoring-check-detail"),
     path("explore/", explore_view, name="monitoring-explore"),
     path("latency/", latency_view, name="monitoring-latency"),
+    path("sla-status/", sla_status_view, name="monitoring-sla-status"),
     path("transitions/", transitions_view, name="monitoring-transitions"),
     path("timeline/", timeline_batch_view, name="monitoring-timeline-batch"),
     path("flapping/", flapping_view, name="monitoring-flapping"),

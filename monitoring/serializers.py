@@ -937,7 +937,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "default_engine", "outpost_repo_url", "outpost_repo_token",
             "outpost_repo_token_set", "updated_at",
             "arp_source_devices", "arp_source_devices_detail",
-            "spike_factor", "spike_floor_ms",
+            "spike_factor", "spike_floor_ms", "availability_frame",
         ]
         read_only_fields = ["updated_at"]
 
