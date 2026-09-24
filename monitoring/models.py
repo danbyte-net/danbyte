@@ -3602,11 +3602,19 @@ class SlaAgreement(TimestampedModel):
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="sla_agreements")
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True, default="")
+    #: Who the agreement is for: the tenant itself (the default - often the
+    #: customer *is* the tenant), some of its sites, a contact, or a name.
+    provided_for = models.CharField(
+        max_length=8, default="tenant",
+        choices=[("tenant", "This tenant"), ("sites", "Sites"),
+                 ("contact", "A contact"), ("name", "A name")],
+    )
+    sites = models.ManyToManyField("api.Site", blank=True, related_name="sla_agreements")
     customer = models.ForeignKey(
         "api.Contact", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="sla_agreements",
     )
-    #: Free text when the customer is not a Contact.
+    #: Free text when ``provided_for`` is "name".
     customer_name = models.CharField(max_length=150, blank=True, default="")
     target_pct = models.DecimalField(max_digits=6, decimal_places=3)
     #: "At risk" below this; null means at risk once 75 % of the budget is spent.
@@ -3671,6 +3679,17 @@ class SlaAgreement(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def for_label(self) -> str:
+        """Who the agreement is for, as one line."""
+        if self.provided_for == "sites":
+            return ", ".join(self.sites.order_by("name").values_list("name", flat=True))
+        if self.provided_for == "contact" and self.customer_id:
+            return self.customer.name
+        if self.provided_for == "name" and self.customer_name:
+            return self.customer_name
+        return self.tenant.name
 
     def rules(self) -> dict:
         out = {}

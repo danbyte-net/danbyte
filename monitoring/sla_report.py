@@ -60,7 +60,7 @@ def report_csv(agreement, result, view=None) -> str:
     f, members, incidents, _days, limited = _parts(result, view)
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["agreement", agreement.name])
+    w.writerow(["agreement", agreement.name, "for", agreement.for_label])
     w.writerow(["period", result.period_key, result.state])
     w.writerow(["availability_pct", f.get("availability"), "target_pct", f.get("target")])
     w.writerow(["coverage_pct", f.get("coverage"), "state", f.get("state")])
@@ -115,7 +115,7 @@ def _tone(av, target) -> str:
 def report_html(agreement, result, view=None) -> str:
     f, members, incidents, days, limited = _parts(result, view)
     target = f.get("target") or float(agreement.target_pct)
-    customer = (agreement.customer.name if agreement.customer_id else "") or agreement.customer_name
+    customer = agreement.for_label
     state = f.get("state", "no_data")
     head = (
         f"<h1>{escape(agreement.name)}</h1>"
@@ -212,7 +212,7 @@ def overview_rows(rows) -> list[dict]:
         f = f or {}
         out.append({
             "agreement": a.name,
-            "customer": (a.customer.name if a.customer_id else "") or a.customer_name,
+            "customer": a.for_label,
             "period": res.period_key if res else "",
             "state_of_period": res.state if res else "",
             "availability": f.get("availability"), "target": float(a.target_pct),
@@ -227,7 +227,7 @@ def overview_csv(rows) -> str:
     data = overview_rows(rows)
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["agreement", "customer", "period", "period_state", "availability_pct",
+    w.writerow(["agreement", "for", "period", "period_state", "availability_pct",
                 "target_pct", "state", "coverage_pct", "budget_left_s", "incidents", "members"])
     for r in data:
         w.writerow([r["agreement"], r["customer"], r["period"], r["state_of_period"],
@@ -254,7 +254,7 @@ def overview_pdf(rows, period_label: str) -> bytes:
         f"<!doctype html><html><head><meta charset='utf-8'><style>{_CSS}</style></head><body>"
         f"<h1>Service levels {escape(period_label)}</h1>"
         f"<div class='muted'>{len(data)} agreement(s) · generated {timezone.now():%Y-%m-%d %H:%M} UTC</div>"
-        f"<h2>Agreements</h2><table><tr><th>Agreement</th><th>Customer</th><th>Period</th>"
+        f"<h2>Agreements</h2><table><tr><th>Agreement</th><th>For</th><th>Period</th>"
         f"<th>Availability</th><th>Target</th><th>State</th><th>Coverage</th><th>Budget left</th>"
         f"<th>Incidents</th></tr>{trs or '<tr><td colspan=9 class=muted>None.</td></tr>'}</table>"
         f"</body></html>"

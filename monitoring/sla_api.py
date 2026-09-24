@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -100,6 +101,11 @@ class HolidayCalendarViewSet(TenantScopedViewSet):
 
 class SlaAgreementSerializer(serializers.ModelSerializer):
     customer_detail = serializers.SerializerMethodField()
+    sites = serializers.PrimaryKeyRelatedField(
+        queryset=Site.objects.all(), many=True, required=False
+    )
+    sites_detail = serializers.SerializerMethodField()
+    for_label = serializers.CharField(read_only=True)
     holiday_calendar_detail = serializers.SerializerMethodField()
     group_count = serializers.IntegerField(read_only=True, default=0)
     member_count = serializers.IntegerField(read_only=True, default=0)
@@ -109,7 +115,8 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
     class Meta:
         model = SlaAgreement
         fields = [
-            "id", "name", "description", "customer", "customer_detail", "customer_name",
+            "id", "name", "description", "provided_for", "sites", "sites_detail",
+            "for_label", "customer", "customer_detail", "customer_name",
             "target_pct", "warning_pct", "period", "timezone", "service_hours",
             "holiday_calendar", "holiday_calendar_detail", "count_degraded_as",
             "count_stale_as", "count_unknown_as", "exclude_maintenance",
@@ -124,6 +131,9 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
     def get_customer_detail(self, obj):
         c = obj.customer
         return {"id": str(c.id), "name": c.name} if c else None
+
+    def get_sites_detail(self, obj):
+        return [{"id": str(s.id), "name": s.name} for s in obj.sites.all()]
 
     def get_holiday_calendar_detail(self, obj):
         c = obj.holiday_calendar
@@ -220,6 +230,21 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
                          holiday_calendar=attrs.get("holiday_calendar"))
             for ch in attrs.get("notify_channels", []):
                 _same_tenant(tenant, notify_channels=ch)
+            for site in attrs.get("sites", []):
+                _same_tenant(tenant, sites=site)
+        # "Provided for" needs what it names.
+        kind = attrs.get("provided_for", getattr(self.instance, "provided_for", "tenant"))
+        sites = attrs.get("sites")
+        if sites is None and self.instance is not None:
+            sites = list(self.instance.sites.all())
+        customer = attrs.get("customer", getattr(self.instance, "customer", None))
+        name = attrs.get("customer_name", getattr(self.instance, "customer_name", ""))
+        if kind == "sites" and not sites:
+            raise ValidationError({"sites": "Pick the sites it covers."})
+        if kind == "contact" and customer is None:
+            raise ValidationError({"customer": "Pick the contact."})
+        if kind == "name" and not (name or "").strip():
+            raise ValidationError({"customer_name": "Give the name."})
         target = attrs.get("target_pct", getattr(self.instance, "target_pct", None))
         warning = attrs.get("warning_pct", getattr(self.instance, "warning_pct", None))
         if warning is not None and target is not None and not target < warning <= 100:
@@ -288,6 +313,19 @@ def _viewer_figures(request, agreement, res, full=False) -> dict:
     return body
 
 
+def _hidden_objects(request, agreement, now):
+    """None when the caller sees every member; else the set of
+    (object_type, id) they may see."""
+    members = sla.resolve_members(agreement, now - timedelta(days=400), now)
+    fake_units = [{"member": True, "key": f"{m['object_type']}:{m['object_id']}",
+                   "object_type": m["object_type"], "object_id": str(m["object_id"])}
+                  for m in members]
+    keys = _visible_keys(request, agreement.tenant, fake_units)
+    if keys is None:
+        return None
+    return {tuple(k.split(":", 1)) for k in keys}
+
+
 def _result_for(agreement, want: str):
     """``(key, result)`` for "current", "previous" or a stored key."""
     now = timezone.now()
@@ -303,7 +341,9 @@ def _result_for(agreement, want: str):
 
 
 class SlaAgreementViewSet(TenantScopedViewSet):
-    queryset = SlaAgreement.objects.select_related("customer", "holiday_calendar", "tenant")
+    queryset = SlaAgreement.objects.select_related(
+        "customer", "holiday_calendar", "tenant"
+    ).prefetch_related("sites")
     serializer_class = SlaAgreementSerializer
 
     def get_queryset(self):
@@ -318,7 +358,12 @@ class SlaAgreementViewSet(TenantScopedViewSet):
         if p.get("status"):
             qs = qs.filter(status__in=p["status"].split(","))
         if p.get("q"):
-            qs = qs.filter(Q(name__icontains=p["q"]) | Q(customer_name__icontains=p["q"]))
+            qs = qs.filter(
+                Q(name__icontains=p["q"]) | Q(customer_name__icontains=p["q"])
+                | Q(customer__name__icontains=p["q"]) | Q(sites__name__icontains=p["q"])
+            ).distinct()
+        if p.get("site"):
+            qs = qs.filter(sites__id__in=p["site"].split(",")).distinct()
         return qs.order_by("name")
 
     def paginate_queryset(self, queryset):
@@ -378,6 +423,66 @@ class SlaAgreementViewSet(TenantScopedViewSet):
             "closed_at": res.closed_at, "frozen_at": res.frozen_at,
             **_viewer_figures(request, a, res, full=True),
         })
+
+    @action(detail=True, methods=["get"])
+    def analysis(self, request, pk=None):
+        """The agreement over any window, sliced for charts. ``?period=``
+        (current / previous / a key) or ``?since=&until=`` (dates), ``?bucket=
+        day|hour``, and filters ``group``, ``site``, ``member`` (object ids),
+        ``kind``, ``redundancy`` - comma-separated. Computed live, scoped to
+        the members the caller can see."""
+        import datetime as _dt
+
+        from .sla_analysis import analyse, options
+
+        a = self.get_object()
+        p = request.query_params
+        now = timezone.now()
+        tz = ZoneInfo(sla.agreement_tz(a))
+        if p.get("since"):
+            try:
+                since = _dt.datetime.combine(_dt.date.fromisoformat(p["since"]), _dt.time(0), tz)
+                until_d = _dt.date.fromisoformat(p.get("until") or p["since"])
+                end = _dt.datetime.combine(until_d + _dt.timedelta(days=1), _dt.time(0), tz)
+            except ValueError:
+                raise ValidationError({"since": "Dates as YYYY-MM-DD."}) from None
+            if end <= since or (end - since).days > 400:
+                raise ValidationError({"until": "After since, and at most 400 days."})
+            key, start, rules = None, since, a.rules()
+        else:
+            key, res = _result_for(a, p.get("period") or "current")
+            bounds = sla.period_by_key(a, key) if key else None
+            if bounds is None:
+                raise ValidationError({"period": "Unknown period."})
+            key, start, end = bounds
+            rules = sla.rules_for(a, res)
+        filters = {k: [v for v in (p.get(k) or "").split(",") if v]
+                   for k in ("group", "site", "member", "kind", "redundancy")}
+        filters = {k: v for k, v in filters.items() if v}
+        hidden = _hidden_objects(request, a, now)
+        if hidden is not None:
+            filters["visible"] = hidden
+        bucket = "hour" if p.get("bucket") == "hour" else "day"
+        if bucket == "hour" and (min(end, now) - start).days > 45:
+            raise ValidationError({"bucket": "Hourly for at most 45 days."})
+        body = analyse(a, start, end, rules=rules, filters=filters, bucket=bucket, now=now)
+        # The same slice one period (or one range length) earlier, for deltas.
+        if key is not None:
+            prev = sla.previous_period(a, start)
+            p_start, p_end = (prev[1], prev[2]) if prev else (start - (end - start), start)
+        else:
+            p_start, p_end = start - (end - start), start
+        before = sla.compute(a, p_start, p_end, rules=rules, now=now, filters=filters)
+        body["previous"] = {
+            "since": p_start.isoformat(), "until": p_end.isoformat(),
+            **{k: before["figures"].get(k) for k in (
+                "availability", "coverage", "down_s", "incidents", "budget_spent_pct", "state",
+            )},
+        }
+        body["period_key"] = key
+        body["options"] = options(a, now)
+        body["limited"] = hidden is not None
+        return Response(body)
 
     @action(detail=True, methods=["get"])
     def report(self, request, pk=None):

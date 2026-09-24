@@ -351,9 +351,32 @@ def _figure(up: float, down: float, service: float) -> dict:
     }
 
 
+def _keep_member(m, filters: dict) -> bool:
+    """A member passes the analysis filters (all given dimensions must match)."""
+    if filters.get("group") and str(m["group"].id) not in filters["group"]:
+        return False
+    if filters.get("site") and str(m["site_id"] or "") not in filters["site"]:
+        return False
+    if filters.get("member") and str(m["object_id"]) not in filters["member"]:
+        return False
+    if filters.get("redundancy") and m["redundancy_group"] not in filters["redundancy"]:
+        return False
+    visible = filters.get("visible")
+    if visible is not None and (m["object_type"], str(m["object_id"])) not in visible:
+        return False
+    return True
+
+
 def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = None,
-            now: datetime | None = None) -> dict:
-    """The agreement's figures over ``[start, end)``, up to ``now``."""
+            now: datetime | None = None, filters: dict | None = None,
+            detail: bool = False) -> dict:
+    """The agreement's figures over ``[start, end)``, up to ``now``.
+
+    ``filters`` narrows the members (``group``, ``site``, ``member`` - object
+    ids, ``redundancy``, ``visible`` - a set of (object_type, id)) and the
+    checks (``kind``) for the analysis view; ``detail`` also returns the
+    member and unit timelines it was built from."""
+    filters = filters or {}
     from .models import CheckState, SlaCheckItem
 
     now = now or timezone.now()
@@ -384,7 +407,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     time_rules = _time_rules(rules)
     grace = int(rules.get("min_outage_seconds") or 0)
 
-    members = resolve_members(agreement, start, until)
+    members = [m for m in resolve_members(agreement, start, until) if _keep_member(m, filters)]
     objects = _objects(members)
     addresses = _addresses(members, objects)
     groups = {m["group"].id: m["group"] for m in members}
@@ -412,6 +435,8 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             else:
                 for tmpl_id, tname, kind in states.get(ip, []):
                     checks.append((ip, tmpl_id, tname, kind, True, 1.0, False))
+        if filters.get("kind"):
+            checks = [c for c in checks if c[3] in filters["kind"]]
         pairs.update((c[0], c[1]) for c in checks)
         plan.append(checks)
 
@@ -444,6 +469,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             item_rows.append({
                 "template_id": str(tmpl_id), "name": tname, "kind": kind, "ip_id": str(ip),
                 "counts": counts, "incidents": t["incidents"], "down_s": round(t["down_s"]),
+                "up_s": round(t["up_s"]),
                 **_figure(t["up_s"], t["down_s"], service_s),
             })
             if counts:
@@ -513,12 +539,19 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     figures.update(base)
     figures["members"] = len(member_rows)
     figures["full_service_s"] = round(full_service)
-    return {
+    out = {
         "figures": figures,
         "units": units + [{"member": True, **r} for r in member_rows],
         "incidents": _incidents(unit_tls, units, member_rows, timelines),
         "days": _days(unit_tls, service, tz, rules.get("aggregation", "mean")),
     }
+    if detail:
+        out["_detail"] = {
+            "unit_tls": unit_tls, "member_tls": timelines, "tz": tz, "rules": rules,
+            "service": service, "start": start, "until": until, "end": end,
+            "full_service": full_service,
+        }
+    return out
 
 
 def headline(units, rules, full_service, start, until, end) -> dict:
