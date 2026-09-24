@@ -666,8 +666,8 @@ exactly like an automatic scan.
   since, last checked - sort on the server, so a click reorders the whole
   list, not the page in hand. Three more columns come from the
   [rollups](#rollups) and cover the last seven days:
-    - availability, with the coverage beside it when part of the week went
-      unmeasured;
+    - availability, with the share measured beside it ("68% measured")
+      when part of the week went unmeasured;
     - p95 latency;
     - the check's baseline.
 

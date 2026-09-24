@@ -41,7 +41,7 @@ export function AvailabilityCell({
       </span>
       {partial && (
         <span className="text-[11px] text-muted-foreground">
-          {Math.round(figures.coverage!)}% seen
+          {Math.round(figures.coverage!)}% measured
         </span>
       )}
     </span>

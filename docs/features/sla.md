@@ -255,7 +255,9 @@ The device, virtual machine, IP address and prefix lists have two columns:
   object's addresses, whether it is in an agreement or not. The frame is
   picked on the list's toolbar and remembered in your browser. It defaults to
   the tenant's **Availability window**, set in the monitoring settings (24
-  hours, 7/30/90 days, or month, quarter or year to date).
+  hours, 7/30/90 days, or month, quarter or year to date). When part of the
+  frame had no check results, the share that did follows the figure, as in
+  "75.1% 68% measured". Unmeasured time counts as neither up nor down.
 
 The **Monitoring** tab of a device, virtual machine, IP address or prefix opens with
 the agreements the object is in, and has an **Add to SLA** button. It asks
