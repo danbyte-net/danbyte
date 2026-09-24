@@ -203,6 +203,9 @@ DATABASES = {
     }
 }
 
+# Keeps per-request cached values from expiring mid-test (danbyte/test_runner.py).
+TEST_RUNNER = "danbyte.test_runner.DanbyteTestRunner"
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
