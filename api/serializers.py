@@ -2976,9 +2976,35 @@ FAR_END_PREFETCH = (
 )
 
 
-def _point_cable(point):
-    t = point.terminations.all().first()  # ≤1 due to the per-port unique rule
-    return CableMiniSerializer(t.cable).data if t is not None else None
+_CHOICE_LABELS: dict = {}
+
+
+def _choice_label(obj, field: str):
+    """``obj.get_<field>_display()`` without Django rebuilding the whole choices
+    dict on every call (216 interface types, once per row of a list)."""
+    key = (type(obj), field)
+    labels = _CHOICE_LABELS.get(key)
+    if labels is None:
+        f = type(obj)._meta.get_field(field)
+        labels = _CHOICE_LABELS[key] = {k: str(v) for k, v in f.flatchoices}
+    value = getattr(obj, field)
+    return labels.get(value, value)
+
+
+def _point_cable(point, context=None):
+    # ≤1 due to the per-port unique rule. Read the prefetch directly: .first()
+    # clones and re-slices the queryset on every row of a component list.
+    t = next(iter(point.terminations.all()), None)
+    if t is None:
+        return None
+    if context is None:
+        return CableMiniSerializer(t.cable).data
+    # One serializer per request: building a ModelSerializer's fields per
+    # cabled row was most of a large component list's time.
+    ser = context.get("_cable_mini_serializer")
+    if ser is None:
+        ser = context["_cable_mini_serializer"] = CableMiniSerializer()
+    return ser.to_representation(t.cable)
 
 
 def _point_far_end(point):
@@ -2986,7 +3012,7 @@ def _point_far_end(point):
 
 
 def _point_reservation(point):
-    r = point.reservations.all().first()  # ≤1 due to the per-port unique rule
+    r = next(iter(point.reservations.all()), None)  # ≤1 (per-port unique rule)
     if r is None:
         return None
     return {
@@ -3088,7 +3114,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
-        return _point_cable(obj)
+        return _point_cable(obj, self.context)
 
     # What the cable reaches: the far end's device and port, for the port
     # labels a faceplate can print ("far-end device"), the same names the
@@ -3134,7 +3160,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         return len(obj.lag_members.all())
 
     def get_type_display(self, obj) -> str:
-        return obj.get_type_display()
+        return _choice_label(obj, "type")
 
     @extend_schema_field(serializers.ListField())
     def get_ip_addresses(self, obj):
@@ -3384,7 +3410,7 @@ class RearPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
-        return _point_cable(obj)
+        return _point_cable(obj, self.context)
 
     def get_front_port_count(self, obj) -> int:
         return obj.front_ports.count()
@@ -3458,7 +3484,7 @@ class FrontPortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
-        return _point_cable(obj)
+        return _point_cable(obj, self.context)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -3516,14 +3542,14 @@ class _DevicePortSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cable(self, obj):
-        return _point_cable(obj)
+        return _point_cable(obj, self.context)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_reservation(self, obj):
         return _point_reservation(obj)
 
     def get_type_display(self, obj) -> str:
-        return obj.get_type_display() if obj.type else ""
+        return _choice_label(obj, "type") if obj.type else ""
 
 
 class ConsolePortSerializer(_DevicePortSerializer):
@@ -6453,7 +6479,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(CableMiniSerializer(allow_null=True))
     def get_cable(self, obj):
-        return _point_cable(obj)
+        return _point_cable(obj, self.context)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_connected_to(self, obj):

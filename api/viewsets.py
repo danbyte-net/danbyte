@@ -4239,7 +4239,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "parent__device", "lag__device", "bridge__device",
         )
         .prefetch_related(
-            "tags", "terminations__cable", "reservations", "ip_addresses", "children",
+            "tags", "terminations__cable__status", "reservations", "ip_addresses", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
             *FAR_END_PREFETCH,
@@ -4959,7 +4959,7 @@ class FiberSettingsViewSet(viewsets.ViewSet):
 class RearPortViewSet(_DevicePortViewSet):
     queryset = (
         RearPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations", "front_ports")
+        .prefetch_related("tags", "terminations__cable__status", "reservations", "front_ports")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = RearPortSerializer
@@ -4970,7 +4970,7 @@ class RearPortViewSet(_DevicePortViewSet):
 class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
         FrontPort.objects.select_related("device", "rear_port")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
@@ -4980,7 +4980,7 @@ class FrontPortViewSet(_DevicePortViewSet):
 class ConsolePortViewSet(_DevicePortViewSet):
     queryset = (
         ConsolePort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsolePortSerializer
@@ -5012,7 +5012,7 @@ class AntennaViewSet(_DevicePortViewSet):
 class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsoleServerPortSerializer
@@ -5022,7 +5022,7 @@ class ConsoleServerPortViewSet(_DevicePortViewSet):
 class PowerPortViewSet(_DevicePortViewSet):
     queryset = (
         PowerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations", "outlets")
+        .prefetch_related("tags", "terminations__cable__status", "reservations", "outlets")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerPortSerializer
@@ -5031,7 +5031,7 @@ class PowerPortViewSet(_DevicePortViewSet):
 class PowerOutletViewSet(_DevicePortViewSet):
     queryset = (
         PowerOutlet.objects.select_related("device", "power_port")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerOutletSerializer
