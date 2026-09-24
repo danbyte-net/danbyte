@@ -44,6 +44,7 @@ import type { BreakdownKind } from "./sla-analysis-charts"
 import { DayDrill, MemberPanel } from "./sla-drill"
 import { BurnNow } from "./sla-burn-rules"
 import { fmtCredit } from "./sla-credit-tiers"
+import { ObjectiveCards } from "./sla-objectives"
 
 type FilterKey = "group" | "site" | "member" | "kind" | "redundancy"
 type Filters = Record<FilterKey, string[]>
@@ -527,6 +528,8 @@ export function SlaAnalysisView({
                 <BurnNow burn={a.current?.burn} />
               )}
             </div>
+
+            <ObjectiveCards objectives={d.objectives} />
 
             <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
               <AnalysisCard

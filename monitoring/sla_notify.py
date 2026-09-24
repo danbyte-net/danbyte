@@ -28,24 +28,13 @@ def _fmt(p) -> str:
 def latency_p95_by_kind(agreement, since, until) -> dict:
     """``{kind: p95 ms}`` over the agreement's members' checks, from the
     rollups (daily rows for whole days, hourly for the rest)."""
-    from .figures import Window, figures, sums
-    from .models import CheckRollupDaily, CheckRollupHourly
-    from .rollups import DAY, HOUR, _floor
+    from .figures import figures, span_window, sums
     from .sla import member_ip_ids
 
     ips = member_ip_ids([agreement.id])
     if not ips:
         return {}
-    first_day = _floor(since, DAY) + (DAY if _floor(since, DAY) < since else timedelta(0))
-    last_day = _floor(until, DAY)
-    parts = []
-    if first_day < last_day:
-        parts.append((CheckRollupDaily, first_day, last_day))
-        parts.append((CheckRollupHourly, _floor(since, HOUR), first_day))
-        parts.append((CheckRollupHourly, last_day, until + HOUR))
-    else:
-        parts.append((CheckRollupHourly, _floor(since, HOUR), until + HOUR))
-    win = Window(since, until, tuple(parts))
+    win = span_window(since, until)
     got = sums(
         win,
         lambda qs: qs.filter(tenant_id=agreement.tenant_id, target_ip_id__in=ips),
@@ -62,7 +51,10 @@ def events_for(agreement, result) -> list[tuple[str, str, str, str]]:
     name = agreement.name
     out = []
     target = f.get("target")
-    if f.get("state") == "breached":
+    # Objectives can make the agreement's state worse; these two alerts are
+    # about availability, and the objectives have their own below.
+    avail_state = f.get("availability_state", f.get("state"))
+    if avail_state == "breached":
         out.append((
             "breached", "critical", f"SLA breached: {name}",
             f"{name} is at {_fmt(f['availability'])} against a target of {_fmt(target)} "
@@ -73,7 +65,7 @@ def events_for(agreement, result) -> list[tuple[str, str, str, str]]:
         fast = agreement.alert_burn_rate is not None and burn is not None and (
             burn >= agreement.alert_burn_rate
         )
-        if f.get("state") == "at_risk" or fast:
+        if avail_state == "at_risk" or fast:
             why = (
                 f"burning budget {burn}x as fast as time passes" if fast
                 else f"{f.get('budget_spent_pct')}% of the budget spent"
@@ -94,6 +86,15 @@ def events_for(agreement, result) -> list[tuple[str, str, str, str]]:
             f"{result.period_key} (alert below {agreement.alert_coverage_pct}%). "
             "Its figure may not reflect the service.",
         ))
+    for o in f.get("objectives") or []:
+        if o["state"] != "breached":
+            continue
+        out.append((
+            f"objective:{o['kind']}:{o['threshold_ms']}", "warning",
+            f"SLA latency objective breached: {name} ({o['kind']})",
+            f"{o['pct']}% of {o['kind']} probes answered within {o['threshold_ms']} ms "
+            f"for {result.period_key}, against an objective of {o['target_pct']:g}%.",
+        ))
     objectives = agreement.latency_objectives or {}
     if objectives:
         from datetime import datetime
@@ -106,8 +107,8 @@ def events_for(agreement, result) -> list[tuple[str, str, str, str]]:
             if p95 is not None and p95 > float(limit):
                 out.append((
                     f"latency:{kind}", "warning",
-                    f"SLA latency objective missed: {name} ({kind})",
-                    f"{kind} p95 is {p95} ms against an objective of {limit} ms "
+                    f"SLA p95 latency above the alert: {name} ({kind})",
+                    f"{kind} p95 is {p95} ms, above the alert at {limit} ms, "
                     f"for {result.period_key}.",
                 ))
     return out

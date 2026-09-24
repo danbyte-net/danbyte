@@ -775,6 +775,7 @@ def partial(result, visible_units: list, rules: dict) -> dict:
     # gets neither - a part of the service can't price the contract.
     out["forecast"] = None
     out["credit"] = None
+    out["objectives"] = None
     return {**f, **out}
 
 
@@ -839,6 +840,24 @@ def _days(unit_tls, service, tz, aggregation) -> list[dict]:
 # ─── storage ────────────────────────────────────────────────────────────────
 
 
+def _objectives(agreement, rules, figures, start, until) -> None:
+    """Add the latency objectives to a period's figures and, when they count,
+    fold them into its state. The availability-only state stays beside it,
+    so the availability alerts keep speaking about availability."""
+    from . import sla_objectives
+
+    objectives = rules.get("objectives") or []
+    if not objectives:
+        return
+    members = resolve_members(agreement, start, until)
+    ips = {ip for v in _addresses(members, _objects(members)).values() for ip in v}
+    figures["objectives"] = sla_objectives.evaluate(
+        agreement.tenant_id, objectives, ips, start, until)
+    figures["availability_state"] = figures["state"]
+    if rules.get("objectives_in_state"):
+        figures["state"] = sla_objectives.worst_state(figures["state"], figures["objectives"])
+
+
 def store(agreement, key: str, start, end, *, state: str, now=None, result=None):
     """Compute and write one period's result."""
     from .models import SlaPeriodResult
@@ -851,6 +870,7 @@ def store(agreement, key: str, start, end, *, state: str, now=None, result=None)
     data = compute(agreement, start, end, rules=rules, now=now)
     if state == "open":
         data["figures"]["forecast"] = forecast(agreement, data["figures"], end, now, rules)
+    _objectives(agreement, rules, data["figures"], start, min(end, now))
     defaults = {
         "tenant_id": agreement.tenant_id, "period_start": start, "period_end": end,
         "state": state, "figures": data["figures"], "units": data["units"],

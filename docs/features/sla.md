@@ -214,10 +214,35 @@ These figures appear everywhere an agreement's figure is shown:
 
 ### Latency objectives
 
-**Latency objectives** set a p95 response time in milliseconds per check
-kind (ICMP, TCP, HTTP, SSH), over the period. Missing one sends an alert and
-draws in the latency chart. It never lowers availability. Leave a kind empty
-to have no objective for it.
+A **latency objective** is a promise about speed, counted in probes: *99 % of
+ICMP probes answered within 20 ms*. Add them under **Latency objectives** on
+the form: a check kind, a time, and the share of probes that must make it. The
+time is one of 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000 or 5000 ms.
+
+Each objective has its own figure, error budget and state, like availability.
+With 99 % over 1,000 probes, ten may be slow; five slow probes have spent half
+the budget. It is *at risk* at three quarters spent and *breached* below the
+target. Only probes that answered count: an unanswered probe is down time,
+which availability already charges.
+
+Objectives are measured over the whole period, every hour, not only in service
+hours, because the latency counts are kept per hour and per day. The Overview
+shows a card per objective under the headline, and the latency chart draws
+each objective's time as an amber line, with the share within it on hover.
+
+By default objectives never change the agreement's state: they are reported,
+and a breached one sends its own alert. Tick **Objectives count in the
+state** to make the agreement's state the worst of availability and its
+objectives. The availability alerts still speak about availability.
+
+The counts come from a histogram the rollups keep from 0.17 on. After
+upgrading, `manage.py rollup_checks --backfill 29` fills in the last 29 days
+from the raw results; older periods have no histogram and show no data for an
+objective.
+
+**p95 latency alert** is the simpler, older setting: a p95 in milliseconds per
+check kind over the period. Above it sends an alert and draws a red line in
+the latency chart. It never changes availability or the state.
 
 ## Analysis
 
@@ -250,7 +275,7 @@ compare like for like.
 | **Where the down time went** | Down time and availability per member, check group, site or check type | A row narrows the whole page to it |
 | **When outages happen** | Down time by weekday and hour, in the agreement's timezone. A nightly job or a Monday change window shows up as a stripe. Hover a cell for its down time | - |
 | **Incident lengths** | Incidents by duration, and the mean time to recover | - |
-| **Latency against objectives** | p95 and median per check type, with the objective as a dashed line | - |
+| **Latency against objectives** | p95 and median per check type, the p95 alert as a red line and each latency objective's time as an amber one. Hover a point for the share within each objective | - |
 | **Members over time** | One status strip per member across the window, so overlaps and redundancy show at a glance | A name opens the member panel |
 
 The **member panel** shows one member for the window:
@@ -290,7 +315,8 @@ day.
 | **SLA breached** | The period's availability is below the target. It is also sent when a period tips into breach in its last minutes and closes before the next run. |
 | **SLA at risk** | The state is at risk (below *At risk below*, or three quarters of the budget spent), or the budget burns faster than **At risk above burn rate**. At 1.0 the budget runs out exactly at the period's end; at 2 it lasts half the period. |
 | **SLA coverage low** | Less of the service time than **Coverage alert below** was measured. This waits until a tenth of the period has passed. |
-| **Latency objective missed** | A check kind's p95 over the members' checks is above its **latency objective** for the period. It never changes availability. |
+| **Latency objective breached** | A latency objective's share within its time is below its target for the period. |
+| **p95 latency above the alert** | A check kind's p95 over the members' checks is above its **p95 latency alert** for the period. It never changes availability. |
 
 A new agreement does not alert about periods that ended before it existed.
 

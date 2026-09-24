@@ -122,7 +122,7 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
     if detail is None:
         return {**body, "series": [], "burn": [], "by_member": [], "by_group": [],
                 "by_site": [], "by_kind": [], "strips": [], "heatmap": [],
-                "durations": [], "latency": [], "incidents": []}
+                "durations": [], "latency": [], "incidents": [], "objectives": []}
 
     tz = detail["tz"]
     zone = ZoneInfo(tz)
@@ -240,23 +240,45 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
         "series": series, "burn": burn, "by_member": by_member, "by_group": by_group,
         "by_site": by_site, "by_kind": by_kind, "strips": strips, "heatmap": heatmap,
         "durations": durations, "incidents": data["incidents"],
-        "latency": _latency(agreement, bounds, filters or {}, tz, bucket),
+        "latency": _latency(agreement, bounds, filters or {}, tz, bucket, rules),
+        "objectives": _objectives(agreement, rules, detail["start"], detail["until"],
+                                  filters or {}),
     }
 
 
-def _latency(agreement, bounds, filters, tz, bucket) -> list[dict]:
+def _window_ips(agreement, start, end, filters) -> set:
+    """The addresses whose checks the window reads: every member's, or only
+    those the filters keep - by group, site, member or redundancy group, and
+    never a member a limited viewer can't see."""
+    narrowing = ("group", "site", "member", "redundancy", "visible")
+    if not any(filters.get(k) is not None and filters.get(k) != [] for k in narrowing):
+        return sla.member_ip_ids([agreement.id])
+    members = [m for m in sla.resolve_members(agreement, start, end)
+               if sla._keep_member(m, filters)]
+    objs = sla._objects(members)
+    return {ip for v in sla._addresses(members, objs).values() for ip in v}
+
+
+def _objectives(agreement, rules, start, until, filters) -> list[dict]:
+    from . import sla_objectives
+
+    objectives = rules.get("objectives") or []
+    if filters.get("kind"):
+        objectives = [o for o in objectives if o["kind"] in filters["kind"]]
+    if not objectives:
+        return []
+    ips = _window_ips(agreement, start, until, filters)
+    return sla_objectives.evaluate(agreement.tenant_id, objectives, ips, start, until)
+
+
+def _latency(agreement, bounds, filters, tz, bucket, rules=None) -> list[dict]:
     """p95 per kind per bucket over the (filtered) members' checks."""
-    from .figures import _aggregates, _fold, figures
+    from .figures import _aggregates, _fold, figures, share_within
     from .models import CheckRollupDaily, CheckRollupHourly
 
     if not bounds:
         return []
-    ips = sla.member_ip_ids([agreement.id])
-    if filters.get("member"):
-        members = [m for m in sla.resolve_members(agreement, bounds[0][0], bounds[-1][1])
-                   if sla._keep_member(m, filters)]
-        objs = sla._objects(members)
-        ips = {ip for v in sla._addresses(members, objs).values() for ip in v}
+    ips = _window_ips(agreement, bounds[0][0], bounds[-1][1], filters)
     if not ips:
         return []
     model = CheckRollupHourly if bucket == "hour" else CheckRollupDaily
@@ -271,9 +293,17 @@ def _latency(agreement, bounds, filters, tz, bucket) -> list[dict]:
         acc[row["kind"]].setdefault(row["bucket"], {})
         _fold(acc[row["kind"]][row["bucket"]], row)
     objectives = agreement.latency_objectives or {}
+    # Each latency objective on a kind: its share within the threshold, per bucket.
+    within = defaultdict(list)
+    for o in (rules or {}).get("objectives") or []:
+        within[o["kind"]].append(o)
     return [
         {"kind": kind, "objective": objectives.get(kind),
-         "points": [{"t": b.isoformat(), "p95": figures(r)["p95"], "p50": figures(r)["p50"]}
+         "objectives": [{"threshold_ms": o["threshold_ms"], "target_pct": o["target_pct"]}
+                        for o in within[kind]],
+         "points": [{"t": b.isoformat(), "p95": figures(r)["p95"], "p50": figures(r)["p50"],
+                     "within": {str(o["threshold_ms"]): share_within(r, o["threshold_ms"])
+                                for o in within[kind]}}
                     for b, r in sorted(points.items())]}
         for kind, points in sorted(acc.items())
     ]

@@ -9,6 +9,7 @@ import type {
   SlaAgreement,
   SlaBurnRule,
   SlaCreditTier,
+  SlaObjective,
   SlaPeriod,
 } from "@/lib/api"
 import {
@@ -34,6 +35,7 @@ import { useMe } from "@/lib/use-me"
 import { PERIOD_LABEL } from "./sla-figure"
 import { BurnRulesEditor, DEFAULT_BURN_RULES } from "./sla-burn-rules"
 import { CreditTiersEditor } from "./sla-credit-tiers"
+import { ObjectivesEditor } from "./sla-objectives"
 
 const DAYS = [
   ["mon", "Monday"],
@@ -122,6 +124,10 @@ export function SlaAgreementForm({
         String(v),
       ])
     )
+  )
+  const [slos, setSlos] = useState<SlaObjective[]>(a?.objectives ?? [])
+  const [slosInState, setSlosInState] = useState(
+    a?.objectives_in_state ?? false
   )
   const [recipients, setRecipients] = useState(
     (a?.report_recipients ?? []).join("\n")
@@ -212,6 +218,8 @@ export function SlaAgreementForm({
             .map((x) => x.trim())
             .filter(Boolean),
           report_format: reportFormat,
+          objectives: slos,
+          objectives_in_state: slosInState,
           ...(money
             ? {
                 credit_tiers: tiers,
@@ -502,6 +510,23 @@ export function SlaAgreementForm({
           </FormSection>
         </FormColumn>
       </FormColumns>
+      <FormSection title="Latency objectives" card>
+        <div className="grid gap-3">
+          <Field
+            label="Objectives"
+            info="A share of probes that must answer within a time, such as 99 % of ICMP within 20 ms. Each has its own budget."
+            error={fieldErrors.objectives}
+          >
+            <ObjectivesEditor value={slos} onChange={setSlos} />
+          </Field>
+          <FormCheckbox
+            label="Objectives count in the state"
+            checked={slosInState}
+            onChange={setSlosInState}
+            info="On: a missed objective makes the agreement at risk or breached. Off: objectives are reported and alerted on, and the state is availability's."
+          />
+        </div>
+      </FormSection>
       {money && (
         <FormSection title="Service credits" card>
           <div className="grid gap-4 @3xl:grid-cols-2">
@@ -584,8 +609,8 @@ export function SlaAgreementForm({
               />
             </div>
             <Field
-              label="Latency objectives"
-              info="p95 per check kind, in ms, over the period. Missing one alerts; it never lowers availability."
+              label="p95 latency alert"
+              info="p95 per check kind, in ms, over the period. Above it sends an alert; it never lowers availability."
               error={fieldErrors.latency_objectives}
             >
               <div className="grid grid-cols-2 gap-2 @md:grid-cols-4">

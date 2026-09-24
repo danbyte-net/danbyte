@@ -70,7 +70,7 @@ class AlertTests(_Alerting):
             closed=True,
         )
         sla.refresh_agreement(self.agreement, now=NOW)
-        self.assertEqual(self.subjects(), ["SLA latency objective missed: Gold (icmp)"])
+        self.assertEqual(self.subjects(), ["SLA p95 latency above the alert: Gold (icmp)"])
 
     def test_a_breach_in_the_last_minutes_is_still_reported(self):
         sla.refresh_agreement(self.agreement, now=NOW)  # September open, fine

@@ -73,6 +73,9 @@ def report_csv(agreement, result, view=None) -> str:
                     "currency", c["currency"]])
     if limited:
         w.writerow(["limited_view_hidden_members", limited.get("hidden_members")])
+    for o in f.get("objectives") or []:
+        w.writerow(["objective", o["kind"], "within_ms", o["threshold_ms"], "pct", o["pct"],
+                    "target_pct", o["target_pct"], "probes", o["probes"], "state", o["state"]])
     w.writerow([])
     w.writerow(["member", "type", "group", "redundancy_group", "availability_pct",
                 "coverage_pct", "down_s", "incidents", "worst_check"])
@@ -199,6 +202,7 @@ def report_html(agreement, result, view=None) -> str:
         + (f"<h2>Per day</h2><table><thead><tr><th>Day</th><th class='n'>Availability</th>"
            f"<th class='n'>Down</th><th></th></tr></thead>"
            f"{day_rows}</table>" if day_rows else "")
+        + _objectives_html(f.get("objectives"))
         + f"<h2>Members</h2><table><thead><tr><th>Member</th><th>Group</th><th>Redundancy</th>"
           f"<th class='n'>Availability</th><th class='n'>Coverage</th><th class='n'>Down</th>"
           f"<th>Worst check</th></tr></thead>"
@@ -236,6 +240,25 @@ def overview_rows(rows) -> list[dict]:
             "members": f.get("members", 0), "credit": f.get("credit"),
         })
     return out
+
+
+def _objectives_html(objectives) -> str:
+    if not objectives:
+        return ""
+    rows = "".join(
+        f"<tr><td>{escape(o['kind'])} within {o['threshold_ms']} ms</td>"
+        f"<td class='n {o['state']}'>{_pct(o['pct'])}</td>"
+        f"<td class='n'>{_pct(o['target_pct'])}</td><td class='n'>{o['probes']:,}</td>"
+        f"<td class='n'>{o['slow']:,}</td><td class='n'>{o['budget_spent_pct']}%</td>"
+        f"<td class='{o['state']}'>{STATE_LABEL.get(o['state'], o['state'])}</td></tr>"
+        for o in objectives
+    )
+    return (
+        "<h2>Latency objectives</h2><table><thead><tr><th>Objective</th>"
+        "<th class='n'>Answered within</th><th class='n'>Target</th><th class='n'>Probes</th>"
+        "<th class='n'>Slower</th><th class='n'>Budget spent</th><th>State</th></tr></thead>"
+        f"{rows}</table>"
+    )
 
 
 def _credit_text(c) -> str:

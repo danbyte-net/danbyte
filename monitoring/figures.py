@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from django.db.models import F, Max, Q, Sum
 from django.utils import timezone
 
-from .models import CheckRollupDaily, CheckRollupHourly
+from .models import LATENCY_EDGES, CheckRollupDaily, CheckRollupHourly
 from .rollups import DAY, HOUR, CountingRules, _floor, classify
 
 #: The longest window the hourly rows can answer (they are kept 30 days).
@@ -78,6 +78,20 @@ def frame_window(frame: str, tz: str = "UTC", now=None) -> Window:
     return window(days=(today - start).days + 1, now=now)
 
 
+def span_window(since: datetime, until: datetime) -> Window:
+    """The rollup rows covering ``[since, until)``: daily rows for the whole
+    UTC days inside it, hourly rows for the edges."""
+    first_day = _floor(since, DAY) + (DAY if _floor(since, DAY) < since else timedelta(0))
+    last_day = _floor(until, DAY)
+    if first_day < last_day:
+        parts = ((CheckRollupHourly, _floor(since, HOUR), first_day),
+                 (CheckRollupDaily, first_day, last_day),
+                 (CheckRollupHourly, last_day, until + HOUR))
+    else:
+        parts = ((CheckRollupHourly, _floor(since, HOUR), until + HOUR),)
+    return Window(since, until, parts)
+
+
 def window_from_params(params, now=None) -> Window:
     hours = params.get("hours")
     if hours and str(hours).isdigit():
@@ -103,7 +117,18 @@ def _aggregates() -> dict:
         "p95_w": Sum(F("lat_p95") * F("samples"), filter=has_lat),
         "p99_w": Sum(F("lat_p99") * F("samples"), filter=has_lat),
         "lat_max": Max("lat_max"),
+        "lat_hist_n": Sum("lat_hist_n"),
+        **{f"lat_le_{e}": Sum(f"lat_le_{e}") for e in LATENCY_EDGES},
     }.items()}
+
+
+def share_within(row: dict, edge: int) -> float | None:
+    """Of the probes a summed row has a histogram for, the percentage answered
+    within ``edge`` ms. None when none were counted."""
+    n = row.get("lat_hist_n") or 0
+    if not n:
+        return None
+    return round(100 * (row.get(f"lat_le_{edge}") or 0) / n, 3)
 
 
 def _fold(acc: dict, row: dict) -> None:

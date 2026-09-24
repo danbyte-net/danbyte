@@ -564,7 +564,10 @@ Each record holds:
 - the incidents that began in the bucket;
 - the probe count;
 - that check's own latency: min, average, p50, p95, p99 and max;
-- **spikes**, the probes slower than the check's usual latency.
+- **spikes**, the probes slower than the check's usual latency;
+- a latency histogram: how many probes answered within 1, 2, 5, 10, 20, 50,
+  100, 200, 500, 1000, 2000 and 5000 ms. The
+  [SLA latency objectives](sla.md#latency-objectives) read it.
 
 Hourly records are kept 30 days (`MONITORING_ROLLUP_HOURLY_RETENTION_DAYS`).
 Daily records are never pruned, so an availability figure for last year can

@@ -1804,6 +1804,10 @@ class Silence(TimestampedModel):
         return self.starts_at <= now < self.ends_at
 
 
+#: The histogram edges, in ms: a latency objective's threshold is one of them.
+LATENCY_EDGES = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000)
+
+
 class _CheckRollup(models.Model):
     """What one check did over one bucket of time, kept after the raw rows go.
 
@@ -1848,6 +1852,24 @@ class _CheckRollup(models.Model):
     lat_p99 = models.FloatField(null=True)
     lat_max = models.FloatField(null=True)
     spikes = models.PositiveIntegerField(default=0)
+    #: A cumulative latency histogram: probes answered within each edge of
+    #: LATENCY_EDGES, out of ``lat_hist_n``. Cumulative counts add across
+    #: rows, so "the share under 20 ms" is lat_le_20 / lat_hist_n over any
+    #: window. Rows written before the histogram existed have lat_hist_n = 0
+    #: and drop out of that share instead of counting as slow.
+    lat_hist_n = models.PositiveIntegerField(default=0)
+    lat_le_1 = models.PositiveIntegerField(default=0)
+    lat_le_2 = models.PositiveIntegerField(default=0)
+    lat_le_5 = models.PositiveIntegerField(default=0)
+    lat_le_10 = models.PositiveIntegerField(default=0)
+    lat_le_20 = models.PositiveIntegerField(default=0)
+    lat_le_50 = models.PositiveIntegerField(default=0)
+    lat_le_100 = models.PositiveIntegerField(default=0)
+    lat_le_200 = models.PositiveIntegerField(default=0)
+    lat_le_500 = models.PositiveIntegerField(default=0)
+    lat_le_1000 = models.PositiveIntegerField(default=0)
+    lat_le_2000 = models.PositiveIntegerField(default=0)
+    lat_le_5000 = models.PositiveIntegerField(default=0)
     #: The bucket is over and was computed after it ended. An open bucket is
     #: refreshed on every run.
     closed = models.BooleanField(default=False)
@@ -3612,6 +3634,7 @@ class SlaAgreement(TimestampedModel):
         # Money is part of the contract: a frozen period keeps the credit it
         # was worked out under.
         "credit_tiers", "period_fee", "currency",
+        "objectives", "objectives_in_state",
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -3663,6 +3686,12 @@ class SlaAgreement(TimestampedModel):
     #: {"icmp": 5, "ssh": 300} - p95 targets per check kind, reported beside
     #: availability, never folded into it.
     latency_objectives = models.JSONField(default=dict, blank=True)
+    #: ``[{"kind": "icmp", "threshold_ms": 20, "target_pct": 99}, ...]`` -
+    #: each its own figure and budget, counted in probes (sla_objectives).
+    objectives = models.JSONField(default=list, blank=True)
+    #: The agreement's state is the worst of availability and the objectives;
+    #: off, objectives are reported and alerted on but never change it.
+    objectives_in_state = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
     #: Nothing before this date is computed.
     effective_from = models.DateField(null=True, blank=True)

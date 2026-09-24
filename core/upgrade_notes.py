@@ -190,8 +190,37 @@ def _proxied_blocks_forward_proto() -> bool:
     return True
 
 
+def _histograms_filled() -> bool:
+    """Done once the last four weeks of daily rollups carry a latency
+    histogram wherever they have latency at all."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from monitoring.models import CheckRollupDaily
+
+    since = timezone.now() - timedelta(days=28)
+    return not CheckRollupDaily.objects.filter(
+        bucket__gte=since, lat_p50__isnull=False, lat_hist_n=0
+    ).exists()
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.17.0-latency-histogram",
+        version="0.17.0",
+        title="Fill in latency histograms for SLA latency objectives",
+        body=(
+            "Latency objectives count probes answered within a time from a "
+            "histogram the rollups now keep. Rows written before the upgrade "
+            "have none, so an objective starts empty. Rebuilding the last 29 "
+            "days from the raw results, which are kept 30 days, fills them in."
+        ),
+        snippet="manage.py rollup_checks --backfill 29",
+        docs="features/sla/#latency-objectives",
+        check=_histograms_filled,
+    ),
     UpgradeNote(
         id="0.16.13-nginx-temp-size",
         version="0.16.13",

@@ -526,9 +526,36 @@ export function LatencyAgainstObjective({ data }: { data: SlaAnalysis }) {
               strokeDasharray="4 4"
             />
           )}
+          {cur.objectives.map((o) => (
+            <ReferenceLine
+              key={o.threshold_ms}
+              y={o.threshold_ms}
+              stroke="var(--color-amber-500)"
+              strokeDasharray="2 3"
+              ifOverflow="extendDomain"
+            />
+          ))}
           <ChartTooltip
             cursor={false}
-            content={<ChartTooltipContent indicator="line" />}
+            content={
+              <ChartTooltipContent
+                indicator="line"
+                labelFormatter={(value, payload) => {
+                  const within = (
+                    payload[0]?.payload as (typeof rows)[number] | undefined
+                  )?.within
+                  const parts = cur.objectives
+                    .map((o) => {
+                      const v = within?.[String(o.threshold_ms)]
+                      return v == null
+                        ? null
+                        : `${v}% within ${o.threshold_ms} ms`
+                    })
+                    .filter(Boolean)
+                  return [value, ...parts].join(" · ")
+                }}
+              />
+            }
           />
           <Line
             dataKey="p50"
@@ -545,9 +572,16 @@ export function LatencyAgainstObjective({ data }: { data: SlaAnalysis }) {
           />
         </LineChart>
       </ChartContainer>
-      {cur.objective != null && (
+      {(cur.objective != null || cur.objectives.length > 0) && (
         <p className="text-[11px] text-muted-foreground">
-          Objective {cur.objective} ms (dashed)
+          {[
+            cur.objective != null && `p95 alert ${cur.objective} ms (red)`,
+            ...cur.objectives.map(
+              (o) => `${o.target_pct}% within ${o.threshold_ms} ms (amber)`
+            ),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       )}
     </div>

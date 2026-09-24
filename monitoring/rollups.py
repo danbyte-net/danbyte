@@ -22,13 +22,14 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from django.db.models import Avg, Count, Max, Min, Sum
+from django.db.models import Avg, Count, Max, Min, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from .charts import Percentile
 from .charts import _agg_num as _agg
 from .models import (
+    LATENCY_EDGES,
     CheckResult,
     CheckRollupDaily,
     CheckRollupHourly,
@@ -36,6 +37,8 @@ from .models import (
     MonitoringSettings,
 )
 from .timeline import segments_for_pairs
+
+_HIST_FIELDS = tuple(f"lat_le_{e}" for e in LATENCY_EDGES)
 
 log = logging.getLogger("monitoring.rollups")
 
@@ -199,6 +202,9 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
                     lat_p50=Percentile("latency_ms", 0.5),
                     lat_p95=Percentile("latency_ms", 0.95),
                     lat_p99=Percentile("latency_ms", 0.99),
+                    lat_hist_n=Sum(_samples_expr(), filter=Q(latency_ms__isnull=False)),
+                    **{f"lat_le_{e}": Sum(_samples_expr(), filter=Q(latency_ms__lte=e))
+                       for e in LATENCY_EDGES},
                 )
             )
         }
@@ -227,6 +233,8 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
                 lat_p50=s.get("lat_p50"), lat_p95=s.get("lat_p95"),
                 lat_p99=s.get("lat_p99"), lat_max=s.get("lat_max"),
                 spikes=spikes.get(key, 0), closed=stop <= now,
+                lat_hist_n=int(s.get("lat_hist_n") or 0),
+                **{f: int(s.get(f) or 0) for f in _HIST_FIELDS},
                 **secs,
             ))
         model.objects.bulk_create(
@@ -235,7 +243,7 @@ def roll(tenant_id, size: timedelta, start: datetime, end: datetime,
             update_fields=[
                 "kind", "up_s", "down_s", "degraded_s", "stale_s", "unknown_s",
                 "incidents", "samples", "lat_min", "lat_avg", "lat_p50", "lat_p95",
-                "lat_p99", "lat_max", "spikes", "closed",
+                "lat_p99", "lat_max", "spikes", "closed", "lat_hist_n", *_HIST_FIELDS,
             ],
         )
         written += len(rows)

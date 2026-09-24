@@ -126,7 +126,8 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             "target_pct", "warning_pct", "period", "timezone", "service_hours",
             "holiday_calendar", "holiday_calendar_detail", "count_degraded_as",
             "count_stale_as", "count_unknown_as", "exclude_maintenance",
-            "min_outage_seconds", "aggregation", "latency_objectives", "status",
+            "min_outage_seconds", "aggregation", "latency_objectives", "objectives",
+            "objectives_in_state", "status",
             "effective_from", "revision", "group_count", "member_count", "current",
             "notify_channels", "alert_burn_rate", "burn_alerts", "alert_coverage_pct",
             "credit_tiers", "period_fee", "currency",
@@ -264,6 +265,14 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
                 clean.append([a, b])
             out[day] = clean
         return out
+
+    def validate_objectives(self, value):
+        from .sla_objectives import validate
+
+        try:
+            return validate(value)
+        except ValueError as e:
+            raise serializers.ValidationError(str(e)) from None
 
     def validate_latency_objectives(self, value):
         if not isinstance(value, dict):

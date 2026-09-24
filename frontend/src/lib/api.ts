@@ -9813,6 +9813,27 @@ export interface SlaFigures {
   /** The service credit this figure earns; null without tiers, or for a
    * caller without `view_credits`. */
   credit?: SlaCredit | null
+  /** Each latency objective's figure; null for a limited view. */
+  objectives?: SlaObjectiveFigure[] | null
+  /** The state from availability alone, when objectives may change `state`. */
+  availability_state?: SlaState
+}
+
+export interface SlaObjective {
+  kind: string
+  threshold_ms: number
+  target_pct: number
+}
+
+export interface SlaObjectiveFigure extends SlaObjective {
+  /** Probes with a latency histogram, and how many answered within. */
+  probes: number
+  within: number
+  pct: number | null
+  budget_probes: number
+  slow: number
+  budget_spent_pct: number
+  state: SlaState
 }
 
 export interface SlaCredit {
@@ -9881,6 +9902,9 @@ export interface SlaAgreement {
   min_outage_seconds: number
   aggregation: "mean" | "worst" | "all"
   latency_objectives: Record<string, number>
+  objectives: SlaObjective[]
+  /** The state is the worst of availability and the objectives. */
+  objectives_in_state: boolean
   /** Channels that get this agreement's alerts. */
   notify_channels: string[]
   /** At risk once budget burns this many times faster than time passes. */
@@ -10191,9 +10215,19 @@ export interface SlaAnalysis {
   incidents: SlaIncident[]
   latency: {
     kind: string
+    /** The p95 alert line, in ms. */
     objective: number | null
-    points: { t: string; p95: number | null; p50: number | null }[]
+    /** Latency objectives on this kind; `points[].within` is keyed by threshold. */
+    objectives: { threshold_ms: number; target_pct: number }[]
+    points: {
+      t: string
+      p95: number | null
+      p50: number | null
+      within: Record<string, number | null>
+    }[]
   }[]
+  /** Each latency objective over this window and slice. */
+  objectives: SlaObjectiveFigure[]
   options: {
     groups: { id: string; name: string; count: number }[]
     sites: { id: string; name: string; count: number }[]
