@@ -4566,7 +4566,7 @@ class MACAddressViewSet(TenantScopedViewSet):
 
 class CableViewSet(TenantScopedViewSet):
     queryset = (
-        Cable.objects.prefetch_related(
+        Cable.objects.select_related("status").prefetch_related(
             "terminations__interface__device",
             "terminations__front_port__device",
             "terminations__rear_port__device",
@@ -5556,7 +5556,7 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
 
 
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
-    queryset = VirtualMachine.objects.all().order_by(NATURAL_NAME)
+    queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
 
     def perform_create(self, serializer):
