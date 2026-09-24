@@ -1605,6 +1605,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             # assigned_vm: is_primary_for_vm reads the VM's primary_ip_id, so
             # without the join every VM-assigned row lazy-loads its VM (#122).
             "assigned_vm", "prefix__vrf", "prefix__site", "site",
+            "assigned_interface__device",
         )
         .prefetch_related("tags")
         .all()
