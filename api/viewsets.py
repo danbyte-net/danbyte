@@ -2530,6 +2530,26 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         pass
 
 
+def _status_usage_expr():
+    """Sum of every relation StatusSerializer counts, as correlated subqueries,
+    so a list of N statuses is one statement instead of 14 COUNT(*) per row."""
+    from django.db.models import Count, IntegerField, OuterRef, Subquery, Value
+    from django.db.models.functions import Coalesce
+
+    from .serializers import StatusSerializer
+
+    expr = Value(0)
+    for rn in StatusSerializer._USAGE_RELS:
+        rel = Status._meta.get_field(rn)
+        fk = rel.field.name
+        sub = (
+            rel.related_model._default_manager.filter(**{fk: OuterRef("pk")})
+            .order_by().values(fk).annotate(c=Count("pk")).values("c")
+        )
+        expr = expr + Coalesce(Subquery(sub, output_field=IntegerField()), Value(0))
+    return expr
+
+
 class StatusViewSet(_IpCatalogViewSet):
     queryset = Status.objects.all().order_by("weight", "name")
     serializer_class = StatusSerializer
@@ -2544,7 +2564,7 @@ class StatusViewSet(_IpCatalogViewSet):
             avail = self.request.query_params.get("available_to")
             if avail:
                 qs = qs.filter(available_to__contains=[avail])
-        return qs
+        return qs.annotate(usage_count_annotated=_status_usage_expr())
 
     def _after_save(self, obj):
         # At most one default status per (tenant, object-type): strip each slug
