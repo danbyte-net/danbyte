@@ -20,6 +20,13 @@ from .history_views import (
     transitions_view,
 )
 from .maintenance_api import EventImpactViewSet, MaintenanceEventViewSet
+from .sla_api import (
+    HolidayCalendarViewSet,
+    SlaAgreementViewSet,
+    SlaCheckGroupViewSet,
+    SlaExclusionViewSet,
+    SlaMemberViewSet,
+)
 from .viewsets import (
     AcmeOrderViewSet,
     AlertRuleViewSet,
@@ -122,6 +129,11 @@ router.register(
     basename="port-utilization-rule",
 )
 router.register(r"silences", SilenceViewSet, basename="silence")
+router.register(r"sla-agreements", SlaAgreementViewSet, basename="sla-agreement")
+router.register(r"sla-check-groups", SlaCheckGroupViewSet, basename="sla-check-group")
+router.register(r"sla-members", SlaMemberViewSet, basename="sla-member")
+router.register(r"sla-exclusions", SlaExclusionViewSet, basename="sla-exclusion")
+router.register(r"holiday-calendars", HolidayCalendarViewSet, basename="holiday-calendar")
 router.register(
     r"maintenance-events", MaintenanceEventViewSet, basename="maintenance-event"
 )

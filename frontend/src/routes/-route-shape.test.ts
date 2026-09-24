@@ -73,7 +73,13 @@ function readEntities(): Map<string, Entity> {
     if (file.endsWith(".test.tsx")) continue
     if (file.startsWith("__")) continue
     const stem = file.slice(0, -".tsx".length)
-    const [prefix, ...rest] = stem.split(".")
+    let [prefix, ...rest] = stem.split(".")
+    // `monitoring_.sla.$id` escapes the /monitoring layout: the entity is
+    // `monitoring_.sla`, not everything under `monitoring_`.
+    if (prefix.endsWith("_") && rest.length > 1) {
+      prefix = `${prefix}.${rest[0]}`
+      rest = rest.slice(1)
+    }
     const entity = entities.get(prefix) ?? {
       prefix,
       segments: [],

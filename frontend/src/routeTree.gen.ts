@@ -450,6 +450,8 @@ import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-grou
 import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
 import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
 import { Route as OspfAreasIdEditRouteImport } from './routes/ospf-areas.$id_.edit'
+import { Route as MonitoringSlaNewRouteImport } from './routes/monitoring_.sla.new'
+import { Route as MonitoringSlaIdRouteImport } from './routes/monitoring_.sla.$id'
 import { Route as MonitoringChecksIdRouteImport } from './routes/monitoring_.checks.$id'
 import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
 import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
@@ -496,6 +498,7 @@ import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$i
 import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
 import { Route as PlanningBoardIdTasksTaskIdRouteImport } from './routes/planning.$boardId_.tasks.$taskId'
+import { Route as MonitoringSlaIdEditRouteImport } from './routes/monitoring_.sla.$id_.edit'
 import { Route as LTenantTypeNumidRouteImport } from './routes/l.$tenant.$type.$numid'
 
 const ZonesRoute = ZonesRouteImport.update({
@@ -2706,6 +2709,16 @@ const OspfAreasIdEditRoute = OspfAreasIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => OspfAreasRoute,
 } as any)
+const MonitoringSlaNewRoute = MonitoringSlaNewRouteImport.update({
+  id: '/monitoring_/sla/new',
+  path: '/monitoring/sla/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringSlaIdRoute = MonitoringSlaIdRouteImport.update({
+  id: '/monitoring_/sla/$id',
+  path: '/monitoring/sla/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MonitoringChecksIdRoute = MonitoringChecksIdRouteImport.update({
   id: '/monitoring_/checks/$id',
   path: '/monitoring/checks/$id',
@@ -2937,6 +2950,11 @@ const PlanningBoardIdTasksTaskIdRoute =
     path: '/planning/$boardId/tasks/$taskId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const MonitoringSlaIdEditRoute = MonitoringSlaIdEditRouteImport.update({
+  id: '/monitoring_/sla/$id_/edit',
+  path: '/monitoring/sla/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
   id: '/l/$tenant/$type/$numid',
   path: '/l/$tenant/$type/$numid',
@@ -3391,6 +3409,8 @@ export interface FileRoutesByFullPath {
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
   '/monitoring/checks/$id': typeof MonitoringChecksIdRoute
+  '/monitoring/sla/$id': typeof MonitoringSlaIdRoute
+  '/monitoring/sla/new': typeof MonitoringSlaNewRoute
   '/ospf-areas/$id/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
@@ -3431,6 +3451,7 @@ export interface FileRoutesByFullPath {
   '/wireless-lans/$id/edit': typeof WirelessLansIdEditRoute
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
+  '/monitoring/sla/$id/edit': typeof MonitoringSlaIdEditRoute
   '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
 }
 export interface FileRoutesByTo {
@@ -3812,6 +3833,8 @@ export interface FileRoutesByTo {
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id/edit': typeof ModuleTypesIdEditRoute
   '/monitoring/checks/$id': typeof MonitoringChecksIdRoute
+  '/monitoring/sla/$id': typeof MonitoringSlaIdRoute
+  '/monitoring/sla/new': typeof MonitoringSlaNewRoute
   '/ospf-areas/$id/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id/edit': typeof PermissionsIdEditRoute
@@ -3852,6 +3875,7 @@ export interface FileRoutesByTo {
   '/wireless-lans/$id/edit': typeof WirelessLansIdEditRoute
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
+  '/monitoring/sla/$id/edit': typeof MonitoringSlaIdEditRoute
   '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
 }
 export interface FileRoutesById {
@@ -4303,6 +4327,8 @@ export interface FileRoutesById {
   '/manufacturers/$id_/edit': typeof ManufacturersIdEditRoute
   '/module-types/$id_/edit': typeof ModuleTypesIdEditRoute
   '/monitoring_/checks/$id': typeof MonitoringChecksIdRoute
+  '/monitoring_/sla/$id': typeof MonitoringSlaIdRoute
+  '/monitoring_/sla/new': typeof MonitoringSlaNewRoute
   '/ospf-areas/$id_/edit': typeof OspfAreasIdEditRoute
   '/p/$slug/$': typeof PSlugSplatRoute
   '/permissions/$id_/edit': typeof PermissionsIdEditRoute
@@ -4343,6 +4369,7 @@ export interface FileRoutesById {
   '/wireless-lans/$id_/edit': typeof WirelessLansIdEditRoute
   '/zones/$id_/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
+  '/monitoring_/sla/$id_/edit': typeof MonitoringSlaIdEditRoute
   '/planning/$boardId_/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
 }
 export interface FileRouteTypes {
@@ -4795,6 +4822,8 @@ export interface FileRouteTypes {
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
     | '/monitoring/checks/$id'
+    | '/monitoring/sla/$id'
+    | '/monitoring/sla/new'
     | '/ospf-areas/$id/edit'
     | '/p/$slug/$'
     | '/permissions/$id/edit'
@@ -4835,6 +4864,7 @@ export interface FileRouteTypes {
     | '/wireless-lans/$id/edit'
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
+    | '/monitoring/sla/$id/edit'
     | '/planning/$boardId/tasks/$taskId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -5216,6 +5246,8 @@ export interface FileRouteTypes {
     | '/manufacturers/$id/edit'
     | '/module-types/$id/edit'
     | '/monitoring/checks/$id'
+    | '/monitoring/sla/$id'
+    | '/monitoring/sla/new'
     | '/ospf-areas/$id/edit'
     | '/p/$slug/$'
     | '/permissions/$id/edit'
@@ -5256,6 +5288,7 @@ export interface FileRouteTypes {
     | '/wireless-lans/$id/edit'
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
+    | '/monitoring/sla/$id/edit'
     | '/planning/$boardId/tasks/$taskId'
   id:
     | '__root__'
@@ -5706,6 +5739,8 @@ export interface FileRouteTypes {
     | '/manufacturers/$id_/edit'
     | '/module-types/$id_/edit'
     | '/monitoring_/checks/$id'
+    | '/monitoring_/sla/$id'
+    | '/monitoring_/sla/new'
     | '/ospf-areas/$id_/edit'
     | '/p/$slug/$'
     | '/permissions/$id_/edit'
@@ -5746,6 +5781,7 @@ export interface FileRouteTypes {
     | '/wireless-lans/$id_/edit'
     | '/zones/$id_/edit'
     | '/l/$tenant/$type/$numid'
+    | '/monitoring_/sla/$id_/edit'
     | '/planning/$boardId_/tasks/$taskId'
   fileRoutesById: FileRoutesById
 }
@@ -5933,6 +5969,8 @@ export interface RootRouteChildren {
   IpsIdEditRoute: typeof IpsIdEditRoute
   MaintenanceIdEditRoute: typeof MaintenanceIdEditRoute
   MonitoringChecksIdRoute: typeof MonitoringChecksIdRoute
+  MonitoringSlaIdRoute: typeof MonitoringSlaIdRoute
+  MonitoringSlaNewRoute: typeof MonitoringSlaNewRoute
   PSlugSplatRoute: typeof PSlugSplatRoute
   PlatformGroupsIdEditRoute: typeof PlatformGroupsIdEditRoute
   PlatformsIdEditRoute: typeof PlatformsIdEditRoute
@@ -5943,6 +5981,7 @@ export interface RootRouteChildren {
   SilencesIdEditRoute: typeof SilencesIdEditRoute
   VirtualMachinesIdEditRoute: typeof VirtualMachinesIdEditRoute
   LTenantTypeNumidRoute: typeof LTenantTypeNumidRoute
+  MonitoringSlaIdEditRoute: typeof MonitoringSlaIdEditRoute
   PlanningBoardIdTasksTaskIdRoute: typeof PlanningBoardIdTasksTaskIdRoute
 }
 
@@ -9035,6 +9074,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OspfAreasIdEditRouteImport
       parentRoute: typeof OspfAreasRoute
     }
+    '/monitoring_/sla/new': {
+      id: '/monitoring_/sla/new'
+      path: '/monitoring/sla/new'
+      fullPath: '/monitoring/sla/new'
+      preLoaderRoute: typeof MonitoringSlaNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/$id': {
+      id: '/monitoring_/sla/$id'
+      path: '/monitoring/sla/$id'
+      fullPath: '/monitoring/sla/$id'
+      preLoaderRoute: typeof MonitoringSlaIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/monitoring_/checks/$id': {
       id: '/monitoring_/checks/$id'
       path: '/monitoring/checks/$id'
@@ -9355,6 +9408,13 @@ declare module '@tanstack/react-router' {
       path: '/planning/$boardId/tasks/$taskId'
       fullPath: '/planning/$boardId/tasks/$taskId'
       preLoaderRoute: typeof PlanningBoardIdTasksTaskIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/$id_/edit': {
+      id: '/monitoring_/sla/$id_/edit'
+      path: '/monitoring/sla/$id/edit'
+      fullPath: '/monitoring/sla/$id/edit'
+      preLoaderRoute: typeof MonitoringSlaIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/l/$tenant/$type/$numid': {
@@ -10796,6 +10856,8 @@ const rootRouteChildren: RootRouteChildren = {
   IpsIdEditRoute: IpsIdEditRoute,
   MaintenanceIdEditRoute: MaintenanceIdEditRoute,
   MonitoringChecksIdRoute: MonitoringChecksIdRoute,
+  MonitoringSlaIdRoute: MonitoringSlaIdRoute,
+  MonitoringSlaNewRoute: MonitoringSlaNewRoute,
   PSlugSplatRoute: PSlugSplatRoute,
   PlatformGroupsIdEditRoute: PlatformGroupsIdEditRoute,
   PlatformsIdEditRoute: PlatformsIdEditRoute,
@@ -10806,6 +10868,7 @@ const rootRouteChildren: RootRouteChildren = {
   SilencesIdEditRoute: SilencesIdEditRoute,
   VirtualMachinesIdEditRoute: VirtualMachinesIdEditRoute,
   LTenantTypeNumidRoute: LTenantTypeNumidRoute,
+  MonitoringSlaIdEditRoute: MonitoringSlaIdEditRoute,
   PlanningBoardIdTasksTaskIdRoute: PlanningBoardIdTasksTaskIdRoute,
 }
 export const routeTree = rootRouteImport

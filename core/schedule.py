@@ -76,6 +76,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Roll check history into hourly and daily records",
     ),
     ScheduledTask(
+        unit="danbyte-sla",
+        commands=("sla_compute",),
+        every=15 * MINUTE,
+        label="Recompute SLA figures; close and freeze finished periods",
+    ),
+    ScheduledTask(
         unit="danbyte-dispatch",
         commands=("dispatch_checks",),
         every=MINUTE,

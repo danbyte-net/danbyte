@@ -230,6 +230,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.Silence", "Silences", "Monitoring"),
     ("monitoring.MaintenanceEvent", "Maintenance events", "Monitoring"),
     ("monitoring.EventImpact", "Event impacts", "Monitoring"),
+    # Covers the agreement's check groups, members and exclusions too.
+    ("monitoring.SlaAgreement", "SLA agreements", "Monitoring"),
+    ("monitoring.HolidayCalendar", "Holiday calendars", "Monitoring"),
     ("monitoring.MonitoringPolicy", "Monitoring policies", "Monitoring"),
     ("monitoring.MonitoringProfile", "Monitoring profiles", "Monitoring"),
     ("monitoring.MonitoringDenySubnet", "Monitoring deny subnets", "Monitoring"),

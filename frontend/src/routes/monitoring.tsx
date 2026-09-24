@@ -67,6 +67,7 @@ import { SourceBadge } from "@/components/monitoring/source-badge"
 import { ExploreView } from "@/components/monitoring/explore-view"
 import { LatencyByKindChart } from "@/components/monitoring/latency-by-kind"
 import { LatencyView } from "@/components/monitoring/latency-view"
+import { SlaList } from "@/components/monitoring/sla-list"
 import { usePageTitle } from "@/lib/page-title"
 
 type MonitoringView =
@@ -75,6 +76,7 @@ type MonitoringView =
   | "checks"
   | "explore"
   | "latency"
+  | "sla"
   | "flapping"
   | "templates"
   | "configuration"
@@ -130,6 +132,7 @@ const VIEWS: MonitoringView[] = [
   "checks",
   "explore",
   "latency",
+  "sla",
   "flapping",
   "templates",
   "configuration",
@@ -319,6 +322,7 @@ function MonitoringPage() {
             { value: "checks", label: "Checks" },
             { value: "explore", label: "Explore" },
             { value: "latency", label: "Latency" },
+            { value: "sla", label: "SLAs" },
             ...(flaps.length > 0
               ? [{ value: "flapping", label: "Flapping", count: flaps.length }]
               : []),
@@ -345,6 +349,7 @@ function MonitoringPage() {
           view === "history" ||
           view === "checks" ||
           view === "explore" ||
+          view === "sla" ||
           view === "flapping"
             ? "flex min-h-0 flex-1 flex-col"
             : "min-h-0 flex-1 overflow-auto p-4 lg:p-6"
@@ -357,6 +362,7 @@ function MonitoringPage() {
         {view === "checks" && <ChecksList />}
         {view === "explore" && <ExploreView />}
         {view === "latency" && <LatencyView />}
+        {view === "sla" && <SlaList />}
         {view === "flapping" && <ChecksList flappingOnly />}
 
         {view === "templates" && (

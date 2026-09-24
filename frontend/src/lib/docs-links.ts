@@ -104,6 +104,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/vteps": "features/routing/",
   "/ethernet-segments": "features/routing/",
   "/monitoring": "features/monitoring/",
+  "/monitoring/sla": "features/sla/",
   "/monitoring-engines": "features/monitoring/",
   "/watched-endpoints": "features/monitoring/",
   "/channels": "features/monitoring/",

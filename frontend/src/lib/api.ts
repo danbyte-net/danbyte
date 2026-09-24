@@ -9770,3 +9770,209 @@ export interface ChatConnection {
   ai_api_key_set: boolean
   providers: ChatProviderOption[]
 }
+
+// ─── Service level agreements ───────────────────────────────────────────────
+
+export type SlaPeriod =
+  | "month"
+  | "quarter"
+  | "year"
+  | "rolling_7"
+  | "rolling_30"
+  | "rolling_90"
+
+export type SlaState = "ok" | "at_risk" | "breached" | "no_data" | "not_started"
+
+/** An agreement's headline for a period. Percentages are 0-100. */
+export interface SlaFigures {
+  availability: number | null
+  coverage: number | null
+  state: SlaState
+  target: number
+  warning: number | null
+  units: number
+  members: number
+  down_s: number
+  budget_s: number
+  budget_left_s: number
+  budget_spent_pct: number
+  elapsed_pct: number
+  burn_rate: number | null
+  incidents: number
+  since: string
+  until: string
+  period_end: string
+}
+
+export interface SlaAgreement {
+  id: string
+  name: string
+  description: string
+  customer: string | null
+  customer_detail: { id: string; name: string } | null
+  customer_name: string
+  target_pct: string
+  warning_pct: string | null
+  period: SlaPeriod
+  timezone: string
+  /** {"mon": [["08:00", "17:00"]], ...}; empty = around the clock. */
+  service_hours: Record<string, [string, string][]>
+  holiday_calendar: string | null
+  holiday_calendar_detail: { id: string; name: string } | null
+  count_degraded_as: "up" | "down"
+  count_stale_as: "unmeasured" | "down"
+  count_unknown_as: "unmeasured" | "down"
+  exclude_maintenance: boolean
+  min_outage_seconds: number
+  aggregation: "mean" | "worst"
+  latency_objectives: Record<string, number>
+  status: "draft" | "active" | "archived"
+  effective_from: string | null
+  revision: number
+  group_count: number
+  member_count: number
+  current: {
+    period_key: string
+    computed_at: string
+    figures: SlaFigures
+    limited: { hidden_members: number } | null
+  } | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaCheckItem {
+  id?: string
+  template: string
+  template_name?: string
+  template_kind?: string
+  counts: boolean
+  weight: number
+  required: boolean
+}
+
+export interface SlaCheckGroup {
+  id: string
+  agreement: string
+  name: string
+  position: number
+  target: "primary" | "all"
+  combine: "all" | "weighted"
+  weight: number
+  use_selector: boolean
+  match_sites: string[]
+  match_roles: string[]
+  match_device_types: string[]
+  match_platforms: string[]
+  match_tags: string[]
+  match_name: string
+  items: SlaCheckItem[]
+  member_count: number
+}
+
+export type SlaObjectType =
+  | "api.device"
+  | "api.virtualmachine"
+  | "api.ipaddress"
+
+export interface SlaMember {
+  id: string
+  agreement: string
+  group: string
+  object_type: SlaObjectType
+  object_id: string
+  object: { id: string; name: string } | null
+  object_site: string | null
+  redundancy_group: string
+  excluded: boolean
+  joined_at: string
+  left_at: string | null
+}
+
+export interface SlaExclusion {
+  id: string
+  agreement: string
+  member: string | null
+  starts_at: string
+  ends_at: string
+  reason: string
+  created_by_name: string | null
+  created_at: string
+}
+
+export interface HolidayCalendar {
+  id: string
+  name: string
+  description: string
+  dates: string[]
+  agreement_count: number
+}
+
+/** A member's figure in a period, with its checks. */
+export interface SlaMemberFigure {
+  member: true
+  member_id: string | null
+  key: string
+  object_type: SlaObjectType
+  object_id: string
+  name: string
+  group_id: string
+  group: string
+  redundancy_group: string
+  /** Joined by the group's selector rather than added. */
+  selected: boolean
+  availability: number | null
+  coverage: number | null
+  up_s: number
+  down_s: number
+  service_s: number
+  incidents: number
+  worst_item: string | null
+  items: {
+    template_id: string
+    name: string
+    kind: string
+    ip_id: string
+    counts: boolean
+    availability: number | null
+    coverage: number | null
+    down_s: number
+    incidents: number
+  }[]
+}
+
+export interface SlaIncident {
+  unit: string
+  label: string
+  start: string
+  end: string
+  seconds: number
+  members: string[]
+}
+
+export interface SlaFiguresResponse {
+  period_key: string | null
+  computed: boolean
+  state?: "open" | "closed" | "frozen" | "rolling"
+  period_start?: string
+  period_end?: string
+  revision?: number
+  computed_at?: string
+  closed_at?: string | null
+  frozen_at?: string | null
+  figures?: SlaFigures
+  limited?: { hidden_members: number } | null
+  members?: SlaMemberFigure[]
+  incidents?: SlaIncident[]
+  days?: { date: string; availability: number | null; down_s: number }[]
+}
+
+export interface SlaPeriodSummary {
+  period_key: string
+  state: "open" | "closed" | "frozen" | "rolling"
+  revision: number
+  period_start: string
+  period_end: string
+  figures: SlaFigures
+  limited: { hidden_members: number } | null
+}

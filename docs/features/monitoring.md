@@ -691,6 +691,8 @@ exactly like an automatic scan.
     - the checks **furthest from their baseline** (window p95 ÷ baseline,
       so 2.0x is twice as slow as usual);
     - the checks with the **most spikes**.
+- **SLAs** - service level agreements, with each one's figure for this
+  period against its target. See [Service level agreements](sla.md).
 - **Flapping** - shown while anything is flagged: the Checks list pinned to
   flapping checks, with row selection and a bulk **Confirm not flapping**.
   Every row carries its **last 24 hours** to scale - the alternation itself

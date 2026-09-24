@@ -85,6 +85,7 @@ nav = [
   { "Monitoring & compliance" = [
     "monitoring/index.md",
     { "Monitoring"        = "features/monitoring.md" },
+    { "SLAs"              = "features/sla.md" },
     { "Outposts (remote engines)" = "monitoring/outposts.md" },
     { "Zabbix" = "monitoring/zabbix.md" },
     { "SNMP discovery"    = "features/snmp-discovery.md" },

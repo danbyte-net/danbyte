@@ -194,9 +194,10 @@ export function RollupAvailabilityChart({
   const first = series.findIndex((p) => p.availability != null)
   const shown = first < 0 ? [] : series.slice(first)
   if (!shown.length) return null
-  const floor = Math.min(
-    95,
-    ...shown.map((p) => Math.floor(p.availability ?? 100))
+  // Below the worst bucket by a margin, so the worst still draws a bar.
+  const floor = Math.max(
+    0,
+    Math.min(95, ...shown.map((p) => Math.floor(p.availability ?? 100) - 5))
   )
   const data = shown.map((p) => ({
     ...p,

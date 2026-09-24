@@ -3530,3 +3530,306 @@ class EventImpact(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.event_id} → {self.object_type}:{self.object_id} ({self.level})"
+
+
+# ─── Service level agreements ───────────────────────────────────────────────
+#
+# An agreement says what availability is promised, over what period, in which
+# hours, and how each status counts. Check groups say what is measured on a
+# class of equipment; members say which objects are in it. Figures are
+# computed from status changes by monitoring/sla.py and kept per period in
+# SlaPeriodResult, frozen once the grace window after the period has passed -
+# so March reads the same in December. docs/features/sla.md.
+
+
+class HolidayCalendar(TimestampedModel):
+    """Dates no agreement that uses it measures - one per tenant or a few
+    (per country, per customer). Shared so a bank holiday is entered once."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="holiday_calendars"
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, default="")
+    #: ISO dates, ["2026-12-25", ...].
+    dates = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_holiday_calendar_name"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SlaPeriod(models.TextChoices):
+    MONTH = "month", "Calendar month"
+    QUARTER = "quarter", "Calendar quarter"
+    YEAR = "year", "Calendar year"
+    ROLLING_7 = "rolling_7", "Last 7 days"
+    ROLLING_30 = "rolling_30", "Last 30 days"
+    ROLLING_90 = "rolling_90", "Last 90 days"
+
+
+class SlaAgreement(TimestampedModel):
+    """The contract: a target over a period, and how the time is counted."""
+
+    STATUS_CHOICES = [("draft", "Draft"), ("active", "Active"), ("archived", "Archived")]
+    AGGREGATION_CHOICES = [("mean", "Average of members"), ("worst", "Worst member")]
+    #: The fields a revision snapshots: change one mid-period and the closed
+    #: periods keep the rules they ran under.
+    RULE_FIELDS = (
+        "target_pct", "warning_pct", "period", "timezone", "service_hours",
+        "holiday_calendar_id", "count_degraded_as", "count_stale_as",
+        "count_unknown_as", "exclude_maintenance", "min_outage_seconds",
+        "aggregation", "effective_from",
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="sla_agreements")
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True, default="")
+    customer = models.ForeignKey(
+        "api.Contact", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sla_agreements",
+    )
+    #: Free text when the customer is not a Contact.
+    customer_name = models.CharField(max_length=150, blank=True, default="")
+    target_pct = models.DecimalField(max_digits=6, decimal_places=3)
+    #: "At risk" below this; null means at risk once 75 % of the budget is spent.
+    warning_pct = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    period = models.CharField(max_length=12, choices=SlaPeriod.choices, default=SlaPeriod.MONTH)
+    #: Period boundaries and service hours are read in this zone; blank = the
+    #: tenant's display timezone.
+    timezone = models.CharField(max_length=64, blank=True, default="")
+    #: {"mon": [["08:00", "17:00"]], ...}; empty = around the clock.
+    service_hours = models.JSONField(default=dict, blank=True)
+    holiday_calendar = models.ForeignKey(
+        HolidayCalendar, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="agreements",
+    )
+    count_degraded_as = models.CharField(
+        max_length=10, default="up", choices=[("up", "Up"), ("down", "Down")]
+    )
+    count_stale_as = models.CharField(
+        max_length=10, default="unmeasured",
+        choices=[("unmeasured", "Not measured"), ("down", "Down")],
+    )
+    count_unknown_as = models.CharField(
+        max_length=10, default="unmeasured",
+        choices=[("unmeasured", "Not measured"), ("down", "Down")],
+    )
+    exclude_maintenance = models.BooleanField(default=True)
+    #: Outages shorter than this count as up.
+    min_outage_seconds = models.PositiveIntegerField(default=0)
+    aggregation = models.CharField(max_length=10, choices=AGGREGATION_CHOICES, default="mean")
+    #: {"icmp": 5, "ssh": 300} - p95 targets per check kind, reported beside
+    #: availability, never folded into it.
+    latency_objectives = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="active")
+    #: Nothing before this date is computed.
+    effective_from = models.DateField(null=True, blank=True)
+    #: The revision now in force; bumped when a RULE_FIELDS value changes.
+    revision = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="uniq_sla_agreement_name"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def rules(self) -> dict:
+        out = {}
+        for f in self.RULE_FIELDS:
+            v = getattr(self, f)
+            out[f] = str(v) if v is not None and not isinstance(v, (bool, int, dict, str)) else v
+        return out
+
+
+class SlaAgreementRevision(models.Model):
+    """The rules an agreement ran under from a moment on."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    agreement = models.ForeignKey(
+        SlaAgreement, on_delete=models.CASCADE, related_name="revisions"
+    )
+    number = models.PositiveIntegerField()
+    rules = models.JSONField(default=dict)
+    created_at = models.DateTimeField(default=timezone.now)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["agreement", "-number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "number"], name="uniq_sla_revision_number"
+            ),
+        ]
+
+
+class SlaCheckGroup(TimestampedModel):
+    """What is measured on one class of equipment in an agreement: which
+    checks count, and (optionally) which devices join by selector."""
+
+    TARGET_CHOICES = [("primary", "Primary address"), ("all", "Every address")]
+    COMBINE_CHOICES = [("all", "All must pass"), ("weighted", "Weighted")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(
+        SlaAgreement, on_delete=models.CASCADE, related_name="check_groups"
+    )
+    name = models.CharField(max_length=150)
+    position = models.PositiveIntegerField(default=0)
+    #: Which of a device's addresses its checks are read from.
+    target = models.CharField(max_length=10, choices=TARGET_CHOICES, default="primary")
+    combine = models.CharField(max_length=10, choices=COMBINE_CHOICES, default="all")
+    weight = models.FloatField(default=1.0)
+    #: Devices matching the selector join the agreement without being added.
+    #: Off: only explicit members.
+    use_selector = models.BooleanField(default=False)
+    match_sites = models.ManyToManyField("api.Site", blank=True, related_name="+")
+    match_roles = models.ManyToManyField("api.DeviceRole", blank=True, related_name="+")
+    match_device_types = models.ManyToManyField("api.DeviceType", blank=True, related_name="+")
+    match_platforms = models.ManyToManyField("api.Platform", blank=True, related_name="+")
+    #: Tag slugs; a device must carry all of them.
+    match_tags = models.JSONField(default=list, blank=True)
+    #: Glob on the device name, case-insensitive.
+    match_name = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        ordering = ["agreement", "position", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "name"], name="uniq_sla_group_name"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SlaCheckItem(models.Model):
+    """One check template in a group. Informational items are computed and
+    shown beside the counted ones, never in the figure."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(SlaCheckGroup, on_delete=models.CASCADE, related_name="items")
+    template = models.ForeignKey(CheckTemplate, on_delete=models.CASCADE, related_name="+")
+    counts = models.BooleanField(default=True)
+    weight = models.FloatField(default=1.0)
+    #: Under weighted combining, a required item down still downs the object.
+    required = models.BooleanField(default=False)
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["group", "position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "template"], name="uniq_sla_item_template"
+            ),
+        ]
+
+
+class SlaMember(TimestampedModel):
+    """An object in an agreement. Removing one sets ``left_at`` so a closed
+    period still counts it; ``excluded`` keeps a selector match out."""
+
+    OBJECT_TYPES = ("api.device", "api.virtualmachine", "api.ipaddress")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(SlaAgreement, on_delete=models.CASCADE, related_name="members")
+    group = models.ForeignKey(SlaCheckGroup, on_delete=models.CASCADE, related_name="members")
+    object_type = models.CharField(max_length=40)
+    object_id = models.UUIDField()
+    #: Denormalised for site-scoped reads and writes.
+    object_site = models.ForeignKey(
+        "api.Site", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    #: Members sharing a label count as down only when all of them are down.
+    redundancy_group = models.CharField(max_length=100, blank=True, default="")
+    excluded = models.BooleanField(default=False)
+    joined_at = models.DateTimeField(default=timezone.now)
+    left_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["agreement", "group", "object_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "group", "object_type", "object_id"],
+                name="uniq_sla_member",
+            ),
+        ]
+        indexes = [models.Index(fields=["tenant", "object_type", "object_id"])]
+
+
+class SlaExclusion(TimestampedModel):
+    """Time an agreement (or one member) does not count - a noted reason,
+    written by someone, audit-logged. Allowed until the period freezes."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(SlaAgreement, on_delete=models.CASCADE, related_name="exclusions")
+    member = models.ForeignKey(
+        SlaMember, on_delete=models.CASCADE, null=True, blank=True, related_name="exclusions"
+    )
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    reason = models.TextField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-starts_at"]
+
+
+class SlaPeriodResult(models.Model):
+    """An agreement's figure for one period.
+
+    ``open`` while the period runs, ``closed`` once it ends (still recomputed
+    while exclusions can be added), ``frozen`` after the grace window - never
+    touched again. A rolling agreement keeps one ``rolling`` row."""
+
+    STATES = [("open", "Open"), ("closed", "Closed"), ("frozen", "Frozen"), ("rolling", "Rolling")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(SlaAgreement, on_delete=models.CASCADE, related_name="results")
+    #: "2026-09", "2026-Q3", "2026", or "rolling".
+    period_key = models.CharField(max_length=16)
+    period_start = models.DateTimeField()
+    period_end = models.DateTimeField()
+    state = models.CharField(max_length=8, choices=STATES, default="open")
+    revision = models.PositiveIntegerField(default=1)
+    #: The headline: availability, coverage, budget, state vs target.
+    figures = models.JSONField(default=dict)
+    #: Per unit (a member, or a redundancy group) and per member, with the
+    #: seconds needed to recompute a partial figure for a scoped viewer.
+    units = models.JSONField(default=list)
+    incidents = models.JSONField(default=list)
+    days = models.JSONField(default=list)
+    computed_at = models.DateTimeField(default=timezone.now)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    frozen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["agreement", "-period_start"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "period_key"], name="uniq_sla_period_result"
+            ),
+        ]

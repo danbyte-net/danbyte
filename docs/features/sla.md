@@ -1,0 +1,176 @@
+---
+icon: lucide/badge-check
+---
+
+# Service level agreements
+
+An agreement states the availability you promise over a period, the hours it
+covers, and how each check status counts. Danbyte measures it from the same
+status changes the monitoring history shows. Each period's figure is stored and
+then frozen, so it stays the same after the raw data behind it is pruned.
+
+**Governance → Monitoring → SLAs** lists every agreement. Each row shows this
+period's figure against the target, the error budget left, and how much of the
+time was actually measured.
+
+## The parts of an agreement
+
+| Part | What it says |
+|---|---|
+| **Agreement** | The target (for example 99.9 %), the period, the service hours, holidays, and the counting rules |
+| **Check group** | Which checks count for one class of equipment, and which address they are read from |
+| **Member** | A device, virtual machine or IP address in a group |
+| **Exclusion** | Time that does not count, with the reason recorded |
+
+A new tenant has no agreements. Nothing is seeded.
+
+### Periods
+
+A period is a calendar month, quarter or year, read in the agreement's
+timezone. The timezone defaults to the tenant's. A period can also be rolling:
+the last 7, 30 or 90 days.
+
+Calendar periods go through three states:
+
+- **Open** - the current period, recomputed every 15 minutes by the
+  `danbyte-sla` timer (`manage.py sla_compute`).
+- **Closed** - the period has ended. For seven days it is still recomputed,
+  so exclusions can be added.
+- **Frozen** - seven days after the period ends, the figure is final and
+  never recomputed.
+
+A rolling agreement has a single figure that is always current.
+
+*Counts from* sets a start date. Nothing before it is computed.
+
+### Service hours and holidays
+
+By default an agreement covers all hours. With service hours set, for example
+Monday to Friday 08:00-17:00, time outside those hours is not measured at all.
+
+Holidays come from a **holiday calendar**. Calendars are shared across the
+tenant and managed under **Holidays** on the SLAs list. A bank holiday is
+entered once, and every agreement using that calendar skips it.
+
+### Counting rules
+
+| Status | Counts as | Can be changed to |
+|---|---|---|
+| Up | up | - |
+| Down | down | - |
+| Degraded | up | down |
+| Stale | not measured | down |
+| Unknown, skipped | not measured | down |
+
+*Stale* means the probe could not see the target. That is usually a fault in
+the probe or its network, not in the service, so by default it is not charged
+as downtime.
+
+**Ignore outages under** sets a number of seconds. Outages shorter than that
+count as up.
+
+**Exclude planned maintenance** removes the time of every maintenance event
+that touches a member's device, unless the event is tentative, cancelled or
+rescheduled. Outage events are never excluded. See
+[Maintenance](maintenance.md).
+
+Changing a rule creates a new **revision**. A closed period keeps the revision
+it ran under. The **Revisions** tab shows what changed and who changed it.
+
+## Check groups
+
+A group lists the check templates that count, such as Ping and SSH. A check
+can be **informational**: it is computed and shown next to the counted
+checks, but never included in the figure. If a group lists no checks, every
+check on the member's addresses counts.
+
+**Addresses** controls where the checks are read from: the device's primary
+address, or every address on it.
+
+**Checks combine as** decides how several counted checks become one figure
+for an object:
+
+- **All must pass** (the default) - the object is down while any counted
+  check is down.
+- **Weighted** - the weighted average of the checks' up and down time. A
+  check marked *required* always counts its full down time.
+
+**Devices join by selector** adds, without adding them one by one, every
+device that matches all of the selector fields you fill in: sites, roles,
+device types, platforms, tags, and a name pattern such as `leaf-*`. A selector
+with nothing filled in matches nothing. To keep one matching device out, add
+it as a member and mark it excluded.
+
+## Members
+
+Add devices, virtual machines or IP addresses on the **Members** tab.
+Removing a member marks it as having left; it is not deleted. Periods it was
+part of still count the time it was in. A member you cannot view cannot be
+added.
+
+**Redundancy group** is a label shared by members that back each other up,
+such as a leaf pair. A redundancy group counts as one unit, and it is down only
+while all of its members are down.
+
+The agreement's figure combines its units in one of two ways:
+
+- **Average** - the time-weighted mean: total up time over total measured
+  time.
+- **Worst member** - the figure of the lowest unit.
+
+## The figure
+
+The **Overview** tab shows the figure for this period, or any stored period
+you pick:
+
+- **Availability** - up ÷ (up + down) within service hours, after exclusions.
+- **Coverage** - measured time ÷ service time. A high availability with low
+  coverage was measured over only part of the period, so treat it with care.
+  The badge is dimmed when coverage is under 90 %.
+- **State**:
+    - *On target*;
+    - *At risk* - below *At risk below*, or, when that is empty, once three
+      quarters of the error budget is spent;
+    - *Breached* - below the target;
+    - *No data*.
+- **Error budget** - the downtime the target allows over the whole period,
+  what has been spent, and what is left. With *Average* the spend is the mean
+  unit downtime; with *Worst member* it is the worst unit's downtime.
+- **Burn rate** - budget spent ÷ share of the period elapsed. Above 1.0, the
+  period ends over budget if nothing changes.
+- **Per day** - availability for each day.
+
+**Incidents** lists each outage that spent budget: when it started, how long
+it lasted, and which members were down as it began.
+
+**Exclusions** removes time from the figure, for the whole agreement or for
+one member, with a required reason. Examples are a provider's fibre cut or a
+test the customer asked for. Each exclusion is kept in the change log. An
+exclusion cannot touch a frozen period.
+
+After a change to members, groups or exclusions, the figure is recomputed
+straight away. **Recompute** does the same by hand.
+
+## Who sees what
+
+One permission, **SLA agreements**, covers an agreement together with its
+groups, members and exclusions. Holiday calendars have their own permission.
+
+A viewer whose device, VM or address permissions are limited to some sites gets
+a partial figure. It covers only the units whose members they can all see,
+and a note says how many members are left out. Hidden members, their
+incidents, and the per-day figures are not shown.
+
+## API
+
+| Endpoint | What |
+|---|---|
+| `/api/monitoring/sla-agreements/` | Agreements; each includes the current period's figure as `current` |
+| `…/sla-agreements/<id>/figures/?period=current\|previous\|2026-08` | One period, with members, incidents and days |
+| `…/sla-agreements/<id>/periods/` | Every stored period |
+| `…/sla-agreements/<id>/revisions/` | The rules over time |
+| `POST …/sla-agreements/<id>/recompute/` | Recompute now |
+| `/api/monitoring/sla-check-groups/` | Groups; `items` are written inline |
+| `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once |
+| `/api/monitoring/sla-exclusions/` | Excluded time |
+| `/api/monitoring/holiday-calendars/` | Shared holiday calendars |
