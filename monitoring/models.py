@@ -3597,7 +3597,11 @@ class SlaAgreement(TimestampedModel):
     """The contract: a target over a period, and how the time is counted."""
 
     STATUS_CHOICES = [("draft", "Draft"), ("active", "Active"), ("archived", "Archived")]
-    AGGREGATION_CHOICES = [("mean", "Average of members"), ("worst", "Worst member")]
+    AGGREGATION_CHOICES = [
+        ("mean", "Average of members"), ("worst", "Worst member"),
+        # A service built from parts in series: down while any unit is down.
+        ("all", "All must be up"),
+    ]
     #: The fields a revision snapshots: change one mid-period and the closed
     #: periods keep the rules they ran under.
     RULE_FIELDS = (
@@ -3807,7 +3811,8 @@ class SlaMember(TimestampedModel):
     """An object in an agreement. Removing one sets ``left_at`` so a closed
     period still counts it; ``excluded`` keeps a selector match out."""
 
-    OBJECT_TYPES = ("api.device", "api.virtualmachine", "api.ipaddress", "api.prefix")
+    OBJECT_TYPES = ("api.device", "api.virtualmachine", "api.ipaddress", "api.prefix",
+                    "api.circuit")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
@@ -3821,6 +3826,11 @@ class SlaMember(TimestampedModel):
     )
     #: Members sharing a label count as down only when all of them are down.
     redundancy_group = models.CharField(max_length=100, blank=True, default="")
+    #: A circuit's checks are read from this address when set - typically the
+    #: provider's far-end gateway - instead of the addresses cabled to its ends.
+    monitor_ip = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
     excluded = models.BooleanField(default=False)
     joined_at = models.DateTimeField(default=timezone.now)
     left_at = models.DateTimeField(null=True, blank=True)

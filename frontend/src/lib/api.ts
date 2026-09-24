@@ -9864,7 +9864,7 @@ export interface SlaAgreement {
   count_unknown_as: "unmeasured" | "down"
   exclude_maintenance: boolean
   min_outage_seconds: number
-  aggregation: "mean" | "worst"
+  aggregation: "mean" | "worst" | "all"
   latency_objectives: Record<string, number>
   /** Channels that get this agreement's alerts. */
   notify_channels: string[]
@@ -9930,6 +9930,7 @@ export type SlaObjectType =
   | "api.virtualmachine"
   | "api.ipaddress"
   | "api.prefix"
+  | "api.circuit"
 
 export interface SlaMember {
   id: string
@@ -9940,6 +9941,9 @@ export interface SlaMember {
   object: { id: string; name: string } | null
   object_site: string | null
   redundancy_group: string
+  /** A circuit's checks read from this address instead of its cabled ends. */
+  monitor_ip: string | null
+  monitor_ip_detail: { id: string; address: string } | null
   excluded: boolean
   joined_at: string
   left_at: string | null

@@ -127,19 +127,23 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
     tz = detail["tz"]
     zone = ZoneInfo(tz)
     unit_tls = detail["unit_tls"]
-    units = [u for u in data["units"] if not u.get("member")]
     members = [u for u in data["units"] if u.get("member")]
     worst = rules.get("aggregation") == "worst"
     bounds = _bounds(detail["start"], detail["until"], tz, bucket)
+    # "All must be up": the series is one timeline, down while any unit is.
+    series_tls = (
+        {"all": st.combine(list(unit_tls.values()), "all")}
+        if rules.get("aggregation") == "all" else unit_tls
+    )
 
     # ── series and burn-down ────────────────────────────────────────────────
-    per_unit = {k: _split(tl, bounds) for k, tl in unit_tls.items()}
+    per_unit = {k: _split(tl, bounds) for k, tl in series_tls.items()}
     series, burn = [], []
     starts = [datetime.fromisoformat(i["start"]) for i in data["incidents"]]
     spent = defaultdict(float)
     budget = figures.get("budget_s") or 0
     span = (detail["end"] - detail["start"]).total_seconds() or 1
-    n_units = max(1, len(units))
+    n_units = max(1, len(per_unit))
     for i, (lo, hi) in enumerate(bounds):
         cols = [per_unit[k][i] for k in per_unit]
         up = sum(c[0] for c in cols)
@@ -209,7 +213,7 @@ def analyse(agreement, start, end, *, rules=None, filters=None, bucket="day", no
 
     # ── when down time happens ─────────────────────────────────────────────
     heat = defaultdict(float)
-    for tl in unit_tls.values():
+    for tl in series_tls.values():
         for s, e, c in tl:
             if c != st.DOWN:
                 continue

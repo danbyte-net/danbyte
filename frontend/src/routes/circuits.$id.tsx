@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 
 export const Route = createFileRoute("/circuits/$id")({
   component: CircuitDetail,
@@ -176,7 +177,10 @@ function Body({ circuit: c }: { circuit: Circuit }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <CircuitOverview circuit={c} />
+        <div className="space-y-6">
+          <CircuitOverview circuit={c} />
+          <ObjectSlaPanel objectType="api.circuit" objectId={c.id} />
+        </div>
       </DetailTab>
       <DetailTab value="terminations">
         <div className="grid gap-6 lg:grid-cols-2">

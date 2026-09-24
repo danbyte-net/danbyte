@@ -51,7 +51,7 @@ minutes. That is the **error budget**.
 |---|---|
 | **Agreement** | Who it is provided for, the target (for example 99.9 %), the period, the service hours, holidays, and the counting rules |
 | **Check group** | Which checks count for one class of equipment, and which address they are read from |
-| **Member** | A device, virtual machine, IP address or prefix in a group |
+| **Member** | A device, virtual machine, IP address, prefix or circuit in a group |
 | **Unit** | What the figure is built from: one member, or a redundancy group of members counted as one |
 | **Exclusion** | Time that does not count, with the reason recorded |
 
@@ -114,7 +114,8 @@ as downtime.
 count as up.
 
 **Exclude planned maintenance** removes the time of every maintenance event
-that touches a member's device, unless the event is tentative, cancelled or
+that touches a member's device or circuit (a carrier's announced works),
+unless the event is tentative, cancelled or
 rescheduled. Outage events are never excluded. See
 [Maintenance](maintenance.md).
 
@@ -147,10 +148,17 @@ it as a member and mark it excluded.
 
 ## Members
 
-Add devices, virtual machines, IP addresses or prefixes on the **Members**
-tab. A prefix stands for the monitored addresses in it and in its child
-prefixes. An address with no check is not counted, so adding a /16 does not
-bring in thousands of unmeasured rows.
+Add devices, virtual machines, IP addresses, prefixes or circuits on the
+**Members** tab. A prefix stands for the monitored addresses in it and in its
+child prefixes. An address with no check is not counted, so adding a /16 does
+not bring in thousands of unmeasured rows.
+
+A **circuit** is measured on the addresses of the interfaces its ends are
+cabled to, followed through patch panels. The far side of a circuit is the
+provider's, so the trace stops at its ends. To measure it somewhere else, set
+a **monitor address** when adding it: usually the provider's far-end gateway,
+which is the address that proves the circuit carries traffic. A circuit with
+no cable and no monitor address has no data.
 
 Removing a member marks it as having left; it is not deleted. Periods it was
 part of still count the time it was in. A member you cannot view cannot be
@@ -165,6 +173,16 @@ while all of its members are down.
 - **Average** - the time-weighted mean: total up time over total measured
   time.
 - **Worst member** - the figure of the lowest unit.
+- **All must be up** - the units are in series, like the parts of one
+  service: it is down while any unit is down. Two units down on different
+  days both count, where an average would halve them.
+
+Together with redundancy groups, "all must be up" describes a service built
+from parts. *Internet at Aarhus* is the carrier circuit, then a firewall pair:
+add the circuit, add both firewalls with the redundancy group `fw`, and pick
+**All must be up**. One firewall down costs nothing; the circuit down, or both
+firewalls, is an outage. A viewer with a limited view of such an agreement
+sees its worst visible unit, because the series needs every unit.
 
 ## The figure
 
@@ -336,7 +354,8 @@ user's report leaves out the members they cannot see, and says so.
 
 ## On lists and object pages
 
-The device, virtual machine, IP address and prefix lists have two columns:
+The device, virtual machine, IP address, prefix, circuit, site and cluster
+lists have two columns:
 
 - **SLA** - the object's figure in its agreement's current period, coloured
   against that agreement's target. An object in several agreements shows the
@@ -352,8 +371,20 @@ The device, virtual machine, IP address and prefix lists have two columns:
   frame had no check results, the share that did follows the figure, as in
   "75.1% 68% measured". Unmeasured time counts as neither up nor down.
 
+A site's **SLA** is every agreement provided for that site, with the
+agreement's whole figure; its **Availability** is over the site's devices. A
+cluster's are over its hosts: the agreements its hosts are in, and their
+checks. A circuit's availability is over the addresses its ends are cabled
+to.
+
+A provider's **Circuits** tab shows the same two columns, so each carrier's
+circuits can be read against their agreements in one table. Sort by **SLA**
+to put the worst first.
+
 The **Monitoring** tab of a device, virtual machine, IP address or prefix opens with
-the agreements the object is in, and has an **Add to SLA** button. It asks
+the agreements the object is in, and has an **Add to SLA** button. A
+circuit's **Overview** has the same panel; a circuit added from there is
+measured through its cables. It asks
 for the agreement, the check group and an optional redundancy group. The
 device list's selection bar has the same button, for many devices at once.
 An addition shows in the figure straight away.
@@ -379,11 +410,11 @@ incidents, and the per-day figures are not shown.
 | `POST …/sla-agreements/<id>/recompute/` | Recompute now |
 | `burn_alerts` on an agreement | Up to four rules: `{name, long_min, short_min, burn, on}`; `current.burn` has each rule's last result |
 | `/api/monitoring/sla-check-groups/` | Groups; `items` are written inline |
-| `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once |
+| `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once. A circuit takes `monitor_ip` |
 | `/api/monitoring/sla-exclusions/` | Excluded time |
 | `/api/monitoring/holiday-calendars/` | Shared holiday calendars |
 | `GET …/sla-agreements/<id>/report/?period=&file=pdf\|csv` | A period's report (`file`, not `format`, which the API keeps for itself) |
 | `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live, with `forecast` while the window runs |
 | `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
 | `GET …/sla-agreements/overview-report/?period=&file=` | Every agreement for one period |
-| `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip\|prefix, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |
+| `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip\|prefix\|circuit\|site\|cluster, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |

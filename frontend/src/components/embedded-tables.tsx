@@ -49,6 +49,7 @@ import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import type { WirelessLANColumnId } from "@/components/columns/wireless-lan-columns"
 import { QueryError } from "@/components/query-error"
+import { useSlaStatus } from "@/components/monitoring/sla-status"
 
 function useEmbed<T>(
   kind: string,
@@ -164,6 +165,10 @@ export function EmbeddedCircuitTable({
   emptyText?: string
 }) {
   const q = useEmbed<Circuit>("embedded-circuits", "/api/circuits/", filter)
+  // A provider page is where a carrier is held to its promise: each
+  // circuit's SLA figure and plain availability sit beside it.
+  const ids = useMemo(() => (q.data?.results ?? []).map((r) => r.id), [q.data])
+  const sla = useSlaStatus("circuit", ids)
   const columns = useMemo<ColumnDef<Circuit>[]>(() => {
     const include: CircuitColumnId[] = [
       "cid",
@@ -172,14 +177,17 @@ export function EmbeddedCircuitTable({
       "status",
       "endpoints",
       "commit",
+      "sla",
+      "availability",
       "description",
     ]
     return buildCircuitColumns({
       include: omitProvider
         ? include.filter((id) => id !== "provider")
         : include,
+      sla: { entries: sla.entries, frame: sla.frame },
     })
-  }, [omitProvider])
+  }, [omitProvider, sla.entries, sla.frame])
   return (
     <Frame
       q={q}

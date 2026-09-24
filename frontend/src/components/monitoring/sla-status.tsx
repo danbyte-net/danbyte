@@ -38,7 +38,7 @@ function readFrame(): AvailabilityFrame | null {
  * this browser, else the tenant's default from monitoring settings.
  */
 export function useSlaStatus(
-  kind: "device" | "vm" | "ip" | "prefix",
+  kind: "device" | "vm" | "ip" | "prefix" | "circuit" | "site" | "cluster",
   ids: string[]
 ) {
   const [picked, setPicked] = useState<AvailabilityFrame | null>(readFrame)

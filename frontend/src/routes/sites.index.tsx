@@ -8,6 +8,10 @@ import { api, type Paginated, type Site } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildSiteColumns } from "@/components/columns/site-columns"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
 import { ListPageShell } from "@/components/list-page-shell"
 import { useTableFilters } from "@/components/table-filters"
 import { SiteDeleteDialog } from "@/components/site-delete-dialog"
@@ -35,12 +39,19 @@ function SitesPage() {
 
   const handleDelete = useCallback((s: Site) => setDeleting(s), [])
 
+  const ids = useMemo(
+    () => (query.data?.results ?? []).map((r) => r.id),
+    [query.data]
+  )
+  const sla = useSlaStatus("site", ids)
+
   // Columns declare their own filterability via meta.facet.
   const columns = useMemo<ColumnDef<Site>[]>(
     () =>
       buildSiteColumns<Site>({
         selection: true,
         humanIds,
+        sla: { entries: sla.entries, frame: sla.frame },
         violations: true,
         actions: {
           editTo: "/sites/$id/edit",
@@ -50,7 +61,7 @@ function SitesPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds]
+    [handleDelete, canEdit, canDelete, humanIds, sla.entries, sla.frame]
   )
 
   const allRows = query.data?.results ?? []
@@ -79,6 +90,7 @@ function SitesPage() {
       }}
       actions={
         <>
+          <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="site" />
           {canAdd && (
             <Button size="sm" asChild>

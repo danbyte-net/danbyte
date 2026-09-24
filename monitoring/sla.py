@@ -191,7 +191,7 @@ def resolve_members(agreement, start: datetime, end: datetime) -> list[dict]:
         out.append({
             "member_id": str(m.id), "group": m.group, "object_type": m.object_type,
             "object_id": m.object_id, "site_id": m.object_site_id,
-            "redundancy_group": m.redundancy_group,
+            "redundancy_group": m.redundancy_group, "monitor_ip_id": m.monitor_ip_id,
             "active": (max(start, m.joined_at), min(end, m.left_at or end)),
         })
     for group in agreement.check_groups.all():
@@ -203,14 +203,14 @@ def resolve_members(agreement, start: datetime, end: datetime) -> list[dict]:
             out.append({
                 "member_id": None, "group": group, "object_type": "api.device",
                 "object_id": d.id, "site_id": d.site_id, "redundancy_group": "",
-                "active": (start, end),
+                "monitor_ip_id": None, "active": (start, end),
             })
     return out
 
 
 def _objects(members) -> dict:
     """``{(object_type, id): object}`` for names, sites and addresses."""
-    from api.models import Device, IPAddress, Prefix, VirtualMachine
+    from api.models import Circuit, Device, IPAddress, Prefix, VirtualMachine
 
     by_type = defaultdict(set)
     for m in members:
@@ -218,7 +218,7 @@ def _objects(members) -> dict:
     out = {}
     for label, model in (
         ("api.device", Device), ("api.virtualmachine", VirtualMachine),
-        ("api.ipaddress", IPAddress), ("api.prefix", Prefix),
+        ("api.ipaddress", IPAddress), ("api.prefix", Prefix), ("api.circuit", Circuit),
     ):
         if by_type[label]:
             for o in model.objects.filter(pk__in=by_type[label]):
@@ -226,9 +226,15 @@ def _objects(members) -> dict:
     return out
 
 
+def address_key(m) -> tuple:
+    """How :func:`_addresses` keys a member: the same object can stand for
+    different addresses in two groups, or with a monitor address."""
+    return (m["object_type"], m["object_id"], m["group"].target, m.get("monitor_ip_id"))
+
+
 def _addresses(members, objects) -> dict:
-    """``{(object_type, id, target): [ip_id, ...]}`` - the addresses whose
-    checks stand for each object."""
+    """``{address_key(member): [ip_id, ...]}`` - the addresses whose checks
+    stand for each member's object."""
     from api.models import IPAddress
 
     need_all = defaultdict(set)
@@ -246,6 +252,10 @@ def _addresses(members, objects) -> dict:
             assigned_vm_id__in=need_all["api.virtualmachine"]
         ).values_list("id", "assigned_vm_id"):
             all_ips[("api.virtualmachine", vm_id)].append(ip_id)
+    circuit_ips = _circuit_addresses(
+        [m["object_id"] for m in members
+         if m["object_type"] == "api.circuit" and not m.get("monitor_ip_id")]
+    )
     prefix_ips = _prefix_addresses(
         [objects[(m["object_type"], m["object_id"])] for m in members
          if m["object_type"] == "api.prefix" and (m["object_type"], m["object_id"]) in objects]
@@ -256,6 +266,10 @@ def _addresses(members, objects) -> dict:
         o = objects.get(key)
         if o is None:
             ips = []
+        elif m.get("monitor_ip_id"):
+            ips = [m["monitor_ip_id"]]
+        elif m["object_type"] == "api.circuit":
+            ips = circuit_ips.get(o.pk, [])
         elif m["object_type"] == "api.ipaddress":
             ips = [o.pk]
         elif m["object_type"] == "api.prefix":
@@ -265,8 +279,35 @@ def _addresses(members, objects) -> dict:
             ips = all_ips.get(key, [])
         else:
             ips = [o.primary_ip_id] if getattr(o, "primary_ip_id", None) else []
-        out[(m["object_type"], m["object_id"], m["group"].target)] = ips
+        out[address_key(m)] = ips
     return out
+
+
+def _circuit_addresses(circuit_ids) -> dict:
+    """``{circuit id: [ip id, ...]}`` - the addresses on the interfaces the
+    circuit's ends are cabled to, through patch panels. The far side of a
+    circuit is the provider's; the trace stops at its terminations."""
+    from api.models import CircuitTermination, IPAddress
+    from api.trace import trace
+
+    if not circuit_ids:
+        return {}
+    ifaces = defaultdict(set)
+    for term in CircuitTermination.objects.filter(
+        circuit_id__in=circuit_ids, terminations__isnull=False
+    ).distinct():
+        graph = trace([("circuit_termination", term)])
+        for node in graph["nodes"]:
+            if node["type"] == "interface":
+                ifaces[term.circuit_id].add(node["id"].split(":", 1)[1])
+    by_iface = defaultdict(list)
+    wanted = {i for s_ in ifaces.values() for i in s_}
+    for ip_id, iface_id in IPAddress.objects.filter(
+        assigned_interface_id__in=wanted
+    ).values_list("pk", "assigned_interface_id"):
+        by_iface[str(iface_id)].append(ip_id)
+    return {cid: [ip for i in sorted(ids) for ip in by_iface.get(i, [])]
+            for cid, ids in ifaces.items()}
 
 
 def _prefix_addresses(prefixes) -> dict:
@@ -336,6 +377,8 @@ def _name(o, object_type) -> str:
         return str(o.ip_address)
     if object_type == "api.prefix":
         return str(o.cidr)
+    if object_type == "api.circuit":
+        return o.cid
     return o.name or str(o.pk)
 
 
@@ -344,33 +387,38 @@ def _name(o, object_type) -> str:
 
 def _maintenance(agreement, start, end, members, objects) -> dict:
     """``{(object_type, id): [(start, end)]}`` of planned maintenance on each
-    member - on the device itself, or the device an address sits on."""
+    member - on the device itself, the device an address sits on, or the
+    circuit (a carrier's announced works)."""
     from .models import EventImpact
 
-    device_of = {}
+    target_of = {}
     for m in members:
-        o = objects.get((m["object_type"], m["object_id"]))
-        if m["object_type"] == "api.device":
-            device_of[(m["object_type"], m["object_id"])] = m["object_id"]
+        key = (m["object_type"], m["object_id"])
+        o = objects.get(key)
+        if m["object_type"] in ("api.device", "api.circuit"):
+            target_of[key] = key
         elif m["object_type"] == "api.ipaddress" and o is not None and o.assigned_device_id:
-            device_of[(m["object_type"], m["object_id"])] = o.assigned_device_id
-    if not device_of:
+            target_of[key] = ("api.device", o.assigned_device_id)
+    if not target_of:
         return {}
+    by_type = defaultdict(set)
+    for otype, oid in target_of.values():
+        by_type[otype].add(oid)
+    q = Q()
+    for otype, ids in by_type.items():
+        q |= Q(object_type=otype, object_id__in=ids)
     windows = defaultdict(list)
-    for dev_id, s, e in (
-        EventImpact.objects.filter(
-            tenant_id=agreement.tenant_id, object_type="api.device",
-            object_id__in=set(device_of.values()),
-            event__kind="maintenance", event__starts_at__lt=end,
-        )
+    for otype, oid, s, e in (
+        EventImpact.objects.filter(q, tenant_id=agreement.tenant_id,
+                                   event__kind="maintenance", event__starts_at__lt=end)
         .exclude(level="no_impact")
         .exclude(event__status__slug__in=_NOT_MAINTENANCE)
         .filter(Q(event__ends_at__isnull=True) | Q(event__ends_at__gt=start))
-        .values_list("object_id", "event__starts_at", "event__ends_at")
+        .values_list("object_type", "object_id", "event__starts_at", "event__ends_at")
     ):
-        windows[dev_id].append((s, e or end))
+        windows[(otype, oid)].append((s, e or end))
     return {
-        key: st.normalize(windows[dev]) for key, dev in device_of.items() if windows.get(dev)
+        key: st.normalize(windows[t]) for key, t in target_of.items() if windows.get(t)
     }
 
 
@@ -475,7 +523,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     plan = []  # per member: [(ip, template_id, name, kind, counts, weight, required)]
     pairs = set()
     for m in members:
-        ips = addresses[(m["object_type"], m["object_id"], m["group"].target)]
+        ips = addresses[address_key(m)]
         checks = []
         for ip in ips:
             if items[m["group"].id]:
@@ -595,7 +643,9 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             "incidents": incidents, **_figure(up, down, service_s),
         })
 
-    figures = headline(units, rules, full_service, start, until, end)
+    series = (st.tally(st.combine(list(unit_tls.values()), "all"))
+              if rules.get("aggregation") == "all" else None)
+    figures = headline(units, rules, full_service, start, until, end, series)
     figures.update(base)
     figures["members"] = len(member_rows)
     figures["full_service_s"] = round(full_service)
@@ -614,15 +664,24 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     return out
 
 
-def headline(units, rules, full_service, start, until, end) -> dict:
+def headline(units, rules, full_service, start, until, end, series=None) -> dict:
     """The agreement's figure from its units. Also used to recompute a
-    partial figure over the units a scoped viewer may see."""
+    partial figure over the units a scoped viewer may see.
+
+    ``series`` is the tally of every unit combined "all must be up", for that
+    aggregation. A partial view has no such tally for its subset, so it gets
+    its worst visible unit: an upper bound on what the series would show."""
     target = float(rules["target_pct"])
     warning = rules.get("warning_pct")
     warning = float(warning) if warning not in (None, "") else None
     measured = [u for u in units if u["up_s"] + u["down_s"] > 0]
     service = sum(u["service_s"] for u in units)
-    if rules.get("aggregation") == "worst":
+    aggregation = rules.get("aggregation")
+    if aggregation == "all" and series is not None:
+        up, down = series["up_s"], series["down_s"]
+        availability = round(100 * up / (up + down), 4) if up + down else None
+        used = down
+    elif aggregation in ("worst", "all"):
         worst = min(measured, key=lambda u: u["availability"], default=None)
         availability = worst["availability"] if worst else None
         used = max((u["down_s"] for u in units), default=0)
@@ -655,7 +714,8 @@ def headline(units, rules, full_service, start, until, end) -> dict:
         "elapsed_pct": round(100 * min(1.0, elapsed), 1),
         # Spending faster than time passes: above 1.0 ends the period over budget.
         "burn_rate": round(spent / elapsed, 2) if elapsed > 0 else None,
-        "incidents": sum(u["incidents"] for u in units),
+        "incidents": (series["incidents"] if aggregation == "all" and series is not None
+                      else sum(u["incidents"] for u in units)),
     }
 
 
@@ -728,6 +788,8 @@ def _incidents(unit_tls, units, member_rows, timelines) -> list[dict]:
 def _days(unit_tls, service, tz, aggregation) -> list[dict]:
     """Availability per local day across the units."""
     zone = ZoneInfo(tz)
+    if aggregation == "all":
+        unit_tls = {"all": st.combine(list(unit_tls.values()), "all")}
     per_day: dict = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
     for ukey, tl in unit_tls.items():
         for s, e, c in tl:

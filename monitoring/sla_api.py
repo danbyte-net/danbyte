@@ -51,6 +51,7 @@ MEMBER_TYPES = {
     "api.virtualmachine": "virtualmachine",
     "api.ipaddress": "ipaddress",
     "api.prefix": "prefix",
+    "api.circuit": "circuit",
 }
 
 
@@ -290,7 +291,8 @@ def _visible_keys(request, tenant, units) -> set | None:
     model_for = {"api.device": api_models.Device,
                  "api.virtualmachine": api_models.VirtualMachine,
                  "api.ipaddress": api_models.IPAddress,
-                 "api.prefix": api_models.Prefix}
+                 "api.prefix": api_models.Prefix,
+                 "api.circuit": api_models.Circuit}
     for otype, ids in by_type.items():
         q = rbac.row_filter(request.user, tenant, MEMBER_TYPES.get(otype, ""), "view")
         if q is True:
@@ -728,13 +730,14 @@ class SlaCheckGroupViewSet(TenantScopedViewSet):
 
 class SlaMemberSerializer(serializers.ModelSerializer):
     object = serializers.SerializerMethodField()
+    monitor_ip_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = SlaMember
         fields = [
             "id", "agreement", "group", "object_type", "object_id", "object",
-            "object_site", "redundancy_group", "excluded", "joined_at", "left_at",
-            "created_at",
+            "object_site", "redundancy_group", "monitor_ip", "monitor_ip_detail",
+            "excluded", "joined_at", "left_at", "created_at",
         ]
         read_only_fields = ["id", "object_site", "left_at", "created_at"]
 
@@ -745,18 +748,27 @@ class SlaMemberSerializer(serializers.ModelSerializer):
         name = sla._name(o, obj.object_type)
         return {"id": str(o.pk), "name": name}
 
+    def get_monitor_ip_detail(self, obj):
+        ip = obj.monitor_ip
+        return {"id": str(ip.pk), "address": str(ip.ip_address)} if ip else None
+
     def validate_object_type(self, value):
         if value not in MEMBER_TYPES:
             raise serializers.ValidationError(f"One of: {', '.join(MEMBER_TYPES)}.")
         return value
 
     def validate(self, attrs):
+        tenant = _tenant_of(self)
+        otype = attrs.get("object_type") or getattr(self.instance, "object_type", None)
+        if attrs.get("monitor_ip") is not None:
+            if otype != "api.circuit":
+                raise ValidationError({"monitor_ip": "Only a circuit takes a monitor address."})
+            _same_tenant(tenant, monitor_ip=attrs["monitor_ip"])
         if self.instance is not None:
             for f in ("agreement", "group", "object_type", "object_id"):
                 if f in attrs and attrs[f] != getattr(self.instance, f):
                     raise ValidationError({f: "A member can't be retargeted - remove and re-add."})
             return attrs
-        tenant = _tenant_of(self)
         agreement, group = attrs["agreement"], attrs["group"]
         _same_tenant(tenant, agreement=agreement)
         if group.agreement_id != agreement.id:
@@ -782,7 +794,7 @@ def _check_member(request, tenant, object_type, object_id):
 
 
 class SlaMemberViewSet(TenantScopedViewSet):
-    queryset = SlaMember.objects.select_related("group")
+    queryset = SlaMember.objects.select_related("group", "monitor_ip")
     serializer_class = SlaMemberSerializer
     rbac_object_type = "slaagreement"
 
@@ -826,8 +838,9 @@ class SlaMemberViewSet(TenantScopedViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-add")
     def bulk_add(self, request):
-        """``{agreement, group, objects: [{object_type, object_id}], redundancy_group?}``
-        - add many at once; ones already in the group are skipped."""
+        """``{agreement, group, objects: [{object_type, object_id}], redundancy_group?,
+        monitor_ip?}`` - add many at once; ones already in the group are
+        skipped. ``monitor_ip`` applies to circuits only."""
         tenant = self._tenant_or_403()
         if not rbac.has_action(request.user, tenant, "slaagreement", "add"):
             raise PermissionDenied("slaagreement:add required.")
@@ -839,6 +852,20 @@ class SlaMemberViewSet(TenantScopedViewSet):
         objs = request.data.get("objects") or []
         if not isinstance(objs, list) or len(objs) > 1000:
             raise ValidationError({"objects": "A list of up to 1000 objects."})
+        monitor_ip = None
+        if request.data.get("monitor_ip"):
+            from api.models import IPAddress
+
+            if any(o.get("object_type") != "api.circuit" for o in objs):
+                raise ValidationError({"monitor_ip": "Only a circuit takes a monitor address."})
+            try:
+                monitor_ip = IPAddress.objects.filter(
+                    tenant=tenant, pk=uuid.UUID(str(request.data["monitor_ip"]))
+                ).first()
+            except ValueError:
+                monitor_ip = None
+            if monitor_ip is None:
+                raise ValidationError({"monitor_ip": "No such address in this tenant."})
         created = skipped = 0
         with transaction.atomic():
             for o in objs:
@@ -850,7 +877,7 @@ class SlaMemberViewSet(TenantScopedViewSet):
                 site = _check_member(request, tenant, otype, oid)
                 _m, made = SlaMember.objects.get_or_create(
                     agreement=group.agreement, group=group, object_type=otype, object_id=oid,
-                    defaults={"tenant": tenant, "object_site_id": site,
+                    defaults={"tenant": tenant, "object_site_id": site, "monitor_ip": monitor_ip,
                               "redundancy_group": str(request.data.get("redundancy_group") or "")},
                 )
                 if not made and _m.left_at is not None:
@@ -933,8 +960,90 @@ STATUS_KINDS = {
     "vm": ("api.virtualmachine", "virtualmachine", "target_ip__assigned_vm_id"),
     "ip": ("api.ipaddress", "ipaddress", "target_ip_id"),
     "prefix": ("api.prefix", "prefix", "target_ip__prefix_id"),
+    # A circuit's addresses come from a cable trace, not one lookup.
+    "circuit": ("api.circuit", "circuit", None),
+    # A site or cluster: over its devices (a cluster's hosts).
+    "site": ("api.site", "site", "target_ip__assigned_device__site_id"),
+    "cluster": ("api.cluster", "cluster", "target_ip__assigned_device__cluster_id"),
 }
 MAX_STATUS_IDS = 5000
+
+
+def _sla_state(av, target, warning) -> str:
+    return ("no_data" if av is None else "breached" if av < target
+            else "at_risk" if warning is not None and av < warning else "ok")
+
+
+def _sla_entry(res, u) -> dict:
+    """One agreement's figure for one member unit, for a list cell."""
+    a = res.agreement
+    target = float(a.target_pct)
+    warning = float(a.warning_pct) if a.warning_pct is not None else None
+    av = u["availability"]
+    return {
+        "agreement": {"id": str(a.id), "name": a.name},
+        "period_key": res.period_key, "target": target,
+        "availability": av, "coverage": u["coverage"],
+        "state": _sla_state(av, target, warning),
+        "down_s": u["down_s"], "worst_item": u.get("worst_item"),
+        "budget_left_s": round((1 - target / 100) * (res.figures.get(
+            "full_service_s") or 0) - u["down_s"]),
+    }
+
+
+def _site_agreements(results, keep, out) -> None:
+    """A site's SLA is every agreement provided for it - its whole figure."""
+    by_agreement = {res.agreement_id: res for res in results}
+    for agreement_id, site_id in SlaAgreement.sites.through.objects.filter(
+        slaagreement_id__in=by_agreement, site_id__in=keep
+    ).values_list("slaagreement_id", "site_id"):
+        res = by_agreement[agreement_id]
+        f = res.figures or {}
+        a = res.agreement
+        target = float(a.target_pct)
+        out[str(site_id)]["sla"].append({
+            "agreement": {"id": str(a.id), "name": a.name},
+            "period_key": res.period_key, "target": target,
+            "availability": f.get("availability"), "coverage": f.get("coverage"),
+            "state": f.get("state") or "no_data", "down_s": f.get("down_s", 0),
+            "worst_item": None, "budget_left_s": f.get("budget_left_s"),
+        })
+
+
+def _cluster_hosts(tenant, keep) -> dict:
+    """``{device id: cluster id}`` for the hosts of these clusters."""
+    from api.models import Device
+
+    return {str(d): str(c) for d, c in Device.objects.filter(
+        tenant=tenant, cluster_id__in=keep).values_list("pk", "cluster_id")}
+
+
+def _circuit_sums(win, tenant, keep, sums) -> dict:
+    """Rollup sums per circuit, over the addresses its ends are cabled to."""
+    ip_map = sla._circuit_addresses(list(keep))
+    # A circuit measured through a monitor address in an agreement is
+    # measured there here too.
+    for cid, ip in SlaMember.objects.filter(
+        tenant=tenant, object_type="api.circuit", object_id__in=keep,
+        monitor_ip__isnull=False, left_at__isnull=True,
+    ).values_list("object_id", "monitor_ip_id"):
+        ip_map.setdefault(cid, [])
+        if ip not in ip_map[cid]:
+            ip_map[cid].append(ip)
+    ips = {ip for v in ip_map.values() for ip in v}
+    if not ips:
+        return {}
+    per_ip = sums(win, lambda qs: qs.filter(tenant=tenant, target_ip_id__in=ips),
+                  ("target_ip_id",))
+    out: dict = {}
+    for cid, cips in ip_map.items():
+        acc: dict = {}
+        for ip in cips:
+            for k, v in (per_ip.get((ip,)) or {}).items():
+                acc[k] = max(acc.get(k) or 0, v) if k == "lat_max" else acc.get(k, 0) + v
+        if acc:
+            out[(cid,)] = acc
+    return out
 
 
 @extend_schema(
@@ -946,7 +1055,7 @@ MAX_STATUS_IDS = 5000
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def sla_status_view(request):
-    """``{kind: device|vm|ip, ids: [...], frame?}`` → per id:
+    """``{kind: device|vm|ip|prefix|circuit|site|cluster, ids: [...], frame?}`` → per id:
 
     * ``sla`` - each agreement the object is in, with its figure in the
       agreement's current period (read from the stored result, never
@@ -997,11 +1106,14 @@ def sla_status_view(request):
         return Response({"frame": frame, "results": {}})
 
     win = frame_window(frame, sla.agreement_tz_for_tenant(tenant))
-    got = sums(
-        win,
-        lambda qs: qs.filter(tenant=tenant, **{f"{field}__in": keep}),
-        (field,),
-    )
+    if field is None:
+        got = _circuit_sums(win, tenant, keep, sums)
+    else:
+        got = sums(
+            win,
+            lambda qs: qs.filter(tenant=tenant, **{f"{field}__in": keep}),
+            (field,),
+        )
     for (key,), row in got.items():
         f = figures(row)
         out[str(key)]["availability"] = {"availability": f["availability"],
@@ -1011,26 +1123,19 @@ def sla_status_view(request):
         results = SlaPeriodResult.objects.filter(
             tenant=tenant, state__in=("open", "rolling"), agreement__status="active",
         ).select_related("agreement")
-        for res in results:
-            a = res.agreement
-            for u in res.units:
-                if not u.get("member") or u["object_type"] != otype or u["object_id"] not in keep:
-                    continue
-                target = float(a.target_pct)
-                warning = float(a.warning_pct) if a.warning_pct is not None else None
-                av = u["availability"]
-                state = (
-                    "no_data" if av is None else "breached" if av < target
-                    else "at_risk" if warning is not None and av < warning else "ok"
-                )
-                out[u["object_id"]]["sla"].append({
-                    "agreement": {"id": str(a.id), "name": a.name},
-                    "period_key": res.period_key, "target": target,
-                    "availability": av, "coverage": u["coverage"], "state": state,
-                    "down_s": u["down_s"], "worst_item": u.get("worst_item"),
-                    "budget_left_s": round((1 - target / 100) * (res.figures.get(
-                        "full_service_s") or 0) - u["down_s"]),
-                })
+        results = list(results)
+        if kind == "site":
+            _site_agreements(results, keep, out)
+        else:
+            owner = _cluster_hosts(tenant, keep) if kind == "cluster" else None
+            member_type = "api.device" if kind == "cluster" else otype
+            for res in results:
+                for u in res.units:
+                    if not u.get("member") or u["object_type"] != member_type:
+                        continue
+                    oid = owner.get(u["object_id"]) if owner is not None else u["object_id"]
+                    if oid in keep:
+                        out[oid]["sla"].append(_sla_entry(res, u))
         for entry in out.values():
             if entry["sla"]:
                 # The strictest: furthest below (or least above) its target.

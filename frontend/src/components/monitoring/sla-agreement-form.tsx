@@ -461,6 +461,7 @@ export function SlaAgreementForm({
                 options={[
                   { value: "mean", label: "Average" },
                   { value: "worst", label: "Worst member" },
+                  { value: "all", label: "All must be up" },
                 ]}
               />
               <Field

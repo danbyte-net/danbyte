@@ -28,6 +28,7 @@ export const MEMBER_ROUTE = {
   "api.virtualmachine": "/virtual-machines/$id",
   "api.ipaddress": "/ips/$id",
   "api.prefix": "/prefixes/$id",
+  "api.circuit": "/circuits/$id",
 } as const
 
 const MEMBER_NOUN = {
@@ -35,6 +36,7 @@ const MEMBER_NOUN = {
   "api.virtualmachine": "Virtual machine",
   "api.ipaddress": "IP address",
   "api.prefix": "Prefix",
+  "api.circuit": "Circuit",
 } as const
 
 function IncidentList({ incidents }: { incidents: SlaAnalysis["incidents"] }) {

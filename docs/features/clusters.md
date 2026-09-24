@@ -24,6 +24,10 @@ only place you need to set a site.
 Its detail page lists the **virtual machines** on it (with a count on the tab)
 and its **VM groups**, plus Journal and Change log.
 
+The Clusters list has **SLA** and **Availability** columns, read from the
+cluster's hosts: the agreements its hosts are in, and the checks on their
+addresses. See [Service level agreements](sla.md#on-lists-and-object-pages).
+
 ### Site, and the VMs on it
 
 A cluster's site describes **the cluster**. By default it is **not** inherited:

@@ -12,6 +12,8 @@ import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 
 // The one source of truth for "a table of circuits". The /circuits list and the
 // embedded Circuits pane on a site / provider / provider-network detail page all
@@ -28,6 +30,8 @@ export type CircuitColumnId =
   | "endpoints"
   | "commit"
   | "description"
+  | "sla"
+  | "availability"
   | "tags"
   | "updated"
 
@@ -39,12 +43,16 @@ const CANONICAL_ORDER: CircuitColumnId[] = [
   "status",
   "endpoints",
   "commit",
+  "sla",
+  "availability",
   "description",
   "tags",
   "updated",
 ]
 
 export interface CircuitColumnOpts<T extends Circuit = Circuit> {
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
   /** Drop columns (e.g. the provider page omits its own "provider"). */
   omit?: CircuitColumnId[]
   /** Keep only these columns (canonical order still applies). */
@@ -64,10 +72,16 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
 ): ColumnDef<T, unknown>[] {
   const omit = new Set(opts.omit ?? [])
   if (!opts.humanIds) omit.add("numid")
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   const keep = (id: CircuitColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
   const byId: Record<CircuitColumnId, () => ColumnDef<T, unknown>> = {
+    sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     numid: () => numidColumn<T>({ get: (r) => r.numid }),
     cid: () => ({
       id: "cid",

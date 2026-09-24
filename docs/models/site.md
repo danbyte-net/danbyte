@@ -44,6 +44,11 @@ circuit's termination links to a site, so each site shows the WAN links landing
 there, with the far end (another site or a provider network). `GET
 /api/circuits/?site=<id>` powers that list.
 
+The Sites list has **SLA** and **Availability** columns. A site's SLA is the
+agreements [provided for it](../features/sla.md#the-parts-of-an-agreement),
+with each agreement's whole figure; its availability is over the site's
+devices. The Circuits tab shows each circuit's SLA and availability too.
+
 ## Coming in Phase 4
 
 `SiteMasterSubnet` - explicit CIDR blocks "owned" by a site, used to validate

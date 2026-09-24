@@ -44,6 +44,16 @@ export function SlaMemberDialog({
   const [objectId, setObjectId] = useState<string | null>(null)
   const [group, setGroup] = useState<string | null>(groups[0]?.id ?? null)
   const [redundancy, setRedundancy] = useState("")
+  const [monitorIp, setMonitorIp] = useState<string | null>(null)
+  const circuits = useQuery({
+    queryKey: ["circuits-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; cid: string; provider: { name: string } }>>(
+        "/api/circuits/?page_size=1000"
+      ),
+    enabled: open && type === "api.circuit",
+    staleTime: 5 * 60_000,
+  })
   const vms = useQuery({
     queryKey: ["vms-picker"],
     queryFn: () =>
@@ -63,6 +73,7 @@ export function SlaMemberDialog({
             agreement: agreementId,
             group,
             redundancy_group: redundancy.trim(),
+            monitor_ip: type === "api.circuit" ? monitorIp : null,
             objects: [{ object_type: type, object_id: objectId }],
           }),
         }
@@ -102,14 +113,40 @@ export function SlaMemberDialog({
             onChange={(v) => {
               setType(v as SlaObjectType)
               setObjectId(null)
+              setMonitorIp(null)
             }}
             options={[
               { value: "api.device", label: "Device" },
               { value: "api.virtualmachine", label: "Virtual machine" },
               { value: "api.ipaddress", label: "IP address" },
               { value: "api.prefix", label: "Prefix" },
+              { value: "api.circuit", label: "Circuit" },
             ]}
           />
+          {type === "api.circuit" && (
+            <>
+              <FormCombobox
+                label="Circuit"
+                required
+                value={objectId}
+                onChange={setObjectId}
+                options={(circuits.data?.results ?? []).map((c) => ({
+                  value: c.id,
+                  label: c.cid,
+                  hint: c.provider.name,
+                }))}
+                placeholder="Pick a circuit"
+                searchPlaceholder="Search circuits…"
+                emptyText="No circuits."
+              />
+              <IpPicker
+                label="Monitor address"
+                value={monitorIp}
+                onChange={setMonitorIp}
+                info="Read the checks on this address, such as the provider's far-end gateway. Empty: the addresses cabled to the circuit's ends."
+              />
+            </>
+          )}
           {type === "api.device" && (
             <DevicePicker value={objectId} onChange={setObjectId} required />
           )}

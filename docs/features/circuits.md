@@ -136,6 +136,19 @@ All three circuit lists are the same table the main Circuits page draws. They
 are powered by `GET /api/circuits/?provider=<id>`, `?provider_network=<id>`,
 and `?type=<id>`.
 
+## Circuit SLAs
+
+A circuit can be a member of a
+[service level agreement](sla.md#members). It is measured on the addresses
+of the interfaces its ends are cabled to, or on a monitor address you pick,
+such as the provider's far-end gateway. Carrier maintenance entered on the
+circuit is excluded like any planned maintenance.
+
+The Circuits list, and a provider's **Circuits** tab, have **SLA** and
+**Availability** columns. Sort a provider's circuits by SLA to see which ones
+miss their agreement. A circuit's **Overview** shows the agreements it is in,
+with **Add to SLA**.
+
 ## Tags & custom fields
 
 Need to track something extra - a contract end date, an SLA tier, an order
