@@ -23,6 +23,21 @@ DOCKER = ROOT / "deploy/docker/nginx.conf"
 EXEMPT = ("/.well-known/acme-challenge/",)
 
 
+def _nginx_version() -> tuple:
+    r = subprocess.run(["nginx", "-v"], capture_output=True, text=True)
+    m = re.search(r"nginx/(\d+)\.(\d+)\.(\d+)", r.stderr + r.stdout)
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+
+
+def _http2_for_this_nginx(site: str, modern: bool) -> str:
+    """The http2 form this nginx understands - what the installer does too:
+    1.25.1+ takes the standalone ``http2 on;``, older only ``listen … http2``."""
+    if modern:
+        return site
+    site = re.sub(r"^\s*http2\s+on;\s*$", "", site, flags=re.M)
+    return re.sub(r"(listen\s+\S+\s+ssl)(\s*;)", r"\1 http2\2", site)
+
+
 def _locations(text: str):
     """``(path, body)`` of each flat location block."""
     return re.findall(r"location\s+(\S+)\s*\{([^{}]*)\}", text)
@@ -59,12 +74,16 @@ class NginxAcceptsTests(SimpleTestCase):
                  "-subj", "/CN=danbyte.test", "-keyout", t / "key.pem", "-out", t / "cert.pem"],
                 check=True, capture_output=True,
             )
+            modern = _nginx_version() >= (1, 25, 1)
             values = {
                 "CERT": str(t / "cert.pem"), "KEY": str(t / "key.pem"),
-                "SERVER_NAME": "danbyte.test", "NAME": "danbyte", "H2_LISTEN": "",
-                "H2_DIRECTIVE": "", "MAINTENANCE_ROOT": tmp, "STATIC_ROOT": tmp,
+                "SERVER_NAME": "danbyte.test", "NAME": "danbyte",
+                "H2_LISTEN": "" if modern else " http2",
+                "H2_DIRECTIVE": "    http2 on;" if modern else "",
+                "MAINTENANCE_ROOT": tmp, "STATIC_ROOT": tmp,
             }
             site = re.sub(r"@@([A-Z0-9_]+)@@", lambda m: values.get(m.group(1), tmp), site)
+            site = _http2_for_this_nginx(site, modern)
             # Unprivileged: high ports, and this run's certificate pair.
             site = re.sub(r"listen(\s+(?:\[::\]:)?)(80|443)\b",
                           lambda m: f"listen{m.group(1)}{18000 + int(m.group(2))}", site)
