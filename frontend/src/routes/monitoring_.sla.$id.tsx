@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { FileDown, Mail, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -131,6 +131,16 @@ function Body({ a }: { a: SlaAgreement }) {
       toast.success("Figures recomputed")
       refreshAll()
     },
+    onError: (e) => apiErrorToast(e),
+  })
+  const sendReport = useMutation({
+    mutationFn: () =>
+      api(`${base}/send-report/`, {
+        method: "POST",
+        body: JSON.stringify({ period }),
+      }),
+    onSuccess: () =>
+      toast.success(`Report sent to ${a.report_recipients.join(", ")}`),
     onError: (e) => apiErrorToast(e),
   })
   const del = useMutation({
@@ -266,11 +276,43 @@ function Body({ a }: { a: SlaAgreement }) {
     >
       <DetailTab value="overview">
         <div className="space-y-6">
-          <SegmentedTabs
-            value={period}
-            onValueChange={setPeriod}
-            items={periodTabs}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedTabs
+              value={period}
+              onValueChange={setPeriod}
+              items={periodTabs}
+            />
+            {figures.data?.computed && (
+              <div className="ml-auto flex items-center gap-2">
+                <Button size="sm" variant="outline" asChild>
+                  <a href={`${base}/report/?period=${period}`} download>
+                    <FileDown className="h-3.5 w-3.5" /> PDF
+                  </a>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <a
+                    href={`${base}/report/?period=${period}&file=csv`}
+                    download
+                  >
+                    <FileDown className="h-3.5 w-3.5" /> CSV
+                  </a>
+                </Button>
+                {canDo("slaagreement", "change") && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      sendReport.isPending || a.report_recipients.length === 0
+                    }
+                    onClick={() => sendReport.mutate()}
+                  >
+                    <Mail className="h-3.5 w-3.5" />
+                    {sendReport.isPending ? "Sending..." : "Email report"}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
           {figures.isError && <QueryError error={figures.error} />}
           {figures.data && !figures.data.computed && (
             <EmptyState title="Not computed yet">

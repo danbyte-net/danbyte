@@ -115,6 +115,8 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             "count_stale_as", "count_unknown_as", "exclude_maintenance",
             "min_outage_seconds", "aggregation", "latency_objectives", "status",
             "effective_from", "revision", "group_count", "member_count", "current",
+            "notify_channels", "alert_burn_rate", "alert_coverage_pct",
+            "report_recipients", "report_format",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "revision", "created_at", "updated_at"]
@@ -133,6 +135,33 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             return None
         return {"period_key": res.period_key, "computed_at": res.computed_at,
                 **_viewer_figures(self.context.get("request"), obj, res)}
+
+    def validate_alert_burn_rate(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("Above 0; 1.0 is on pace to spend the budget exactly.")
+        return value
+
+    def validate_alert_coverage_pct(self, value):
+        if value is not None and not Decimal("0") < value <= Decimal("100"):
+            raise serializers.ValidationError("Between 0 and 100.")
+        return value
+
+    def validate_report_recipients(self, value):
+        from django.core.validators import validate_email
+
+        if not isinstance(value, list) or len(value) > 50:
+            raise serializers.ValidationError("A list of up to 50 addresses.")
+        out = []
+        for raw in value:
+            addr = str(raw).strip()
+            if not addr:
+                continue
+            try:
+                validate_email(addr)
+            except Exception:  # noqa: BLE001
+                raise serializers.ValidationError(f"«{addr}» is not an email address.") from None
+            out.append(addr)
+        return out
 
     def validate_target_pct(self, value):
         if not Decimal("0") < value <= Decimal("100"):
@@ -189,6 +218,8 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
         if tenant is not None:
             _same_tenant(tenant, customer=attrs.get("customer"),
                          holiday_calendar=attrs.get("holiday_calendar"))
+            for ch in attrs.get("notify_channels", []):
+                _same_tenant(tenant, notify_channels=ch)
         target = attrs.get("target_pct", getattr(self.instance, "target_pct", None))
         warning = attrs.get("warning_pct", getattr(self.instance, "warning_pct", None))
         if warning is not None and target is not None and not target < warning <= 100:
@@ -257,6 +288,20 @@ def _viewer_figures(request, agreement, res, full=False) -> dict:
     return body
 
 
+def _result_for(agreement, want: str):
+    """``(key, result)`` for "current", "previous" or a stored key."""
+    now = timezone.now()
+    if want == "current":
+        key = sla.period_for(agreement, now)[0]
+    elif want == "previous":
+        prev = sla.previous_period(agreement, now)
+        key = prev[0] if prev else None
+    else:
+        key = want
+    res = SlaPeriodResult.objects.filter(agreement=agreement, period_key=key).first() if key else None
+    return key, res
+
+
 class SlaAgreementViewSet(TenantScopedViewSet):
     queryset = SlaAgreement.objects.select_related("customer", "holiday_calendar", "tenant")
     serializer_class = SlaAgreementSerializer
@@ -323,16 +368,7 @@ class SlaAgreementViewSet(TenantScopedViewSet):
         """One period's figures. ``?period=`` current (default), previous, or
         a stored key ("2026-08", "2026-Q2")."""
         a = self.get_object()
-        want = request.query_params.get("period") or "current"
-        now = timezone.now()
-        if want == "current":
-            key = sla.period_for(a, now)[0]
-        elif want == "previous":
-            prev = sla.previous_period(a, now)
-            key = prev[0] if prev else None
-        else:
-            key = want
-        res = SlaPeriodResult.objects.filter(agreement=a, period_key=key).first() if key else None
+        key, res = _result_for(a, request.query_params.get("period") or "current")
         if res is None:
             return Response({"period_key": key, "computed": False})
         return Response({
@@ -342,6 +378,70 @@ class SlaAgreementViewSet(TenantScopedViewSet):
             "closed_at": res.closed_at, "frozen_at": res.frozen_at,
             **_viewer_figures(request, a, res, full=True),
         })
+
+    @action(detail=True, methods=["get"])
+    def report(self, request, pk=None):
+        """The period's report: ``?period=`` as for figures, ``?file=pdf|csv``
+        (not ``format``, which DRF keeps for its own renderers).
+        A scoped viewer's report leaves out what they cannot see."""
+        from django.http import HttpResponse
+
+        from .sla_report import report_csv, report_pdf
+
+        a = self.get_object()
+        key, res = _result_for(a, request.query_params.get("period") or "current")
+        if res is None:
+            raise ValidationError({"period": "No figures for that period yet."})
+        view = _viewer_figures(request, a, res, full=True)
+        stem = f"sla-{a.name}-{res.period_key}".replace(" ", "-").lower()
+        if request.query_params.get("file") == "csv":
+            resp = HttpResponse(report_csv(a, res, view), content_type="text/csv")
+            resp["Content-Disposition"] = f'attachment; filename="{stem}.csv"'
+            return resp
+        resp = HttpResponse(report_pdf(a, res, view), content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="{stem}.pdf"'
+        return resp
+
+    @action(detail=True, methods=["post"], url_path="send-report")
+    def send_report(self, request, pk=None):
+        """Email a period's report now - to ``recipients`` or the agreement's."""
+        from .sla_notify import send_report
+
+        a = self.get_object()
+        if not rbac.has_action(request.user, a.tenant, "slaagreement", "change"):
+            raise PermissionDenied("slaagreement:change required.")
+        key, res = _result_for(a, request.data.get("period") or "current")
+        if res is None:
+            raise ValidationError({"period": "No figures for that period yet."})
+        recipients = request.data.get("recipients")
+        if recipients is not None:
+            recipients = SlaAgreementSerializer().validate_report_recipients(recipients)
+        view = _viewer_figures(request, a, res, full=True)
+        if not send_report(a, res, recipients=recipients, view=view, mark=False):
+            raise ValidationError({"recipients": "No recipients, or the mail could not be sent."})
+        return Response({"sent": True})
+
+    @action(detail=False, methods=["get"], url_path="overview-report")
+    def overview_report(self, request):
+        """Every agreement's figure for one period: ``?period=current|previous``
+        or a key ("2026-09"), ``?file=pdf|csv``."""
+        from django.http import HttpResponse
+
+        from .sla_report import overview_csv, overview_pdf
+
+        want = request.query_params.get("period") or "current"
+        rows = []
+        for a in self.get_queryset().exclude(status="draft"):
+            _key, res = _result_for(a, want)
+            rows.append((a, res, _viewer_figures(request, a, res)["figures"] if res else None))
+        stem = f"sla-overview-{want}"
+        if request.query_params.get("file") == "csv":
+            resp = HttpResponse(overview_csv(rows), content_type="text/csv")
+            resp["Content-Disposition"] = f'attachment; filename="{stem}.csv"'
+            return resp
+        resp = HttpResponse(overview_pdf(rows, want), content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="{stem}.pdf"'
+        return resp
 
     @action(detail=True, methods=["get"])
     def periods(self, request, pk=None):

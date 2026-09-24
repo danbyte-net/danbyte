@@ -10,6 +10,7 @@ import type {
   SlaPeriod,
 } from "@/lib/api"
 import {
+  CheckList,
   Field,
   FormCheckbox,
   FormColumn,
@@ -96,12 +97,38 @@ export function SlaAgreementForm({
   const [maint, setMaint] = useState(a?.exclude_maintenance ?? true)
   const [grace, setGrace] = useState(String(a?.min_outage_seconds ?? 0))
   const [aggregation, setAggregation] = useState(a?.aggregation ?? "mean")
+  const [channels, setChannels] = useState<string[]>(a?.notify_channels ?? [])
+  const [burn, setBurn] = useState(
+    a?.alert_burn_rate != null ? String(a.alert_burn_rate) : ""
+  )
+  const [coverageAlert, setCoverageAlert] = useState(
+    a?.alert_coverage_pct ?? ""
+  )
+  const [objectives, setObjectives] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(a?.latency_objectives ?? {}).map(([k, v]) => [
+        k,
+        String(v),
+      ])
+    )
+  )
+  const [recipients, setRecipients] = useState(
+    (a?.report_recipients ?? []).join("\n")
+  )
+  const [reportFormat, setReportFormat] = useState(a?.report_format ?? "pdf")
 
   const contacts = useQuery({
     queryKey: ["contacts-picker"],
     queryFn: () =>
       api<Paginated<{ id: string; name: string }>>("/api/contacts/?picker=1"),
     staleTime: 5 * 60_000,
+  })
+  const channelList = useQuery({
+    queryKey: ["notification-channels", "sla"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string; kind: string }>>(
+        "/api/monitoring/channels/?page_size=200"
+      ),
   })
   const calendars = useQuery({
     queryKey: ["holiday-calendars"],
@@ -145,6 +172,19 @@ export function SlaAgreementForm({
           exclude_maintenance: maint,
           min_outage_seconds: Number(grace) || 0,
           aggregation,
+          notify_channels: channels,
+          alert_burn_rate: burn ? Number(burn) : null,
+          alert_coverage_pct: coverageAlert || null,
+          latency_objectives: Object.fromEntries(
+            Object.entries(objectives)
+              .filter(([, v]) => v.trim() !== "")
+              .map(([k, v]) => [k, Number(v)])
+          ),
+          report_recipients: recipients
+            .split(/[\s,]+/)
+            .map((x) => x.trim())
+            .filter(Boolean),
+          report_format: reportFormat,
         },
       })
     },
@@ -399,6 +439,96 @@ export function SlaAgreementForm({
           </FormSection>
         </FormColumn>
       </FormColumns>
+      <FormSection title="Alerts and reports" card>
+        <div className="grid gap-4 @3xl:grid-cols-2">
+          <div className="grid gap-3">
+            <Field
+              label="Alert channels"
+              info="At risk, breached, coverage low and a missed latency objective - each at most once per period."
+              error={fieldErrors.notify_channels}
+            >
+              <CheckList
+                options={(channelList.data?.results ?? []).map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  hint: c.kind,
+                }))}
+                value={channels}
+                onChange={setChannels}
+                className="max-h-32"
+                empty="No notification channels yet."
+              />
+            </Field>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="At risk above burn rate"
+                type="number"
+                inputMode="decimal"
+                value={burn}
+                onChange={setBurn}
+                placeholder="2"
+                info="How many times faster than time passes the budget may burn. 1 spends it exactly by the period's end."
+                error={fieldErrors.alert_burn_rate}
+              />
+              <FormText
+                label="Coverage alert below"
+                type="number"
+                inputMode="decimal"
+                value={coverageAlert}
+                onChange={setCoverageAlert}
+                placeholder="90"
+                info="Alert when less of the service time than this, in percent, was measured."
+                error={fieldErrors.alert_coverage_pct}
+              />
+            </div>
+            <Field
+              label="Latency objectives"
+              info="p95 per check kind, in ms, over the period. Missing one alerts; it never lowers availability."
+              error={fieldErrors.latency_objectives}
+            >
+              <div className="grid grid-cols-2 gap-2 @md:grid-cols-4">
+                {["icmp", "tcp", "http", "ssh"].map((kind) => (
+                  <label key={kind} className="grid gap-1 text-xs">
+                    <span className="font-mono text-muted-foreground uppercase">
+                      {kind}
+                    </span>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={objectives[kind] ?? ""}
+                      onChange={(e) =>
+                        setObjectives((o) => ({ ...o, [kind]: e.target.value }))
+                      }
+                      aria-label={`${kind} p95 objective`}
+                    />
+                  </label>
+                ))}
+              </div>
+            </Field>
+          </div>
+          <div className="grid gap-3">
+            <FormTextarea
+              label="Report recipients"
+              value={recipients}
+              onChange={setRecipients}
+              rows={4}
+              placeholder={"noc@example.com\ncustomer@example.com"}
+              info="Each period's report is emailed here when the period freezes, seven days after it ends."
+              error={fieldErrors.report_recipients}
+            />
+            <FormSelect
+              label="Report as"
+              value={reportFormat}
+              onChange={(v) => setReportFormat(v as typeof reportFormat)}
+              options={[
+                { value: "pdf", label: "PDF" },
+                { value: "csv", label: "CSV" },
+                { value: "both", label: "PDF and CSV" },
+              ]}
+            />
+          </div>
+        </div>
+      </FormSection>
       <FormFooter
         onCancel={onCancel}
         submitting={save.isPending}

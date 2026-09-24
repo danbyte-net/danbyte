@@ -151,6 +151,45 @@ exclusion cannot touch a frozen period.
 After a change to members, groups or exclusions, the figure is recomputed
 straight away. **Recompute** does the same by hand.
 
+## Alerts
+
+Pick **Alert channels** on the agreement: any notification channel (email,
+Slack, Teams, Discord, Telegram, PagerDuty or webhook). Each alert goes out at
+most once per period; a rolling agreement repeats a standing alert once a
+day.
+
+| Alert | When |
+|---|---|
+| **SLA breached** | The period's availability is below the target. It is also sent when a period tips into breach in its last minutes and closes before the next run. |
+| **SLA at risk** | The state is at risk (below *At risk below*, or three quarters of the budget spent), or the budget burns faster than **At risk above burn rate**. At 1.0 the budget runs out exactly at the period's end; at 2 it lasts half the period. |
+| **SLA coverage low** | Less of the service time than **Coverage alert below** was measured. This waits until a tenth of the period has passed. |
+| **Latency objective missed** | A check kind's p95 over the members' checks is above its **latency objective** for the period. It never changes availability. |
+
+A new agreement does not alert about periods that ended before it existed.
+
+## Reports
+
+The agreement page downloads the selected period's report as **PDF** or
+**CSV**. The report contains:
+
+- the figure against the target, the state and the coverage;
+- the error budget and the incidents;
+- the counting rules;
+- availability per day;
+- each member, worst first, with its worst check;
+- each incident, with the members that were down.
+
+A report for a period that is still open or not yet frozen says so. A report
+computed under an older revision of the rules names the revision.
+
+**Report recipients** get the report by email, as PDF, CSV or both, when the
+period freezes, seven days after it ends. **Email report** sends it now.
+**Overview** on the SLAs list gives every agreement's figure for this or the
+last period, as one PDF or CSV.
+
+Reports follow the viewer's permissions like the figures do. A site-scoped
+user's report leaves out the members they cannot see, and says so.
+
 ## On lists and object pages
 
 The device, virtual machine and IP address lists have two columns:
@@ -196,4 +235,7 @@ incidents, and the per-day figures are not shown.
 | `/api/monitoring/sla-members/` | Members; `POST …/bulk-add/` adds up to 1,000 at once |
 | `/api/monitoring/sla-exclusions/` | Excluded time |
 | `/api/monitoring/holiday-calendars/` | Shared holiday calendars |
+| `GET …/sla-agreements/<id>/report/?period=&file=pdf\|csv` | A period's report (`file`, not `format`, which the API keeps for itself) |
+| `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
+| `GET …/sla-agreements/overview-report/?period=&file=` | Every agreement for one period |
 | `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |

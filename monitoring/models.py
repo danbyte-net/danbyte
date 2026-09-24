@@ -3645,6 +3645,24 @@ class SlaAgreement(TimestampedModel):
     #: The revision now in force; bumped when a RULE_FIELDS value changes.
     revision = models.PositiveIntegerField(default=1)
 
+    # ── Alerts and reports ──
+    #: Where the agreement's alerts go: at risk, breached, coverage low, a
+    #: latency objective missed - each at most once per period.
+    notify_channels = models.ManyToManyField(
+        "monitoring.NotificationChannel", blank=True, related_name="sla_agreements"
+    )
+    #: At risk once budget burns faster than this (1.0 = on pace to spend it
+    #: exactly); null = only the warning line / budget share decides.
+    alert_burn_rate = models.FloatField(null=True, blank=True)
+    #: Alert when less than this share of the time was measured.
+    alert_coverage_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    #: Emailed the period's report when it freezes.
+    report_recipients = models.JSONField(default=list, blank=True)
+    report_format = models.CharField(
+        max_length=4, default="pdf",
+        choices=[("pdf", "PDF"), ("csv", "CSV"), ("both", "PDF and CSV")],
+    )
+
     class Meta:
         ordering = ["name"]
         constraints = [
@@ -3833,6 +3851,9 @@ class SlaPeriodResult(models.Model):
     computed_at = models.DateTimeField(default=timezone.now)
     closed_at = models.DateTimeField(null=True, blank=True)
     frozen_at = models.DateTimeField(null=True, blank=True)
+    #: {event key: when it was sent} - so each alert goes once per period.
+    alerts_sent = models.JSONField(default=dict, blank=True)
+    report_sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["agreement", "-period_start"]

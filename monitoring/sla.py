@@ -673,6 +673,9 @@ def refresh_agreement(agreement, now=None) -> list:
         r.period_key: r for r in SlaPeriodResult.objects.filter(agreement=agreement)
         .exclude(state="frozen")
     }
+    # Periods that were running before this run: only those may alert as
+    # they close - an agreement created today must not alarm about last month.
+    was_open = {k for k, r in existing.items() if r.state == "open"}
     state = "rolling" if key == "rolling" else "open"
     done.append(store(agreement, key, start, end, state=state, now=now,
                       result=existing.get(key)))
@@ -695,6 +698,9 @@ def refresh_agreement(agreement, now=None) -> list:
         final = bounds[2] + GRACE <= now
         done.append(store(agreement, pkey, bounds[1], bounds[2],
                           state="frozen" if final else "closed", now=now, result=res))
+    from .sla_notify import after_refresh
+
+    after_refresh(agreement, done, now, was_open=was_open)
     return done
 
 

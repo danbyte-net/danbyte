@@ -1,0 +1,262 @@
+"""SLA period reports - PDF (WeasyPrint, like labels) and CSV - and the
+overview across a tenant's agreements for one period.
+
+Built from a stored SlaPeriodResult, so a frozen period's report reads the
+same whenever it is produced. ``units`` / ``incidents`` / ``days`` may be
+narrowed first for a scoped viewer (the API passes a filtered copy).
+"""
+from __future__ import annotations
+
+import csv
+import io
+from datetime import datetime
+
+from django.utils import timezone
+from django.utils.html import escape
+
+STATE_LABEL = {
+    "ok": "On target", "at_risk": "At risk", "breached": "Breached",
+    "no_data": "No data", "not_started": "Not started",
+}
+
+
+def _pct(p) -> str:
+    return "-" if p is None else f"{p:.3f}%" if p >= 99.95 else f"{p:.2f}%"
+
+
+def _span(seconds) -> str:
+    s = int(abs(seconds or 0))
+    sign = "-" if (seconds or 0) < 0 else ""
+    if s < 90:
+        return f"{sign}{s}s"
+    if s < 90 * 60:
+        return f"{sign}{round(s / 60)}m"
+    if s < 36 * 3600:
+        return f"{sign}{s / 3600:.1f}h"
+    return f"{sign}{s / 86400:.1f}d"
+
+
+def _when(iso) -> str:
+    try:
+        return datetime.fromisoformat(iso).strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return str(iso or "-")
+
+
+def _parts(result, view=None):
+    """figures, members, incidents, days - from the result or a viewer's copy."""
+    if view is None:
+        units = result.units or []
+        return (result.figures or {}, [u for u in units if u.get("member")],
+                result.incidents or [], result.days or [], None)
+    return (view["figures"], view.get("members", []), view.get("incidents", []),
+            view.get("days", []), view.get("limited"))
+
+
+# ─── CSV ────────────────────────────────────────────────────────────────────
+
+
+def report_csv(agreement, result, view=None) -> str:
+    f, members, incidents, _days, limited = _parts(result, view)
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["agreement", agreement.name])
+    w.writerow(["period", result.period_key, result.state])
+    w.writerow(["availability_pct", f.get("availability"), "target_pct", f.get("target")])
+    w.writerow(["coverage_pct", f.get("coverage"), "state", f.get("state")])
+    w.writerow(["budget_s", f.get("budget_s"), "down_s", f.get("down_s"),
+                "budget_left_s", f.get("budget_left_s")])
+    if limited:
+        w.writerow(["limited_view_hidden_members", limited.get("hidden_members")])
+    w.writerow([])
+    w.writerow(["member", "type", "group", "redundancy_group", "availability_pct",
+                "coverage_pct", "down_s", "incidents", "worst_check"])
+    for m in members:
+        w.writerow([m["name"], m["object_type"].split(".")[-1], m["group"],
+                    m.get("redundancy_group", ""), m.get("availability"), m.get("coverage"),
+                    m.get("down_s"), m.get("incidents"), m.get("worst_item") or ""])
+    w.writerow([])
+    w.writerow(["incident_start", "incident_end", "seconds", "unit", "members_down"])
+    for i in incidents:
+        w.writerow([i["start"], i["end"], i["seconds"], i["label"], "; ".join(i["members"])])
+    return out.getvalue()
+
+
+# ─── PDF ────────────────────────────────────────────────────────────────────
+
+_CSS = """
+@page { size: A4; margin: 16mm 14mm; @bottom-right { content: counter(page) " / " counter(pages);
+  font-size: 8pt; color: #71717a; } }
+body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9.5pt; color: #18181b; }
+h1 { font-size: 17pt; margin: 0 0 2mm; }
+h2 { font-size: 11pt; margin: 7mm 0 2mm; border-bottom: 0.3mm solid #e4e4e7; padding-bottom: 1mm; }
+.muted { color: #71717a; }
+.kv { display: flex; flex-wrap: wrap; gap: 3mm; margin-top: 4mm; }
+.cell { border: 0.3mm solid #e4e4e7; border-radius: 1.5mm; padding: 2.5mm 3mm; min-width: 36mm; }
+.cell .l { font-size: 7.5pt; color: #71717a; text-transform: uppercase; letter-spacing: 0.04em; }
+.cell .v { font-size: 13pt; font-weight: bold; margin-top: 1mm; }
+.ok { color: #047857; } .at_risk { color: #b45309; } .breached { color: #b91c1c; }
+table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+th { text-align: left; color: #52525b; font-weight: 600; border-bottom: 0.3mm solid #d4d4d8; padding: 1.2mm; }
+td { border-bottom: 0.2mm solid #f4f4f5; padding: 1.2mm; }
+td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.bar { height: 2.2mm; background: #f4f4f5; border-radius: 0.6mm; }
+.bar i { display: block; height: 100%; border-radius: 0.6mm; }
+.note { background: #fafafa; border: 0.3mm solid #e4e4e7; padding: 2mm 3mm; margin-top: 3mm; }
+"""
+
+
+def _tone(av, target) -> str:
+    if av is None:
+        return ""
+    return "ok" if av >= target else "breached"
+
+
+def report_html(agreement, result, view=None) -> str:
+    f, members, incidents, days, limited = _parts(result, view)
+    target = f.get("target") or float(agreement.target_pct)
+    customer = (agreement.customer.name if agreement.customer_id else "") or agreement.customer_name
+    state = f.get("state", "no_data")
+    head = (
+        f"<h1>{escape(agreement.name)}</h1>"
+        f"<div class='muted'>{escape(customer) + ' · ' if customer else ''}"
+        f"Service level report {escape(result.period_key)} · "
+        f"{_when(f.get('since'))} to {_when(f.get('period_end'))} · "
+        f"generated {timezone.now():%Y-%m-%d %H:%M} UTC</div>"
+    )
+    cells = [
+        ("Availability", f"<span class='{state}'>{_pct(f.get('availability'))}</span>"),
+        ("Target", _pct(target)),
+        ("State", f"<span class='{state}'>{STATE_LABEL.get(state, state)}</span>"),
+        ("Coverage", "-" if f.get("coverage") is None else f"{f['coverage']}%"),
+        ("Budget", _span(f.get("budget_s"))),
+        ("Budget left", _span(f.get("budget_left_s"))),
+        ("Incidents", str(f.get("incidents", 0))),
+    ]
+    kv = "<div class='kv'>" + "".join(
+        f"<div class='cell'><div class='l'>{label}</div><div class='v'>{value}</div></div>"
+        for label, value in cells
+    ) + "</div>"
+    notes = []
+    if result.state != "frozen":
+        notes.append(
+            "This period is still open; the figure may change." if result.state in ("open", "rolling")
+            else "This period is closed but not yet frozen: exclusions can still be added."
+        )
+    if result.revision != agreement.revision:
+        notes.append(f"Computed under revision {result.revision} of the agreement's rules.")
+    if limited:
+        notes.append(f"Limited view: {limited['hidden_members']} member(s) outside the "
+                     "viewer's permissions are left out of this report.")
+    note_html = "".join(f"<div class='note'>{escape(n)}</div>" for n in notes)
+
+    rules = (
+        f"Service hours: {'around the clock' if not agreement.service_hours else 'set per weekday'}"
+        f" · degraded counts as {agreement.count_degraded_as}"
+        f" · stale counts as {'not measured' if agreement.count_stale_as == 'unmeasured' else 'down'}"
+        f" · outages under {agreement.min_outage_seconds}s ignored"
+        f" · planned maintenance {'excluded' if agreement.exclude_maintenance else 'counted'}"
+    )
+
+    day_rows = "".join(
+        f"<tr><td>{d['date']}</td><td class='n {_tone(d['availability'], target)}'>"
+        f"{_pct(d['availability'])}</td><td class='n'>{_span(d['down_s']) if d['down_s'] else '-'}"
+        f"</td><td style='width:45%'><div class='bar'><i style='width:"
+        f"{max(0, min(100, d['availability'] or 0))}%;background:"
+        f"{'#10b981' if (d['availability'] or 0) >= target else '#ef4444'}'></i></div></td></tr>"
+        for d in days
+    )
+    member_rows = "".join(
+        f"<tr><td>{escape(m['name'])}</td><td>{escape(m['group'])}</td>"
+        f"<td>{escape(m.get('redundancy_group') or '')}</td>"
+        f"<td class='n {_tone(m.get('availability'), target)}'>{_pct(m.get('availability'))}</td>"
+        f"<td class='n'>{'-' if m.get('coverage') is None else str(m['coverage']) + '%'}</td>"
+        f"<td class='n'>{_span(m.get('down_s')) if m.get('down_s') else '-'}</td>"
+        f"<td>{escape(m.get('worst_item') or '')}</td></tr>"
+        for m in sorted(members, key=lambda m: (m.get("availability") is None, m.get("availability") or 0))
+    )
+    incident_rows = "".join(
+        f"<tr><td>{_when(i['start'])}</td><td class='n'>{_span(i['seconds'])}</td>"
+        f"<td>{escape(i['label'])}</td><td>{escape(', '.join(i['members']))}</td></tr>"
+        for i in incidents[:200]
+    )
+    body = (
+        head + kv + note_html
+        + f"<p class='muted'>{escape(rules)}</p>"
+        + (f"<h2>Per day</h2><table><tr><th>Day</th><th>Availability</th><th>Down</th><th></th></tr>"
+           f"{day_rows}</table>" if day_rows else "")
+        + f"<h2>Members</h2><table><tr><th>Member</th><th>Group</th><th>Redundancy</th>"
+          f"<th>Availability</th><th>Coverage</th><th>Down</th><th>Worst check</th></tr>"
+          f"{member_rows or '<tr><td colspan=7 class=muted>No members.</td></tr>'}</table>"
+        + f"<h2>Incidents</h2><table><tr><th>Started</th><th>Lasted</th><th>Unit</th>"
+          f"<th>Down at the start</th></tr>"
+          f"{incident_rows or '<tr><td colspan=4 class=muted>None.</td></tr>'}</table>"
+    )
+    return (f"<!doctype html><html><head><meta charset='utf-8'><style>{_CSS}</style>"
+            f"</head><body>{body}</body></html>")
+
+
+def report_pdf(agreement, result, view=None) -> bytes:
+    import weasyprint
+
+    return weasyprint.HTML(string=report_html(agreement, result, view)).write_pdf()
+
+
+# ─── overview across agreements ─────────────────────────────────────────────
+
+
+def overview_rows(rows) -> list[dict]:
+    """``rows``: ``[(agreement, result-or-None, figures-or-None)]``."""
+    out = []
+    for a, res, f in rows:
+        f = f or {}
+        out.append({
+            "agreement": a.name,
+            "customer": (a.customer.name if a.customer_id else "") or a.customer_name,
+            "period": res.period_key if res else "",
+            "state_of_period": res.state if res else "",
+            "availability": f.get("availability"), "target": float(a.target_pct),
+            "state": f.get("state", "no_data"), "coverage": f.get("coverage"),
+            "budget_left_s": f.get("budget_left_s"), "incidents": f.get("incidents", 0),
+            "members": f.get("members", 0),
+        })
+    return out
+
+
+def overview_csv(rows) -> str:
+    data = overview_rows(rows)
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["agreement", "customer", "period", "period_state", "availability_pct",
+                "target_pct", "state", "coverage_pct", "budget_left_s", "incidents", "members"])
+    for r in data:
+        w.writerow([r["agreement"], r["customer"], r["period"], r["state_of_period"],
+                    r["availability"], r["target"], r["state"], r["coverage"],
+                    r["budget_left_s"], r["incidents"], r["members"]])
+    return out.getvalue()
+
+
+def overview_pdf(rows, period_label: str) -> bytes:
+    import weasyprint
+
+    data = overview_rows(rows)
+    trs = "".join(
+        f"<tr><td>{escape(r['agreement'])}</td><td>{escape(r['customer'])}</td>"
+        f"<td>{escape(r['period'])}</td>"
+        f"<td class='n {r['state']}'>{_pct(r['availability'])}</td><td class='n'>{_pct(r['target'])}</td>"
+        f"<td class='{r['state']}'>{STATE_LABEL.get(r['state'], r['state'])}</td>"
+        f"<td class='n'>{'-' if r['coverage'] is None else str(r['coverage']) + '%'}</td>"
+        f"<td class='n'>{_span(r['budget_left_s']) if r['budget_left_s'] is not None else '-'}</td>"
+        f"<td class='n'>{r['incidents']}</td></tr>"
+        for r in data
+    )
+    html = (
+        f"<!doctype html><html><head><meta charset='utf-8'><style>{_CSS}</style></head><body>"
+        f"<h1>Service levels {escape(period_label)}</h1>"
+        f"<div class='muted'>{len(data)} agreement(s) · generated {timezone.now():%Y-%m-%d %H:%M} UTC</div>"
+        f"<h2>Agreements</h2><table><tr><th>Agreement</th><th>Customer</th><th>Period</th>"
+        f"<th>Availability</th><th>Target</th><th>State</th><th>Coverage</th><th>Budget left</th>"
+        f"<th>Incidents</th></tr>{trs or '<tr><td colspan=9 class=muted>None.</td></tr>'}</table>"
+        f"</body></html>"
+    )
+    return weasyprint.HTML(string=html).write_pdf()

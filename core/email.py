@@ -461,6 +461,7 @@ def send_html_email(
     tenant=None,
     site=None,
     fail_silently: bool = True,
+    attachments: list | None = None,
 ) -> bool:
     """Send a multipart HTML+text email via the effective SMTP for the tenant/
     site. Returns True if a send was attempted with at least one recipient.
@@ -498,6 +499,9 @@ def send_html_email(
             part.add_header("Content-Disposition", "inline", filename="logo")
             msg.mixed_subtype = "related"
             msg.attach(part)
+        # Files, e.g. an SLA report: ``[(filename, bytes, mimetype), ...]``.
+        for name, content, mime in attachments or []:
+            msg.attach(name, content, mime)
         msg.send(fail_silently=False)
         return True
     except Exception as exc:  # noqa: BLE001 - best-effort by default

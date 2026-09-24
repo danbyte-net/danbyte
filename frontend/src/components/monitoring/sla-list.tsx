@@ -1,12 +1,18 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Plus } from "lucide-react"
+import { FileDown, Plus } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { Paginated, SlaAgreement } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { slaAgreementColumns } from "@/components/columns/sla-columns"
@@ -40,6 +46,32 @@ export function SlaList() {
       }}
       actions={
         <>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline">
+                <FileDown className="h-3.5 w-3.5" /> Overview
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {(
+                [
+                  ["current", "This period"],
+                  ["previous", "Last period"],
+                ] as const
+              ).map(([p, label]) =>
+                (["pdf", "csv"] as const).map((f) => (
+                  <DropdownMenuItem key={`${p}-${f}`} asChild>
+                    <a
+                      href={`/api/monitoring/sla-agreements/overview-report/?period=${p}${f === "csv" ? "&file=csv" : ""}`}
+                      download
+                    >
+                      {label}, {f.toUpperCase()}
+                    </a>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <HolidayCalendarsButton />
           {canDo("slaagreement", "add") && (
             <Button size="sm" asChild>

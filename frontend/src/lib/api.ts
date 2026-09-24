@@ -9831,6 +9831,15 @@ export interface SlaAgreement {
   min_outage_seconds: number
   aggregation: "mean" | "worst"
   latency_objectives: Record<string, number>
+  /** Channels that get this agreement's alerts. */
+  notify_channels: string[]
+  /** At risk once budget burns this many times faster than time passes. */
+  alert_burn_rate: number | null
+  /** Alert when less than this share of the time was measured. */
+  alert_coverage_pct: string | null
+  /** Emailed each period's report when it freezes. */
+  report_recipients: string[]
+  report_format: "pdf" | "csv" | "both"
   status: "draft" | "active" | "archived"
   effective_from: string | null
   revision: number
