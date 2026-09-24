@@ -68,6 +68,10 @@ def _same_tenant(tenant, **objs):
 # ─── holiday calendars ──────────────────────────────────────────────────────
 
 
+#: The list's history column counts this many finished periods.
+HISTORY_PERIODS = 12
+
+
 class HolidayCalendarSerializer(serializers.ModelSerializer):
     agreement_count = serializers.IntegerField(read_only=True, default=0)
 
@@ -146,9 +150,10 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             return None
         body = _viewer_figures(self.context.get("request"), obj, res)
         # Burn is over the whole agreement: a limited viewer does not get it.
-        burn = obj.burn_state or None if body["limited"] is None else None
+        full = body["limited"] is None
         return {"period_key": res.period_key, "computed_at": res.computed_at,
-                "burn": burn, **body}
+                "burn": obj.burn_state or None if full else None,
+                "history": getattr(obj, "_history", None) if full else None, **body}
 
     def validate_burn_alerts(self, value):
         from .sla_burn import validate_rules
@@ -396,8 +401,20 @@ class SlaAgreementViewSet(TenantScopedViewSet):
             agreement__in=agreements, state__in=("open", "rolling")
         ):
             current[r.agreement_id] = r
+        # The last twelve finished periods: how many met the target.
+        history: dict = {}
+        for agreement_id, st_ in (
+            SlaPeriodResult.objects.filter(agreement__in=agreements, state__in=("closed", "frozen"))
+            .order_by("agreement_id", "-period_start")
+            .values_list("agreement_id", "figures__state")
+        ):
+            h = history.setdefault(agreement_id, {"met": 0, "of": 0})
+            if h["of"] < HISTORY_PERIODS and st_ not in (None, "no_data"):
+                h["of"] += 1
+                h["met"] += st_ in ("ok", "at_risk")
         for a in agreements:
             a._current = current.get(a.id)
+            a._history = history.get(a.id, {"met": 0, "of": 0})
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -492,6 +509,14 @@ class SlaAgreementViewSet(TenantScopedViewSet):
                 "availability", "coverage", "down_s", "incidents", "budget_spent_pct", "state",
             )},
         }
+        body["forecast"] = sla.forecast(a, body["figures"], end, now, rules, filters)
+        if body["forecast"] and bucket == "day":
+            # The days still to come, for the chart's dashed continuation.
+            from .sla_analysis import _bounds
+
+            body["forecast"]["buckets"] = [
+                lo.isoformat() for lo, _hi in _bounds(now, end, sla.agreement_tz(a), "day")[1:]
+            ]
         body["period_key"] = key
         body["options"] = options(a, now)
         body["limited"] = hidden is not None

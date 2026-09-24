@@ -69,17 +69,31 @@ export function AvailabilityOverTime({
   // A zoomed axis shows the nines; a deep drop shows its true size from 0,
   // or a 50% day would draw as a sliver at the bottom.
   const floor = low >= 90 ? Math.max(0, Math.floor(low) - 2) : 0
+  const tone = (av: number) =>
+    av >= target ? "var(--color-emerald-500)" : "var(--color-red-500)"
   const rows = data.series.map((p) => ({
     ...p,
     label: label(p.t),
     value: p.availability ?? floor,
-    fill:
-      p.availability == null
-        ? "var(--muted)"
-        : p.availability >= target
-          ? "var(--color-emerald-500)"
-          : "var(--color-red-500)",
+    fill: p.availability == null ? "var(--muted)" : tone(p.availability),
+    forecast: false,
   }))
+  // The days still to come, drawn hollow at the trailing week's figure.
+  const fc = data.forecast
+  for (const t of fc?.buckets ?? []) {
+    rows.push({
+      t,
+      end: t,
+      availability: fc?.trailing ?? null,
+      down_s: 0,
+      measured_s: 0,
+      incidents: 0,
+      label: label(t),
+      value: fc?.trailing ?? floor,
+      fill: tone(fc?.trailing ?? 100),
+      forecast: true,
+    })
+  }
   return (
     <ChartContainer config={AVAIL} className="aspect-auto h-[200px] w-full">
       <BarChart data={rows} margin={{ left: 0, right: 8, top: 6 }}>
@@ -110,8 +124,9 @@ export function AvailabilityOverTime({
             <ChartTooltipContent
               hideIndicator
               formatter={(_v, _n, item) => {
-                const p =
-                  item.payload as unknown as SlaAnalysis["series"][number]
+                const p = item.payload as unknown as (typeof rows)[number]
+                if (p.forecast)
+                  return `Forecast ${fmtSla(p.availability)}, like the last 7 days`
                 return p.availability == null
                   ? "Nothing measured"
                   : `${fmtSla(p.availability)} · ${fmtSpan(p.down_s * 1000)} down · ${p.incidents} incident${p.incidents === 1 ? "" : "s"}`
@@ -130,9 +145,18 @@ export function AvailabilityOverTime({
           }}
           className={onPick ? "cursor-pointer" : undefined}
         >
-          {rows.map((r) => (
-            <Cell key={r.t} fill={r.fill} />
-          ))}
+          {rows.map((r) =>
+            r.forecast ? (
+              <Cell
+                key={r.t}
+                fill="transparent"
+                stroke={r.fill}
+                strokeDasharray="3 2"
+              />
+            ) : (
+              <Cell key={r.t} fill={r.fill} />
+            )
+          )}
         </Bar>
       </BarChart>
     </ChartContainer>

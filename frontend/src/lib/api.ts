@@ -9807,6 +9807,15 @@ export interface SlaFigures {
   since: string
   until: string
   period_end: string
+  /** The open period's end, if the rest goes like the trailing week. */
+  forecast?: SlaForecast | null
+}
+
+export interface SlaForecast {
+  availability: number
+  /** The trailing seven days' figure the rest is assumed to repeat. */
+  trailing: number
+  state: SlaState
 }
 
 export interface SlaBurnRule {
@@ -9880,6 +9889,8 @@ export interface SlaAgreement {
     limited: { hidden_members: number } | null
     /** Each burn rule as last evaluated; null for a limited viewer. */
     burn: Record<string, SlaBurnState> | null
+    /** Of the last twelve finished periods, how many met the target. */
+    history: { met: number; of: number } | null
   } | null
   created_at: string
   updated_at: string
@@ -10120,6 +10131,8 @@ export interface SlaAnalysis {
   period_end: string
   limited: boolean
   figures: SlaFigures
+  /** Set while the window is still running; `buckets` are the days to come. */
+  forecast: (SlaForecast & { buckets?: string[] }) | null
   previous: {
     since: string
     until: string

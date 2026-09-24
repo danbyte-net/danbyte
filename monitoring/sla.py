@@ -659,6 +659,34 @@ def headline(units, rules, full_service, start, until, end) -> dict:
     }
 
 
+#: The forecast assumes the rest of the window goes like this much of the past.
+FORECAST_TRAILING = timedelta(days=7)
+#: Before this share of the window has passed there is too little to go on.
+FORECAST_MIN_ELAPSED_PCT = 10
+
+
+def forecast(agreement, figures: dict, end: datetime, now: datetime, rules: dict,
+             filters: dict | None = None) -> dict | None:
+    """Where a window that is still running ends if the rest of it goes like
+    the trailing seven days: the figure so far and the trailing figure,
+    weighted by the share of the window each covers."""
+    av = figures.get("availability")
+    elapsed = (figures.get("elapsed_pct") or 0) / 100
+    if av is None or end <= now or not FORECAST_MIN_ELAPSED_PCT <= elapsed * 100 < 100:
+        return None
+    trailing = compute(agreement, now - FORECAST_TRAILING, now, rules=rules, now=now,
+                       filters=filters)["figures"].get("availability")
+    if trailing is None:
+        trailing = av
+    fc = round(av * elapsed + trailing * (1 - elapsed), 4)
+    target = float(rules["target_pct"])
+    warning = rules.get("warning_pct")
+    warning = float(warning) if warning not in (None, "") else None
+    state = ("breached" if fc < target
+             else "at_risk" if warning is not None and fc < warning else "ok")
+    return {"availability": fc, "trailing": trailing, "state": state}
+
+
 def partial(result, visible_units: list, rules: dict) -> dict:
     """The headline over only the units a scoped viewer may see."""
     f = result.figures
@@ -668,6 +696,8 @@ def partial(result, visible_units: list, rules: dict) -> dict:
         parse(f["since"]), parse(f["until"]), parse(f["period_end"]),
     )
     out["members"] = sum(len(u["members"]) for u in visible_units)
+    # The forecast is the whole agreement's; a partial view does not get it.
+    out["forecast"] = None
     return {**f, **out}
 
 
@@ -737,6 +767,8 @@ def store(agreement, key: str, start, end, *, state: str, now=None, result=None)
     now = now or timezone.now()
     rules = rules_for(agreement, result)
     data = compute(agreement, start, end, rules=rules, now=now)
+    if state == "open":
+        data["figures"]["forecast"] = forecast(agreement, data["figures"], end, now, rules)
     defaults = {
         "tenant_id": agreement.tenant_id, "period_start": start, "period_end": end,
         "state": state, "figures": data["figures"], "units": data["units"],

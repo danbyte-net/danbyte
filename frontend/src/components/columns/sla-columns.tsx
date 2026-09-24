@@ -106,6 +106,25 @@ export function slaAgreementColumns(): ColumnDef<SlaAgreement>[] {
       },
     },
     {
+      id: "history",
+      // Share met, so 12 of 12 sorts above 11 of 12 and 3 of 3.
+      accessorFn: (r) => {
+        const h = r.current?.history
+        return h?.of ? h.met / h.of + h.of / 1000 : -1
+      },
+      header: ({ column }) => <SortHeader column={column} label="Last 12" />,
+      cell: ({ row }) => {
+        const h = row.original.current?.history
+        if (!h?.of) return dash
+        return (
+          <span className={`num ${h.met < h.of ? "text-destructive" : ""}`}>
+            {h.met}
+            <span className="text-muted-foreground"> of {h.of}</span>
+          </span>
+        )
+      },
+    },
+    {
       id: "members",
       accessorFn: (r) => r.member_count,
       header: ({ column }) => <SortHeader column={column} label="Members" />,

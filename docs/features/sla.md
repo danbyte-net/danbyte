@@ -10,8 +10,9 @@ status changes the monitoring history shows. Each period's figure is stored and
 then frozen, so it stays the same after the raw data behind it is pruned.
 
 **Governance → Monitoring → SLAs** lists every agreement. Each row shows this
-period's figure against the target, the error budget left, and how much of the
-time was actually measured.
+period's figure against the target, the error budget left, how much of the
+time was actually measured, and **Last 12**: how many of the last twelve
+finished periods met the target.
 
 ## Your first agreement
 
@@ -186,6 +187,12 @@ These figures appear everywhere an agreement's figure is shown:
   unit downtime; with *Worst member* it is the worst unit's downtime.
 - **Burn rate** - budget spent ÷ share of the period elapsed. Above 1.0, the
   period ends over budget if nothing changes.
+- **Forecast** - where the period ends if the rest of it goes like the last
+  seven days: the figure so far and the last week's figure, weighted by how
+  much of the period each covers. A bad start followed by a clean week
+  forecasts better than the figure today; a fresh outage forecasts worse. It
+  appears once a tenth of the period has passed, only while the period is
+  open, and is coloured against the target like the figure.
 
 ### Latency objectives
 
@@ -205,8 +212,15 @@ pick. Every figure and chart follows the filter rail on the left.
 - **Slices** - check groups, sites, check types, redundancy groups and
   members. Ticking several means any of them.
 
+Above the headline, **history** shows the last twelve finished periods as
+pills, oldest first, coloured by how each ended, with "Met 11 of 12" before
+them. A pill opens that period. A closed period that is not yet frozen says
+so on hover.
+
 The headline shows availability, state, coverage, down time, budget left and
-incidents. Where it makes sense it adds the change from the window before:
+incidents. For a window still running, the forecast follows the target line,
+and the availability chart draws the days still to come as hollow, dashed
+bars at the last week's figure. Where it makes sense it adds the change from the window before:
 the previous period, or a range of the same length just before a custom
 range. The previous window is computed with the same slices, so the two
 compare like for like.
@@ -369,7 +383,7 @@ incidents, and the per-day figures are not shown.
 | `/api/monitoring/sla-exclusions/` | Excluded time |
 | `/api/monitoring/holiday-calendars/` | Shared holiday calendars |
 | `GET …/sla-agreements/<id>/report/?period=&file=pdf\|csv` | A period's report (`file`, not `format`, which the API keeps for itself) |
-| `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live |
+| `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live, with `forecast` while the window runs |
 | `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
 | `GET …/sla-agreements/overview-report/?period=&file=` | Every agreement for one period |
 | `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip\|prefix, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |

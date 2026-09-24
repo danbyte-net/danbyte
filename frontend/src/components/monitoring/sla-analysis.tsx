@@ -5,6 +5,8 @@ import { X } from "lucide-react"
 import { api } from "@/lib/api"
 import type { SlaAgreement, SlaAnalysis, SlaPeriodSummary } from "@/lib/api"
 import { QueryError } from "@/components/query-error"
+import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -16,6 +18,11 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import {
   SLA_STATE_LABEL,
   SlaFigureBadge,
@@ -113,6 +120,72 @@ function RailList({
     </div>
   )
 }
+
+/** The last twelve finished periods as pills, oldest first; a pill opens
+ * that period. */
+function HistoryStrip({
+  periods,
+  active,
+  onPick,
+}: {
+  periods: SlaPeriodSummary[]
+  active: string | null
+  onPick: (key: string) => void
+}) {
+  const done = periods
+    .filter((p) => p.state === "closed" || p.state === "frozen")
+    .slice(0, 12)
+    .reverse()
+  const counted = done.filter((p) => p.figures.state !== "no_data")
+  if (!counted.length) return null
+  const met = counted.filter(
+    (p) => p.figures.state === "ok" || p.figures.state === "at_risk"
+  ).length
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+      <span className="mr-1 text-muted-foreground">
+        Met <span className="num text-foreground">{met}</span> of{" "}
+        <span className="num">{counted.length}</span>
+      </span>
+      {done.map((p) => (
+        <Tooltip key={p.period_key}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onPick(p.period_key)}
+              className={cn(
+                "rounded-md",
+                active === p.period_key && "ring-2 ring-ring ring-offset-1"
+              )}
+            >
+              <Badge
+                variant={HISTORY_VARIANT[p.figures.state]}
+                className="num cursor-pointer"
+              >
+                {p.period_key}
+              </Badge>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <span className="num">
+              {fmtSla(p.figures.availability)} ·{" "}
+              {SLA_STATE_LABEL[p.figures.state]}
+              {p.state === "closed" ? " · not final yet" : ""}
+            </span>
+          </TooltipContent>
+        </Tooltip>
+      ))}
+    </div>
+  )
+}
+
+const HISTORY_VARIANT = {
+  ok: "success",
+  at_risk: "warning",
+  breached: "destructive",
+  no_data: "secondary",
+  not_started: "secondary",
+} as const
 
 /** A chart in its own card: title and description inside the border. */
 function AnalysisCard({
@@ -368,6 +441,14 @@ export function SlaAnalysisView({
                 Limited view: members outside what you can see are left out.
               </p>
             )}
+            <HistoryStrip
+              periods={periods}
+              active={useRange ? null : period}
+              onPick={(key) => {
+                setUseRange(false)
+                setPeriod(key)
+              }}
+            />
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
               <Figure
                 label="Availability"
@@ -419,11 +500,23 @@ export function SlaAnalysisView({
               </Figure>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-              <p className="text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
                 Target {fmtSla(f.target)}
                 {prev?.availability != null &&
                   ` · the window before: ${fmtSla(prev.availability)}`}
-              </p>
+                {d.forecast && (
+                  <>
+                    <span>· forecast</span>
+                    <SlaFigureBadge
+                      figures={{
+                        availability: d.forecast.availability,
+                        state: d.forecast.state,
+                        coverage: null,
+                      }}
+                    />
+                  </>
+                )}
+              </div>
               {!useRange && period === "current" && (
                 <BurnNow burn={a.current?.burn} />
               )}
