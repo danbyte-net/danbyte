@@ -219,11 +219,15 @@ location ^~ /api/backups/ {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_request_buffering off;
+    proxy_request_buffering on;
+    proxy_max_temp_file_size 10240m;
     proxy_read_timeout 600s;
     client_max_body_size 8g;
 }
 ```
+
+`proxy_max_temp_file_size` takes `k` or `m`: nginx refuses `10g` there,
+although `client_max_body_size` accepts it.
 
 Then `sudo nginx -t && sudo systemctl reload nginx`. Without it, uploads over
 the server's default body limit and slow downloads fail; backups themselves
