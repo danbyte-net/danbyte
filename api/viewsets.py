@@ -5707,8 +5707,8 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("vm")
-            .prefetch_related("tags", "ip_addresses")
+            .select_related("vm__status", "vlan", "vrf")
+            .prefetch_related("tags", "ip_addresses", "tagged_vlans")
         )
         if self.request:
             vm = self.request.query_params.get("vm")
