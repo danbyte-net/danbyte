@@ -45,6 +45,7 @@ import { DayDrill, MemberPanel } from "./sla-drill"
 import { BurnNow } from "./sla-burn-rules"
 import { fmtCredit } from "./sla-credit-tiers"
 import { ObjectiveCards } from "./sla-objectives"
+import { MembersMatrix } from "./sla-matrix"
 
 type FilterKey = "group" | "site" | "member" | "kind" | "redundancy"
 type Filters = Record<FilterKey, string[]>
@@ -578,6 +579,13 @@ export function SlaAnalysisView({
             </div>
             <AnalysisCard title="Members over time" count={d.strips.length}>
               <MemberStrips data={d} onPick={setMember} />
+            </AnalysisCard>
+            <AnalysisCard
+              title="Members by check"
+              description="Each check's availability in this window"
+              count={d.by_member.length}
+            >
+              <MembersMatrix data={d} onMember={setMember} />
             </AnalysisCard>
           </>
         )}

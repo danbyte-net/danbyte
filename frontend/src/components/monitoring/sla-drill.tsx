@@ -31,7 +31,7 @@ export const MEMBER_ROUTE = {
   "api.circuit": "/circuits/$id",
 } as const
 
-const MEMBER_NOUN = {
+export const MEMBER_NOUN = {
   "api.device": "Device",
   "api.virtualmachine": "Virtual machine",
   "api.ipaddress": "IP address",

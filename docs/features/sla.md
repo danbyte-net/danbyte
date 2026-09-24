@@ -18,17 +18,23 @@ finished periods met the target.
 
 1. Make sure the equipment is monitored. An agreement only reads the results
    of checks that already run; see [Monitoring](monitoring.md).
-2. On the SLAs list, click **New agreement**. Give it a name, who it is
-   **provided for**, a **target** such as 99.9 and a **period** such as
-   Month. The other settings have sensible defaults.
-3. On the agreement's **Check groups** tab, click **New group** and pick the
-   checks that count, for example Ping. Leave the list empty to count every
-   check.
-4. On the **Members** tab, click **Add member** and pick devices, virtual
-   machines, IP addresses or prefixes. You can also add them from an
-   object's **Monitoring** tab or the device list, with **Add to SLA**.
-5. The figure appears straight away and is kept up to date every 15
-   minutes. The **Overview** tab shows it with charts.
+2. On the SLAs list, click **New agreement**. Three steps follow:
+    - **Agreement** - a name, who it is **provided for**, a **target** such
+      as 99.9 and a **period** such as Month.
+    - **Members** - devices, virtual machines, IP addresses, prefixes or
+      circuits. Pick several at once. Members can also be added later, from
+      the agreement or from an object's **Monitoring** tab with **Add to
+      SLA**.
+    - **Checks** - a first check group and the checks that count. The checks
+      your devices and prefixes already run are ticked for you; with none
+      ticked, every check on a member's addresses counts.
+
+    **Create** makes the agreement, its group and its members. **All
+    settings** opens every setting on one form instead.
+3. The figure appears straight away and is kept up to date every 15
+   minutes. The **Overview** tab shows it with charts. Service hours,
+   counting rules, alerts, objectives and credits keep their defaults until
+   you edit the agreement.
 
 ### An example
 
@@ -276,6 +282,7 @@ compare like for like.
 | **When outages happen** | Down time by weekday and hour, in the agreement's timezone. A nightly job or a Monday change window shows up as a stripe. Hover a cell for its down time | - |
 | **Incident lengths** | Incidents by duration, and the mean time to recover | - |
 | **Latency against objectives** | p95 and median per check type, the p95 alert as a red line and each latency objective's time as an amber one. Hover a point for the share within each objective | - |
+| **Members by check** | One row per member, one column per check template: each check's availability in the window as a pill against the target. A member with several addresses on one template shows its worst | A pill opens that check, or the member panel when there are several |
 | **Members over time** | One status strip per member across the window, so overlaps and redundancy show at a glance | A name opens the member panel |
 
 The **member panel** shows one member for the window:
