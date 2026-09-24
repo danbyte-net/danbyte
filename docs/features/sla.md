@@ -13,6 +13,37 @@ then frozen, so it stays the same after the raw data behind it is pruned.
 period's figure against the target, the error budget left, and how much of the
 time was actually measured.
 
+## Your first agreement
+
+1. Make sure the equipment is monitored. An agreement only reads the results
+   of checks that already run; see [Monitoring](monitoring.md).
+2. On the SLAs list, click **New agreement**. Give it a name, who it is
+   **provided for**, a **target** such as 99.9 and a **period** such as
+   Month. The other settings have sensible defaults.
+3. On the agreement's **Check groups** tab, click **New group** and pick the
+   checks that count, for example Ping. Leave the list empty to count every
+   check.
+4. On the **Members** tab, click **Add member** and pick devices, virtual
+   machines, IP addresses or prefixes. You can also add them from an
+   object's **Monitoring** tab or the device list, with **Add to SLA**.
+5. The figure appears straight away and is kept up to date every 15
+   minutes. The **Overview** tab shows it with charts.
+
+### An example
+
+A target of 99.9 % over a 30-day month allows 0.1 % of 30 days down: 43
+minutes. That is the **error budget**.
+
+- Fifteen days in, with 15 minutes down, 35 % of the budget is spent after
+  50 % of the month. The **burn rate** is 35 ÷ 50 = 0.7, and availability so
+  far is 99.93 %: *On target*.
+- Twenty-five days in, with 35 minutes down, 81 % of the budget is spent.
+  Availability is still 99.90 %, but three quarters of the budget is gone:
+  *At risk*.
+- Once the down time passes what the elapsed share of the month allows, the
+  burn rate goes above 1.0 and availability drops under the target:
+  *Breached*.
+
 ## The parts of an agreement
 
 | Part | What it says |
@@ -20,6 +51,7 @@ time was actually measured.
 | **Agreement** | Who it is provided for, the target (for example 99.9 %), the period, the service hours, holidays, and the counting rules |
 | **Check group** | Which checks count for one class of equipment, and which address they are read from |
 | **Member** | A device, virtual machine, IP address or prefix in a group |
+| **Unit** | What the figure is built from: one member, or a redundancy group of members counted as one |
 | **Exclusion** | Time that does not count, with the reason recorded |
 
 A new tenant has no agreements. Nothing is seeded.
@@ -118,6 +150,7 @@ Add devices, virtual machines, IP addresses or prefixes on the **Members**
 tab. A prefix stands for the monitored addresses in it and in its child
 prefixes. An address with no check is not counted, so adding a /16 does not
 bring in thousands of unmeasured rows.
+
 Removing a member marks it as having left; it is not deleted. Periods it was
 part of still count the time it was in. A member you cannot view cannot be
 added.
@@ -126,7 +159,7 @@ added.
 such as a leaf pair. A redundancy group counts as one unit, and it is down only
 while all of its members are down.
 
-The agreement's figure combines its units in one of two ways:
+**Members combine as** decides how the units become the agreement's figure:
 
 - **Average** - the time-weighted mean: total up time over total measured
   time.
@@ -137,9 +170,11 @@ The agreement's figure combines its units in one of two ways:
 These figures appear everywhere an agreement's figure is shown:
 
 - **Availability** - up ÷ (up + down) within service hours, after exclusions.
-- **Coverage** - measured time ÷ service time. A high availability with low
-  coverage was measured over only part of the period, so treat it with care.
-  The badge is dimmed when coverage is under 90 %.
+- **Coverage** - measured time ÷ service time, shown beside a figure as
+  "68% measured". Time with no check results counts as neither up nor down,
+  so a high availability with low coverage was measured over only part of
+  the period; treat it with care. The badge is dimmed when coverage is under
+  90 %.
 - **State**:
     - *On target*;
     - *At risk* - below *At risk below*, or, when that is empty, once three
@@ -151,6 +186,14 @@ These figures appear everywhere an agreement's figure is shown:
   unit downtime; with *Worst member* it is the worst unit's downtime.
 - **Burn rate** - budget spent ÷ share of the period elapsed. Above 1.0, the
   period ends over budget if nothing changes.
+
+### Latency objectives
+
+**Latency objectives** set a p95 response time in milliseconds per check
+kind (ICMP, TCP, HTTP, SSH), over the period. Missing one sends an alert and
+draws in the latency chart. It never lowers availability. Leave a kind empty
+to have no objective for it.
+
 ## Analysis
 
 The **Overview** tab computes the agreement live for the window and slice you
@@ -180,9 +223,11 @@ compare like for like.
 
 The **member panel** shows one member for the window:
 
+- its name, linked to the object's page, and its check group;
 - its figure, coverage, down time and incidents;
 - its strip;
-- each check with its own availability, informational checks marked;
+- each check with its own availability, informational checks marked, and a
+  link to the check's page (for a prefix, with the address it runs on);
 - its incidents.
 
 The report bar above the analysis downloads or emails the **stored** figure
@@ -202,7 +247,8 @@ straight away. **Recompute** does the same by hand.
 
 ## Alerts
 
-Pick **Alert channels** on the agreement: any notification channel (email,
+Under **Alerts and reports** on the agreement's form, pick **Alert
+channels**: any notification channel (email,
 Slack, Teams, Discord, Telegram, PagerDuty or webhook). Each alert goes out at
 most once per period; a rolling agreement repeats a standing alert once a
 day.
@@ -235,6 +281,7 @@ computed under an older revision of the rules names the revision.
 period freezes, seven days after it ends. **Email report** sends it now,
 either to those recipients or once to addresses you type in; a one-off
 address is not saved on the agreement.
+
 **Overview** on the SLAs list gives every agreement's figure for this or the
 last period, as one PDF or CSV.
 
@@ -292,4 +339,4 @@ incidents, and the per-day figures are not shown.
 | `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live |
 | `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
 | `GET …/sla-agreements/overview-report/?period=&file=` | Every agreement for one period |
-| `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |
+| `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip\|prefix, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |
