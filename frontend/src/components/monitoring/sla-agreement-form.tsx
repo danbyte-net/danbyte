@@ -26,6 +26,7 @@ import {
 } from "@/components/forms"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { TimePicker } from "@/components/ui/time-picker"
 import { useSaveObject } from "@/lib/save-object"
 import { PERIOD_LABEL } from "./sla-figure"
 
@@ -369,22 +370,18 @@ export function SlaAgreementForm({
                       />
                       {label}
                     </label>
-                    <Input
-                      type="time"
+                    <TimePicker
                       className="h-8 w-28"
                       value={hours[d].from}
                       disabled={!hours[d].on}
-                      onChange={(e) => setDay(d, { from: e.target.value })}
-                      aria-label={`${label} from`}
+                      onChange={(v) => v && setDay(d, { from: v })}
                     />
                     <span className="text-muted-foreground">to</span>
-                    <Input
-                      type="time"
+                    <TimePicker
                       className="h-8 w-28"
                       value={hours[d].to}
                       disabled={!hours[d].on}
-                      onChange={(e) => setDay(d, { to: e.target.value })}
-                      aria-label={`${label} to`}
+                      onChange={(v) => v && setDay(d, { to: v })}
                     />
                   </div>
                 ))}
