@@ -33,13 +33,10 @@ export function slaAgreementColumns(): ColumnDef<SlaAgreement>[] {
       ),
     },
     {
-      id: "customer",
-      accessorFn: (r) => r.customer_detail?.name ?? r.customer_name,
-      header: ({ column }) => <SortHeader column={column} label="Customer" />,
-      cell: ({ row }) =>
-        row.original.customer_detail?.name ||
-        row.original.customer_name ||
-        dash,
+      id: "for",
+      accessorFn: (r) => r.for_label,
+      header: ({ column }) => <SortHeader column={column} label="For" />,
+      cell: ({ row }) => row.original.for_label || dash,
     },
     {
       id: "target",

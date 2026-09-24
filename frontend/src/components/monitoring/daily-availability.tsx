@@ -45,13 +45,9 @@ export function DailyAvailability({
   }))
   // Below the worst day by a margin: a floor at the worst day's own value
   // drew that day as an empty slot, indistinguishable from "not measured".
-  const floor = Math.max(
-    0,
-    Math.min(
-      95,
-      ...days.map((d) => d.uptime_pct ?? 100).map((v) => Math.floor(v) - 5)
-    )
-  )
+  const lowest = Math.min(...days.map((d) => d.uptime_pct ?? 100))
+  // The nines zoomed; a deep drop from 0, so its bar shows its true size.
+  const floor = lowest >= 90 ? Math.min(95, Math.floor(lowest) - 5) : 0
   return (
     <div className={className}>
       <ChartContainer config={CONFIG} className="aspect-auto h-[120px] w-full">

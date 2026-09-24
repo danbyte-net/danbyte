@@ -76,6 +76,8 @@ export function SlaAgreementForm({
 
   const [name, setName] = useState(a?.name ?? "")
   const [description, setDescription] = useState(a?.description ?? "")
+  const [providedFor, setProvidedFor] = useState(a?.provided_for ?? "tenant")
+  const [sites, setSites] = useState<string[]>(a?.sites ?? [])
   const [customer, setCustomer] = useState<string | null>(a?.customer ?? null)
   const [customerName, setCustomerName] = useState(a?.customer_name ?? "")
   const [target, setTarget] = useState(a?.target_pct ?? "99.9")
@@ -130,6 +132,13 @@ export function SlaAgreementForm({
         "/api/monitoring/channels/?page_size=200"
       ),
   })
+  const siteOptions = useQuery({
+    queryKey: ["sites", "sla-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
+    enabled: providedFor === "sites",
+    staleTime: 5 * 60_000,
+  })
   const calendars = useQuery({
     queryKey: ["holiday-calendars"],
     queryFn: () =>
@@ -156,8 +165,10 @@ export function SlaAgreementForm({
         payload: {
           name: name.trim(),
           description,
-          customer,
-          customer_name: customerName.trim(),
+          provided_for: providedFor,
+          sites: providedFor === "sites" ? sites : [],
+          customer: providedFor === "contact" ? customer : null,
+          customer_name: providedFor === "name" ? customerName.trim() : "",
           target_pct: target,
           warning_pct: warning || null,
           period,
@@ -223,28 +234,60 @@ export function SlaAgreementForm({
               error={fieldErrors.name}
             />
             <div className="grid gap-3 @md:grid-cols-2">
-              <FormCombobox
-                label="Customer"
-                value={customer}
-                onChange={setCustomer}
-                options={(contacts.data?.results ?? []).map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                }))}
-                noneLabel="None"
-                placeholder="Pick a contact"
-                searchPlaceholder="Search contacts…"
-                emptyText="No contacts."
-                error={fieldErrors.customer}
+              <FormSelect
+                label="Provided for"
+                value={providedFor}
+                onChange={(v) => setProvidedFor(v as typeof providedFor)}
+                options={[
+                  { value: "tenant", label: "This tenant" },
+                  { value: "sites", label: "Sites" },
+                  { value: "contact", label: "A contact" },
+                  { value: "name", label: "A name" },
+                ]}
+                info="Who the promise is made to. Often the tenant itself; or some of its sites or locations; or a contact or a name outside Danbyte."
+                error={fieldErrors.provided_for}
               />
-              <FormText
-                label="Customer name"
-                value={customerName}
-                onChange={setCustomerName}
-                info="For a customer that is not a contact in Danbyte."
-                error={fieldErrors.customer_name}
-              />
+              {providedFor === "contact" && (
+                <FormCombobox
+                  label="Contact"
+                  required
+                  value={customer}
+                  onChange={setCustomer}
+                  options={(contacts.data?.results ?? []).map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                  }))}
+                  placeholder="Pick a contact"
+                  searchPlaceholder="Search contacts…"
+                  emptyText="No contacts."
+                  error={fieldErrors.customer}
+                />
+              )}
+              {providedFor === "name" && (
+                <FormText
+                  label="Name"
+                  required
+                  value={customerName}
+                  onChange={setCustomerName}
+                  placeholder="Acme A/S"
+                  error={fieldErrors.customer_name}
+                />
+              )}
             </div>
+            {providedFor === "sites" && (
+              <Field label="Sites" required error={fieldErrors.sites}>
+                <CheckList
+                  options={(siteOptions.data?.results ?? []).map((o) => ({
+                    value: o.id,
+                    label: o.name,
+                  }))}
+                  value={sites}
+                  onChange={setSites}
+                  className="max-h-40"
+                  empty="No sites."
+                />
+              </Field>
+            )}
             <FormTextarea
               label="Description"
               value={description}

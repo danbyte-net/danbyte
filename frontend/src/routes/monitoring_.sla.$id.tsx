@@ -45,7 +45,6 @@ import {
   slaIncidentColumns,
   slaMemberColumns,
 } from "@/components/columns/sla-columns"
-import { DailyAvailability } from "@/components/monitoring/daily-availability"
 import {
   PERIOD_LABEL,
   SlaFigureBadge,
@@ -53,6 +52,7 @@ import {
   fmtBudget,
   fmtSla,
 } from "@/components/monitoring/sla-figure"
+import { SlaAnalysisView } from "@/components/monitoring/sla-analysis"
 import { SlaGroupDialog } from "@/components/monitoring/sla-group-dialog"
 import {
   SlaExclusionDialog,
@@ -159,7 +159,6 @@ function Body({ a }: { a: SlaAgreement }) {
     else refreshAll()
   }
 
-  const f = figures.data?.figures
   const current = a.current?.figures
   const periodTabs = useMemo(() => {
     const keys = new Set<string>()
@@ -226,9 +225,7 @@ function Body({ a }: { a: SlaAgreement }) {
           }
           subtitle={
             <>
-              {(a.customer_detail?.name || a.customer_name) && (
-                <span>{a.customer_detail?.name || a.customer_name}</span>
-              )}
+              <span>For {a.for_label}</span>
               <span>
                 {fmtSla(Number(a.target_pct))} · {PERIOD_LABEL[a.period]}
               </span>
@@ -276,14 +273,23 @@ function Body({ a }: { a: SlaAgreement }) {
     >
       <DetailTab value="overview">
         <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Stored periods: the frozen figures reports are made from. */}
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+            <span className="text-[13px] text-muted-foreground">Report</span>
             <SegmentedTabs
               value={period}
               onValueChange={setPeriod}
               items={periodTabs}
             />
-            {figures.data?.computed && (
+            {figures.data?.computed ? (
               <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {figures.data.state === "frozen"
+                    ? "Frozen"
+                    : figures.data.state === "closed"
+                      ? "Closed"
+                      : "Open"}
+                </span>
                 <Button size="sm" variant="outline" asChild>
                   <a href={`${base}/report/?period=${period}`} download>
                     <FileDown className="h-3.5 w-3.5" /> PDF
@@ -311,109 +317,15 @@ function Body({ a }: { a: SlaAgreement }) {
                   </Button>
                 )}
               </div>
+            ) : (
+              <span className="ml-auto text-xs text-muted-foreground">
+                {a.status === "active"
+                  ? "Not computed yet - within fifteen minutes, or recompute now."
+                  : "Only active agreements are computed."}
+              </span>
             )}
           </div>
-          {figures.isError && <QueryError error={figures.error} />}
-          {figures.data && !figures.data.computed && (
-            <EmptyState title="Not computed yet">
-              {a.status === "active"
-                ? "Figures appear within fifteen minutes, or recompute now."
-                : "Only active agreements are computed."}
-            </EmptyState>
-          )}
-          {f && figures.data && (
-            <>
-              {figures.data.limited && (
-                <p className="text-[13px] text-muted-foreground">
-                  Limited view: {figures.data.limited.hidden_members} member
-                  {figures.data.limited.hidden_members === 1
-                    ? " is"
-                    : "s are"}{" "}
-                  outside what you can see, and not in this figure.
-                </p>
-              )}
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <KvCard
-                  title={figures.data.period_key ?? "Period"}
-                  rows={[
-                    {
-                      label: "Availability",
-                      value: <SlaFigureBadge figures={f} />,
-                    },
-                    { label: "Target", value: fmtSla(f.target) },
-                    {
-                      label: "State",
-                      value: <SlaStateBadge state={f.state} />,
-                    },
-                    {
-                      label: "Coverage",
-                      value: f.coverage == null ? dash : `${f.coverage}%`,
-                    },
-                    {
-                      label: "Period",
-                      value:
-                        figures.data.state === "frozen"
-                          ? "Frozen"
-                          : figures.data.state === "closed"
-                            ? "Closed - exclusions still possible"
-                            : `${f.elapsed_pct}% elapsed`,
-                    },
-                    {
-                      label: "Computed",
-                      value: figures.data.computed_at ? (
-                        <TimeCell iso={figures.data.computed_at} />
-                      ) : (
-                        dash
-                      ),
-                    },
-                  ]}
-                />
-                <KvCard
-                  title="Error budget"
-                  rows={[
-                    { label: "Allowed", value: fmtBudget(f.budget_s) },
-                    {
-                      label: "Spent",
-                      value: `${fmtBudget(f.down_s)} · ${f.budget_spent_pct}%`,
-                    },
-                    {
-                      label: "Left",
-                      value: (
-                        <span
-                          className={
-                            f.budget_left_s < 0 ? "text-destructive" : ""
-                          }
-                        >
-                          {fmtBudget(f.budget_left_s)}
-                        </span>
-                      ),
-                    },
-                    {
-                      label: "Burn rate",
-                      value: f.burn_rate == null ? dash : `${f.burn_rate}x`,
-                    },
-                    {
-                      label: "Incidents",
-                      value: <span className="num">{f.incidents}</span>,
-                    },
-                  ]}
-                />
-              </div>
-              {(figures.data.days?.length ?? 0) > 0 && (
-                <Section title="Per day">
-                  <DailyAvailability
-                    days={(figures.data.days ?? []).map((d) => ({
-                      date: d.date,
-                      uptime_pct: d.availability,
-                      up_s: 0,
-                      down_s: d.down_s,
-                      incidents: 0,
-                    }))}
-                  />
-                </Section>
-              )}
-            </>
-          )}
+          <SlaAnalysisView agreement={a} periods={periods.data ?? []} />
         </div>
       </DetailTab>
 

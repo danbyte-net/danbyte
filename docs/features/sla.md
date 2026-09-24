@@ -17,12 +17,23 @@ time was actually measured.
 
 | Part | What it says |
 |---|---|
-| **Agreement** | The target (for example 99.9 %), the period, the service hours, holidays, and the counting rules |
+| **Agreement** | Who it is provided for, the target (for example 99.9 %), the period, the service hours, holidays, and the counting rules |
 | **Check group** | Which checks count for one class of equipment, and which address they are read from |
 | **Member** | A device, virtual machine or IP address in a group |
 | **Exclusion** | Time that does not count, with the reason recorded |
 
 A new tenant has no agreements. Nothing is seeded.
+
+**Provided for** says who the promise is made to:
+
+- **This tenant** (the default) - often the customer *is* the tenant.
+- **Sites** - one or more of the tenant's sites or locations, for an
+  internal agreement per site.
+- **A contact** - someone from Contacts.
+- **A name** - free text.
+
+Lists, the agreement page and reports show it as "For ...". The SLAs list
+searches it, and filters by site with `?site=`.
 
 ### Periods
 
@@ -120,8 +131,7 @@ The agreement's figure combines its units in one of two ways:
 
 ## The figure
 
-The **Overview** tab shows the figure for this period, or any stored period
-you pick:
+These figures appear everywhere an agreement's figure is shown:
 
 - **Availability** - up ÷ (up + down) within service hours, after exclusions.
 - **Coverage** - measured time ÷ service time. A high availability with low
@@ -138,7 +148,43 @@ you pick:
   unit downtime; with *Worst member* it is the worst unit's downtime.
 - **Burn rate** - budget spent ÷ share of the period elapsed. Above 1.0, the
   period ends over budget if nothing changes.
-- **Per day** - availability for each day.
+## Analysis
+
+The **Overview** tab computes the agreement live for the window and slice you
+pick. Every figure and chart follows the filter rail on the left.
+
+- **Window** - this period, any stored period, or a custom date range (up to
+  400 days).
+- **Per** - day, or hour (up to 45 days).
+- **Slices** - check groups, sites, check types, redundancy groups and
+  members. Ticking several means any of them.
+
+The headline shows availability, state, coverage, down time, budget left and
+incidents. Where it makes sense it adds the change from the window before:
+the previous period, or a range of the same length just before a custom
+range. The previous window is computed with the same slices, so the two
+compare like for like.
+
+| Chart | What it shows | Click |
+|---|---|---|
+| **Availability over time** | Availability per day or hour against the dashed target line | A day opens it by the hour: who was down, which check, the incidents, and down time per check type |
+| **Error budget** | Budget spent so far (steps) against the pace that would spend it exactly by the period's end (dashed); the red line is the whole budget | - |
+| **Where the down time went** | Down time and availability per member, check group, site or check type | A row narrows the whole page to it |
+| **When outages happen** | Down time by weekday and hour, in the agreement's timezone. A nightly job or a Monday change window shows up as a stripe | - |
+| **Incident lengths** | Incidents by duration, and the mean time to recover | - |
+| **Latency against objectives** | p95 and median per check type, with the objective as a dashed line | - |
+| **Members over time** | One status strip per member across the window, so overlaps and redundancy show at a glance | A name opens the member panel |
+
+The **member panel** shows one member for the window:
+
+- its figure, coverage, down time and incidents;
+- its strip;
+- each check with its own availability, informational checks marked;
+- its incidents.
+
+The report bar above the analysis downloads or emails the **stored** figure
+of a period. The analysis itself is computed fresh each time, from the same
+status changes.
 
 **Incidents** lists each outage that spent budget: when it started, how long
 it lasted, and which members were down as it began.
@@ -236,6 +282,7 @@ incidents, and the per-day figures are not shown.
 | `/api/monitoring/sla-exclusions/` | Excluded time |
 | `/api/monitoring/holiday-calendars/` | Shared holiday calendars |
 | `GET …/sla-agreements/<id>/report/?period=&file=pdf\|csv` | A period's report (`file`, not `format`, which the API keeps for itself) |
+| `GET …/sla-agreements/<id>/analysis/?period=\|since=&until=&bucket=day\|hour&group=&site=&member=&kind=&redundancy=` | The analysis view's data, computed live |
 | `POST …/sla-agreements/<id>/send-report/` | Email it now: `{period, recipients?}` |
 | `GET …/sla-agreements/overview-report/?period=&file=` | Every agreement for one period |
 | `POST /api/monitoring/sla-status/` | `{kind: device\|vm\|ip, ids, frame?}` → each object's agreements, strictest figure, and availability over the frame |

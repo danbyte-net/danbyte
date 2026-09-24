@@ -9813,6 +9813,11 @@ export interface SlaAgreement {
   id: string
   name: string
   description: string
+  /** Who it is for; `for_label` says it in one line. */
+  provided_for: "tenant" | "sites" | "contact" | "name"
+  sites: string[]
+  sites_detail: { id: string; name: string }[]
+  for_label: string
   customer: string | null
   customer_detail: { id: string; name: string } | null
   customer_name: string
@@ -10053,4 +10058,80 @@ export interface NamedDashboard {
   refresh_seconds: number
   created_at: string
   updated_at: string
+}
+
+/** A slice of an agreement over a window - the analysis view. */
+export interface SlaBreakdownRow {
+  key: string | null
+  name: string
+  availability: number | null
+  down_s: number
+  incidents: number
+}
+
+export interface SlaAnalysisMember extends SlaBreakdownRow {
+  key: string
+  member_id: string | null
+  object_type: SlaObjectType
+  object_id: string
+  group: string
+  group_id: string
+  site_id: string | null
+  coverage: number | null
+  worst_item: string | null
+  items: SlaMemberFigure["items"]
+}
+
+export interface SlaAnalysis {
+  period_key: string | null
+  bucket: "day" | "hour"
+  since: string
+  until: string
+  period_end: string
+  limited: boolean
+  figures: SlaFigures
+  previous: {
+    since: string
+    until: string
+    availability: number | null
+    coverage: number | null
+    down_s: number | null
+    incidents: number | null
+    budget_spent_pct: number | null
+    state: SlaState | null
+  }
+  series: {
+    t: string
+    end: string
+    availability: number | null
+    down_s: number
+    measured_s: number
+    incidents: number
+  }[]
+  burn: { t: string; spent_s: number; pace_s: number; budget_s: number }[]
+  by_member: SlaAnalysisMember[]
+  by_group: SlaBreakdownRow[]
+  by_site: SlaBreakdownRow[]
+  by_kind: SlaBreakdownRow[]
+  strips: {
+    key: string
+    name: string
+    availability: number | null
+    segments: [string, string, "up" | "down" | "unmeasured"][]
+  }[]
+  heatmap: { dow: number; hour: number; down_s: number }[]
+  durations: { label: string; count: number }[]
+  incidents: SlaIncident[]
+  latency: {
+    kind: string
+    objective: number | null
+    points: { t: string; p95: number | null; p50: number | null }[]
+  }[]
+  options: {
+    groups: { id: string; name: string; count: number }[]
+    sites: { id: string; name: string; count: number }[]
+    members: { id: string; object_type: SlaObjectType; name: string }[]
+    kinds: string[]
+    redundancy: { name: string; count: number }[]
+  }
 }
