@@ -2,6 +2,7 @@ import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
 import { useState } from "react"
 
+import { labelTicks } from "@/lib/chart-axis"
 import type { LatencyByKind } from "@/lib/api"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { SeriesLegend } from "@/components/monitoring/series-legend"
@@ -45,12 +46,15 @@ export function LatencyByKindChart({
   formatLabel,
   empty,
   chartClassName,
+  onPick,
 }: {
   kinds: LatencyByKind[]
   formatLabel: (t: string) => string
   /** Rendered in place of the chart when nothing was recorded. */
   empty: React.ReactNode
   chartClassName?: string
+  /** A click on the plot, e.g. to open the full latency view. */
+  onPick?: () => void
 }) {
   const [picked, setPicked] = useState<string | null>(null)
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
@@ -73,16 +77,22 @@ export function LatencyByKindChart({
       )}
       <ChartContainer
         config={LATENCY}
-        className={cn("aspect-auto w-full", chartClassName)}
+        className={cn(
+          "aspect-auto w-full",
+          onPick && "cursor-pointer",
+          chartClassName
+        )}
       >
         <LineChart
           accessibilityLayer
           data={data}
+          onClick={onPick}
           margin={{ left: 0, right: 12, top: 4 }}
         >
           <CartesianGrid vertical={false} />
           <XAxis
-            dataKey="label"
+            dataKey="t"
+            tickFormatter={labelTicks(data, "t")}
             tickLine={false}
             axisLine={false}
             tickMargin={6}

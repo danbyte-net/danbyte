@@ -49,7 +49,17 @@ Every chart segment is a **deep link**: click a slice or bar (or a legend row)
 and it opens the matching list already filtered - *IPs by status* → the IP list
 for that status, *Devices by type* → those devices, *Firing alerts by severity*
 → the alerts list, and so on. The monitoring **Certificate & key health** tiles
-work the same way.
+work the same way. The other charts open where their data lives:
+
+- the **Reachability** gauge → the checks list, **Availability** → Explore;
+- an **Alerts per day** bar → that day's state changes on History;
+- the **Latency** chart → the Latency view;
+- the **SLA** widget's budget bar → the agreement. Its white marker is how much
+  of the period has gone: a bar past it is spending the budget faster than time
+  passes. Hover it for both figures.
+
+Over a time frame longer than a week, time axes show the date, not the
+weekday, so every point has its own label.
 
 ## Customizing it
 

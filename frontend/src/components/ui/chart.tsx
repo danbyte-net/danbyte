@@ -199,10 +199,15 @@ export function ChartTooltipContent({
     const [item] = payload
     const key = `${labelKey || item?.dataKey || item?.name || "value"}`
     const itemConfig = getPayloadConfigFromPayload(config, item, key)
+    // A row that carries its own display label (a time axis keyed on the
+    // timestamp) shows that, not the raw key.
+    const own = (item.payload as { label?: unknown } | undefined)?.label
     const value =
-      !labelKey && typeof label === "string"
-        ? config[label]?.label || label
-        : itemConfig?.label
+      !labelKey && typeof own === "string"
+        ? own
+        : !labelKey && typeof label === "string"
+          ? config[label]?.label || label
+          : itemConfig?.label
     if (labelFormatter)
       return (
         <div className={cn("font-medium", labelClassName)}>

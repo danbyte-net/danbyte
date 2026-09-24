@@ -3,6 +3,7 @@ import { useSearch } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
+import { labelTicks } from "@/lib/chart-axis"
 import { api, transitionsQuery } from "@/lib/api"
 import type {
   CheckStatus,
@@ -284,7 +285,8 @@ export function HistoryView() {
             >
               <CartesianGrid vertical={false} />
               <XAxis
-                dataKey="label"
+                dataKey="t"
+                tickFormatter={labelTicks(seriesData, "t")}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={6}

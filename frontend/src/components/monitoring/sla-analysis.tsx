@@ -526,9 +526,15 @@ export function SlaAnalysisView({
               <AnalysisCard
                 title="Availability over time"
                 description={
-                  d.bucket === "day"
-                    ? "Click a day to see it by the hour"
-                    : undefined
+                  [
+                    d.bucket === "day" && "Click a day to see it by the hour",
+                    d.period_end > d.until &&
+                      (d.bucket === "day"
+                        ? "today is so far"
+                        : "this hour is so far"),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || undefined
                 }
               >
                 <AvailabilityOverTime

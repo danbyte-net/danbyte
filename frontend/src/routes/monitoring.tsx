@@ -23,6 +23,7 @@ import {
   type MonitoringStats,
   type StatsHours,
 } from "@/lib/api"
+import { labelTicks } from "@/lib/chart-axis"
 import { TimeCell } from "@/components/cells/time-ago"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -511,7 +512,8 @@ function MonitoringPage() {
                     >
                       <CartesianGrid vertical={false} />
                       <XAxis
-                        dataKey="label"
+                        dataKey="t"
+                        tickFormatter={labelTicks(seriesData, "t")}
                         tickLine={false}
                         axisLine={false}
                         tickMargin={8}
@@ -602,7 +604,8 @@ function MonitoringPage() {
                       >
                         <CartesianGrid vertical={false} />
                         <XAxis
-                          dataKey="label"
+                          dataKey="t"
+                          tickFormatter={labelTicks(alertsData, "t")}
                           tickLine={false}
                           axisLine={false}
                           tickMargin={8}

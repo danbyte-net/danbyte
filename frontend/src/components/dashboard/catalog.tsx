@@ -284,7 +284,13 @@ export const CATALOG: WidgetDef[] = [
     fit: "center",
     title: "Reachability",
     description: "Share of checks currently up",
-    render: (d) => <RadialGauge value={d.reachable_pct} label="reachable" />,
+    render: (d) => (
+      <RadialGauge
+        value={d.reachable_pct}
+        label="reachable"
+        link={{ to: "/monitoring", search: { view: "checks" } }}
+      />
+    ),
   },
   {
     id: "ip-status",
@@ -490,6 +496,7 @@ export const CATALOG: WidgetDef[] = [
         value={d.availability_7d}
         label="7-day availability"
         color="var(--color-emerald-500)"
+        link={{ to: "/monitoring", search: { view: "explore" } }}
       />
     ),
   },

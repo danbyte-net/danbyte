@@ -11,6 +11,11 @@ import type {
   SlaAgreement,
 } from "@/lib/api"
 import { TimeCell } from "@/components/cells/time-ago"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { StatusBadge } from "@/components/status-badge"
 import {
   Select,
@@ -113,25 +118,38 @@ export function SlaHeadlineWidget({
             {picked.name}
           </Link>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-semibold tracking-tight">
-              <SlaFigureBadge figures={f} />
-            </span>
+            <SlaFigureBadge figures={f} />
             <span className="text-xs text-muted-foreground">
               of {fmtSla(f.target)} · {SLA_STATE_LABEL[f.state]}
             </span>
           </div>
-          {/* Budget spent against the period elapsed: past the tick is
+          {/* Budget spent against the period elapsed: past the marker is
               spending faster than time passes. */}
-          <div className="relative h-2 overflow-hidden rounded-sm bg-muted">
-            <div
-              className={`h-full ${f.budget_left_s < 0 ? "bg-red-500" : f.state === "at_risk" ? "bg-amber-500" : "bg-emerald-500"}`}
-              style={{ width: `${Math.min(100, f.budget_spent_pct)}%` }}
-            />
-            <div
-              className="absolute top-0 h-full w-px bg-foreground/60"
-              style={{ left: `${f.elapsed_pct}%` }}
-            />
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                to="/monitoring/sla/$id"
+                params={{ id: picked.id }}
+                className="relative block h-2.5 rounded-sm bg-muted"
+                aria-label={`${f.budget_spent_pct}% of the budget spent, ${f.elapsed_pct}% of the period gone`}
+              >
+                <span
+                  className={`block h-full rounded-sm ${f.budget_left_s < 0 ? "bg-red-500" : f.state === "at_risk" ? "bg-amber-500" : "bg-emerald-500"}`}
+                  style={{ width: `${Math.min(100, f.budget_spent_pct)}%` }}
+                />
+                <span
+                  className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+                  style={{ left: `${Math.min(100, f.elapsed_pct)}%` }}
+                />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>
+              <span className="num">
+                Budget {f.budget_spent_pct}% spent · the marker is{" "}
+                {f.elapsed_pct}% of the period gone
+              </span>
+            </TooltipContent>
+          </Tooltip>
           <div className="text-[11px] text-muted-foreground">
             Budget left {fmtBudget(f.budget_left_s)} · {f.budget_spent_pct}%
             spent, {f.elapsed_pct}% of the period gone

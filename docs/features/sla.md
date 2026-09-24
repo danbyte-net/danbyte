@@ -192,8 +192,8 @@ These figures appear everywhere an agreement's figure is shown:
 - **Coverage** - measured time ÷ service time, shown beside a figure as
   "68% measured". Time with no check results counts as neither up nor down,
   so a high availability with low coverage was measured over only part of
-  the period; treat it with care. The badge is dimmed when coverage is under
-  90 %.
+  the period; treat it with care. The badge gets a dashed outline when coverage is
+  under 90 %.
 - **State**:
     - *On target*;
     - *At risk* - below *At risk below*, or, when that is empty, once three

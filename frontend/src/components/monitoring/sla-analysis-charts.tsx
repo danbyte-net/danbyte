@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts"
 
+import { labelTicks } from "@/lib/chart-axis"
 import type { SlaAnalysis, SlaBreakdownRow } from "@/lib/api"
 import {
   ChartContainer,
@@ -71,12 +72,17 @@ export function AvailabilityOverTime({
   const floor = low >= 90 ? Math.max(0, Math.floor(low) - 2) : 0
   const tone = (av: number) =>
     av >= target ? "var(--color-emerald-500)" : "var(--color-red-500)"
-  const rows = data.series.map((p) => ({
+  // A window still running ends in a bucket that is only partly measured:
+  // today so far. It is drawn hollow-ish so it never reads as a full day.
+  const running = data.period_end > data.until
+  const last = data.series.length - 1
+  const rows = data.series.map((p, i) => ({
     ...p,
     label: label(p.t),
     value: p.availability ?? floor,
     fill: p.availability == null ? "var(--muted)" : tone(p.availability),
     forecast: false,
+    current: running && i === last,
   }))
   // The days still to come, drawn hollow at the trailing week's figure.
   const fc = data.forecast
@@ -92,6 +98,7 @@ export function AvailabilityOverTime({
       value: fc?.trailing ?? floor,
       fill: tone(fc?.trailing ?? 100),
       forecast: true,
+      current: false,
     })
   }
   return (
@@ -99,7 +106,8 @@ export function AvailabilityOverTime({
       <BarChart data={rows} margin={{ left: 0, right: 8, top: 6 }}>
         <CartesianGrid vertical={false} />
         <XAxis
-          dataKey="label"
+          dataKey="t"
+          tickFormatter={labelTicks(rows, "t")}
           tickLine={false}
           axisLine={false}
           tickMargin={6}
@@ -127,9 +135,15 @@ export function AvailabilityOverTime({
                 const p = item.payload as unknown as (typeof rows)[number]
                 if (p.forecast)
                   return `Forecast ${fmtSla(p.availability)}, like the last 7 days`
-                return p.availability == null
-                  ? "Nothing measured"
-                  : `${fmtSla(p.availability)} · ${fmtSpan(p.down_s * 1000)} down · ${p.incidents} incident${p.incidents === 1 ? "" : "s"}`
+                const soFar = p.current
+                  ? `${data.bucket === "day" ? "Today" : "This hour"} so far · `
+                  : ""
+                return (
+                  soFar +
+                  (p.availability == null
+                    ? "Nothing measured"
+                    : `${fmtSla(p.availability)} · ${fmtSpan(p.down_s * 1000)} down · ${p.incidents} incident${p.incidents === 1 ? "" : "s"}`)
+                )
               }}
             />
           }
@@ -154,7 +168,13 @@ export function AvailabilityOverTime({
                 strokeDasharray="3 2"
               />
             ) : (
-              <Cell key={r.t} fill={r.fill} />
+              <Cell
+                key={r.t}
+                fill={r.fill}
+                fillOpacity={r.current ? 0.45 : 1}
+                stroke={r.current ? r.fill : undefined}
+                strokeWidth={r.current ? 1.5 : 0}
+              />
             )
           )}
         </Bar>
@@ -174,6 +194,7 @@ export function BurnDown({ data }: { data: SlaAnalysis }) {
   if (!data.burn.length) return <Empty>No budget to show.</Empty>
   const budget = data.burn[0].budget_s
   const rows = data.burn.map((p) => ({
+    t: p.t,
     label: label(p.t),
     spent: Math.round(p.spent_s / 60),
     pace: Math.round(p.pace_s / 60),
@@ -183,7 +204,8 @@ export function BurnDown({ data }: { data: SlaAnalysis }) {
       <LineChart data={rows} margin={{ left: 0, right: 8, top: 6 }}>
         <CartesianGrid vertical={false} />
         <XAxis
-          dataKey="label"
+          dataKey="t"
+          tickFormatter={labelTicks(rows, "t")}
           tickLine={false}
           axisLine={false}
           tickMargin={6}
@@ -484,7 +506,8 @@ export function LatencyAgainstObjective({ data }: { data: SlaAnalysis }) {
         <LineChart data={rows} margin={{ left: 0, right: 8, top: 6 }}>
           <CartesianGrid vertical={false} />
           <XAxis
-            dataKey="label"
+            dataKey="t"
+            tickFormatter={labelTicks(rows, "t")}
             tickLine={false}
             axisLine={false}
             tickMargin={6}

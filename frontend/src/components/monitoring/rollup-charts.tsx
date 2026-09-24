@@ -12,6 +12,7 @@ import {
 
 import { useState } from "react"
 
+import { labelTicks } from "@/lib/chart-axis"
 import type { CheckFigures } from "@/lib/api"
 import {
   ChartContainer,
@@ -85,7 +86,8 @@ export function RollupLatencyChart({
         <ComposedChart data={data} margin={{ left: 0, right: 12, top: 4 }}>
           <CartesianGrid vertical={false} />
           <XAxis
-            dataKey="label"
+            dataKey="t"
+            tickFormatter={labelTicks(data, "t")}
             tickLine={false}
             axisLine={false}
             tickMargin={6}
@@ -211,7 +213,8 @@ export function RollupAvailabilityChart({
       <BarChart data={data} margin={{ left: 0, right: 8, top: 4 }}>
         <CartesianGrid vertical={false} />
         <XAxis
-          dataKey="label"
+          dataKey="t"
+          tickFormatter={labelTicks(data, "t")}
           tickLine={false}
           axisLine={false}
           tickMargin={6}

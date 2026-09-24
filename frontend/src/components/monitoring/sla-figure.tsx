@@ -29,8 +29,9 @@ export function fmtSla(p: number | null | undefined): string {
 
 /**
  * An agreement's figure as a badge, coloured against its own target: on
- * target green, inside the warning band amber, below it red. Muted when
- * less than 90 % of the time was measured.
+ * target green, inside the warning band amber, below it red. A dashed
+ * outline when less than 90 % of the time was measured - never faded, which
+ * turned the red muddy on the dark theme.
  */
 export function SlaFigureBadge({
   figures,
@@ -46,7 +47,7 @@ export function SlaFigureBadge({
   return (
     <Badge
       variant={VARIANT[figures.state]}
-      className={`num font-medium ${low ? "opacity-60" : ""}`}
+      className={`num font-medium ${low ? "border-dashed border-current/60" : ""}`}
     >
       {fmtSla(figures.availability)}
     </Badge>

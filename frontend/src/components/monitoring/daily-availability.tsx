@@ -1,5 +1,6 @@
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts"
 
+import { labelTicks } from "@/lib/chart-axis"
 import type { DayAvailability } from "@/lib/api"
 import {
   ChartContainer,
@@ -58,7 +59,8 @@ export function DailyAvailability({
         >
           <CartesianGrid vertical={false} />
           <XAxis
-            dataKey="label"
+            dataKey="date"
+            tickFormatter={labelTicks(data, "date")}
             tickLine={false}
             axisLine={false}
             tickMargin={6}
