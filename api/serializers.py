@@ -402,6 +402,15 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
             cache = request._rbac_allowed_pks_cache = {}
         parent = getattr(self, "parent", None)
         rows = getattr(parent, "instance", None) if parent is not None else None
+        # Look the page up before building it: this runs once per row per
+        # action, and listing + collecting the whole page's pks on every call
+        # made a list of N rows cost O(N^2) before the cache was consulted.
+        key = (
+            (model._meta.label_lower, action, None, obj.pk) if rows is None
+            else (model._meta.label_lower, action, id(parent), id(rows))
+        )
+        if key in cache:
+            return cache[key]
         if rows is None:
             page = [obj]
         else:
@@ -410,7 +419,6 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
             except TypeError:  # a single instance, not a list
                 page = [rows]
         pks = [r.pk for r in page if isinstance(r, model)] or [obj.pk]
-        key = (model._meta.label_lower, action, id(parent), len(pks))
         if key not in cache:
             cache[key] = set(
                 model._default_manager.filter(pk__in=pks)
