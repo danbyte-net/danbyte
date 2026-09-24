@@ -75,6 +75,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 
 export const Route = createFileRoute("/prefixes/$id")({
   component: PrefixDetail,
@@ -409,6 +410,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="monitoring">
+        <div className="mb-6">
+          <ObjectSlaPanel objectType="api.prefix" objectId={p.id} />
+        </div>
         <PrefixMonitoring
           prefix={{
             id: p.id,

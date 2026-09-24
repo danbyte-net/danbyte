@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { ArrowUpRight } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
@@ -22,10 +23,18 @@ import { StatusStrip, fmtSpan } from "@/components/monitoring/status-strip"
 import { fmtSla } from "@/components/monitoring/sla-figure"
 import { AvailabilityOverTime } from "./sla-analysis-charts"
 
-const MEMBER_ROUTE = {
+export const MEMBER_ROUTE = {
   "api.device": "/devices/$id",
   "api.virtualmachine": "/virtual-machines/$id",
   "api.ipaddress": "/ips/$id",
+  "api.prefix": "/prefixes/$id",
+} as const
+
+const MEMBER_NOUN = {
+  "api.device": "Device",
+  "api.virtualmachine": "Virtual machine",
+  "api.ipaddress": "IP address",
+  "api.prefix": "Prefix",
 } as const
 
 function IncidentList({ incidents }: { incidents: SlaAnalysis["incidents"] }) {
@@ -156,17 +165,37 @@ export function MemberPanel({
 }) {
   const m = data?.by_member.find((x) => x.key === memberKey)
   const strip = data?.strips.find((s) => s.key === memberKey)
+  // Several addresses (a prefix, a dual-homed device): say which one.
+  const manyIps = new Set(m?.items.map((i) => i.ip_id)).size > 1
   const incidents = (data?.incidents ?? []).filter(
     (i) => m && i.members.includes(m.name)
   )
   return (
     <Sheet open={!!memberKey} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full overflow-auto sm:max-w-xl">
+      <SheetContent className="w-full overflow-x-hidden overflow-y-auto data-[side=right]:sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>{m?.name ?? "Member"}</SheetTitle>
+          <SheetTitle className="flex items-center gap-2">
+            {m ? (
+              <Link
+                to={MEMBER_ROUTE[m.object_type]}
+                params={{ id: m.object_id }}
+                className="link inline-flex min-w-0 items-center gap-1.5"
+              >
+                <span className="truncate">{m.name}</span>
+                <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+              </Link>
+            ) : (
+              "Member"
+            )}
+          </SheetTitle>
+          {m && (
+            <p className="text-[13px] text-muted-foreground">
+              {MEMBER_NOUN[m.object_type]} · {m.group}
+            </p>
+          )}
         </SheetHeader>
         {m && data && (
-          <div className="space-y-5 px-4 pb-6">
+          <div className="min-w-0 space-y-5 px-4 pb-6">
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px]">
               <span className="text-2xl font-semibold">
                 {fmtSla(m.availability)}
@@ -177,22 +206,6 @@ export function MemberPanel({
                 {m.incidents === 1 ? "" : "s"}
               </span>
             </div>
-            <p className="text-[13px] text-muted-foreground">
-              {m.group}
-              {" · "}
-              <Link
-                to={MEMBER_ROUTE[m.object_type]}
-                params={{ id: m.object_id }}
-                className="link"
-              >
-                Open{" "}
-                {m.object_type === "api.ipaddress"
-                  ? "address"
-                  : m.object_type === "api.device"
-                    ? "device"
-                    : "VM"}
-              </Link>
-            </p>
             {strip && (
               <StatusStrip
                 segments={strip.segments.map(([start, end, c]) => ({
@@ -213,7 +226,22 @@ export function MemberPanel({
                     className="flex items-center gap-2 py-1.5"
                   >
                     <span className="min-w-0 flex-1 truncate">
-                      {it.name}{" "}
+                      {manyIps && it.address && (
+                        <span className="mr-2 font-mono text-[12px] text-muted-foreground">
+                          {it.address}
+                        </span>
+                      )}
+                      {it.state_id ? (
+                        <Link
+                          to="/monitoring/checks/$id"
+                          params={{ id: it.state_id }}
+                          className="link"
+                        >
+                          {it.name}
+                        </Link>
+                      ) : (
+                        it.name
+                      )}{" "}
                       <span className="font-mono text-[10px] text-muted-foreground uppercase">
                         {it.kind}
                       </span>

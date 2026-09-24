@@ -10,11 +10,8 @@ import {
 } from "@/components/columns/monitoring-facet"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
-import {
-  availabilityColumn,
-  slaColumn,
-  type SlaColumnOpts,
-} from "@/components/columns/sla-column"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"

@@ -37,7 +37,10 @@ function readFrame(): AvailabilityFrame | null {
  * like the monitoring roll-up. The frame is the viewer's pick, remembered in
  * this browser, else the tenant's default from monitoring settings.
  */
-export function useSlaStatus(kind: "device" | "vm" | "ip", ids: string[]) {
+export function useSlaStatus(
+  kind: "device" | "vm" | "ip" | "prefix",
+  ids: string[]
+) {
   const [picked, setPicked] = useState<AvailabilityFrame | null>(readFrame)
   useEffect(() => {
     try {

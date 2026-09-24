@@ -21,11 +21,8 @@ import {
   actionsColumn,
   type ActionsColumnOpts,
 } from "@/components/columns/actions-column"
-import {
-  availabilityColumn,
-  slaColumn,
-  type SlaColumnOpts,
-} from "@/components/columns/sla-column"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 
 // The one source of truth for "a table of IP addresses". Every surface that
 // lists IPs - the prefix IPs pane, the device IPs pane, embedded IP tables -

@@ -147,3 +147,4 @@ class ReportEndpointTests(_Alerting, APITestCase):
         bad = self.client.post(f"{A}{self.agreement.id}/send-report/",
                                {"period": self.key, "recipients": ["nope"]}, format="json")
         self.assertEqual(bad.status_code, 400)
+        self.assertIn("recipients", bad.json())

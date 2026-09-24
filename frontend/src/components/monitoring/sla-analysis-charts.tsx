@@ -22,6 +22,12 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { StatusStrip, fmtSpan } from "@/components/monitoring/status-strip"
 import { fmtBudget, fmtSla } from "@/components/monitoring/sla-figure"
 import { useDateFormat } from "@/lib/datetime"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 // The analysis view's charts. Every chart reads the same filtered analysis
 // payload; the clickable ones report what was clicked and the page decides
@@ -310,43 +316,82 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 /** Down time by weekday and hour: patterns (a nightly job, Monday changes)
  * stand out that a timeline hides. */
+function heatColor(v: number, max: number) {
+  return v
+    ? `color-mix(in oklab, var(--color-red-500) ${Math.round(15 + (85 * v) / max)}%, transparent)`
+    : "var(--muted)"
+}
+
+/** Down time by weekday and hour of day, in the agreement's timezone. */
 export function DowntimeHeatmap({ data }: { data: SlaAnalysis }) {
+  const { settings } = useDateFormat()
+  const twelve = settings.time_style === "12h"
+  const hourLabel = (h: number) =>
+    twelve
+      ? `${((h + 11) % 12) + 1} ${h < 12 ? "AM" : "PM"}`
+      : `${String(h).padStart(2, "0")}:00`
   const cells = new Map(
     data.heatmap.map((c) => [`${c.dow}:${c.hour}`, c.down_s])
   )
   const max = Math.max(1, ...data.heatmap.map((c) => c.down_s))
+  const total = data.heatmap.reduce((n, c) => n + c.down_s, 0)
   if (!data.heatmap.length) return <Empty>No down time in this window.</Empty>
   return (
-    <div className="overflow-x-auto">
-      <div className="inline-grid min-w-full grid-cols-[2.5rem_repeat(24,minmax(0.9rem,1fr))] gap-[2px] text-[10px]">
-        <span />
-        {Array.from({ length: 24 }, (_, h) => (
-          <span key={h} className="text-center text-muted-foreground">
-            {h % 3 === 0 ? h : ""}
-          </span>
-        ))}
-        {DAYS.map((d, dow) => (
-          <div key={d} className="contents">
-            <span className="pr-1 text-right text-muted-foreground">{d}</span>
-            {Array.from({ length: 24 }, (_, h) => {
-              const v = cells.get(`${dow}:${h}`) ?? 0
-              return (
-                <span
-                  key={h}
-                  className="h-4 rounded-[2px]"
-                  style={{
-                    background: v
-                      ? `color-mix(in oklab, var(--color-red-500) ${Math.round(15 + (85 * v) / max)}%, transparent)`
-                      : "var(--muted)",
-                  }}
-                  aria-label={`${d} ${h}:00, ${fmtSpan(v * 1000)} down`}
-                />
-              )
-            })}
+    <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+      <div className="space-y-2">
+        <div className="overflow-x-auto">
+          <div className="inline-grid min-w-full grid-cols-[2.5rem_repeat(24,minmax(0.9rem,1fr))] gap-[2px] text-[10px]">
+            <span />
+            {Array.from({ length: 24 }, (_, h) => (
+              <span key={h} className="text-center text-muted-foreground">
+                {h % 3 === 0 ? (twelve ? ((h + 11) % 12) + 1 : h) : ""}
+              </span>
+            ))}
+            {DAYS.map((d, dow) => (
+              <div key={d} className="contents">
+                <span className="pr-1 text-right text-muted-foreground">
+                  {d}
+                </span>
+                {Array.from({ length: 24 }, (_, h) => {
+                  const v = cells.get(`${dow}:${h}`) ?? 0
+                  return (
+                    <Tooltip key={h}>
+                      <TooltipTrigger asChild>
+                        <span
+                          className="h-4 rounded-[2px] hover:ring-1 hover:ring-foreground"
+                          style={{ background: heatColor(v, max) }}
+                          aria-label={`${d} ${hourLabel(h)}, ${fmtSpan(v * 1000)} down`}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <span className="num">
+                          {d} {hourLabel(h)}-{hourLabel((h + 1) % 24)}
+                          {" · "}
+                          {v
+                            ? `${fmtSpan(v * 1000)} down (${Math.round((100 * v) / total)}%)`
+                            : "no down time"}
+                        </span>
+                      </TooltipContent>
+                    </Tooltip>
+                  )
+                })}
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+        <div className="flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+          <span>None</span>
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+            <span
+              key={f}
+              className="h-3 w-4 rounded-[2px]"
+              style={{ background: heatColor(f * max, max) }}
+            />
+          ))}
+          <span className="num">{fmtSpan(max * 1000)} in one hour</span>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
 

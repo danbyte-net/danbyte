@@ -3791,7 +3791,7 @@ class SlaMember(TimestampedModel):
     """An object in an agreement. Removing one sets ``left_at`` so a closed
     period still counts it; ``excluded`` keeps a selector match out."""
 
-    OBJECT_TYPES = ("api.device", "api.virtualmachine", "api.ipaddress")
+    OBJECT_TYPES = ("api.device", "api.virtualmachine", "api.ipaddress", "api.prefix")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")

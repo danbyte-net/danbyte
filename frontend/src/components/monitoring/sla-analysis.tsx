@@ -8,7 +8,13 @@ import { QueryError } from "@/components/query-error"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
-import { Section } from "@/components/ui/section"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   SLA_STATE_LABEL,
@@ -107,6 +113,36 @@ function RailList({
   )
 }
 
+/** A chart in its own card: title and description inside the border. */
+function AnalysisCard({
+  title,
+  description,
+  count,
+  children,
+}: {
+  title: string
+  description?: string
+  count?: number
+  children: React.ReactNode
+}) {
+  return (
+    <Card className="min-w-0 gap-3">
+      <CardHeader>
+        <CardTitle className="text-sm">
+          {title}
+          {count != null && (
+            <span className="num ml-1.5 font-normal text-muted-foreground">
+              {count}
+            </span>
+          )}
+        </CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  )
+}
+
 function Figure({
   label,
   children,
@@ -193,7 +229,7 @@ export function SlaAnalysisView({
   return (
     <div className="flex min-h-0 gap-6">
       {/* ── the rail ── */}
-      <aside className="hidden w-56 shrink-0 space-y-5 lg:block">
+      <aside className="hidden w-60 shrink-0 space-y-5 self-start rounded-lg border border-border bg-card p-4 lg:block">
         <div className="space-y-1.5">
           <div className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
             Window
@@ -388,7 +424,7 @@ export function SlaAnalysisView({
             </p>
 
             <div className="grid grid-cols-1 gap-6 2xl:grid-cols-2">
-              <Section
+              <AnalysisCard
                 title="Availability over time"
                 description={
                   d.bucket === "day"
@@ -400,35 +436,35 @@ export function SlaAnalysisView({
                   data={d}
                   onPick={d.bucket === "day" ? (p) => setDay(p.t) : undefined}
                 />
-              </Section>
-              <Section
+              </AnalysisCard>
+              <AnalysisCard
                 title="Error budget"
                 description="Spent against the pace that would spend it exactly"
               >
                 <BurnDown data={d} />
-              </Section>
-              <Section
+              </AnalysisCard>
+              <AnalysisCard
                 title="Where the down time went"
                 description="Click a row to filter the page to it"
               >
                 <DowntimeBreakdown data={d} onPick={pick} />
-              </Section>
-              <Section
+              </AnalysisCard>
+              <AnalysisCard
                 title="When outages happen"
                 description="Down time by weekday and hour"
               >
                 <DowntimeHeatmap data={d} />
-              </Section>
-              <Section title="Incident lengths">
+              </AnalysisCard>
+              <AnalysisCard title="Incident lengths">
                 <IncidentLengths data={d} />
-              </Section>
-              <Section title="Latency against objectives">
+              </AnalysisCard>
+              <AnalysisCard title="Latency against objectives">
                 <LatencyAgainstObjective data={d} />
-              </Section>
+              </AnalysisCard>
             </div>
-            <Section title="Members over time" count={d.strips.length}>
+            <AnalysisCard title="Members over time" count={d.strips.length}>
               <MemberStrips data={d} onPick={setMember} />
-            </Section>
+            </AnalysisCard>
           </>
         )}
       </div>

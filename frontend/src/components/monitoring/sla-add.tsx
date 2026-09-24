@@ -31,10 +31,11 @@ import {
   fmtSla,
 } from "./sla-figure"
 
-const KIND: Record<SlaObjectType, "device" | "vm" | "ip"> = {
+const KIND: Record<SlaObjectType, "device" | "vm" | "ip" | "prefix"> = {
   "api.device": "device",
   "api.virtualmachine": "vm",
   "api.ipaddress": "ip",
+  "api.prefix": "prefix",
 }
 
 /** Pick an agreement and one of its groups, and add the objects to it. */

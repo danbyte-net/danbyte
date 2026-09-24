@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
-import { FileDown, Mail, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { FileDown, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { SlaEmailReport } from "@/components/monitoring/sla-email-report"
 import {
   DetailHero,
   DetailShell,
@@ -131,16 +132,6 @@ function Body({ a }: { a: SlaAgreement }) {
       toast.success("Figures recomputed")
       refreshAll()
     },
-    onError: (e) => apiErrorToast(e),
-  })
-  const sendReport = useMutation({
-    mutationFn: () =>
-      api(`${base}/send-report/`, {
-        method: "POST",
-        body: JSON.stringify({ period }),
-      }),
-    onSuccess: () =>
-      toast.success(`Report sent to ${a.report_recipients.join(", ")}`),
     onError: (e) => apiErrorToast(e),
   })
   const del = useMutation({
@@ -304,17 +295,11 @@ function Body({ a }: { a: SlaAgreement }) {
                   </a>
                 </Button>
                 {canDo("slaagreement", "change") && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={
-                      sendReport.isPending || a.report_recipients.length === 0
-                    }
-                    onClick={() => sendReport.mutate()}
-                  >
-                    <Mail className="h-3.5 w-3.5" />
-                    {sendReport.isPending ? "Sending..." : "Email report"}
-                  </Button>
+                  <SlaEmailReport
+                    base={base}
+                    period={period}
+                    recipients={a.report_recipients}
+                  />
                 )}
               </div>
             ) : (

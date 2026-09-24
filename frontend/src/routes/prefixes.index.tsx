@@ -23,6 +23,10 @@ import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
 import { useMe, objCan } from "@/lib/use-me"
+import {
+  AvailabilityFramePicker,
+  useSlaStatus,
+} from "@/components/monitoring/sla-status"
 
 export const Route = createFileRoute("/prefixes/")({
   component: PrefixesPage,
@@ -82,6 +86,7 @@ function PrefixesPage() {
     enabled: prefixIds.length > 0,
   })
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
+  const sla = useSlaStatus("prefix", prefixIds)
 
   // The filter rail derives from the factory's facet metadata (status, VLAN,
   // site, VRF, utilisation, tags + one facet per tenant custom field), so a
@@ -148,6 +153,7 @@ function PrefixesPage() {
           nested: true,
           violations,
           monitoring,
+          sla: { entries: sla.entries, frame: sla.frame },
           cfDefs,
           tagFilter: {
             activeSlugs: tagSelection,
@@ -174,6 +180,8 @@ function PrefixesPage() {
       violations,
       canEdit,
       canDelete,
+      sla.entries,
+      sla.frame,
     ]
   )
 
@@ -197,6 +205,10 @@ function PrefixesPage() {
         }}
         actions={
           <>
+            <AvailabilityFramePicker
+              value={sla.frame}
+              onChange={sla.setFrame}
+            />
             <TableActions ioType="prefix" />
             {canAdd && (
               <Button size="sm" asChild>

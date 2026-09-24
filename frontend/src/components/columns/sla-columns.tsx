@@ -14,6 +14,7 @@ import {
   fmtSla,
 } from "@/components/monitoring/sla-figure"
 import { fmtSpan } from "@/components/monitoring/status-strip"
+import { MEMBER_ROUTE } from "@/components/monitoring/sla-drill"
 
 /** An agreement, as a row of the SLAs list. */
 export function slaAgreementColumns(): ColumnDef<SlaAgreement>[] {
@@ -115,12 +116,6 @@ export function slaAgreementColumns(): ColumnDef<SlaAgreement>[] {
   ]
 }
 
-const MEMBER_ROUTE = {
-  "api.device": "/devices/$id",
-  "api.virtualmachine": "/virtual-machines/$id",
-  "api.ipaddress": "/ips/$id",
-} as const
-
 /** A member's figure inside one period of an agreement. */
 export function slaMemberColumns(): ColumnDef<SlaMemberFigure>[] {
   return [
@@ -135,7 +130,7 @@ export function slaMemberColumns(): ColumnDef<SlaMemberFigure>[] {
             <Link
               to={MEMBER_ROUTE[m.object_type]}
               params={{ id: m.object_id }}
-              className={`link ${m.object_type === "api.ipaddress" ? "font-mono" : ""}`}
+              className={`link ${m.object_type === "api.ipaddress" || m.object_type === "api.prefix" ? "font-mono" : ""}`}
             >
               {m.name}
             </Link>

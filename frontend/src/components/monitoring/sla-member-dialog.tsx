@@ -15,6 +15,7 @@ import {
 } from "@/components/forms"
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
+import { PrefixPicker } from "@/components/prefix-picker"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -106,6 +107,7 @@ export function SlaMemberDialog({
               { value: "api.device", label: "Device" },
               { value: "api.virtualmachine", label: "Virtual machine" },
               { value: "api.ipaddress", label: "IP address" },
+              { value: "api.prefix", label: "Prefix" },
             ]}
           />
           {type === "api.device" && (
@@ -113,6 +115,9 @@ export function SlaMemberDialog({
           )}
           {type === "api.ipaddress" && (
             <IpPicker value={objectId} onChange={setObjectId} required />
+          )}
+          {type === "api.prefix" && (
+            <PrefixPicker value={objectId} onChange={setObjectId} required />
           )}
           {type === "api.virtualmachine" && (
             <FormCombobox

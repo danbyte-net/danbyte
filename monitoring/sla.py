@@ -210,7 +210,7 @@ def resolve_members(agreement, start: datetime, end: datetime) -> list[dict]:
 
 def _objects(members) -> dict:
     """``{(object_type, id): object}`` for names, sites and addresses."""
-    from api.models import Device, IPAddress, VirtualMachine
+    from api.models import Device, IPAddress, Prefix, VirtualMachine
 
     by_type = defaultdict(set)
     for m in members:
@@ -218,7 +218,7 @@ def _objects(members) -> dict:
     out = {}
     for label, model in (
         ("api.device", Device), ("api.virtualmachine", VirtualMachine),
-        ("api.ipaddress", IPAddress),
+        ("api.ipaddress", IPAddress), ("api.prefix", Prefix),
     ):
         if by_type[label]:
             for o in model.objects.filter(pk__in=by_type[label]):
@@ -246,6 +246,10 @@ def _addresses(members, objects) -> dict:
             assigned_vm_id__in=need_all["api.virtualmachine"]
         ).values_list("id", "assigned_vm_id"):
             all_ips[("api.virtualmachine", vm_id)].append(ip_id)
+    prefix_ips = _prefix_addresses(
+        [objects[(m["object_type"], m["object_id"])] for m in members
+         if m["object_type"] == "api.prefix" and (m["object_type"], m["object_id"]) in objects]
+    )
     out = {}
     for m in members:
         key = (m["object_type"], m["object_id"])
@@ -254,11 +258,51 @@ def _addresses(members, objects) -> dict:
             ips = []
         elif m["object_type"] == "api.ipaddress":
             ips = [o.pk]
+        elif m["object_type"] == "api.prefix":
+            # A prefix stands for every address in it, its children's too.
+            ips = prefix_ips.get(o.pk, [])
         elif m["group"].target == "all":
             ips = all_ips.get(key, [])
         else:
             ips = [o.primary_ip_id] if getattr(o, "primary_ip_id", None) else []
         out[(m["object_type"], m["object_id"], m["group"].target)] = ips
+    return out
+
+
+def _prefix_addresses(prefixes) -> dict:
+    """``{prefix id: [ip id, ...]}`` - the addresses in each prefix or any
+    prefix inside it (same VRF)."""
+    import ipaddress as _ip
+
+    from api.models import IPAddress, Prefix
+
+    if not prefixes:
+        return {}
+    tenant_id = prefixes[0].tenant_id
+    nets = {}
+    for pk, cidr, vrf in Prefix.objects.filter(tenant_id=tenant_id).values_list(
+        "pk", "cidr", "vrf_id"
+    ):
+        try:
+            nets[pk] = (_ip.ip_network(cidr, strict=False), vrf)
+        except ValueError:
+            continue
+    by_prefix = defaultdict(list)
+    for ip_id, prefix_id in IPAddress.objects.filter(
+        tenant_id=tenant_id, prefix_id__isnull=False
+    ).values_list("pk", "prefix_id"):
+        by_prefix[prefix_id].append(ip_id)
+    out = {}
+    for p in prefixes:
+        mine = nets.get(p.pk)
+        if mine is None:
+            continue
+        net, vrf = mine
+        ips = []
+        for pk, (other, other_vrf) in nets.items():
+            if other_vrf == vrf and other.version == net.version and other.subnet_of(net):
+                ips.extend(by_prefix.get(pk, []))
+        out[p.pk] = ips
     return out
 
 
@@ -290,6 +334,8 @@ def _name(o, object_type) -> str:
         return "(deleted)"
     if object_type == "api.ipaddress":
         return str(o.ip_address)
+    if object_type == "api.prefix":
+        return str(o.cidr)
     return o.name or str(o.pk)
 
 
@@ -377,6 +423,8 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     checks (``kind``) for the analysis view; ``detail`` also returns the
     member and unit timelines it was built from."""
     filters = filters or {}
+    from api.models import IPAddress
+
     from .models import CheckState, SlaCheckItem
 
     now = now or timezone.now()
@@ -417,10 +465,12 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     # A group without items counts every check its members' addresses have.
     all_ips = {ip for ips in addresses.values() for ip in ips}
     states = defaultdict(list)
-    for ip_id, tmpl_id, tname, kind in CheckState.objects.filter(
+    state_ids = {}  # (ip, template) -> CheckState id, for links to the check
+    for sid, ip_id, tmpl_id, tname, kind in CheckState.objects.filter(
         tenant_id=agreement.tenant_id, target_ip_id__in=all_ips
-    ).values_list("target_ip_id", "template_id", "template__name", "kind"):
+    ).values_list("id", "target_ip_id", "template_id", "template__name", "kind"):
         states[ip_id].append((tmpl_id, tname, kind))
+        state_ids[(ip_id, tmpl_id)] = str(sid)
 
     plan = []  # per member: [(ip, template_id, name, kind, counts, weight, required)]
     pairs = set()
@@ -435,6 +485,11 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             else:
                 for tmpl_id, tname, kind in states.get(ip, []):
                     checks.append((ip, tmpl_id, tname, kind, True, 1.0, False))
+        if m["object_type"] == "api.prefix":
+            # A prefix stands for its monitored addresses, not every address
+            # in it: an unchecked address is not an outage, and a /16 would
+            # otherwise be tens of thousands of unmeasured rows.
+            checks = [c for c in checks if (c[0], c[1]) in state_ids]
         if filters.get("kind"):
             checks = [c for c in checks if c[3] in filters["kind"]]
         pairs.update((c[0], c[1]) for c in checks)
@@ -447,6 +502,9 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     )
     everyone_off, member_off = _exclusions(agreement, start, until)
 
+    ip_text = dict(
+        IPAddress.objects.filter(pk__in={p[0] for p in pairs}).values_list("pk", "ip_address")
+    )
     member_rows = []
     timelines = {}
     for m, checks in zip(members, plan, strict=True):
@@ -468,6 +526,8 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
             t = st.tally(tl)
             item_rows.append({
                 "template_id": str(tmpl_id), "name": tname, "kind": kind, "ip_id": str(ip),
+                "address": ip_text.get(ip, ""),
+                "state_id": state_ids.get((ip, tmpl_id)),
                 "counts": counts, "incidents": t["incidents"], "down_s": round(t["down_s"]),
                 "up_s": round(t["up_s"]),
                 **_figure(t["up_s"], t["down_s"], service_s),

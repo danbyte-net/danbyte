@@ -9893,6 +9893,7 @@ export type SlaObjectType =
   | "api.device"
   | "api.virtualmachine"
   | "api.ipaddress"
+  | "api.prefix"
 
 export interface SlaMember {
   id: string
@@ -9949,9 +9950,13 @@ export interface SlaMemberFigure {
   worst_item: string | null
   items: {
     template_id: string
+    /** The CheckState behind it, for a link to the check's page. */
+    state_id: string | null
     name: string
     kind: string
     ip_id: string
+    /** The address checked - a prefix member has several. */
+    address?: string
     counts: boolean
     availability: number | null
     coverage: number | null

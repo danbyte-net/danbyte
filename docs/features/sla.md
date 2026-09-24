@@ -19,7 +19,7 @@ time was actually measured.
 |---|---|
 | **Agreement** | Who it is provided for, the target (for example 99.9 %), the period, the service hours, holidays, and the counting rules |
 | **Check group** | Which checks count for one class of equipment, and which address they are read from |
-| **Member** | A device, virtual machine or IP address in a group |
+| **Member** | A device, virtual machine, IP address or prefix in a group |
 | **Exclusion** | Time that does not count, with the reason recorded |
 
 A new tenant has no agreements. Nothing is seeded.
@@ -114,7 +114,10 @@ it as a member and mark it excluded.
 
 ## Members
 
-Add devices, virtual machines or IP addresses on the **Members** tab.
+Add devices, virtual machines, IP addresses or prefixes on the **Members**
+tab. A prefix stands for the monitored addresses in it and in its child
+prefixes. An address with no check is not counted, so adding a /16 does not
+bring in thousands of unmeasured rows.
 Removing a member marks it as having left; it is not deleted. Periods it was
 part of still count the time it was in. A member you cannot view cannot be
 added.
@@ -170,7 +173,7 @@ compare like for like.
 | **Availability over time** | Availability per day or hour against the dashed target line | A day opens it by the hour: who was down, which check, the incidents, and down time per check type |
 | **Error budget** | Budget spent so far (steps) against the pace that would spend it exactly by the period's end (dashed); the red line is the whole budget | - |
 | **Where the down time went** | Down time and availability per member, check group, site or check type | A row narrows the whole page to it |
-| **When outages happen** | Down time by weekday and hour, in the agreement's timezone. A nightly job or a Monday change window shows up as a stripe | - |
+| **When outages happen** | Down time by weekday and hour, in the agreement's timezone. A nightly job or a Monday change window shows up as a stripe. Hover a cell for its down time | - |
 | **Incident lengths** | Incidents by duration, and the mean time to recover | - |
 | **Latency against objectives** | p95 and median per check type, with the objective as a dashed line | - |
 | **Members over time** | One status strip per member across the window, so overlaps and redundancy show at a glance | A name opens the member panel |
@@ -229,7 +232,9 @@ A report for a period that is still open or not yet frozen says so. A report
 computed under an older revision of the rules names the revision.
 
 **Report recipients** get the report by email, as PDF, CSV or both, when the
-period freezes, seven days after it ends. **Email report** sends it now.
+period freezes, seven days after it ends. **Email report** sends it now,
+either to those recipients or once to addresses you type in; a one-off
+address is not saved on the agreement.
 **Overview** on the SLAs list gives every agreement's figure for this or the
 last period, as one PDF or CSV.
 
@@ -238,7 +243,7 @@ user's report leaves out the members they cannot see, and says so.
 
 ## On lists and object pages
 
-The device, virtual machine and IP address lists have two columns:
+The device, virtual machine, IP address and prefix lists have two columns:
 
 - **SLA** - the object's figure in its agreement's current period, coloured
   against that agreement's target. An object in several agreements shows the
@@ -252,7 +257,7 @@ The device, virtual machine and IP address lists have two columns:
   the tenant's **Availability window**, set in the monitoring settings (24
   hours, 7/30/90 days, or month, quarter or year to date).
 
-The **Monitoring** tab of a device, virtual machine or IP address opens with
+The **Monitoring** tab of a device, virtual machine, IP address or prefix opens with
 the agreements the object is in, and has an **Add to SLA** button. It asks
 for the agreement, the check group and an optional redundancy group. The
 device list's selection bar has the same button, for many devices at once.

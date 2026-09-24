@@ -17,6 +17,8 @@ import {
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { StatusBadge } from "@/components/status-badge"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
@@ -50,6 +52,8 @@ export type PrefixColumnId =
   | "status"
   | "dhcp"
   | "monitoring"
+  | "sla"
+  | "availability"
   | "vrf"
   | "vlan"
   | "zone"
@@ -66,6 +70,8 @@ const CANONICAL_ORDER: PrefixColumnId[] = [
   "status",
   "dhcp",
   "monitoring",
+  "sla",
+  "availability",
   "vrf",
   "vlan",
   "zone",
@@ -94,6 +100,8 @@ export interface PrefixColumnOpts<T extends Prefix = Prefix> {
   violations?: Map<string, ComplianceViolation[]>
   /** Monitoring status per prefix id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
+  sla?: SlaColumnOpts
   /** One column per tenant custom field (hidden by default via Columns menu). */
   cfDefs?: CustomField[]
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
@@ -118,6 +126,10 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
   const omit = new Set(opts.omit ?? [])
   // The Monitoring column only exists when the page fetched bulk status.
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.sla) {
+    omit.add("sla")
+    omit.add("availability")
+  }
   const keep = (id: PrefixColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -217,6 +229,8 @@ export function buildPrefixColumns<T extends Prefix = Prefix>(
         },
       },
     }),
+    sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
+    availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     monitoring: () => ({
       id: "monitoring",
       accessorFn: (r) => monitoringBucket(opts.monitoring?.[r.id]),

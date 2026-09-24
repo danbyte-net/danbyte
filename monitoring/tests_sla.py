@@ -253,6 +253,27 @@ class FigureTests(_Base):
         f = self.compute()["figures"]
         self.assertEqual(f["availability"], 100.0)
 
+    def test_a_prefix_stands_for_its_monitored_addresses(self):
+        from api.models import Prefix
+
+        _dev, ip = self.device("leaf1", 1)  # in 10.0.0.0/24
+        # In the prefix but never checked: not an outage, and not a row.
+        IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.9", prefix=self.prefix)
+        container = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.0.0.0/16", status=self.prefix.status
+        )
+        SlaMember.objects.create(
+            tenant=self.tenant, agreement=self.agreement, group=self.group,
+            object_type="api.prefix", object_id=container.id,
+            joined_at=SEP - timedelta(days=30),
+        )
+        self.tr(ip, self.ping, SEP + timedelta(days=5), "down")
+        out = self.compute()
+        self.assertEqual(out["figures"]["availability"], 50.0)
+        member = next(u for u in out["units"] if u.get("member"))
+        self.assertEqual(member["name"], "10.0.0.0/16")
+        self.assertEqual({i["address"] for i in member["items"]}, {"10.0.0.1"})
+
     def test_no_members_is_no_data(self):
         self.assertEqual(self.compute()["figures"]["state"], "no_data")
 

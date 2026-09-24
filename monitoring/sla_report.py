@@ -89,17 +89,19 @@ _CSS = """
   font-size: 8pt; color: #71717a; } }
 body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9.5pt; color: #18181b; }
 h1 { font-size: 17pt; margin: 0 0 2mm; }
-h2 { font-size: 11pt; margin: 7mm 0 2mm; border-bottom: 0.3mm solid #e4e4e7; padding-bottom: 1mm; }
+h2 { break-after: avoid; font-size: 11pt; margin: 7mm 0 2mm; border-bottom: 0.3mm solid #e4e4e7; padding-bottom: 1mm; }
 .muted { color: #71717a; }
-.kv { display: flex; flex-wrap: wrap; gap: 3mm; margin-top: 4mm; }
-.cell { border: 0.3mm solid #e4e4e7; border-radius: 1.5mm; padding: 2.5mm 3mm; min-width: 36mm; }
+.kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.5mm; margin-top: 4mm; }
+.cell { border: 0.3mm solid #e4e4e7; border-radius: 1.5mm; padding: 2mm 3mm; }
 .cell .l { font-size: 7.5pt; color: #71717a; text-transform: uppercase; letter-spacing: 0.04em; }
 .cell .v { font-size: 13pt; font-weight: bold; margin-top: 1mm; }
 .ok { color: #047857; } .at_risk { color: #b45309; } .breached { color: #b91c1c; }
 table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+th, td { vertical-align: top; }
 th { text-align: left; color: #52525b; font-weight: 600; border-bottom: 0.3mm solid #d4d4d8; padding: 1.2mm; }
+tr { break-inside: avoid; }
 td { border-bottom: 0.2mm solid #f4f4f5; padding: 1.2mm; }
-td.n { text-align: right; font-variant-numeric: tabular-nums; }
+th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; }
 .bar { height: 2.2mm; background: #f4f4f5; border-radius: 0.6mm; }
 .bar i { display: block; height: 100%; border-radius: 0.6mm; }
 .note { background: #fafafa; border: 0.3mm solid #e4e4e7; padding: 2mm 3mm; margin-top: 3mm; }
@@ -132,6 +134,7 @@ def report_html(agreement, result, view=None) -> str:
         ("Budget", _span(f.get("budget_s"))),
         ("Budget left", _span(f.get("budget_left_s"))),
         ("Incidents", str(f.get("incidents", 0))),
+        ("Members", str(len(members))),
     ]
     kv = "<div class='kv'>" + "".join(
         f"<div class='cell'><div class='l'>{label}</div><div class='v'>{value}</div></div>"
@@ -183,13 +186,15 @@ def report_html(agreement, result, view=None) -> str:
     body = (
         head + kv + note_html
         + f"<p class='muted'>{escape(rules)}</p>"
-        + (f"<h2>Per day</h2><table><tr><th>Day</th><th>Availability</th><th>Down</th><th></th></tr>"
+        + (f"<h2>Per day</h2><table><thead><tr><th>Day</th><th class='n'>Availability</th>"
+           f"<th class='n'>Down</th><th></th></tr></thead>"
            f"{day_rows}</table>" if day_rows else "")
-        + f"<h2>Members</h2><table><tr><th>Member</th><th>Group</th><th>Redundancy</th>"
-          f"<th>Availability</th><th>Coverage</th><th>Down</th><th>Worst check</th></tr>"
+        + f"<h2>Members</h2><table><thead><tr><th>Member</th><th>Group</th><th>Redundancy</th>"
+          f"<th class='n'>Availability</th><th class='n'>Coverage</th><th class='n'>Down</th>"
+          f"<th>Worst check</th></tr></thead>"
           f"{member_rows or '<tr><td colspan=7 class=muted>No members.</td></tr>'}</table>"
-        + f"<h2>Incidents</h2><table><tr><th>Started</th><th>Lasted</th><th>Unit</th>"
-          f"<th>Down at the start</th></tr>"
+        + f"<h2>Incidents</h2><table><thead><tr><th>Started</th><th class='n'>Lasted</th><th>Unit</th>"
+          f"<th>Down at the start</th></tr></thead>"
           f"{incident_rows or '<tr><td colspan=4 class=muted>None.</td></tr>'}</table>"
     )
     return (f"<!doctype html><html><head><meta charset='utf-8'><style>{_CSS}</style>"
@@ -254,9 +259,10 @@ def overview_pdf(rows, period_label: str) -> bytes:
         f"<!doctype html><html><head><meta charset='utf-8'><style>{_CSS}</style></head><body>"
         f"<h1>Service levels {escape(period_label)}</h1>"
         f"<div class='muted'>{len(data)} agreement(s) · generated {timezone.now():%Y-%m-%d %H:%M} UTC</div>"
-        f"<h2>Agreements</h2><table><tr><th>Agreement</th><th>For</th><th>Period</th>"
-        f"<th>Availability</th><th>Target</th><th>State</th><th>Coverage</th><th>Budget left</th>"
-        f"<th>Incidents</th></tr>{trs or '<tr><td colspan=9 class=muted>None.</td></tr>'}</table>"
+        f"<h2>Agreements</h2><table><thead><tr><th>Agreement</th><th>For</th><th>Period</th>"
+        f"<th class='n'>Availability</th><th class='n'>Target</th><th>State</th>"
+        f"<th class='n'>Coverage</th><th class='n'>Budget left</th>"
+        f"<th class='n'>Incidents</th></tr></thead>{trs or '<tr><td colspan=9 class=muted>None.</td></tr>'}</table>"
         f"</body></html>"
     )
     return weasyprint.HTML(string=html).write_pdf()

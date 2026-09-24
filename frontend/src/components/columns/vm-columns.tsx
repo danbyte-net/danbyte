@@ -14,16 +14,16 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
-import { monitoringBucket, monitoringFacet } from "@/components/columns/monitoring-facet"
+import {
+  monitoringBucket,
+  monitoringFacet,
+} from "@/components/columns/monitoring-facet"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
-import {
-  availabilityColumn,
-  slaColumn,
-  type SlaColumnOpts,
-} from "@/components/columns/sla-column"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
+import type { SlaColumnOpts } from "@/components/columns/sla-column"
 
 // The one source of truth for "a table of virtual machines". Every surface
 // that lists VMs - /virtual-machines and the cluster detail page's VM pane -

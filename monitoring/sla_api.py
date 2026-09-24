@@ -50,6 +50,7 @@ MEMBER_TYPES = {
     "api.device": "device",
     "api.virtualmachine": "virtualmachine",
     "api.ipaddress": "ipaddress",
+    "api.prefix": "prefix",
 }
 
 
@@ -272,7 +273,8 @@ def _visible_keys(request, tenant, units) -> set | None:
 
     model_for = {"api.device": api_models.Device,
                  "api.virtualmachine": api_models.VirtualMachine,
-                 "api.ipaddress": api_models.IPAddress}
+                 "api.ipaddress": api_models.IPAddress,
+                 "api.prefix": api_models.Prefix}
     for otype, ids in by_type.items():
         q = rbac.row_filter(request.user, tenant, MEMBER_TYPES.get(otype, ""), "view")
         if q is True:
@@ -520,7 +522,10 @@ class SlaAgreementViewSet(TenantScopedViewSet):
             raise ValidationError({"period": "No figures for that period yet."})
         recipients = request.data.get("recipients")
         if recipients is not None:
-            recipients = SlaAgreementSerializer().validate_report_recipients(recipients)
+            try:
+                recipients = SlaAgreementSerializer().validate_report_recipients(recipients)
+            except ValidationError as e:
+                raise ValidationError({"recipients": e.detail}) from None
         view = _viewer_figures(request, a, res, full=True)
         if not send_report(a, res, recipients=recipients, view=view, mark=False):
             raise ValidationError({"recipients": "No recipients, or the mail could not be sent."})
@@ -701,7 +706,7 @@ class SlaMemberSerializer(serializers.ModelSerializer):
         o = self.context.get("objects", {}).get((obj.object_type, obj.object_id))
         if o is None:
             return None
-        name = str(o.ip_address) if obj.object_type == "api.ipaddress" else o.name
+        name = sla._name(o, obj.object_type)
         return {"id": str(o.pk), "name": name}
 
     def validate_object_type(self, value):
@@ -891,6 +896,7 @@ STATUS_KINDS = {
     "device": ("api.device", "device", "target_ip__assigned_device_id"),
     "vm": ("api.virtualmachine", "virtualmachine", "target_ip__assigned_vm_id"),
     "ip": ("api.ipaddress", "ipaddress", "target_ip_id"),
+    "prefix": ("api.prefix", "prefix", "target_ip__prefix_id"),
 }
 MAX_STATUS_IDS = 5000
 
