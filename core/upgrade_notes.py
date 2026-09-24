@@ -60,7 +60,7 @@ location ^~ /api/backups/ {
 _NGINX_BACKUPS_BUFFER = """\
 # in the /api/backups/ block, replace "proxy_request_buffering off;" with:
     proxy_request_buffering on;
-    proxy_max_temp_file_size 10g;
+    proxy_max_temp_file_size 10240m;
 # then: sudo nginx -t && sudo systemctl reload nginx"""
 
 _LOGROTATE = """\
@@ -140,8 +140,86 @@ def _tls_unit_installed() -> bool:
     return UNIT_FILE.exists()
 
 
+_NGINX_TEMP_SIZE = """\
+# nginx takes k or m for this size, never g:
+sudo sed -i 's/proxy_max_temp_file_size 10g;/proxy_max_temp_file_size 10240m;/' \\
+    /etc/nginx/sites-available/danbyte.conf
+sudo nginx -t && sudo systemctl reload nginx"""
+
+_NGINX_PROTO = """\
+# in /etc/nginx/sites-available/danbyte.conf, add to the /media/ and the
+# /static/ block (the https server):
+    proxy_set_header X-Forwarded-Proto $scheme;
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _site_config() -> str | None:
+    """The site's nginx config, or None when it cannot be read."""
+    from pathlib import Path
+
+    for path in (Path("/etc/nginx/sites-enabled/danbyte.conf"),
+                 Path("/etc/nginx/sites-available/danbyte.conf")):
+        try:
+            return path.read_text()
+        except OSError:
+            continue
+    return None
+
+
+def _temp_size_valid() -> bool:
+    """Done when no size in the config carries a g suffix nginx refuses."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    return not re.search(r"proxy_max_temp_file_size\s+\d+[gG]\s*;", text)
+
+
+def _proxied_blocks_forward_proto() -> bool:
+    """Done when every /media/ and /static/ block that proxies to Danbyte
+    says which scheme the request came in on."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    for block in re.findall(r"location\s+/(?:media|static)/\s*\{([^}]*)\}", text):
+        if "proxy_pass" in block and "X-Forwarded-Proto" not in block:
+            return False
+    return True
+
+
 # Newest first.
 NOTES: tuple[UpgradeNote, ...] = (
+    UpgradeNote(
+        id="0.16.13-nginx-temp-size",
+        version="0.16.13",
+        title="Fix the backup temp-file size in nginx",
+        body=(
+            "0.16.12 wrote the backup block's temp-file size as 10g, which "
+            "nginx does not accept, so nginx -t failed after the change. The "
+            "same size in megabytes works."
+        ),
+        snippet=_NGINX_TEMP_SIZE,
+        docs="getting-started/backup-restore/",
+        platforms=("systemd",),
+        check=_temp_size_valid,
+    ),
+    UpgradeNote(
+        id="0.16.13-nginx-media-proto",
+        version="0.16.13",
+        title="Pass the HTTPS scheme on /media/ and /static/",
+        body=(
+            "A config from make proxy-install sent /media/ to Danbyte without "
+            "saying the request came in over HTTPS, so Danbyte redirected it "
+            "to itself and no document or image loaded."
+        ),
+        snippet=_NGINX_PROTO,
+        docs="getting-started/upgrading/",
+        platforms=("systemd",),
+        check=_proxied_blocks_forward_proto,
+    ),
     UpgradeNote(
         id="0.16.12-logrotate",
         version="0.16.12",
