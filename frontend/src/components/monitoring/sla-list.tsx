@@ -34,7 +34,11 @@ export function SlaList() {
     placeholderData: keepPreviousData,
     refetchInterval: 5 * 60_000,
   })
-  const columns = useMemo(() => slaAgreementColumns(), [])
+  // The credit column only once some agreement is priced and visible to you.
+  const credits = (query.data?.results ?? []).some(
+    (a) => a.current?.figures.credit != null
+  )
+  const columns = useMemo(() => slaAgreementColumns({ credits }), [credits])
   return (
     <ListPageShell
       title="SLAs"

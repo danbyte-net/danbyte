@@ -420,6 +420,7 @@ export type RBACAction =
   | "grant_superuser"
   | "run"
   | "trust"
+  | "view_credits"
 
 export interface RBACUser {
   id: number
@@ -9809,6 +9810,20 @@ export interface SlaFigures {
   period_end: string
   /** The open period's end, if the rest goes like the trailing week. */
   forecast?: SlaForecast | null
+  /** The service credit this figure earns; null without tiers, or for a
+   * caller without `view_credits`. */
+  credit?: SlaCredit | null
+}
+
+export interface SlaCredit {
+  pct: number
+  amount: number | null
+  currency: string
+}
+
+export interface SlaCreditTier {
+  below: number
+  credit_pct: number
 }
 
 export interface SlaForecast {
@@ -9872,6 +9887,11 @@ export interface SlaAgreement {
   alert_burn_rate: number | null
   /** Multi-window burn-rate alerts: fire while both windows burn >= burn. */
   burn_alerts: SlaBurnRule[]
+  /** Money: absent for a caller without `view_credits`. */
+  credit_tiers?: SlaCreditTier[]
+  /** One period's fee, for the credit as an amount. */
+  period_fee?: string | null
+  currency?: string
   /** Alert when less than this share of the time was measured. */
   alert_coverage_pct: string | null
   /** Emailed each period's report when it freezes. */

@@ -31,7 +31,9 @@ A few extra **capability** verbs apply to specific types and are never implied
 by *change*: **connect** (on devices - open a [Connect launcher or the SSH
 terminal](device-access.md)), **reveal** (on device credentials, wireless
 LANs and IPSec profiles - read the referenced secret), **subscribe** (on notification channels -
-self-service opt-in/out), and **grant superuser** (on users - see below). The
+self-service opt-in/out), **view credits** (on SLA agreements - see the
+[service credits](sla.md#service-credits) an agreement owes), and **grant
+superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
 ### Granting superuser without being one

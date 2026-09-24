@@ -129,10 +129,18 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
             "min_outage_seconds", "aggregation", "latency_objectives", "status",
             "effective_from", "revision", "group_count", "member_count", "current",
             "notify_channels", "alert_burn_rate", "burn_alerts", "alert_coverage_pct",
+            "credit_tiers", "period_fee", "currency",
             "report_recipients", "report_format",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "revision", "created_at", "updated_at"]
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        if not _may_see_credits(self.context.get("request"), obj):
+            for f in CREDIT_FIELDS:
+                data.pop(f, None)
+        return data
 
     def get_customer_detail(self, obj):
         c = obj.customer
@@ -155,6 +163,36 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
         return {"period_key": res.period_key, "computed_at": res.computed_at,
                 "burn": obj.burn_state or None if full else None,
                 "history": getattr(obj, "_history", None) if full else None, **body}
+
+    def validate_credit_tiers(self, value):
+        if not isinstance(value, list) or len(value) > 10:
+            raise serializers.ValidationError("A list of up to 10 tiers.")
+        out, seen = [], set()
+        for raw in value:
+            try:
+                below, pct = float(raw["below"]), float(raw["credit_pct"])
+            except (TypeError, KeyError, ValueError):
+                raise serializers.ValidationError(
+                    "Each tier is {below, credit_pct}, both numbers.") from None
+            if not (0 < below <= 100 and 0 <= pct <= 100):
+                raise serializers.ValidationError(
+                    "Below is 0-100 %, the credit 0-100 % of the fee.")
+            if below in seen:
+                raise serializers.ValidationError(f"Two tiers below {below:g} %.")
+            seen.add(below)
+            out.append({"below": below, "credit_pct": pct})
+        return sorted(out, key=lambda t: -t["below"])
+
+    def validate_currency(self, value):
+        value = (value or "").strip().upper()
+        if value and not (len(value) == 3 and value.isalpha()):
+            raise serializers.ValidationError("A three-letter code, such as DKK or EUR.")
+        return value
+
+    def validate_period_fee(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Zero or more.")
+        return value
 
     def validate_burn_alerts(self, value):
         from .sla_burn import validate_rules
@@ -242,6 +280,16 @@ class SlaAgreementSerializer(serializers.ModelSerializer):
         return out
 
     def validate(self, attrs):
+        request = self.context.get("request")
+        if request is not None and any(f in attrs for f in CREDIT_FIELDS):
+            tenant = _tenant_of(self)
+            if not rbac.has_action(request.user, tenant, "slaagreement", "view_credits"):
+                current = self.instance
+                for f in CREDIT_FIELDS:
+                    now = getattr(current, f) if current else SlaAgreement._meta.get_field(
+                        f).get_default()
+                    if f in attrs and attrs[f] != now:
+                        raise PermissionDenied("Changing service credits needs view_credits.")
         tenant = _tenant_of(self)
         if tenant is not None:
             _same_tenant(tenant, customer=attrs.get("customer"),
@@ -308,13 +356,32 @@ def _visible_keys(request, tenant, units) -> set | None:
     return {m["key"] for m in members if (m["object_type"], m["object_id"]) in visible}
 
 
+#: The agreement fields that are money; shown and changed with view_credits.
+CREDIT_FIELDS = ("credit_tiers", "period_fee", "currency")
+
+
+def _may_see_credits(request, agreement) -> bool:
+    return request is None or rbac.has_action(
+        request.user, agreement.tenant, "slaagreement", "view_credits")
+
+
+def _credit_gate(request, agreement, figures: dict, whole: bool = True) -> dict:
+    """The figures without the service credit, unless the caller may see
+    money on this agreement and the figure is the whole agreement's."""
+    if not figures or figures.get("credit") is None:
+        return figures
+    if whole and _may_see_credits(request, agreement):
+        return figures
+    return {**figures, "credit": None}
+
+
 def _viewer_figures(request, agreement, res, full=False) -> dict:
     """A result as this viewer may see it. A scoped viewer gets the figure
     over the units whose members they can all see, marked limited."""
     units = [u for u in res.units if not u.get("member")]
     members = [u for u in res.units if u.get("member")]
     keys = _visible_keys(request, agreement.tenant, res.units) if request else None
-    body = {"figures": res.figures, "limited": None}
+    body = {"figures": _credit_gate(request, agreement, res.figures), "limited": None}
     if keys is not None:
         shown_units = [u for u in units if all(k in keys for k in u["members"])]
         hidden = len(members) - len(keys)
@@ -498,6 +565,9 @@ class SlaAgreementViewSet(TenantScopedViewSet):
         if bucket == "hour" and (min(end, now) - start).days > 45:
             raise ValidationError({"bucket": "Hourly for at most 45 days."})
         body = analyse(a, start, end, rules=rules, filters=filters, bucket=bucket, now=now)
+        # A slice prices nothing; the whole agreement only for a credit viewer.
+        body["figures"] = _credit_gate(
+            request, a, body["figures"], whole=not filters)
         # The same slice one period (or one range length) earlier, for deltas.
         if key is not None:
             prev = sla.previous_period(a, start)
@@ -607,8 +677,12 @@ class SlaAgreementViewSet(TenantScopedViewSet):
     @action(detail=True, methods=["get"])
     def revisions(self, request, pk=None):
         a = self.get_object()
+        money = _may_see_credits(request, a)
         return Response([
-            {"number": r.number, "rules": r.rules, "created_at": r.created_at,
+            {"number": r.number,
+             "rules": r.rules if money else {k: v for k, v in r.rules.items()
+                                             if k not in CREDIT_FIELDS},
+             "created_at": r.created_at,
              "created_by": getattr(r.created_by, "username", None)}
             for r in a.revisions.select_related("created_by")
         ])

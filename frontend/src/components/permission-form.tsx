@@ -39,8 +39,10 @@ const ACTION_ORDER: RBACAction[] = [
   "reveal",
   "subscribe",
   "grant_superuser",
+  "view_credits",
 ]
 const ACTION_HINT: Partial<Record<RBACAction, string>> = {
+  view_credits: "See the service credits an agreement owes",
   connect: "Open an interactive session to the device",
   reveal: "Read the referenced secret value",
   subscribe: "Opt in or out of this notification channel",

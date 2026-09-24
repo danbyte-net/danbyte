@@ -706,6 +706,9 @@ const RULE_LABEL: Record<string, string> = {
   min_outage_seconds: "Ignore outages under",
   aggregation: "Members combine as",
   effective_from: "Counts from",
+  credit_tiers: "Credit tiers",
+  period_fee: "Fee per period",
+  currency: "Currency",
 }
 
 function Revisions({ agreementId }: { agreementId: string }) {

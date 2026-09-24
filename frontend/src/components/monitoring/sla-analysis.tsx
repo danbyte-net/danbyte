@@ -43,6 +43,7 @@ import {
 import type { BreakdownKind } from "./sla-analysis-charts"
 import { DayDrill, MemberPanel } from "./sla-drill"
 import { BurnNow } from "./sla-burn-rules"
+import { fmtCredit } from "./sla-credit-tiers"
 
 type FilterKey = "group" | "site" | "member" | "kind" | "redundancy"
 type Filters = Record<FilterKey, string[]>
@@ -504,6 +505,11 @@ export function SlaAnalysisView({
                 Target {fmtSla(f.target)}
                 {prev?.availability != null &&
                   ` · the window before: ${fmtSla(prev.availability)}`}
+                {fmtCredit(f.credit) && (
+                  <span className="text-destructive">
+                    · credit {fmtCredit(f.credit)}
+                  </span>
+                )}
                 {d.forecast && (
                   <>
                     <span>· forecast</span>

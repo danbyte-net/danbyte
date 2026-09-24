@@ -8,6 +8,7 @@ import type {
   Paginated,
   SlaAgreement,
   SlaBurnRule,
+  SlaCreditTier,
   SlaPeriod,
 } from "@/lib/api"
 import {
@@ -29,8 +30,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { TimePicker } from "@/components/ui/time-picker"
 import { useSaveObject } from "@/lib/save-object"
+import { useMe } from "@/lib/use-me"
 import { PERIOD_LABEL } from "./sla-figure"
 import { BurnRulesEditor, DEFAULT_BURN_RULES } from "./sla-burn-rules"
+import { CreditTiersEditor } from "./sla-credit-tiers"
 
 const DAYS = [
   ["mon", "Monday"],
@@ -124,6 +127,12 @@ export function SlaAgreementForm({
     (a?.report_recipients ?? []).join("\n")
   )
   const [reportFormat, setReportFormat] = useState(a?.report_format ?? "pdf")
+  // Credits are money: without view_credits they are neither shown nor sent.
+  const { canDo } = useMe()
+  const money = canDo("slaagreement", "view_credits")
+  const [tiers, setTiers] = useState<SlaCreditTier[]>(a?.credit_tiers ?? [])
+  const [fee, setFee] = useState(a?.period_fee ?? "")
+  const [currency, setCurrency] = useState(a?.currency ?? "")
 
   const contacts = useQuery({
     queryKey: ["contacts-picker"],
@@ -203,6 +212,13 @@ export function SlaAgreementForm({
             .map((x) => x.trim())
             .filter(Boolean),
           report_format: reportFormat,
+          ...(money
+            ? {
+                credit_tiers: tiers,
+                period_fee: fee === "" ? null : fee,
+                currency: currency.trim(),
+              }
+            : {}),
         },
       })
     },
@@ -486,6 +502,38 @@ export function SlaAgreementForm({
           </FormSection>
         </FormColumn>
       </FormColumns>
+      {money && (
+        <FormSection title="Service credits" card>
+          <div className="grid gap-4 @3xl:grid-cols-2">
+            <Field
+              label="Tiers"
+              info="Below an availability, the customer is owed this share of the period's fee. The lowest tier met wins."
+              error={fieldErrors.credit_tiers}
+            >
+              <CreditTiersEditor value={tiers} onChange={setTiers} />
+            </Field>
+            <div className="grid content-start gap-3 @md:grid-cols-2">
+              <FormText
+                label="Fee per period"
+                type="number"
+                inputMode="decimal"
+                value={fee}
+                onChange={setFee}
+                placeholder="0.00"
+                info="What one period of the service costs. Empty: credits are a percentage only."
+                error={fieldErrors.period_fee}
+              />
+              <FormText
+                label="Currency"
+                value={currency}
+                onChange={setCurrency}
+                placeholder="DKK"
+                error={fieldErrors.currency}
+              />
+            </div>
+          </div>
+        </FormSection>
+      )}
       <FormSection title="Alerts and reports" card>
         <div className="grid gap-4 @3xl:grid-cols-2">
           <div className="grid gap-3">

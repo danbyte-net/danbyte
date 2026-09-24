@@ -649,6 +649,7 @@ def compute(agreement, start: datetime, end: datetime, *, rules: dict | None = N
     figures.update(base)
     figures["members"] = len(member_rows)
     figures["full_service_s"] = round(full_service)
+    figures["credit"] = credit(rules, figures.get("availability"))
     out = {
         "figures": figures,
         "units": units + [{"member": True, **r} for r in member_rows],
@@ -719,6 +720,20 @@ def headline(units, rules, full_service, start, until, end, series=None) -> dict
     }
 
 
+def credit(rules: dict, availability) -> dict | None:
+    """The service credit a figure earns under the agreement's tiers: the
+    highest credit of every tier it falls below, and the amount of the
+    period fee. None without tiers or a figure."""
+    tiers = rules.get("credit_tiers") or []
+    if not tiers or availability is None:
+        return None
+    pct = max((float(t["credit_pct"]) for t in tiers if availability < float(t["below"])),
+              default=0.0)
+    fee = rules.get("period_fee")
+    amount = round(float(fee) * pct / 100, 2) if fee not in (None, "") else None
+    return {"pct": pct, "amount": amount, "currency": rules.get("currency") or ""}
+
+
 #: The forecast assumes the rest of the window goes like this much of the past.
 FORECAST_TRAILING = timedelta(days=7)
 #: Before this share of the window has passed there is too little to go on.
@@ -756,8 +771,10 @@ def partial(result, visible_units: list, rules: dict) -> dict:
         parse(f["since"]), parse(f["until"]), parse(f["period_end"]),
     )
     out["members"] = sum(len(u["members"]) for u in visible_units)
-    # The forecast is the whole agreement's; a partial view does not get it.
+    # The forecast and the credit are the whole agreement's; a partial view
+    # gets neither - a part of the service can't price the contract.
     out["forecast"] = None
+    out["credit"] = None
     return {**f, **out}
 
 
@@ -827,7 +844,10 @@ def store(agreement, key: str, start, end, *, state: str, now=None, result=None)
     from .models import SlaPeriodResult
 
     now = now or timezone.now()
-    rules = rules_for(agreement, result)
+    running = state in ("open", "rolling")
+    # The running period follows the rules as they are now; a closed one keeps
+    # the revision it ran under.
+    rules = agreement.rules() if running else rules_for(agreement, result)
     data = compute(agreement, start, end, rules=rules, now=now)
     if state == "open":
         data["figures"]["forecast"] = forecast(agreement, data["figures"], end, now, rules)
@@ -836,7 +856,7 @@ def store(agreement, key: str, start, end, *, state: str, now=None, result=None)
         "state": state, "figures": data["figures"], "units": data["units"],
         "incidents": data["incidents"], "days": data["days"], "computed_at": now,
     }
-    if result is None:
+    if result is None or running:
         defaults["revision"] = agreement.revision
     if state == "closed" and (result is None or result.closed_at is None):
         defaults["closed_at"] = now

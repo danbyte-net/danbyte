@@ -119,8 +119,8 @@ unless the event is tentative, cancelled or
 rescheduled. Outage events are never excluded. See
 [Maintenance](maintenance.md).
 
-Changing a rule creates a new **revision**. A closed period keeps the revision
-it ran under. The **Revisions** tab shows what changed and who changed it.
+Changing a rule creates a new **revision**. The running period uses the new
+rules straight away; a closed period keeps the revision it ran under. The **Revisions** tab shows what changed and who changed it.
 
 ## Check groups
 
@@ -326,6 +326,27 @@ The `danbyte-sla-burn` timer (`manage.py sla_burn`) checks the rules every
 minute. **At risk above burn rate** stays as it was: the pace over the whole
 period, sent once per period as *SLA at risk*.
 
+## Service credits
+
+A contract usually pays out when the figure misses. Under **Service credits**
+on the form, add **tiers**: below an availability, the customer is owed a
+share of the period's fee. With *below 99.9 % → 10 %* and *below 99.5 % →
+25 %*, a month at 99.7 % owes 10 % and a month at 99 % owes 25 %: the lowest
+tier met wins. Set **Fee per period** and **Currency** to see the credit as an
+amount; without a fee it is a percentage.
+
+The credit is worked out with the figure and stored with the period. Tiers,
+fee and currency are revisioned like the counting rules, so a frozen period
+keeps the credit it was priced under when the contract changes later. The
+running period always follows the current rules.
+
+The credit shows after the target on the Overview, in a **Credit** column on
+the SLAs list once any agreement owes one, as a line in the PDF report and as
+rows in its CSV, and per agreement with totals per currency in the
+**Overview** report. It needs the **view credits** permission (see below). A
+filtered analysis never shows one; a slice of a service is not what the
+contract prices.
+
 ## Reports
 
 The agreement page downloads the selected period's report as **PDF** or
@@ -398,6 +419,10 @@ A viewer whose device, VM or address permissions are limited to some sites gets
 a partial figure. It covers only the units whose members they can all see,
 and a note says how many members are left out. Hidden members, their
 incidents, and the per-day figures are not shown.
+
+Service credits need **view credits** on SLA agreements as well, and a
+partial figure never carries one: part of a service can't price the whole
+contract.
 
 ## API
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+from collections import defaultdict
 from datetime import datetime
 
 from django.utils import timezone
@@ -66,6 +67,10 @@ def report_csv(agreement, result, view=None) -> str:
     w.writerow(["coverage_pct", f.get("coverage"), "state", f.get("state")])
     w.writerow(["budget_s", f.get("budget_s"), "down_s", f.get("down_s"),
                 "budget_left_s", f.get("budget_left_s")])
+    if f.get("credit"):
+        c = f["credit"]
+        w.writerow(["service_credit_pct", c["pct"], "service_credit_amount", c["amount"],
+                    "currency", c["currency"]])
     if limited:
         w.writerow(["limited_view_hidden_members", limited.get("hidden_members")])
     w.writerow([])
@@ -104,6 +109,8 @@ td { border-bottom: 0.2mm solid #f4f4f5; padding: 1.2mm; }
 th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; }
 .bar { height: 2.2mm; background: #f4f4f5; border-radius: 0.6mm; }
 .bar i { display: block; height: 100%; border-radius: 0.6mm; }
+.credit { margin-top: 3mm; padding: 2mm 3mm; border: 0.3mm solid #e4e4e7;
+  border-radius: 1.5mm; font-weight: bold; }
 .note { background: #fafafa; border: 0.3mm solid #e4e4e7; padding: 2mm 3mm; margin-top: 3mm; }
 """
 
@@ -152,6 +159,9 @@ def report_html(agreement, result, view=None) -> str:
         notes.append(f"Limited view: {limited['hidden_members']} member(s) outside the "
                      "viewer's permissions are left out of this report.")
     note_html = "".join(f"<div class='note'>{escape(n)}</div>" for n in notes)
+    if f.get("credit"):
+        note_html = (f"<div class='credit'>Service credit: {_credit_text(f['credit'])}</div>"
+                     + note_html)
 
     rules = (
         f"Service hours: {'around the clock' if not agreement.service_hours else 'set per weekday'}"
@@ -223,9 +233,18 @@ def overview_rows(rows) -> list[dict]:
             "availability": f.get("availability"), "target": float(a.target_pct),
             "state": f.get("state", "no_data"), "coverage": f.get("coverage"),
             "budget_left_s": f.get("budget_left_s"), "incidents": f.get("incidents", 0),
-            "members": f.get("members", 0),
+            "members": f.get("members", 0), "credit": f.get("credit"),
         })
     return out
+
+
+def _credit_text(c) -> str:
+    """"10% of the period fee, 1,200.00 DKK" or "none"."""
+    if not c or not c.get("pct"):
+        return "none"
+    amount = (f", {c['amount']:,.2f} {c['currency']}".rstrip()
+              if c.get("amount") is not None else "")
+    return f"{c['pct']:g}% of the period fee{amount}"
 
 
 def overview_csv(rows) -> str:
@@ -233,18 +252,30 @@ def overview_csv(rows) -> str:
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow(["agreement", "for", "period", "period_state", "availability_pct",
-                "target_pct", "state", "coverage_pct", "budget_left_s", "incidents", "members"])
+                "target_pct", "state", "coverage_pct", "budget_left_s", "incidents", "members",
+                "credit_pct", "credit_amount", "currency"])
     for r in data:
         w.writerow([r["agreement"], r["customer"], r["period"], r["state_of_period"],
                     r["availability"], r["target"], r["state"], r["coverage"],
-                    r["budget_left_s"], r["incidents"], r["members"]])
+                    r["budget_left_s"], r["incidents"], r["members"],
+                    *((r["credit"]["pct"], r["credit"]["amount"], r["credit"]["currency"])
+                      if r["credit"] else ("", "", ""))])
     return out.getvalue()
+
+
+def _credit_cell(c) -> str:
+    if not c or not c.get("pct"):
+        return "-"
+    if c.get("amount") is not None:
+        return f"{c['pct']:g}% · {c['amount']:,.2f} {c['currency']}".rstrip()
+    return f"{c['pct']:g}%"
 
 
 def overview_pdf(rows, period_label: str) -> bytes:
     import weasyprint
 
     data = overview_rows(rows)
+    priced = any(r["credit"] for r in data)
     trs = "".join(
         f"<tr><td>{escape(r['agreement'])}</td><td>{escape(r['customer'])}</td>"
         f"<td>{escape(r['period'])}</td>"
@@ -252,8 +283,20 @@ def overview_pdf(rows, period_label: str) -> bytes:
         f"<td class='{r['state']}'>{STATE_LABEL.get(r['state'], r['state'])}</td>"
         f"<td class='n'>{'-' if r['coverage'] is None else str(r['coverage']) + '%'}</td>"
         f"<td class='n'>{_span(r['budget_left_s']) if r['budget_left_s'] is not None else '-'}</td>"
-        f"<td class='n'>{r['incidents']}</td></tr>"
+        f"<td class='n'>{r['incidents']}</td>"
+        + (f"<td class='n'>{_credit_cell(r['credit'])}</td>" if priced else "")
+        + "</tr>"
         for r in data
+    )
+    totals = defaultdict(float)
+    for r in data:
+        c = r["credit"]
+        if c and c.get("amount"):
+            totals[c["currency"]] += c["amount"]
+    total_html = (
+        "<p><b>Service credits: "
+        + ", ".join(f"{v:,.2f} {k}".rstrip() for k, v in sorted(totals.items()))
+        + "</b></p>" if totals else ""
     )
     html = (
         f"<!doctype html><html><head><meta charset='utf-8'><style>{_CSS}</style></head><body>"
@@ -262,7 +305,8 @@ def overview_pdf(rows, period_label: str) -> bytes:
         f"<h2>Agreements</h2><table><thead><tr><th>Agreement</th><th>For</th><th>Period</th>"
         f"<th class='n'>Availability</th><th class='n'>Target</th><th>State</th>"
         f"<th class='n'>Coverage</th><th class='n'>Budget left</th>"
-        f"<th class='n'>Incidents</th></tr></thead>{trs or '<tr><td colspan=9 class=muted>None.</td></tr>'}</table>"
+        f"<th class='n'>Incidents</th>{'<th class=n>Credit</th>' if priced else ''}</tr></thead>"
+        f"{trs or '<tr><td colspan=9 class=muted>None.</td></tr>'}</table>{total_html}"
         f"</body></html>"
     )
     return weasyprint.HTML(string=html).write_pdf()

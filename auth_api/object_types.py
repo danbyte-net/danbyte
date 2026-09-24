@@ -23,7 +23,8 @@ from django.apps import apps
 # universe (used to validate a grant's actions); it is intentionally permissive
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
-ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust"]
+ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
+           "view_credits"]
 
 # Which capability verbs a *specific* type actually honours - only these are
 # advertised for that type in the permission form, so the UI never offers e.g.
@@ -44,6 +45,8 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "device": ["connect"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
+    # An agreement's service credits are money; seeing them is its own grant.
+    "slaagreement": ["view_credits"],
     # Set or clear is_superuser on accounts. Superuser is global, so ONLY a
     # tenant-unscoped grant carrying this verb counts (checked with
     # tenant=None); a tenant-scoped one is ignored by construction.

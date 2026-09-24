@@ -3609,6 +3609,9 @@ class SlaAgreement(TimestampedModel):
         "holiday_calendar_id", "count_degraded_as", "count_stale_as",
         "count_unknown_as", "exclude_maintenance", "min_outage_seconds",
         "aggregation", "effective_from",
+        # Money is part of the contract: a frozen period keeps the credit it
+        # was worked out under.
+        "credit_tiers", "period_fee", "currency",
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -3684,6 +3687,13 @@ class SlaAgreement(TimestampedModel):
     burn_state = models.JSONField(default=dict, blank=True, editable=False)
     #: Alert when less than this share of the time was measured.
     alert_coverage_pct = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    # ── Service credits ──
+    #: ``[{"below": 99.9, "credit_pct": 10}, ...]`` - a period below a tier's
+    #: availability earns its credit; the lowest tier met wins.
+    credit_tiers = models.JSONField(default=list, blank=True)
+    #: What one period of the service costs, for the credit as an amount.
+    period_fee = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, blank=True, default="")
     #: Emailed the period's report when it freezes.
     report_recipients = models.JSONField(default=list, blank=True)
     report_format = models.CharField(
@@ -3715,7 +3725,8 @@ class SlaAgreement(TimestampedModel):
         out = {}
         for f in self.RULE_FIELDS:
             v = getattr(self, f)
-            out[f] = str(v) if v is not None and not isinstance(v, (bool, int, dict, str)) else v
+            out[f] = (str(v) if v is not None and not isinstance(v, (bool, int, dict, list, str))
+                      else v)
         return out
 
 

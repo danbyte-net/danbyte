@@ -15,9 +15,29 @@ import {
 } from "@/components/monitoring/sla-figure"
 import { fmtSpan } from "@/components/monitoring/status-strip"
 import { MEMBER_ROUTE } from "@/components/monitoring/sla-drill"
+import { fmtCredit } from "@/components/monitoring/sla-credit-tiers"
 
 /** An agreement, as a row of the SLAs list. */
-export function slaAgreementColumns(): ColumnDef<SlaAgreement>[] {
+export function slaAgreementColumns(
+  opts: { credits?: boolean } = {}
+): ColumnDef<SlaAgreement>[] {
+  const credit: ColumnDef<SlaAgreement>[] = opts.credits
+    ? [
+        {
+          id: "credit",
+          accessorFn: (r) => r.current?.figures.credit?.amount ?? -1,
+          header: ({ column }) => <SortHeader column={column} label="Credit" />,
+          cell: ({ row }) => {
+            const text = fmtCredit(row.original.current?.figures.credit)
+            return text ? (
+              <span className="num text-destructive">{text}</span>
+            ) : (
+              dash
+            )
+          },
+        },
+      ]
+    : []
   return [
     {
       id: "name",
@@ -96,6 +116,7 @@ export function slaAgreementColumns(): ColumnDef<SlaAgreement>[] {
         )
       },
     },
+    ...credit,
     {
       id: "coverage",
       accessorFn: (r) => r.current?.figures.coverage ?? -1,
