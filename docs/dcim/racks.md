@@ -36,6 +36,15 @@ rating. Define them on **DCIM → Rack types**; picking one on the rack form
 **pre-fills all of those fields** (each stays editable - the rack remains the
 source of truth, so a one-off odd cabinet just overrides a value).
 
+**Import from library** on the Rack types page reads the NetBox
+devicetype-library's `rack-types/` folder - single files, pasted YAML, uploads,
+or a `/tree/` link to a manufacturer - through the same import the device types
+use. The model, width, height, starting unit, top-down numbering, outer width
+and depth (converted from inches when the file uses them) and load budget come
+across; the form factor, outer height, the rack's own weight and mounting depth
+aren't held on a rack type, and the import report lists them as skipped. A
+model that already exists is left alone.
+
 A rack type can also carry **accessories**: the factory-fitted 0U gear the
 model ships with - typically a pair of vertical PDU strips. Each accessory
 names a **0U device type**, a **label** (`PDU-A`), a **rail** (left/right),

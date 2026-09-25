@@ -18,7 +18,9 @@ nearly 1:1:
 
 Module-type files (``module-types/<Manufacturer>/*.yaml`` - line cards whose
 port names carry ``{module}``) are auto-detected (no ``u_height``/``slug``)
-and import as :class:`ModuleType` + interface templates. Everything Danbyte
+and import as :class:`ModuleType` + interface templates. Rack-type files
+(``rack-types/<Manufacturer>/*.yaml``) carry ``form_factor``/``width``, which
+no device type has, and import as :class:`RackType`. Everything Danbyte
 doesn't model (device-bays, inventory-items) is *skipped and reported*, never
 silently dropped.
 
@@ -474,18 +476,52 @@ def import_devicetype_yaml(
     }
 
 
+#: What each kind of library file creates, as its RBAC slug - an import needs
+#: ``add`` on the kind it would create.
+KIND_RBAC = {"device-type": "devicetype", "module-type": "moduletype",
+             "rack-type": "racktype"}
+KIND_NOUN = {"device-type": "device types", "module-type": "module types",
+             "rack-type": "rack types"}
+
+
+def detect_kind(data) -> str:
+    """Which library a parsed YAML doc comes from. Rack types carry
+    ``form_factor``/``width``; device types ``u_height``/``slug``; module
+    types neither."""
+    if not isinstance(data, dict):
+        return "device-type"
+    if "form_factor" in data or "width" in data:
+        return "rack-type"
+    if "u_height" not in data and "slug" not in data:
+        return "module-type"
+    return "device-type"
+
+
+def allowed_kinds(user, tenant) -> set[str]:
+    """The kinds ``user`` may import into ``tenant``: add on what it creates."""
+    from auth_api import rbac
+
+    return {k for k, slug in KIND_RBAC.items() if rbac.has_action(user, tenant, slug, "add")}
+
+
 def import_yaml_auto(
     tenant, text: str, *, stack_positions: bool = False, owning_site=None,
-    image_inventory: set[str] | None = None,
+    image_inventory: set[str] | None = None, allowed: set[str] | None = None,
 ) -> dict:
-    """Import one library YAML doc, auto-detecting its kind: device-type
-    files carry ``u_height``/``slug``; module-type files don't. The result
-    gains ``"kind"`` so the UI can label the report row."""
+    """Import one library YAML doc, auto-detecting its kind (see
+    :func:`detect_kind`). ``allowed`` limits the kinds the caller may create
+    (None = any). The result gains ``"kind"`` so the UI can label the row."""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         return {**_err(f"Not valid YAML: {exc}"), "kind": "device-type"}
-    if isinstance(data, dict) and "u_height" not in data and "slug" not in data:
+    kind = detect_kind(data)
+    if allowed is not None and kind not in allowed:
+        name = str(data.get("model") or "") if isinstance(data, dict) else ""
+        return {**_err(f"You can't add {KIND_NOUN[kind]}.", name=name), "kind": kind}
+    if kind == "rack-type":
+        return {**import_racktype_yaml(tenant, text), "kind": kind}
+    if kind == "module-type":
         return {
             **import_moduletype_yaml(tenant, text, owning_site=owning_site),
             "kind": "module-type",
@@ -559,6 +595,97 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None) -> dict:
         "skipped": skipped,
         "error": None,
     }
+
+
+#: NetBox measures a rack's outside in mm or inches.
+_TO_MM = {"mm": 1.0, "in": 25.4}
+
+
+def import_racktype_yaml(tenant, text: str) -> dict:
+    """Create a RackType from a rack-types YAML doc: model, width, height,
+    unit numbering, outer size and load budget. What Danbyte's rack types
+    don't hold (form factor, outer height, own weight, mounting depth) is
+    reported as skipped."""
+    from .models import Rack, RackType
+
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        return _err(f"Not valid YAML: {exc}")
+    if not isinstance(data, dict):
+        return _err("Expected a YAML mapping (one rack-types file).")
+    manufacturer_name = str(data.get("manufacturer") or "").strip()
+    model = str(data.get("model") or "").strip()
+    if not manufacturer_name or not model:
+        return _err("The file needs at least `manufacturer` and `model`.")
+    if RackType.objects.filter(tenant=tenant, name=model).exists():
+        return _err(f"Rack type “{model}” already exists.", name=model)
+
+    skipped: list[str] = []
+    widths = {w for w, _label in Rack.WIDTH_CHOICES}
+    try:
+        width = int(data.get("width") or 19)
+    except (TypeError, ValueError):
+        width = 0
+    if width not in widths:
+        return _err(f"width {data.get('width')!r} is not one of "
+                    f"{', '.join(map(str, sorted(widths)))} inches.", name=model)
+    try:
+        raw_u = float(data.get("u_height") or 42)
+    except (TypeError, ValueError):
+        return _err("u_height is not a number.", name=model)
+    u_height = max(1, int(-(-raw_u // 1)))
+    if raw_u != u_height:
+        skipped.append(f"u_height {raw_u} rounded up to {u_height}U")
+    try:
+        starting_unit = max(1, int(data.get("starting_unit") or 1))
+    except (TypeError, ValueError):
+        starting_unit = 1
+
+    unit = str(data.get("outer_unit") or "mm").strip().lower()
+    factor = _TO_MM.get(unit)
+
+    def outer(key, lo, hi):
+        value = data.get(key)
+        if value in (None, ""):
+            return None
+        if factor is None:
+            skipped.append(f"{key}: outer_unit {unit!r} not recognised - dropped")
+            return None
+        try:
+            mm = round(float(value) * factor)
+        except (TypeError, ValueError):
+            skipped.append(f"{key} {value!r} is not a number - dropped")
+            return None
+        if not lo <= mm <= hi:
+            skipped.append(f"{key} {mm} mm is outside {lo}-{hi} mm - dropped")
+            return None
+        return mm
+
+    outer_width = outer("outer_width", 100, 2000)
+    outer_depth = outer("outer_depth", 100, 3000)
+    max_weight = data.get("max_weight")
+    weight_unit = str(data.get("weight_unit") or "").strip()
+    if max_weight is not None and weight_unit not in VALID_WEIGHT_UNITS:
+        skipped.append(f"weight_unit {weight_unit!r} not recognised - max_weight dropped")
+        max_weight, weight_unit = None, ""
+    for key in ("form_factor", "outer_height", "weight", "mounting_depth"):
+        if data.get(key) not in (None, ""):
+            skipped.append(f"{key}: not modelled on rack types - skipped")
+
+    description = str(data.get("description") or data.get("comments") or "").strip()
+    RackType.objects.create(
+        tenant=tenant,
+        manufacturer=_get_or_create_manufacturer(tenant, manufacturer_name),
+        name=model, width=width, u_height=u_height, starting_unit=starting_unit,
+        desc_units=bool(data.get("desc_units")),
+        outer_width_mm=outer_width, outer_depth_mm=outer_depth,
+        max_weight=max_weight if max_weight is not None else None,
+        max_weight_unit=weight_unit if max_weight is not None else "",
+        description=description,
+    )
+    return {"ok": True, "name": model, "id": None, "created": {"rack_type": 1},
+            "skipped": skipped, "error": None}
 
 
 def _fetch_elevation_image(

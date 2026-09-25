@@ -57,6 +57,34 @@ function folderUrlOf(items: string[]): string | null {
   return last.includes(".") ? null : url // has an extension → a file, not a folder
 }
 
+export type LibraryKind = "device-type" | "module-type" | "rack-type"
+
+// One dialog, one backend, for the library's three folders. A file is
+// imported as whatever it is; the kind only sets the words and the example.
+const KIND: Record<
+  LibraryKind,
+  { one: string; many: string; folder: string; stack: boolean }
+> = {
+  "device-type": {
+    one: "device type",
+    many: "device types",
+    folder: "device-types/Cisco",
+    stack: true,
+  },
+  "module-type": {
+    one: "module type",
+    many: "module types",
+    folder: "module-types/Cisco",
+    stack: false,
+  },
+  "rack-type": {
+    one: "rack type",
+    many: "rack types",
+    folder: "rack-types/APC",
+    stack: false,
+  },
+}
+
 /**
  * Import device types from NetBox's community devicetype-library
  * (github.com/netbox-community/devicetype-library - public domain). Accepts
@@ -68,11 +96,25 @@ function folderUrlOf(items: string[]): string | null {
 export function DeviceTypeImportDialog({
   open,
   onOpenChange,
+  kind = "device-type",
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Which library folder the dialog is for - words and example only. */
+  kind?: LibraryKind
 }) {
+  const spec = KIND[kind]
   const qc = useQueryClient()
+  const refresh = () => {
+    for (const key of [
+      "device-types",
+      "device-types-picker",
+      "module-types",
+      "rack-types",
+      "manufacturers",
+    ])
+      void qc.invalidateQueries({ queryKey: [key] })
+  }
   const [text, setText] = useState("")
   const [files, setFiles] = useState<{ name: string; content: string }[]>([])
   const [stack, setStack] = useState(false)
@@ -125,12 +167,10 @@ export function DeviceTypeImportDialog({
   ) {
     bgDone.current = true
     if (bg.status === "success") {
-      qc.invalidateQueries({ queryKey: ["device-types"] })
-      qc.invalidateQueries({ queryKey: ["device-types-picker"] })
-      qc.invalidateQueries({ queryKey: ["manufacturers"] })
+      refresh()
       const p = bg.progress
       toast.success(
-        `Imported ${p.created ?? 0} device type${p.created === 1 ? "" : "s"}` +
+        `Imported ${p.created ?? 0} ${p.created === 1 ? spec.one : spec.many}` +
           (p.failed ? ` · ${p.failed} failed` : "")
       )
     } else {
@@ -202,11 +242,9 @@ export function DeviceTypeImportDialog({
       setResults(data.results)
       const ok = data.results.filter((r) => r.ok).length
       if (ok) {
-        qc.invalidateQueries({ queryKey: ["device-types"] })
-        qc.invalidateQueries({ queryKey: ["device-types-picker"] })
-        qc.invalidateQueries({ queryKey: ["manufacturers"] })
+        refresh()
         toast.success(
-          `Imported ${ok} device type${ok === 1 ? "" : "s"}` +
+          `Imported ${ok} ${ok === 1 ? spec.one : spec.many}` +
             (ok < data.results.length
               ? ` · ${data.results.length - ok} failed`
               : "")
@@ -252,7 +290,7 @@ export function DeviceTypeImportDialog({
     >
       <DialogContent size="2xl">
         <DialogHeader>
-          <DialogTitle>Import device types</DialogTitle>
+          <DialogTitle>Import {spec.many}</DialogTitle>
           <DialogDescription>
             Paste YAML from the{" "}
             <a
@@ -266,8 +304,8 @@ export function DeviceTypeImportDialog({
             (or GitHub links, one per line), or upload the .yaml files. A link
             to a <span className="font-medium">folder</span> (a{" "}
             <span className="font-mono">/tree/</span> URL, e.g. one
-            manufacturer) imports every device type in it. Manufacturers are
-            created as needed.
+            manufacturer) imports every {spec.one} in it. Manufacturers are created
+            as needed.
           </DialogDescription>
         </DialogHeader>
 
@@ -275,9 +313,7 @@ export function DeviceTypeImportDialog({
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={
-              "https://github.com/netbox-community/devicetype-library/tree/master/device-types/Cisco\n- a single file, or the YAML itself -"
-            }
+            placeholder={`https://github.com/netbox-community/devicetype-library/tree/master/${spec.folder}\n- a single file, or the YAML itself -`}
             className="min-h-28 font-mono text-[12px]"
           />
           <div className="flex flex-wrap items-center gap-3">
@@ -295,17 +331,19 @@ export function DeviceTypeImportDialog({
               </span>
             )}
           </div>
-          <FormCheckbox
-            className="text-[12px] text-muted-foreground"
-            label={
-              <>
-                Stackable - rewrite the leading slot digit to{" "}
-                <code className="font-mono">{"{position}"}</code>
-              </>
-            }
-            checked={stack}
-            onChange={setStack}
-          />
+          {spec.stack && (
+            <FormCheckbox
+              className="text-[12px] text-muted-foreground"
+              label={
+                <>
+                  Stackable - rewrite the leading slot digit to{" "}
+                  <code className="font-mono">{"{position}"}</code>
+                </>
+              }
+              checked={stack}
+              onChange={setStack}
+            />
+          )}
           <FormCheckbox
             className="text-[12px] text-muted-foreground"
             label="Fetch with my browser"

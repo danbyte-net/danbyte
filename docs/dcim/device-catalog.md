@@ -80,10 +80,17 @@ console/console-server ports, power ports/outlets, front/rear ports,
 **module bays**, **device bays** (+ subdevice role, exclude-from-utilisation),
 **inventory items**, plus **full-depth, airflow, and weight** - comes across, and
 the library's **elevation images** are downloaded automatically when the file
-declares them. **Module-type files** (`module-types/…`) import through the
-same dialog - auto-detected. **Every construct in the library schema now
+declares them. **Module-type files** (`module-types/…`) and **rack-type
+files** (`rack-types/…`) import through the same dialog - auto-detected, so a
+mixed paste works. The Module types and Rack types pages have the dialog too,
+as **Import from library**. **Every construct in the library schema now
 maps** - anything unrecognised in a file would still be reported, never
 silently dropped.
+
+Each file needs **add** on what it creates: a device-type file needs add on
+device types, a module-type file on module types, a rack-type file on rack
+types. A file you can't add is reported as refused and the rest of the batch
+goes on. A folder import checks the same when it runs in the background.
 
 **Stackable switches:** the upstream library has no stack-position concept, so
 its port names are literal (`GigabitEthernet1/0/1`).
@@ -651,7 +658,10 @@ that has one of its modules installed.
 
 Module-type YAMLs from the devicetype-library import through the same
 **Import** dialog - they're auto-detected (no `u_height`), so you can paste
-`module-types/...` links right next to device types.
+`module-types/...` links right next to device types. The Module types page
+opens it too, with **Import from library**; a `/tree/` link to
+`module-types/<Manufacturer>` imports that manufacturer's module types in the
+background.
 
 ## Device roles
 

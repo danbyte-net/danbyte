@@ -23,6 +23,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
 
 export const Route = createFileRoute("/rack-types/")({
   component: RackTypesPage,
@@ -33,6 +34,9 @@ function RackTypesPage() {
   const [deleting, setDeleting] = useState<RackType | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("racktype", "add")
+  // The import lives on the device-type catalog, which it needs to see.
+  const canImport = canDo("devicetype", "view")
+  const [importing, setImporting] = useState(false)
   const canEdit = canDo("racktype", "change")
   const canDelete = canDo("racktype", "delete")
 
@@ -73,9 +77,22 @@ function RackTypesPage() {
         <>
           <TableActions ioType="racktype" />
           {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/rack-types/new">Add rack type</Link>
-            </Button>
+            <>
+              {/* The NetBox library's rack-types folder, through the same
+                  import the device types use. */}
+              {canImport && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setImporting(true)}
+                >
+                  Import from library
+                </Button>
+              )}
+              <Button size="sm" asChild>
+                <Link to="/rack-types/new">Add rack type</Link>
+              </Button>
+            </>
           )}
         </>
       }
@@ -99,6 +116,11 @@ function RackTypesPage() {
       <RackTypeDeleteDialog
         rackType={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <DeviceTypeImportDialog
+        open={importing}
+        onOpenChange={setImporting}
+        kind="rack-type"
       />
     </ListPageShell>
   )

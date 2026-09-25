@@ -2727,10 +2727,14 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     # read/write-but-not-delete editor empty the catalog. Reimporting images
     # rewrites existing rows' image fields - `change`, pinned explicitly so the
     # row restriction below scopes the batch the same way.
+    # The library import checks add on each kind it creates (device, module,
+    # rack type), so the endpoint itself only asks to see the catalog.
     rbac_action_map = {
         "import_bundle": "add",
         "bulk_delete": "delete",
         "reimport_images": "change",
+        "import_yaml": "view",
+        "import_folder": "view",
     }
 
     @action(detail=True, methods=["get"], url_path="library-export")
@@ -2868,10 +2872,12 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         Body: {"url": "<github /tree/ folder url>", "stack_positions": bool}.
         Returns the run so the client can poll ``import-runs/<id>/``. The
         synchronous ``import-yaml`` handles small pastes; this handles bulk."""
-        from .devicetype_import import is_github_dir
+        from .devicetype_import import allowed_kinds, is_github_dir
         from .devicetype_import_tasks import enqueue_devicetype_import
 
         tenant = self._tenant_or_403()
+        if not allowed_kinds(request.user, tenant):
+            raise PermissionDenied("You can't add device, module or rack types.")
         url = str((request.data or {}).get("url") or "").strip()
         if not is_github_dir(url):
             return Response(
@@ -2918,7 +2924,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         from core.ssrf import SSRFError, safe_get
 
         from .devicetype_import import (
-            expand_github_dir, import_yaml_auto, is_github_dir, to_raw_url,
+            allowed_kinds, expand_github_dir, import_yaml_auto, is_github_dir, to_raw_url,
         )
 
         # A GitHub /tree/ directory URL fetched as-is returns HTML, not YAML.
@@ -2928,6 +2934,11 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         SYNC_FILE_CAP = 200
 
         tenant = self._tenant_or_403()
+        # Each file needs add on what it creates (a rack-type file, rack
+        # types); nothing is fetched for a caller who may add none of them.
+        allowed = allowed_kinds(request.user, tenant)
+        if not allowed:
+            raise PermissionDenied("You can't add device, module or rack types.")
         body = request.data or {}
         items = body.get("items")
         if not isinstance(items, list) or not items or len(items) > 100:
@@ -3015,7 +3026,8 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                     continue
             results.append(
                 import_yaml_auto(
-                    tenant, text, stack_positions=stack, owning_site=owning_site
+                    tenant, text, stack_positions=stack, owning_site=owning_site,
+                    allowed=allowed,
                 )
             )
         return Response({"results": results})
