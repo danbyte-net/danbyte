@@ -1605,6 +1605,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             # assigned_vm: is_primary_for_vm reads the VM's primary_ip_id, so
             # without the join every VM-assigned row lazy-loads its VM (#122).
             "assigned_vm", "prefix__vrf", "prefix__site", "site",
+            "assigned_interface__device",
         )
         .prefetch_related("tags")
         .all()
@@ -2529,6 +2530,26 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         pass
 
 
+def _status_usage_expr():
+    """Sum of every relation StatusSerializer counts, as correlated subqueries,
+    so a list of N statuses is one statement instead of 14 COUNT(*) per row."""
+    from django.db.models import Count, IntegerField, OuterRef, Subquery, Value
+    from django.db.models.functions import Coalesce
+
+    from .serializers import StatusSerializer
+
+    expr = Value(0)
+    for rn in StatusSerializer._USAGE_RELS:
+        rel = Status._meta.get_field(rn)
+        fk = rel.field.name
+        sub = (
+            rel.related_model._default_manager.filter(**{fk: OuterRef("pk")})
+            .order_by().values(fk).annotate(c=Count("pk")).values("c")
+        )
+        expr = expr + Coalesce(Subquery(sub, output_field=IntegerField()), Value(0))
+    return expr
+
+
 class StatusViewSet(_IpCatalogViewSet):
     queryset = Status.objects.all().order_by("weight", "name")
     serializer_class = StatusSerializer
@@ -2543,7 +2564,7 @@ class StatusViewSet(_IpCatalogViewSet):
             avail = self.request.query_params.get("available_to")
             if avail:
                 qs = qs.filter(available_to__contains=[avail])
-        return qs
+        return qs.annotate(usage_count_annotated=_status_usage_expr())
 
     def _after_save(self, obj):
         # At most one default status per (tenant, object-type): strip each slug
@@ -4218,7 +4239,7 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             "parent__device", "lag__device", "bridge__device",
         )
         .prefetch_related(
-            "tags", "terminations__cable", "reservations", "ip_addresses", "children",
+            "tags", "terminations__cable__status", "reservations", "ip_addresses", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
             "tunnel_terminations__tunnel",
             *FAR_END_PREFETCH,
@@ -4545,7 +4566,7 @@ class MACAddressViewSet(TenantScopedViewSet):
 
 class CableViewSet(TenantScopedViewSet):
     queryset = (
-        Cable.objects.prefetch_related(
+        Cable.objects.select_related("status").prefetch_related(
             "terminations__interface__device",
             "terminations__front_port__device",
             "terminations__rear_port__device",
@@ -4938,7 +4959,7 @@ class FiberSettingsViewSet(viewsets.ViewSet):
 class RearPortViewSet(_DevicePortViewSet):
     queryset = (
         RearPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations", "front_ports")
+        .prefetch_related("tags", "terminations__cable__status", "reservations", "front_ports")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = RearPortSerializer
@@ -4949,7 +4970,7 @@ class RearPortViewSet(_DevicePortViewSet):
 class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
         FrontPort.objects.select_related("device", "rear_port")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = FrontPortSerializer
@@ -4959,7 +4980,7 @@ class FrontPortViewSet(_DevicePortViewSet):
 class ConsolePortViewSet(_DevicePortViewSet):
     queryset = (
         ConsolePort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsolePortSerializer
@@ -4991,7 +5012,7 @@ class AntennaViewSet(_DevicePortViewSet):
 class ConsoleServerPortViewSet(_DevicePortViewSet):
     queryset = (
         ConsoleServerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = ConsoleServerPortSerializer
@@ -5001,7 +5022,7 @@ class ConsoleServerPortViewSet(_DevicePortViewSet):
 class PowerPortViewSet(_DevicePortViewSet):
     queryset = (
         PowerPort.objects.select_related("device")
-        .prefetch_related("tags", "terminations__cable", "reservations", "outlets")
+        .prefetch_related("tags", "terminations__cable__status", "reservations", "outlets")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerPortSerializer
@@ -5010,7 +5031,7 @@ class PowerPortViewSet(_DevicePortViewSet):
 class PowerOutletViewSet(_DevicePortViewSet):
     queryset = (
         PowerOutlet.objects.select_related("device", "power_port")
-        .prefetch_related("tags", "terminations__cable", "reservations")
+        .prefetch_related("tags", "terminations__cable__status", "reservations")
         .order_by("device__name", NATURAL_NAME)
     )
     serializer_class = PowerOutletSerializer
@@ -5535,7 +5556,7 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
 
 
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
-    queryset = VirtualMachine.objects.all().order_by(NATURAL_NAME)
+    queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
 
     def perform_create(self, serializer):
@@ -5686,8 +5707,8 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("vm")
-            .prefetch_related("tags", "ip_addresses")
+            .select_related("vm__status", "vlan", "vrf")
+            .prefetch_related("tags", "ip_addresses", "tagged_vlans")
         )
         if self.request:
             vm = self.request.query_params.get("vm")

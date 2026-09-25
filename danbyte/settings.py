@@ -155,6 +155,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "auth_api.rbac.RequestCacheMiddleware",
     # Rolling idle-session timeout (admin-configurable; no-op when unset). After
     # auth so request.user is resolved.
     "core.middleware.SessionIdleTimeoutMiddleware",
