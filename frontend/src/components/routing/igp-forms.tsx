@@ -5,7 +5,6 @@ import { api } from "@/lib/api"
 import type {
   EIGRPInstance,
   EIGRPInterface,
-  InterfaceOption,
   ISISInstance,
   ISISInterface,
   OSPFArea,
@@ -41,10 +40,20 @@ import {
   usePickList,
   useRoutingSave,
 } from "./form-bits"
+import {
+  firstError,
+  ownerName,
+  ownerOf,
+  ownerPayload,
+  portOf,
+  portPayload,
+  useOwnerPorts,
+} from "./owner"
+import type { RoutingOwner } from "./owner"
 
-// OSPF and IS-IS: the area catalog, an instance on a device, and the rows
-// that enrol its interfaces. An interface row is edited from the instance's
-// card, so the device is known and the picker lists that device's ports.
+// OSPF, IS-IS and EIGRP: the area catalog, an instance on a device or VM,
+// and the rows that enrol its interfaces. An interface row is edited from
+// the instance's card, so the box is known and the picker lists its ports.
 
 const SOURCES = [
   { value: "connected", label: "connected" },
@@ -78,14 +87,6 @@ function useInstanceStatuses() {
         "/api/statuses/?available_to=routinginstance&picker=1"
       ),
     staleTime: 5 * 60_000,
-  })
-}
-function useDeviceInterfaces(deviceId: string | null) {
-  return useQuery({
-    queryKey: ["interfaces-picker", deviceId],
-    queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${deviceId}`),
-    enabled: !!deviceId,
   })
 }
 
@@ -343,12 +344,12 @@ export function OSPFAreaForm({
 
 export function OSPFInstanceForm({
   item,
-  device,
+  owner,
   onSaved,
   onCancel,
 }: {
   item?: OSPFInstance | null
-  device: { id: string; name: string }
+  owner: RoutingOwner
   onSaved: (v: OSPFInstance) => void
   onCancel: () => void
 }) {
@@ -395,7 +396,7 @@ export function OSPFInstanceForm({
     endpoint: "/api/routing/ospf-instances/",
     queryKey: "ospf-instances",
     id: item?.id,
-    label: (v) => `OSPF ${v.process_id} on ${v.device.name}`,
+    label: (v) => `OSPF ${v.process_id} on ${ownerName(v)}`,
     onSaved,
   })
   return (
@@ -403,7 +404,7 @@ export function OSPFInstanceForm({
       onSubmit={(e) => {
         e.preventDefault()
         mutation.mutate({
-          device_id: device.id,
+          ...ownerPayload(owner),
           vrf_id: vrfId,
           process_id: processId.trim(),
           version: Number(version ?? 2),
@@ -544,7 +545,7 @@ export function OSPFInterfaceForm({
 }) {
   const isEdit = !!item
   const [interfaceId, setInterfaceId] = useState<string | null>(
-    item?.interface.id ?? initialInterfaceId ?? null
+    portOf(item ?? {})?.id ?? initialInterfaceId ?? null
   )
   const [areaId, setAreaId] = useState<string | null>(item?.area.id ?? null)
   const [cost, setCost] = useState(numText(item?.cost))
@@ -566,7 +567,7 @@ export function OSPFInterfaceForm({
   const [keychainId, setKeychainId] = useState<string | null>(
     item?.keychain?.id ?? null
   )
-  const interfaces = useDeviceInterfaces(instance.device.id)
+  const interfaces = useOwnerPorts(ownerOf(instance))
   const areas = usePickList<OSPFAreaMini>(
     "ospf-areas",
     "/api/routing/ospf-areas/",
@@ -577,13 +578,13 @@ export function OSPFInterfaceForm({
     "/api/routing/keychains/",
     (k) => k.name
   )
-  const used = new Set(instance.interfaces.map((i) => i.interface.id))
+  const used = new Set(instance.interfaces.map((i) => portOf(i)?.id))
   const { mutation, fieldErrors } = useRoutingSave<OSPFInterface>({
     objectType: ROUTING_OBJECT_TYPES.ospfinterface,
     endpoint: "/api/routing/ospf-interfaces/",
     queryKey: "ospf-instances",
     id: item?.id,
-    label: (v) => v.interface.name,
+    label: (v) => portOf(v)?.name ?? "interface",
     onSaved,
   })
   return (
@@ -592,7 +593,7 @@ export function OSPFInterfaceForm({
         e.preventDefault()
         mutation.mutate({
           instance_id: instance.id,
-          interface_id: interfaceId,
+          ...portPayload(ownerOf(instance)?.kind, interfaceId),
           area_id: areaId,
           cost: numOrNull(cost),
           network_type: networkType ?? "",
@@ -623,7 +624,13 @@ export function OSPFInterfaceForm({
             searchPlaceholder="Search interfaces…"
             emptyText="Every interface is enrolled already."
             disabled={isEdit}
-            error={fieldErrors.interface_id}
+            error={firstError(
+              fieldErrors,
+              "interface_id",
+              "vm_interface_id",
+              "interface",
+              "vm_interface"
+            )}
           />
           <FormCombobox
             label="Area"
@@ -748,12 +755,12 @@ const ISIS_AUTH = [
 
 export function ISISInstanceForm({
   item,
-  device,
+  owner,
   onSaved,
   onCancel,
 }: {
   item?: ISISInstance | null
-  device: { id: string; name: string }
+  owner: RoutingOwner
   onSaved: (v: ISISInstance) => void
   onCancel: () => void
 }) {
@@ -825,7 +832,7 @@ export function ISISInstanceForm({
     endpoint: "/api/routing/isis-instances/",
     queryKey: "isis-instances",
     id: item?.id,
-    label: (v) => `IS-IS ${v.process} on ${v.device.name}`,
+    label: (v) => `IS-IS ${v.process} on ${ownerName(v)}`,
     onSaved,
   })
   return (
@@ -833,7 +840,7 @@ export function ISISInstanceForm({
       onSubmit={(e) => {
         e.preventDefault()
         mutation.mutate({
-          device_id: device.id,
+          ...ownerPayload(owner),
           vrf_id: vrfId,
           process: process.trim(),
           net: net.trim(),
@@ -1092,7 +1099,7 @@ export function ISISInterfaceForm({
 }) {
   const isEdit = !!item
   const [interfaceId, setInterfaceId] = useState<string | null>(
-    item?.interface.id ?? initialInterfaceId ?? null
+    portOf(item ?? {})?.id ?? initialInterfaceId ?? null
   )
   const [families, setFamilies] = useState<string[]>(item?.families ?? ["ipv4"])
   const [level, setLevel] = useState<string | null>(item?.level || null)
@@ -1118,19 +1125,19 @@ export function ISISInterfaceForm({
   const [keychainId, setKeychainId] = useState<string | null>(
     item?.keychain?.id ?? null
   )
-  const interfaces = useDeviceInterfaces(instance.device.id)
+  const interfaces = useOwnerPorts(ownerOf(instance))
   const keychains = usePickList<{ id: string; name: string }>(
     "routing-keychains",
     "/api/routing/keychains/",
     (k) => k.name
   )
-  const used = new Set(instance.interfaces.map((i) => i.interface.id))
+  const used = new Set(instance.interfaces.map((i) => portOf(i)?.id))
   const { mutation, fieldErrors } = useRoutingSave<ISISInterface>({
     objectType: ROUTING_OBJECT_TYPES.isisinterface,
     endpoint: "/api/routing/isis-interfaces/",
     queryKey: "isis-instances",
     id: item?.id,
-    label: (v) => v.interface.name,
+    label: (v) => portOf(v)?.name ?? "interface",
     onSaved,
   })
   return (
@@ -1139,7 +1146,7 @@ export function ISISInterfaceForm({
         e.preventDefault()
         mutation.mutate({
           instance_id: instance.id,
-          interface_id: interfaceId,
+          ...portPayload(ownerOf(instance)?.kind, interfaceId),
           families,
           level: level ?? "",
           metric: numOrNull(metric),
@@ -1170,7 +1177,13 @@ export function ISISInterfaceForm({
             searchPlaceholder="Search interfaces…"
             emptyText="Every interface is enrolled already."
             disabled={isEdit}
-            error={fieldErrors.interface_id}
+            error={firstError(
+              fieldErrors,
+              "interface_id",
+              "vm_interface_id",
+              "interface",
+              "vm_interface"
+            )}
           />
           <div className="grid gap-1">
             <span className="text-xs font-medium">Families</span>
@@ -1285,12 +1298,12 @@ export function ISISInterfaceForm({
 
 export function EIGRPInstanceForm({
   item,
-  device,
+  owner,
   onSaved,
   onCancel,
 }: {
   item?: EIGRPInstance | null
-  device: { id: string; name: string }
+  owner: RoutingOwner
   onSaved: (v: EIGRPInstance) => void
   onCancel: () => void
 }) {
@@ -1335,7 +1348,7 @@ export function EIGRPInstanceForm({
     endpoint: "/api/routing/eigrp-instances/",
     queryKey: "eigrp-instances",
     id: item?.id,
-    label: (v) => `EIGRP ${v.asn} on ${v.device.name}`,
+    label: (v) => `EIGRP ${v.asn} on ${ownerName(v)}`,
     onSaved,
   })
   return (
@@ -1343,7 +1356,7 @@ export function EIGRPInstanceForm({
       onSubmit={(e) => {
         e.preventDefault()
         mutation.mutate({
-          device_id: device.id,
+          ...ownerPayload(owner),
           vrf_id: vrfId,
           asn: numOrNull(asn),
           name: name.trim(),
@@ -1506,7 +1519,7 @@ export function EIGRPInterfaceForm({
 }) {
   const isEdit = !!item
   const [interfaceId, setInterfaceId] = useState<string | null>(
-    item?.interface.id ?? initialInterfaceId ?? null
+    portOf(item ?? {})?.id ?? initialInterfaceId ?? null
   )
   const [passive, setPassive] = useState<string | null>(triFrom(item?.passive))
   const [splitHorizon, setSplitHorizon] = useState<string | null>(
@@ -1528,19 +1541,19 @@ export function EIGRPInterfaceForm({
   const [keychainId, setKeychainId] = useState<string | null>(
     item?.keychain?.id ?? null
   )
-  const interfaces = useDeviceInterfaces(instance.device.id)
+  const interfaces = useOwnerPorts(ownerOf(instance))
   const keychains = usePickList<{ id: string; name: string }>(
     "routing-keychains",
     "/api/routing/keychains/",
     (k) => k.name
   )
-  const used = new Set(instance.interfaces.map((i) => i.interface.id))
+  const used = new Set(instance.interfaces.map((i) => portOf(i)?.id))
   const { mutation, fieldErrors } = useRoutingSave<EIGRPInterface>({
     objectType: ROUTING_OBJECT_TYPES.eigrpinterface,
     endpoint: "/api/routing/eigrp-interfaces/",
     queryKey: "eigrp-instances",
     id: item?.id,
-    label: (v) => v.interface.name,
+    label: (v) => portOf(v)?.name ?? "interface",
     onSaved,
   })
   return (
@@ -1549,7 +1562,7 @@ export function EIGRPInterfaceForm({
         e.preventDefault()
         mutation.mutate({
           instance_id: instance.id,
-          interface_id: interfaceId,
+          ...portPayload(ownerOf(instance)?.kind, interfaceId),
           passive: triTo(passive),
           split_horizon: triTo(splitHorizon),
           hello_interval: numOrNull(hello),
@@ -1581,7 +1594,13 @@ export function EIGRPInterfaceForm({
             searchPlaceholder="Search interfaces…"
             emptyText="Every interface is enrolled already."
             disabled={isEdit}
-            error={fieldErrors.interface_id}
+            error={firstError(
+              fieldErrors,
+              "interface_id",
+              "vm_interface_id",
+              "interface",
+              "vm_interface"
+            )}
           />
           <FormSelect
             label="Passive"

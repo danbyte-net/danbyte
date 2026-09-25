@@ -31,6 +31,7 @@ import { numidColumn } from "@/components/cells/numid"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
+import { OwnerLink, ownerName, ownerOf } from "@/components/routing/owner"
 
 // One factory per routing object, all built the same way: the list page,
 // the embedded panes (a device's Routing tab, a prefix's Static routes tab)
@@ -510,23 +511,23 @@ export function buildStaticRouteColumns<T extends StaticRoute = StaticRoute>(
       }),
       device: () => ({
         id: "device",
-        accessorFn: (r) => r.device.name,
-        header: ({ column }) => <SortHeader column={column} label="Device" />,
+        accessorFn: (r) => ownerName(r),
+        header: ({ column }) => (
+          <SortHeader column={column} label="Device / VM" />
+        ),
         cell: ({ row }) => (
-          <Link
-            to="/devices/$id"
-            params={{ id: row.original.device.id }}
+          <OwnerLink
+            owner={ownerOf(row.original)}
+            tab="overview"
             className="link text-xs"
-          >
-            {row.original.device.name}
-          </Link>
+          />
         ),
         meta: {
           facet: {
             kind: "enum",
-            label: "Device",
-            get: (r: T) => r.device.id,
-            formatValue: (_v, sample) => ({ label: sample.device.name }),
+            label: "Device / VM",
+            get: (r: T) => ownerOf(r)?.id ?? "__none__",
+            formatValue: (_v, sample) => ({ label: ownerName(sample) }),
           },
         },
       }),
@@ -833,25 +834,23 @@ export function buildBGPSessionColumns<T extends BGPSession = BGPSession>(
       }),
       device: () => ({
         id: "device",
-        accessorFn: (r) => r.instance.device.name,
-        header: ({ column }) => <SortHeader column={column} label="Device" />,
+        accessorFn: (r) => ownerName(r.instance),
+        header: ({ column }) => (
+          <SortHeader column={column} label="Device / VM" />
+        ),
         cell: ({ row }) => (
-          <Link
-            to="/devices/$id"
-            params={{ id: row.original.instance.device.id }}
-            search={{ tab: "routing" }}
+          <OwnerLink
+            owner={ownerOf(row.original.instance)}
             className="link text-xs"
-          >
-            {row.original.instance.device.name}
-          </Link>
+          />
         ),
         meta: {
           facet: {
             kind: "enum",
-            label: "Device",
-            get: (r: T) => r.instance.device.id,
+            label: "Device / VM",
+            get: (r: T) => ownerOf(r.instance)?.id ?? "__none__",
             formatValue: (_v, sample) => ({
-              label: sample.instance.device.name,
+              label: ownerName(sample.instance),
             }),
           },
         },
@@ -1246,7 +1245,8 @@ export function buildVTEPColumns<T extends VTEP = VTEP>(
 
 type InstanceRow = {
   id: string
-  device: { id: string; name: string }
+  device: { id: string; name: string } | null
+  virtual_machine?: { id: string; name: string } | null
   site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   status: StatusMini | null
@@ -1258,18 +1258,11 @@ function instanceDeviceColumn<T extends InstanceRow>(
 ): ColumnDef<T, unknown> {
   return {
     id: "device",
-    accessorFn: (r) => r.device.name,
-    header: ({ column }) => <SortHeader column={column} label="Device" />,
+    accessorFn: (r) => ownerName(r),
+    header: ({ column }) => <SortHeader column={column} label="Device / VM" />,
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-1.5">
-        <Link
-          to="/devices/$id"
-          params={{ id: row.original.device.id }}
-          search={{ tab: "routing" }}
-          className="link font-medium"
-        >
-          {row.original.device.name}
-        </Link>
+        <OwnerLink owner={ownerOf(row.original)} className="link font-medium" />
         <PlannedChangeMarker
           objectType={objectType}
           objectId={row.original.id}
@@ -1279,9 +1272,9 @@ function instanceDeviceColumn<T extends InstanceRow>(
     meta: {
       facet: {
         kind: "enum",
-        label: "Device",
-        get: (r: T) => r.device.id,
-        formatValue: (_v, sample) => ({ label: sample.device.name }),
+        label: "Device / VM",
+        get: (r: T) => ownerOf(r)?.id ?? "__none__",
+        formatValue: (_v, sample) => ({ label: ownerName(sample) }),
       },
     },
   }

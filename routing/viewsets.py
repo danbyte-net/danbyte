@@ -20,6 +20,7 @@ from api.viewsets import (
     TenantScopedViewSet,
 )
 from audit.bulk import log_bulk_delete
+from auth_api.site_paths import SITE_PATHS, site_in_q
 
 from .models import (
     VTEP,
@@ -286,7 +287,8 @@ class RoutingPolicyRuleViewSet(_RuleViewSet):
 # ─── Static routes ───────────────────────────────────────────────────────────
 
 class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
-    """Static routes per device. Filter with ``?device=``, ``?vrf=``
+    """Static routes per device or VM. Filter with ``?device=``,
+    ``?virtual_machine=``, ``?vrf=``
     (``global`` for the global table), ``?kind=``, ``?status=``,
     ``?prefix_obj=``, ``?site=``."""
 
@@ -296,13 +298,15 @@ class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
     queryset = StaticRoute.objects.all()
     serializer_class = StaticRouteSerializer
     pagination_class = StandardPagination
-    clone_fields = ("device", "vrf", "kind", "next_hop", "next_hop_interface",
+    clone_fields = ("device", "virtual_machine", "vrf", "kind", "next_hop",
+                    "next_hop_interface", "next_hop_vm_interface",
                     "next_hop_vrf", "distance", "metric", "tag", "bfd", "status")
 
     def get_queryset(self):
         qs = (
             super().get_queryset()
-            .select_related("device", "vrf", "prefix_obj", "next_hop_interface__device",
+            .select_related("device__site", "virtual_machine__site", "vrf", "prefix_obj",
+                            "next_hop_interface__device", "next_hop_vm_interface__vm",
                             "next_hop_vrf", "status")
             .prefetch_related("tags")
         )
@@ -314,19 +318,24 @@ class StaticRouteViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
             qs = qs.filter(
                 Q(prefix__icontains=s) | Q(next_hop__icontains=s)
                 | Q(description__icontains=s) | Q(device__name__icontains=s)
-                | Q(next_hop_interface__name__icontains=s) | cf_text_q(qs.model, s)
+                | Q(virtual_machine__name__icontains=s)
+                | Q(next_hop_interface__name__icontains=s)
+                | Q(next_hop_vm_interface__name__icontains=s) | cf_text_q(qs.model, s)
             )
         for key, field in (
             ("device", "device_id"),
+            ("virtual_machine", "virtual_machine_id"),
             ("kind", "kind"),
             ("status", "status_id"),
             ("prefix_obj", "prefix_obj_id"),
-            ("site", "device__site_id"),
             ("next_hop_interface", "next_hop_interface_id"),
+            ("next_hop_vm_interface", "next_hop_vm_interface_id"),
         ):
             v = p.get(key)
             if v:
                 qs = qs.filter(**{field: v})
+        if p.get("site"):
+            qs = qs.filter(site_in_q(SITE_PATHS["staticroute"], [p["site"]]))
         vrf = p.get("vrf")
         if vrf == "global":
             qs = qs.filter(vrf__isnull=True)
@@ -353,7 +362,7 @@ class BGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
     def get_queryset(self):
         qs = (
             super().get_queryset()
-            .select_related("device", "vrf", "asn", "status")
+            .select_related("device__site", "virtual_machine__site", "vrf", "asn", "status")
             .prefetch_related(
                 "tags", "address_families__import_policy",
                 "address_families__export_policy",
@@ -367,17 +376,20 @@ class BGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, 
         s = p.get("search", "").strip()
         if s:
             qs = qs.filter(
-                Q(device__name__icontains=s) | Q(asn__asn__icontains=s)
+                Q(device__name__icontains=s) | Q(virtual_machine__name__icontains=s)
+                | Q(asn__asn__icontains=s)
                 | Q(router_id__icontains=s) | Q(description__icontains=s)
                 | Q(vrf__name__icontains=s) | cf_text_q(qs.model, s)
             )
         for key, field in (
-            ("device", "device_id"), ("asn", "asn_id"), ("status", "status_id"),
-            ("site", "device__site_id"),
+            ("device", "device_id"), ("virtual_machine", "virtual_machine_id"),
+            ("asn", "asn_id"), ("status", "status_id"),
         ):
             v = p.get(key)
             if v:
                 qs = qs.filter(**{field: v})
+        if p.get("site"):
+            qs = qs.filter(site_in_q(SITE_PATHS["bgpinstance"], [p["site"]]))
         vrf = p.get("vrf")
         if vrf == "global":
             qs = qs.filter(vrf__isnull=True)
@@ -494,11 +506,13 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
         qs = (
             super().get_queryset()
             .select_related(
-                "instance__device", "instance__vrf", "instance__asn",
+                "instance__device", "instance__virtual_machine", "instance__vrf",
+                "instance__asn", "vm_interface__vm",
                 "peer_group__import_policy", "peer_group__export_policy",
                 "peer_group__keychain", "peer_group__local_asn",
                 "local_asn", "local_address__assigned_interface", "interface__device",
                 "remote_address_obj", "peer_device", "peer_session__instance__device",
+                "peer_session__instance__virtual_machine",
                 "import_policy", "export_policy", "keychain", "status",
             )
             .prefetch_related("tags")
@@ -510,8 +524,10 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
         if s:
             qs = qs.filter(
                 Q(name__icontains=s) | Q(remote_address__icontains=s)
-                | Q(interface__name__icontains=s) | Q(description__icontains=s)
+                | Q(interface__name__icontains=s) | Q(vm_interface__name__icontains=s)
+                | Q(description__icontains=s)
                 | Q(instance__device__name__icontains=s)
+                | Q(instance__virtual_machine__name__icontains=s)
                 | Q(peer_device__name__icontains=s) | Q(peer_group__name__icontains=s)
                 | cf_text_q(qs.model, s)
             )
@@ -521,13 +537,15 @@ class BGPSessionViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, T
                 )
         for key, field in (
             ("instance", "instance_id"), ("device", "instance__device_id"),
-            ("site", "instance__device__site_id"), ("asn", "instance__asn_id"),
+            ("virtual_machine", "instance__virtual_machine_id"), ("asn", "instance__asn_id"),
             ("remote_asn", "remote_asn"), ("peer_group", "peer_group_id"),
             ("peer_device", "peer_device_id"), ("status", "status_id"),
         ):
             v = p.get(key)
             if v:
                 qs = qs.filter(**{field: v})
+        if p.get("site"):
+            qs = qs.filter(site_in_q(SITE_PATHS["bgpsession"], [p["site"]]))
         vrf = p.get("vrf")
         if vrf == "global":
             qs = qs.filter(instance__vrf__isnull=True)
@@ -614,7 +632,8 @@ class OSPFAreaViewSet(_CatalogViewSet):
 
 
 class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
-    """Filter with ``?device=``, ``?vrf=`` (``global``), ``?site=``, ``?status=``."""
+    """Filter with ``?device=``, ``?virtual_machine=``, ``?vrf=`` (``global``),
+    ``?site=``, ``?status=``."""
 
     editable_str_fields = ("description",)
     editable_bool_fields = ("bfd",)
@@ -624,7 +643,7 @@ class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin,
     def get_queryset(self):
         qs = (
             super().get_queryset()
-            .select_related("device", "vrf", "status")
+            .select_related("device__site", "virtual_machine__site", "vrf", "status")
             .prefetch_related("tags", "redistributions__policy")
             .annotate(interface_count_annotated=Count("interfaces", distinct=True))
         )
@@ -633,16 +652,20 @@ class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin,
         p = self.request.query_params
         s = p.get("search", "").strip()
         if s:
-            q = Q(device__name__icontains=s) | Q(description__icontains=s) | cf_text_q(qs.model, s)
+            q = (Q(device__name__icontains=s) | Q(virtual_machine__name__icontains=s)
+                 | Q(description__icontains=s) | cf_text_q(qs.model, s))
             for f in self.text_search_fields:
                 q |= Q(**{f"{f}__icontains": s})
             qs = qs.filter(q)
         for key, field in (
-            ("device", "device_id"), ("status", "status_id"), ("site", "device__site_id"),
+            ("device", "device_id"), ("virtual_machine", "virtual_machine_id"),
+            ("status", "status_id"),
         ):
             v = p.get(key)
             if v:
                 qs = qs.filter(**{field: v})
+        if p.get("site"):
+            qs = qs.filter(site_in_q(SITE_PATHS[qs.model._meta.model_name], [p["site"]]))
         vrf = p.get("vrf")
         if vrf == "global":
             qs = qs.filter(vrf__isnull=True)
@@ -653,7 +676,8 @@ class _IGPInstanceViewSet(_BulkDeleteMixin, FieldWriteAllowList, CloneableMixin,
 
 class OSPFInstanceViewSet(_IGPInstanceViewSet):
     queryset = OSPFInstance.objects.all().prefetch_related(
-        "interfaces__interface__device", "interfaces__area", "interfaces__keychain"
+        "interfaces__interface__device", "interfaces__vm_interface__vm", "interfaces__area",
+        "interfaces__keychain",
     )
     serializer_class = OSPFInstanceSerializer
     text_search_fields = ("process_id", "router_id", "vrf__name")
@@ -665,7 +689,7 @@ class OSPFInstanceViewSet(_IGPInstanceViewSet):
 
 class ISISInstanceViewSet(_IGPInstanceViewSet):
     queryset = ISISInstance.objects.all().select_related("keychain").prefetch_related(
-        "interfaces__interface__device", "interfaces__keychain"
+        "interfaces__interface__device", "interfaces__vm_interface__vm", "interfaces__keychain"
     )
     serializer_class = ISISInstanceSerializer
     text_search_fields = ("process", "net")
@@ -684,7 +708,8 @@ class OSPFInterfaceViewSet(_RuleViewSet):
 
     parent = "instance"
     queryset = OSPFInterface.objects.select_related(
-        "instance__device", "interface__device", "area", "keychain"
+        "instance__device", "instance__virtual_machine", "interface__device",
+        "vm_interface__vm", "area", "keychain"
     ).order_by("interface__name")
     serializer_class = OSPFInterfaceSerializer
 
@@ -704,7 +729,8 @@ class ISISInterfaceViewSet(_RuleViewSet):
 
     parent = "instance"
     queryset = ISISInterface.objects.select_related(
-        "instance__device", "interface__device", "keychain"
+        "instance__device", "instance__virtual_machine", "interface__device",
+        "vm_interface__vm", "keychain"
     ).order_by("interface__name")
     serializer_class = ISISInterfaceSerializer
 
@@ -719,7 +745,7 @@ class ISISInterfaceViewSet(_RuleViewSet):
 
 class EIGRPInstanceViewSet(_IGPInstanceViewSet):
     queryset = EIGRPInstance.objects.all().prefetch_related(
-        "interfaces__interface__device", "interfaces__keychain"
+        "interfaces__interface__device", "interfaces__vm_interface__vm", "interfaces__keychain"
     )
     serializer_class = EIGRPInstanceSerializer
     text_search_fields = ("name", "router_id", "vrf__name")
@@ -735,7 +761,8 @@ class EIGRPInterfaceViewSet(_RuleViewSet):
 
     parent = "instance"
     queryset = EIGRPInterface.objects.select_related(
-        "instance__device", "interface__device", "keychain"
+        "instance__device", "instance__virtual_machine", "interface__device",
+        "vm_interface__vm", "keychain"
     ).order_by("interface__name")
     serializer_class = EIGRPInterfaceSerializer
 

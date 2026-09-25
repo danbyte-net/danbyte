@@ -36,8 +36,17 @@ import {
   OSPFInstanceForm,
   OSPFInterfaceForm,
 } from "./igp-forms"
+import {
+  ownerDetailKey,
+  ownerName,
+  ownerNoun,
+  ownerParam,
+  PortLink,
+  portOf,
+} from "./owner"
+import type { RoutingOwner } from "./owner"
 
-// The OSPF and IS-IS cards on a device's Routing tab: one card per
+// The OSPF, IS-IS and EIGRP cards on a device's or VM's Routing tab: one card per
 // instance, the enrolled interfaces as rows, and dialogs to add or edit
 // either - the same shape the BGP cards have.
 
@@ -181,11 +190,7 @@ type OSPFDialog =
   | { kind: "iface"; instance: OSPFInstance; item: OSPFInterface | null }
   | null
 
-export function OSPFSection({
-  device,
-}: {
-  device: { id: string; name: string }
-}) {
+export function OSPFSection({ owner }: { owner: RoutingOwner }) {
   const { canDo } = useMe()
   const qc = useQueryClient()
   const [dialog, setDialog] = useState<OSPFDialog>(null)
@@ -195,15 +200,15 @@ export function OSPFSection({
     | null
   >(null)
   const q = useQuery({
-    queryKey: ["ospf-instances", "device", device.id],
+    queryKey: ["ospf-instances", owner.kind, owner.id],
     queryFn: () =>
       api<Paginated<OSPFInstance>>(
-        `/api/routing/ospf-instances/?device=${device.id}`
+        `/api/routing/ospf-instances/?${ownerParam(owner)}`
       ),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["ospf-instances"] })
-    qc.invalidateQueries({ queryKey: ["device", device.id] })
+    qc.invalidateQueries({ queryKey: ownerDetailKey(owner) })
   }
   const close = () => setDialog(null)
   const rows = q.data?.results ?? []
@@ -226,7 +231,9 @@ export function OSPFSection({
       {q.isError && <QueryError error={q.error} />}
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.data && rows.length === 0 && (
-        <p className="text-sm text-muted-foreground">No OSPF on this device.</p>
+        <p className="text-sm text-muted-foreground">
+          No OSPF on this {ownerNoun(owner)}.
+        </p>
       )}
       {rows.map((inst) => (
         <Card
@@ -278,13 +285,11 @@ export function OSPFSection({
               key={row.id}
               className="flex flex-wrap items-center gap-3 px-3 py-1.5 text-xs"
             >
-              <Link
-                to="/interfaces/$id"
-                params={{ id: row.interface.id }}
+              <PortLink
+                iface={row.interface}
+                vmIface={row.vm_interface}
                 className="link font-mono font-medium"
-              >
-                {row.interface.name}
-              </Link>
+              />
               <Link
                 to="/ospf-areas/$id"
                 params={{ id: row.area.id }}
@@ -341,10 +346,10 @@ export function OSPFSection({
               {dialog?.kind === "instance"
                 ? dialog.item
                   ? `Edit OSPF ${dialog.item.process_id}`
-                  : `Add OSPF instance on ${device.name}`
+                  : `Add OSPF instance on ${owner.name}`
                 : dialog?.kind === "iface"
                   ? dialog.item
-                    ? `Edit ${dialog.item.interface.name}`
+                    ? `Edit ${portOf(dialog.item)?.name ?? "interface"}`
                     : `Enrol an interface in OSPF ${dialog.instance.process_id}`
                   : ""}
             </DialogTitle>
@@ -352,7 +357,7 @@ export function OSPFSection({
           {dialog?.kind === "instance" && (
             <OSPFInstanceForm
               item={dialog.item}
-              device={device}
+              owner={owner}
               onSaved={() => {
                 refresh()
                 close()
@@ -377,7 +382,7 @@ export function OSPFSection({
         item={deleting?.kind === "instance" ? deleting.item : null}
         endpoint="/api/routing/ospf-instances/"
         queryKey="ospf-instances"
-        label={(i) => `OSPF ${i.process_id} on ${i.device.name}`}
+        label={(i) => `OSPF ${i.process_id} on ${ownerName(i)}`}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}
       />
@@ -385,7 +390,7 @@ export function OSPFSection({
         item={deleting?.kind === "iface" ? deleting.item : null}
         endpoint="/api/routing/ospf-interfaces/"
         queryKey="ospf-instances"
-        label={(i) => i.interface.name}
+        label={(i) => portOf(i)?.name ?? "interface"}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}
       />
@@ -400,11 +405,7 @@ type ISISDialog =
   | { kind: "iface"; instance: ISISInstance; item: ISISInterface | null }
   | null
 
-export function ISISSection({
-  device,
-}: {
-  device: { id: string; name: string }
-}) {
+export function ISISSection({ owner }: { owner: RoutingOwner }) {
   const { canDo } = useMe()
   const qc = useQueryClient()
   const [dialog, setDialog] = useState<ISISDialog>(null)
@@ -414,15 +415,15 @@ export function ISISSection({
     | null
   >(null)
   const q = useQuery({
-    queryKey: ["isis-instances", "device", device.id],
+    queryKey: ["isis-instances", owner.kind, owner.id],
     queryFn: () =>
       api<Paginated<ISISInstance>>(
-        `/api/routing/isis-instances/?device=${device.id}`
+        `/api/routing/isis-instances/?${ownerParam(owner)}`
       ),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["isis-instances"] })
-    qc.invalidateQueries({ queryKey: ["device", device.id] })
+    qc.invalidateQueries({ queryKey: ownerDetailKey(owner) })
   }
   const close = () => setDialog(null)
   const rows = q.data?.results ?? []
@@ -446,7 +447,7 @@ export function ISISSection({
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.data && rows.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No IS-IS on this device.
+          No IS-IS on this {ownerNoun(owner)}.
         </p>
       )}
       {rows.map((inst) => (
@@ -502,13 +503,11 @@ export function ISISSection({
               key={row.id}
               className="flex flex-wrap items-center gap-3 px-3 py-1.5 text-xs"
             >
-              <Link
-                to="/interfaces/$id"
-                params={{ id: row.interface.id }}
+              <PortLink
+                iface={row.interface}
+                vmIface={row.vm_interface}
                 className="link font-mono font-medium"
-              >
-                {row.interface.name}
-              </Link>
+              />
               <span className="font-mono text-muted-foreground">
                 {row.families.join(" ")}
               </span>
@@ -555,10 +554,10 @@ export function ISISSection({
               {dialog?.kind === "instance"
                 ? dialog.item
                   ? `Edit IS-IS ${dialog.item.process}`
-                  : `Add IS-IS instance on ${device.name}`
+                  : `Add IS-IS instance on ${owner.name}`
                 : dialog?.kind === "iface"
                   ? dialog.item
-                    ? `Edit ${dialog.item.interface.name}`
+                    ? `Edit ${portOf(dialog.item)?.name ?? "interface"}`
                     : `Enrol an interface in IS-IS ${dialog.instance.process}`
                   : ""}
             </DialogTitle>
@@ -566,7 +565,7 @@ export function ISISSection({
           {dialog?.kind === "instance" && (
             <ISISInstanceForm
               item={dialog.item}
-              device={device}
+              owner={owner}
               onSaved={() => {
                 refresh()
                 close()
@@ -591,7 +590,7 @@ export function ISISSection({
         item={deleting?.kind === "instance" ? deleting.item : null}
         endpoint="/api/routing/isis-instances/"
         queryKey="isis-instances"
-        label={(i) => `IS-IS ${i.process} on ${i.device.name}`}
+        label={(i) => `IS-IS ${i.process} on ${ownerName(i)}`}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}
       />
@@ -599,7 +598,7 @@ export function ISISSection({
         item={deleting?.kind === "iface" ? deleting.item : null}
         endpoint="/api/routing/isis-interfaces/"
         queryKey="isis-instances"
-        label={(i) => i.interface.name}
+        label={(i) => portOf(i)?.name ?? "interface"}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}
       />
@@ -614,11 +613,7 @@ type EIGRPDialog =
   | { kind: "iface"; instance: EIGRPInstance; item: EIGRPInterface | null }
   | null
 
-export function EIGRPSection({
-  device,
-}: {
-  device: { id: string; name: string }
-}) {
+export function EIGRPSection({ owner }: { owner: RoutingOwner }) {
   const { canDo } = useMe()
   const qc = useQueryClient()
   const [dialog, setDialog] = useState<EIGRPDialog>(null)
@@ -628,15 +623,15 @@ export function EIGRPSection({
     | null
   >(null)
   const q = useQuery({
-    queryKey: ["eigrp-instances", "device", device.id],
+    queryKey: ["eigrp-instances", owner.kind, owner.id],
     queryFn: () =>
       api<Paginated<EIGRPInstance>>(
-        `/api/routing/eigrp-instances/?device=${device.id}`
+        `/api/routing/eigrp-instances/?${ownerParam(owner)}`
       ),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["eigrp-instances"] })
-    qc.invalidateQueries({ queryKey: ["device", device.id] })
+    qc.invalidateQueries({ queryKey: ownerDetailKey(owner) })
   }
   const close = () => setDialog(null)
   const rows = q.data?.results ?? []
@@ -662,7 +657,7 @@ export function EIGRPSection({
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {q.data && rows.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No EIGRP on this device.
+          No EIGRP on this {ownerNoun(owner)}.
         </p>
       )}
       {rows.map((inst) => (
@@ -721,13 +716,11 @@ export function EIGRPSection({
               key={row.id}
               className="flex flex-wrap items-center gap-3 px-3 py-1.5 text-xs"
             >
-              <Link
-                to="/interfaces/$id"
-                params={{ id: row.interface.id }}
+              <PortLink
+                iface={row.interface}
+                vmIface={row.vm_interface}
                 className="link font-mono font-medium"
-              >
-                {row.interface.name}
-              </Link>
+              />
               {row.summary_addresses.length > 0 && (
                 <span className="font-mono text-muted-foreground">
                   summary {row.summary_addresses.join(", ")}
@@ -781,10 +774,10 @@ export function EIGRPSection({
               {dialog?.kind === "instance"
                 ? dialog.item
                   ? `Edit ${title(dialog.item)}`
-                  : `Add EIGRP instance on ${device.name}`
+                  : `Add EIGRP instance on ${owner.name}`
                 : dialog?.kind === "iface"
                   ? dialog.item
-                    ? `Edit ${dialog.item.interface.name}`
+                    ? `Edit ${portOf(dialog.item)?.name ?? "interface"}`
                     : `Enrol an interface in ${title(dialog.instance)}`
                   : ""}
             </DialogTitle>
@@ -792,7 +785,7 @@ export function EIGRPSection({
           {dialog?.kind === "instance" && (
             <EIGRPInstanceForm
               item={dialog.item}
-              device={device}
+              owner={owner}
               onSaved={() => {
                 refresh()
                 close()
@@ -817,7 +810,7 @@ export function EIGRPSection({
         item={deleting?.kind === "instance" ? deleting.item : null}
         endpoint="/api/routing/eigrp-instances/"
         queryKey="eigrp-instances"
-        label={(i) => `${title(i)} on ${i.device.name}`}
+        label={(i) => `${title(i)} on ${ownerName(i)}`}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}
       />
@@ -825,7 +818,7 @@ export function EIGRPSection({
         item={deleting?.kind === "iface" ? deleting.item : null}
         endpoint="/api/routing/eigrp-interfaces/"
         queryKey="eigrp-instances"
-        label={(i) => i.interface.name}
+        label={(i) => portOf(i)?.name ?? "interface"}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={refresh}
       />

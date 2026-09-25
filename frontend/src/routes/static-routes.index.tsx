@@ -4,6 +4,7 @@ import type { StaticRoute } from "@/lib/api"
 import { buildStaticRouteColumns } from "@/components/columns/routing-columns"
 import { RoutingListPage } from "@/components/routing/catalog-page"
 import type { RoutingListSpec } from "@/components/routing/catalog-page"
+import { ownerName } from "@/components/routing/owner"
 
 const spec: RoutingListSpec<StaticRoute> = {
   title: "Static routes",
@@ -15,9 +16,9 @@ const spec: RoutingListSpec<StaticRoute> = {
   addLabel: "Add static route",
   searchPlaceholder: "Filter routes…",
   searchText: (r) =>
-    `${r.prefix} ${r.next_hop} ${r.device.name} ${r.vrf?.name ?? ""} ${r.description}`,
+    `${r.prefix} ${r.next_hop} ${ownerName(r)} ${r.vrf?.name ?? ""} ${r.description}`,
   flexColumn: "description",
-  label: (r) => `${r.prefix} on ${r.device.name}`,
+  label: (r) => `${r.prefix} on ${ownerName(r)}`,
   columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
     buildStaticRouteColumns({
       humanIds,

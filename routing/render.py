@@ -96,7 +96,7 @@ def static_route_dict(r: StaticRoute) -> dict:
         "prefix": r.prefix,
         "kind": r.kind,
         "next_hop": r.next_hop or None,
-        "next_hop_interface": r.next_hop_interface.name if r.next_hop_interface_id else None,
+        "next_hop_interface": r.via_interface.name if r.via_interface is not None else None,
         "next_hop_vrf": _vrf_name(r.next_hop_vrf),
         "distance": r.distance,
         "metric": r.metric,
@@ -253,10 +253,14 @@ def session_dict(s, policies: set[str]) -> dict:
         "local_address": {
             "address": local.ip_address,
             "cidr": local.cidr,
-            "interface": local.assigned_interface.name if local.assigned_interface_id else None,
+            "interface": (
+                local.assigned_interface.name if local.assigned_interface_id
+                else local.assigned_vm_interface.name if local.assigned_vm_interface_id
+                else None
+            ),
         } if local is not None else None,
         "remote_address": s.remote_address or None,
-        "interface": s.interface.name if s.interface_id else None,
+        "interface": s.port.name if s.port is not None else None,
         "peer_device": s.peer_device.name if s.peer_device_id else None,
         "address_families": list(eff["address_families"] or []),
         "import_policy": _name(eff["import_policy"]),
@@ -328,7 +332,7 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
     ordered = sorted(
         inst.sessions.all(),
         key=lambda s: (not s.remote_address, s.remote_address,
-                       s.interface.name if s.interface_id else ""),
+                       s.port.name if s.port is not None else ""),
     )
     sessions = [session_dict(s, policies) for s in ordered]
     groups = {}
@@ -431,7 +435,7 @@ def ospf_dict(inst: OSPFInstance, policies: set[str]) -> dict:
         areas.setdefault(row.area.area_id, {"area_id": row.area.area_id,
                                             "name": row.area.name, "kind": row.area.kind})
         ifaces.append({
-            "interface": row.interface.name,
+            "interface": row.port.name,
             "area": row.area.area_id,
             "cost": row.cost,
             "network_type": row.network_type or None,
@@ -470,7 +474,7 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
     ifaces = []
     for row in inst.interfaces.all():
         ifaces.append({
-            "interface": row.interface.name,
+            "interface": row.port.name,
             "families": list(row.families or ["ipv4"]),
             "level": row.level or inst.level,
             "level_frr": ISISInstance.LEVEL_FRR.get(row.level or inst.level),
@@ -570,7 +574,7 @@ def eigrp_dict(inst: EIGRPInstance, policies: set[str]) -> dict:
     ifaces = []
     for row in inst.interfaces.all():
         ifaces.append({
-            "interface": row.interface.name,
+            "interface": row.port.name,
             "passive": inst.passive_by_default if row.passive is None else row.passive,
             "hello_interval": row.hello_interval,
             "hold_time": row.hold_time,
@@ -644,14 +648,18 @@ def _policies_closure(tenant_id, names: set[str]) -> dict:
 
 
 def routing_context(device) -> dict:
-    """The routing block for one device. Only devices have one - a VM (which
-    the VM renderer also hands here) gets an empty block."""
-    if device._meta.label_lower != "api.device":
+    """The routing block for one device or VM (#217). A VM runs static routes,
+    BGP and the IGPs; the fabric parts (VTEP, LDP, first-hop groups, Ethernet
+    segments) are device-only and stay empty for it."""
+    label = device._meta.label_lower
+    if label not in ("api.device", "api.virtualmachine"):
         return {}
+    is_vm = label == "api.virtualmachine"
+    own = {"virtual_machine": device} if is_vm else {"device": device}
 
     static_routes = list(
-        StaticRoute.objects.filter(device=device)
-        .select_related("vrf", "next_hop_vrf", "next_hop_interface")
+        StaticRoute.objects.filter(**own)
+        .select_related("vrf", "next_hop_vrf", "next_hop_interface", "next_hop_vm_interface")
         # Global table first, then VRFs by name.
         .order_by(F("vrf__name").asc(nulls_first=True), "prefix", "next_hop")
     )
@@ -670,7 +678,7 @@ def routing_context(device) -> dict:
 
     referenced_policies: set[str] = set()
     instances = (
-        BGPInstance.objects.filter(device=device)
+        BGPInstance.objects.filter(**own)
         .select_related("vrf", "asn")
         .prefetch_related(
             "address_families__import_policy", "address_families__export_policy",
@@ -679,6 +687,7 @@ def routing_context(device) -> dict:
             "sessions__peer_group__keychain", "sessions__peer_group__local_asn",
             "sessions__local_asn", "sessions__local_address__prefix",
             "sessions__local_address__assigned_interface", "sessions__interface",
+            "sessions__local_address__assigned_vm_interface", "sessions__vm_interface",
             "sessions__peer_device", "sessions__import_policy",
             "sessions__export_policy", "sessions__keychain",
         )
@@ -686,26 +695,29 @@ def routing_context(device) -> dict:
     )
     bgp = [bgp_dict(i, referenced_policies) for i in instances]
     ospf_instances = (
-        OSPFInstance.objects.filter(device=device)
+        OSPFInstance.objects.filter(**own)
         .select_related("vrf", "bfd_profile")
         .prefetch_related("redistributions__policy", "interfaces__interface",
+                          "interfaces__vm_interface",
                           "interfaces__area", "interfaces__keychain",
                           "interfaces__bfd_profile")
         .order_by(F("vrf__name").asc(nulls_first=True), "process_id")
     )
     ospf = [ospf_dict(i, referenced_policies) for i in ospf_instances]
     isis_instances = (
-        ISISInstance.objects.filter(device=device)
+        ISISInstance.objects.filter(**own)
         .select_related("vrf", "keychain", "bfd_profile")
         .prefetch_related("redistributions__policy", "interfaces__interface",
+                          "interfaces__vm_interface",
                           "interfaces__keychain", "interfaces__bfd_profile")
         .order_by("process")
     )
     isis = [isis_dict(i, referenced_policies) for i in isis_instances]
     eigrp_instances = (
-        EIGRPInstance.objects.filter(device=device)
+        EIGRPInstance.objects.filter(**own)
         .select_related("vrf", "bfd_profile")
         .prefetch_related("redistributions__policy", "interfaces__interface",
+                          "interfaces__vm_interface",
                           "interfaces__keychain", "interfaces__bfd_profile")
         .order_by(F("vrf__name").asc(nulls_first=True), "asn")
     )
@@ -714,7 +726,7 @@ def routing_context(device) -> dict:
         if inst.vrf_id:
             vrfs[inst.vrf.name] = inst.vrf
 
-    vtep_row = (
+    vtep_row = None if is_vm else (
         VTEP.objects.filter(device=device)
         .select_related("source_interface", "source_ip", "anycast_ip")
         .prefetch_related(
@@ -739,7 +751,7 @@ def routing_context(device) -> dict:
     # them - so an SVI loop prints the shared address without walking the
     # FHRP tables in a template.
     fhrp: dict[str, list] = {}
-    for a in (
+    for a in () if is_vm else (
         FHRPGroupAssignment.objects.filter(interface__device=device)
         .select_related("interface", "fhrp_group__virtual_ip__prefix")
         .order_by("interface__name", "fhrp_group__group_id")
@@ -775,7 +787,7 @@ def routing_context(device) -> dict:
 
     # Ethernet segments this device takes part in, keyed by its own port.
     es_by_iface: dict[str, dict] = {}
-    for seg in (
+    for seg in () if is_vm else (
         EthernetSegment.objects.filter(interfaces__device=device)
         .prefetch_related("interfaces__device").distinct()
     ):
@@ -791,11 +803,11 @@ def routing_context(device) -> dict:
             "ospf": None, "isis": None, "eigrp": None,
             "fhrp": rows, "gateway": _gateway(rows), "nd": _nd(rows),
             "es": es_by_iface.get(iface.name),
-            "evpn_mh_uplink": bool(iface.evpn_mh_uplink),
+            "evpn_mh_uplink": bool(getattr(iface, "evpn_mh_uplink", False)),
         }
     blank = {"vrf": None, "ospf": None, "isis": None, "eigrp": None, "fhrp": [],
              "gateway": None, "nd": None, "es": None, "evpn_mh_uplink": False}
-    ldp_row = (
+    ldp_row = None if is_vm else (
         LDPInstance.objects.filter(device=device)
         .select_related("bfd_profile").prefetch_related("interfaces").first()
     )

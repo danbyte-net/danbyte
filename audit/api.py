@@ -99,7 +99,9 @@ def _can_act_on_object(request, object_type_label, object_id, action="view") -> 
 
         sp = site_path_for(slug, tenant)
         if sp and sp != "id":
-            base = base.filter(**{f"{sp}__tenant": tenant})
+            from auth_api.site_paths import site_tenant_q
+
+            base = base.filter(site_tenant_q(sp, tenant))
     scoped = rbac.restrict_queryset(base, request.user, tenant, slug, action)
     return scoped.filter(pk=object_id).exists()
 

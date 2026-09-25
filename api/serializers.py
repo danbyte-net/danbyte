@@ -288,10 +288,9 @@ def _site_fence(qs, request, tenant):
     slug = model._meta.model_name
     site_path = SITE_PATHS.get(slug) or CATALOG_SITE_PATHS.get(slug)
     if site_path and site_path != "id":
-        return qs.filter(
-            Q(**{f"{site_path}__in": editable})
-            | Q(**{f"{site_path}__isnull": True})
-        )
+        from auth_api.site_paths import site_in_q, site_null_q
+
+        return qs.filter(site_in_q(site_path, editable) | site_null_q(site_path))
     return qs
 
 
@@ -4864,9 +4863,21 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     disk_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
     certificate_count = serializers.SerializerMethodField()
+    routing_count = serializers.SerializerMethodField()
 
     def _detail(self) -> bool:
         return isinstance(self.instance, VirtualMachine)
+
+    def get_routing_count(self, obj) -> int:
+        """The Routing tab's count, as on the device page (#217)."""
+        if not self._detail():
+            return 0
+        return (
+            obj.static_routes.count() + obj.bgpinstances.count()
+            + sum(i.sessions.count() for i in obj.bgpinstances.all())
+            + obj.ospfinstances.count() + obj.isisinstances.count()
+            + obj.eigrpinstances.count()
+        )
 
     def get_interface_count(self, obj) -> int:
         return obj.interfaces.count() if self._detail() else 0
@@ -4957,7 +4968,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "synced_from", "synced_from_id", "drift_count",
                   "vcpus", "memory_mb", "disk_gb", "disks",
                   "interface_count", "disk_count", "service_count",
-                  "certificate_count",
+                  "certificate_count", "routing_count",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]

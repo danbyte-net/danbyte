@@ -156,7 +156,7 @@ import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ServicesPane } from "@/components/services-pane"
-import { DeviceRoutingPanel } from "@/components/routing/device-routing-panel"
+import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
   DeviceMonitoring,
@@ -505,7 +505,7 @@ function Body({ device: d }: { device: Device }) {
         />
       </DetailTab>
       <DetailTab value="routing">
-        <DeviceRoutingPanel device={{ id: d.id, name: d.name }} />
+        <RoutingPanel owner={{ kind: "device", id: d.id, name: d.name }} />
       </DetailTab>
       <DetailTab value="certificates">
         <div className="space-y-6">

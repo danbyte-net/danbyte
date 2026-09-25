@@ -57,18 +57,18 @@ SITE_PATHS: dict[str, str] = {
     # Per-site settings rows - a change grant scoped to sites=[X] makes its
     # holders "site admins" of X (see core.site_settings).
     "sitesettings": "site",
-    # Routing rows hang off their device; the catalogs they reference
+    # Routing rows hang off their device or VM (#217); the catalogs they reference
     # (policies, prefix lists, keychains) are tenant-wide.
-    "staticroute": "device__site",
-    "bgpinstance": "device__site",
-    "bgpaddressfamily": "instance__device__site",
-    "bgpsession": "instance__device__site",
-    "ospfinstance": "device__site",
-    "ospfinterface": "instance__device__site",
-    "isisinstance": "device__site",
-    "isisinterface": "instance__device__site",
-    "eigrpinstance": "device__site",
-    "eigrpinterface": "instance__device__site",
+    "staticroute": "device__site|virtual_machine__site",
+    "bgpinstance": "device__site|virtual_machine__site",
+    "bgpaddressfamily": "instance__device__site|instance__virtual_machine__site",
+    "bgpsession": "instance__device__site|instance__virtual_machine__site",
+    "ospfinstance": "device__site|virtual_machine__site",
+    "ospfinterface": "instance__device__site|instance__virtual_machine__site",
+    "isisinstance": "device__site|virtual_machine__site",
+    "isisinterface": "instance__device__site|instance__virtual_machine__site",
+    "eigrpinstance": "device__site|virtual_machine__site",
+    "eigrpinterface": "instance__device__site|instance__virtual_machine__site",
     "vtep": "device__site",
     "ldpinstance": "device__site",
     "vtepmembership": "vtep__device__site",
@@ -105,6 +105,46 @@ CATALOG_SITE_PATHS: dict[str, str] = {
     "inventoryitemtemplate": "device_type__owning_site",
     "devicetypeservice": "device_type__owning_site",
 }
+
+
+# A path may list alternatives with "|": a routing row belongs to a device OR
+# a virtual machine, so its site is the device's or the VM's (#217). The
+# helpers below are the only way a path becomes a query - use them rather
+# than formatting ``f"{path}__in"`` yourself, or an alternative is lost.
+
+
+def alternatives(path: str) -> list[str]:
+    return path.split("|")
+
+
+def site_in_q(path: str, site_ids):
+    """Rows whose site, by any alternative, is one of ``site_ids``."""
+    from django.db.models import Q
+
+    q = Q()
+    for p in alternatives(path):
+        q |= Q(**{f"{p}__in": site_ids})
+    return q
+
+
+def site_null_q(path: str):
+    """Rows with no site by any alternative - shared, not one site's."""
+    from django.db.models import Q
+
+    q = Q()
+    for p in alternatives(path):
+        q &= Q(**{f"{p}__isnull": True})
+    return q
+
+
+def site_tenant_q(path: str, tenant):
+    """Rows whose site, by any alternative, belongs to ``tenant``."""
+    from django.db.models import Q
+
+    q = Q()
+    for p in alternatives(path):
+        q |= Q(**{f"{p}__tenant": tenant})
+    return q
 
 
 def site_path_for(slug: str, tenant) -> str | None:

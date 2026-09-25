@@ -10,7 +10,6 @@ import type {
   BGPPeerGroup,
   BGPPeerGroupMini,
   BGPSession,
-  InterfaceOption,
   Paginated,
   Status,
   VRFOption,
@@ -41,6 +40,18 @@ import {
   usePickList,
   useRoutingSave,
 } from "./form-bits"
+import {
+  firstError,
+  OwnerField,
+  ownerName,
+  ownerOf,
+  ownerParam,
+  ownerPayload,
+  portOf,
+  portPayload,
+  useOwnerPorts,
+} from "./owner"
+import type { OwnerKind, RoutingOwner } from "./owner"
 
 // BGP forms: the instance ("router bgp" on a device), its address families,
 // peer groups, and sessions. A session field left on "inherit" stays null
@@ -546,19 +557,22 @@ export function BGPPeerGroupForm({
 
 export function BGPInstanceForm({
   item,
-  device,
+  owner,
   onSaved,
   onCancel,
 }: {
   item?: BGPInstance | null
-  device?: { id: string; name: string }
+  /** The box it runs on, when adding from its Routing tab. */
+  owner?: RoutingOwner
   onSaved: (v: BGPInstance) => void
   onCancel: () => void
 }) {
   const isEdit = !!item
-  const [deviceId, setDeviceId] = useState<string | null>(
-    item?.device.id ?? device?.id ?? null
-  )
+  const start = (item ? ownerOf(item) : null) ?? owner ?? null
+  const [on, setOn] = useState<{ kind: OwnerKind; id: string | null }>({
+    kind: start?.kind ?? "device",
+    id: start?.id ?? null,
+  })
   const [vrfId, setVrfId] = useState<string | null>(item?.vrf?.id ?? null)
   const [asnId, setAsnId] = useState<string | null>(item?.asn.id ?? null)
   const [routerId, setRouterId] = useState(item?.router_id ?? "")
@@ -604,7 +618,7 @@ export function BGPInstanceForm({
     endpoint: "/api/routing/bgp-instances/",
     queryKey: "bgp-instances",
     id: item?.id,
-    label: (v) => `AS${v.asn.asn} on ${v.device.name}`,
+    label: (v) => `AS${v.asn.asn} on ${ownerName(v)}`,
     onSaved,
   })
   return (
@@ -612,7 +626,7 @@ export function BGPInstanceForm({
       onSubmit={(e) => {
         e.preventDefault()
         mutation.mutate({
-          device_id: deviceId,
+          ...ownerPayload(on.id ? { ...on, id: on.id, name: "" } : null),
           vrf_id: vrfId,
           asn_id: asnId,
           router_id: routerId.trim(),
@@ -637,15 +651,18 @@ export function BGPInstanceForm({
       className="@container grid gap-4"
     >
       <FormSection title="Instance" card>
+        <OwnerField
+          value={on}
+          onChange={setOn}
+          locked={!!owner || isEdit}
+          error={firstError(
+            fieldErrors,
+            "device_id",
+            "virtual_machine_id",
+            "device"
+          )}
+        />
         <div className="grid gap-3 @md:grid-cols-2">
-          <DevicePicker
-            label="Device"
-            required
-            value={deviceId}
-            onChange={setDeviceId}
-            disabled={!!device || isEdit}
-            error={fieldErrors.device_id}
-          />
           <FormCombobox
             label="VRF"
             value={vrfId}
@@ -1032,15 +1049,20 @@ export function BGPSessionForm({
   onCancel,
 }: {
   item?: BGPSession | null
-  /** Pre-set instance when adding from a device's Routing tab. */
+  /** Pre-set instance when adding from a device's or VM's Routing tab. */
   instance?: BGPInstance | BGPSession["instance"]
   onSaved: (v: BGPSession) => void
   onCancel: () => void
 }) {
   const isEdit = !!item
-  const [deviceId, setDeviceId] = useState<string | null>(
-    item?.instance.device.id ?? instance?.device.id ?? null
-  )
+  const start = ownerOf(item?.instance ?? instance ?? {})
+  const [on, setOn] = useState<{ kind: OwnerKind; id: string | null }>({
+    kind: start?.kind ?? "device",
+    id: start?.id ?? null,
+  })
+  const deviceId = on.id
+  const box = on.id ? { kind: on.kind, id: on.id } : null
+  const pickFirst = on.kind === "vm" ? "Pick a VM first" : "Pick a device first"
   const [instanceId, setInstanceId] = useState<string | null>(
     item?.instance.id ?? instance?.id ?? null
   )
@@ -1059,11 +1081,11 @@ export function BGPSessionForm({
     item?.local_address?.id ?? null
   )
   const [farKind, setFarKind] = useState<string | null>(
-    item?.interface ? "interface" : "address"
+    item && portOf(item) ? "interface" : "address"
   )
   const [remoteAddress, setRemoteAddress] = useState(item?.remote_address ?? "")
   const [interfaceId, setInterfaceId] = useState<string | null>(
-    item?.interface?.id ?? null
+    portOf(item ?? {})?.id ?? null
   )
   const [peerDeviceId, setPeerDeviceId] = useState<string | null>(
     item?.peer_device?.id ?? null
@@ -1081,12 +1103,12 @@ export function BGPSessionForm({
   )
 
   const instances = useQuery({
-    queryKey: ["bgp-instances", "device", deviceId],
+    queryKey: ["bgp-instances", on.kind, deviceId],
     queryFn: () =>
       api<Paginated<BGPInstance>>(
-        `/api/routing/bgp-instances/?device=${deviceId}`
+        `/api/routing/bgp-instances/?${ownerParam({ ...box!, name: "" })}`
       ),
-    enabled: !!deviceId,
+    enabled: !!box,
   })
   const groups = useQuery({
     queryKey: ["bgp-peer-groups-picker"],
@@ -1098,23 +1120,23 @@ export function BGPSessionForm({
   })
   const asns = useAsns()
   const ips = useQuery({
-    queryKey: ["device-ips", deviceId],
+    queryKey: [on.kind === "vm" ? "vm-ips" : "device-ips", deviceId],
     queryFn: () =>
       api<{
         results: {
           id: string
           ip_address: string
           assigned_interface: { name: string } | null
+          assigned_vm_interface?: { name: string } | null
         }[]
-      }>(`/api/devices/${deviceId}/ips/`),
-    enabled: !!deviceId,
+      }>(
+        on.kind === "vm"
+          ? `/api/ips/?assigned_vm=${deviceId}&page_size=500`
+          : `/api/devices/${deviceId}/ips/`
+      ),
+    enabled: !!box,
   })
-  const interfaces = useQuery({
-    queryKey: ["interfaces-picker", deviceId],
-    queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${deviceId}`),
-    enabled: !!deviceId,
-  })
+  const interfaces = useOwnerPorts(box)
   const statuses = useStatuses("bgpsession")
   useDefaultStatus(
     "bgpsession",
@@ -1130,7 +1152,7 @@ export function BGPSessionForm({
     endpoint: "/api/routing/bgp-sessions/",
     queryKey: "bgp-sessions",
     id: item?.id,
-    label: (v) => v.remote_address || v.interface?.name || v.name,
+    label: (v) => v.remote_address || portOf(v)?.name || v.name,
     onSaved,
   })
   const viaAddress = farKind === "address"
@@ -1148,7 +1170,7 @@ export function BGPSessionForm({
           local_asn_id: localAsnId,
           local_address_id: localAddressId,
           remote_address: viaAddress ? remoteAddress.trim() : "",
-          interface_id: viaAddress ? null : interfaceId,
+          ...portPayload(on.kind, viaAddress ? null : interfaceId),
           peer_device_id: peerDeviceId,
           ...knobsPayload(k),
           status_id: statusId,
@@ -1160,20 +1182,17 @@ export function BGPSessionForm({
       className="@container grid gap-4"
     >
       <FormSection title="Session" card>
+        <OwnerField
+          value={on}
+          onChange={(v) => {
+            setOn(v)
+            setInstanceId(null)
+            setLocalAddressId(null)
+            setInterfaceId(null)
+          }}
+          locked={!!instance || isEdit}
+        />
         <div className="grid gap-3 @md:grid-cols-2">
-          <DevicePicker
-            label="Device"
-            required
-            value={deviceId}
-            onChange={(v) => {
-              setDeviceId(v)
-              setInstanceId(null)
-              setLocalAddressId(null)
-              setInterfaceId(null)
-            }}
-            disabled={!!instance || isEdit}
-            error={fieldErrors.device_id}
-          />
           <FormCombobox
             label="Instance"
             required
@@ -1183,9 +1202,9 @@ export function BGPSessionForm({
               value: i.id,
               label: `AS${i.asn.asn} · ${i.vrf?.name ?? "global"}`,
             }))}
-            placeholder={deviceId ? "Pick an instance" : "Pick a device first"}
+            placeholder={deviceId ? "Pick an instance" : pickFirst}
             disabled={!deviceId || !!instance || isEdit}
-            emptyText="No BGP instance on this device yet."
+            emptyText={`No BGP instance on this ${on.kind === "vm" ? "VM" : "device"} yet.`}
             error={fieldErrors.instance_id}
           />
         </div>
@@ -1271,15 +1290,16 @@ export function BGPSessionForm({
             onChange={setLocalAddressId}
             options={(ips.data?.results ?? []).map((ip) => ({
               value: ip.id,
-              label: ip.assigned_interface
-                ? `${ip.ip_address} · ${ip.assigned_interface.name}`
-                : ip.ip_address,
+              label:
+                (ip.assigned_interface ?? ip.assigned_vm_interface)
+                  ? `${ip.ip_address} · ${(ip.assigned_interface ?? ip.assigned_vm_interface)!.name}`
+                  : ip.ip_address,
             }))}
             noneLabel="None"
-            placeholder={deviceId ? "None" : "Pick a device first"}
+            placeholder={deviceId ? "None" : pickFirst}
             disabled={!deviceId}
             searchPlaceholder="Search addresses…"
-            emptyText="No addresses on this device."
+            emptyText={`No addresses on this ${on.kind === "vm" ? "VM" : "device"}.`}
             info="The source of the session - its interface is the update source."
             error={fieldErrors.local_address_id}
           />
@@ -1314,13 +1334,17 @@ export function BGPSessionForm({
                 value: i.id,
                 label: i.name,
               }))}
-              placeholder={
-                deviceId ? "Pick an interface" : "Pick a device first"
-              }
+              placeholder={deviceId ? "Pick an interface" : pickFirst}
               disabled={!deviceId}
               searchPlaceholder="Search interfaces…"
               emptyText="No interfaces."
-              error={fieldErrors.interface_id}
+              error={firstError(
+                fieldErrors,
+                "interface_id",
+                "vm_interface_id",
+                "interface",
+                "vm_interface"
+              )}
             />
           )}
           <DevicePicker

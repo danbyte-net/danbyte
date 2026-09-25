@@ -39,6 +39,7 @@ import { ServicesPane } from "@/components/services-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { RoutingPanel } from "@/components/routing/device-routing-panel"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -80,6 +81,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "overview"
     | "components"
     | "services"
+    | "routing"
     | "monitoring"
     | "snmp"
     | "certificates"
@@ -202,6 +204,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.interface_count,
         },
         { value: "services", label: "Services", count: vm.service_count },
+        {
+          value: "routing",
+          label: "Routing",
+          count: vm.routing_count || undefined,
+        },
         { value: "monitoring", label: "Monitoring" },
         { value: "snmp", label: "SNMP" },
         {
@@ -221,6 +228,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       </DetailTab>
       <DetailTab value="components">
         <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
+      </DetailTab>
+      <DetailTab value="routing">
+        <RoutingPanel owner={{ kind: "vm", id: vm.id, name: vm.name }} />
       </DetailTab>
       <DetailTab value="config">
         <ConfigContextPanel endpoint="virtual-machines" id={vm.id} />

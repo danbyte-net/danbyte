@@ -3842,6 +3842,7 @@ export interface VirtualMachine {
   disk_count?: number
   service_count?: number
   certificate_count?: number
+  routing_count?: number
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
@@ -4492,10 +4493,18 @@ export interface BGPAddressFamily {
   extra: Record<string, unknown>
 }
 
+/** A VM in a routing row - the box a route or instance runs on (#217). */
+export interface VMMini {
+  id: string
+  name: string
+}
+
 export interface BGPInstance {
   id: string
   numid: number | null
-  device: DeviceMini
+  /** Exactly one of `device` / `virtual_machine` is set. */
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
   site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   asn: ASNMini
@@ -4530,7 +4539,8 @@ export interface BGPInstance {
 
 export interface BGPInstanceMini {
   id: string
-  device: DeviceMini
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   asn: ASNMini
 }
@@ -4594,13 +4604,19 @@ export interface BGPSession extends BGPPeerKnobs {
   /** The far end: an address, or an interface for unnumbered peering. */
   remote_address: string
   interface: { id: string; name: string; device: DeviceMini } | null
+  /** Unnumbered peering out of a VM's port. */
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   remote_address_obj: {
     id: string
     ip_address: string
     dns_name: string
   } | null
   peer_device: DeviceMini | null
-  peer_session: { id: string; device: DeviceMini } | null
+  peer_session: {
+    id: string
+    device?: DeviceMini
+    virtual_machine?: VMMini
+  } | null
   effective: BGPSessionEffective
   status: StatusMini | null
   description: string
@@ -4626,7 +4642,9 @@ export interface OSPFAreaMini {
 
 export interface OSPFInterface {
   id: string
-  interface: { id: string; name: string; device: DeviceMini }
+  /** The device's port, or `vm_interface` on a VM-owned instance. */
+  interface: { id: string; name: string; device: DeviceMini } | null
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   area: OSPFAreaMini
   cost: number | null
   network_type:
@@ -4651,7 +4669,8 @@ export interface OSPFInterface {
 interface IGPInstanceBase {
   id: string
   numid: number | null
-  device: DeviceMini
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
   site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   bfd: boolean
@@ -4679,7 +4698,9 @@ export interface OSPFInstance extends IGPInstanceBase {
 
 export interface ISISInterface {
   id: string
-  interface: { id: string; name: string; device: DeviceMini }
+  /** The device's port, or `vm_interface` on a VM-owned instance. */
+  interface: { id: string; name: string; device: DeviceMini } | null
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   families: ("ipv4" | "ipv6")[]
   level: "" | "1" | "2" | "1-2"
   metric: number | null
@@ -4764,7 +4785,9 @@ export interface VTEP {
 
 export interface EIGRPInterface {
   id: string
-  interface: { id: string; name: string; device: DeviceMini }
+  /** The device's port, or `vm_interface` on a VM-owned instance. */
+  interface: { id: string; name: string; device: DeviceMini } | null
+  vm_interface: { id: string; name: string; vm: VMMini } | null
   /** Null = the instance's passive_by_default. */
   passive: boolean | null
   bfd: boolean
@@ -4797,7 +4820,9 @@ export interface EIGRPInstance extends IGPInstanceBase {
 export interface StaticRoute {
   id: string
   numid: number | null
-  device: DeviceMini
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
+  site: { id: string; name: string } | null
   vrf: { id: string; name: string; rd: string; color: string } | null
   prefix: string
   prefix_obj: PrefixMini | null
@@ -4805,6 +4830,7 @@ export interface StaticRoute {
   kind_display: string
   next_hop: string
   next_hop_interface: { id: string; name: string; device: DeviceMini } | null
+  next_hop_vm_interface: { id: string; name: string; vm: VMMini } | null
   next_hop_vrf: { id: string; name: string; rd: string; color: string } | null
   distance: number | null
   metric: number | null

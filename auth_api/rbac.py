@@ -183,11 +183,13 @@ def _perm_q(perm, site_path, action="view") -> Q:
         q = Q()
     # Site scope: only narrows types that have a site path; others ignore it.
     if site_path:
+        from .site_paths import site_in_q, site_null_q
+
         site_ids = [s.pk for s in perm.sites.all()]
         if site_ids:
-            scope_q = Q(**{f"{site_path}__in": site_ids})
+            scope_q = site_in_q(site_path, site_ids)
             if action == "view" and site_path != "id":
-                scope_q |= Q(**{f"{site_path}__isnull": True})
+                scope_q |= site_null_q(site_path)
             q = q & scope_q
     return q
 

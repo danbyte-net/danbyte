@@ -99,30 +99,30 @@ SPECS: dict[str, IndexSpec] = {
                                "internal_ip.ip_address"),
                          facets=("status", "device")),
     "staticroute": IndexSpec("routing.StaticRoute", "/static-routes/{id}", weight=6,
-                             site="device.site", subtitle="device.name",
+                             site="owner.site", subtitle="owner_name",
                              body=("prefix", "next_hop", "vrf.name", "description"),
-                             facets=("status", "device", "vrf")),
+                             facets=("status", "device", "virtual_machine", "vrf")),
     "bgpsession": IndexSpec("routing.BGPSession", "/bgp-sessions/{id}", weight=7,
-                            site="instance.device.site", subtitle="instance.device.name",
+                            site="instance.owner.site", subtitle="instance.owner_name",
                             body=("remote_address", "interface.name", "remote_asn",
                                   "peer_group.name", "description", "instance.asn.asn"),
                             facets=("status", "instance.device", "peer_group")),
     "bgppeergroup": IndexSpec("routing.BGPPeerGroup", "/bgp-peer-groups/{id}",
                               weight=5, site=None, subtitle="description",
                               body=("remote_asn",)),
-    "bgpinstance": IndexSpec("routing.BGPInstance", "/devices/{device_id}?tab=routing",
-                             weight=5, site="device.site", subtitle="device.name",
+    "bgpinstance": IndexSpec("routing.BGPInstance", "{owner_page}?tab=routing",
+                             weight=5, site="owner.site", subtitle="owner_name",
                              body=("asn.asn", "router_id", "vrf.name")),
     "ospfarea": IndexSpec("routing.OSPFArea", "/ospf-areas/{id}", weight=5, site=None,
                           subtitle="area_id", body=("area_id", "description")),
-    "ospfinstance": IndexSpec("routing.OSPFInstance", "/devices/{device_id}?tab=routing",
-                              weight=5, site="device.site", subtitle="device.name",
+    "ospfinstance": IndexSpec("routing.OSPFInstance", "{owner_page}?tab=routing",
+                              weight=5, site="owner.site", subtitle="owner_name",
                               body=("process_id", "router_id", "vrf.name")),
-    "isisinstance": IndexSpec("routing.ISISInstance", "/devices/{device_id}?tab=routing",
-                              weight=5, site="device.site", subtitle="device.name",
+    "isisinstance": IndexSpec("routing.ISISInstance", "{owner_page}?tab=routing",
+                              weight=5, site="owner.site", subtitle="owner_name",
                               body=("process", "net")),
-    "eigrpinstance": IndexSpec("routing.EIGRPInstance", "/devices/{device_id}?tab=routing",
-                               weight=5, site="device.site", subtitle="device.name",
+    "eigrpinstance": IndexSpec("routing.EIGRPInstance", "{owner_page}?tab=routing",
+                               weight=5, site="owner.site", subtitle="owner_name",
                                body=("asn", "name", "router_id", "vrf.name")),
     "vtep": IndexSpec("routing.VTEP", "/devices/{device_id}?tab=routing", weight=5,
                       site="device.site", subtitle="device.name",
@@ -413,6 +413,13 @@ def _context(obj, spec: IndexSpec) -> dict:
     return out
 
 
+def _owner_page(obj) -> str:
+    """The page of the device or VM a routing row runs on (#217)."""
+    if getattr(obj, "virtual_machine_id", None):
+        return f"/virtual-machines/{obj.virtual_machine_id}"
+    return f"/devices/{getattr(obj, 'device_id', '')}"
+
+
 def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
     """The SearchEntry field values for ``obj``, or None when it must not be
     indexed (no tenant to scope it to)."""
@@ -445,6 +452,7 @@ def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
             # Rows that live on another object's page (a BGP instance on its
             # device's Routing tab) link there.
             device_id=getattr(obj, "device_id", ""),
+            owner_page=_owner_page(obj),
         ),
         "weight": spec.weight,
     }

@@ -1651,7 +1651,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         """Tenant/RBAC-scoped, with optional server-side narrowing so the
         IP-assign picker scales to very large address spaces (filter, don't
         ship millions of rows): ``?search=`` (address or DNS), ``?prefix=``,
-        ``?vrf=``, ``?site=``, ``?assigned_interface=``."""
+        ``?vrf=``, ``?site=``, ``?assigned_interface=``, ``?assigned_vm=``."""
         qs = annotate_dhcp(super().get_queryset())
         if not self.request:
             return qs
@@ -1700,6 +1700,8 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 qs = qs.filter(prefix__site_id=site)
         if iface := p.get("assigned_interface"):
             qs = qs.filter(assigned_interface_id=iface)
+        if vm := p.get("assigned_vm"):
+            qs = qs.filter(assigned_vm_id=vm)
         if role := p.get("role"):
             qs = qs.filter(role_id=role)
         if status := p.get("status"):

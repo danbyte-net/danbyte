@@ -23,6 +23,13 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { sessionNeighbor } from "@/components/columns/routing-columns"
+import {
+  OwnerLink,
+  ownerName,
+  ownerOf,
+  PortLink,
+  portOf,
+} from "@/components/routing/owner"
 import { knobRows, remoteAsnText } from "@/components/routing/bgp-bits"
 import { RoutingDeleteDialog } from "@/components/routing/catalog-page"
 
@@ -68,7 +75,7 @@ function Body({ s }: { s: BGPSession }) {
         method: "POST",
       }),
     onSuccess: (mirror) => {
-      toast.success(`Created the far end on ${mirror.instance.device.name}`)
+      toast.success(`Created the far end on ${ownerName(mirror.instance)}`)
       qc.invalidateQueries({ queryKey: ["bgp-session", s.id] })
       qc.invalidateQueries({ queryKey: ["bgp-sessions"] })
     },
@@ -91,17 +98,8 @@ function Body({ s }: { s: BGPSession }) {
       : []),
     { label: "Name", value: s.name || dash },
     {
-      label: "Device",
-      value: (
-        <Link
-          to="/devices/$id"
-          params={{ id: s.instance.device.id }}
-          search={{ tab: "routing" }}
-          className="link"
-        >
-          {s.instance.device.name}
-        </Link>
-      ),
+      label: s.instance.virtual_machine ? "Virtual machine" : "Device",
+      value: <OwnerLink owner={ownerOf(s.instance)} className="link" />,
     },
     {
       label: "Instance",
@@ -164,15 +162,9 @@ function Body({ s }: { s: BGPSession }) {
       value: <span className="num font-mono">{eff.local_asn}</span>,
     },
     {
-      label: s.interface ? "Interface" : "Remote address",
-      value: s.interface ? (
-        <Link
-          to="/interfaces/$id"
-          params={{ id: s.interface.id }}
-          className="link font-mono"
-        >
-          {s.interface.name}
-        </Link>
+      label: portOf(s) ? "Interface" : "Remote address",
+      value: portOf(s) ? (
+        <PortLink iface={s.interface} vmIface={s.vm_interface} />
       ) : s.remote_address_obj ? (
         <Link
           to="/ips/$id"
@@ -214,7 +206,7 @@ function Body({ s }: { s: BGPSession }) {
           params={{ id: s.peer_session.id }}
           className="link"
         >
-          session on {s.peer_session.device.name}
+          session on {ownerName(s.peer_session)}
         </Link>
       ) : canPair && canDo("bgpsession", "add") ? (
         <Button
@@ -280,7 +272,7 @@ function Body({ s }: { s: BGPSession }) {
           }
           subtitle={
             <span className="font-mono">
-              {s.instance.device.name} · AS{eff.local_asn} →{" "}
+              {ownerName(s.instance)} · AS{eff.local_asn} →{" "}
               {eff.remote_asn_mode === "internal"
                 ? `AS${eff.local_asn}`
                 : eff.remote_asn_mode === "external"

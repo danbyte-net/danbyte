@@ -20,6 +20,12 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { RoutingDeleteDialog } from "@/components/routing/catalog-page"
+import {
+  OwnerLink,
+  ownerName,
+  ownerOf,
+  PortLink,
+} from "@/components/routing/owner"
 
 export const Route = createFileRoute("/static-routes/$id")({
   component: Page,
@@ -54,7 +60,9 @@ function Body({ r }: { r: StaticRoute }) {
 
   const via =
     r.kind === "nexthop" || r.kind === "interface"
-      ? [r.next_hop, r.next_hop_interface?.name].filter(Boolean).join(" via ")
+      ? [r.next_hop, (r.next_hop_interface ?? r.next_hop_vm_interface)?.name]
+          .filter(Boolean)
+          .join(" via ")
       : r.kind_display
 
   const details: KvRow[] = [
@@ -86,12 +94,8 @@ function Body({ r }: { r: StaticRoute }) {
       ),
     },
     {
-      label: "Device",
-      value: (
-        <Link to="/devices/$id" params={{ id: r.device.id }} className="link">
-          {r.device.name}
-        </Link>
-      ),
+      label: r.virtual_machine ? "Virtual machine" : "Device",
+      value: <OwnerLink owner={ownerOf(r)} tab="overview" className="link" />,
     },
     {
       label: "VRF",
@@ -118,16 +122,11 @@ function Body({ r }: { r: StaticRoute }) {
     },
     {
       label: "Interface",
-      value: r.next_hop_interface ? (
-        <Link
-          to="/interfaces/$id"
-          params={{ id: r.next_hop_interface.id }}
-          className="link font-mono"
-        >
-          {r.next_hop_interface.name}
-        </Link>
-      ) : (
-        dash
+      value: (
+        <PortLink
+          iface={r.next_hop_interface}
+          vmIface={r.next_hop_vm_interface}
+        />
       ),
     },
     {
@@ -192,7 +191,7 @@ function Body({ r }: { r: StaticRoute }) {
           badges={<StatusBadge status={r.status} />}
           subtitle={
             <span className="font-mono">
-              {r.device.name} · {r.vrf?.name ?? "Global"} · {via}
+              {ownerName(r)} · {r.vrf?.name ?? "Global"} · {via}
             </span>
           }
           description={r.description}
