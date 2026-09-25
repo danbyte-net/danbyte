@@ -649,7 +649,33 @@ class VLANMiniSerializer(NumIdModelSerializer):
         }
 
 
-class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class StatusMiniSerializer(NumIdModelSerializer):
+    text_color = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Status
+        # slug: lets clients key behavior (e.g. "planned" = reserved port)
+        # without matching on the editable display name.
+        fields = ["id", "name", "slug", "color", "text_color"]
+
+
+class StatusSerializerMixin(serializers.Serializer):
+    """Shared status fields for any model with a ``Status`` FK: a nested
+    read-only ``status`` ({id,name,color,text_color}) + a write-only
+    ``status_id``. Mix in before ``ModelSerializer``; add ``status_id`` to
+    ``Meta.fields`` (``status`` is already there)."""
+
+    status = StatusMiniSerializer(read_only=True)
+    status_id = TenantScopedPrimaryKeyRelatedField(
+        source="status",
+        queryset=Status.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+
+
+class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     """Read+write VLAN. Mirror PrefixSerializer's flat write payload."""
 
     cf_model = "vlan"
@@ -774,6 +800,7 @@ class VLANSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumId
         model = VLAN
         fields = [
             "id", "vlan_id", "name", "color",
+            "status", "status_id",
             "site", "site_id",
             "group", "group_id",
             "zone", "zone_id",
@@ -1072,32 +1099,6 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
-
-
-class StatusMiniSerializer(NumIdModelSerializer):
-    text_color = serializers.CharField(read_only=True)
-
-    class Meta:
-        model = Status
-        # slug: lets clients key behavior (e.g. "planned" = reserved port)
-        # without matching on the editable display name.
-        fields = ["id", "name", "slug", "color", "text_color"]
-
-
-class StatusSerializerMixin(serializers.Serializer):
-    """Shared status fields for any model with a ``Status`` FK: a nested
-    read-only ``status`` ({id,name,color,text_color}) + a write-only
-    ``status_id``. Mix in before ``ModelSerializer``; add ``status_id`` to
-    ``Meta.fields`` (``status`` is already there)."""
-
-    status = StatusMiniSerializer(read_only=True)
-    status_id = TenantScopedPrimaryKeyRelatedField(
-        source="status",
-        queryset=Status.objects.all(),
-        write_only=True,
-        required=False,
-        allow_null=True,
-    )
 
 
 class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
@@ -1724,7 +1725,7 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
     _USAGE_RELS = [
         "ips", "devices", "prefixes", "ip_ranges", "racks", "clusters",
         "virtual_machines", "cables", "circuits", "power_feeds",
-        "wireless_lans", "tunnels", "locations", "maintenance_events",
+        "wireless_lans", "tunnels", "locations", "maintenance_events", "vlans",
     ]
 
     def get_usage_count(self, obj) -> int:

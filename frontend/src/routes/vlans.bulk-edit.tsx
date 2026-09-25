@@ -3,13 +3,14 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type SiteOption,
-  type TagOption,
-  type VLANBulkUpdateFields,
-  type ZoneOption,
+import { api } from "@/lib/api"
+import type {
+  Paginated,
+  SiteOption,
+  StatusOption,
+  TagOption,
+  VLANBulkUpdateFields,
+  ZoneOption,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/select"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { StatusBadge } from "@/components/status-badge"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/vlans/bulk-edit")({
@@ -40,11 +42,18 @@ function BulkEditVlansPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
 
+  const [statusId, setStatusId] = useState<string>(KEEP)
   const [siteId, setSiteId] = useState<string>(KEEP)
   const [zoneId, setZoneId] = useState<string>(KEEP)
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
 
+  const statuses = useQuery({
+    queryKey: ["statuses", "vlan"],
+    queryFn: () =>
+      api<Paginated<StatusOption>>("/api/statuses/?available_to=vlan&picker=1"),
+    staleTime: 5 * 60_000,
+  })
   const sites = useQuery({
     queryKey: ["sites-picker"],
     queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
@@ -66,6 +75,8 @@ function BulkEditVlansPage() {
   const m = useMutation({
     mutationFn: () => {
       const fields: VLANBulkUpdateFields = {}
+      if (statusId !== KEEP)
+        fields.status_id = statusId === NONE ? null : statusId
       if (siteId !== KEEP) fields.site_id = siteId === NONE ? null : siteId
       if (zoneId !== KEEP) fields.zone_id = zoneId === NONE ? null : zoneId
       if (addTags.length) fields.add_tag_ids = addTags
@@ -118,6 +129,22 @@ function BulkEditVlansPage() {
         }}
         className="grid gap-4"
       >
+        <Field label="Status">
+          <Select value={statusId} onValueChange={setStatusId}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={KEEP}>(keep)</SelectItem>
+              <SelectItem value={NONE}>No status</SelectItem>
+              {statuses.data?.results.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  <StatusBadge status={s} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <Field label="Site">
           <Select value={siteId} onValueChange={setSiteId}>
             <SelectTrigger className="w-full">

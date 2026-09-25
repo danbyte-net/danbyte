@@ -34,6 +34,7 @@ STATUSABLE_MODELS = [
     # One scope shared by the BGP, OSPF and IS-IS instance models.
     ("routinginstance", "Routing instances"),
     ("vtep", "VTEPs"),
+    ("vlan", "VLANs"),
 ]
 STATUSABLE_MODEL_VALUES = {m[0] for m in STATUSABLE_MODELS}
 
@@ -112,6 +113,7 @@ STATUS_MODEL_SEEDS = [
     ("tunnel", "Tunnel", "active"),
     ("location", "Location", "active"),
     ("inventoryitem", "InventoryItem", "active"),
+    ("vlan", "VLAN", "active"),
 ]
 
 # Built-in status values per object type, mirroring the historical per-model
@@ -147,6 +149,8 @@ STATUS_MODEL_VALUES = {
     "bgpsession": ["active", "planned", "disabled"],
     "routinginstance": ["active", "planned", "disabled"],
     "vtep": ["active", "planned", "disabled"],
+    # VLANs (#172): in use, held for a rollout, or on the way out.
+    "vlan": ["active", "reserved", "deprecated"],
     "location": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.

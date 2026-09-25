@@ -909,6 +909,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "bgpsession", label: "BGP sessions" },
   { value: "routinginstance", label: "Routing instances" },
   { value: "vtep", label: "VTEPs" },
+  { value: "vlan", label: "VLANs" },
 ]
 
 // api/status_registry.MONITORING_STATES - the six states a check can end in.
@@ -3197,6 +3198,8 @@ export interface VLAN {
   zone: { id: string; name: string; color: string; text_color: string } | null
   /** The routing table the VLAN's SVI lives in, when documented. */
   vrf: { id: string; name: string; rd: string; color: string } | null
+  /** Active / Reserved / Deprecated, or the tenant's own (#172). */
+  status: StatusMini | null
   description: string
   tags: Tag[]
   prefix_count: number
@@ -3215,6 +3218,7 @@ export interface VLANWritePayload {
   group_id?: string | null
   zone_id?: string | null
   vrf_id?: string | null
+  status_id?: string | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -3489,6 +3493,7 @@ export interface ContactAssignmentWritePayload {
 export interface VLANBulkUpdateFields {
   site_id?: string | null
   zone_id?: string | null
+  status_id?: string | null
   description?: string
   add_tag_ids?: number[]
   remove_tag_ids?: number[]

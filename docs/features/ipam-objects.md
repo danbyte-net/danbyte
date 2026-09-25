@@ -43,6 +43,13 @@ status, a description, tags, and any custom fields. Interfaces reference a VLAN
 for access or trunk membership. The list filters by site, status, group and VRF,
 and supports **bulk edit** for changing many VLANs at once.
 
+The **status** says whether a VLAN is in use: *Active*, *Reserved* for a
+coming rollout, or *Deprecated* and due for removal - or any status of your own
+made available to VLANs under Statuses. A new VLAN starts in the default
+(*Active*). VLANs created before 0.17 have no status; tick them in the list and
+use **Edit** to set many at once. The status shows as a column on the list,
+filters it, and sits on the VLAN's page.
+
 A VLAN can also name the **VRF** its SVI lives in - the Layer 3 side of the
 VLAN, documented before any prefix exists on it (a reserved or planned VLAN
 has none yet). It is optional; a flat network leaves it empty. The VRF shows

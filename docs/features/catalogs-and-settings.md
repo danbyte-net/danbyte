@@ -22,7 +22,7 @@ available to devices, prefixes, IP addresses, racks, … so it reads identically
 
 | Field | Effect |
 |---|---|
-| **Available to** | The object types this status can be used on (IP addresses, Devices, Prefixes, Racks, Clusters, VMs, Cables, Circuits, Power feeds, Wireless LANs, Tunnels, Locations, IP ranges, Inventory items, Maintenance & outage events). Only statuses available to an object show in its form. |
+| **Available to** | The object types this status can be used on (IP addresses, Devices, Prefixes, Racks, Clusters, VMs, Cables, Circuits, Power feeds, Wireless LANs, Tunnels, Locations, IP ranges, Inventory items, VLANs, Maintenance & outage events). Only statuses available to an object show in its form. |
 | **Default for** | Object types for which this status is applied on create. At most one default per (tenant, object type) - a subset of *Available to*. |
 
 IP-specific flags still apply when a status is available to IP addresses:

@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { SiteCell } from "@/components/cells/site-cell"
+import { StatusBadge } from "@/components/status-badge"
 import { VrfCell } from "@/components/cells/vrf-cell"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -194,6 +195,7 @@ function VlanOverview({
       label: "VLAN ID",
       value: <span className="num font-mono">{v.vlan_id}</span>,
     },
+    { label: "Status", value: <StatusBadge status={v.status} /> },
     { label: "Site", value: <SiteCell site={v.site} /> },
     {
       label: "VRF",

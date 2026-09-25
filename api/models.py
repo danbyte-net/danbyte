@@ -2180,6 +2180,11 @@ class VLAN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     # The VLAN's own display colour (badges, topology rails). Optional - zones
     # stay firewall semantics, never a colour requirement.
+    # Active / Reserved / Deprecated, or the tenant's own (#172).
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="vlans",
+    )
     color = models.CharField(max_length=7, blank=True, default="")
     # The routing table the VLAN's SVI lives in - documentation of the L3
     # side, so a VLAN says which VRF it belongs to before any prefix does.

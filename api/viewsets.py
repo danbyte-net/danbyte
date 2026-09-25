@@ -1962,8 +1962,11 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors this viewset's own bulk_update action (see PrefixViewSet).
     editable_str_fields = ("description",)
-    editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF}
-    queryset = VLAN.objects.select_related("site", "group", "zone", "vrf").prefetch_related("tags").all().order_by("vlan_id")
+    editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF, "status_id": Status}
+    queryset = (
+        VLAN.objects.select_related("site", "group", "zone", "vrf", "status")
+        .prefetch_related("tags").all().order_by("vlan_id")
+    )
     serializer_class = VLANSerializer
     pagination_class = StandardPagination
     rbac_action_map = {"bulk_delete": "delete"}
@@ -2007,6 +2010,9 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         vrf = self.request.query_params.get("vrf")
         if vrf:
             qs = qs.filter(vrf_id=vrf)
+        status = self.request.query_params.get("status")
+        if status:
+            qs = qs.filter(status_id__in=[s for s in status.split(",") if s])
         return _apply_custom_field_scope(self.request, qs, "vlan")
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
@@ -2041,9 +2047,13 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         vval = fields.get("vrf_id")
         if vval and not VRF.objects.filter(pk=vval, tenant=tenant).exists():
             raise ValidationError({"vrf_id": "Not found in this tenant."})
+        sval = fields.get("status_id")
+        if sval and not Status.objects.filter(pk=sval, tenant=tenant).exists():
+            raise ValidationError({"status_id": "Not found in this tenant."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = _bulk_field_updates(fields, ("site_id", "zone_id", "vrf_id", "description"))
+        updates = _bulk_field_updates(
+            fields, ("site_id", "zone_id", "vrf_id", "status_id", "description"))
 
         with transaction.atomic():
             _rows = list(qs)
