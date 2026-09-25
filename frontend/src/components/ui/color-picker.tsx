@@ -9,10 +9,10 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
-// Tailwind v3 palette laid out as rows-by-hue, columns-by-shade.
-// Each row is one hue (red → … → fuchsia), columns go light→dark across
-// 400 / 500 / 600 / 700 / 800 so the eye groups by color first and
-// brightness second. Neutrals on the bottom row.
+// Tailwind v3 palette, five shades per hue (400 / 500 / 600 / 700 / 800),
+// listed hue by hue. It is drawn one column per hue and one row per shade, so
+// the grid is five swatches tall whatever the palette holds: a tall grid ran
+// off the top of short screens (#184). Neutrals are the last column.
 const PALETTE: string[] = [
   // red       orange     amber      yellow     lime
   "#f87171",
@@ -174,11 +174,15 @@ export function ColorPicker({
             {!value && <Pipette className="h-4 w-4 text-muted-foreground" />}
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto gap-3 p-3">
-          {/* Preset grid - rows are hues, columns are shades (light→dark). */}
+        <PopoverContent
+          align="start"
+          collisionPadding={8}
+          className="max-h-(--radix-popover-content-available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-auto p-3"
+        >
+          {/* Preset grid - columns are hues, rows are shades (light→dark). */}
           <div
-            className="grid gap-1"
-            style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+            className="grid grid-flow-col gap-1"
+            style={{ gridTemplateRows: "repeat(5, minmax(0, 1fr))" }}
           >
             {PALETTE.map((hex) => {
               const selected = value.toLowerCase() === hex.toLowerCase()
@@ -192,7 +196,7 @@ export function ColorPicker({
                     setOpen(false)
                   }}
                   className={cn(
-                    "relative h-6 w-6 rounded-md ring-offset-popover transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+                    "relative h-5 w-5 rounded-[4px] ring-offset-popover transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
                     selected && "ring-2 ring-foreground/60 ring-offset-2"
                   )}
                   style={{ backgroundColor: hex }}
