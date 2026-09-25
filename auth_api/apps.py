@@ -6,17 +6,16 @@ class AuthApiConfig(AppConfig):
     name = "auth_api"
 
     def ready(self):
-        # Register the drf-spectacular auth extension for our token scheme.
-        from . import schema  # noqa: F401
-
-        # A grant, its scope or a user's groups changing mid-request must not
-        # be answered from the per-request RBAC memo.
         from django.contrib.auth import get_user_model
         from django.db.models.signals import m2m_changed, post_delete, post_save
 
+        # Register the drf-spectacular auth extension for our token scheme.
+        from . import schema  # noqa: F401
         from .models import ObjectPermission
         from .rbac import invalidate_request_cache
 
+        # A grant, its scope or a user's groups changing mid-request must not
+        # be answered from the per-request RBAC memo.
         for sig in (post_save, post_delete):
             sig.connect(invalidate_request_cache, sender=ObjectPermission,
                         dispatch_uid=f"rbac-memo-{sig}")

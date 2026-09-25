@@ -409,8 +409,12 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
             (model._meta.label_lower, action, None, obj.pk) if rows is None
             else (model._meta.label_lower, action, id(parent), id(rows))
         )
-        if key in cache:
-            return cache[key]
+        # The entry keeps the page alive: an id() is only unique while its
+        # object lives, and a freed list's id can come back for another list
+        # later in the same request.
+        hit = cache.get(key)
+        if hit is not None and hit[0] is rows:
+            return hit[1]
         if rows is None:
             page = [obj]
         else:
@@ -419,13 +423,13 @@ class ObjectPermsSerializerMixin(serializers.Serializer):
             except TypeError:  # a single instance, not a list
                 page = [rows]
         pks = [r.pk for r in page if isinstance(r, model)] or [obj.pk]
-        if key not in cache:
-            cache[key] = set(
-                model._default_manager.filter(pk__in=pks)
-                .filter(filt)
-                .values_list("pk", flat=True)
-            )
-        return cache[key]
+        allowed = set(
+            model._default_manager.filter(pk__in=pks)
+            .filter(filt)
+            .values_list("pk", flat=True)
+        )
+        cache[key] = (rows, allowed)
+        return allowed
 
 
 class TaggableSerializerMixin:
