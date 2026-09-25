@@ -10,6 +10,7 @@ import { numidColumn } from "@/components/cells/numid"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
+import { PMF_LABEL } from "@/lib/wifi-security"
 
 // The one source of truth for "a table of wireless LANs". The /wireless-lans
 // list and the WLANs pane on a wireless LAN group's detail page both build
@@ -24,6 +25,7 @@ export type WirelessLANColumnId =
   | "status"
   | "vlan"
   | "auth"
+  | "pmf"
   | "description"
   | "tags"
 
@@ -34,6 +36,7 @@ const CANONICAL_ORDER: WirelessLANColumnId[] = [
   "status",
   "vlan",
   "auth",
+  "pmf",
   "description",
   "tags",
 ]
@@ -154,7 +157,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
     auth: () => ({
       id: "auth",
       accessorKey: "auth_type",
-      header: "Auth",
+      header: "Security",
       cell: ({ row }) =>
         row.original.auth_type ? (
           <span className="text-xs">
@@ -162,7 +165,7 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
             {row.original.auth_cipher && (
               <span className="text-muted-foreground">
                 {" "}
-                · {row.original.auth_cipher.toUpperCase()}
+                · {row.original.auth_cipher_display}
               </span>
             )}
           </span>
@@ -172,9 +175,35 @@ export function buildWirelessLANColumns<T extends WirelessLAN = WirelessLAN>(
       meta: {
         facet: {
           kind: "enum",
-          label: "Auth",
+          label: "Security",
           get: (r: T) => r.auth_type,
-          formatValue: (v) => ({ label: v || "-" }),
+          formatValue: (v, sample) => ({
+            label: v ? sample.auth_type_display : "-",
+          }),
+        },
+      },
+    }),
+    pmf: () => ({
+      id: "pmf",
+      accessorKey: "pmf",
+      header: "PMF",
+      cell: ({ row }) =>
+        row.original.pmf ? (
+          <span className="text-xs">{PMF_LABEL[row.original.pmf]}</span>
+        ) : (
+          dash
+        ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "PMF",
+          get: (r: T) => r.pmf || "__none__",
+          formatValue: (v) => ({
+            label:
+              v === "__none__"
+                ? "Not documented"
+                : PMF_LABEL[v as keyof typeof PMF_LABEL],
+          }),
         },
       },
     }),

@@ -6704,6 +6704,9 @@ class WirelessLANSerializer(SecretPSKSerializerMixin, StatusSerializerMixin,
     auth_type_display = serializers.CharField(
         source="get_auth_type_display", read_only=True
     )
+    auth_cipher_display = serializers.CharField(
+        source="get_auth_cipher_display", read_only=True
+    )
     tags = TagSerializer(many=True, read_only=True)
 
     group_id = TenantScopedPrimaryKeyRelatedField(
@@ -6722,10 +6725,32 @@ class WirelessLANSerializer(SecretPSKSerializerMixin, StatusSerializerMixin,
         model = WirelessLAN
         fields = ["id", "ssid", "group", "group_id", "status", "status_id", 
                   "vlan", "vlan_id", "auth_type", "auth_type_display",
-                  "auth_cipher", "psk", "psk_set", "description", "comments",
+                  "auth_cipher", "auth_cipher_display", "pmf", "psk", "psk_set",
+                  "description", "comments",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id",  "auth_type_display", "psk_set",
                             "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        """The mode, cipher, PMF and passphrase must go together (#177)."""
+        from .wifi_security import problems
+
+        attrs = super().validate(attrs)
+        inst = self.instance
+
+        def current(key):
+            return attrs[key] if key in attrs else getattr(inst, key, "") if inst else ""
+
+        # A passphrase is there if one is given, or stored and not being cleared.
+        given = attrs.get("psk")
+        has_psk = bool(given) or (
+            inst is not None and inst.psk_set and "psk" not in attrs
+        ) or (inst is not None and inst.psk_set and given == "")
+        errors = problems(current("auth_type"), current("auth_cipher"), current("pmf"),
+                          psk=has_psk)
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
 
 # ─── VPN ─────────────────────────────────────────────────────────────────────

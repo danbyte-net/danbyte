@@ -6246,16 +6246,31 @@ class SecretBackedPSK(models.Model):
 class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A wireless network (SSID), optionally grouped and bridged to a VLAN."""
 
+    # The security mode (#177). What each allows is in api/wifi_security.py;
+    # "WPA Personal/Enterprise" are the older, WPA-or-WPA2 values.
     AUTH_TYPE_CHOICES = [
         ("open", "Open"),
-        ("wep", "WEP"),
+        ("owe", "Enhanced Open (OWE)"),
+        ("wep", "WEP (legacy)"),
+        ("wpa2-personal", "WPA2-Personal"),
+        ("wpa3-personal", "WPA3-Personal (SAE)"),
+        ("wpa2-wpa3-personal", "WPA2/WPA3-Personal"),
+        ("wpa2-enterprise", "WPA2-Enterprise"),
+        ("wpa3-enterprise", "WPA3-Enterprise"),
+        ("wpa2-wpa3-enterprise", "WPA2/WPA3-Enterprise"),
         ("wpa-personal", "WPA Personal (PSK)"),
         ("wpa-enterprise", "WPA Enterprise"),
     ]
     AUTH_CIPHER_CHOICES = [
         ("auto", "Auto"),
-        ("tkip", "TKIP"),
-        ("aes", "AES"),
+        ("aes", "AES-CCMP"),
+        ("gcmp-256", "GCMP-256"),
+        ("tkip", "TKIP (legacy)"),
+    ]
+    PMF_CHOICES = [
+        ("disabled", "Disabled"),
+        ("optional", "Optional"),
+        ("required", "Required"),
     ]
 
     psk_secret_prefix = "wireless-lans"
@@ -6278,11 +6293,13 @@ class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMix
         related_name="wireless_lans",
     )
     auth_type = models.CharField(
-        max_length=16, choices=AUTH_TYPE_CHOICES, blank=True, default=""
+        max_length=24, choices=AUTH_TYPE_CHOICES, blank=True, default=""
     )
     auth_cipher = models.CharField(
         max_length=8, choices=AUTH_CIPHER_CHOICES, blank=True, default=""
     )
+    #: Protected Management Frames: required by WPA3 and OWE.
+    pmf = models.CharField(max_length=8, choices=PMF_CHOICES, blank=True, default="")
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
 

@@ -30,7 +30,7 @@ A group bundles related SSIDs together - for example *Corporate*, *Guest*, or
 1. Open **Wireless → Wireless LANs** and click **Add wireless LAN**.
 2. Enter the **SSID** - the broadcast network name.
 3. Optionally put it in a **group**.
-4. Set a **status**, the **authentication** details, and an optional **VLAN
+4. Set a **status**, the **security** details, and an optional **VLAN
    bridge** (see below).
 5. Save.
 
@@ -40,10 +40,34 @@ A group bundles related SSIDs together - for example *Corporate*, *Guest*, or
 |---|---|
 | **Status** | active, reserved, disabled, or deprecated. |
 | **VLAN** | the VLAN this SSID bridges onto, so wireless and wired networks line up. |
-| **Authentication type** | open, WEP, WPA-Personal, or WPA-Enterprise. |
-| **Authentication cipher** | auto, TKIP, or AES. |
-| **Pre-shared key** | the WPA-Personal passphrase - stored in the secret store, never in this record (see below). |
+| **Security mode** | WPA2-Personal, WPA3-Personal (SAE), WPA2/WPA3-Personal, the three Enterprise equivalents, Enhanced Open (OWE), Open, or the legacy WPA Personal, WPA Enterprise and WEP. |
+| **Cipher** | Auto, AES-CCMP, GCMP-256, or TKIP (legacy). |
+| **PMF** | Protected Management Frames: disabled, optional or required. |
+| **Pre-shared key** | the passphrase of a Personal mode (or WEP key) - stored in the secret store, never in this record (see below). |
 | **Description / comments** | free-text notes. |
+
+### Security settings that go together
+
+The mode decides which cipher and PMF setting make sense, and Danbyte refuses
+the rest - the form only offers what fits, and the API returns a field error
+for anything else:
+
+| Mode | Cipher | PMF |
+|---|---|---|
+| WPA2-Personal / -Enterprise | Auto, AES-CCMP, TKIP | any |
+| WPA3-Personal (SAE) / -Enterprise | Auto, AES-CCMP, GCMP-256 | required |
+| WPA2/WPA3 transition | Auto, AES-CCMP | optional or required |
+| Enhanced Open (OWE) | Auto, AES-CCMP, GCMP-256 | required |
+| Open, WEP | none | disabled |
+
+Only Personal modes and WEP carry a passphrase. SAE (WPA3-Personal) still
+starts from one, so it is stored the same way. Switching an SSID with a stored
+passphrase to a mode without one - Enterprise, OWE or Open - removes the
+passphrase on save; the form says so first, and the API refuses the switch
+unless the same request clears it (`"psk": null`).
+
+Leaving a field blank means *not documented*. The list has a **PMF** column
+and filter, so the SSIDs without PMF required are one click away.
 
 ### The pre-shared key
 
@@ -111,7 +135,7 @@ Clicking an **SSID** in **Wireless → Wireless LANs** opens that SSID's own pag
 
 - **Overview** - the SSID, status, group, and description; then the **Network**
   card, which is what you actually come here to read: the VLAN it bridges onto,
-  the authentication type, and the cipher. Comments render below if there are
+  the security mode, cipher and PMF. Comments render below if there are
   any.
 - **Journal** - your notes on this SSID.
 - **Change log** - the automatic record of changes to the row.

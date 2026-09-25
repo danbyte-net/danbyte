@@ -12,7 +12,16 @@ import {
   type WirelessLAN,
   type WirelessLANGroupOption,
   type WirelessLANWritePayload,
+  type WirelessPmf,
 } from "@/lib/api"
+import {
+  CIPHER_LABEL,
+  PMF_LABEL,
+  SECURITY_MODE_GROUPS,
+  ciphersFor,
+  pmfFor,
+  takesPassphrase,
+} from "@/lib/wifi-security"
 import {
   FormColumn,
   FormColumns,
@@ -28,18 +37,6 @@ import {
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
-
-const AUTH_TYPES: { value: WirelessAuthType; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "wep", label: "WEP" },
-  { value: "wpa-personal", label: "WPA Personal (PSK)" },
-  { value: "wpa-enterprise", label: "WPA Enterprise" },
-]
-const AUTH_CIPHERS: { value: WirelessAuthCipher; label: string }[] = [
-  { value: "auto", label: "Auto" },
-  { value: "tkip", label: "TKIP" },
-  { value: "aes", label: "AES" },
-]
 
 export interface WirelessLANFormProps {
   wlan?: WirelessLAN
@@ -69,6 +66,18 @@ export function WirelessLANForm({
   const [authCipher, setAuthCipher] = useState<WirelessAuthCipher>(
     wlan?.auth_cipher ?? ""
   )
+  const [pmf, setPmf] = useState<WirelessPmf>(wlan?.pmf ?? "")
+  // A new mode keeps only the cipher and PMF that still fit; where it allows
+  // exactly one PMF setting (WPA3, OWE: required), that one is filled in.
+  const changeMode = (mode: WirelessAuthType) => {
+    setAuthType(mode)
+    if (!ciphersFor(mode).includes(authCipher)) setAuthCipher("")
+    const pmfs = pmfFor(mode)
+    if (pmfs.length === 1) setPmf(pmfs[0])
+    else if (!pmfs.includes(pmf)) setPmf("")
+  }
+  // Leaving a passphrase mode with a key stored removes the key on save.
+  const dropsPassphrase = !!wlan?.psk_set && !takesPassphrase(authType)
   const [description, setDescription] = useState(wlan?.description ?? "")
   // Write-only: it is never sent back, so the box always starts empty and a
   // blank one means "leave the stored key alone" (#68).
@@ -89,6 +98,7 @@ export function WirelessLANForm({
     setVlanId(wlan.vlan?.id ?? null)
     setAuthType(wlan.auth_type)
     setAuthCipher(wlan.auth_cipher)
+    setPmf(wlan.pmf)
     setDescription(wlan.description)
     setComments(wlan.comments)
     setTagIds(wlan.tags.map((t) => t.id))
@@ -127,9 +137,14 @@ export function WirelessLANForm({
         vlan_id: vlanId,
         auth_type: authType,
         auth_cipher: authCipher,
+        pmf,
         // Only send it when the operator typed one - an empty box must not
-        // read as "clear the key".
-        ...(psk ? { psk } : {}),
+        // read as "clear the key". A mode without a passphrase clears it.
+        ...(dropsPassphrase
+          ? { psk: null }
+          : psk && takesPassphrase(authType)
+            ? { psk }
+            : {}),
         description: description.trim(),
         comments: comments.trim(),
         tag_ids: tagIds,
@@ -222,35 +237,62 @@ export function WirelessLANForm({
 
         <FormColumn>
           <FormSection title="Security" card>
+            <FormSelect
+              label="Security mode"
+              value={authType || null}
+              onChange={(v) => changeMode((v as WirelessAuthType | null) ?? "")}
+              noneLabel="-"
+              options={[]}
+              groups={SECURITY_MODE_GROUPS}
+              error={fieldErrors.auth_type}
+            />
             <div className="grid gap-3 @md:grid-cols-2">
-              <FormSelect
-                label="Authentication"
-                value={authType || null}
-                onChange={(v) => setAuthType((v as WirelessAuthType) ?? "")}
-                noneLabel="-"
-                options={AUTH_TYPES}
-              />
               <FormSelect
                 label="Cipher"
                 value={authCipher || null}
                 onChange={(v) => setAuthCipher((v as WirelessAuthCipher) ?? "")}
                 noneLabel="-"
-                options={AUTH_CIPHERS}
+                options={ciphersFor(authType).map((c) => ({
+                  value: c,
+                  label: CIPHER_LABEL[c as Exclude<WirelessAuthCipher, "">],
+                }))}
+                disabled={ciphersFor(authType).length === 0}
+                error={fieldErrors.auth_cipher}
+              />
+              <FormSelect
+                label="PMF"
+                info="Protected Management Frames. WPA3 and Enhanced Open require them."
+                value={pmf || null}
+                onChange={(v) => setPmf((v as WirelessPmf | null) ?? "")}
+                noneLabel="-"
+                options={pmfFor(authType).map((p) => ({
+                  value: p,
+                  label: PMF_LABEL[p as Exclude<WirelessPmf, "">],
+                }))}
+                error={fieldErrors.pmf}
               />
             </div>
-            <FormText
-              label="Pre-shared key"
-              type="password"
-              autoComplete="new-password"
-              value={psk}
-              onChange={setPsk}
-              placeholder={
-                wlan?.psk_set ? "Stored - type to replace" : "Not set"
-              }
-              hint={wlan?.psk_set ? "blank keeps the stored key" : "optional"}
-              info="The key is written to the deployment's secret store, never to this record. An administrator must enable a store under Settings → Security first."
-              error={fieldErrors.psk}
-            />
+            {dropsPassphrase && (
+              <p className="text-[12px] text-muted-foreground">
+                This mode takes no passphrase; the stored one is removed on
+                save.
+              </p>
+            )}
+            {takesPassphrase(authType) && (
+              <FormText
+                label="Pre-shared key"
+                type="password"
+                autoComplete="new-password"
+                value={psk}
+                onChange={setPsk}
+                placeholder={
+                  wlan?.psk_set ? "Stored - type to replace" : "Not set"
+                }
+                hint={wlan?.psk_set ? "blank keeps the stored key" : "optional"}
+                info="The key is written to the deployment's secret store, never to this record. An administrator must enable a store under Settings → Security first."
+                error={fieldErrors.psk}
+              />
+            )}
           </FormSection>
 
           <FormSection title="Notes" card>

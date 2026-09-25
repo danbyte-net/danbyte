@@ -7830,10 +7830,19 @@ export type WirelessLANStatus =
 export type WirelessAuthType =
   | ""
   | "open"
+  | "owe"
   | "wep"
+  | "wpa2-personal"
+  | "wpa3-personal"
+  | "wpa2-wpa3-personal"
+  | "wpa2-enterprise"
+  | "wpa3-enterprise"
+  | "wpa2-wpa3-enterprise"
   | "wpa-personal"
   | "wpa-enterprise"
-export type WirelessAuthCipher = "" | "auto" | "tkip" | "aes"
+export type WirelessAuthCipher = "" | "auto" | "tkip" | "aes" | "gcmp-256"
+/** Protected Management Frames (#177). */
+export type WirelessPmf = "" | "disabled" | "optional" | "required"
 
 export interface WirelessLAN {
   id: string
@@ -7845,6 +7854,8 @@ export interface WirelessLAN {
   auth_type: WirelessAuthType
   auth_type_display: string
   auth_cipher: WirelessAuthCipher
+  auth_cipher_display: string
+  pmf: WirelessPmf
   /** Whether a PSK is stored (#68). The value itself is never serialised -
    * fetch it from `POST /api/wireless-lans/{id}/reveal-psk/`. */
   psk_set: boolean
@@ -7863,6 +7874,7 @@ export interface WirelessLANWritePayload {
   vlan_id?: string | null
   auth_type?: WirelessAuthType
   auth_cipher?: WirelessAuthCipher
+  pmf?: WirelessPmf
   /** Write-only. Send only when setting or rotating it; omit to keep the
    * stored key, or send null to clear it. */
   psk?: string | null
