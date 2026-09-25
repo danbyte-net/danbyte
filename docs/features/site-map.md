@@ -187,6 +187,11 @@ theme color with a standard building glyph. The same pair exists on locations - 
 on list and detail pages (locations have no coordinates, so nothing changes on
 the map), and give the upcoming topology views a grouping color to work with.
 
+To colour many at once, tick them in the **Sites**, **Regions** or
+**Locations** list and choose **Edit** in the bar that appears: sites and
+locations take a marker colour and icon, regions a colour. Leave a field
+unticked to keep each one's own; tick it with nothing picked to clear it.
+
 ## Close markers cluster
 
 In **View** mode, markers that would collide collapse into a round chip with a

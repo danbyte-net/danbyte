@@ -21,7 +21,14 @@ import {
 } from "@/components/ui/select"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { FieldEditor, useFieldEditorOptions } from "@/components/forms"
+import type { BulkFieldSpec } from "@/components/forms/field-spec"
 import { apiErrorToast } from "@/lib/api-toast"
+
+const MARKER_FIELDS: BulkFieldSpec[] = [
+  { key: "color", label: "Marker colour", kind: "color" },
+  { key: "icon", label: "Marker icon", kind: "icon" },
+]
 
 export const Route = createFileRoute("/sites/bulk-edit")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -39,6 +46,9 @@ function BulkEditSitesPage() {
   const qc = useQueryClient()
 
   const [policy, setPolicy] = useState<string>(KEEP)
+  // undefined = keep each site's own.
+  const [marker, setMarker] = useState<{ color?: string; icon?: string }>({})
+  const editorOptions = useFieldEditorOptions(MARKER_FIELDS)
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
 
@@ -54,6 +64,8 @@ function BulkEditSitesPage() {
     mutationFn: () => {
       const fields: SiteBulkUpdateFields = {}
       if (policy !== KEEP) fields.gateway_policy = policy as SiteGatewayPolicy
+      if (marker.color !== undefined) fields.color = marker.color
+      if (marker.icon !== undefined) fields.icon = marker.icon
       if (addTags.length) fields.add_tag_ids = addTags
       if (removeTags.length) fields.remove_tag_ids = removeTags
       if (Object.keys(fields).length === 0) {
@@ -117,6 +129,20 @@ function BulkEditSitesPage() {
             </SelectContent>
           </Select>
         </Field>
+        {MARKER_FIELDS.map((spec) => (
+          <FieldEditor
+            key={spec.key}
+            spec={spec}
+            value={marker[spec.key as "color" | "icon"]}
+            onChange={(v) =>
+              setMarker((prev) => ({ ...prev, [spec.key]: String(v ?? "") }))
+            }
+            onClear={() =>
+              setMarker((prev) => ({ ...prev, [spec.key]: undefined }))
+            }
+            options={editorOptions}
+          />
+        ))}
         <Field label="Add tags">
           <TagMultiSelect
             options={tags.data?.results ?? []}

@@ -6,6 +6,8 @@ import type { DcimChoices, Paginated, StorageUnit, TagOption } from "@/lib/api"
 import { useCustomizationMeta } from "@/lib/custom-fields"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { CfObjectPicker } from "@/components/cf-object-picker"
+import { IconPicker } from "@/components/icon-picker"
+import { ColorPicker } from "@/components/ui/color-picker"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
@@ -306,11 +308,37 @@ export function FieldEditor({
       />
     )
   }
+  if (f.kind === "color" || f.kind === "icon") {
+    // Picking a value arms the field; the checkbox puts it back to "keep".
+    const current = active ? String(value ?? "") : ""
+    return (
+      <Field label={f.label} hint={f.hint}>
+        <div className="flex items-center gap-2">
+          {keep && (
+            <Checkbox
+              checked={active}
+              disabled={disabled}
+              onCheckedChange={(v) => (v ? onChange("") : unset())}
+              aria-label={active ? "Will be set" : "Keep current"}
+            />
+          )}
+          <div className="min-w-0 flex-1">
+            {f.kind === "color" ? (
+              <ColorPicker value={current} onChange={(v) => onChange(v)} />
+            ) : (
+              <IconPicker value={current} onChange={(v) => onChange(v)} />
+            )}
+          </div>
+        </div>
+      </Field>
+    )
+  }
   if (f.kind === "object") {
     // `disabled` is dropped here: CfObjectPicker takes no disabled flag.
     return <ObjectFieldEditor spec={f} value={value} onChange={onChange} />
   }
   // text / int: a checkbox arms the field, the input carries it.
+  const suggestions = "suggestions" in f ? f.suggestions : undefined
   return (
     <Field label={f.label} hint={f.hint}>
       <div className="flex items-center gap-2">
@@ -324,11 +352,11 @@ export function FieldEditor({
             title={active ? "Will be set" : "Keep current"}
           />
         )}
-        {f.suggestions && f.suggestions.length > 0 ? (
+        {suggestions && suggestions.length > 0 ? (
           <SuggestInput
             value={active && value !== null ? String(value ?? "") : ""}
             onChange={(v) => onChange(v)}
-            suggestions={f.suggestions}
+            suggestions={suggestions}
             placeholder={active ? "" : "Keep current"}
             disabled={off}
           />

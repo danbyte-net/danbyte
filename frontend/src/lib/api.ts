@@ -4985,6 +4985,9 @@ export interface TenantGroupWritePayload {
 export interface SiteBulkUpdateFields {
   gateway_policy?: SiteGatewayPolicy
   location?: string
+  /** Map marker colour and icon (#183); "" clears. */
+  color?: string
+  icon?: string
   add_tag_ids?: number[]
   remove_tag_ids?: number[]
 }

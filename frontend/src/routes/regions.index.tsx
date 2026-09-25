@@ -95,6 +95,8 @@ function RegionsPage() {
         onCleared={() => setSel([])}
         invalidate={[["regions"]]}
         canDelete={false}
+        rename={false}
+        clone={false}
         fields={[
           {
             key: "parent_id",
@@ -102,6 +104,7 @@ function RegionsPage() {
             kind: "object",
             object_model: "region",
           },
+          { key: "color", label: "Marker colour", kind: "color" },
         ]}
       />
       <RegionDeleteDialog

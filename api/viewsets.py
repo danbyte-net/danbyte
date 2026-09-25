@@ -5,6 +5,9 @@ the old Django UI used) so a user can never see another tenant's data.
 """
 from __future__ import annotations
 
+import re
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models.functions import Coalesce, Collate
 from django.db.models import Count, OuterRef, Q, Subquery
@@ -230,6 +233,31 @@ def _bulk_field_updates(fields: dict, allowed: tuple[str, ...]) -> dict:
     if unknown:
         raise ValidationError({"fields": f"Unknown field(s): {', '.join(unknown)}."})
     return {k: fields[k] for k in allowed if k in fields}
+
+
+_ICON_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _marker_updates(fields: dict, keys: tuple[str, ...]) -> dict:
+    """``color`` / ``icon`` of a bulk update, checked as the edit forms check
+    them: a bulk write goes straight to the database (#183)."""
+    from core.models import validate_hex_color
+
+    out = {}
+    if "color" in keys and "color" in fields:
+        color = (fields["color"] or "").strip().lower()
+        if color:
+            try:
+                validate_hex_color(color)
+            except DjangoValidationError:
+                raise ValidationError({"color": "A colour like #10b981."}) from None
+        out["color"] = color
+    if "icon" in keys and "icon" in fields:
+        icon = (fields["icon"] or "").strip()
+        if icon and (len(icon) > 48 or not _ICON_NAME.match(icon)):
+            raise ValidationError({"icon": "An icon name like building-2."})
+        out["icon"] = icon
+    return out
 
 
 # Bulk rename patterns: longest accepted, and the per-name match deadline.
@@ -1943,7 +1971,8 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             raise ValidationError({"fields": "Provide at least one field to update."})
 
         qs = self.get_queryset().filter(pk__in=ids)
-        updates = _bulk_field_updates(fields, ("gateway_policy", "location"))
+        updates = _bulk_field_updates(fields, ("gateway_policy", "location", "color", "icon"))
+        updates.update(_marker_updates(fields, ("color", "icon")))
 
         with transaction.atomic():
             _rows = list(qs)
@@ -7592,12 +7621,18 @@ class RegionViewSet(TenantScopedViewSet):
         if not isinstance(ids, list) or not ids:
             raise ValidationError({"ids": "Provide a non-empty list."})
         fields = request.data.get("fields") or {}
-        unknown = set(fields) - {"parent_id"}
-        if unknown or "parent_id" not in fields:
+        unknown = set(fields) - {"parent_id", "color"}
+        if unknown or not fields:
             raise ValidationError(
-                {"fields": "Only parent_id is bulk-editable here."}
+                {"fields": "Only parent_id and color are bulk-editable here."}
             )
         rows = list(self.get_queryset().filter(id__in=ids))
+        marker = _marker_updates(fields, ("color",))
+        if "parent_id" not in fields:
+            with transaction.atomic():
+                self.get_queryset().filter(pk__in=[r.pk for r in rows]).update(**marker)
+                log_bulk_update(rows, marker)
+            return Response({"updated": len(rows)})
         parent = None
         if fields["parent_id"] is not None:
             parent = self.get_queryset().filter(pk=fields["parent_id"]).first()
@@ -7614,7 +7649,9 @@ class RegionViewSet(TenantScopedViewSet):
                 node = node.parent
         for r in rows:
             r.parent = parent
-            r.save(update_fields=["parent"])
+            for k, v in marker.items():
+                setattr(r, k, v)
+            r.save(update_fields=["parent", *marker])
         return Response({"updated": len(rows)})
 
     def get_serializer_class(self):
@@ -7650,6 +7687,28 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     queryset = Location.objects.all().order_by("site__name", "name")
     serializer_class = LocationSerializer
     pagination_class = StandardPagination
+
+    @action(detail=False, methods=["post"], url_path="bulk-update")
+    def bulk_update(self, request):
+        """Colour and icon for many locations at once (#183):
+        ``{ids: [...], fields: {color?, icon?}}``."""
+        ids = request.data.get("ids") or []
+        fields = request.data.get("fields") or {}
+        if not isinstance(ids, list) or not ids:
+            raise ValidationError({"ids": "Provide a non-empty list of location IDs."})
+        if not isinstance(fields, dict) or not fields:
+            raise ValidationError({"fields": "Provide at least one field to update."})
+        unknown = sorted(set(fields) - {"color", "icon"})
+        if unknown:
+            raise ValidationError({"fields": f"Unknown field(s): {', '.join(unknown)}."})
+        updates = _marker_updates(fields, ("color", "icon"))
+        qs = self.get_queryset().filter(pk__in=ids)
+        with transaction.atomic():
+            rows = list(qs)
+            updated = qs.update(**updates)
+            log_bulk_update(rows, updates)
+            self._assert_bulk_write_in_site_scope(rows)
+        return Response({"updated": updated})
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \

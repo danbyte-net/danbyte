@@ -63,6 +63,9 @@ export interface ComponentBulkBarProps {
   tags?: boolean
   /** Hide the delete button (e.g. read-only contexts). */
   canDelete?: boolean
+  /** Hide rename / clone where the endpoint has no bulk-rename / bulk-clone. */
+  rename?: boolean
+  clone?: boolean
 }
 
 export function ComponentBulkBar({
@@ -74,6 +77,8 @@ export function ComponentBulkBar({
   fields,
   tags = false,
   canDelete = true,
+  rename = true,
+  clone = true,
 }: ComponentBulkBarProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
@@ -99,22 +104,26 @@ export function ComponentBulkBar({
           >
             <Pencil className="mr-1 h-3 w-3" /> Edit
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
-            onClick={() => setRenameOpen(true)}
-          >
-            <Replace className="mr-1 h-3 w-3" /> Rename
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
-            onClick={() => setCloneOpen(true)}
-          >
-            <Copy className="mr-1 h-3 w-3" /> Clone
-          </Button>
+          {rename && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setRenameOpen(true)}
+            >
+              <Replace className="mr-1 h-3 w-3" /> Rename
+            </Button>
+          )}
+          {clone && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setCloneOpen(true)}
+            >
+              <Copy className="mr-1 h-3 w-3" /> Clone
+            </Button>
+          )}
           {canDelete && (
             <Button
               size="sm"

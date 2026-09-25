@@ -58,6 +58,14 @@ export type BulkFieldSpec =
   | {
       key: string
       label: string
+      /** A hex colour, or a Lucide icon name - with the pickers the
+       *  single-object forms use. "" clears. */
+      kind: "color" | "icon"
+      hint?: string
+    }
+  | {
+      key: string
+      label: string
       /** Any object from the customization reference registry - a site, rack,
        *  device, status-bearing catalog row. Rendered with CfObjectPicker. */
       kind: "object"
