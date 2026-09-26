@@ -30,6 +30,10 @@ export interface NodeSizing {
    * hundreds of nodes stay compact. Wiring cards keep the roomy spacing
    * their port-anchored cables need. */
   compact: boolean
+  /** Stack a hub's single-cable neighbours in a grid beside it (default).
+   * Off for views whose cables run straight: a line from the hub would
+   * cross every card in front of the one it serves. */
+  leafGrids?: boolean
 }
 
 export interface LayoutResult {
@@ -1373,20 +1377,21 @@ export function layoutNodes(
    * absent, tiers use a uniform gap. */
   mainOffsets?: number[]
 ): LayoutResult {
-  const { sizeOf: sizer, compact } = sizing
+  const { sizeOf: sizer, compact, leafGrids = true } = sizing
   const tbDir = direction === "TB"
   const pinnedIds = positions
     ? new Set(Object.keys(positions))
     : undefined
   // Leaf grids (structural mode only - Levels owns every tier placement).
-  const clusters: LeafClusters = levels
-    ? {
-        byHub: new Map(),
-        leafSet: new Set(),
-        leafEdgeIds: new Set(),
-        edgeOf: new Map(),
-      }
-    : findLeafClusters(edges, pinnedIds)
+  const clusters: LeafClusters =
+    levels || !leafGrids
+      ? {
+          byHub: new Map(),
+          leafSet: new Set(),
+          leafEdgeIds: new Set(),
+          edgeOf: new Map(),
+        }
+      : findLeafClusters(edges, pinnedIds)
   const byId = new Map(nodes.map((n) => [n.id, n]))
   // Grid geometry per hub, shared by size inflation and placement.
   const gridMeta = new Map<
@@ -1542,6 +1547,9 @@ export function layoutNodes(
     g.setNode(n.id, { width, height })
   }
   for (const e of mainEdges) {
+    // A peer link (the Diagram marks links between twins of one role) does
+    // not rank its ends, so the twins can share a tier.
+    if ((e.data as { peer?: boolean } | undefined)?.peer) continue
     g.setEdge(e.source, e.target, { weight: 1, minlen: 1 })
   }
   dagre.layout(g)

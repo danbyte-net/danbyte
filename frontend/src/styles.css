@@ -665,6 +665,31 @@
   visibility: hidden;
 }
 
+/* Diagram links. A port name runs along its line just past the nub, with a
+   halo in the canvas colour so a crossing line never strikes through it; it
+   goes first as the map zooms out (data-ports="off", below 0.55). The
+   mid-line chip (a bundle's count) is portalled out of the edge, so it
+   carries its own hover flag. Far out, the card lines hide too - the card
+   keeps its size, so nothing moves. */
+.topo-endlabel {
+  font-size: 9px;
+  fill: var(--muted-foreground);
+  stroke: var(--background);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  pointer-events: none;
+}
+[data-ports="off"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
+[data-lod="1"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
+[data-lod="2"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
+[data-lod="2"] .topo-midlabel:not([data-hot]) {
+  display: none;
+}
+[data-lod="2"] .topo-cardline {
+  visibility: hidden;
+}
+
 /* Cable connector dot. Sits fully outside its port cell so the circle is
    whole - centred on the border it reads as a half dot, and a cell that
    clips its overflow cuts the inner half away entirely. */

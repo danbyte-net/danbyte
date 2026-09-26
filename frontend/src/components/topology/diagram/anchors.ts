@@ -382,3 +382,33 @@ export function anchorLinks(
   for (const [id, a] of anchorsOf) out.links.set(id, a)
   return out
 }
+
+/**
+ * A link's ends per cable, as drawn: side midpoints re-chosen from the two
+ * boxes for a `simple` link (or one with no anchors yet), else each
+ * cable's anchors, starting at the Detailed nub's tip.
+ */
+export function linkEnds(
+  link: { a: readonly Anchor[]; b: readonly Anchor[]; simple?: boolean },
+  s: Rect,
+  t: Rect
+): [End, End][] {
+  if (link.simple || !link.a.length || !link.b.length) {
+    const [ss, ts] = chooseSides(s, t)
+    return [
+      [
+        anchorPoint(s, { k: "side", side: ss, off: sideLength(s, ss) / 2 }),
+        anchorPoint(t, { k: "side", side: ts, off: sideLength(t, ts) / 2 }),
+      ],
+    ]
+  }
+  const out: [End, End][] = []
+  const n = Math.min(link.a.length, link.b.length)
+  for (let i = 0; i < n; i++) {
+    const a = link.a[i] as Anchor | undefined
+    const b = link.b[i] as Anchor | undefined
+    if (a && b)
+      out.push([anchorPoint(s, a, NUB.OUT), anchorPoint(t, b, NUB.OUT)])
+  }
+  return out
+}

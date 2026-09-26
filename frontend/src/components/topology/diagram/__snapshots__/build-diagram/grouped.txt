@@ -1,0 +1,24 @@
+# buildDiagram(graph, {"mode":"detailed","line":"straight","colorMode":"cable"})
+
+nodes 4
+grp:@dc1  sitegroup @106,38 212x76
+grp:@dc2  sitegroup @408,142 212x76
+grp:@dc3  sitegroup @408,38 212x76
+grp:none  sitegroup @710,142 212x76
+
+edges 3
+ge:@dc1:@dc2  link groupedge straight simple mid ["2x"]
+  style {"strokeWidth":1.9509775004326935}
+  a R38
+  b L38
+  path M 212,38 L 302,142
+ge:@dc1:@dc3  link groupedge straight simple mid ["3x"]
+  style {"strokeWidth":2.2}
+  a R38
+  b L38
+  path M 212,38 L 302,38
+ge:@dc2:none  link groupedge straight simple mid ["1x"]
+  style {"strokeWidth":1.6}
+  a R38
+  b L38
+  path M 514,142 L 604,142

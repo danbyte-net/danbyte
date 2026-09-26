@@ -1,5 +1,7 @@
 import type {
+  CheckStatus,
   TopoEdge,
+  TopoNode,
   TopologyDiagramDisplay,
   TopologyLineType,
 } from "@/lib/api"
@@ -7,6 +9,8 @@ import type { Weight } from "@/lib/diagram/measure"
 import type { EdgeSem } from "../edge-style"
 import type { BundleMember } from "../edge-semantics"
 import type { EdgeLag } from "../lag-bundles"
+import type { Nub } from "./anchors"
+import type { CardBox } from "./card-layout"
 
 // The Diagram tab's shared vocabulary: what the pure layout core (card
 // fields, card layout, anchors, link geometry) hands the renderers and the
@@ -129,6 +133,43 @@ export type LinkData = {
   midT?: number
   /** No free spot for the middle label: shown on hover only. */
   crowded?: boolean
+}
+
+/** A Diagram edge's data as the canvas holds it: the link plus what the
+ * renderer needs that the pure core does not. */
+export type DiagramEdgeData = LinkData & {
+  /** Anchors are side midpoints, recomputed from the live boxes while a
+   * card is dragged: Simple mode, LLDP ghosts and grouped-map links. */
+  simple?: boolean
+  /** The top-left of the source and target boxes `wp` was routed for. A
+   * card dragged away from there draws the plain elbow until the drop
+   * re-routes it. */
+  wpAt?: [number, number, number, number]
+  /** LLDP ghost: the adjacency, for the materialise dialog. */
+  ghost?: TopoEdge["data"]
+  /** BGP overlay: the sessions between the pair. */
+  bgp?: TopoEdge["data"]
+  /** Grouped map: the aggregated group edge. */
+  group?: unknown
+  /** Hovered or selected: labels show at every zoom. */
+  hot?: boolean
+  /** Both ends share a role: the layout may keep them on one tier. */
+  peer?: boolean
+}
+
+/** A Diagram card's data: the payload node plus its laid-out box. */
+export type DiagramCardData = TopoNode["data"] & {
+  /** Search miss or outside the spotlight. */
+  dimmed?: boolean
+  /** The device's monitoring state, merged in outside the build so a
+   * refresh never re-lays the map out. */
+  monitor?: CheckStatus | null
+  diagram: {
+    box: CardBox
+    /** Detailed mode: one per cabled interface, in order along each side. */
+    nubs: Nub[]
+    mode: DiagramMode
+  }
 }
 
 /** The per-link override key: the two device ids, sorted, joined by "|". */

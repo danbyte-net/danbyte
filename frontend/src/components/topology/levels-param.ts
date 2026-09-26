@@ -105,3 +105,49 @@ export function roleTiers(
   extras.forEach((name, i) => rank.set(name, groups.length + i))
   return { rank, fallback: groups.length + extras.length }
 }
+
+/** What a tiered layout needs: each device's level and each level's
+ * main-axis offset. */
+export interface GraphLevels {
+  /** Node id → level index. Patch panels are left out: they sit between
+   * the cables they join, not on a tier. */
+  levels: Map<string, number>
+  /** Main-axis coordinate of each level, from the Levels distances. */
+  mainOffsets: number[]
+}
+
+/**
+ * The Levels organiser applied to a graph's devices. `groups` is the
+ * resolved order (`resolveLevels`); `distance` the extra gap above a
+ * level, keyed by its first role.
+ */
+export function graphLevels(
+  nodes: readonly {
+    id: string
+    data: { role?: { name: string; is_patch_panel?: boolean } | null }
+  }[],
+  groups: string[][],
+  direction: "LR" | "TB" | undefined,
+  distance: Record<string, number> | undefined
+): GraphLevels {
+  const { rank, fallback: last } = roleTiers(
+    nodes
+      .filter((n) => n.data.role && !n.data.role.is_patch_panel)
+      .map((n) => n.data.role!.name),
+    groups
+  )
+  const levels = new Map<string, number>()
+  for (const n of nodes) {
+    if (n.data.role?.is_patch_panel) continue
+    levels.set(n.id, rank.get(n.data.role?.name ?? "") ?? last)
+  }
+  // A level's gap comes from the distance step of its FIRST role (bonded
+  // roles share the level, so they share its gap).
+  const base = direction === "TB" ? 200 : 360
+  const mult = [0.6, 0.8, 1, 1.4, 2] // 5 distance steps
+  const gapOf = (role: string) => base * mult[distance?.[role] ?? 2]
+  const mainOffsets = [0]
+  for (let i = 1; i <= last; i++)
+    mainOffsets[i] = mainOffsets[i - 1] + gapOf(groups[i]?.[0] ?? "")
+  return { levels, mainOffsets }
+}

@@ -1,0 +1,138 @@
+# buildDiagram(graph, {"mode":"detailed","line":"elbow","colorMode":"cable","direction":"TB"})
+
+nodes 10
+dev:@fw-01  card @1037,448.5 172x71
+  fill #ef4444 ink #fff
+  title "fw-01" top 6
+  lines primary_ip="10.0.2.1" loopback="10.255.0.1" serial="SN FDO22000X"
+  nubs T78:ethernet1/2 T94:ethernet1/1
+dev:@leaf-01  card @95,242 180x71
+  fill #0ea5e9 ink #fff
+  title "leaf-01" top 6
+  lines primary_ip="10.0.1.1" loopback="10.255.0.2" serial="SN FDO22001X"
+  nubs T74:Ethernet1/50 T90:Ethernet1/49 T106:Ethernet1/51 R27.5:Ethernet1/54 R43.5:Ethernet1/53
+dev:@leaf-02  card @1055,242 182x82
+  fill #0ea5e9 ink #fff
+  title "leaf-02" top 6
+  lines primary_ip="10.0.1.2" loopback="10.255.0.3" serial="SN FDO22002X"
+  nubs L17:Ethernet1/51 L33:Ethernet1/49 L49:Ethernet1/54 L65:Ethernet1/53
+dev:@leaf-03  card @360,242 182x71
+  fill #0ea5e9 ink #fff
+  title "leaf-03" top 6
+  lines primary_ip="10.0.1.3" loopback="10.255.0.4" serial="SN FDO22003X"
+  nubs T83:Ethernet1/49 T99:Ethernet1/51 B83:Ethernet1/47 B99:Ethernet1/48
+dev:@leaf-04  card @598,242 182x71
+  fill #0ea5e9 ink #fff
+  title "leaf-04" top 6
+  lines primary_ip="10.0.1.4" loopback="10.255.0.5" serial="SN FDO22004X"
+  nubs T83:Ethernet1/49 T99:Ethernet1/51 B75:Ethernet1/48 B91:Ethernet1/2 B107:Ethernet1/1
+dev:@oob-con-01  card @1339.5,35.5 207x71
+  fill #a855f7 ink #fff
+  title "oob-con-01" top 6
+  lines primary_ip="10.0.9.1" loopback="10.255.0.6" serial="SN FDO22005X"
+dev:@pp-c01  card @598,448.5 88x28
+  fill #71717a ink #fff
+  title "pp-c01" top 6
+  nubs T44:1
+dev:@spine-01  card @95,35.5 190x71
+  fill #6366f1 ink #fff
+  title "spine-01" top 6
+  lines primary_ip="10.0.0.1" loopback="10.255.0.8" serial="SN FDO22007X"
+  nubs R35.5:Ethernet1/3 B71:Ethernet1/2 B87:Ethernet1/1 B103:Ethernet1/4 B119:Ethernet1/5
+dev:@spine-02  card @383.3,35.5 192x71
+  fill #6366f1 ink #fff
+  title "spine-02" top 6
+  lines primary_ip="10.0.0.2" loopback="10.255.0.9" serial="SN FDO22008X"
+  nubs R35.5:Ethernet1/2 B80:Ethernet1/1 B96:Ethernet1/3 B112:Ethernet1/4
+dev:@srv-db-01  card @796.5,448.5 197x57
+  fill #10b981 ink #fff
+  title "srv-db-01" top 6
+  lines loopback="10.255.0.10" serial="SN FDO22009X"
+  nubs T90.5:eno2 T106.5:eno1
+
+edges 17
+e:@c1:@leaf-01:@spine-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a B87:Ethernet1/1
+  b T90:Ethernet1/49
+  wp 95,131 95,131
+  path M 87,77 L 87,125 Q 87,131 91,131 L 91,131 Q 95,131 95,137 L 95,200.5
+e:@c2:@leaf-01:@spine-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a B71:Ethernet1/2
+  b T74:Ethernet1/50
+  wp 95,141 95,141
+  path M 71,77 L 71,135 Q 71,141 75,141 L 75,141 Q 79,141 79,147 L 79,200.5
+e:@c3:@leaf-02:@spine-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a R35.5:Ethernet1/3
+  b L33:Ethernet1/49
+  path M 196,35.5 L 571,35.5 Q 577,35.5 577,41.5 L 577,228 Q 577,234 583,234 L 958,234
+e:@c4:@spine-01:@leaf-03  link cable elbow
+  style {"strokeWidth":1.25,"stroke":"#f59e0b"}
+  a B103:Ethernet1/4
+  b T83:Ethernet1/49
+  path M 103,77 L 103,132.75 Q 103,138.75 109,138.75 L 346,138.75 Q 352,138.75 352,144.75 L 352,200.5
+e:@c5:@spine-01:@leaf-04  link cable elbow
+  style {"strokeWidth":1.25}
+  a B119:Ethernet1/5
+  b T83:Ethernet1/49
+  path M 119,77 L 119,132.75 Q 119,138.75 125,138.75 L 584,138.75 Q 590,138.75 590,144.75 L 590,200.5
+e:@c6:@leaf-01:@spine-02  link cable elbow
+  style {"strokeWidth":1.25}
+  a B80:Ethernet1/1
+  b T106:Ethernet1/51
+  path M 367.33414043583537,77 L 367.33414043583537,132.75 Q 367.33414043583537,138.75 361.33414043583537,138.75 L 117,138.75 Q 111,138.75 111,144.75 L 111,200.5
+e:@c7:@leaf-02:@spine-02  link cable elbow
+  style {"strokeWidth":1.25}
+  a R35.5:Ethernet1/2
+  b L17:Ethernet1/51
+  path M 485.33414043583537,35.5 L 715.6670702179176,35.5 Q 721.6670702179176,35.5 721.6670702179176,41.5 L 721.6670702179176,212 Q 721.6670702179176,218 727.6670702179176,218 L 958,218
+e:@c8:@spine-02:@leaf-03  link cable elbow
+  style {"strokeWidth":1.25,"stroke":"#f59e0b"}
+  a B96:Ethernet1/3
+  b T99:Ethernet1/51
+  path M 383.33414043583537,77 L 383.33414043583537,132.75 Q 383.33414043583537,138.75 377.33414043583537,138.75 L 374,138.75 Q 368,138.75 368,144.75 L 368,200.5
+e:@c9:@spine-02:@leaf-04  link cable elbow
+  style {"strokeWidth":1.25}
+  a B112:Ethernet1/4
+  b T99:Ethernet1/51
+  path M 399.33414043583537,77 L 399.33414043583537,132.75 Q 399.33414043583537,138.75 405.33414043583537,138.75 L 600,138.75 Q 606,138.75 606,144.75 L 606,200.5
+e:@c12:@fw-01:@leaf-04  link cable elbow mid ["2x"]
+  style {"strokeWidth":1.75,"stroke":"#3b82f6"}
+  a B107:Ethernet1/1 B91:Ethernet1/2
+  b T94:ethernet1/1 T78:ethernet1/2
+  path M 614,283.5 L 614,339.25 Q 614,345.25 620,345.25 L 1039,345.25 Q 1045,345.25 1045,351.25 L 1045,407
+  path M 598,283.5 L 598,339.25 Q 598,345.25 604,345.25 L 1023,345.25 Q 1029,345.25 1029,351.25 L 1029,407
+e:@c13:@leaf-03:@srv-db-01  link cable elbow
+  style {"strokeWidth":1.25,"strokeDasharray":"10 4"}
+  a B99:Ethernet1/48
+  b T106.5:eno1
+  wp 360,343 796.5,343
+  path M 368,283.5 L 368,337 Q 368,343 374,343 L 798.5,343 Q 804.5,343 804.5,349 L 804.5,414
+e:@c14:@pp-c01:@leaf-04  link cable elbow
+  style {"strokeWidth":1.25}
+  a B75:Ethernet1/48
+  b T44:1
+  path M 582,283.5 L 582,350 Q 582,356 588,356 L 592,356 Q 598,356 598,362 L 598,428.5
+e:@c17:@leaf-03:@srv-db-01  link cable elbow
+  style {"strokeWidth":1.25}
+  a B83:Ethernet1/47
+  b T90.5:eno2
+  wp 360,353 796.5,353
+  path M 352,283.5 L 352,347 Q 352,353 358,353 L 782.5,353 Q 788.5,353 788.5,359 L 788.5,414
+ghost:@leaf-02:@fw-01  link ghost straight simple mid ["LLDP"]
+  style {"strokeWidth":1.5,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","opacity":0.8}
+  a B91
+  b T86
+  path M 1055,283 L 1037,413
+bgp:@fw-01:@spine-01:  overlay bgp straight
+  style {"strokeWidth":1.25,"stroke":"var(--primary)","strokeDasharray":"3 5","opacity":0.45}
+bgp:@spine-01:@spine-02:underlay  overlay bgp straight
+  style {"strokeWidth":1.25,"stroke":"var(--primary)","strokeDasharray":"3 5","opacity":0.45}
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  link lagbundle elbow mid ["Po10 ⇄ Po10 · 2x"]
+  style {"strokeWidth":2.5}
+  a R43.5:Ethernet1/53 R27.5:Ethernet1/54
+  b L65:Ethernet1/53 L49:Ethernet1/54
+  path M 191,250 L 568.5,250 Q 574.5,250 574.5,256 L 574.5,260 Q 574.5,266 580.5,266 L 958,266
+  path M 191,234 L 568.5,234 Q 574.5,234 574.5,240 L 574.5,244 Q 574.5,250 580.5,250 L 958,250

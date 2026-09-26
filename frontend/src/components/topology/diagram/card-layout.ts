@@ -139,6 +139,12 @@ export function nubRect(w: number, h: number, side: Side, off: number): Rect {
   }
 }
 
+/** The pill's top, card-relative: on the name row, or its own row above
+ * the name when the card is `stacked`. */
+export function pillTop(stacked: boolean): number {
+  return CARD.PAD_Y + (stacked ? 0 : (CARD.TITLE_LH - PILL.H) / 2)
+}
+
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v))
 
@@ -255,7 +261,7 @@ export function cardLayout(
       text,
       rect: {
         x: PILL.X,
-        y: CARD.PAD_Y + (stacked ? 0 : (CARD.TITLE_LH - PILL.H) / 2),
+        y: pillTop(stacked),
         w: pillWidth(text, measure),
         h: PILL.H,
       },

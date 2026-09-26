@@ -8,6 +8,8 @@ import { hierHeight, hierarchyWidth } from "./layout"
 import { PortNode, StencilNode, stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
 import { ZoneNode } from "./zone-node"
+import { CardNode } from "./diagram/card-node"
+import type { DiagramCardData } from "./diagram/types"
 
 // Every node kind the topology canvas renders: its component and the box it
 // occupies. The layout takes `sizeOf` as a parameter instead of importing
@@ -47,6 +49,14 @@ export const NODE_KINDS = {
     size: (n: Node) => {
       const d = n.data as { name?: string; portSpan?: number }
       return { width: hierarchyWidth(d), height: hierHeight(d.portSpan ?? 0) }
+    },
+  },
+  // The Diagram tab's card: its box is laid out in code (card-layout.ts).
+  card: {
+    component: CardNode,
+    size: (n: Node) => {
+      const box = (n.data as Partial<DiagramCardData>).diagram?.box
+      return box ? { width: box.w, height: box.h } : stencilBox(n)
     },
   },
   interface: { component: PortNode },
