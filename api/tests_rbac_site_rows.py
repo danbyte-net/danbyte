@@ -197,6 +197,38 @@ class MonitoringConfigSiteTests(_SiteScopedBase):
         node_ids = {n["data"]["device_id"] for n in g.get("nodes", [])}
         self.assertNotIn(str(d_b.id), node_ids)
 
+    def test_topology_post_device_set_excludes_other_site(self):
+        from api.models import Interface
+
+        self._grant("device")
+        d_a = self._device(self.site_a, "a")
+        d_b = self._device(self.site_b, "b")
+        self._cable_between(
+            Interface.objects.create(device=d_a, name="e0"),
+            Interface.objects.create(device=d_b, name="e0"),
+        )
+        self._login()
+        r = self.client.post(
+            "/api/topology/",
+            {"devices": [str(d_a.id), str(d_b.id)], "include": ["card"]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        g = r.json()
+        self.assertEqual(
+            [n["data"]["device_id"] for n in g["nodes"]], [str(d_a.id)]
+        )
+        self.assertEqual(g["edges"], [])
+        self.assertNotIn(str(d_b.id), str(g))
+
+    def _cable_between(self, a, b):
+        from api.models import Cable, CableTermination
+
+        cab = Cable.objects.create(tenant=self.tenant)
+        CableTermination.objects.create(cable=cab, end="A", interface=a)
+        CableTermination.objects.create(cable=cab, end="B", interface=b)
+        return cab
+
     def test_snmp_ghost_other_site_device_empty(self):
         self._grant("device")
         d_b = self._device(self.site_b, "b")

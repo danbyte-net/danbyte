@@ -1,6 +1,8 @@
 """Network topology graph v2 for the React Flow map.
 
-``GET /api/topology/`` → ``{nodes, edges}``.
+``GET /api/topology/`` → ``{nodes, edges}``. ``POST`` takes the same query as
+a JSON body (a large device set overflows a URL). ``include=card,link_ips,
+photo`` opts into enrichment (``api/topology_enrich.py``) and adds ``meta``.
 
 Nodes are devices rendered as *stencil cards*: each carries its cabled ports
 (so edges anchor port-to-port, like a wiring diagram), role color, primary IP
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import uuid
 from collections import deque
+from collections.abc import Mapping
 
 from django.db.models import Count, Prefetch, Q
 from drf_spectacular.types import OpenApiTypes
@@ -75,6 +78,57 @@ def _uuid_list_param(params, param, limit=MAX_DEVICE_SET):
     if len(items) > limit:
         raise ParseError(f"{param}: at most {limit:,} ids")
     return list(dict.fromkeys(_parse_uuid(x, param) for x in items))
+
+
+def _query_params(request):
+    """The map's parameters: the query string on GET, the JSON body on POST.
+    A device set of a few hundred ids overflows gunicorn's 8190-byte request
+    line, so the page POSTs; the body mirrors the query, with lists where the
+    query takes comma-separated values."""
+    if request.method != "POST":
+        return request.query_params
+    data = request.data
+    if not isinstance(data, Mapping):
+        raise ParseError("The body must be a JSON object.")
+    return data
+
+
+def _flag_param(params, param, default=True):
+    """A switch: ``0`` (or JSON ``false``) is off, anything else on."""
+    raw = params.get(param)
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip() != "0"
+
+
+def _csv_param(params, param):
+    """The ``param`` values from a comma-separated string or a JSON list,
+    stripped, empties dropped; None when the parameter is absent."""
+    if param not in params:
+        return None
+    raw = params.get(param)
+    if raw is None:
+        return None
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(",")
+    return [str(x).strip() for x in items if str(x).strip()]
+
+
+def _include_param(params):
+    """The opt-in enrichments ``include`` names; unknown tokens are ignored."""
+    from .topology_enrich import INCLUDE_TOKENS
+
+    return frozenset(_csv_param(params, "include") or ()) & INCLUDE_TOKENS
+
+
+def _card_fields_param(params):
+    """A saved view's own card lines (``card_fields``): None when absent
+    (inherit), ``[]`` for name only. Keys outside the vocabulary drop."""
+    from core.deployment import topology_card_list
+
+    fields = _csv_param(params, "card_fields")
+    return None if fields is None else topology_card_list(fields)
 
 
 # ─── Node payload ────────────────────────────────────────────────────────────
@@ -351,9 +405,12 @@ def viewable_device_ids(user, tenant):
 
 
 def _build_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
-                 collapse=True, scope_q=None):
+                 collapse=True, scope_q=None, collect=None):
+    """``collect``: an optional dict the assembly fills with the objects
+    behind the graph - see ``_graph_from_links``."""
     opts = {"device_filter_q": device_filter_q, "focus_id": focus_id,
-            "depth": depth, "collapse": collapse, "scope_q": scope_q}
+            "depth": depth, "collapse": collapse, "scope_q": scope_q,
+            "collect": collect}
     if _wants_narrowing(device_filter_q, focus_id, scope_q):
         return _narrowed_graph(tenant, **opts)
     graph, _ = _graph_from_links(tenant, _physical_links(tenant), **opts)
@@ -428,9 +485,12 @@ def _terminations_touching(tenant, devices, rear_ids, fronts_of_rear_ids):
 
 
 def _narrowed_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
-                    collapse=True, scope_q=None):
+                    collapse=True, scope_q=None, collect=None):
+    # ``collect`` rides into every assembly pass; each one replaces its keys
+    # wholesale, so what's left is the returned graph's.
     opts = {"device_filter_q": device_filter_q, "focus_id": focus_id,
-            "depth": depth, "collapse": collapse, "scope_q": scope_q}
+            "depth": depth, "collapse": collapse, "scope_q": scope_q,
+            "collect": collect}
     if focus_id:
         pending = {str(focus_id)}
     else:
@@ -483,9 +543,21 @@ def _narrowed_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
 
 
 def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
-                      depth=1, collapse=True, scope_q=None, narrowed=False):
+                      depth=1, collapse=True, scope_q=None, narrowed=False,
+                      collect=None):
     """Assemble ``{nodes, edges}`` from physical ``links``. Returns the graph
-    and, for a focus, the BFS neighbourhood (ids) it kept - else None."""
+    and, for a focus, the BFS neighbourhood (ids) it kept - else None.
+
+    ``collect`` (a dict, optional) is a side channel for the opt-in
+    enrichers (``api/topology_enrich.py``). It receives the objects the
+    assembly already loaded - no extra queries - for the returned graph only:
+
+    * ``devices`` - ``{device id: Device}`` for every device node;
+    * ``ports`` - ``{device id: {(termination kind, port id): port}}``, the
+      node's cabled components (``interface``, ``front_port``, …);
+    * ``pairs`` - ``{edge id: [(pair, a_obj, a_kind, b_obj, b_kind)]}``,
+      each ``pair`` being the payload dict itself, oriented like it.
+    """
     keep = None
     # Remove hidden devices before panel-collapse walks are assembled. Filtering
     # only final endpoints allowed an otherwise visible edge to retain a hidden
@@ -527,11 +599,17 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
     edges = {}
     # device id → ordered {port name: (kind, port object)}
     port_sets: dict[str, dict] = {}
+    # ``collect`` only: device id → {(termination kind, id): port object},
+    # and edge id → [(pair, a_obj, a_kind, b_obj, b_kind)].
+    port_objs: dict[str, dict] = {}
+    pair_objs: dict[str, list] = {}
 
     def note_port(dev, port, kind):
         d = port_sets.setdefault(str(dev.id), {})
         if port.name not in d:
             d[port.name] = (_KIND_OF.get(kind, "interface"), port)
+        if collect is not None:
+            port_objs.setdefault(str(dev.id), {})[(kind, port.id)] = port
 
     for cab, da, pa, ka, db, pb, kb, vias in links:
         note_port(da, pa, ka)
@@ -580,7 +658,7 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
                 "a": {"id": str(lag_a.id), "name": lag_a.name} if lag_a else None,
                 "b": {"id": str(lag_b.id), "name": lag_b.name} if lag_b else None,
             }
-        e["data"]["pairs"].append({
+        pair = {
             "a": f"{da.name if src_is_a else db.name}:{a_port}",
             "b": f"{db.name if src_is_a else da.name}:{b_port}",
             "a_port": a_port,
@@ -589,7 +667,12 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
             "a_kind": end_a[1],
             "b_id": str(end_b[0].id),
             "b_kind": end_b[1],
-        })
+        }
+        e["data"]["pairs"].append(pair)
+        if collect is not None:
+            pair_objs.setdefault(e["id"], []).append(
+                (pair, end_a[0], end_a[1], end_b[0], end_b[1])
+            )
         # Link speed from either endpoint interface (first non-empty wins) -
         # front/rear panel ports have no speed.
         if not e["data"].get("speed"):
@@ -675,6 +758,18 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
                 continue
             ports.append({"name": name, "kind": kind})
         nodes.append(_device_node(d, ports, panel=panel))
+
+    if collect is not None:
+        node_ids = {n["data"]["device_id"] for n in nodes}
+        collect["devices"] = {
+            did: d for did, d in in_scope.items() if did in node_ids
+        }
+        collect["ports"] = {
+            did: objs for did, objs in port_objs.items() if did in node_ids
+        }
+        collect["pairs"] = {
+            e["id"]: pair_objs.get(e["id"], []) for e in edge_list
+        }
 
     return {"nodes": nodes, "edges": edge_list}, keep
 
@@ -1024,12 +1119,35 @@ def _filter_q(params):
         value = _uuid_param(params, param)
         if value:
             q &= Q(**{f"{param}_id": value})
-    if params.get("tag"):
-        q &= Q(tags__slug=params["tag"])
+    tag = params.get("tag")
+    if tag:
+        if not isinstance(tag, str):
+            raise ParseError("tag: not a valid slug")
+        q &= Q(tags__slug=tag)
     return q
 
 
+_GRAPH_200 = OpenApiResponse(
+    response=OpenApiTypes.OBJECT,
+    description=(
+        "`{nodes, edges}` for the React Flow map - device stencil-card "
+        "nodes with cabled ports and cable edges (port-to-port pairs, via "
+        "panels), scoped to the caller's device.view grant. With `include`, "
+        "also `meta` and the enrichment each token names."
+    ),
+)
+_GRAPH_400 = OpenApiResponse(
+    description=(
+        "A malformed id in `device`, `devices`, `site`, `location`, "
+        "`role` or `status` (`{detail: \"<param>: not a valid id\"}`), "
+        f"more than {MAX_DEVICE_SET:,} `devices`, or (POST) a body that is "
+        "not a JSON object."
+    ),
+)
+
+
 @extend_schema(
+    methods=["GET"],
     summary="Network topology graph (devices as nodes, cables as edges)",
     tags=["topology"],
     request=None,
@@ -1092,7 +1210,7 @@ def _filter_q(params):
             description=(
                 "'site' or 'location': aggregate to one node per group "
                 "(device count + role breakdown) with cable-count edges "
-                "between groups. Ignores device/depth focus."
+                "between groups. Ignores device/depth focus and `include`."
             ),
         ),
         OpenApiParameter(
@@ -1102,31 +1220,73 @@ def _filter_q(params):
             description=(
                 "Comma-separated device ids: the induced subgraph on exactly "
                 "this set (the custom-map builder). Overrides focus/filters. "
-                f"At most {MAX_DEVICE_SET:,} ids."
+                f"At most {MAX_DEVICE_SET:,} ids; POST the query for large sets."
+            ),
+        ),
+        OpenApiParameter(
+            name="include",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Comma-separated opt-in enrichment: `card`, `link_ips`, "
+                "`photo`. Unknown tokens are ignored. Adds `meta` to the "
+                "response."
+            ),
+        ),
+        OpenApiParameter(
+            name="card_fields",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Comma-separated card lines of a saved view, over the role "
+                "and global lists (`include=card`). Empty = name only."
             ),
         ),
     ],
-    responses={
-        200: OpenApiResponse(
-            response=OpenApiTypes.OBJECT,
-            description=(
-                "`{nodes, edges}` for the React Flow map - device stencil-card "
-                "nodes with cabled ports and cable edges (port-to-port pairs, via "
-                "panels), scoped to the caller's device.view grant."
-            ),
-        ),
-        400: OpenApiResponse(
-            description=(
-                "A malformed id in `device`, `devices`, `site`, `location`, "
-                "`role` or `status` (`{detail: \"<param>: not a valid id\"}`), "
-                f"or more than {MAX_DEVICE_SET:,} `devices`."
-            ),
-        ),
-    },
+    responses={200: _GRAPH_200, 400: _GRAPH_400},
 )
-@api_view(["GET"])
+@extend_schema(
+    methods=["POST"],
+    summary="Network topology graph, the query as a JSON body",
+    tags=["topology"],
+    request=inline_serializer(
+        name="TopologyQuery",
+        fields={
+            "devices": serializers.ListField(
+                child=serializers.UUIDField(), required=False,
+                max_length=MAX_DEVICE_SET,
+            ),
+            "device": serializers.UUIDField(required=False),
+            "depth": serializers.IntegerField(
+                required=False, min_value=1, max_value=MAX_DEPTH
+            ),
+            "site": serializers.UUIDField(required=False),
+            "location": serializers.UUIDField(required=False),
+            "role": serializers.UUIDField(required=False),
+            "status": serializers.UUIDField(required=False),
+            "tag": serializers.CharField(required=False),
+            "collapse_panels": serializers.BooleanField(required=False),
+            "group_by": serializers.ChoiceField(
+                choices=["site", "location"], required=False
+            ),
+            "include": serializers.ListField(
+                child=serializers.ChoiceField(
+                    choices=["card", "link_ips", "photo"]
+                ),
+                required=False,
+            ),
+            "card_fields": serializers.ListField(
+                child=serializers.CharField(), required=False
+            ),
+        },
+    ),
+    responses={200: _GRAPH_200, 400: _GRAPH_400},
+)
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def topology_view(request):
+    """The map. POST is a read too: it takes the same query as a JSON body,
+    for device sets too long for a URL."""
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"nodes": [], "edges": []})
@@ -1137,8 +1297,8 @@ def topology_view(request):
         return Response({"detail": "device.view required."}, status=403)
     scope_q = None if dev_q is True else dev_q
 
-    p = request.query_params
-    collapse = p.get("collapse_panels", "1") != "0"
+    p = _query_params(request)
+    collapse = _flag_param(p, "collapse_panels")
     # Every id is parsed before any query: a malformed one is a 400, even in
     # a mode that ignores it.
     focus = _uuid_param(p, "device")
@@ -1150,7 +1310,7 @@ def topology_view(request):
         depth = 1
 
     # Aggregated mode: one node per site/location. Focus is device-level and
-    # doesn't apply here.
+    # doesn't apply here, nor does enrichment (there are no device cards).
     group_by = p.get("group_by")
     if group_by in ("site", "location"):
         return Response(_grouped_graph(
@@ -1159,14 +1319,19 @@ def topology_view(request):
             collapse=collapse,
             scope_q=scope_q,
         ))
+    include = _include_param(p)
+    card_fields = _card_fields_param(p)
 
     # Explicit device set - the custom-map builder's induced subgraph. The
     # parameter's PRESENCE selects the mode: an empty value is an empty map
     # (a builder you just opened), never a fall-through to the full graph.
-    custom_set = "devices" in p
+    custom_set = "devices" in p and p.get("devices") is not None
     if custom_set:
         focus = None
 
+    # The enrichers read the objects the assembly already loaded instead of
+    # querying them again; nobody else pays for the bookkeeping.
+    collect = {} if include else None
     graph = _build_graph(
         tenant,
         device_filter_q=(
@@ -1177,7 +1342,16 @@ def topology_view(request):
         depth=depth,
         collapse=collapse,
         scope_q=scope_q,
+        collect=collect,
     )
+    if include:
+        from .topology_enrich import enrich
+
+        graph["meta"] = enrich(
+            graph, collect, include,
+            request=request, user=request.user, tenant=tenant,
+            card_fields=card_fields,
+        )
     return Response(graph)
 
 

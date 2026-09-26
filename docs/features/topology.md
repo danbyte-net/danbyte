@@ -461,6 +461,23 @@ Nodes carry the cabled ports + role/IP used by the stencil; edges carry the
 cable id/type/label/length, every port pair, and the `via` panel list when
 collapsed.
 
+`POST /api/topology/` takes the same query as a JSON body and returns the same
+graph: `devices` (a list), `device`, `depth`, `site`, `location`, `role`,
+`status`, `tag`, `collapse_panels` (a boolean), `group_by`, `include` (a list)
+and `card_fields` (a list). The map posts whenever it has a device set - a few
+hundred ids overflow the server's 8 KB request line - and scripts can keep
+using GET. It is a read: the same `device.view` scope applies. A read-only API
+token can't POST, so use GET with one. A body that isn't a JSON object is a
+400; `"devices": null` means no device set.
+
+Enrichment is opt-in with `include` (comma-separated on GET): `card`,
+`link_ips` and `photo`, the data behind the Diagram tab's cards, link labels
+and photo fronts. Unknown tokens are ignored, and `include` is ignored with
+`group_by`. When anything is included the response gains a `meta` object;
+without `include` the payload and its cost are unchanged. `card_fields`
+passes a saved view's own card lines for `include=card` (keys as in
+[Card lines](#card-lines); an empty value means name only).
+
 Always present, at no extra query cost:
 
 | Where | Field | Shape |

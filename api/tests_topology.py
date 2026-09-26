@@ -1028,3 +1028,188 @@ class LagEdgeTests(_Base):
         )
         self.assertNotIn("lag", by_origin["eth9"])
 
+
+
+class PostQueryTests(_Base):
+    """POST /api/topology/ takes the query as a JSON body - a device set of a
+    few hundred ids overflows gunicorn's request line - and answers exactly
+    what GET does."""
+
+    def setUp(self):
+        super().setUp()
+        from core.models import Tag
+
+        self.site = Site.objects.create(tenant=self.tenant, name="S1")
+        self.role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Core", slug="core"
+        )
+        self.a = Device.objects.create(
+            tenant=self.tenant, name="sw-a", site=self.site, role=self.role
+        )
+        self.b = Device.objects.create(tenant=self.tenant, name="sw-b", site=self.site)
+        self.c = Device.objects.create(tenant=self.tenant, name="sw-c")
+        self.tag = Tag.objects.create(tenant=self.tenant, name="Edge", slug="edge")
+        self.b.tags.add(self.tag)
+        pp = Device.objects.create(tenant=self.tenant, name="pp")
+        rear = RearPort.objects.create(device=pp, name="rear", positions=1)
+        front = FrontPort.objects.create(
+            device=pp, name="f1", rear_port=rear, rear_port_position=1
+        )
+        self._cable(
+            Interface.objects.create(device=self.a, name="e1"),
+            Interface.objects.create(device=self.b, name="e1"),
+        )
+        self._cable(Interface.objects.create(device=self.b, name="e2"), front)
+        self._cable(rear, Interface.objects.create(device=self.c, name="e1"))
+
+    def _post(self, body):
+        return self.client.post("/api/topology/", body, format="json")
+
+    def test_post_answers_what_get_does(self):
+        a, b = str(self.a.id), str(self.b.id)
+        cases = (
+            ("", {}),
+            (f"devices={a},{b}", {"devices": [a, b]}),
+            (f"devices={a},{b}", {"devices": f"{a},{b}"}),
+            ("devices=", {"devices": []}),
+            (f"device={a}&depth=2", {"device": a, "depth": 2}),
+            (f"site={self.site.id}", {"site": str(self.site.id)}),
+            (f"role={self.role.id}", {"role": str(self.role.id)}),
+            ("tag=edge", {"tag": "edge"}),
+            ("collapse_panels=0", {"collapse_panels": False}),
+            ("collapse_panels=0", {"collapse_panels": "0"}),
+            ("collapse_panels=1", {"collapse_panels": True}),
+            ("group_by=site", {"group_by": "site"}),
+        )
+        for qs, body in cases:
+            with self.subTest(qs=qs, body=body):
+                got = self.client.get(f"/api/topology/?{qs}")
+                posted = self._post(body)
+                self.assertEqual(posted.status_code, 200, posted.content)
+                self.assertEqual(posted.json(), got.json())
+
+    def test_null_devices_is_no_device_set(self):
+        self.assertEqual(
+            self._post({"devices": None}).json(), self._graph()
+        )
+
+    def test_a_device_set_too_long_for_a_url(self):
+        import uuid
+
+        ids = [str(uuid.uuid4()) for _ in range(400)] + [
+            str(self.a.id), str(self.b.id)
+        ]
+        r = self._post({"devices": ids})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            {n["data"]["name"] for n in r.json()["nodes"]}, {"sw-a", "sw-b"}
+        )
+
+    def test_junk_is_a_400(self):
+        for body, detail in (
+            ([str(self.a.id)], "The body must be a JSON object."),
+            ({"devices": ["nope"]}, "devices: not a valid id"),
+            ({"devices": {"a": 1}}, "devices: not a valid id"),
+            ({"device": 7}, "device: not a valid id"),
+            ({"site": "nope"}, "site: not a valid id"),
+            ({"tag": ["edge"]}, "tag: not a valid slug"),
+        ):
+            with self.subTest(body=body):
+                r = self._post(body)
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertEqual(r.json(), {"detail": detail})
+
+
+class IncludeTests(_Base):
+    """``include=`` opts into enrichment: ``meta`` appears only when asked,
+    unknown tokens are ignored and aggregated maps never enrich."""
+
+    def setUp(self):
+        super().setUp()
+        self.site = Site.objects.create(tenant=self.tenant, name="S1")
+        self.a = Device.objects.create(tenant=self.tenant, name="sw-a", site=self.site)
+        self.b = Device.objects.create(tenant=self.tenant, name="sw-b", site=self.site)
+        self._cable(
+            Interface.objects.create(device=self.a, name="e1"),
+            Interface.objects.create(device=self.b, name="e1"),
+        )
+
+    def test_meta_only_when_something_is_included(self):
+        self.assertNotIn("meta", self._graph())
+        self.assertNotIn("meta", self._graph("include="))
+        self.assertNotIn("meta", self._graph("include=bogus,,x"))
+        g = self._graph("include=card,link_ips,photo")
+        self.assertIsInstance(g["meta"], dict)
+        r = self.client.post(
+            "/api/topology/", {"include": ["photo", "nope"]}, format="json"
+        )
+        self.assertIsInstance(r.json()["meta"], dict)
+
+    def test_enrichers_get_what_was_asked(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        with mock.patch.object(te, "enrich_card") as card, \
+                mock.patch.object(te, "enrich_link_ips") as link_ips, \
+                mock.patch.object(te, "enrich_photo") as photo:
+            self._graph("include=photo,card,bogus&card_fields=primary_ip,nope,serial")
+        link_ips.assert_not_called()
+        (ctx,), _ = card.call_args
+        self.assertIs(photo.call_args[0][0], ctx)
+        self.assertEqual(ctx.include, frozenset({"card", "photo"}))
+        self.assertEqual(ctx.card_fields, ["primary_ip", "serial"])
+        self.assertEqual(ctx.tenant, self.tenant)
+        self.assertEqual(
+            set(ctx.collect["devices"]), {str(self.a.id), str(self.b.id)}
+        )
+        self.assertEqual(ctx.graph["edges"][0]["id"], next(iter(ctx.collect["pairs"])))
+
+    def test_card_fields_absent_empty_or_listed(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        seen = []
+        with mock.patch.object(
+            te, "enrich_card", side_effect=lambda ctx: seen.append(ctx.card_fields)
+        ):
+            self._graph("include=card")
+            self._graph("include=card&card_fields=")
+            self.client.post(
+                "/api/topology/",
+                {"include": ["card"], "card_fields": ["loopback", "cf_owner"]},
+                format="json",
+            )
+            self.client.post(
+                "/api/topology/",
+                {"include": ["card"], "card_fields": None},
+                format="json",
+            )
+        self.assertEqual(seen, [None, [], ["loopback", "cf_owner"], None])
+
+    def test_group_by_never_enriches(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        with mock.patch.object(te, "enrich", side_effect=AssertionError):
+            g = self._graph("group_by=site&include=card,photo")
+            posted = self.client.post(
+                "/api/topology/",
+                {"group_by": "site", "include": ["card"]},
+                format="json",
+            ).json()
+        self.assertNotIn("meta", g)
+        self.assertEqual([n["type"] for n in g["nodes"]], ["group"])
+        self.assertEqual(posted, g)
+
+    def test_summary_ignores_include(self):
+        from unittest import mock
+
+        from . import topology_enrich as te
+
+        with mock.patch.object(te, "enrich", side_effect=AssertionError):
+            r = self.client.get("/api/topology/summary/?include=card")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertNotIn("meta", r.json())

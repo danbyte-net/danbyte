@@ -336,3 +336,27 @@ class VlanBulkZoneTests(_TenantClientMixin, APITestCase):
             format="json",
         )
         self.assertEqual(res.status_code, 400)
+
+
+class TopologyPostRbacTests(_TenantClientMixin, APITestCase):
+    """POST /api/topology/ is a read with the query in the body: the same
+    device.view gate as GET."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="Org", slug="org")
+        self.t = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.d = Device.objects.create(tenant=self.t, name="d1")
+
+    def test_walled_member_is_refused(self):
+        self._client(self._user("walled", self.t), self.t)
+        for body in ({}, {"devices": [str(self.d.id)], "include": ["card"]}):
+            r = self.client.post("/api/topology/", body, format="json")
+            self.assertEqual(r.status_code, 403, r.content)
+
+    def test_reader_may_post(self):
+        self._client(self._user("reader", self.t, group="Read-only"), self.t)
+        r = self.client.post(
+            "/api/topology/", {"devices": [str(self.d.id)]}, format="json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual([n["data"]["name"] for n in r.json()["nodes"]], ["d1"])
