@@ -13,6 +13,7 @@ any name drift.
 from __future__ import annotations
 
 from api.models import Cable, Device
+from api.topology_views import _status_mini
 
 from .models import DeviceSnmp
 
@@ -53,6 +54,7 @@ def _topo_node(d) -> dict:
             "name": d.name,
             "status": d.status.slug if d.status_id else None,
             "status_display": d.status.name if d.status_id else "",
+            "status_mini": _status_mini(d.status if d.status_id else None, "device"),
             "site": d.site.name if d.site_id else None,
         },
     }

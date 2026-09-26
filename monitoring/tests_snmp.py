@@ -895,6 +895,26 @@ class SnmpTopologyGhostTests(APITestCase):
         self.assertEqual(names, {"sw-a", "sw-b"})
         self.assertEqual(len(r["edges"]), 1)
 
+    def test_device_scoped_ghost_graph_nodes_carry_status_mini(self):
+        # The mini-map draws a status pill from status_mini, as on /api/topology/.
+        from api.models import Status
+        planned = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned", color="#f59e0b",
+            available_to=["device"], default_for=["device"],
+        )
+        Device.objects.filter(pk=self.b.pk).update(status=planned)
+        Device.objects.filter(pk=self.a.pk).update(status=None)
+        r = self.client.get(
+            f"/api/monitoring/topology/ghosts/?device={self.a.id}"
+        ).json()
+        by_name = {n["data"]["name"]: n["data"] for n in r["nodes"]}
+        self.assertIsNone(by_name["sw-a"]["status_mini"])
+        self.assertEqual(by_name["sw-b"]["status_mini"], {
+            "id": str(planned.id), "name": "Planned", "slug": "planned",
+            "color": "#f59e0b", "text_color": planned.text_color,
+            "is_default": True,
+        })
+
     def test_no_ghost_when_already_cabled(self):
         from api.models import Cable, CableTermination
         cab = Cable.objects.create(tenant=self.tenant)

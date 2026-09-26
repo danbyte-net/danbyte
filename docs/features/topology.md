@@ -479,6 +479,10 @@ new cables (on an edge) get by default - its `default_for` list.
 orientation as `a_port`/`b_port` (the edge's source, then its target); on a
 collapsed edge they are the run's two real endpoints, not the panels between.
 
+`GET /api/monitoring/topology/ghosts/?device=<id>` - the device page's LLDP
+mini-graph - returns its nodes in a reduced shape: name, site, `status` and
+`status_mini`, with no role or ports.
+
 A malformed id in `device`, `devices`, `site`, `location`, `role` or `status`
 returns `400 {"detail": "<param>: not a valid id"}`, even in a mode that
 ignores the parameter. `devices` takes at most 10,000 ids; more is a 400. An
