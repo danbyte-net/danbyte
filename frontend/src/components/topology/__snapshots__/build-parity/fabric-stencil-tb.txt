@@ -6,7 +6,7 @@ dev:@leaf-01  {"data":{"dimmed":false,"portOrder":{"Ethernet1/49":354.5,"Etherne
 dev:@leaf-02  {"data":{"dimmed":false,"portOrder":{"Ethernet1/49":354.5,"Ethernet1/51":519,"Ethernet1/53":334},"portSide":{"Ethernet1/49":"T","Ethernet1/51":"T","Ethernet1/53":"T"}},"h":66,"type":"device","w":328,"x":262.5,"y":804}
 dev:@leaf-03  {"data":{"dimmed":false,"portOrder":{"Ethernet1/47":9,"Ethernet1/48":9,"Ethernet1/49":354.5,"Ethernet1/51":519},"portSide":{"Ethernet1/47":"B","Ethernet1/48":"B","Ethernet1/49":"T","Ethernet1/51":"T"}},"h":86,"type":"device","w":178,"x":0,"y":588}
 dev:@leaf-04  {"data":{"dimmed":false,"portOrder":{"Ethernet1/1":169.5,"Ethernet1/48":857,"Ethernet1/49":354.5,"Ethernet1/51":519},"portSide":{"Ethernet1/1":"T","Ethernet1/48":"B","Ethernet1/49":"T","Ethernet1/51":"T"}},"h":86,"type":"device","w":318,"x":863.5,"y":588}
-dev:@oob-con-01  {"data":{"dimmed":false},"h":46,"type":"device","w":178,"x":1271.5,"y":0}
+dev:@oob-con-01  {"data":{"dimmed":false},"h":46,"type":"device","w":198,"x":1271.5,"y":0}
 dev:@pp-c01  {"data":{"dimmed":false,"portOrder":{"1":848},"portSide":{"1":"T"}},"h":66,"type":"device","w":178,"x":933.5,"y":804}
 dev:@spine-01  {"data":{"dimmed":false,"portOrder":{"Ethernet1/1":334,"Ethernet1/2":334,"Ethernet1/3":334,"Ethernet1/4":0,"Ethernet1/5":848},"portSide":{"Ethernet1/1":"B","Ethernet1/2":"B","Ethernet1/3":"B","Ethernet1/4":"B","Ethernet1/5":"B"}},"h":66,"type":"device","w":385,"x":252,"y":196}
 dev:@spine-02  {"data":{"dimmed":false,"portOrder":{"Ethernet1/1":334,"Ethernet1/2":334,"Ethernet1/3":0,"Ethernet1/4":848},"portSide":{"Ethernet1/1":"B","Ethernet1/2":"B","Ethernet1/3":"B","Ethernet1/4":"B"}},"h":66,"type":"device","w":308,"x":481.5,"y":392}

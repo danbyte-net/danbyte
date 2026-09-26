@@ -1,5 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
+import { NodeStatusPill, statusPillReserve } from "./node-status-pill"
+import type { HasStatusPill } from "./node-status-pill"
 import { handleId, type StencilData } from "./stencil-node"
 
 // The Flat view's barebones device chip: fixed size, no port rows, whole-node
@@ -9,9 +11,13 @@ import { handleId, type StencilData } from "./stencil-node"
 export const FLAT_W = 156
 export const FLAT_H = 46
 
-/** Chip width sized to the device name (11px mono), capped. */
-export function flatW(d: { name?: string }): number {
-  return Math.max(FLAT_W, Math.min(250, 40 + (d.name?.length ?? 0) * 6.6))
+/** Chip width sized to the device name (11px mono), capped, plus the
+ * status pill beside it. */
+export function flatW(d: { name?: string } & HasStatusPill): number {
+  return Math.max(
+    FLAT_W,
+    Math.min(250, 40 + (d.name?.length ?? 0) * 6.6) + statusPillReserve(d)
+  )
 }
 
 /** A distributed connection point on the chip's edge - the card extends and
@@ -25,6 +31,7 @@ export interface FlatAnchor {
 
 export type FlatData = {
   name?: string
+  status_mini?: StencilData["status_mini"]
   flatAnchors?: FlatAnchor[]
   /** Busiest left/right side's link count - grows the card DOWN. */
   flatFanH?: number
@@ -40,15 +47,6 @@ export function flatHeight(d: FlatData): number {
 
 export function flatWidth(d: FlatData): number {
   return Math.max(flatW(d), 36 + (d.flatFanW ?? 0) * 9)
-}
-
-const STATUS_DOT: Record<string, string> = {
-  active: "bg-emerald-500",
-  planned: "bg-amber-500",
-  staged: "bg-amber-500",
-  failed: "bg-red-500",
-  offline: "bg-red-500",
-  decommissioning: "bg-zinc-400",
 }
 
 // Four invisible handles named after the single pseudo-port "n" - the canvas
@@ -135,20 +133,15 @@ export function FlatNode({ data, selected }: NodeProps) {
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          {d.status && (
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                STATUS_DOT[d.status] ?? "bg-zinc-400"
-              }`}
-              title={d.status_display || d.status}
-            />
-          )}
           <span className="truncate font-mono text-[11px] font-medium">
             {d.name}
           </span>
+          <span className="ml-auto flex shrink-0">
+            <NodeStatusPill status={d.status_mini} />
+          </span>
           {(d.ports?.length ?? 0) > 0 && (
             <span
-              className="num ml-auto shrink-0 text-[9px] text-muted-foreground"
+              className="num shrink-0 text-[9px] text-muted-foreground"
               title={`${d.ports!.length} cabled port${
                 d.ports!.length === 1 ? "" : "s"
               }`}

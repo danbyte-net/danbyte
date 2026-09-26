@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
+import { NodeStatusPill } from "./node-status-pill"
 import { handleId, type StencilData } from "./stencil-node"
 import {
   HIER_HEADER,
@@ -17,15 +18,6 @@ export { hierarchyWidth } from "./layout"
 export type HierData = StencilData & {
   portPos?: Record<string, HierPortPos>
   portSpan?: number
-}
-
-const STATUS_DOT: Record<string, string> = {
-  active: "bg-emerald-500",
-  planned: "bg-amber-500",
-  staged: "bg-amber-500",
-  failed: "bg-red-500",
-  offline: "bg-red-500",
-  decommissioning: "bg-zinc-400",
 }
 
 const HANDLE = "topo-conn"
@@ -70,17 +62,10 @@ export function HierarchyNode({ data, selected }: NodeProps) {
           style={{ background: d.role?.color || "var(--border)" }}
           title={d.role?.name}
         />
-        {d.status && (
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              STATUS_DOT[d.status] ?? "bg-zinc-400"
-            }`}
-            title={d.status_display || d.status}
-          />
-        )}
         <span className="min-w-0 truncate font-mono text-[11px] font-medium">
           {d.name}
         </span>
+        <NodeStatusPill status={d.status_mini} />
         <span className="ml-auto min-w-0 truncate text-[9px] text-muted-foreground">
           {[d.primary_ip, d.site].filter(Boolean).join(" · ")}
         </span>

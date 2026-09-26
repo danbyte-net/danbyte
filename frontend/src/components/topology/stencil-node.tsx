@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
 import type { TopoNode, TopoPortKind } from "@/lib/api"
+import { NodeStatusPill, statusPillReserve } from "./node-status-pill"
 
 // ── Handle-id side suffixes ──────────────────────────────────────────────────
 // A port renders on exactly one side of its card (the side facing its
@@ -41,11 +42,12 @@ export const CENTER_W = 178
 export const CENTER_H = 46
 // The device name is the most important text on the map - the identity
 // centre widens to fit it (11px mono ≈ 6.6px/char + spine/padding), capped
-// so one hostname can't blow up a card.
+// so one hostname can't blow up a card. The status pill beside it adds its
+// own width on top, so the name keeps the same room with or without one.
 function centerW(d: StencilData): number {
   return Math.max(
     CENTER_W,
-    Math.min(268, 34 + (d.name?.length ?? 0) * 6.6)
+    Math.min(268, 34 + (d.name?.length ?? 0) * 6.6) + statusPillReserve(d)
   )
 }
 const STRIP_H = 20 // top / bottom horizontal strip
@@ -65,15 +67,6 @@ function colWFor(ports: FlatPort[]): number {
   let w = COL_W
   for (const p of ports) w = Math.max(w, chipW(p.name))
   return w
-}
-
-const STATUS_DOT: Record<string, string> = {
-  active: "bg-emerald-500",
-  planned: "bg-amber-500",
-  staged: "bg-amber-500",
-  failed: "bg-red-500",
-  offline: "bg-red-500",
-  decommissioning: "bg-zinc-400",
 }
 
 type FlatPort = { name: string; kind: TopoPortKind }
@@ -314,16 +307,11 @@ export function StencilNode({ data, selected }: NodeProps) {
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            {d.status && (
-              <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  STATUS_DOT[d.status] ?? "bg-zinc-400"
-                }`}
-                title={d.status_display || d.status}
-              />
-            )}
             <span className="truncate font-mono text-[11px] font-medium">
               {d.name}
+            </span>
+            <span className="ml-auto flex shrink-0">
+              <NodeStatusPill status={d.status_mini} />
             </span>
           </div>
           <div className="truncate text-[9px] text-muted-foreground">

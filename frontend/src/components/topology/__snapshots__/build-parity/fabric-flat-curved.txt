@@ -2,15 +2,15 @@
 
 nodes 10
 dev:@fw-01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.5,"id":"aR0","side":"R"}],"flatFanH":1,"flatFanW":0},"h":46,"type":"flat","w":156,"x":0,"y":20}
-dev:@leaf-01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.25,"id":"aL0","side":"L"},{"frac":0.5,"id":"aL1","side":"L"},{"frac":0.75,"id":"aL2","side":"L"}],"flatFanH":3,"flatFanW":0},"h":55,"type":"flat","w":156,"x":1022,"y":130.5}
-dev:@leaf-02  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.3333,"id":"aL0","side":"L"},{"frac":0.6667,"id":"aL1","side":"L"},{"frac":0.5,"id":"aR0","side":"R"}],"flatFanH":2,"flatFanW":0},"h":46,"type":"flat","w":156,"x":776,"y":105.9}
-dev:@leaf-03  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.3333,"id":"aL0","side":"L"},{"frac":0.6667,"id":"aL1","side":"L"},{"frac":0.5,"id":"aR0","side":"R"}],"flatFanH":2,"flatFanW":0},"h":46,"type":"flat","w":156,"x":776,"y":0}
-dev:@leaf-04  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.25,"id":"aL0","side":"L"},{"frac":0.5,"id":"aL1","side":"L"},{"frac":0.75,"id":"aL2","side":"L"},{"frac":0.5,"id":"aR0","side":"R"}],"flatFanH":3,"flatFanW":0},"h":55,"type":"flat","w":156,"x":776,"y":228}
-dev:@oob-con-01  {"data":{"dimmed":false,"flatAnchors":[],"flatFanH":0,"flatFanW":0},"h":46,"type":"flat","w":156,"x":1268,"y":0}
-dev:@pp-c01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.5,"id":"aL0","side":"L"}],"flatFanH":1,"flatFanW":0},"h":46,"type":"flat","w":156,"x":1022,"y":232.5}
-dev:@spine-01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.2,"id":"aR0","side":"R"},{"frac":0.4,"id":"aR1","side":"R"},{"frac":0.6,"id":"aR2","side":"R"},{"frac":0.8,"id":"aR3","side":"R"}],"flatFanH":4,"flatFanW":0},"h":64,"type":"flat","w":156,"x":246,"y":150.3}
-dev:@spine-02  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.2,"id":"aR0","side":"R"},{"frac":0.4,"id":"aR1","side":"R"},{"frac":0.6,"id":"aR2","side":"R"},{"frac":0.8,"id":"aR3","side":"R"}],"flatFanH":4,"flatFanW":0},"h":64,"type":"flat","w":156,"x":506,"y":247.2}
-dev:@srv-db-01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.5,"id":"aL0","side":"L"}],"flatFanH":1,"flatFanW":0},"h":46,"type":"flat","w":156,"x":1022,"y":0}
+dev:@leaf-01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.25,"id":"aL0","side":"L"},{"frac":0.5,"id":"aL1","side":"L"},{"frac":0.75,"id":"aL2","side":"L"}],"flatFanH":3,"flatFanW":0},"h":55,"type":"flat","w":156,"x":1046,"y":130.5}
+dev:@leaf-02  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.3333,"id":"aL0","side":"L"},{"frac":0.6667,"id":"aL1","side":"L"},{"frac":0.5,"id":"aR0","side":"R"}],"flatFanH":2,"flatFanW":0},"h":46,"type":"flat","w":156,"x":800,"y":105.9}
+dev:@leaf-03  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.3333,"id":"aL0","side":"L"},{"frac":0.6667,"id":"aL1","side":"L"},{"frac":0.5,"id":"aR0","side":"R"}],"flatFanH":2,"flatFanW":0},"h":46,"type":"flat","w":156,"x":800,"y":0}
+dev:@leaf-04  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.25,"id":"aL0","side":"L"},{"frac":0.5,"id":"aL1","side":"L"},{"frac":0.75,"id":"aL2","side":"L"},{"frac":0.5,"id":"aR0","side":"R"}],"flatFanH":3,"flatFanW":0},"h":55,"type":"flat","w":156,"x":800,"y":228}
+dev:@oob-con-01  {"data":{"dimmed":false,"flatAnchors":[],"flatFanH":0,"flatFanW":0},"h":46,"type":"flat","w":204,"x":1292,"y":0}
+dev:@pp-c01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.5,"id":"aL0","side":"L"}],"flatFanH":1,"flatFanW":0},"h":46,"type":"flat","w":156,"x":1046,"y":232.5}
+dev:@spine-01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.2,"id":"aR0","side":"R"},{"frac":0.4,"id":"aR1","side":"R"},{"frac":0.6,"id":"aR2","side":"R"},{"frac":0.8,"id":"aR3","side":"R"}],"flatFanH":4,"flatFanW":0},"h":64,"type":"flat","w":156,"x":270,"y":154}
+dev:@spine-02  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.2,"id":"aR0","side":"R"},{"frac":0.4,"id":"aR1","side":"R"},{"frac":0.6,"id":"aR2","side":"R"},{"frac":0.8,"id":"aR3","side":"R"}],"flatFanH":4,"flatFanW":0},"h":64,"type":"flat","w":156,"x":530,"y":248.6}
+dev:@srv-db-01  {"data":{"dimmed":false,"flatAnchors":[{"frac":0.5,"id":"aL0","side":"L"}],"flatFanH":1,"flatFanW":0},"h":46,"type":"flat","w":156,"x":1046,"y":0}
 
 edges 15
 ghost:@leaf-02:@fw-01  {"data":{"ghost":"Ethernet1/10 ↔ ethernet1/3","sem":"ghost"},"label":"Ethernet1/10 ↔ ethernet1/3 · LLDP","labelBgStyle":{"fill":"var(--card)"},"labelStyle":{"fontSize":9,"fontStyle":"italic"},"pathOptions":{"borderRadius":10},"source":"dev:@leaf-02","style":{"opacity":0.8,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","strokeWidth":1.5},"target":"dev:@fw-01","type":"smoothstep"}

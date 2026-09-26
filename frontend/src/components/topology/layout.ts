@@ -1,6 +1,9 @@
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node } from "@xyflow/react"
 
+import { statusPillReserve } from "./node-status-pill"
+import type { HasStatusPill } from "./node-status-pill"
+
 // Lay nodes out left-to-right with dagre and write positions back. Node
 // sizes come from the caller (a stencil card is a header + one row per
 // cabled port) so port-anchored edges land on their rows without overlap.
@@ -735,8 +738,12 @@ export function hierHeight(span: number): number {
   return HIER_HEADER + 2 * HIER_PAD + Math.max(HIER_MIN_SPAN, span)
 }
 
-export function hierarchyWidth(d: { name?: string }): number {
-  return Math.max(190, Math.min(300, 70 + (d.name?.length ?? 0) * 6.6))
+/** Sized to the device name, capped, plus the status pill beside it. */
+export function hierarchyWidth(d: { name?: string } & HasStatusPill): number {
+  return Math.max(
+    190,
+    Math.min(300, 70 + (d.name?.length ?? 0) * 6.6) + statusPillReserve(d)
+  )
 }
 
 export interface HierResult {

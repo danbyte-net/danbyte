@@ -17,7 +17,7 @@ icon: lucide/network
   cross a card standing in its way, and only where a clear vertical street
   exists - otherwise it stays straight at its own port level.
 - **Flat** - the barebones view for big graphs: every device is a small
-  fixed-size chip (role color, status dot, name), parallel cables between
+  fixed-size chip (role color, name, status pill), parallel cables between
   two devices merge into a single **×N** edge (click it to list and open
   the member cables; hover names them). A pair joined by one cable shows
   that cable - its label on the line, its own colour, its panel on click.
@@ -36,7 +36,7 @@ The view choice is remembered per browser and saved with
 [saved views](#saved-views).
 
 In the Wiring view, devices render as **stencil cards** - role-colored
-spine, status dot, type and primary IP, and one row per **cabled port** -
+spine, status pill, type and primary IP, and one row per **cabled port** -
 and every cable connects **port-to-port** on the cards, so you can follow
 `asw1:Gi1/0/48 → core:Te1/1/1` visually instead of guessing which line is
 which.
@@ -107,8 +107,10 @@ cable draws it emphasized in the accent color while its panel is open.
 
 ## Reading the map
 
-- **Cards** - the colored spine is the device's role color; the dot before
-  the name is its status. Clicking a card **spotlights** it - everything not
+- **Cards** - the colored spine is the device's role color; the pill after
+  the name is its lifecycle status, in that status's own color (the same pill
+  as the device list). A long status name widens the card rather than
+  squeezing the name. Clicking a card **spotlights** it - everything not
   directly cabled to it fades until you click empty canvas.
   **Double-clicking** a card opens its device page. Flat chips carry a small
   `N×` cabled-port count; Hierarchy headers show the primary IP. Patch panels get a dashed border. Port cells show

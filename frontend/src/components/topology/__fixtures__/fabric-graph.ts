@@ -40,11 +40,33 @@ const ROLE = {
   panel: { name: "Patch panel", color: "#71717a", is_patch_panel: true },
 }
 
+// Lifecycle status rows as `_status_mini` sends them. The long name sizes a
+// card for its pill.
+const STATUS = {
+  active: {
+    id: "0a1c0001-4b2e-4f6a-9c3d-000000000001",
+    name: "Active",
+    slug: "active",
+    color: "#22c55e",
+    text_color: "#000000",
+    is_default: true,
+  },
+  decommissioning: {
+    id: "0a1c0002-4b2e-4f6a-9c3d-000000000002",
+    name: "Decommissioning",
+    slug: "decommissioning",
+    color: "#71717a",
+    text_color: "#ffffff",
+    is_default: false,
+  },
+}
+
 interface DeviceMeta {
   name: string
   role: (typeof ROLE)[keyof typeof ROLE] | null
   status: string
   status_display: string
+  status_mini: (typeof STATUS)[keyof typeof STATUS]
   device_type: string
   site: string | null
   location: string | null
@@ -65,7 +87,14 @@ const DEVICES: Record<DevKey, DeviceMeta> = {
   leaf4: meta("leaf-04", ROLE.leaf, "N9K-C93180YC", DC3, "10.0.1.4"),
   fw1: meta("fw-01", ROLE.firewall, "PA-3220", DC1, "10.0.2.1"),
   srv1: meta("srv-db-01", ROLE.server, "PowerEdge R750", null, null),
-  oob1: meta("oob-con-01", ROLE.console, "CM8100", DC1, "10.0.9.1"),
+  oob1: meta(
+    "oob-con-01",
+    ROLE.console,
+    "CM8100",
+    DC1,
+    "10.0.9.1",
+    STATUS.decommissioning
+  ),
   ppc: meta("pp-c01", ROLE.panel, "LC-24", DC3, null),
   ppa: meta("pp-a01", ROLE.panel, "LC-24", DC2, null),
   ppb: meta("pp-b01", ROLE.panel, "LC-24", null, null),
@@ -76,13 +105,15 @@ function meta(
   role: DeviceMeta["role"],
   device_type: string,
   site: string | null,
-  primary_ip: string | null
+  primary_ip: string | null,
+  status: DeviceMeta["status_mini"] = STATUS.active
 ): DeviceMeta {
   return {
     name,
     role,
-    status: "active",
-    status_display: "Active",
+    status: status.slug,
+    status_display: status.name,
+    status_mini: status,
     device_type,
     site,
     location: site ? "Hall A" : null,
@@ -227,6 +258,7 @@ function deviceNode(k: DevKey, ports: TopoPort[]): TopoNode {
       name: d.name,
       status: d.status,
       status_display: d.status_display,
+      status_mini: d.status_mini,
       device_type: d.device_type,
       role: d.role,
       site: d.site,

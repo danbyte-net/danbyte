@@ -2806,6 +2806,9 @@ export interface TopoNode {
     interface_id?: string
     status?: string
     status_display?: string
+    /** Device nodes: the lifecycle status row (`is_default` = the status a
+     * new device gets). Absent on trace and LLDP-neighbour nodes. */
+    status_mini?: (StatusMini & { is_default?: boolean }) | null
     device_type?: string | null
     role?: { name: string; color: string; is_patch_panel?: boolean } | null
     site?: string | null
