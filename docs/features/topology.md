@@ -539,7 +539,47 @@ collapsed edge they are the run's two real endpoints, not the panels between.
 
 `GET /api/monitoring/topology/ghosts/?device=<id>` - the device page's LLDP
 mini-graph - returns its nodes in a reduced shape: name, site, `status` and
-`status_mini`, with no role or ports.
+`status_mini`, with no role or ports. The device nodes of a trace
+(`GET /api/interfaces/<id>/trace/`, `GET /api/cables/<id>/trace/`) carry
+`status_mini` as well.
+
+**`include=card`** adds `card` to every device node and `card` to `meta`:
+
+```json
+"card": {
+  "fields": ["monitor", "primary_ip", "loopback", "serial"],
+  "source": "default",
+  "values": {
+    "primary_ip": {"id": "…", "address": "10.0.0.1", "cidr": "10.0.0.1/24"},
+    "loopback": [{"id": "…", "address": "10.255.0.1", "cidr": "10.255.0.1/32"}],
+    "serial": "SN-1"
+  }
+}
+```
+
+- `fields` are the device's resolved [card lines](#card-lines) and `source`
+  the level that chose them: `device`, `view` (the query's `card_fields`),
+  `role`, `tenant`, `deployment` or `default`.
+- `values` holds only that node's own keys. `status`, `monitor`,
+  `device_type`, `role`, `site` and `location` have no value: the node
+  already carries them, and the monitoring pill comes from
+  `/api/monitoring/status/`.
+- `primary_ip`, `secondary_ip` and `oob_ip` are `{id, address, cidr}` or
+  `null`. They are device attributes, shown wherever the device is, as on the
+  device API. `cidr` uses the address's own mask length, else its prefix's.
+- `loopback` lists the addresses with the IP role `loopback` assigned to the
+  device, limited to the caller's `ipaddress.view` scope.
+- `serial` and `asset_tag` are strings; `platform` (the device's own, else
+  its type's) and `manufacturer` are `{id, name}` or `null`; `rack` is
+  `{id, name, position}` or `null`; `tags` is `[{name, slug, color}]`.
+- `cf_<key>` is the custom field's raw value. A key for a hidden custom field,
+  or one that isn't a device custom field, is dropped from `fields`.
+- `meta.card` is `{fields, source, uses_monitor}`: the effective global list
+  (before role, view and device lists) and whether any node shows the
+  monitoring pill, which is when the page fetches check states.
+
+The cost doesn't grow with the map: at most ten queries, each run only when
+some card shows a line that needs it.
 
 A malformed id in `device`, `devices`, `site`, `location`, `role` or `status`
 returns `400 {"detail": "<param>: not a valid id"}`, even in a mode that

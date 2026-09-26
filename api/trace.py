@@ -75,6 +75,8 @@ def _through_steps(p):
 def trace(starts):
     """Run the trace from one or more start points. Returns
     ``{nodes, edges, complete}``."""
+    from .topology_views import _status_mini
+
     nodes: dict = {}
     edges: dict = {}
     complete = True
@@ -121,6 +123,7 @@ def trace(starts):
                     "name": d.name,
                     "status": status.slug if status else None,
                     "status_display": status.name if status else "",
+                    "status_mini": _status_mini(status, "device"),
                     "device_type": dtype.name if dtype else None,
                     "site": site.name if site else None,
                 },

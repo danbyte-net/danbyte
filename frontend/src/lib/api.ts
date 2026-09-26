@@ -2811,7 +2811,7 @@ export interface TopoNode {
     status?: string
     status_display?: string
     /** Device nodes: the lifecycle status row (`is_default` = the status a
-     * new device gets). Absent on trace nodes. */
+     * new device gets). Trace device nodes carry it too. */
     status_mini?: (StatusMini & { is_default?: boolean }) | null
     device_type?: string | null
     device_type_id?: string | null
