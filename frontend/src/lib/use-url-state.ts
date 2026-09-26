@@ -80,16 +80,19 @@ function useUrlParam<T>(spec: ParamSpec<T>): [T, (value: T) => void] {
  *   patch({ site: "x", view: undefined, devices: undefined })
  *
  * `undefined` removes a param, exactly as in the single-value hooks.
+ * `ignoreBlocker` lets the write past a leave guard (`useBlocker`) - for a
+ * move the page itself makes once there is nothing left to lose.
  */
 export function useUrlPatch(): (
   values: Record<string, string | undefined>,
-  opts?: { replace?: boolean }
+  opts?: { replace?: boolean; ignoreBlocker?: boolean }
 ) => void {
   const navigate = useNavigate()
   return (values, opts) => {
     void navigate({
       to: ".",
       replace: opts?.replace ?? false,
+      ignoreBlocker: opts?.ignoreBlocker,
       search: (prev: Record<string, unknown>) => ({ ...prev, ...values }),
     })
   }

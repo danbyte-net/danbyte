@@ -11,6 +11,8 @@ import {
   emptyDocument,
   historyReducer,
   initHistory,
+  readDefaultMap,
+  storedDefaultMap,
   toViewState,
   useDocumentKeys,
   useViewDocument,
@@ -125,6 +127,31 @@ describe("docFromView / toViewState", () => {
   it("gives the logical view an empty legacy arrangement", () => {
     const d = emptyDocument({ positions: { stencil: { a: [0, 0] } } })
     expect(toViewState(d, { style: "logical" }).positions).toEqual({})
+  })
+})
+
+describe("storedDefaultMap / readDefaultMap", () => {
+  it("keeps everything a view saves, without a device set", () => {
+    const d = emptyDocument({
+      positions: { diagram: { "dev:a": [1, 2] }, stencil: { "dev:a": [3, 4] } },
+      zones: { diagram: [zone("b1")] },
+      filters: { diagram: { mode: "simple", line: "bendy" } as never },
+      links: { "a|b": { line: "cyclical", flip: -1 } },
+      nodes: { a: { face: "photo" } },
+      notes: [{ id: "n1", kind: "text", x: 0, y: 0, text: "WAN" }],
+      hidden: { ...NO_TOPO_HIDDEN, devices: ["dev:c"] },
+      devices: ["a"],
+      extra: { future_key: 1 },
+    })
+    const back = readDefaultMap(storedDefaultMap(d), styleOf)
+    expect(back).toEqual({ ...d, devices: null, extra: {} })
+  })
+
+  it("reads nothing from an absent or unreadable copy", () => {
+    expect(readDefaultMap(null, styleOf)).toBeNull()
+    expect(readDefaultMap("", styleOf)).toBeNull()
+    expect(readDefaultMap("{not json", styleOf)).toBeNull()
+    expect(readDefaultMap("[1,2]", styleOf)).toBeNull()
   })
 })
 

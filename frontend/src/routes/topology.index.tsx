@@ -1,10 +1,4 @@
-import {
-  createFileRoute,
-  Link,
-  useBlocker,
-  useNavigate,
-} from "@tanstack/react-router"
-import type { ShouldBlockFn } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Camera,
@@ -20,18 +14,10 @@ import {
   Trash2,
   X,
 } from "lucide-react"
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { api, fetchTopology } from "@/lib/api"
 import type {
   BulkStatusResponse,
   GhostEdgeData,
@@ -41,6 +27,7 @@ import type {
   TopoEdge,
   TopoNode,
   TopologyGraph,
+  TopologyQuery,
   TopologyViewSaved,
   TopologyViewState,
   TopologyViewSummary,
@@ -100,8 +87,11 @@ import {
   docFromView,
   emptyDocument,
   isStaleViewError,
+  readDefaultMap,
+  storedDefaultMap,
   toViewState,
   useDocumentKeys,
+  useMapLeaveGuard,
   useViewDocument,
 } from "@/components/topology/view-document"
 import type { ViewDocument } from "@/components/topology/view-document"
@@ -258,18 +248,6 @@ const OVERRIDE_KEYS = [
   "dir", "color", "cables", "lag", "levels", "device", "depth", "devices",
   "q", "vlangroup", "vms",
 ] as const
-
-/** Which map a location shows - the key the document and the leave guard
- * follow. A saved view is its own map even while it is built on by hand. */
-function mapKeyOf(search: Record<string, unknown>): string {
-  const view = search.view
-  if (typeof view === "string" && view) return `view:${view}`
-  return search.devices !== undefined ? "custom" : "default"
-}
-
-/** Same page? Compared loosely so a trailing slash can't read as a move. */
-const samePath = (a: string, b: string) =>
-  a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
 
 const Skeleton = () => (
   <div className="h-full w-full animate-pulse bg-muted/30" />
@@ -487,14 +465,44 @@ function writeStoredDisplay(d: StoredDisplay) {
 const fetchView = (id: string) =>
   api<TopologyViewSaved>(`/api/topology-views/${id}/`)
 
+// The default map's whole document, in a saved view's `state` shape, so
+// what a view saves beyond the arrangement - the Diagram's display, link and
+// card overrides, notes - survives a reload here too. The positions, zones
+// and hidden keys are still written, and read when this one is missing, for
+// one release.
+const MAP_KEY = "danbyte-topology-map"
+
+function readStoredMap(): ViewDocument | null {
+  try {
+    return readDefaultMap(localStorage.getItem(MAP_KEY), sanitizeViewStyle)
+  } catch {
+    return null
+  }
+}
+function writeStoredMap(doc: ViewDocument) {
+  try {
+    localStorage.setItem(MAP_KEY, storedDefaultMap(doc))
+  } catch {
+    // A copy that could not be updated must not outlive the older keys.
+    try {
+      localStorage.removeItem(MAP_KEY)
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
+
 /** The default map as this browser last left it. A legacy single-map
  * arrangement is read as the style on screen. */
 function defaultDocument(style: ViewStyle): ViewDocument {
-  return emptyDocument({
-    positions: readStoredPositions(style as NodeStyle),
-    zones: readStoredZones(),
-    hidden: readStoredHidden(),
-  })
+  return (
+    readStoredMap() ??
+    emptyDocument({
+      positions: readStoredPositions(style as NodeStyle),
+      zones: readStoredZones(),
+      hidden: readStoredHidden(),
+    })
+  )
 }
 
 function TopologyPage() {
@@ -774,6 +782,10 @@ function TopologyPage() {
   useEffect(() => {
     if (ownDefault) writeStoredHidden(hidden)
   }, [ownDefault, hidden])
+  const docNow = doc.doc
+  useEffect(() => {
+    if (ownDefault) writeStoredMap(docNow)
+  }, [ownDefault, docNow])
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [ghost, setGhost] = useState<GhostEdgeData | null>(null)
   const [selNode, setSelNode] = useState<TopoNode["data"] | null>(null)
@@ -956,34 +968,31 @@ function TopologyPage() {
   }, [drilled, groupBy, drillId, sites.data, locations.data])
 
   // ── Graph ──
-  const graphQs = useMemo(() => {
-    const p = new URLSearchParams()
-    if (custom !== null) {
-      // Builder mode: exactly this set, nothing else.
-      p.set("devices", custom.join(","))
-      p.set("collapse_panels", filters.collapse ? "1" : "0")
-      return p.toString()
-    }
-    if (focus && !grouped) {
-      p.set("device", focus.id)
-      p.set("depth", String(focus.depth))
-    } else {
-      if (filters.site !== "all") p.set("site", filters.site)
-      if (filters.role !== "all") p.set("role", filters.role)
-      if (filters.status !== "all") p.set("status", filters.status)
-      if (filters.tag !== "all") p.set("tag", filters.tag)
-      if (grouped) p.set("group_by", groupBy)
-      // Drilled into a group: the device view scoped to that one group. Its
-      // id is already on the matching filter param, so nothing extra here.
-      if (drill && drill.kind === "location") p.set("location", drill.id)
-    }
-    p.set("collapse_panels", filters.collapse ? "1" : "0")
-    return p.toString()
+  // A device set is POSTed (fetchTopology): a builder map of a few hundred
+  // ids would overflow the server's request line as a query string.
+  const graphQuery = useMemo<TopologyQuery>(() => {
+    const collapse_panels = filters.collapse
+    // Builder mode: exactly this set, nothing else.
+    if (custom !== null) return { devices: custom, collapse_panels }
+    if (focus && !grouped)
+      return { device: focus.id, depth: focus.depth, collapse_panels }
+    const g: TopologyQuery = { collapse_panels }
+    if (filters.site !== "all") g.site = filters.site
+    if (filters.role !== "all") g.role = filters.role
+    if (filters.status !== "all") g.status = filters.status
+    if (filters.tag !== "all") g.tag = filters.tag
+    if (grouped) g.group_by = groupBy
+    // Drilled into a group: the device view scoped to that one group. Its
+    // id is already on the matching filter param, so nothing extra here.
+    if (drill && drill.kind === "location") g.location = drill.id
+    return g
   }, [filters, focus, grouped, groupBy, drill, custom])
+  /** Changes exactly when the query does - the canvas refits on a new one. */
+  const graphKey = useMemo(() => JSON.stringify(graphQuery), [graphQuery])
 
   const q = useQuery({
-    queryKey: ["topology", graphQs],
-    queryFn: () => api<TopologyGraph>(`/api/topology/?${graphQs}`),
+    queryKey: ["topology", graphQuery],
+    queryFn: ({ signal }) => fetchTopology(graphQuery, { signal }),
     enabled: !logical,
   })
 
@@ -1211,7 +1220,9 @@ function TopologyPage() {
       doc.markSaved(a.doc, `view:${v.id}`, v.updated_at)
       // The saved view now describes the map, so the overrides that produced
       // it are no longer overrides - the URL collapses back to just the id.
-      patch({ view: v.id, ...noOverrides() })
+      // Past the leave guard: this is the map it saved, and an edit made
+      // while the save was in flight stays in the document, unsaved.
+      patch({ view: v.id, ...noOverrides() }, { ignoreBlocker: true })
       setSaveAsOpen(false)
       toast.success(`Saved “${v.name}”`)
     },
@@ -1299,47 +1310,9 @@ function TopologyPage() {
   })
 
   // ── Unsaved-edit guard ──
-  // One dialog for every in-app way off a map with unsaved edits: a sidebar
-  // link, browser back/forward, picking another view, leaving a custom map.
-  // Same as the floor-plan editor, except that here the map is in the query
-  // string - so a navigation that stays on this page but lands on another
-  // map (another view, the default map) is a leave too, while a filter or
-  // display change on the same map is not. The default map is never guarded:
-  // it is kept in this browser as it changes.
-  //
-  // shouldBlockFn reads refs so it stays referentially stable - an inline
-  // closure would re-register the history blocker on every render.
-  const guardedRef = useRef(false)
-  guardedRef.current = doc.docKey !== "default"
-  const shouldBlockLeave = useCallback<ShouldBlockFn>(
-    ({ current, next }) => {
-      if (!dirtyRef.current || !guardedRef.current) return false
-      if (!samePath(next.pathname, current.pathname)) return true
-      return (
-        mapKeyOf(next.search as Record<string, unknown>) !==
-        mapKeyOf(current.search as Record<string, unknown>)
-      )
-    },
-    [dirtyRef]
-  )
-  const leaveGuard = useBlocker({
-    shouldBlockFn: shouldBlockLeave,
-    enableBeforeUnload: false,
-    withResolver: true,
-  })
-  // Closing the tab or reloading never reaches the router - the browser's
-  // own prompt is the only guard there. Registered only while it matters.
-  const guardDirty = doc.dirty && doc.docKey !== "default"
-  useEffect(() => {
-    if (!guardDirty) return
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!dirtyRef.current) return
-      e.preventDefault()
-      e.returnValue = ""
-    }
-    window.addEventListener("beforeunload", onBeforeUnload)
-    return () => window.removeEventListener("beforeunload", onBeforeUnload)
-  }, [guardDirty, dirtyRef])
+  // See useMapLeaveGuard: another map (view, default, custom) is a leave, a
+  // filter change on this one is not.
+  const leaveGuard = useMapLeaveGuard(doc)
 
   /** This map, as a link someone else can open. */
   const copyLink = async () => {
@@ -1840,7 +1813,7 @@ function TopologyPage() {
               bundleLags={lagMode === "on"}
               positions={positions}
               layoutTick={layoutTick}
-              fitKey={graphQs}
+              fitKey={graphKey}
               matchedIds={matchedIds}
               selectedEdgeId={selEdgeId}
               onGhostEdge={setGhost}

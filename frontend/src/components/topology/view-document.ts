@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from "react"
 import type { RefObject } from "react"
+import { useBlocker } from "@tanstack/react-router"
+import type { ShouldBlockFn } from "@tanstack/react-router"
 
 import { ApiError } from "@/lib/api"
 import type {
@@ -97,7 +99,16 @@ export function docFromView(
   v: TopologyViewSaved,
   styleOf: (raw: unknown) => string
 ): ViewDocument {
-  const s: TopologyViewState = isObj(v.state) ? v.state : {}
+  return docFromState(v.state, styleOf)
+}
+
+/** A saved view's `state` as a document - also how this browser keeps the
+ * default map, so it holds everything a view does. */
+export function docFromState(
+  state: unknown,
+  styleOf: (raw: unknown) => string
+): ViewDocument {
+  const s: TopologyViewState = isObj(state) ? state : {}
   const noFilters: TopologyViewFilters = {}
   const { devices, ...filters } = isObj(s.filters) ? s.filters : noFilters
   const zones: DocZones = {}
@@ -109,7 +120,7 @@ export function docFromView(
   const extra: Record<string, unknown> = {}
   for (const [k, val] of Object.entries(s)) if (!MODELLED.has(k)) extra[k] = val
   return {
-    positions: viewPositions({ ...v, state: s }, styleOf),
+    positions: viewPositions({ state: s }, styleOf),
     zones,
     filters,
     links: isObj(s.links) ? s.links : {},
@@ -160,6 +171,29 @@ export function toViewState(
   if (Object.keys(doc.nodes).length) state.nodes = doc.nodes
   if (doc.notes.length) state.notes = doc.notes
   return state
+}
+
+/** The default map as this browser stores it: a saved view's `state`,
+ * without a device set (the default map has none). */
+export function storedDefaultMap(doc: ViewDocument): string {
+  return JSON.stringify(toViewState({ ...doc, devices: null, extra: {} }))
+}
+
+/** A stored default map as a document; null when there is none or it
+ * cannot be read, so the caller falls back to the older keys. */
+export function readDefaultMap(
+  raw: string | null,
+  styleOf: (raw: unknown) => string
+): ViewDocument | null {
+  if (!raw) return null
+  let state: unknown
+  try {
+    state = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!isObj(state)) return null
+  return { ...docFromState(state, styleOf), devices: null, extra: {} }
 }
 
 export type DocAction =
@@ -501,6 +535,72 @@ export function useViewDocument(
     load,
     markSaved,
   }
+}
+
+/** Which map a location shows - the key the document and the leave guard
+ * follow. A saved view is its own map even while it is built on by hand. */
+export function mapKeyOf(search: Record<string, unknown>): string {
+  const view = search.view
+  if (typeof view === "string" && view) return `view:${view}`
+  return search.devices !== undefined ? "custom" : "default"
+}
+
+/** Same page? Compared loosely so a trailing slash can't read as a move. */
+const samePath = (a: string, b: string) =>
+  a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
+
+/**
+ * The unsaved-edit guard. One dialog for every in-app way off a map with
+ * unsaved edits: a sidebar link, browser back/forward, picking another view,
+ * leaving a custom map. Same as the floor-plan editor, except that here the
+ * map is in the query string - so a navigation that stays on the page but
+ * lands on another map (another view, the default map) is a leave too,
+ * while a filter or display change on the same map is not. The default map
+ * is never guarded: it is kept in this browser as it changes.
+ *
+ * Returns the blocker the page's dialog answers. A move the page makes
+ * itself once nothing can be lost - onto the view a save just wrote - goes
+ * with `ignoreBlocker`: edits made while that save was in flight are still
+ * unsaved, and would otherwise raise "Discard?" on the page's own redirect.
+ */
+export function useMapLeaveGuard(
+  doc: Pick<ViewDocumentApi, "dirty" | "dirtyRef" | "docKey">
+) {
+  const { dirtyRef } = doc
+  // shouldBlockFn reads refs so it stays referentially stable - an inline
+  // closure would re-register the history blocker on every render.
+  const guardedRef = useRef(false)
+  guardedRef.current = doc.docKey !== "default"
+  const shouldBlockFn = useCallback<ShouldBlockFn>(
+    ({ current, next }) => {
+      if (!dirtyRef.current || !guardedRef.current) return false
+      if (!samePath(next.pathname, current.pathname)) return true
+      return (
+        mapKeyOf(next.search as Record<string, unknown>) !==
+        mapKeyOf(current.search as Record<string, unknown>)
+      )
+    },
+    [dirtyRef]
+  )
+  const blocker = useBlocker({
+    shouldBlockFn,
+    enableBeforeUnload: false,
+    withResolver: true,
+  })
+  // Closing the tab or reloading never reaches the router - the browser's
+  // own prompt is the only guard there. Registered only while it matters.
+  const guardDirty = doc.dirty && doc.docKey !== "default"
+  useEffect(() => {
+    if (!guardDirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return
+      e.preventDefault()
+      e.returnValue = ""
+    }
+    window.addEventListener("beforeunload", onBeforeUnload)
+    return () => window.removeEventListener("beforeunload", onBeforeUnload)
+  }, [guardDirty, dirtyRef])
+  return blocker
 }
 
 /** A save refused because the view changed since it was opened. */

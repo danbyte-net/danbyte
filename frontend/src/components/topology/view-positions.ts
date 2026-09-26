@@ -34,7 +34,7 @@ export function migratePositions(raw: unknown, style: NodeStyle): PosByStyle {
 /** A saved view's arrangements. Views written before the split carry one map
  * under `positions`; it belongs to the style the view was saved in. */
 export function viewPositions(
-  v: TopologyViewSaved,
+  v: Pick<TopologyViewSaved, "state">,
   styleOf: (raw: unknown) => string
 ): PosByStyle {
   const byStyle = v.state.positions_by_style as PosByStyle | undefined
