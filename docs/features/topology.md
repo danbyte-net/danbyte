@@ -451,6 +451,29 @@ Nodes carry the cabled ports + role/IP used by the stencil; edges carry the
 cable id/type/label/length, every port pair, and the `via` panel list when
 collapsed.
 
+Always present, at no extra query cost:
+
+| Where | Field | Shape |
+|---|---|---|
+| Node | `role` | `{id, name, slug, color, icon, is_patch_panel}`, or `null` |
+| Node | `status_mini` | `{id, name, slug, color, text_color, is_default}`, or `null` |
+| Node | `device_type_id` | id, or `null` |
+| Cable edge | `status_mini` | as on a node, for the cable's status |
+| Each pair | `a_id`, `a_kind`, `b_id`, `b_kind` | the component at each end |
+
+`is_default` is true when the status is the one new devices (on a node) or
+new cables (on an edge) get by default - its `default_for` list.
+`a_kind`/`b_kind` name the termination type: `interface`, `front_port`,
+`rear_port`, `console_port`, `console_server_port`, `power_port`,
+`power_outlet`, `aux_port` or `circuit_termination`. Pair ends follow the same
+orientation as `a_port`/`b_port` (the edge's source, then its target); on a
+collapsed edge they are the run's two real endpoints, not the panels between.
+
+A malformed id in `device`, `devices`, `site`, `location`, `role` or `status`
+returns `400 {"detail": "<param>: not a valid id"}`, even in a mode that
+ignores the parameter. `devices` takes at most 10,000 ids; more is a 400. An
+empty `devices=` is still the device-set mode: an empty map.
+
 In the **Logical** view, a leg's interface name clicks through to that
 interface's page (device interfaces; VM interfaces have no page). Cable
 detail pages have a **Topology** button opening a custom map of the cable's
@@ -467,7 +490,8 @@ LLM context or scripted analysis: `device_count`, `cable_count`, per-site
 device rollups, `inter_site_links` (cable counts between sites), and
 `adjacency` - one row per device with its role, site, and neighbors
 (`{device, cables, types, via_panels}`), no port-level noise. Same filters
-and `collapse_panels` semantics as the graph endpoint. This is the endpoint
+(and the same 400 on a malformed id) and `collapse_panels` semantics as the
+graph endpoint. This is the endpoint
 to point an AI assistant at when it needs to answer "what connects to
 what" questions.
 

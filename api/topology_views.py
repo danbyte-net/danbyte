@@ -34,6 +34,7 @@ from drf_spectacular.utils import (
 )
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -42,6 +43,38 @@ from .views import _get_active_tenant
 from auth_api import rbac
 
 MAX_DEPTH = 6
+# Largest explicit device set (``devices=``) one request may name.
+MAX_DEVICE_SET = 10_000
+
+
+# ─── Request parsing ────────────────────────────────────────────────────────
+#
+# Ids feed UUID filters; a malformed one raised Django's ValidationError from
+# the queryset, which the API exception handler doesn't map - a 500. Parse
+# them up front into a 400 instead.
+
+def _parse_uuid(raw, param):
+    try:
+        return str(uuid.UUID(str(raw).strip()))
+    except (TypeError, ValueError):
+        raise ParseError(f"{param}: not a valid id") from None
+
+
+def _uuid_param(params, param):
+    """The ``param`` id as a canonical UUID string, or None when absent."""
+    raw = params.get(param)
+    return _parse_uuid(raw, param) if raw else None
+
+
+def _uuid_list_param(params, param, limit=MAX_DEVICE_SET):
+    """The comma-separated ``param`` ids (or a list of them), de-duplicated
+    in order. More than ``limit`` ids is a 400."""
+    raw = params.get(param) or ""
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(",")
+    items = [x for x in items if str(x).strip()]
+    if len(items) > limit:
+        raise ParseError(f"{param}: at most {limit:,} ids")
+    return list(dict.fromkeys(_parse_uuid(x, param) for x in items))
 
 
 # ─── Node payload ────────────────────────────────────────────────────────────
@@ -55,9 +88,25 @@ def _devices_qs(tenant):
     )
 
 
+def _status_mini(status, model):
+    """The ``StatusMini`` shape plus ``is_default``: whether ``status`` is
+    the one applied to a new ``model`` (its ``default_for`` slug)."""
+    if status is None:
+        return None
+    return {
+        "id": str(status.id),
+        "name": status.name,
+        "slug": status.slug,
+        "color": status.color,
+        "text_color": status.text_color,
+        "is_default": model in (status.default_for or []),
+    }
+
+
 def _device_node(d, ports, panel=False):
     """``ports`` = ordered [{name, kind, pair?}] of this device's cabled ends
-    - ``pair`` names the rear port sharing the row (front ⇄ rear strand)."""
+    - ``pair`` names the rear port sharing the row (front ⇄ rear strand).
+    Reads only the relations ``_devices_qs`` joins - no per-node queries."""
     return {
         "id": f"dev:{d.id}",
         "type": "device",
@@ -66,9 +115,15 @@ def _device_node(d, ports, panel=False):
             "name": d.name,
             "status": d.status.slug if d.status_id else None,
             "status_display": d.status.name if d.status_id else "",
+            "status_mini": _status_mini(
+                d.status if d.status_id else None, "device"
+            ),
             "device_type": d.device_type.name if d.device_type_id else None,
+            "device_type_id": str(d.device_type_id) if d.device_type_id else None,
             "role": (
-                {"name": d.role.name, "color": d.role.color,
+                {"id": str(d.role.id), "name": d.role.name,
+                 "slug": d.role.slug, "color": d.role.color,
+                 "icon": d.role.icon,
                  "is_patch_panel": d.role.is_patch_panel}
                 if d.role_id else None
             ),
@@ -497,6 +552,9 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
                     "cable_label": cab.label,
                     "color": cab.color,
                     "status": cab.status.slug if cab.status_id else None,
+                    "status_mini": _status_mini(
+                        cab.status if cab.status_id else None, "cable"
+                    ),
                     "length": str(cab.length) if cab.length is not None else None,
                     "length_unit": cab.length_unit,
                     "speed": None,
@@ -511,6 +569,9 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
         e = edges[key]
         src_is_a = e["source"] == f"dev:{da.id}"
         a_port, b_port = (pa.name, pb.name) if src_is_a else (pb.name, pa.name)
+        # The components themselves (termination kinds: interface,
+        # front_port, circuit_termination, …), oriented like a_port/b_port.
+        end_a, end_b = ((pa, ka), (pb, kb)) if src_is_a else ((pb, kb), (pa, ka))
         if not e["data"]["pairs"]:
             pa_lag = getattr(pa, "lag", None) if ka == "interface" else None
             pb_lag = getattr(pb, "lag", None) if kb == "interface" else None
@@ -524,6 +585,10 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
             "b": f"{db.name if src_is_a else da.name}:{b_port}",
             "a_port": a_port,
             "b_port": b_port,
+            "a_id": str(end_a[0].id),
+            "a_kind": end_a[1],
+            "b_id": str(end_b[0].id),
+            "b_kind": end_b[1],
         })
         # Link speed from either endpoint interface (first non-empty wins) -
         # front/rear panel ports have no speed.
@@ -778,15 +843,18 @@ def topology_logical_view(request):
                          location=OpenApiParameter.QUERY,
                          description="Walk patch panels through (default '1')."),
     ],
-    responses=OpenApiResponse(
-        response=OpenApiTypes.OBJECT,
-        description=(
-            "`{device_count, cable_count, sites, inter_site_links, adjacency}` "
-            "- the cabling graph without port-level noise, sized for an LLM "
-            "context or scripted analysis. Same filters and RBAC scope as "
-            "`/api/topology/`."
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "`{device_count, cable_count, sites, inter_site_links, adjacency}` "
+                "- the cabling graph without port-level noise, sized for an LLM "
+                "context or scripted analysis. Same filters and RBAC scope as "
+                "`/api/topology/`."
+            ),
         ),
-    ),
+        400: OpenApiResponse(description="`{detail: \"<param>: not a valid id\"}`"),
+    },
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -949,15 +1017,13 @@ def _grouped_graph(tenant, group_by, device_filter_q=None, collapse=True,
 
 
 def _filter_q(params):
+    """The device filter from ``site location role status tag``; a malformed
+    id is a 400 (``ParseError``)."""
     q = Q()
-    if params.get("site"):
-        q &= Q(site_id=params["site"])
-    if params.get("location"):
-        q &= Q(location_id=params["location"])
-    if params.get("role"):
-        q &= Q(role_id=params["role"])
-    if params.get("status"):
-        q &= Q(status_id=params["status"])
+    for param in ("site", "location", "role", "status"):
+        value = _uuid_param(params, param)
+        if value:
+            q &= Q(**{f"{param}_id": value})
     if params.get("tag"):
         q &= Q(tags__slug=params["tag"])
     return q
@@ -1035,18 +1101,28 @@ def _filter_q(params):
             location=OpenApiParameter.QUERY,
             description=(
                 "Comma-separated device ids: the induced subgraph on exactly "
-                "this set (the custom-map builder). Overrides focus/filters."
+                "this set (the custom-map builder). Overrides focus/filters. "
+                f"At most {MAX_DEVICE_SET:,} ids."
             ),
         ),
     ],
-    responses=OpenApiResponse(
-        response=OpenApiTypes.OBJECT,
-        description=(
-            "`{nodes, edges}` for the React Flow map - device stencil-card nodes "
-            "with cabled ports and cable edges (port-to-port pairs, via panels), "
-            "scoped to the caller's device.view grant."
+    responses={
+        200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                "`{nodes, edges}` for the React Flow map - device stencil-card "
+                "nodes with cabled ports and cable edges (port-to-port pairs, via "
+                "panels), scoped to the caller's device.view grant."
+            ),
         ),
-    ),
+        400: OpenApiResponse(
+            description=(
+                "A malformed id in `device`, `devices`, `site`, `location`, "
+                "`role` or `status` (`{detail: \"<param>: not a valid id\"}`), "
+                f"or more than {MAX_DEVICE_SET:,} `devices`."
+            ),
+        ),
+    },
 )
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -1063,7 +1139,11 @@ def topology_view(request):
 
     p = request.query_params
     collapse = p.get("collapse_panels", "1") != "0"
-    focus = p.get("device") or None
+    # Every id is parsed before any query: a malformed one is a 400, even in
+    # a mode that ignores it.
+    focus = _uuid_param(p, "device")
+    device_ids = _uuid_list_param(p, "devices")
+    filter_q = _filter_q(p)
     try:
         depth = max(1, min(MAX_DEPTH, int(p.get("depth", 1))))
     except (TypeError, ValueError):
@@ -1075,7 +1155,7 @@ def topology_view(request):
     if group_by in ("site", "location"):
         return Response(_grouped_graph(
             tenant, group_by,
-            device_filter_q=_filter_q(p),
+            device_filter_q=filter_q,
             collapse=collapse,
             scope_q=scope_q,
         ))
@@ -1084,7 +1164,6 @@ def topology_view(request):
     # parameter's PRESENCE selects the mode: an empty value is an empty map
     # (a builder you just opened), never a fall-through to the full graph.
     custom_set = "devices" in p
-    device_ids = [x for x in (p.get("devices") or "").split(",") if x]
     if custom_set:
         focus = None
 
@@ -1092,7 +1171,7 @@ def topology_view(request):
         tenant,
         device_filter_q=(
             Q(id__in=device_ids) if custom_set
-            else (_filter_q(p) if not focus else None)
+            else (filter_q if not focus else None)
         ),
         focus_id=focus,
         depth=depth,

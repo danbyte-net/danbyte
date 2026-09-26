@@ -144,6 +144,29 @@ class PanelCollapseTests(_Base):
         self.assertTrue(by_name["panel-a"]["panel"])
         self.assertFalse(by_name["server"]["panel"])
 
+    def test_pairs_name_their_components(self):
+        # Collapsed: the end-to-end pair names the two interfaces, oriented
+        # like a_port/b_port.
+        pair = self._graph("collapse_panels=1")["edges"][0]["data"]["pairs"][0]
+        ids = {"eth0": str(self.s_eth.id), "gi1": str(self.w_gi.id)}
+        self.assertEqual(pair["a_id"], ids[pair["a_port"]])
+        self.assertEqual(pair["b_id"], ids[pair["b_port"]])
+        self.assertEqual((pair["a_kind"], pair["b_kind"]), ("interface", "interface"))
+        # Raw: the server's hop lands on the panel's front port.
+        edges = self._graph("collapse_panels=0")["edges"]
+        pair = next(
+            p for e in edges for p in e["data"]["pairs"]
+            if {p["a_port"], p["b_port"]} == {"eth0", "front1"}
+        )
+        ends = {
+            (pair["a_port"], pair["a_id"], pair["a_kind"]),
+            (pair["b_port"], pair["b_id"], pair["b_kind"]),
+        }
+        self.assertEqual(ends, {
+            ("eth0", str(self.s_eth.id), "interface"),
+            ("front1", str(self.fa.id), "front_port"),
+        })
+
     def test_device_paths_strip(self):
         data = self.client.get(f"/api/devices/{self.server.id}/paths/").json()
         self.assertEqual(len(data["runs"]), 1)
@@ -793,6 +816,174 @@ class DeviceSetAndSpeedTests(_Base):
         bc = by_pair[frozenset((f"dev:{self.b.id}", f"dev:{self.c.id}"))]
         self.assertEqual(ab["speed"], "10G")
         self.assertIsNone(bc["speed"])
+
+    def test_empty_devices_param_is_an_empty_map(self):
+        g = self._graph("devices=")
+        self.assertEqual(g, {"nodes": [], "edges": []})
+
+
+class MalformedIdTests(_Base):
+    """A malformed id is a 400 naming its parameter - it used to reach a UUID
+    filter and surface as a 500."""
+
+    ID_PARAMS = ("device", "devices", "site", "location", "role", "status")
+
+    def test_each_id_param_rejects_junk(self):
+        for param in self.ID_PARAMS:
+            with self.subTest(param=param):
+                r = self.client.get(f"/api/topology/?{param}=not-a-uuid")
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertEqual(r.json(), {"detail": f"{param}: not a valid id"})
+
+    def test_one_bad_id_in_a_device_set(self):
+        d = Device.objects.create(tenant=self.tenant, name="sw")
+        r = self.client.get(f"/api/topology/?devices={d.id},nope")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"detail": "devices: not a valid id"})
+
+    def test_junk_is_rejected_even_where_the_param_is_ignored(self):
+        for qs in ("group_by=site&site=nope", "devices=&device=nope"):
+            with self.subTest(qs=qs):
+                r = self.client.get(f"/api/topology/?{qs}")
+                self.assertEqual(r.status_code, 400, r.content)
+
+    def test_summary_shares_the_filter_parsing(self):
+        r = self.client.get("/api/topology/summary/?role=nope")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"detail": "role: not a valid id"})
+
+    def test_uppercase_ids_still_focus(self):
+        a = Device.objects.create(tenant=self.tenant, name="sw-a")
+        b = Device.objects.create(tenant=self.tenant, name="sw-b")
+        self._cable(
+            Interface.objects.create(device=a, name="e1"),
+            Interface.objects.create(device=b, name="e1"),
+        )
+        g = self._graph(f"device={str(a.id).upper()}")
+        self.assertEqual({n["data"]["name"] for n in g["nodes"]}, {"sw-a", "sw-b"})
+
+    def test_device_set_is_capped(self):
+        import uuid
+
+        from .topology_views import MAX_DEVICE_SET
+
+        ids = [str(uuid.uuid4()) for _ in range(MAX_DEVICE_SET + 1)]
+        r = self.client.get(f"/api/topology/?devices={','.join(ids)}")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"detail": "devices: at most 10,000 ids"})
+        r = self.client.get(f"/api/topology/?devices={','.join(ids[1:])}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json(), {"nodes": [], "edges": []})
+
+
+class AlwaysOnFieldTests(_Base):
+    """Role, status and component ids ride on every node, edge and pair -
+    read off relations the builder already joins."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import DeviceType, Status
+
+        both = ["device", "cable"]
+        self.active = Status.objects.create(
+            tenant=self.tenant, name="Active", slug="active", color="#22c55e",
+            available_to=both, default_for=both,
+        )
+        self.planned = Status.objects.create(
+            tenant=self.tenant, name="Planned", slug="planned", color="#f59e0b",
+            available_to=both,
+        )
+        self.role = DeviceRole.objects.create(
+            tenant=self.tenant, name="Core", slug="core", color="#ff0000",
+            icon="router",
+        )
+        self.dt = DeviceType.objects.create(tenant=self.tenant, name="SW")
+        self.a = Device.objects.create(
+            tenant=self.tenant, name="sw-a", role=self.role, status=self.active,
+            device_type=self.dt,
+        )
+        self.b = Device.objects.create(
+            tenant=self.tenant, name="sw-b", status=self.planned
+        )
+        self.cab = self._cable(
+            Interface.objects.create(device=self.a, name="e1"),
+            Interface.objects.create(device=self.b, name="e1"),
+        )
+        Cable.objects.filter(pk=self.cab.pk).update(status=self.planned)
+
+    def _mini(self, s, is_default):
+        return {
+            "id": str(s.id), "name": s.name, "slug": s.slug, "color": s.color,
+            "text_color": s.text_color, "is_default": is_default,
+        }
+
+    def test_node_role_status_and_type(self):
+        g = self._graph()
+        by_name = {n["data"]["name"]: n["data"] for n in g["nodes"]}
+        a, b = by_name["sw-a"], by_name["sw-b"]
+        self.assertEqual(a["role"], {
+            "id": str(self.role.id), "name": "Core", "slug": "core",
+            "color": "#ff0000", "icon": "router", "is_patch_panel": False,
+        })
+        self.assertEqual(a["status_mini"], self._mini(self.active, True))
+        self.assertEqual(a["device_type_id"], str(self.dt.id))
+        # The legacy keys stay.
+        self.assertEqual((a["status"], a["status_display"]), ("active", "Active"))
+        self.assertEqual(a["device_type"], "SW")
+        self.assertIsNone(b["role"])
+        self.assertEqual(b["status_mini"], self._mini(self.planned, False))
+        self.assertIsNone(b["device_type_id"])
+
+    def test_node_without_status(self):
+        Device.objects.filter(pk=self.b.pk).update(status=None)
+        by_name = {n["data"]["name"]: n["data"] for n in self._graph()["nodes"]}
+        self.assertIsNone(by_name["sw-b"]["status_mini"])
+
+    def test_cable_edge_status(self):
+        edge = self._graph()["edges"][0]["data"]
+        self.assertEqual(edge["status"], "planned")
+        self.assertEqual(edge["status_mini"], self._mini(self.planned, False))
+        Cable.objects.filter(pk=self.cab.pk).update(status=self.active)
+        edge = self._graph()["edges"][0]["data"]
+        self.assertEqual(edge["status_mini"], self._mini(self.active, True))
+
+    def test_the_fields_cost_no_queries_per_node(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from .models import DeviceType, Status
+        from .topology_views import _build_graph
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                g = _build_graph(self.tenant)
+            return len(ctx.captured_queries), len(g["nodes"])
+
+        before, nodes_before = count()
+        for i in range(4):
+            role = DeviceRole.objects.create(
+                tenant=self.tenant, name=f"R{i}", slug=f"r{i}"
+            )
+            status = Status.objects.create(
+                tenant=self.tenant, name=f"S{i}", slug=f"s{i}",
+                available_to=["device", "cable"],
+            )
+            dt = DeviceType.objects.create(tenant=self.tenant, name=f"T{i}")
+            x, y = (
+                Device.objects.create(
+                    tenant=self.tenant, name=f"{n}{i}", role=role,
+                    status=status, device_type=dt,
+                )
+                for n in ("x", "y")
+            )
+            cab = self._cable(
+                Interface.objects.create(device=x, name="e1"),
+                Interface.objects.create(device=y, name="e1"),
+            )
+            Cable.objects.filter(pk=cab.pk).update(status=status)
+        after, nodes_after = count()
+        self.assertEqual(nodes_after, nodes_before + 8)
+        self.assertEqual(after, before)
 
 
 class LagEdgeTests(_Base):
