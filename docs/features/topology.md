@@ -775,3 +775,26 @@ Keys come from `status`, `monitor`, `primary_ip`, `secondary_ip`, `oob_ip`,
 list; an unknown key is a 400. See
 [Tenant settings](../architecture/tenant-settings.md) for the resolution
 rules.
+
+On the card the name is bold and centred, and each line under it shows its
+value - alone where that is unambiguous, with a short prefix where a bare
+value could be taken for another line:
+
+| Key | The card shows |
+|---|---|
+| `primary_ip`, `secondary_ip` | the address: `10.0.0.11` |
+| `loopback` | the address, `+N` when the device has more: `10.255.0.11 +1` |
+| `oob_ip` | `OOB 10.9.0.11` |
+| `serial` | `SN FDO2231X0AB` |
+| `asset_tag` | `Asset A-00123` |
+| `rack` | `Rack R12 · U20` |
+| `device_type`, `manufacturer`, `platform`, `role`, `site`, `location` | the name |
+| `tags` | the tag names, comma separated |
+| `cf_<key>` | `Label: value` |
+
+Lines without a value are skipped, and at most six show. `status` and
+`monitor` are pills, not lines, and at most one shows, inside the card's
+top-left corner: `monitor` shows the monitoring pill while the device is
+down or degraded and wins over `status`, which shows the lifecycle status
+pill whenever it is listed. A card keeps room for the pill whenever its
+list can show one, so a device going down never resizes it.
