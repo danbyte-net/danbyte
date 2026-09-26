@@ -536,7 +536,10 @@ export function useDocumentKeys(h: {
     const onKey = (e: KeyboardEvent) => {
       const cur = ref.current
       if (!cur.enabled || !(e.ctrlKey || e.metaKey) || e.altKey) return
-      if (e.target instanceof Element && e.target.closest("[role=dialog]"))
+      if (
+        e.target instanceof Element &&
+        e.target.closest("[role=dialog],[role=alertdialog]")
+      )
         return
       const key = e.key.toLowerCase()
       if (key === "s" && !e.shiftKey) {

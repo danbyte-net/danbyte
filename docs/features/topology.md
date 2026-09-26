@@ -221,7 +221,8 @@ labelled box behind the map. Use them to say what a cluster of cards *is*:
 - **Resize** it by selecting it and dragging a corner.
 - **Recolour or delete** it from the small toolbar above a selected zone, or
   by right-clicking it. The Delete and Backspace keys never remove a zone or
-  a card - that always takes one of these explicit actions.
+  a card - that always takes one of these explicit actions, and
+  ++ctrl+z++ puts a deleted zone back.
 
 A zone is an **annotation, not a container** - it owns nothing inside it, so
 dragging one moves the box and leaves every card exactly where it was. That
@@ -232,11 +233,12 @@ still reads as a cable.
 Like the arrangement, zones are kept **per view style**: a box that frames
 four Flat chips would frame half a card in Wiring.
 
-Zones and hidden objects belong to the map you drew them on. A saved view
-carries its own, the default map keeps its own in this browser, and a
-**custom map is a scratch map** - what you draw there stays there until you
-save it as a view, and exiting the custom map does not carry it back to the
-default map.
+The arrangement, zones and hidden objects belong to the map you made them
+on. A saved view carries its own, the default map keeps its own in this
+browser, and a **custom map is a scratch map** - what you arrange and draw
+there stays there until you save it as a view, and exiting the custom map
+neither carries it back to the default map nor disturbs the default map's
+own arrangement.
 
 ## Filters, focus, search
 
@@ -316,9 +318,9 @@ logical link rather than its physical legs. A port-channel that fans out to a
 vPC / MLAG pair is two bundles, one per far-end aggregate. Hover names the
 aggregates, the member cables and the speed; click opens the same bundle panel
 as a flat-view `×N` edge, titled by the aggregates. **Display → Bundle
-aggregates** turns the fold off (`?lag=off` in the URL) to see every cable;
-the flat view already bundles every parallel cable and simply names the
-aggregates when all of them share one.
+aggregates** turns the fold off (`?lag=off` in the URL; a saved view keeps
+the setting) to see every cable; the flat view already bundles every
+parallel cable and simply names the aggregates when all of them share one.
 
 ## Edge coloring
 
@@ -367,11 +369,17 @@ counts.
 
 ## Saved views
 
-Drag cards where you want them, then **Save as…** - a saved view stores the
-**filter set, color mode and every node position** per tenant. Load it from
-the views select; **Save** updates it in place after you rearrange;
+Drag cards where you want them, then **Save as…** - a saved view stores,
+per tenant, the **filter set** (or a custom map's device set), the **display
+settings** (colour mode, layout direction, cables, Levels, grouping and
+aggregate bundling), **every node position** per view style, the **zones**
+and the **hidden objects**. Load it from the views select; **Save** (or
+++ctrl+s++, ++cmd+s++ on a Mac) updates it in place after you rearrange;
 **Re-layout** discards hand positions and re-runs the automatic
-left-to-right layout. Views are plain API objects
+left-to-right layout. **Save** needs the change permission on topology
+views, **Save as…** the add permission (++ctrl+s++ on a map that is not a
+saved view opens **Save as…**), and deleting a view the delete permission.
+Views are plain API objects
 (`/api/topology-views/`), change-logged like everything else - except that
 the change log keeps a summary of a view's `state`, not the arrangement
 itself: which top-level keys changed and the size before and after. In a
@@ -392,16 +400,46 @@ switch away, come back: it's as you left it.
 **Save** stores the arrangements you actually made - a view you dragged is
 pinned exactly, a view you left (or returned, with **Re-layout**) to the
 automatic layout stays automatic, so it keeps laying itself out as the map's
-devices change. **Re-layout** only re-runs the view you're looking at. The
+devices change. **Re-layout** only re-runs the view you're looking at. A
+drag stores the whole arrangement of that view as it stands; the only
+positions it keeps from before are those of cards your permissions do not
+let you see, so saving a shared view never scrambles somebody else's. The
 saved arrangements come back however the view is opened - picked from the
 select, or as a `?view=` link in a fresh tab. Views saved before the per-view
 split keep their arrangement under the style they were saved in; if one opens
 scrambled, **Re-layout** and **Save** once.
 
-A view is addressable: `?view=<id>` opens it. Change anything afterwards and
-the toolbar says **edited** - what you're looking at is no longer what the
-view describes. **Save** writes it back and the address collapses to the plain
-`?view=<id>` again.
+A view is addressable: `?view=<id>` opens it. Change anything afterwards -
+a setting, a drag, a zone, a hidden card - and the toolbar says **edited**:
+what you're looking at is no longer what the view describes. **Save** writes
+it back and the address collapses to the plain `?view=<id>` again.
+
+Edits to a map are **undoable**: every drag, zone change, hide and
+**Re-layout** is one step, up to 100 steps back, and a save can be undone
+too. Settings that live in the URL (filters, tab, colour mode…) are not on
+the undo list - the browser's Back button takes those back.
+
+**Unsaved changes.** Leaving a saved view or a custom map with unsaved edits -
+another view from the select, the default map, a sidebar link, the browser's
+Back button, closing the tab - asks first: **Keep editing** or **Discard and
+leave**. The default map never asks; it is kept in this browser as you go.
+
+**Changed by someone else.** Save only writes over the version you opened. If
+somebody saved the view in the meantime, Save is refused and offers **Save as
+copy** (keep your version as a new view) or **Reload** (take theirs and drop
+your changes); nothing is overwritten silently.
+
+### Keyboard
+
+| Keys | Action |
+|---|---|
+| ++ctrl+s++ / ++cmd+s++ | Save (Save as… on a map that is not a saved view) |
+| ++ctrl+z++ / ++cmd+z++ | Undo the last edit to the map |
+| ++ctrl+shift+z++ / ++cmd+shift+z++ (or ++ctrl+y++) | Redo |
+
+Undo and redo leave a text field's own undo alone while you type in it.
+++h++ and ++shift+h++ hide and show cards - see
+[Hiding things](#hiding-things-the-eyes).
 
 ## Linking and sharing
 
@@ -420,6 +458,7 @@ back button and a reload all keep it.
 | `dir` | `lr` (default), `tb` |
 | `color` | `cable` (default), `type`, `status`, `speed`, `none` |
 | `cables` | `routed` (default), `straight` |
+| `lag` | `on` (default) bundles aggregate members, `off` |
 | `levels` | the tier order - see below |
 | `device` `depth` | focus on one device, 1-6 hops |
 | `devices` | a comma-separated device set (the custom map) |

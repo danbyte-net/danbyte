@@ -1,4 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Link,
+  useBlocker,
+  useNavigate,
+} from "@tanstack/react-router"
+import type { ShouldBlockFn } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Camera,
@@ -14,21 +20,41 @@ import {
   Trash2,
   X,
 } from "lucide-react"
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type BulkStatusResponse,
-  type GhostEdgeData,
-  type Paginated,
-  type Status,
-  type TagOption,
-  type TopoEdge,
-  type TopoNode,
-  type TopologyGraph,
-  type TopologyViewSaved,
+import { api } from "@/lib/api"
+import type {
+  BulkStatusResponse,
+  GhostEdgeData,
+  Paginated,
+  Status,
+  TagOption,
+  TopoEdge,
+  TopoNode,
+  TopologyGraph,
+  TopologyViewSaved,
+  TopologyViewState,
+  TopologyViewSummary,
 } from "@/lib/api"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -69,6 +95,16 @@ import {
   readTopoHidden,
   type TopoHidden,
 } from "@/components/topology/hidden"
+import { StaleViewDialog } from "@/components/topology/stale-view-dialog"
+import {
+  docFromView,
+  emptyDocument,
+  isStaleViewError,
+  toViewState,
+  useDocumentKeys,
+  useViewDocument,
+} from "@/components/topology/view-document"
+import type { ViewDocument } from "@/components/topology/view-document"
 import { HiddenChip } from "@/components/hidden-chip"
 import {
   setHidden as withHidden,
@@ -109,7 +145,6 @@ import {
 } from "@/components/topology/levels-param"
 import {
   migratePositions,
-  viewPositions,
   viewZones,
   ZONE_COLORS,
   ZONE_H,
@@ -220,9 +255,21 @@ export const Route = createFileRoute("/topology/")({
  * the user has edited the view. */
 const OVERRIDE_KEYS = [
   "tab", "site", "location", "role", "status", "tag", "panels", "group",
-  "dir", "color", "cables", "levels", "device", "depth", "devices", "q",
-  "vlangroup", "vms",
+  "dir", "color", "cables", "lag", "levels", "device", "depth", "devices",
+  "q", "vlangroup", "vms",
 ] as const
+
+/** Which map a location shows - the key the document and the leave guard
+ * follow. A saved view is its own map even while it is built on by hand. */
+function mapKeyOf(search: Record<string, unknown>): string {
+  const view = search.view
+  if (typeof view === "string" && view) return `view:${view}`
+  return search.devices !== undefined ? "custom" : "default"
+}
+
+/** Same page? Compared loosely so a trailing slash can't read as a move. */
+const samePath = (a: string, b: string) =>
+  a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
 
 const Skeleton = () => (
   <div className="h-full w-full animate-pulse bg-muted/30" />
@@ -416,6 +463,7 @@ type ViewFilters = Partial<
     edgeRouting: "routed" | "straight" | "curved"
     viewStyle: ViewStyle
     groupBy: GroupBy
+    lag: "on" | "off"
     devices: string[]
   }
 >
@@ -435,6 +483,20 @@ function writeStoredDisplay(d: StoredDisplay) {
   }
 }
 
+/** One saved view, state included. */
+const fetchView = (id: string) =>
+  api<TopologyViewSaved>(`/api/topology-views/${id}/`)
+
+/** The default map as this browser last left it. A legacy single-map
+ * arrangement is read as the style on screen. */
+function defaultDocument(style: ViewStyle): ViewDocument {
+  return emptyDocument({
+    positions: readStoredPositions(style as NodeStyle),
+    zones: readStoredZones(),
+    hidden: readStoredHidden(),
+  })
+}
+
 function TopologyPage() {
   usePageTitle("Topology")
   const urlSearch = Route.useSearch()
@@ -444,14 +506,21 @@ function TopologyPage() {
   const qc = useQueryClient()
   const canvas = useRef<CanvasHandle>(null)
 
-  // Saved views are fetched first: an applied one supplies the fallback for
-  // every control the URL doesn't override.
+  // The select lists names only; the applied view - the one whose state is
+  // needed - is fetched by id. It supplies the fallback for every control
+  // the URL doesn't override.
   const views = useQuery({
-    queryKey: ["topology-views"],
-    queryFn: () => api<Paginated<TopologyViewSaved>>("/api/topology-views/"),
+    queryKey: ["topology-views", "picker"],
+    queryFn: () =>
+      api<Paginated<TopologyViewSummary>>("/api/topology-views/?picker=1"),
   })
   const viewId = urlSearch.view ?? "none"
-  const appliedView = views.data?.results.find((v) => v.id === viewId)
+  const viewQ = useQuery({
+    queryKey: ["topology-view", viewId],
+    queryFn: () => fetchView(viewId),
+    enabled: viewId !== "none",
+  })
+  const appliedView = viewId !== "none" ? viewQ.data : undefined
   const vf = (appliedView?.state.filters ?? {}) as ViewFilters
   // Personal defaults from the last unsaved session (this read is unchanged
   // from before the URL work - same hydration behaviour).
@@ -501,7 +570,11 @@ function TopologyPage() {
     dflt.cables,
     ROUTINGS
   )
-  const [lagMode, setLagMode] = useUrlEnum("lag", "on", LAG_MODES)
+  const [lagMode, setLagMode] = useUrlEnum(
+    "lag",
+    oneOf(vf.lag, LAG_MODES) ?? "on",
+    LAG_MODES
+  )
   const logical = viewStyle === "logical"
   // Aggregate the graph to one card per site/location; double-click a card
   // (or its panel's button) drills into that group's device view.
@@ -571,62 +644,48 @@ function TopologyPage() {
       device: f ? f.id : undefined,
       depth: f && f.depth !== 1 ? String(f.depth) : undefined,
     })
-  // One arrangement per view style - see PosByStyle. The canvas only ever
-  // sees the style it is currently drawing.
-  const [posByStyle, setPosByStyle] = useState<PosByStyle>(() =>
-    urlSearch.view
-      ? {} // a saved view's arrangements arrive with the view (effect below)
-      : readStoredPositions(styleOfTab(dflt.tab) as NodeStyle)
-  )
-  const positions = logical ? undefined : posByStyle[viewStyle as NodeStyle]
-  /** Replace the arrangement of the style on screen (undefined = re-layout
-   * it); every other style keeps the one the user tuned. */
-  const setPositions = (p: PosMap | undefined) => {
-    if (logical) return
-    const next = { ...posByStyle }
-    if (p) next[viewStyle as NodeStyle] = p
-    else delete next[viewStyle as NodeStyle]
-    setPosByStyle(next)
-    // Only the default map persists to the browser; a saved view's
-    // arrangements are written by Save.
-    if (viewId === "none") writeStoredPositions(next)
-  }
-  /** Every style's arrangement is stale - the map is about to hold a
-   * different set of devices. */
-  const dropAllPositions = () => {
-    setPosByStyle({})
-    if (viewId === "none") clearStoredPositions()
-  }
-  // Which map the annotations belong to. A saved view carries its own; the
-  // default map keeps its own in this browser; a custom map is a scratch
-  // map until it is saved, so what you draw on it must not follow you back
-  // to the default map when you exit.
+  // Which map is on screen. A saved view carries its own arrangement, zones
+  // and hidden set; the default map keeps its own in this browser; a custom
+  // map is a scratch map until it is saved, so what you draw on it must not
+  // follow you back to the default map when you exit.
   const mapKey =
     viewId !== "none" ? `view:${viewId}` : builder ? "custom" : "default"
-  const ownScratch = mapKey === "default"
+
+  // Everything about this map that is not in the URL - the arrangements,
+  // zones, hidden set, overrides - as one undoable document. A saved view's
+  // arrives with the view (the load effect below); the default map starts
+  // from this browser's copy.
+  const doc = useViewDocument(() => {
+    if (urlSearch.view) return { doc: emptyDocument(), key: mapKey }
+    if (builder) return { doc: emptyDocument(), key: mapKey }
+    return { doc: defaultDocument(styleOfTab(dflt.tab)), key: mapKey }
+  })
+  const { dispatch: send, dirtyRef } = doc
+  /** One user action = one undo step, however many edits it makes (a zone
+   * drag also snapshots the cards). */
+  const edit = (action: Parameters<typeof send>[0]) =>
+    send(action, { coalesce: "gesture" })
+
+  // One arrangement per view style - see PosByStyle. The canvas only ever
+  // sees the style it is currently drawing.
+  const positions = logical ? undefined : doc.doc.positions[viewStyle]
+  /** Every style's arrangement is stale - the map is about to hold a
+   * different set of devices. */
+  const dropAllPositions = () => edit({ type: "clearPositions" })
 
   // What is switched off on this map - by site, location, role, link family
   // (the sidebar's eyes) or one card by hand ("Remove from view"). Not a
   // filter: a filter says what kind of thing belongs, this says "not that
   // one" - the last mile of a diagram you are shaping for someone to read.
-  const [hidden, setHidden] = useState<TopoHidden>(() =>
-    urlSearch.view || urlSearch.devices ? NO_TOPO_HIDDEN : readStoredHidden()
-  )
-  const setHiddenNodes = (next: TopoHidden) => {
-    setHidden(next)
-    if (ownScratch) writeStoredHidden(next)
-  }
+  const hidden = doc.doc.hidden
+  const setHiddenNodes = (next: TopoHidden) =>
+    edit({ type: "setHidden", hidden: next })
   // Labelled backdrop boxes, per view style - a box framing Flat chips is
   // the wrong size around Stencil cards.
-  const [zonesByStyle, setZonesByStyle] = useState<ZonesByStyle>(() =>
-    urlSearch.view || urlSearch.devices ? {} : readStoredZones()
-  )
-  const zones = logical ? undefined : zonesByStyle[viewStyle]
+  const zones = logical ? undefined : doc.doc.zones[viewStyle]
   const setZones = (next: Zone[]) => {
     if (logical) return
-    const all = { ...zonesByStyle, [viewStyle]: next }
-    setZonesByStyle(all)
-    if (ownScratch) writeStoredZones(all)
+    edit({ type: "setRegions", style: viewStyle, regions: next })
   }
   const addZone = (x: number, y: number) =>
     setZones([
@@ -653,22 +712,68 @@ function TopologyPage() {
   const recolorZone = (id: string, color: string) =>
     setZones((zones ?? []).map((z) => (z.id === id ? { ...z, color } : z)))
 
-  // Moving between maps swaps the annotations with them. A saved view's are
-  // restored by the appliedView effect below; these are the other two.
-  const prevMapKey = useRef(mapKey)
-  useEffect(() => {
-    if (prevMapKey.current === mapKey) return
-    prevMapKey.current = mapKey
-    if (mapKey === "custom") {
-      setZonesByStyle({})
-      setHidden(NO_TOPO_HIDDEN)
-    } else if (mapKey === "default") {
-      setZonesByStyle(readStoredZones())
-      setHidden(readStoredHidden())
-    }
-  }, [mapKey])
-
   const [layoutTick, setLayoutTick] = useState(0)
+
+  // The ONE place a map's document is (re)loaded. An effect, because a map
+  // arrives several ways - picked in the select, opened as a link in a fresh
+  // tab, refetched, left for the default map - and the first fix that only
+  // covered the click left cold links opening with the personal default's
+  // coordinates pinned under the view's graph. A saved view's key carries
+  // its `updated_at`: a newer copy (someone else saved) replaces a clean
+  // document, but never unsaved edits - their Save reports the conflict.
+  const loadedKey = useRef<string>(
+    urlSearch.view ? `${mapKey}@pending` : mapKey
+  )
+  useEffect(() => {
+    const view = mapKey.startsWith("view:")
+    const key = !view
+      ? mapKey
+      : `${mapKey}@${appliedView?.updated_at ?? "pending"}`
+    const prev = loadedKey.current
+    if (prev === key) return
+    const sameView =
+      view && prev.startsWith(`${mapKey}@`) && prev !== `${mapKey}@pending`
+    if (view && !appliedView) {
+      // Still fetching: a background refetch keeps what is there; a view
+      // just switched to starts blank rather than showing the last map's.
+      if (sameView) return
+      doc.load(emptyDocument(), mapKey)
+    } else if (sameView && dirtyRef.current) {
+      return
+    } else if (appliedView) {
+      doc.load(
+        docFromView(appliedView, sanitizeViewStyle),
+        mapKey,
+        appliedView.updated_at
+      )
+    } else if (mapKey === "custom") {
+      doc.load(emptyDocument(), mapKey)
+    } else {
+      doc.load(defaultDocument(viewStyle), mapKey)
+    }
+    loadedKey.current = key
+    setLayoutTick((t) => t + 1)
+    // Keyed on the map and the view copy only: the style and the document
+    // are read as they are at that moment, not reasons to reload.
+  }, [mapKey, appliedView])
+
+  // The default map persists to this browser as it changes; a saved view's
+  // document is written by Save. Keyed on the document's own map, so the
+  // frame between leaving a view and loading the default map can never
+  // write the view's arrangement into the default map's storage.
+  const ownDefault = doc.docKey === "default"
+  const { positions: docPositions, zones: docZones } = doc.doc
+  useEffect(() => {
+    if (!ownDefault) return
+    if (Object.keys(docPositions).length) writeStoredPositions(docPositions)
+    else clearStoredPositions()
+  }, [ownDefault, docPositions])
+  useEffect(() => {
+    if (ownDefault) writeStoredZones(docZones)
+  }, [ownDefault, docZones])
+  useEffect(() => {
+    if (ownDefault) writeStoredHidden(hidden)
+  }, [ownDefault, hidden])
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [ghost, setGhost] = useState<GhostEdgeData | null>(null)
   const [selNode, setSelNode] = useState<TopoNode["data"] | null>(null)
@@ -719,11 +824,12 @@ function TopologyPage() {
     setCustom([...new Set([...(custom ?? []), ...ids])])
 
   /** Leaving the builder. A saved view whose whole point IS its device set
-   * can't survive losing it, so that view is left behind too. */
+   * can't survive losing it, so that view is left behind too. The map the
+   * user lands on brings its own arrangement (the load effect), and a view
+   * built on by hand keeps the positions of the cards it still shows. */
   const exitBuilder = () => {
     patch({ devices: undefined, ...(vf.devices ? { view: undefined } : {}) })
     clearSel()
-    dropAllPositions()
   }
 
   /** Builder: pull one device's 1-hop neighbourhood into the set. */
@@ -880,6 +986,21 @@ function TopologyPage() {
     queryFn: () => api<TopologyGraph>(`/api/topology/?${graphQs}`),
     enabled: !logical,
   })
+
+  /** Replace the arrangement of the style on screen (undefined = re-layout
+   * it); every other style keeps the one the user tuned. The canvas only
+   * knows the cards this user can see, so a saved position of any card the
+   * query did not return is kept - a narrower user saving a shared view
+   * must not wipe how everybody else's cards were arranged. */
+  const setPositions = (p: PosMap | undefined) => {
+    if (logical) return
+    edit({
+      type: "setPositions",
+      style: viewStyle,
+      positions: p ?? null,
+      seen: q.data?.nodes.map((n) => n.id),
+    })
+  }
   const ghosts = useQuery({
     queryKey: ["topology-ghosts", filters.site],
     enabled: !logical,
@@ -997,69 +1118,42 @@ function TopologyPage() {
   const checks = monQuery.data?.statuses ?? EMPTY_MON
 
   // ── Saved views ──
+  // Save needs `change` on the view; Save as (and Ctrl+S on a map that is
+  // not a view yet) needs `add`.
+  const canChangeViews = canDo("topologyview", "change")
+  const canAddViews = canDo("topologyview", "add")
+  const canDeleteViews = canDo("topologyview", "delete")
+  const noOverrides = () =>
+    Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined]))
+
   /** Applying a view is one navigation to `?view=<id>`, clearing every other
    * param: the view's own settings then supply the fallbacks, so the link
    * stays short and keeps showing the view as it is saved today. Anything the
    * user changes afterwards lands back on the URL as an override, which is
-   * what `edited` below reports. */
-  const applyView = (v: TopologyViewSaved) => {
-    patch({
-      view: v.id,
-      ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
-    })
-    // Re-applying the view you're on restores its saved arrangements too.
-    restoredView.current = null
-  }
-
-  // The ONE place a view's arrangements are restored. An effect, not a call
-  // inside applyView, because a view arrives three ways - clicked in the
-  // select, opened as a ?view= link in a fresh tab, refetched after Save -
-  // and the first fix that only covered the click left cold links opening
-  // with the personal default's coordinates pinned under the view's graph.
-  // Every style gets back exactly what was saved; tiers still drive anything
-  // unpinned, and Re-layout regenerates a style on demand.
-  const restoredView = useRef<string | null>(null)
-  useEffect(() => {
-    if (!appliedView) return
-    const key = `${appliedView.id}:${appliedView.updated_at}`
-    if (restoredView.current === key) return
-    restoredView.current = key
-    setPosByStyle(viewPositions(appliedView, sanitizeViewStyle))
-    setZonesByStyle(viewZones(appliedView.state.zones_by_style))
-    setHidden(readTopoHidden(appliedView.state.hidden))
-    setLayoutTick((t) => t + 1)
-  }, [appliedView])
+   * what `edited` below reports. The view's document follows through the
+   * load effect - and through the leave guard, if this map has edits. */
+  const applyView = (v: TopologyViewSummary) =>
+    patch({ view: v.id, ...noOverrides() })
 
   /** Back to the personal default map: no view, no overrides. */
-  const clearView = () => {
-    patch({
-      view: undefined,
-      ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
-    })
-    restoredView.current = null
-    setPosByStyle(readStoredPositions(viewStyle as NodeStyle))
-    setZonesByStyle(readStoredZones())
-    setHidden(readStoredHidden())
-    setLayoutTick((t) => t + 1)
-  }
+  const clearView = () => patch({ view: undefined, ...noOverrides() })
 
-  /** The applied view has been changed since it was applied - the URL carries
-   * at least one override on top of `?view=`. */
+  /** The applied view is no longer what it saved - the URL carries at least
+   * one override on top of `?view=`, or the map itself was edited. */
   const edited =
     viewId !== "none" &&
-    OVERRIDE_KEYS.some(
-      (k) => (urlSearch as Record<string, unknown>)[k] !== undefined
-    )
+    (doc.dirty ||
+      OVERRIDE_KEYS.some(
+        (k) => (urlSearch as Record<string, unknown>)[k] !== undefined
+      ))
+  /** A view's own document is on screen (not the blank one shown while it
+   * loads) - saving before that would write an empty map over it. */
+  const docReady =
+    viewId === "none" || (doc.docKey === mapKey && doc.base !== null)
 
-  const currentState = () => {
-    // Save every style's arrangement AS THE USER OWNS IT: a drag writes the
-    // full snapshot into posByStyle, a Re-layout deletes that style's entry.
-    // The live canvas is deliberately NOT captured here - it would pin a
-    // fresh auto layout, and a pinned auto layout replays stale coordinates
-    // forever once the device set changes. No entry = that style keeps
-    // laying itself out.
-    const byStyle = posByStyle
-    return {
+  /** What Save writes: the document, under the settings the URL holds. */
+  const currentState = () =>
+    toViewState(doc.doc, {
       filters: {
         ...filters,
         colorMode,
@@ -1070,51 +1164,182 @@ function TopologyPage() {
         edgeRouting,
         viewStyle,
         groupBy,
-        ...(custom !== null ? { devices: custom } : {}),
+        lag: lagMode,
       },
-      positions_by_style: byStyle,
-      // Kept in step for anything still reading the single-map field.
-      positions: byStyle[viewStyle as NodeStyle] ?? {},
-      zones_by_style: zonesByStyle,
-      hidden,
-    }
+      devices: custom,
+      style: viewStyle,
+    })
+
+  const [stale, setStale] = useState(false)
+  const [reloading, setReloading] = useState(false)
+  // A fresh dialog per opening, so "Save as copy" can hand it a name.
+  const [saveAsSeed, setSaveAsSeed] = useState({ n: 0, name: "" })
+  const openSaveAs = (name = "") => {
+    setSaveAsSeed((cur) => ({ n: cur.n + 1, name }))
+    setSaveAsOpen(true)
   }
 
   const saveView = useMutation({
-    mutationFn: (args: { id?: string; name?: string }) => {
-      if (args.id)
-        return api<TopologyViewSaved>(`/api/topology-views/${args.id}/`, {
+    mutationFn: (a: {
+      id?: string
+      name?: string
+      state: TopologyViewState
+      doc: ViewDocument
+      base: string | null
+    }) => {
+      if (a.id)
+        return api<TopologyViewSaved>(`/api/topology-views/${a.id}/`, {
           method: "PATCH",
-          body: JSON.stringify({ state: currentState() }),
+          // The copy these edits started from: a view saved again since
+          // is refused with 409 rather than silently overwritten.
+          body: JSON.stringify({
+            state: a.state,
+            ...(a.base ? { base_updated_at: a.base } : {}),
+          }),
         })
       return api<TopologyViewSaved>("/api/topology-views/", {
         method: "POST",
-        body: JSON.stringify({ name: args.name, state: currentState() }),
+        body: JSON.stringify({ name: a.name, state: a.state }),
       })
     },
-    onSuccess: (v) => {
+    onSuccess: (v, a) => {
+      qc.setQueryData(["topology-view", v.id], v)
       qc.invalidateQueries({ queryKey: ["topology-views"] })
+      // The document is what the server holds now - it keeps its history,
+      // so the save can be undone, and the refetch of this copy is no news.
+      loadedKey.current = `view:${v.id}@${v.updated_at}`
+      doc.markSaved(a.doc, `view:${v.id}`, v.updated_at)
       // The saved view now describes the map, so the overrides that produced
       // it are no longer overrides - the URL collapses back to just the id.
-      patch({
-        view: v.id,
-        ...Object.fromEntries(OVERRIDE_KEYS.map((k) => [k, undefined])),
-      })
+      patch({ view: v.id, ...noOverrides() })
       setSaveAsOpen(false)
       toast.success(`Saved “${v.name}”`)
     },
-    onError: (err) => apiErrorToast(err),
+    onError: (err, a) => {
+      if (a.id && isStaleViewError(err)) setStale(true)
+      else apiErrorToast(err)
+    },
   })
+  const save = (id?: string, name?: string) =>
+    saveView.mutate({
+      id,
+      name,
+      state: currentState(),
+      doc: doc.doc,
+      base: id ? doc.base : null,
+    })
+  const savingInPlace = saveView.isPending && !!saveView.variables.id
+
+  /** After a refused save: take the newer copy, dropping this map's edits
+   * and overrides. */
+  const reloadView = async () => {
+    if (viewId === "none") return
+    setReloading(true)
+    try {
+      const v = await qc.fetchQuery({
+        queryKey: ["topology-view", viewId],
+        queryFn: () => fetchView(viewId),
+        staleTime: 0,
+      })
+      loadedKey.current = `view:${v.id}@${v.updated_at}`
+      doc.load(docFromView(v, sanitizeViewStyle), `view:${v.id}`, v.updated_at)
+      setLayoutTick((t) => t + 1)
+      patch({ view: v.id, ...noOverrides() })
+      setStale(false)
+    } catch (err) {
+      apiErrorToast(err)
+    } finally {
+      setReloading(false)
+    }
+  }
+
   const deleteView = useMutation({
     mutationFn: (id: string) =>
       api<void>(`/api/topology-views/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["topology-views"] })
+      // Nothing is left to keep the edits in, so there is nothing for the
+      // leave guard to ask; the default map loads on the way out.
+      doc.load(emptyDocument(), mapKey)
       clearView()
       toast.success("View deleted")
     },
     onError: (err) => apiErrorToast(err),
   })
+
+  // ── Keyboard ──
+  /** Ctrl/Cmd+S: Save in place where allowed, else Save as. False leaves
+   * the key to the browser. */
+  const saveShortcut = () => {
+    if (logical) return false
+    if (saveView.isPending || saveAsOpen || stale) return true
+    if (viewId !== "none" && canChangeViews) {
+      if (docReady) save(viewId)
+      return true
+    }
+    if (canAddViews) {
+      openSaveAs()
+      return true
+    }
+    return false
+  }
+  /** A style whose arrangement steps back to "none" has to be laid out
+   * again - the canvas otherwise keeps the cards where they were dragged. */
+  const stepHistory = (back: boolean) => {
+    const style = viewStyle as NodeStyle
+    const before = doc.doc.positions[style]
+    const to = back ? doc.undo() : doc.redo()
+    if (to && before && !to.positions[style]) setLayoutTick((t) => t + 1)
+  }
+  useDocumentKeys({
+    enabled: !logical,
+    onSave: saveShortcut,
+    onUndo: () => stepHistory(true),
+    onRedo: () => stepHistory(false),
+  })
+
+  // ── Unsaved-edit guard ──
+  // One dialog for every in-app way off a map with unsaved edits: a sidebar
+  // link, browser back/forward, picking another view, leaving a custom map.
+  // Same as the floor-plan editor, except that here the map is in the query
+  // string - so a navigation that stays on this page but lands on another
+  // map (another view, the default map) is a leave too, while a filter or
+  // display change on the same map is not. The default map is never guarded:
+  // it is kept in this browser as it changes.
+  //
+  // shouldBlockFn reads refs so it stays referentially stable - an inline
+  // closure would re-register the history blocker on every render.
+  const guardedRef = useRef(false)
+  guardedRef.current = doc.docKey !== "default"
+  const shouldBlockLeave = useCallback<ShouldBlockFn>(
+    ({ current, next }) => {
+      if (!dirtyRef.current || !guardedRef.current) return false
+      if (!samePath(next.pathname, current.pathname)) return true
+      return (
+        mapKeyOf(next.search as Record<string, unknown>) !==
+        mapKeyOf(current.search as Record<string, unknown>)
+      )
+    },
+    [dirtyRef]
+  )
+  const leaveGuard = useBlocker({
+    shouldBlockFn: shouldBlockLeave,
+    enableBeforeUnload: false,
+    withResolver: true,
+  })
+  // Closing the tab or reloading never reaches the router - the browser's
+  // own prompt is the only guard there. Registered only while it matters.
+  const guardDirty = doc.dirty && doc.docKey !== "default"
+  useEffect(() => {
+    if (!guardDirty) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) return
+      e.preventDefault()
+      e.returnValue = ""
+    }
+    window.addEventListener("beforeunload", onBeforeUnload)
+    return () => window.removeEventListener("beforeunload", onBeforeUnload)
+  }, [guardDirty, dirtyRef])
 
   /** This map, as a link someone else can open. */
   const copyLink = async () => {
@@ -1152,7 +1377,6 @@ function TopologyPage() {
     filters.status,
     filters.tag,
   ].filter((v) => v !== "all").length
-  const canWriteViews = canDo("topologyview", "add")
   const focusName = focus
     ? (graph?.nodes.find((n) => n.data.device_id === focus.id)?.data.name ??
       "device")
@@ -1487,38 +1711,36 @@ function TopologyPage() {
             edited
           </Badge>
         )}
-        {canWriteViews && (
-          <>
-            {viewId !== "none" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 shrink-0 text-xs whitespace-nowrap"
-                onClick={() => saveView.mutate({ id: viewId })}
-                disabled={saveView.isPending}
-              >
-                <Save className="h-3 w-3" /> Save
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 shrink-0 text-xs whitespace-nowrap"
-              onClick={() => setSaveAsOpen(true)}
-            >
-              <Save className="h-3 w-3" /> Save as…
-            </Button>
-            {viewId !== "none" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-destructive hover:text-destructive"
-                onClick={() => deleteView.mutate(viewId)}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            )}
-          </>
+        {viewId !== "none" && canChangeViews && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 text-xs whitespace-nowrap"
+            onClick={() => save(viewId)}
+            disabled={saveView.isPending || !docReady}
+          >
+            <Save className="h-3 w-3" /> {savingInPlace ? "Saving…" : "Save"}
+          </Button>
+        )}
+        {canAddViews && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 text-xs whitespace-nowrap"
+            onClick={() => openSaveAs()}
+          >
+            <Save className="h-3 w-3" /> Save as…
+          </Button>
+        )}
+        {viewId !== "none" && canDeleteViews && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-destructive hover:text-destructive"
+            onClick={() => deleteView.mutate(viewId)}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <BarTip tip="Everything on this map">
@@ -1995,11 +2217,57 @@ function TopologyPage() {
       />
       <MaterializeCableDialog ghost={ghost} onClose={() => setGhost(null)} />
       <SaveAsDialog
+        key={saveAsSeed.n}
+        defaultName={saveAsSeed.name}
         open={saveAsOpen}
         onOpenChange={setSaveAsOpen}
-        onSave={(name) => saveView.mutate({ name })}
+        onSave={(name) => save(undefined, name)}
         busy={saveView.isPending}
       />
+      <StaleViewDialog
+        open={stale}
+        name={appliedView?.name ?? ""}
+        canCopy={canAddViews}
+        reloading={reloading}
+        onOpenChange={setStale}
+        onSaveCopy={() => {
+          setStale(false)
+          openSaveAs(`${appliedView?.name ?? "View"} (copy)`)
+        }}
+        onReload={() => void reloadView()}
+      />
+
+      {/* The leave guard's one dialog. The router holds the navigation open
+          until this resolves, so every close path must settle it: leave the
+          blocker hanging and the next navigation is stuck behind it. */}
+      <AlertDialog
+        open={leaveGuard.status === "blocked"}
+        onOpenChange={(open) => {
+          // Escape, an overlay click and "Keep editing" all mean stay.
+          if (!open) leaveGuard.reset?.()
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This map has unsaved changes. Leaving it drops them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            {/* Radix closes on action too, so onOpenChange's reset() lands
+                right after this proceed(). Both settle the same promise and
+                only the first wins, so the navigation still goes through. */}
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => leaveGuard.proceed?.()}
+            >
+              Discard and leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -2415,13 +2683,16 @@ function SaveAsDialog({
   onOpenChange,
   onSave,
   busy,
+  defaultName = "",
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   onSave: (name: string) => void
   busy: boolean
+  /** Prefilled name ("Save as copy" offers "<view> (copy)"). */
+  defaultName?: string
 }) {
-  const [name, setName] = useState("")
+  const [name, setName] = useState(defaultName)
   return (
     <Dialog
       open={open}
