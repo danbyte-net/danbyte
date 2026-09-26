@@ -625,6 +625,47 @@ two ends share, and `subnets` to every cable edge:
 It costs at most two queries (the sub-interfaces, then the addresses),
 whatever the size of the map, and none without `ipaddress.view`.
 
+**`include=photo`** adds `photo` to every device node:
+
+```json
+"photo": {
+  "front": {
+    "url": "/media/device-type-images/c9300-48p.png",
+    "aspect": 0.0833,
+    "scale": null,
+    "markers": [
+      {"port": "Gi2/0/1", "port_id": "…", "kind": "interface",
+       "x": 0.12, "y": 0.4, "w": 0.02, "h": 0.2}
+    ]
+  },
+  "type_faceplate": true,
+  "u_height": 1,
+  "vc_position": 2
+}
+```
+
+- `front` is `null` when the device type has no front photo or its file is
+  missing. `url` is the same-origin media path the device type API returns.
+  `aspect` is height / width as the photo is shown, or `null` when the file
+  isn't an image the server can read. `scale` is the front display size saved
+  with the photo ports (`view.front.scale`), else `null`.
+- `markers` are the [photo ports](../dcim/device-catalog.md#photo-ports) of
+  the effective layout (the device's own, else its type's) that land on one
+  of the node's cabled ports, in layout order. `port` and `port_id` are the
+  port as it is called now; `kind` is the marker's kind and `x y w h` its box
+  as fractions of the image, `x`/`y` being the centre.
+- A marker matches the way the device's faceplate matches it: `{position}`
+  becomes the stack member number, then the port's frozen marker key is
+  tried, then its name, then either ignoring case and surrounding spaces. A
+  renamed port keeps its marker. Uncabled ports, module bays and inventory
+  items get none, and a port two markers name keeps the first.
+- `type_faceplate` is true when the type can draw a schematic faceplate
+  instead: a saved faceplate layout with a front, else interface templates.
+- Only the front is sent.
+
+It costs one query whatever the size of the map, and never asks SNMP. Each
+photo's size is read from the file header once and cached.
+
 A malformed id in `device`, `devices`, `site`, `location`, `role` or `status`
 returns `400 {"detail": "<param>: not a valid id"}`, even in a mode that
 ignores the parameter. `devices` takes at most 10,000 ids; more is a 400. An

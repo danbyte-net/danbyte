@@ -434,6 +434,236 @@ def _shared_subnets(a_end, b_end) -> list:
     return [s for _v, _r, s in sorted(found.values(), key=lambda t: t[:2])]
 
 
+#: How long a front photo's measured aspect is kept. The key carries the
+#: type's ``updated_at``, which an upload, resize or clear bumps, so this only
+#: ages out a file replaced behind the application's back.
+PHOTO_ASPECT_TTL = 24 * 3600
+#: A file that wasn't there is looked for again soon: media restored from a
+#: backup comes back under the same name.
+PHOTO_MISSING_TTL = 300
+_PHOTO_MISSING = "missing"
+_PHOTO_UNREADABLE = "unreadable"
+
+
 def enrich_photo(ctx: EnrichContext) -> None:
     """``include=photo``: each device node's front photo with the markers of
-    its cabled ports (``node.data.photo``). Not built yet."""
+    its cabled ports - ``node.data.photo = {front, type_faceplate, u_height,
+    vc_position}``.
+
+    ``front`` is ``{url, aspect, scale, markers}``, or None when the type has
+    no front photo or its file is gone. ``markers`` are
+    ``[{port, port_id, kind, x, y, w, h}]``: the markers of the effective
+    layout (the device's override, else its type's) that resolve to one of
+    the node's cabled ports, named by the port's current name. A marker
+    names a component template: ``{position}`` renders to the stack member
+    number, then the name matches the ``marker_key``, then the name, then
+    either ignoring case and spaces - the face-ports rule
+    (``api.face_ports``). ``type_faceplate`` says a schematic faceplate can
+    be drawn instead: a saved layout with a front, else interface templates.
+
+    Markers resolve in memory against the ports the graph already loaded;
+    no SNMP. The cost is one query (the types' interface templates) and a
+    cached header read per photo file.
+    """
+    from .face_ports import effective_image_ports
+
+    devices = ctx.collect.get("devices") or {}
+    cabled = ctx.collect.get("ports") or {}
+    nodes = []  # (node data, device)
+    for node in ctx.graph.get("nodes", ()):
+        if node.get("type") != "device":
+            continue
+        d = devices.get(node["data"].get("device_id"))
+        if d is not None:
+            nodes.append((node["data"], d))
+
+    types = {d.device_type_id: d.device_type for _data, d in nodes if d.device_type_id}
+    aspects = _photo_aspects(types.values())
+    faceplates = _type_faceplates(types.values())
+
+    for data, d in nodes:
+        dt = types.get(d.device_type_id)
+        front = None
+        if dt is not None and dt.pk in aspects:
+            url = _photo_url(dt.front_image)
+            if url:
+                layout = effective_image_ports(d) or {}
+                front = {
+                    "url": url,
+                    "aspect": aspects[dt.pk],
+                    "scale": _photo_scale(layout),
+                    "markers": _photo_markers(
+                        layout.get("front"), d, cabled.get(str(d.id)) or {}
+                    ),
+                }
+        data["photo"] = {
+            "front": front,
+            "type_faceplate": dt is not None and dt.pk in faceplates,
+            "u_height": dt.u_height if dt is not None else 1,
+            "vc_position": d.vc_position,
+        }
+
+
+def _photo_url(f):
+    """The same-origin ``/media/…`` URL the device type API returns."""
+    if not f:
+        return None
+    try:
+        return f.url
+    except ValueError:
+        return None
+
+
+def _photo_scale(layout):
+    """The front display-size override saved with the layout
+    (``view.front.scale``), or None."""
+    view = layout.get("view")
+    front = view.get("front") if isinstance(view, dict) else None
+    scale = front.get("scale") if isinstance(front, dict) else None
+    return scale if _is_number(scale) else None
+
+
+def _is_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _photo_markers(markers, device, ports) -> list:
+    """The ``markers`` that resolve to one of ``ports`` (``{(termination
+    kind, id): port}``, the node's cabled components), in layout order; a
+    port two markers resolve to keeps the first."""
+    from .face_ports import FACE_PORT_KINDS, ComponentIndex, render_marker_name
+
+    by_kind: dict[str, list] = {}
+    for (kind, _pid), obj in ports.items():
+        by_kind.setdefault(kind, []).append(obj)
+    indexes: dict = {}
+    out, seen = [], set()
+    for m in markers if isinstance(markers, list) else ():
+        if not isinstance(m, dict) or not isinstance(m.get("name"), str):
+            continue
+        kind = m.get("kind", "interface")
+        if not isinstance(kind, str):
+            continue
+        term_kind = (FACE_PORT_KINDS.get(kind) or (None, None))[1]
+        if term_kind not in by_kind:
+            continue
+        if term_kind not in indexes:
+            # Name order, as the face-ports endpoint loads a relation, so a
+            # marker key two components share picks the same one there.
+            indexes[term_kind] = ComponentIndex(
+                sorted(by_kind[term_kind], key=lambda c: (c.name, str(c.id)))
+            )
+        port = indexes[term_kind].match(
+            render_marker_name(m["name"], device.vc_position)
+        )
+        box = {k: m.get(k) for k in ("x", "y", "w", "h")}
+        if port is None or not all(_is_number(v) for v in box.values()):
+            continue
+        if (term_kind, port.id) in seen:
+            continue
+        seen.add((term_kind, port.id))
+        out.append({"port": port.name, "port_id": str(port.id), "kind": kind, **box})
+    return out
+
+
+def _type_faceplates(types) -> set:
+    """The ids of the types a schematic faceplate can draw a front for: a
+    saved layout with a front group, else interface templates to lay out
+    automatically - one query, for the types without a saved layout."""
+    from .models import InterfaceTemplate
+
+    found, ask = set(), set()
+    for dt in types:
+        if dt.faceplate is not None:
+            if isinstance(dt.faceplate, dict) and dt.faceplate.get("front"):
+                found.add(dt.pk)
+        else:
+            ask.add(dt.pk)
+    if ask:
+        found.update(
+            InterfaceTemplate.objects.filter(device_type_id__in=ask)
+            .order_by()
+            .values_list("device_type_id", flat=True)
+            .distinct()
+        )
+    return found
+
+
+def _photo_aspects(types) -> dict:
+    """``{type id: height / width, or None when unreadable}`` for the types
+    whose front photo file is there.
+
+    Measured from the file's header and kept in the cache; a cache that is
+    down only means measuring again."""
+    from django.core.cache import cache
+
+    keys = {
+        _photo_aspect_key(dt): dt
+        for dt in types
+        if dt.front_image and dt.front_image.name
+    }
+    if not keys:
+        return {}
+    try:
+        found = cache.get_many(list(keys))
+    except Exception:  # noqa: BLE001 - the cache is only a shortcut (#230)
+        found = {}
+    measured = {
+        k: _photo_measure(dt.front_image) for k, dt in keys.items() if k not in found
+    }
+    if measured:
+        found.update(measured)
+        missing = {k: v for k, v in measured.items() if v == _PHOTO_MISSING}
+        present = {k: v for k, v in measured.items() if v != _PHOTO_MISSING}
+        try:
+            if present:
+                cache.set_many(present, PHOTO_ASPECT_TTL)
+            if missing:
+                cache.set_many(missing, PHOTO_MISSING_TTL)
+        except Exception:  # noqa: BLE001 - the cache is only a shortcut (#230)
+            pass
+    out = {}
+    for key, dt in keys.items():
+        value = found.get(key)
+        if value == _PHOTO_MISSING:
+            continue
+        out[dt.pk] = value if _is_number(value) else None
+    return out
+
+
+def _photo_aspect_key(dt) -> str:
+    import hashlib
+
+    stamp = dt.updated_at.isoformat() if dt.updated_at else ""
+    digest = hashlib.sha256(f"{dt.front_image.name}|{stamp}".encode()).hexdigest()
+    return f"topo:photo-aspect:{dt.pk}:{digest[:32]}"
+
+
+#: EXIF orientations a viewer turns a quarter: width and height swap.
+_EXIF_QUARTER_TURNS = frozenset({5, 6, 7, 8})
+
+
+def _photo_measure(field):
+    """Height / width of an image file, read from its header only;
+    ``_PHOTO_MISSING`` when the file can't be opened and
+    ``_PHOTO_UNREADABLE`` when it isn't an image Pillow knows."""
+    from PIL import Image
+
+    try:
+        fh = field.storage.open(field.name, "rb")
+    except Exception:  # noqa: BLE001 - gone or unreachable: nothing to draw
+        return _PHOTO_MISSING
+    try:
+        with fh, Image.open(fh) as img:
+            w, h = img.size
+            # Only EXIF already parsed with the header: asking a PNG for its
+            # EXIF otherwise decodes the whole image.
+            if "exif" in img.info and (
+                img.getexif().get(0x0112) in _EXIF_QUARTER_TURNS
+            ):
+                w, h = h, w
+    except Exception:  # noqa: BLE001 - not an image Pillow can read
+        return _PHOTO_UNREADABLE
+    if not w or not h:
+        return _PHOTO_UNREADABLE
+    return round(h / w, 6)
