@@ -26,19 +26,12 @@ import { toPng } from "html-to-image"
 
 import type { GhostEdgeData, TopoEdge, TopologyGraph } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
-import {
-  ABOVE,
-  BELOW,
-  PortNode,
-  RIGHT,
-  StencilNode,
-  handleId,
-} from "./stencil-node"
+import { ABOVE, BELOW, RIGHT, handleId } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
-import { FLAT_H, FlatNode, flatHeight, flatW, flatWidth } from "./flat-node"
+import { FLAT_H, flatHeight, flatW, flatWidth } from "./flat-node"
 import type { FlatAnchor, FlatData } from "./flat-node"
-import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
-import { HierarchyNode, hierarchyWidth } from "./hierarchy-node"
+import { GROUP_H, GROUP_W } from "./group-node"
+import { hierarchyWidth } from "./hierarchy-node"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import {
   edgeWaypoints,
@@ -47,29 +40,25 @@ import {
   layoutNodes,
   realignHierPorts,
 } from "./layout"
+import type { NodeSizing } from "./layout"
 import { resolveLevels } from "./level-organiser"
 import { roleTiers } from "./levels-param"
 import { OverlayEdge } from "./overlay-edge"
 import { RoutedEdge } from "./routed-edge"
-import { ZONE_DRAG_HANDLE, ZoneNode } from "./zone-node"
+import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { ZONE_H, ZONE_W } from "./view-positions"
 import type { Zone } from "./view-positions"
-import { groupLagEdges, lagBundleLabel, sharedLag } from "./lag-bundles"
+import { lagBundleLabel, sharedLag } from "./lag-bundles"
+import { bundleStroke, edgeLook, edgeStroke, flowEdgeStyle } from "./edge-style"
+import type { EdgeColorMode } from "./edge-style"
+import { ROUTABLE, classifyEdges, orientHubToLeaf } from "./edge-semantics"
+import type { BundleMember, EdgeClass } from "./edge-semantics"
+import { nodeTypes, sizeOf } from "./node-registry"
 
-// Defined once, outside the component (re-creating nodeTypes each render
-// re-mounts every node - a classic React Flow footgun).
-const nodeTypes = {
-  device: StencilNode,
-  flat: FlatNode,
-  // "sitegroup", not "group": React Flow reserves "group" and paints its own
-  // grey stock box behind it.
-  sitegroup: GroupNode,
-  hier: HierarchyNode,
-  interface: PortNode,
-  front_port: PortNode,
-  rear_port: PortNode,
-  zone: ZoneNode,
-}
+export { speedColor, typeColor } from "./edge-style"
+export type { EdgeColorMode } from "./edge-style"
+export type { BundleMember } from "./edge-semantics"
+
 const edgeTypes = { routed: RoutedEdge, overlay: OverlayEdge }
 
 /**
@@ -133,21 +122,19 @@ function nodesToZones(nodes: Node[], previous: Zone[]): Zone[] {
   return out
 }
 
-export type EdgeColorMode = "cable" | "type" | "status" | "speed" | "none"
-
 /** "stencil" = wiring cards with port rows; "hierarchy" = tall cards with
  * peer-aligned port chips (near-straight cables); "flat" = barebones fixed
  * chips with parallel cables bundled into one ×N edge. */
 export type NodeStyle = "stencil" | "hierarchy" | "flat"
-
-/** One member of a Flat-view bundled edge (the underlying cable's data). */
-export type BundleMember = NonNullable<TopoEdge["data"]>
 
 const flatSize = (n: Node) => ({
   width: flatW(n.data as { name?: string }),
   height: FLAT_H,
 })
 const groupSize = () => ({ width: GROUP_W, height: GROUP_H })
+/** Wiring cards (and trace-map ports) at their registered size, with the
+ * roomy spacing port-anchored cables need. */
+const CARD_SIZING: NodeSizing = { sizeOf, compact: false }
 
 export interface CanvasHandle {
   /** Current node positions (for saving a view). */
@@ -167,73 +154,6 @@ export interface CanvasHandle {
    * visible viewport. */
   exportPng: (viewportOnly?: boolean) => Promise<string | null>
 }
-
-// Deterministic palette per cable type - informational hue, not state.
-const TYPE_PALETTE = [
-  "#0ea5e9",
-  "#8b5cf6",
-  "#f59e0b",
-  "#10b981",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#6366f1",
-  "#84cc16",
-  "#e11d48",
-  "#06b6d4",
-  "#a855f7",
-]
-
-export function typeColor(type: string): string {
-  let h = 0
-  for (let i = 0; i < type.length; i++) h = (h * 31 + type.charCodeAt(i)) | 0
-  return TYPE_PALETTE[Math.abs(h) % TYPE_PALETTE.length]
-}
-
-/** "10G" / "2.5 Gbps" / "1000" (Mbps) → Mbps, or null when unparsable. */
-function speedMbps(s: string): number | null {
-  const m = /([\d.]+)\s*([tgm]?)/i.exec(s.trim())
-  if (!m) return null
-  const n = parseFloat(m[1])
-  if (!isFinite(n)) return null
-  const u = m[2].toLowerCase()
-  return u === "t" ? n * 1e6 : u === "g" ? n * 1000 : n
-}
-
-/** Speed tier hue - faster = hotter. Unparsable/absent speeds stay zinc. */
-export function speedColor(s?: string | null): string | undefined {
-  if (!s) return undefined
-  const mb = speedMbps(s)
-  if (mb == null) return "#71717a"
-  if (mb >= 100000) return "#e11d48" // 100G+
-  if (mb >= 40000) return "#f59e0b" // 40G
-  if (mb >= 25000) return "#8b5cf6" // 25G
-  if (mb >= 10000) return "#0ea5e9" // 10G
-  if (mb >= 1000) return "#10b981" // 1G
-  return "#71717a"
-}
-
-function statusColor(slug?: string | null): string | undefined {
-  if (!slug) return undefined
-  if (/(active|connected|up)/.test(slug)) return "#10b981"
-  if (/(plan|staged|reserved)/.test(slug)) return "#f59e0b"
-  if (/(fail|broken|down|decom)/.test(slug)) return "#ef4444"
-  return "#71717a"
-}
-
-function edgeStroke(
-  data: TopoEdge["data"],
-  mode: EdgeColorMode
-): string | undefined {
-  if (mode === "type" && data?.cable_type) return typeColor(data.cable_type)
-  if (mode === "status") return statusColor(data?.status)
-  if (mode === "speed") return speedColor(data?.speed)
-  if (mode === "cable" && data?.color) return data.color
-  return undefined
-}
-
-/** Edge semantics that carry node-avoiding routing. */
-const ROUTABLE = new Set(["cable", "lagbundle", "bundle", "groupedge"])
 
 /** The full name a cable edge announces on hover - label/number, media,
  * speed, and its endpoint pair(s). Bundles and group edges summarize. */
@@ -392,6 +312,172 @@ function assignSides(
   return { edges: out, sides, orders }
 }
 
+type CablePair = NonNullable<BundleMember["pairs"]>[number]
+
+/** Port handles for an edge whose ends are real ports. */
+const portHandles = (first: CablePair | undefined) => ({
+  ...(first?.a_port ? { sourceHandle: first.a_port } : {}),
+  ...(first?.b_port ? { targetHandle: first.b_port } : {}),
+})
+
+const smoothstep = () => ({
+  type: "smoothstep",
+  pathOptions: { borderRadius: 10 },
+})
+
+/** One classified payload edge as a React Flow edge, styled for the colour
+ * mode. */
+function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
+  const ends = { id: c.id, source: c.source, target: c.target }
+  switch (c.sem) {
+    // Aggregated group-to-group edge (group_by mode): ×N cables, width
+    // scaled gently by the bundle size.
+    case "groupedge": {
+      const n = c.group?.cable_count ?? 1
+      return {
+        ...ends,
+        sourceHandle: "n",
+        targetHandle: "n",
+        ...smoothstep(),
+        label: `×${n}`,
+        data: { sem: "groupedge", group: c.group, baseS: "n", baseT: "n" },
+        ...flowEdgeStyle(edgeLook("groupedge", { count: n })),
+      }
+    }
+    // Trace graphs: device→port membership + patch-panel pass-through.
+    case "membership":
+      return {
+        ...ends,
+        ...smoothstep(),
+        selectable: false,
+        ...flowEdgeStyle(edgeLook("membership")),
+      }
+    case "through":
+      return {
+        ...ends,
+        ...smoothstep(),
+        label: "patch",
+        ...flowEdgeStyle(edgeLook("through")),
+      }
+    // A BGP session between the two cards - a faint straight line from
+    // centre to centre under the wiring, one per device pair and table,
+    // named on hover; the sidebar lists them and a click opens the session.
+    case "bgp":
+      return {
+        ...ends,
+        type: "overlay",
+        data: { sem: "bgp", bgp: c.raw },
+        ...flowEdgeStyle(edgeLook("bgp")),
+      }
+    // LLDP "ghost" link - SNMP-adjacent, no cable. Clicking offers to
+    // materialise it.
+    case "ghost": {
+      const ep = c.raw?.pairs?.[0]
+      return {
+        ...ends,
+        ...smoothstep(),
+        label: ep ? `${ep.a} ↔ ${ep.b} · LLDP` : "LLDP",
+        data: { sem: "ghost", ghost: c.raw },
+        ...flowEdgeStyle(edgeLook("ghost")),
+      }
+    }
+    case "cable": {
+      const r = c.raw
+      const stroke = edgeStroke(r, colorMode)
+      // Flat view: a pair joined by ONE cable is that cable, not a bundle of
+      // one - it carries the cable's real label, colours by its own data,
+      // gets the full hover identity, and clicking it opens the cable panel
+      // rather than a one-row bundle list.
+      if (c.byPair) {
+        const bits: string[] = []
+        if (r?.via?.length) bits.push(`via ${r.via.join(", ")}`)
+        if (r?.cable_label) bits.push(r.cable_label)
+        if (colorMode === "speed" && r?.speed) bits.push(r.speed)
+        return {
+          ...ends,
+          sourceHandle: "n",
+          targetHandle: "n",
+          ...smoothstep(),
+          label: bits.length ? bits.join(" · ") : undefined,
+          animated: r?.marked,
+          data: { sem: "cable", raw: r },
+          ...flowEdgeStyle(
+            edgeLook("cable", {
+              stroke,
+              via: !!r?.via?.length,
+              marked: r?.marked,
+            })
+          ),
+        }
+      }
+      const pairs = r?.pairs ?? []
+      const first: CablePair | undefined = pairs[0]
+      const via = r?.via ?? []
+      const count = pairs.length
+      const labelBits: string[] = []
+      if (count > 1) labelBits.push(`×${count}`)
+      if (via.length) labelBits.push(`via ${via.join(", ")}`)
+      if (r?.cable_label) labelBits.push(r.cable_label)
+      if (colorMode === "speed" && r?.speed) labelBits.push(r.speed)
+      return {
+        ...ends,
+        ...portHandles(first),
+        ...smoothstep(),
+        label: labelBits.length ? labelBits.join(" · ") : undefined,
+        animated: r?.marked,
+        data: { sem: "cable", raw: r },
+        ...flowEdgeStyle(
+          edgeLook("cable", {
+            stroke,
+            count,
+            via: via.length > 0,
+            marked: r?.marked,
+          })
+        ),
+      }
+    }
+    case "lagbundle": {
+      const marked = c.cables.some((x) => x.marked)
+      return {
+        ...ends,
+        ...portHandles(c.cables[0].pairs?.[0]),
+        ...smoothstep(),
+        label: lagBundleLabel(c.lag, c.cables.length),
+        animated: marked,
+        data: { sem: "lagbundle", cables: c.cables, lag: c.lag },
+        ...flowEdgeStyle(
+          edgeLook("lagbundle", {
+            stroke: bundleStroke(c.cables, colorMode),
+            marked,
+          })
+        ),
+      }
+    }
+    case "bundle": {
+      const n = c.cables.length
+      // In speed mode a bundle that agrees announces the shared speed.
+      const speeds = new Set(c.cables.map((x) => x.speed ?? ""))
+      const speed =
+        colorMode === "speed" && speeds.size === 1
+          ? [...speeds][0] || undefined
+          : undefined
+      const lag = sharedLag(c.cables)
+      const base = lag ? lagBundleLabel(lag, n) : `×${n}`
+      return {
+        ...ends,
+        sourceHandle: "n",
+        targetHandle: "n",
+        ...smoothstep(),
+        label: speed ? `${base} · ${speed}` : base,
+        data: { sem: "bundle", cables: c.cables },
+        ...flowEdgeStyle(
+          edgeLook("bundle", { stroke: bundleStroke(c.cables, colorMode) })
+        ),
+      }
+    }
+  }
+}
+
 /** Graph payload → React Flow nodes and edges, laid out. Exported for the
  * golden parity test (`build-parity.test.ts`). */
 export function build(
@@ -438,306 +524,16 @@ export function build(
       dimmed: opts.matched ? !opts.matched.has(n.id) : false,
     },
   }))
-  const nodeIds = new Set(nodes.map((n) => n.id))
-
-  const allEdges: Edge[] = []
-  // Flat view: parallel cables between a device pair collapse into one edge.
-  const bundles = new Map<
-    string,
-    { source: string; target: string; cables: BundleMember[] }
-  >()
-  // Link aggregation: member cables of one bundle draw as ONE edge - the
-  // logical link people think in - unless the view asks for every cable.
-  const lagFold =
-    !flat && opts.bundleLags !== false
-      ? groupLagEdges(graph.edges)
-      : { bundles: [], rest: graph.edges }
-  for (const e of lagFold.rest) {
-    if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) continue
-
-    // Aggregated group-to-group edge (group_by mode): ×N cables, width
-    // scaled gently by the bundle size.
-    if (e.type === "group") {
-      const info = e.data as unknown as GroupEdgeInfo
-      const n = info?.cable_count ?? 1
-      allEdges.push({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        sourceHandle: "n",
-        targetHandle: "n",
-        type: "smoothstep",
-        pathOptions: { borderRadius: 10 },
-        label: `×${n}`,
-        data: { sem: "groupedge", group: info, baseS: "n", baseT: "n" },
-        style: { strokeWidth: Math.min(1 + Math.log2(n + 1) * 0.6, 3) },
-        labelStyle: { fontSize: 9 },
-        labelBgStyle: { fill: "var(--card)" },
-      } as Edge)
-      continue
-    }
-
-    // Trace graphs: device→port membership + patch-panel pass-through.
-    if (e.type === "membership") {
-      allEdges.push({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: "smoothstep",
-        pathOptions: { borderRadius: 10 },
-        selectable: false,
-        style: { strokeWidth: 1, stroke: "var(--border)", opacity: 0.6 },
-      } as Edge)
-      continue
-    }
-    if (e.type === "through") {
-      allEdges.push({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: "smoothstep",
-        pathOptions: { borderRadius: 10 },
-        label: "patch",
-        style: {
-          strokeWidth: 1.5,
-          stroke: "var(--muted-foreground)",
-          strokeDasharray: "4 3",
-        },
-        labelStyle: { fontSize: 9 },
-        labelBgStyle: { fill: "var(--card)" },
-      } as Edge)
-      continue
-    }
-
-    // A BGP session between the two cards - a faint straight line from
-    // centre to centre under the wiring, one per device pair and table,
-    // named on hover; the sidebar lists them and a click opens the session.
-    if (e.type === "bgp") {
-      allEdges.push({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: "overlay",
-        data: { sem: "bgp", bgp: e.data },
-        style: {
-          strokeWidth: 1.25,
-          stroke: "var(--primary)",
-          strokeDasharray: "3 5",
-          opacity: 0.45,
-        },
-      } as Edge)
-      continue
-    }
-
-    // LLDP "ghost" link - SNMP-adjacent, no cable. Clicking offers to
-    // materialise it.
-    if (e.type === "ghost") {
-      const ep = e.data?.pairs?.[0]
-      allEdges.push({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: "smoothstep",
-        pathOptions: { borderRadius: 10 },
-        label: ep ? `${ep.a} ↔ ${ep.b} · LLDP` : "LLDP",
-        data: { sem: "ghost", ghost: e.data },
-        style: {
-          strokeWidth: 1.5,
-          stroke: "var(--muted-foreground)",
-          strokeDasharray: "6 4",
-          opacity: 0.8,
-        },
-        labelStyle: { fontSize: 9, fontStyle: "italic" },
-        labelBgStyle: { fill: "var(--card)" },
-      } as Edge)
-      continue
-    }
-
-    const pairs = e.data?.pairs ?? []
-    const first = pairs[0]
-    // Hide edges whose origin-side port was toggled off (device mini map).
-    if (
-      opts.hiddenPorts?.size &&
-      opts.originId &&
-      ((e.source === opts.originId &&
-        first?.a_port &&
-        opts.hiddenPorts.has(first.a_port)) ||
-        (e.target === opts.originId &&
-          first?.b_port &&
-          opts.hiddenPorts.has(first.b_port)))
-    )
-      continue
-
-    if (flat) {
-      const key = [e.source, e.target].sort().join(">")
-      let b = bundles.get(key)
-      if (!b) {
-        b = { source: e.source, target: e.target, cables: [] }
-        bundles.set(key, b)
-      }
-      if (e.data) b.cables.push(e.data)
-      continue
-    }
-
-    const via = e.data?.via ?? []
-    const count = pairs.length
-    const labelBits: string[] = []
-    if (count > 1) labelBits.push(`×${count}`)
-    if (via.length) labelBits.push(`via ${via.join(", ")}`)
-    if (e.data?.cable_label) labelBits.push(e.data.cable_label)
-    if (opts.colorMode === "speed" && e.data?.speed)
-      labelBits.push(e.data.speed)
-
-    const stroke = edgeStroke(e.data, opts.colorMode)
-    const marked = e.data?.marked
-    allEdges.push({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      ...(first?.a_port ? { sourceHandle: first.a_port } : {}),
-      ...(first?.b_port ? { targetHandle: first.b_port } : {}),
-      type: "smoothstep",
-      pathOptions: { borderRadius: 10 },
-      label: labelBits.length ? labelBits.join(" · ") : undefined,
-      animated: marked,
-      data: { sem: "cable", raw: e.data },
-      // Traced cable (trace map): thick primary stroke so the run stands out.
-      style: marked
-        ? { strokeWidth: 2.5, stroke: "var(--primary)" }
-        : {
-            strokeWidth: count > 1 ? 1.75 : 1.25,
-            ...(stroke ? { stroke } : {}),
-            ...(via.length ? { strokeDasharray: "10 4" } : {}),
-          },
-      labelStyle: { fontSize: 9 },
-      labelBgStyle: { fill: "var(--card)" },
-    } as Edge)
-  }
-
-  for (const b of lagFold.bundles) {
-    const first = b.edges[0].data?.pairs?.[0]
-    const cables = b.edges.map((e) => e.data).filter(Boolean) as BundleMember[]
-    const strokes = new Set(cables.map((c) => edgeStroke(c, opts.colorMode) ?? ""))
-    const stroke = strokes.size === 1 ? [...strokes][0] || undefined : undefined
-    const marked = cables.some((c) => c.marked)
-    allEdges.push({
-      id: `lag:${b.key}`,
-      source: b.source,
-      target: b.target,
-      ...(first?.a_port ? { sourceHandle: first.a_port } : {}),
-      ...(first?.b_port ? { targetHandle: first.b_port } : {}),
-      type: "smoothstep",
-      pathOptions: { borderRadius: 10 },
-      label: lagBundleLabel(b.lag, cables.length),
-      animated: marked,
-      data: { sem: "lagbundle", cables, lag: b.lag },
-      style: marked
-        ? { strokeWidth: 3, stroke: "var(--primary)" }
-        : { strokeWidth: 2.5, ...(stroke ? { stroke } : {}) },
-      labelStyle: { fontSize: 9, fontWeight: 600 },
-      labelBgStyle: { fill: "var(--card)" },
-    } as Edge)
-  }
-
-  if (flat) {
-    for (const [key, b] of bundles) {
-      const n = b.cables.length
-      // A pair joined by ONE cable is that cable, not a bundle of one: it
-      // carries the cable's real label, colours by its own data, gets the
-      // full hover identity, and clicking it opens the cable panel rather
-      // than a one-row bundle list.
-      if (n === 1) {
-        const c = b.cables[0]
-        const stroke = edgeStroke(c, opts.colorMode)
-        const bits: string[] = []
-        if (c.via?.length) bits.push(`via ${c.via.join(", ")}`)
-        if (c.cable_label) bits.push(c.cable_label)
-        if (opts.colorMode === "speed" && c.speed) bits.push(c.speed)
-        allEdges.push({
-          id: `f:${key}`,
-          source: b.source,
-          target: b.target,
-          sourceHandle: "n",
-          targetHandle: "n",
-          type: "smoothstep",
-          pathOptions: { borderRadius: 10 },
-          label: bits.length ? bits.join(" · ") : undefined,
-          animated: c.marked,
-          data: { sem: "cable", raw: c },
-          style: c.marked
-            ? { strokeWidth: 2.5, stroke: "var(--primary)" }
-            : {
-                strokeWidth: 1.25,
-                ...(stroke ? { stroke } : {}),
-                ...(c.via?.length ? { strokeDasharray: "10 4" } : {}),
-              },
-          labelStyle: { fontSize: 9 },
-          labelBgStyle: { fill: "var(--card)" },
-        } as Edge)
-        continue
-      }
-      // The bundle keeps a colour only when every member agrees under the
-      // active mode - a mixed bundle stays neutral rather than lying.
-      const strokes = new Set(
-        b.cables.map((c) => edgeStroke(c, opts.colorMode) ?? "")
-      )
-      const stroke =
-        strokes.size === 1 ? [...strokes][0] || undefined : undefined
-      // In speed mode a bundle that agrees announces the shared speed.
-      const speeds = new Set(b.cables.map((c) => c.speed ?? ""))
-      const speed =
-        opts.colorMode === "speed" && speeds.size === 1
-          ? [...speeds][0] || undefined
-          : undefined
-      allEdges.push({
-        id: `f:${key}`,
-        source: b.source,
-        target: b.target,
-        sourceHandle: "n",
-        targetHandle: "n",
-        type: "smoothstep",
-        pathOptions: { borderRadius: 10 },
-        label: (() => {
-          const lag = sharedLag(b.cables)
-          const base = lag ? lagBundleLabel(lag, n) : `×${n}`
-          return speed ? `${base} · ${speed}` : base
-        })(),
-        data: { sem: "bundle", cables: b.cables },
-        style: {
-          strokeWidth: 1.75,
-          ...(stroke ? { stroke } : {}),
-        },
-        labelStyle: { fontSize: 9 },
-        labelBgStyle: { fill: "var(--card)" },
-      } as Edge)
-    }
-  }
-
-  // Orient hub → leaf: dagre ranks along edge direction, and the backend's
-  // uuid-sorted endpoints put leaves on random sides of their switch. Making
-  // the higher-degree device the source ranks cores before distribution
-  // before access before servers - consistently one direction.
-  {
-    const deg = new Map<string, number>()
-    for (const ed of allEdges) {
-      deg.set(ed.source, (deg.get(ed.source) ?? 0) + 1)
-      deg.set(ed.target, (deg.get(ed.target) ?? 0) + 1)
-    }
-    for (let i = 0; i < allEdges.length; i++) {
-      const ed = allEdges[i]
-      const sem = (ed.data as { sem?: string } | undefined)?.sem
-      if (!ROUTABLE.has(sem ?? "")) continue
-      if ((deg.get(ed.target) ?? 0) > (deg.get(ed.source) ?? 0)) {
-        allEdges[i] = {
-          ...ed,
-          source: ed.target,
-          target: ed.source,
-          sourceHandle: ed.targetHandle,
-          targetHandle: ed.sourceHandle,
-        }
-      }
-    }
-  }
+  const allEdges = orientHubToLeaf(
+    classifyEdges(graph, {
+      // Link aggregation: member cables of one bundle draw as ONE edge - the
+      // logical link people think in - unless the view asks for every
+      // cable. Flat collapses every parallel cable between a device pair.
+      fold: flat ? "pair" : opts.bundleLags !== false ? "lag" : "none",
+      originId: opts.originId,
+      hiddenPorts: opts.hiddenPorts,
+    }).map((c) => flowEdge(c, opts.colorMode))
+  ).edges
 
   // Hierarchy view: port-aligned layout, near-straight cables, no channel
   // routing (alignment removes the need). Levels don't apply here - the
@@ -836,11 +632,11 @@ export function build(
     const pre = layoutNodes(
       nodes,
       allEdges,
+      { sizeOf: grouped ? groupSize : flatSize, compact: true },
       opts.positions,
       dir,
       levels,
-      mainOffsets,
-      grouped ? groupSize : flatSize
+      mainOffsets
     )
     const posPre = new Map(pre.nodes.map((n) => [n.id, n.position]))
     const { edges: sided } = assignSides(allEdges, (id) => posPre.get(id), dir)
@@ -922,14 +718,17 @@ export function build(
       const grown = layoutNodes(
         nodes2,
         outEdges,
+        {
+          sizeOf: (n) => ({
+            width: flatWidth(n.data as FlatData),
+            height: flatHeight(n.data as FlatData),
+          }),
+          compact: true,
+        },
         opts.positions,
         dir,
         levels,
-        mainOffsets,
-        (n) => ({
-          width: flatWidth(n.data as FlatData),
-          height: flatHeight(n.data as FlatData),
-        })
+        mainOffsets
       )
       outNodes = grown.nodes
       wpMap = grown.waypoints
@@ -974,6 +773,7 @@ export function build(
   const pass1 = layoutNodes(
     nodes,
     allEdges,
+    CARD_SIZING,
     opts.positions,
     opts.direction,
     levels,
@@ -1008,6 +808,7 @@ export function build(
   const { nodes: laid, waypoints } = layoutNodes(
     sized,
     edges,
+    CARD_SIZING,
     opts.positions,
     opts.direction,
     levels,
@@ -1367,7 +1168,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     // layout's positions, not the kept ones - re-route from the actual
     // rendered positions so cables always match their cards.
     if (routingActive && keepingDrags) {
-      const wp = edgeWaypoints(nextNodes, built.edges, direction)
+      const wp = edgeWaypoints(nextNodes, built.edges, sizeOf, direction)
       setEdges(
         built.edges.map((e) => {
           const sem = (e.data as { sem?: string } | undefined)?.sem
@@ -1742,7 +1543,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       // Straight mode (and the flat view): only re-snapped sides, nothing
       // to route.
       if (!routingActive) return next
-      const wp = edgeWaypoints(liveNodes, next, direction)
+      const wp = edgeWaypoints(liveNodes, next, sizeOf, direction)
       return next.map((e) => {
         const sem = (e.data as { sem?: string } | undefined)?.sem
         if (!sem || !ROUTABLE.has(sem)) return e

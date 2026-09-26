@@ -9,11 +9,15 @@ import {
   nudgeOffEdges,
   type HierPortPos,
 } from "./layout"
+import { sizeOf } from "./node-registry"
 import { stencilSize } from "./stencil-node"
 
 // Scale guard: the layout pipeline must stay interactive on a ~150-device
 // fabric (3 sites × core pair + 4 dist + 12 access + 24 servers). A
 // regression here is what a user experiences as "the topology froze".
+
+/** Wiring cards: registered sizes, roomy spacing. */
+const CARDS = { sizeOf, compact: false }
 
 function fabric(): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = []
@@ -78,7 +82,7 @@ describe("aligned-card detour", () => {
       { id: "bc", source: "b", target: "c", data: { sem: "cable" } } as Edge,
       { id: "ac", source: "a", target: "c", data: { sem: "cable" } } as Edge,
     ]
-    const wp = edgeWaypoints(nodes, edges, "TB")
+    const wp = edgeWaypoints(nodes, edges, sizeOf, "TB")
     const detour = wp.get("ac")
     expect(detour).toBeDefined()
     // Both waypoints share an X clear of the cards' 100..~256 span.
@@ -93,8 +97,8 @@ describe("topology layout at scale", () => {
     const { nodes, edges } = fabric()
     expect(nodes.length).toBeGreaterThan(120)
     const t0 = performance.now()
-    const { nodes: laid } = layoutNodes(nodes, edges)
-    const wp = edgeWaypoints(laid, edges, "LR")
+    const { nodes: laid } = layoutNodes(nodes, edges, CARDS)
+    const wp = edgeWaypoints(laid, edges, sizeOf, "LR")
     const ms = performance.now() - t0
     expect(laid).toHaveLength(nodes.length)
     expect(wp).toBeInstanceOf(Map)
@@ -117,7 +121,14 @@ describe("topology layout at scale", () => {
       levels.set(n.id, tier)
     }
     const t0 = performance.now()
-    const { nodes: laid } = layoutNodes(nodes, edges, undefined, "TB", levels)
+    const { nodes: laid } = layoutNodes(
+      nodes,
+      edges,
+      CARDS,
+      undefined,
+      "TB",
+      levels
+    )
     const ms = performance.now() - t0
     expect(laid).toHaveLength(nodes.length)
     expect(ms).toBeLessThan(1000)
@@ -154,7 +165,13 @@ describe("density-adaptive gaps and lanes", () => {
           data: { sem: "cable", baseS: pn, baseT: "eno1" },
         }) as Edge
     )
-    const { nodes: laid, waypoints } = layoutNodes(nodes, edges, undefined, "LR")
+    const { nodes: laid, waypoints } = layoutNodes(
+      nodes,
+      edges,
+      CARDS,
+      undefined,
+      "LR"
+    )
     // Leaves stack in a compact grid beside the hub (NetBox/visio style),
     // never strung out along one endless rank...
     const leaves = laid.filter((n) => n.id !== "hub")
@@ -189,7 +206,7 @@ describe("density-adaptive gaps and lanes", () => {
           data: { sem: "cable", baseS: pn, baseT: pn },
         }) as Edge
     )
-    const { waypoints } = layoutNodes(nodes, edges, undefined, "LR")
+    const { waypoints } = layoutNodes(nodes, edges, CARDS, undefined, "LR")
     // Every parallel cable rides its own distinct lane (keyed by edge id).
     const lanes = edges
       .map((e) => waypoints.get(e.id)?.[0][0])

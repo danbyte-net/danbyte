@@ -1,15 +1,11 @@
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node } from "@xyflow/react"
 
-import { stencilSize } from "./stencil-node"
-import type { StencilData } from "./stencil-node"
-import { flatHeight, flatWidth } from "./flat-node"
-import { GROUP_H, GROUP_W } from "./group-node"
-
 // Lay nodes out left-to-right with dagre and write positions back. Node
-// height follows the stencil card (header + one row per cabled port) so
-// port-anchored edges land on their rows without overlap. `positions`
-// (from a saved view or a user drag) win over the computed layout.
+// sizes come from the caller (a stencil card is a header + one row per
+// cabled port) so port-anchored edges land on their rows without overlap.
+// `positions` (from a saved view or a user drag) win over the computed
+// layout.
 // Fixed tier spacing when the Level organiser forces a role order.
 const LEVEL_GAP_LR = 340
 const LEVEL_GAP_TB = 210
@@ -20,6 +16,18 @@ const CROSS_GAP = 64 // intra-tier peer spacing - wide enough that a
 // Natural order so fw-01 precedes fw-02 precedes fw-10.
 const natural = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+
+/** A node's rendered box. Callers pass the node registry's `sizeOf` (or a
+ * view's own fixed-size chips) - the layout knows no node kinds itself. */
+export type SizeOf = (n: Node) => { width: number; height: number }
+
+export interface NodeSizing {
+  sizeOf: SizeOf
+  /** Small fixed chips (the Flat view, grouped cards): tighten the gaps so
+   * hundreds of nodes stay compact. Wiring cards keep the roomy spacing
+   * their port-anchored cables need. */
+  compact: boolean
+}
 
 export interface LayoutResult {
   nodes: Node[]
@@ -483,32 +491,23 @@ function sideDetour(
 }
 
 /** Recompute node-avoiding routes for live (e.g. just-dragged) node positions.
- * Sizes come from each node's stencil data, so no dagre pass is needed. */
+ * Sizes come from `sizeOf`, so no dagre pass is needed. */
 export function edgeWaypoints(
   nodes: Node[],
   edges: Edge[],
+  sizeOf: SizeOf,
   direction: "LR" | "TB",
   /** false = obstacle avoidance only, no parallel-run lanes (hierarchy:
    * aligned parallel cables are already separated by their chips). */
   lanes = true
 ): Map<string, [number, number][]> {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
   return computeWaypoints(
     nodes,
     edges,
     (id) => {
-      const n = nodes.find((x) => x.id === id)
-      if (!n) return { width: 0, height: 0 }
-      // Fixed-size card types size themselves; stencil cards by their ports.
-      if (n.type === "flat") {
-        const d = n.data as Parameters<typeof flatHeight>[0] & { name?: string }
-        return { width: flatWidth(d), height: flatHeight(d) }
-      }
-      if (n.type === "sitegroup") return { width: GROUP_W, height: GROUP_H }
-      if (n.type === "hier") {
-        const d = n.data as { name?: string; portSpan?: number }
-        return { width: hierarchyWidth(d), height: hierHeight(d.portSpan ?? 0) }
-      }
-      return stencilSize(n.data as StencilData)
+      const n = byId.get(id)
+      return n ? sizeOf(n) : { width: 0, height: 0 }
     },
     direction === "TB",
     lanes
@@ -1357,6 +1356,7 @@ function findLeafClusters(
 export function layoutNodes(
   nodes: Node[],
   edges: Edge[],
+  sizing: NodeSizing,
   positions?: Record<string, [number, number]>,
   direction: "LR" | "TB" = "LR",
   /** node id → role tier; when present, overrides the main-axis so nodes
@@ -1364,17 +1364,9 @@ export function layoutNodes(
   levels?: Map<string, number>,
   /** main-axis coordinate per tier index (from the Level distances); when
    * absent, tiers use a uniform gap. */
-  mainOffsets?: number[],
-  /** Node dimensions; defaults to the stencil card. The Flat view passes a
-   * fixed-size function so its chips lay out tight. */
-  sizeOfNode?: (n: Node) => { width: number; height: number }
+  mainOffsets?: number[]
 ): LayoutResult {
-  const sizer =
-    sizeOfNode ?? ((n: Node) => stencilSize(n.data as StencilData))
-  // A custom sizer means small fixed chips (the Flat view) - tighten the
-  // gaps so hundreds of nodes stay compact; stencil cards keep the roomy
-  // spacing their port-anchored cables need.
-  const compact = !!sizeOfNode
+  const { sizeOf: sizer, compact } = sizing
   const tbDir = direction === "TB"
   const pinnedIds = positions
     ? new Set(Object.keys(positions))

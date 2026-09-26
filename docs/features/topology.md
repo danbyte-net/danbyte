@@ -325,7 +325,7 @@ The **color mode** select paints edges by:
 |---|---|
 | **Cable color** | the literal color recorded on each cable (default) |
 | **By type** | a stable hue per media type (cat6, OM4, DAC…) |
-| **By status** | green = active/connected, amber = planned, red = failed |
+| **By status** | each cable's status color from your [status catalog](catalogs-and-settings.md) |
 | **By speed** | link speed from the endpoint interface's **speed** field - green 1G, blue 10G, violet 25G, amber 40G, red 100G+ - with the speed as the edge label |
 | **No color** | monochrome |
 
