@@ -1,0 +1,13 @@
+# build(graph, {"colorMode":"cable","direction":"LR","edgeRouting":"routed","nodeStyle":"stencil"})
+
+nodes 4
+dev:@leaf-03  {"data":{"dimmed":false,"portOrder":{"Ethernet1/47":9,"Ethernet1/48":69},"portSide":{"Ethernet1/47":"R","Ethernet1/48":"R"}},"h":46,"type":"device","w":342,"x":0,"y":0}
+dev:@pp-a01  {"data":{"dimmed":false,"portOrder":{"1":0,"R1":69},"portSide":{"1":"L","R1":"R"}},"h":46,"type":"device","w":306,"x":472,"y":60}
+dev:@pp-b01  {"data":{"dimmed":false,"portOrder":{"1":9,"R1":69},"portSide":{"1":"R","R1":"L"}},"h":46,"type":"device","w":306,"x":908,"y":60}
+dev:@srv-db-01  {"data":{"dimmed":false,"portOrder":{"eno1":69,"eno2":0},"portSide":{"eno1":"L","eno2":"L"}},"h":46,"type":"device","w":242,"x":1344,"y":0}
+
+edges 4
+e:@c13:@leaf-03:@pp-a01  {"animated":true,"data":{"baseS":"Ethernet1/48","baseT":"1","raw":"@c13","sem":"cable"},"label":"DB uplink","labelBgStyle":{"fill":"var(--card)"},"labelStyle":{"fontSize":9},"pathOptions":{"borderRadius":10},"source":"dev:@leaf-03","sourceHandle":"Ethernet1/48~r","style":{"stroke":"var(--primary)","strokeWidth":2.5},"target":"dev:@pp-a01","targetHandle":"1","type":"smoothstep"}
+e:@c15:@pp-a01:@pp-b01  {"animated":true,"data":{"baseS":"R1","baseT":"R1","raw":"@c15","sem":"cable"},"label":"TRUNK-A-B","labelBgStyle":{"fill":"var(--card)"},"labelStyle":{"fontSize":9},"pathOptions":{"borderRadius":10},"source":"dev:@pp-a01","sourceHandle":"R1~r","style":{"stroke":"var(--primary)","strokeWidth":2.5},"target":"dev:@pp-b01","targetHandle":"R1","type":"smoothstep"}
+e:@c16:@pp-b01:@srv-db-01  {"animated":true,"data":{"baseS":"1","baseT":"eno1","raw":"@c16","sem":"cable"},"labelBgStyle":{"fill":"var(--card)"},"labelStyle":{"fontSize":9},"pathOptions":{"borderRadius":10},"source":"dev:@pp-b01","sourceHandle":"1~r","style":{"stroke":"var(--primary)","strokeWidth":2.5},"target":"dev:@srv-db-01","targetHandle":"eno1","type":"smoothstep"}
+e:@c17:@leaf-03:@srv-db-01  {"animated":false,"data":{"baseS":"Ethernet1/47","baseT":"eno2","raw":"@c17","sem":"cable"},"labelBgStyle":{"fill":"var(--card)"},"labelStyle":{"fontSize":9},"pathOptions":{"borderRadius":10},"source":"dev:@leaf-03","sourceHandle":"Ethernet1/47~r","style":{"strokeWidth":1.25},"target":"dev:@srv-db-01","targetHandle":"eno2","type":"smoothstep"}

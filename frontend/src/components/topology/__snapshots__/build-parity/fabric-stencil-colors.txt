@@ -1,0 +1,104 @@
+# build(graph, {"colorMode":"cable","edgeRouting":"straight","nodeStyle":"stencil"})
+
+edges 17
+e:@c1:@leaf-01:@spine-01  {"style":{"strokeWidth":1.25}}
+e:@c2:@leaf-01:@spine-01  {"style":{"strokeWidth":1.25}}
+e:@c3:@leaf-02:@spine-01  {"style":{"strokeWidth":1.25}}
+e:@c4:@spine-01:@leaf-03  {"style":{"stroke":"#f59e0b","strokeWidth":1.25}}
+e:@c5:@spine-01:@leaf-04  {"style":{"strokeWidth":1.25}}
+e:@c6:@leaf-01:@spine-02  {"style":{"strokeWidth":1.25}}
+e:@c7:@leaf-02:@spine-02  {"style":{"strokeWidth":1.25}}
+e:@c8:@spine-02:@leaf-03  {"style":{"stroke":"#f59e0b","strokeWidth":1.25}}
+e:@c9:@spine-02:@leaf-04  {"label":"SP2-LF4","style":{"strokeWidth":1.25}}
+e:@c12:@fw-01:@leaf-04  {"label":"×2 · FW-UPLINK","style":{"stroke":"#3b82f6","strokeWidth":1.75}}
+e:@c13:@leaf-03:@srv-db-01  {"label":"via pp-a01, pp-b01 · DB uplink","style":{"strokeDasharray":"10 4","strokeWidth":1.25}}
+e:@c14:@pp-c01:@leaf-04  {"style":{"strokeWidth":1.25}}
+e:@c17:@leaf-03:@srv-db-01  {"style":{"strokeWidth":1.25}}
+ghost:@leaf-02:@fw-01  {"label":"Ethernet1/10 ↔ ethernet1/3 · LLDP","style":{"opacity":0.8,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","strokeWidth":1.5}}
+bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 ×2","style":{"strokeWidth":2.5}}
+
+# build(graph, {"colorMode":"type","edgeRouting":"straight","nodeStyle":"stencil"})
+
+edges 17
+e:@c1:@leaf-01:@spine-01  {"style":{"stroke":"#6366f1","strokeWidth":1.25}}
+e:@c2:@leaf-01:@spine-01  {"style":{"stroke":"#6366f1","strokeWidth":1.25}}
+e:@c3:@leaf-02:@spine-01  {"style":{"stroke":"#6366f1","strokeWidth":1.25}}
+e:@c4:@spine-01:@leaf-03  {"style":{"stroke":"#84cc16","strokeWidth":1.25}}
+e:@c5:@spine-01:@leaf-04  {"style":{"stroke":"#6366f1","strokeWidth":1.25}}
+e:@c6:@leaf-01:@spine-02  {"style":{"stroke":"#6366f1","strokeWidth":1.25}}
+e:@c7:@leaf-02:@spine-02  {"style":{"stroke":"#6366f1","strokeWidth":1.25}}
+e:@c8:@spine-02:@leaf-03  {"style":{"stroke":"#84cc16","strokeWidth":1.25}}
+e:@c9:@spine-02:@leaf-04  {"label":"SP2-LF4","style":{"stroke":"#6366f1","strokeWidth":1.25}}
+e:@c12:@fw-01:@leaf-04  {"label":"×2 · FW-UPLINK","style":{"stroke":"#0ea5e9","strokeWidth":1.75}}
+e:@c13:@leaf-03:@srv-db-01  {"label":"via pp-a01, pp-b01 · DB uplink","style":{"stroke":"#84cc16","strokeDasharray":"10 4","strokeWidth":1.25}}
+e:@c14:@pp-c01:@leaf-04  {"style":{"stroke":"#0ea5e9","strokeWidth":1.25}}
+e:@c17:@leaf-03:@srv-db-01  {"style":{"stroke":"#0ea5e9","strokeWidth":1.25}}
+ghost:@leaf-02:@fw-01  {"label":"Ethernet1/10 ↔ ethernet1/3 · LLDP","style":{"opacity":0.8,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","strokeWidth":1.5}}
+bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 ×2","style":{"stroke":"#84cc16","strokeWidth":2.5}}
+
+# build(graph, {"colorMode":"status","edgeRouting":"straight","nodeStyle":"stencil"})
+
+edges 17
+e:@c1:@leaf-01:@spine-01  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c2:@leaf-01:@spine-01  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c3:@leaf-02:@spine-01  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c4:@spine-01:@leaf-03  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c5:@spine-01:@leaf-04  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c6:@leaf-01:@spine-02  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c7:@leaf-02:@spine-02  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c8:@spine-02:@leaf-03  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c9:@spine-02:@leaf-04  {"label":"SP2-LF4","style":{"stroke":"#f59e0b","strokeWidth":1.25}}
+e:@c12:@fw-01:@leaf-04  {"label":"×2 · FW-UPLINK","style":{"stroke":"#10b981","strokeWidth":1.75}}
+e:@c13:@leaf-03:@srv-db-01  {"label":"via pp-a01, pp-b01 · DB uplink","style":{"stroke":"#10b981","strokeDasharray":"10 4","strokeWidth":1.25}}
+e:@c14:@pp-c01:@leaf-04  {"style":{"stroke":"#f59e0b","strokeWidth":1.25}}
+e:@c17:@leaf-03:@srv-db-01  {"style":{"stroke":"#10b981","strokeWidth":1.25}}
+ghost:@leaf-02:@fw-01  {"label":"Ethernet1/10 ↔ ethernet1/3 · LLDP","style":{"opacity":0.8,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","strokeWidth":1.5}}
+bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 ×2","style":{"stroke":"#10b981","strokeWidth":2.5}}
+
+# build(graph, {"colorMode":"speed","edgeRouting":"straight","nodeStyle":"stencil"})
+
+edges 17
+e:@c1:@leaf-01:@spine-01  {"label":"100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
+e:@c2:@leaf-01:@spine-01  {"label":"100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
+e:@c3:@leaf-02:@spine-01  {"label":"100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
+e:@c4:@spine-01:@leaf-03  {"label":"40G","style":{"stroke":"#f59e0b","strokeWidth":1.25}}
+e:@c5:@spine-01:@leaf-04  {"label":"100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
+e:@c6:@leaf-01:@spine-02  {"label":"100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
+e:@c7:@leaf-02:@spine-02  {"label":"100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
+e:@c8:@spine-02:@leaf-03  {"label":"40G","style":{"stroke":"#f59e0b","strokeWidth":1.25}}
+e:@c9:@spine-02:@leaf-04  {"label":"SP2-LF4 · 100G","style":{"stroke":"#e11d48","strokeWidth":1.25}}
+e:@c12:@fw-01:@leaf-04  {"label":"×2 · FW-UPLINK · 10G","style":{"stroke":"#0ea5e9","strokeWidth":1.75}}
+e:@c13:@leaf-03:@srv-db-01  {"label":"via pp-a01, pp-b01 · DB uplink · 25G","style":{"stroke":"#8b5cf6","strokeDasharray":"10 4","strokeWidth":1.25}}
+e:@c14:@pp-c01:@leaf-04  {"label":"1G","style":{"stroke":"#10b981","strokeWidth":1.25}}
+e:@c17:@leaf-03:@srv-db-01  {"label":"1G","style":{"stroke":"#10b981","strokeWidth":1.25}}
+ghost:@leaf-02:@fw-01  {"label":"Ethernet1/10 ↔ ethernet1/3 · LLDP","style":{"opacity":0.8,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","strokeWidth":1.5}}
+bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 ×2","style":{"stroke":"#e11d48","strokeWidth":2.5}}
+
+# build(graph, {"colorMode":"none","edgeRouting":"straight","nodeStyle":"stencil"})
+
+edges 17
+e:@c1:@leaf-01:@spine-01  {"style":{"strokeWidth":1.25}}
+e:@c2:@leaf-01:@spine-01  {"style":{"strokeWidth":1.25}}
+e:@c3:@leaf-02:@spine-01  {"style":{"strokeWidth":1.25}}
+e:@c4:@spine-01:@leaf-03  {"style":{"strokeWidth":1.25}}
+e:@c5:@spine-01:@leaf-04  {"style":{"strokeWidth":1.25}}
+e:@c6:@leaf-01:@spine-02  {"style":{"strokeWidth":1.25}}
+e:@c7:@leaf-02:@spine-02  {"style":{"strokeWidth":1.25}}
+e:@c8:@spine-02:@leaf-03  {"style":{"strokeWidth":1.25}}
+e:@c9:@spine-02:@leaf-04  {"label":"SP2-LF4","style":{"strokeWidth":1.25}}
+e:@c12:@fw-01:@leaf-04  {"label":"×2 · FW-UPLINK","style":{"strokeWidth":1.75}}
+e:@c13:@leaf-03:@srv-db-01  {"label":"via pp-a01, pp-b01 · DB uplink","style":{"strokeDasharray":"10 4","strokeWidth":1.25}}
+e:@c14:@pp-c01:@leaf-04  {"style":{"strokeWidth":1.25}}
+e:@c17:@leaf-03:@srv-db-01  {"style":{"strokeWidth":1.25}}
+ghost:@leaf-02:@fw-01  {"label":"Ethernet1/10 ↔ ethernet1/3 · LLDP","style":{"opacity":0.8,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","strokeWidth":1.5}}
+bgp:@fw-01:@spine-01:  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+bgp:@spine-01:@spine-02:underlay  {"style":{"opacity":0.45,"stroke":"var(--primary)","strokeDasharray":"3 5","strokeWidth":1.25}}
+lag:dev:@leaf-01>dev:@leaf-02|@leaf-01.lag|@leaf-02.lag  {"animated":false,"label":"Po10 ⇄ Po10 ×2","style":{"strokeWidth":2.5}}

@@ -392,7 +392,9 @@ function assignSides(
   return { edges: out, sides, orders }
 }
 
-function build(
+/** Graph payload → React Flow nodes and edges, laid out. Exported for the
+ * golden parity test (`build-parity.test.ts`). */
+export function build(
   graph: TopologyGraph,
   opts: {
     focusNodeId?: string
