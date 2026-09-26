@@ -57,6 +57,11 @@ export const CanvasTip = forwardRef<
 >(function CanvasTip({ root }, ref) {
   const [text, setText] = useState<string | null>(null)
   const anchor = useRef<HTMLSpanElement>(null)
+  // The delegated `data-tip` element that owns the tip, or null while an
+  // edge (or nothing) does. Leaving a cable straight onto a port fires the
+  // port's pointerover before React Flow's edge mouseleave, so the edge's
+  // hide() must not wipe a tip the port has already taken over.
+  const owner = useRef<Element | null>(null)
 
   const place = useCallback((ev: PointerLike) => {
     const el = anchor.current
@@ -69,11 +74,14 @@ export const CanvasTip = forwardRef<
     ref,
     () => ({
       show: (next, ev) => {
+        owner.current = null
         place(ev)
         setText(next || null)
       },
       move: place,
-      hide: () => setText(null),
+      hide: () => {
+        if (!owner.current) setText(null)
+      },
     }),
     [place]
   )
@@ -82,29 +90,28 @@ export const CanvasTip = forwardRef<
   useEffect(() => {
     const el = root.current
     if (!el) return
-    let current: Element | null = null
     const over = (ev: PointerEvent) => {
       const t = tipTarget(ev.target, el)
-      if (!t || t === current) return
-      current = t
+      if (!t || t === owner.current) return
+      owner.current = t
       place(ev)
       setText(t.getAttribute(TIP_ATTR) || null)
     }
     const move = (ev: PointerEvent) => {
-      if (current) place(ev)
+      if (owner.current) place(ev)
     }
     const out = (ev: PointerEvent) => {
-      if (!current) return
+      if (!owner.current) return
       const next = tipTarget(ev.relatedTarget, el)
-      if (next === current) return
-      current = null
+      if (next === owner.current) return
+      owner.current = null
       // Moving straight onto another tip element: its pointerover follows
       // and takes over.
       if (!next) setText(null)
     }
     // A drag or click is not a hover - get out of the way.
     const down = () => {
-      current = null
+      owner.current = null
       setText(null)
     }
     el.addEventListener("pointerover", over)

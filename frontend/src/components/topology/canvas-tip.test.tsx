@@ -79,6 +79,19 @@ describe("CanvasTip", () => {
     expect(tip()).toBeNull()
   })
 
+  it("keeps a port's tip when the pointer leaves a cable onto it", () => {
+    render(<Canvas />)
+    act(() => api?.show("Cable #4", { clientX: 10, clientY: 20 }))
+    // pointerout/over reach the port before the edge's mouseleave.
+    fireEvent.pointerOver(screen.getByText("port"))
+    act(() => api?.hide())
+    expect(tip()?.textContent).toContain("Ethernet1/49")
+    fireEvent.pointerOut(screen.getByText("port"), {
+      relatedTarget: screen.getByText("plain"),
+    })
+    expect(tip()).toBeNull()
+  })
+
   it("uses no native title tooltip", () => {
     const { container } = render(<Canvas />)
     fireEvent.pointerOver(screen.getByText("spine"))
