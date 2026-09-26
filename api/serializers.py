@@ -1883,6 +1883,67 @@ class DeviceVcPickerSerializer(DevicePickerSerializer):
         return {"id": str(vc.id), "name": vc.name} if vc else None
 
 
+def _id_name(obj):
+    return {"id": str(obj.id), "name": obj.name} if obj is not None else None
+
+
+class DevicePaletteSerializer(NumIdModelSerializer):
+    """``?picker=palette``: the diagram builder's device palette - what it
+    groups (role), filters on (type, place, status) and whether the type has
+    a front photo to draw. Reads only what ``DeviceViewSet.palette_queryset``
+    joins, so the list costs the same few queries at any size."""
+
+    role = serializers.SerializerMethodField()
+    device_type = serializers.SerializerMethodField()
+    site = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+    rack = serializers.SerializerMethodField()
+    status = StatusMiniSerializer(read_only=True)
+    has_photo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Device
+        fields = [
+            "id", "name", "role", "device_type", "site", "location", "rack",
+            "status", "has_photo",
+        ]
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_role(self, obj):
+        r = obj.role
+        if r is None:
+            return None
+        return {
+            "id": str(r.id), "name": r.name, "slug": r.slug, "color": r.color,
+            "icon": r.icon, "is_patch_panel": r.is_patch_panel,
+        }
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device_type(self, obj):
+        dt = obj.device_type
+        if dt is None:
+            return None
+        return {
+            "id": str(dt.id), "name": dt.name, "model": dt.model,
+            "manufacturer": _id_name(dt.manufacturer),
+        }
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        return _id_name(obj.site)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        return _id_name(obj.location)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_rack(self, obj):
+        return _id_name(obj.rack)
+
+    def get_has_photo(self, obj) -> bool:
+        return bool(obj.device_type is not None and obj.device_type.front_image)
+
+
 class InterfacePickerSerializer(NumIdModelSerializer):
     device_id = TenantScopedPrimaryKeyRelatedField(source="device", read_only=True)
 

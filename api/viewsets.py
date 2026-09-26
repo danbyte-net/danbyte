@@ -195,6 +195,7 @@ from .serializers import (
     ContactAssignmentSerializer,
     CustomFieldSerializer,
     CustomFieldGroupSerializer,
+    DevicePaletteSerializer,
     DevicePickerSerializer,
     DeviceVcPickerSerializer,
     DeviceSerializer,
@@ -3345,6 +3346,31 @@ class DeviceViewSet(
         )
         .all().order_by(NATURAL_NAME)
     )
+    # ``?picker=palette`` (the topology diagram builder) lists every device at
+    # once, so it starts from its own base: only the columns and joins its rows
+    # print, none of the list's per-row count subqueries or tag prefetch.
+    # Grouped by role, then natural name; role-less devices last.
+    palette_queryset = (
+        Device.objects.select_related(
+            "role", "device_type", "device_type__manufacturer",
+            "site", "location", "rack", "status",
+        )
+        .only(
+            "id", "numid", "name",
+            "role", "role__name", "role__slug", "role__color", "role__icon",
+            "role__is_patch_panel",
+            "device_type", "device_type__name", "device_type__model",
+            "device_type__front_image", "device_type__manufacturer",
+            "device_type__manufacturer__name",
+            "site", "site__name", "location", "location__name",
+            "rack", "rack__name",
+            "status", "status__name", "status__slug", "status__color",
+        )
+        .order_by(
+            Collate("role__name", "natural_sort").asc(nulls_last=True),
+            NATURAL_NAME,
+        )
+    )
     serializer_class = DeviceSerializer
     pagination_class = StandardPagination
     # Field-level write allow-list, read by api.editable_fields - devices have
@@ -3965,7 +3991,16 @@ class DeviceViewSet(
         return Response(DeviceConfigStateSerializer(state).data,
                         status=drf_status.HTTP_200_OK)
 
+    def _palette(self) -> bool:
+        """``?picker=palette`` on the list: the diagram builder's palette."""
+        return (
+            self.action == "list" and self.request is not None
+            and self.request.query_params.get("picker") == "palette"
+        )
+
     def get_serializer_class(self):
+        if self._palette():
+            return DevicePaletteSerializer
         if self.action == "list" and self.request and self.request.query_params.get("picker") == "1":
             if self.request.query_params.get("with_vc") == "1":
                 return DeviceVcPickerSerializer
@@ -3973,6 +4008,10 @@ class DeviceViewSet(
         return DeviceSerializer
 
     def get_queryset(self):
+        if self._palette():
+            # Swap the base only - tenant scoping, RBAC rows and every list
+            # filter below apply to the palette exactly as to the list.
+            self.queryset = self.palette_queryset
         qs = super().get_queryset()
         if self.request:
             s = self.request.query_params.get("search", "").strip()

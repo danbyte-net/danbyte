@@ -694,6 +694,27 @@ what" questions.
 
 All three are RBAC-scoped to the caller's `device.view` grant.
 
+### Device palette API
+
+`GET /api/devices/?picker=palette` is the light device list the diagram
+builder's palette loads: every device in one response, grouped by role name
+and then natural name, with role-less devices last. Each row is `{id, numid,
+name, role, device_type, site, location, rack, status, has_photo}`:
+
+- `role` - `{id, name, slug, color, icon, is_patch_panel}`
+- `device_type` - `{id, name, model, manufacturer: {id, name} | null}`
+- `site`, `location`, `rack` - `{id, name}`
+- `status` - `{id, name, slug, color, text_color}`
+- `has_photo` - the device type has a front image
+
+Each of those is `null` when the device has none. The device list's filters
+all apply: `search`, `site`, `role`, `device_type`, `status`, `tag`
+(repeatable, all must match), `rack`, `location`, `region` (and its
+sub-regions) and `manufacturer`. The response is paginated like any list, so
+`count` is the total and `page_size` caps a page. Rows follow the caller's
+`device.view` scope, so a user limited to some sites sees only those devices,
+and the query count doesn't grow with the number of devices.
+
 ### Saved views API
 
 `/api/topology-views/` is a plain CRUD endpoint, gated by the `topologyview`
