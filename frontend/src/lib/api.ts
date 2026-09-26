@@ -1344,6 +1344,9 @@ export interface Device {
   name: string
   /** Per-device photo-port override; null = inherit the type's layout. */
   image_ports?: DeviceType["image_ports"] | null
+  /** Topology card lines for this device; null inherits the view, role
+   * or global list, `[]` = name only. */
+  topology_card?: string[] | null
   device_type: {
     id: string
     name: string
@@ -1479,6 +1482,7 @@ export interface DeviceWritePayload {
   vc_position?: number | null
   vc_priority?: number | null
   config_template_id?: string | null
+  topology_card?: string[] | null
 }
 
 // Admin-controlled visibility for the promoted built-in Device fields.
@@ -2829,7 +2833,96 @@ export interface TopoNode {
     panel?: boolean
     /** Cabled ports, ordered - each is an edge anchor on the stencil card. */
     ports?: TopoPort[]
+    /** `include=card` only: the card lines this device resolved to. */
+    card?: TopoCard
+    /** `include=photo` only. */
+    photo?: TopoPhoto
   }
+}
+
+/** Where a device's card lines came from, most specific first. `view` =
+ * the query's `card_fields` (a saved view's own list). */
+export type TopoCardSource =
+  | "device"
+  | "view"
+  | "role"
+  | "tenant"
+  | "deployment"
+  | "default"
+
+/** An IP on a card line: `address` bare, `cidr` with its prefix length. */
+export interface TopoCardIp {
+  id: string
+  address: string
+  cidr: string
+}
+
+/** Card line values. Only the keys in the node's `card.fields` are present;
+ * site, location, role, device type and status are already on the node. */
+export interface TopoCardValues {
+  primary_ip?: TopoCardIp | null
+  secondary_ip?: TopoCardIp | null
+  oob_ip?: TopoCardIp | null
+  /** Addresses with the IP role `loopback` assigned to this device. */
+  loopback?: TopoCardIp[]
+  serial?: string
+  asset_tag?: string
+  /** The device's own platform, else its type's. */
+  platform?: { id: string; name: string } | null
+  manufacturer?: { id: string; name: string } | null
+  rack?: { id: string; name: string; position: number | null } | null
+  tags?: Pick<Tag, "name" | "slug" | "color">[]
+  /** Visible device custom fields, raw values. */
+  [cf: `cf_${string}`]: unknown
+}
+
+export interface TopoCard {
+  /** Resolved line keys (at most 8); `[]` = name only. */
+  fields: string[]
+  source: TopoCardSource
+  values: TopoCardValues
+}
+
+/** A photo marker resolved to one of this node's cabled ports. `x y w h`
+ * are fractions of the image; `port` is the port's current name. */
+export interface TopoPhotoMarker {
+  port: string
+  port_id: string
+  /** The marker kind as saved on the type (`interface`, `front-port`...). */
+  kind: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface TopoPhoto {
+  /** Null when the type has no front photo. */
+  front: {
+    /** Same-origin media URL. */
+    url: string
+    /** Height / width; null when unreadable (use `naturalWidth`). */
+    aspect: number | null
+    /** Display-size override from the type's layout (`ImagePorts.view`). */
+    scale: number | null
+    markers: TopoPhotoMarker[]
+  } | null
+  /** The type can render a `TypeFaceplate` (on screen only). */
+  type_faceplate: boolean
+  u_height: number
+  vc_position: number | null
+}
+
+/** A subnet both ends of one cable pair sit in (`include=link_ips`). */
+export interface TopoLinkSubnet {
+  cidr: string
+  family: 4 | 6
+  /** The A and B end addresses (bare), oriented like the pair. */
+  a: string
+  b: string
+  /** The LAG or sub-interface carrying the address, when not the port. */
+  a_via?: string | null
+  b_via?: string | null
 }
 
 export interface TopoEdge {
@@ -2856,7 +2949,16 @@ export interface TopoEdge {
       a_kind?: string
       b_id?: string
       b_kind?: string
+      /** `include=link_ips`: each end's addresses with length (at most 8). */
+      a_ips?: string[]
+      b_ips?: string[]
+      /** Subnets shared by both ends, v4 first (at most 8). */
+      subnets?: TopoLinkSubnet[]
+      /** How many shared subnets the cap left out. */
+      subnets_truncated?: number
     }[]
+    /** `include=link_ips`: every pair's shared subnets, de-duplicated. */
+    subnets?: string[]
     cable_numid?: number | null
     cable_label?: string
     length?: string | null
@@ -2941,19 +3043,85 @@ export interface DevicePathRun {
   complete: boolean
 }
 
+/** The view styles that own an arrangement in a saved view. Mirrors
+ * `TopologyViewSerializer.POSITION_STYLES`. */
+export type TopologyPositionStyle = "stencil" | "hierarchy" | "flat" | "diagram"
+
+export type TopologyLineType = "straight" | "elbow" | "bendy" | "cyclical"
+
+/** A labelled box behind the map. Zones are annotation only; bands group
+ * the cards inside them by geometry. */
+export interface TopologyViewZone {
+  id: string
+  label: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** One of `ZONE_COLORS`; a band may be neutral (null or ""). */
+  color: string | null
+  /** Absent = "zone" (every view saved before bands). */
+  kind?: "zone" | "band"
+  /** Bands: a row (`h`) or a side band (`v`). */
+  orient?: "h" | "v"
+  /** Bands generated by Arrange: what they were generated from. */
+  rule?: { by: "role" | "device_type"; ids: string[] }
+}
+
+/** The Diagram tab's display settings (`state.filters.diagram`). */
+export interface TopologyDiagramDisplay {
+  mode: "simple" | "detailed"
+  face: "card" | "photo"
+  line: TopologyLineType
+  labels: ("subnet" | "ip" | "port")[]
+  /** The view's own card lines; absent inherits, `[]` = name only. */
+  fields?: string[]
+}
+
+/** `state.filters`: the map's settings under the page's own names. */
+export interface TopologyViewFilters {
+  [key: string]: unknown
+  diagram?: TopologyDiagramDisplay
+}
+
+/** A per-link override, keyed by the sorted device pair `"<uuid>|<uuid>"`. */
+export interface TopologyLinkOverride {
+  line?: TopologyLineType
+  /** Which side a cyclical arc bulges to. */
+  flip?: 1 | -1
+}
+
+/** A free-text or icon annotation on the Diagram tab. */
+export interface TopologyViewNote {
+  id: string
+  kind: "text" | "icon"
+  x: number
+  y: number
+  text?: string
+  icon?: "cloud" | "globe" | "building"
+}
+
 export interface TopologyViewState {
-  filters?: Record<string, unknown>
+  filters?: TopologyViewFilters
   /** Node arrangements per view style - the cards differ in size between
    * styles, so each keeps its own coordinates. */
-  positions_by_style?: Record<string, Record<string, [number, number]>>
+  positions_by_style?: Partial<
+    Record<TopologyPositionStyle, Record<string, [number, number]>>
+  >
   /** The style-on-save arrangement. Predates `positions_by_style`; still
    * written so older readers keep working. */
   positions?: Record<string, [number, number]>
   /** Labelled backdrop boxes, per view style - same reason as positions. */
-  zones_by_style?: Record<string, unknown>
+  zones_by_style?: Partial<Record<TopologyPositionStyle, TopologyViewZone[]>>
   /** What the eyes switched off - `components/topology/hidden.ts`'s
    * TopoHidden; a flat list of node ids in views saved before it. */
   hidden?: unknown
+  /** Per-link line overrides (at most 20,000). */
+  links?: Record<string, TopologyLinkOverride>
+  /** Per-device overrides, keyed by device id. */
+  nodes?: Record<string, { face?: "card" | "photo" }>
+  /** Diagram annotations (at most 500). */
+  notes?: TopologyViewNote[]
 }
 
 export interface TopologyViewSaved {
@@ -2965,9 +3133,159 @@ export interface TopologyViewSaved {
   updated_at: string
 }
 
+/** The light saved-view list (GET /api/topology-views/?picker=1) - no state. */
+export interface TopologyViewSummary {
+  id: string
+  numid: number | null
+  name: string
+  updated_at: string
+}
+
+export interface TopologyGraphMeta {
+  /** `include=card`: the effective lines before per-device overrides.
+   * `uses_monitor` = some node lists `monitor` (fetch check states). */
+  card?: { fields: string[]; source: TopoCardSource; uses_monitor: boolean }
+}
+
 export interface TopologyGraph {
   nodes: TopoNode[]
   edges: TopoEdge[]
+  /** Present only when the query asked for an `include`. */
+  meta?: TopologyGraphMeta
+}
+
+export type TopologyInclude = "card" | "link_ips" | "photo"
+
+/** The /api/topology/ query - GET params, or the POST body for large sets. */
+export interface TopologyQuery {
+  /** Present (even empty) = the induced subgraph on exactly these devices;
+   * focus and filters are ignored. At most 10,000. */
+  devices?: string[]
+  device?: string
+  depth?: number
+  site?: string
+  location?: string
+  role?: string
+  status?: string
+  /** Tag slug. */
+  tag?: string
+  /** Walk patch panels end to end (the server default is on). */
+  collapse_panels?: boolean
+  group_by?: "site" | "location"
+  /** Opt-in enrichment; ignored with `group_by`. */
+  include?: TopologyInclude[]
+  /** A saved view's own card lines, applied over role and global lists. */
+  card_fields?: string[]
+}
+
+function topologyParams(q: TopologyQuery): URLSearchParams {
+  const p = new URLSearchParams()
+  if (q.devices) p.set("devices", q.devices.join(","))
+  for (const k of [
+    "device",
+    "site",
+    "location",
+    "role",
+    "status",
+    "tag",
+    "group_by",
+  ] as const) {
+    const v = q[k]
+    if (v) p.set(k, v)
+  }
+  if (q.depth !== undefined) p.set("depth", String(q.depth))
+  if (q.collapse_panels !== undefined)
+    p.set("collapse_panels", q.collapse_panels ? "1" : "0")
+  if (q.include?.length) p.set("include", q.include.join(","))
+  if (q.card_fields) p.set("card_fields", q.card_fields.join(","))
+  return p
+}
+
+/** POST /api/topology/ with the query as a JSON body. A device set rides
+ * here: a few hundred ids overflow gunicorn's 8190-byte request line. */
+export function postTopology(
+  q: TopologyQuery,
+  init: { signal?: AbortSignal } = {}
+): Promise<TopologyGraph> {
+  return api<TopologyGraph>("/api/topology/", {
+    method: "POST",
+    body: JSON.stringify(q),
+    signal: init.signal,
+  })
+}
+
+/** The topology graph: GET for a filtered or focused map, POST once a
+ * device set is given. */
+export function fetchTopology(
+  q: TopologyQuery,
+  init: { signal?: AbortSignal } = {}
+): Promise<TopologyGraph> {
+  if (q.devices !== undefined) return postTopology(q, init)
+  return api<TopologyGraph>(`/api/topology/?${topologyParams(q)}`, {
+    signal: init.signal,
+  })
+}
+
+/** The card-line vocabulary, served with the settings so it lives in one
+ * place. `cf_<key>` keys are not listed; add the tenant's device custom
+ * fields client-side. */
+export interface TopologyCardVocabulary {
+  available: string[]
+  /** The keys that render as the card's pill, not as a line. */
+  pills: string[]
+  defaults: string[]
+  max_fields: number
+}
+
+/** The effective card lines for the active tenant (GET /api/topology-card/).
+ * A `role:<slug>` absent from `role_overrides` inherits `fields`. */
+export interface TopologyCardConfig extends Partial<TopologyCardVocabulary> {
+  fields: string[]
+  role_overrides: Record<string, string[]>
+  source: "tenant" | "deployment" | "default"
+}
+
+/** Card-lines editor shape: GET/PUT /api/deployment/topology-card/ and
+ * /api/tenant-settings/topology-card/. A PUT of `card_fields: null` resets
+ * to the built-in default. */
+export interface TopologyCardSettings extends TopologyCardVocabulary {
+  card_fields: string[]
+  /** `card_fields` is the built-in default (nothing stored). */
+  is_default: boolean
+  role_overrides: Record<string, string[]>
+  /** Tenant layer only: whether this tenant overrides the deployment. */
+  override?: boolean
+  /** Tenant layer only: what it inherits when `override` is false. */
+  deployment_defaults?: {
+    card_fields: string[]
+    role_overrides: Record<string, string[]>
+  }
+}
+
+/** A device palette row (GET /api/devices/?picker=palette). */
+export interface DevicePaletteRow {
+  id: string
+  numid: number | null
+  name: string
+  role: {
+    id: string
+    name: string
+    slug: string
+    color: string
+    icon?: string
+    is_patch_panel?: boolean
+  } | null
+  device_type: {
+    id: string
+    name: string
+    manufacturer: string | null
+  } | null
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  rack: { id: string; name: string } | null
+  status: StatusMini | null
+  /** The type has a front photo. */
+  has_photo: boolean
 }
 
 /** GET /api/topology/logical/ - VLANs as rails, devices + VMs attached. */
