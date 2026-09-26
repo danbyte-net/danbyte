@@ -204,6 +204,26 @@ class PhotoPayloadTests(_Base):
         photo = self._photos(self._graph())["sw"]
         self.assertEqual(self._ports(photo), [("uplink-core", str(uplink.id))])
 
+    def test_an_uncabled_better_match_keeps_its_marker_off_the_map(self):
+        """A marker lands where the faceplate lands it, among ALL the
+        device's components: when that is an uncabled port, the marker is
+        left out rather than falling through to a cabled port that matches
+        only by a looser rule."""
+        dt = self._type("SW", front=[
+            _marker("interface", "Gi1/0/2", 0.2),  # marker_key of a spare
+            _marker("interface", "eth0", 0.4),  # exact name of a spare
+            _marker("interface", "eth1", 0.6),  # only the cabled one matches
+        ])
+        d = self._device("sw", dt)
+        Interface.objects.create(device=d, name="spare", marker_key="Gi1/0/2")
+        Interface.objects.create(device=d, name="eth0")
+        for name in ("gi1/0/2", "ETH0", "ETH1"):
+            self._to_peer(Interface.objects.create(device=d, name=name))
+        front = self._photos(self._graph())["sw"]["front"]
+        self.assertEqual(
+            [(m["port"], m["x"]) for m in front["markers"]], [("ETH1", 0.6)]
+        )
+
     def test_device_override_replaces_the_type_layout(self):
         dt = self._type("SW", image_ports={
             "front": [_marker("interface", "eth0", 0.1)], "rear": [],
@@ -434,7 +454,8 @@ class PhotoCostTests(_Base):
         large, g = self._measure()
         self.assertEqual(len(g["nodes"]), 31)
         self.assertEqual(small, large)
-        self.assertLessEqual(large, 1)
+        # The types' interface templates, then the devices' interfaces.
+        self.assertLessEqual(large, 2)
         photos = self._photos(g)
         self.assertTrue(all(
             len(photos[f"d{i}"]["front"]["markers"]) == 1 for i in range(30)

@@ -4001,14 +4001,18 @@ class TopologyViewSerializer(NumIdModelSerializer):
             self._choice(
                 region.get("orient"), self.BAND_ORIENTS, f"{where}.orient"
             )
+            # A swatch, or neutral. An off-palette hex - which older zones
+            # could carry, and which the map already draws as the first
+            # swatch - saves as neutral rather than refusing the whole view.
             color = region.get("color")
             if color not in (None, ""):
-                if not isinstance(color, str) or color.lower() not in self.ZONE_COLORS:
+                if not isinstance(color, str):
                     raise serializers.ValidationError(
                         f"{where}.color must be one of "
                         f"{', '.join(self.ZONE_COLORS)} or null"
                     )
-                region["color"] = color.lower()
+                color = color.lower()
+                region["color"] = color if color in self.ZONE_COLORS else None
             rule = region.get("rule")
             if rule is None:
                 continue

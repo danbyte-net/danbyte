@@ -495,6 +495,15 @@ class DiagramViewStateTests(_Base):
         self.assertEqual(state["nodes"][self.A], {"face": "card"})
         self.assertEqual([n["id"] for n in state["notes"]], ["n1", "n2"])
 
+    def test_off_palette_diagram_colour_saves_as_neutral(self):
+        zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
+        resp = self._save({"zones_by_style": {"diagram": [
+            {**zone, "color": "#123456"}, {**zone, "id": "y", "color": "#10B981"},
+        ]}})
+        self.assertEqual(resp.status_code, 201, resp.content)
+        zones = resp.json()["state"]["zones_by_style"]["diagram"]
+        self.assertEqual([z["color"] for z in zones], [None, "#10b981"])
+
     def test_view_card_lines_may_be_empty_or_absent(self):
         for fields in ([], None):
             state = {"filters": {"diagram": {"mode": "simple", "fields": fields}}}
@@ -510,7 +519,6 @@ class DiagramViewStateTests(_Base):
             {"zones_by_style": {"diagram": ["nope"]}},
             {"zones_by_style": {"diagram": [{**zone, "kind": "lane"}]}},
             {"zones_by_style": {"diagram": [{**zone, "orient": "x"}]}},
-            {"zones_by_style": {"diagram": [{**zone, "color": "#123456"}]}},
             {"zones_by_style": {"diagram": [{**zone, "color": 7}]}},
             {"zones_by_style": {"diagram": [{**zone, "rule": "role"}]}},
             {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "site", "ids": []}}]}},

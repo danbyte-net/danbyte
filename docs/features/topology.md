@@ -657,14 +657,18 @@ whatever the size of the map, and none without `ipaddress.view`.
 - A marker matches the way the device's faceplate matches it: `{position}`
   becomes the stack member number, then the port's frozen marker key is
   tried, then its name, then either ignoring case and surrounding spaces. A
-  renamed port keeps its marker. Uncabled ports, module bays and inventory
-  items get none, and a port two markers name keeps the first.
+  renamed port keeps its marker. The match runs over all of the device's
+  ports of that kind, so a marker that lands on an uncabled port is left out
+  rather than moved to a cabled port that only matches more loosely. Module
+  bays and inventory items get none, and a port two markers name keeps the
+  first.
 - `type_faceplate` is true when the type can draw a schematic faceplate
   instead: a saved faceplate layout with a front, else interface templates.
 - Only the front is sent.
 
-It costs one query whatever the size of the map, and never asks SNMP. Each
-photo's size is read from the file header once and cached.
+It costs one query, plus one per port kind the markers of cabled ports use,
+whatever the size of the map, and never asks SNMP. Each photo's size is read
+from the file header once and cached.
 
 A malformed id in `device`, `devices`, `site`, `location`, `role` or `status`
 returns `400 {"detail": "<param>: not a valid id"}`, even in a mode that
@@ -738,7 +742,7 @@ earlier versions load and save unchanged.
 | Key | Shape |
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
-| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band) and `rule` `{by: role\|device_type, ids}` (at most 100 ids, what the band was generated from). `color` is one of the six zone swatches, or `null` or `""` for a neutral band. |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band) and `rule` `{by: role\|device_type, ids}` (at most 100 ids, what the band was generated from). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other colour string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines](#card-lines). |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000 |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo}`, at most 10,000 |

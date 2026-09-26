@@ -15,6 +15,7 @@ place and may add its own key to ``ctx.meta``, which the response carries as
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 #: What ``include`` may name; anything else is ignored.
 INCLUDE_TOKENS = frozenset({"card", "link_ips", "photo"})
@@ -461,9 +462,12 @@ def enrich_photo(ctx: EnrichContext) -> None:
     (``api.face_ports``). ``type_faceplate`` says a schematic faceplate can
     be drawn instead: a saved layout with a front, else interface templates.
 
-    Markers resolve in memory against the ports the graph already loaded;
-    no SNMP. The cost is one query (the types' interface templates) and a
-    cached header read per photo file.
+    A marker is matched against every component of its kind on the device,
+    as the face-ports endpoint matches it, and kept only when the component
+    it lands on is cabled: a marker whose key names an uncabled port must
+    not fall through to a cabled port with a similar name. No SNMP. The cost
+    is one query for the types' interface templates, one per component kind
+    the cabled markers use, and a cached header read per photo file.
     """
     from .face_ports import effective_image_ports
 
@@ -481,21 +485,36 @@ def enrich_photo(ctx: EnrichContext) -> None:
     aspects = _photo_aspects(types.values())
     faceplates = _type_faceplates(types.values())
 
+    fronts = {}  # device id → (url, layout)
+    wanted: dict[str, set] = {}  # termination kind → device ids to index
+    for _data, d in nodes:
+        dt = types.get(d.device_type_id)
+        if dt is None or dt.pk not in aspects:
+            continue
+        url = _photo_url(dt.front_image)
+        if not url:
+            continue
+        layout = effective_image_ports(d) or {}
+        fronts[d.id] = (url, layout)
+        have = {kind for kind, _pid in cabled.get(str(d.id)) or {}}
+        for kind in _marker_kinds(layout.get("front")) & have:
+            wanted.setdefault(kind, set()).add(d.id)
+    components = _face_components(wanted)
+
     for data, d in nodes:
         dt = types.get(d.device_type_id)
         front = None
-        if dt is not None and dt.pk in aspects:
-            url = _photo_url(dt.front_image)
-            if url:
-                layout = effective_image_ports(d) or {}
-                front = {
-                    "url": url,
-                    "aspect": aspects[dt.pk],
-                    "scale": _photo_scale(layout),
-                    "markers": _photo_markers(
-                        layout.get("front"), d, cabled.get(str(d.id)) or {}
-                    ),
-                }
+        if d.id in fronts:
+            url, layout = fronts[d.id]
+            front = {
+                "url": url,
+                "aspect": aspects[dt.pk],
+                "scale": _photo_scale(layout),
+                "markers": _photo_markers(
+                    layout.get("front"), d, cabled.get(str(d.id)) or {},
+                    components,
+                ),
+            }
         data["photo"] = {
             "front": front,
             "type_faceplate": dt is not None and dt.pk in faceplates,
@@ -527,42 +546,104 @@ def _is_number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def _photo_markers(markers, device, ports) -> list:
+def _marker_term_kind(marker):
+    """The termination kind a photo marker names, or None when it is not a
+    usable marker of a cable-able kind."""
+    from .face_ports import FACE_PORT_KINDS
+
+    if not isinstance(marker, dict) or not isinstance(marker.get("name"), str):
+        return None
+    kind = marker.get("kind", "interface")
+    if not isinstance(kind, str):
+        return None
+    return (FACE_PORT_KINDS.get(kind) or (None, None))[1]
+
+
+def _marker_kinds(markers) -> set:
+    """The termination kinds ``markers`` name."""
+    if not isinstance(markers, list):
+        return set()
+    return {k for k in map(_marker_term_kind, markers) if k is not None}
+
+
+#: Termination kind → the component model's name in ``api.models``.
+_COMPONENT_MODELS = {
+    "interface": "Interface",
+    "console_port": "ConsolePort",
+    "console_server_port": "ConsoleServerPort",
+    "power_port": "PowerPort",
+    "power_outlet": "PowerOutlet",
+    "front_port": "FrontPort",
+    "rear_port": "RearPort",
+    "aux_port": "AuxPort",
+}
+
+
+class _Component(NamedTuple):
+    """One component row, as much of it as marker matching reads."""
+
+    id: object
+    name: str
+    marker_key: str
+
+
+def _face_components(wanted) -> dict:
+    """``{(device id, termination kind): [component]}`` - every component of
+    each kind on the devices ``wanted`` names (``{kind: device ids}``), in
+    name order as the face-ports endpoint loads a relation. One query per
+    kind."""
+    from . import models
+
+    out: dict = {}
+    for kind, device_ids in wanted.items():
+        model = getattr(models, _COMPONENT_MODELS[kind])
+        keyed = any(f.name == "marker_key" for f in model._meta.concrete_fields)
+        cols = ["id", "device_id", "name"] + (["marker_key"] if keyed else [])
+        rows = (
+            model.objects.filter(device_id__in=device_ids)
+            .order_by("name", "id")
+            .values_list(*cols)
+        )
+        for row in rows:
+            out.setdefault((row[1], kind), []).append(
+                _Component(row[0], row[2], row[3] if keyed else "")
+            )
+    return out
+
+
+def _photo_markers(markers, device, ports, components) -> list:
     """The ``markers`` that resolve to one of ``ports`` (``{(termination
     kind, id): port}``, the node's cabled components), in layout order; a
-    port two markers resolve to keeps the first."""
-    from .face_ports import FACE_PORT_KINDS, ComponentIndex, render_marker_name
+    port two markers resolve to keeps the first. A marker resolves against
+    all of the device's components of its kind (``components``, from
+    :func:`_face_components`), so it lands where the face-ports endpoint
+    lands it; one that lands on an uncabled component is left out."""
+    from .face_ports import ComponentIndex, render_marker_name
 
-    by_kind: dict[str, list] = {}
-    for (kind, _pid), obj in ports.items():
-        by_kind.setdefault(kind, []).append(obj)
     indexes: dict = {}
     out, seen = [], set()
     for m in markers if isinstance(markers, list) else ():
-        if not isinstance(m, dict) or not isinstance(m.get("name"), str):
-            continue
-        kind = m.get("kind", "interface")
-        if not isinstance(kind, str):
-            continue
-        term_kind = (FACE_PORT_KINDS.get(kind) or (None, None))[1]
-        if term_kind not in by_kind:
+        term_kind = _marker_term_kind(m)
+        if term_kind is None:
             continue
         if term_kind not in indexes:
-            # Name order, as the face-ports endpoint loads a relation, so a
-            # marker key two components share picks the same one there.
             indexes[term_kind] = ComponentIndex(
-                sorted(by_kind[term_kind], key=lambda c: (c.name, str(c.id)))
+                components.get((device.id, term_kind), ())
             )
-        port = indexes[term_kind].match(
+        comp = indexes[term_kind].match(
             render_marker_name(m["name"], device.vc_position)
         )
+        port = ports.get((term_kind, comp.id)) if comp is not None else None
         box = {k: m.get(k) for k in ("x", "y", "w", "h")}
         if port is None or not all(_is_number(v) for v in box.values()):
             continue
         if (term_kind, port.id) in seen:
             continue
         seen.add((term_kind, port.id))
-        out.append({"port": port.name, "port_id": str(port.id), "kind": kind, **box})
+        out.append({
+            "port": port.name, "port_id": str(port.id),
+            "kind": m.get("kind", "interface"), **box,
+        })
     return out
 
 
