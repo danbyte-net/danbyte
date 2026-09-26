@@ -9,6 +9,7 @@ import type {
 } from "@/lib/api"
 import { readableText } from "@/lib/color"
 import { documentBounds } from "@/lib/diagram/geometry"
+import type { PortPlace } from "@/lib/diagram/geometry"
 import type { Measure } from "@/lib/diagram/measure"
 import {
   LINK_DEFAULTS,
@@ -21,6 +22,8 @@ import type {
   DiagramBand,
   DiagramDocument,
   DiagramEnd,
+  DiagramEndLabel,
+  DiagramJunction,
   DiagramLink,
   DiagramMeta,
   DiagramNode,
@@ -33,14 +36,14 @@ import type {
 } from "@/lib/diagram/types"
 import type { LegendItem } from "../legend"
 import { linkEnds } from "./anchors"
-import type { Nub } from "./anchors"
-import { relinkDiagram } from "./build-diagram"
+import type { AnchorLink, Nub } from "./anchors"
+import { distinctCables, relinkDiagram } from "./build-diagram"
 import type { DiagramModel } from "./build-diagram"
 import { cardContent } from "./card-fields"
 import type { CardPill } from "./card-fields"
-import { cardLayout, nubRect } from "./card-layout"
+import { cardLayout, JUNCTION, nubRect } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
-import { elbowChannel, linkRoute } from "./link-geometry"
+import { leaves, linkRoute, planOf, routeThrough } from "./link-geometry"
 import type {
   Anchor,
   DiagramEdgeData,
@@ -415,27 +418,43 @@ export function printLegend(
 
 type CardData = TopoNode["data"]
 
-/** How many cables an edge stands for. */
+/** The cables an edge stands for, by id: a bundle's members, a breakout
+ * part's cable, or its own. */
+function cableIds(d: DiagramEdgeData): string[] {
+  if (d.cables?.length) return d.cables.map((c, i) => c.cable_id ?? `#${i}`)
+  const id = d.cableId ?? d.raw?.cable_id
+  return id ? [id] : []
+}
+
+/** How many distinct cables an edge stands for: a breakout cable's port
+ * pairs are one cable. */
 function cableCount(d: DiagramEdgeData): number {
-  if (d.cables?.length)
-    return d.cables.reduce((n, c) => n + Math.max(1, c.pairs?.length ?? 0), 0)
-  return Math.max(1, d.raw?.pairs?.length ?? 0)
+  if (d.cables?.length) return distinctCables(d.cables)
+  return 1
+}
+
+const isWiring = (e: Pick<Edge, "type"> & { data?: unknown }) => {
+  const d = e.data as DiagramEdgeData | undefined
+  return (
+    e.type === "link" &&
+    (d?.sem === "cable" || d?.sem === "lagbundle" || d?.sem === "bundle")
+  )
 }
 
 /**
  * Simple: every cable between two devices is one line. A Detailed map
  * keeps a pair's separate cables apart, so its Simple document folds them
- * here - one line with a count chip, like the Simple canvas.
+ * here - one line with a count chip, like the Simple canvas - and a
+ * breakout's legs to one card into one leg. Each folded edge comes with
+ * the id of the edge it was made from.
  */
-function foldPairs(edges: LiveEdge[]): LiveEdge[] {
-  const groups = new Map<string, LiveEdge[]>()
-  const out: (LiveEdge | string)[] = []
+function foldPairs<TEdge extends LiveEdge>(
+  edges: readonly TEdge[]
+): [TEdge, string][] {
+  const groups = new Map<string, TEdge[]>()
+  const out: (TEdge | string)[] = []
   for (const e of edges) {
-    const d = e.data as DiagramEdgeData | undefined
-    const wiring =
-      e.type === "link" &&
-      (d?.sem === "cable" || d?.sem === "lagbundle" || d?.sem === "bundle")
-    if (!wiring) {
+    if (!isWiring(e)) {
       out.push(e)
       continue
     }
@@ -447,32 +466,69 @@ function foldPairs(edges: LiveEdge[]): LiveEdge[] {
       out.push(key)
     }
   }
-  return out.map((x) => {
-    if (typeof x !== "string") return x
+  return out.map((x): [TEdge, string] => {
+    if (typeof x !== "string") return [x, x.id]
     const g = groups.get(x)!
-    if (g.length === 1) return g[0]
+    if (g.length === 1) return [g[0], g[0].id]
     const first = g[0]
     const d = first.data as DiagramEdgeData
-    const n = g.reduce((s, e) => s + cableCount(e.data as DiagramEdgeData), 0)
+    const ids = new Set(g.flatMap((e) => cableIds(e.data as DiagramEdgeData)))
+    const id = `${first.id}+${g.length - 1}`
+    const { plan: _p, planAt: _a, ...rest } = d
+    if (ids.size < 2)
+      // One cable reaching the pair several ways (a breakout's legs).
+      return [{ ...first, id, data: rest }, first.id]
     const strokes = new Set(g.map((e) => String(e.style?.stroke ?? "")))
-    return {
-      ...first,
-      id: `${first.id}+${g.length - 1}`,
-      style: {
-        strokeWidth: 1.75,
-        ...(strokes.size === 1 && first.style?.stroke
-          ? { stroke: first.style.stroke }
-          : {}),
+    return [
+      {
+        ...first,
+        id,
+        style: {
+          strokeWidth: 1.75,
+          ...(strokes.size === 1 && first.style?.stroke
+            ? { stroke: first.style.stroke }
+            : {}),
+        },
+        data: {
+          ...rest,
+          sem: "bundle",
+          raw: undefined,
+          cables: undefined,
+          cableId: undefined,
+          fan: undefined,
+          labels: { mid: [`${ids.size}x`] },
+        } satisfies DiagramEdgeData,
       },
-      data: {
-        ...d,
-        sem: "bundle",
-        raw: undefined,
-        cables: undefined,
-        labels: { mid: [`${n}x`] },
-      } satisfies DiagramEdgeData,
-    }
+      first.id,
+    ]
   })
+}
+
+/** A Detailed map's model as its Simple picture: each pair's cables
+ * folded into one line before the lines are planned, so the lanes are
+ * the Simple ones. */
+function simpleModel(model: DiagramModel): DiagramModel {
+  const byId = new Map(model.links.map((l) => [l.id, l]))
+  const folded = foldPairs(model.edges)
+  const links: AnchorLink[] = []
+  for (const [e, from] of folded) {
+    const l = byId.get(from)
+    if (!l) continue
+    links.push({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      simple: true,
+      ...(l.junction ? { junction: l.junction } : {}),
+    })
+  }
+  return {
+    ...model,
+    mode: "simple",
+    shown: new Map(),
+    edges: folded.map(([e]) => e),
+    links,
+  }
 }
 
 /** A link's way back into Danbyte: its cable, or its BGP session. */
@@ -507,20 +563,29 @@ export function toDocument(
   const shownNodes = live.nodes.filter(
     (n) => !n.hidden && (model.base.has(n.id) || model.fixed.has(n.id))
   )
+  const fanIds = new Set(model.fans.map((f) => f.id))
 
-  // Boxes, nubs and anchored edges for the document's mode.
+  // Boxes, nubs, junctions and anchored edges for the document's mode.
   let shown = model.shown
   let edges: LiveEdge[]
+  const junctionAt = new Map<string, Pt>()
   if (mode === model.mode && live.edges) {
     edges = live.edges.filter((e) => !e.hidden)
+    for (const n of live.nodes)
+      if (!n.hidden && fanIds.has(n.id))
+        junctionAt.set(n.id, { x: n.position.x, y: n.position.y })
   } else {
     const re = relinkDiagram(
-      mode === model.mode ? model : { ...model, mode, shown: new Map() },
+      mode === model.mode
+        ? model
+        : mode === "simple"
+          ? simpleModel(model)
+          : { ...model, mode, shown: new Map() },
       shownNodes.map((n) => ({ id: n.id, position: n.position, data: {} }))
     )
     shown = re.model.shown
     edges = re.edges.filter((e) => !e.hidden)
-    if (mode === "simple" && model.mode === "detailed") edges = foldPairs(edges)
+    for (const [id, c] of re.junctions) junctionAt.set(id, c)
   }
 
   // The cards.
@@ -581,8 +646,40 @@ export function toDocument(
     )
   }
 
+  // Breakout junctions: a dot in their cable's colour, where their trunk
+  // meets their legs.
+  const junctions: DiagramJunction[] = []
+  for (const [id, c] of junctionAt) {
+    if (
+      area &&
+      !(
+        c.x >= area.x &&
+        c.x <= area.x + area.w &&
+        c.y >= area.y &&
+        c.y <= area.y + area.h
+      )
+    )
+      continue
+    const trunk = edges.find(
+      (e) => (e.data as DiagramEdgeData | undefined)?.fan?.junction === id
+    )
+    const d = trunk?.data as DiagramEdgeData | undefined
+    rects.set(id, rectAt(c, JUNCTION))
+    junctions.push({
+      id,
+      x: c.x,
+      y: c.y,
+      r: JUNCTION.w / 2,
+      fill: linkPaint("cable", trunk?.style).stroke,
+      ...(d?.cableId ? { cable: d.cableId } : {}),
+      ...(d?.cableId
+        ? { link: danbyteUrl(opts.origin, `/cables/${d.cableId}`) }
+        : {}),
+    })
+  }
+
   // The links: one per cable in Detailed (each leaves its own nub), one
-  // per device pair in Simple.
+  // per device pair in Simple - each drawn as the canvas plans it.
   const links: DiagramLink[] = []
   for (const e of edges) {
     if (e.type !== "link" && e.type !== "overlay") continue
@@ -591,55 +688,85 @@ export function toDocument(
     const d = e.data as DiagramEdgeData | undefined
     if (!s || !t || !d) continue
     const overlay = e.type === "overlay"
+    const plan = overlay ? undefined : planOf(d, s, t)
     // A BGP session is an overlay, not wiring: it meets the facing side
     // midpoints, like any Simple line.
     const pairs = linkEnds(overlay ? { a: [], b: [], simple: true } : d, s, t)
     if (!pairs.length) continue
     const sem = docSem(d.sem, cableCount(d))
     const line = overlay || sem === "ghost" ? "straight" : d.line
-    const wp = elbowChannel(d, s, t)
     const paint = linkPaint(sem, e.style)
     const detailed = !overlay && !d.simple && mode === "detailed"
     const mids = (d.labels.mid ?? []).filter(Boolean)
     const midAt = Math.floor(pairs.length / 2)
     const url = edgeUrl(d, opts.origin)
-    pairs.forEach(([a, b], i) => {
-      const route = linkRoute(line, a, b, { wp })
-      const aa = detailed ? d.a[i] : undefined
-      const ba = detailed ? d.b[i] : undefined
+    const cable = cableIds(d)
+    pairs.forEach(([a0, b0], i) => {
+      const p = plan?.[i]
+      const route = p
+        ? routeThrough(line, p.pts, leaves(p.pts))
+        : linkRoute(line, a0, b0)
+      const first = route.pts[0]
+      const last = route.pts[route.pts.length - 1]
+      const a = { ...a0, x: first.x, y: first.y }
+      const b = { ...b0, x: last.x, y: last.y }
+      const aa = d.a[i] as Anchor | undefined
+      const ba = d.b[i] as Anchor | undefined
       const na = detailed ? nubIndex.get(`${e.id}#${i}a`) : undefined
       const nb = detailed ? nubIndex.get(`${e.id}#${i}b`) : undefined
+      const port = (
+        anchor: typeof aa,
+        placed: PortPlace | null | undefined
+      ): DiagramEndLabel | undefined => {
+        if (!detailed || anchor?.k !== "side" || !anchor.port) return undefined
+        if (placed === null) return undefined
+        return {
+          text: anchor.port,
+          rotate: true,
+          ...(placed ? { at: placed } : {}),
+        }
+      }
+      const la = port(aa, p ? p.a : undefined)
+      const lb = port(ba, p ? p.b : undefined)
+      const end = (
+        node: string,
+        at: End,
+        anchor: typeof aa,
+        nub: number | undefined
+      ): DiagramEnd => ({
+        node,
+        x: at.x,
+        y: at.y,
+        ...(anchor?.k === "junction"
+          ? {}
+          : { side: endSide(at, detailed ? anchor : undefined) }),
+        ...(nub !== undefined ? { nub } : {}),
+      })
       links.push(
         routeLink(
           i ? `${e.id}~${i}` : e.id,
           e.source,
           e.target,
           route,
-          [
-            {
-              node: e.source,
-              x: a.x,
-              y: a.y,
-              side: endSide(a, aa),
-              ...(na !== undefined ? { nub: na } : {}),
-            },
-            {
-              node: e.target,
-              x: b.x,
-              y: b.y,
-              side: endSide(b, ba),
-              ...(nb !== undefined ? { nub: nb } : {}),
-            },
-          ],
+          [end(e.source, a, aa, na), end(e.target, b, ba, nb)],
           {
             sem,
             ...paint,
             labels: {
-              ...(i === midAt && mids.length ? { mid: mids } : {}),
-              ...(aa?.port ? { a: { text: aa.port, rotate: true } } : {}),
-              ...(ba?.port ? { b: { text: ba.port, rotate: true } } : {}),
+              // A chip with no free spot shows on hover only on the canvas;
+              // the file shows the map at rest.
+              ...(i === midAt && mids.length && !(plan && d.crowded)
+                ? {
+                    mid: mids,
+                    ...(plan && d.midT !== undefined ? { midAt: d.midT } : {}),
+                    ...(plan && d.midOff ? { midOff: d.midOff } : {}),
+                  }
+                : {}),
+              ...(la ? { a: la } : {}),
+              ...(lb ? { b: lb } : {}),
             },
             ...(url ? { link: url } : {}),
+            ...(cable.length === 1 ? { cable: cable[0] } : {}),
           }
         )
       )
@@ -648,7 +775,13 @@ export function toDocument(
 
   const bands = regionBands(regions, area)
   const notes = viewNotes(opts.notes, area)
-  const body = { bands, nodes, links, notes }
+  const body = {
+    bands,
+    nodes,
+    links,
+    ...(junctions.length ? { junctions } : {}),
+    notes,
+  }
   return {
     meta: { ...opts.meta, mode },
     bounds: documentBounds(body, measure),

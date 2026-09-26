@@ -46,6 +46,7 @@ ghost:@leaf-02:@fw-01  link ghost straight simple mid ["LLDP"]
   style {"strokeWidth":1.5,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","opacity":0.8}
   a B91
   b T86
+  mid at 0.5
   path M 518.5,232 L 518.5,322
 bgp:@fw-01:@spine-01:  overlay bgp straight
   style {"strokeWidth":1.25,"stroke":"var(--primary)","strokeDasharray":"3 5","opacity":0.45}
@@ -55,37 +56,38 @@ f:dev:@leaf-01>dev:@spine-01  link bundle bendy simple mid ["2x"]
   style {"strokeWidth":1.75}
   a B95:Ethernet1/1
   b T90:Ethernet1/49
+  mid at 0.5
   path M 737.5,71 Q 737.5,107.22 732.5,116 Q 727.5,124.78 727.5,161
 f:dev:@leaf-02>dev:@spine-01  link cable bendy simple
   style {"strokeWidth":1.25}
   a B95:Ethernet1/3
   b T91:Ethernet1/49
-  path M 737.5,71 Q 737.5,165.71 628,116 Q 518.5,66.29 518.5,161
+  path M 737.5,71 Q 737.5,116 628,116 Q 518.5,116 518.5,161
 f:dev:@spine-01>dev:@leaf-03  link cable bendy simple
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
-  a L35.5:Ethernet1/4
-  b R35.5:Ethernet1/49
-  path M 642.5,35.5 Q 525.07,35.5 519.75,116 Q 514.43,196.5 397,196.5
+  a B95:Ethernet1/4
+  b T91:Ethernet1/49
+  path M 737.5,71 Q 737.5,116 521.75,116 Q 306,116 306,161
 f:dev:@spine-01>dev:@leaf-04  link cable bendy simple
   style {"strokeWidth":1.25}
-  a L35.5:Ethernet1/5
-  b R35.5:Ethernet1/49
-  path M 642.5,35.5 Q 482.5,35.5 414.75,116 Q 347,196.5 187,196.5
+  a B95:Ethernet1/5
+  b T91:Ethernet1/49
+  path M 737.5,71 Q 737.5,116 416.75,116 Q 96,116 96,161
 f:dev:@leaf-01>dev:@spine-02  link cable bendy simple
   style {"strokeWidth":1.25}
-  a R35.5:Ethernet1/1
-  b L35.5:Ethernet1/51
-  path M 192,35.5 Q 352,35.5 414.75,116 Q 477.5,196.5 637.5,196.5
+  a B96:Ethernet1/1
+  b T90:Ethernet1/51
+  path M 96,71 Q 96,116 411.75,116 Q 727.5,116 727.5,161
 f:dev:@leaf-02>dev:@spine-02  link cable bendy simple
   style {"strokeWidth":1.25}
   a B96:Ethernet1/2
   b T91:Ethernet1/51
-  path M 96,71 Q 96,231 307.25,116 Q 518.5,1 518.5,161
+  path M 96,71 Q 96,116 307.25,116 Q 518.5,116 518.5,161
 f:dev:@spine-02>dev:@leaf-03  link cable bendy simple
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
   a B96:Ethernet1/3
   b T91:Ethernet1/51
-  path M 96,71 Q 96,162.39 201,116 Q 306,69.61 306,161
+  path M 96,71 Q 96,116 201,116 Q 306,116 306,161
 f:dev:@spine-02>dev:@leaf-04  link cable bendy simple
   style {"strokeWidth":1.25}
   a B96:Ethernet1/4
@@ -95,16 +97,18 @@ f:dev:@leaf-01>dev:@leaf-02  link bundle bendy simple mid ["Po10 ⇄ Po10 · 2x"
   style {"strokeWidth":1.75}
   a R35.5:Ethernet1/53
   b L35.5:Ethernet1/53
+  mid at 0.5 crowded
   path M 609.5,196.5 Q 639.5,196.5 623.5,196.5 Q 607.5,196.5 637.5,196.5
-f:dev:@fw-01>dev:@leaf-04  link cable bendy simple mid ["2x"]
-  style {"strokeWidth":1.75,"stroke":"#3b82f6"}
-  a R35.5:Ethernet1/1
-  b L35.5:ethernet1/1
-  path M 187,196.5 Q 304.43,196.5 309.75,277 Q 315.07,357.5 432.5,357.5
+f:dev:@fw-01>dev:@leaf-04  link cable bendy simple
+  style {"strokeWidth":1.25,"stroke":"#3b82f6"}
+  a B91:Ethernet1/1
+  b T86:ethernet1/1
+  path M 96,232 Q 96,277 307.25,277 Q 518.5,277 518.5,322
 f:dev:@leaf-03>dev:@srv-db-01  link bundle bendy simple mid ["2x"]
   style {"strokeWidth":1.75}
   a B91:Ethernet1/48
   b T98.5:eno1
+  mid at 0.58
   path M 306,232 Q 306,270.8 306,280.5 Q 306,290.2 306,329
 f:dev:@pp-c01>dev:@leaf-04  link cable bendy simple
   style {"strokeWidth":1.25}

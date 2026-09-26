@@ -13,6 +13,7 @@ import { linkEnds } from "../diagram/anchors"
 import { cardContent } from "../diagram/card-fields"
 import { cardLayout } from "../diagram/card-layout"
 import type { CardLayoutInput } from "../diagram/card-layout"
+import { distinctCables } from "../diagram/build-diagram"
 import { linkRoute } from "../diagram/link-geometry"
 import {
   cardNode,
@@ -87,12 +88,12 @@ function cardInput(d: TopoNode["data"]): {
   }
 }
 
-/** How many cables a legacy edge stands for. */
+/** How many cables a legacy edge stands for: a breakout cable's port
+ * pairs are one cable. */
 function cables(d: FlowEdgeData): number {
   if (d.group) return Math.max(1, d.group.cable_count)
-  if (d.cables?.length)
-    return d.cables.reduce((n, c) => n + Math.max(1, c.pairs?.length ?? 0), 0)
-  return Math.max(1, d.raw?.pairs?.length ?? 0)
+  if (d.cables?.length) return distinctCables(d.cables)
+  return 1
 }
 
 const WIRING = new Set(["cable", "lagbundle", "bundle", "groupedge"])

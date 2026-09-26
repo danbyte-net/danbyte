@@ -87,6 +87,9 @@ export const approxMeasure: Measure = (text, size, weight = 400) => {
 
 let ctx: CanvasRenderingContext2D | null | undefined
 const ready = new Set<Weight>()
+/** Some text was measured with the estimate while a canvas could have
+ * measured it once Inter loads. */
+let estimated = false
 const loading = new Set<Weight>()
 const cache = new Map<string, number>()
 
@@ -140,7 +143,11 @@ function fontReady(weight: Weight): boolean {
  */
 export const measureText: Measure = (text, size, weight = 400) => {
   const c = context()
-  if (!c || !fontReady(weight)) return approxMeasure(text, size, weight)
+  if (!c) return approxMeasure(text, size, weight)
+  if (!fontReady(weight)) {
+    estimated = true
+    return approxMeasure(text, size, weight)
+  }
   const key = `${weight}|${size}|${text}`
   const hit = cache.get(key)
   if (hit !== undefined) return hit
@@ -150,24 +157,28 @@ export const measureText: Measure = (text, size, weight = 400) => {
   return w
 }
 
-/** Resolves once Inter is loaded at the diagram's weights, so a caller that
- * laid out with the fallback widths can lay out again. Resolves at once
- * where there is no canvas to measure with. */
+/** Resolves once Inter is loaded at the diagram's weights, to whether
+ * anything was measured with the estimate before - so a caller that laid
+ * out then measures again, and one that did not is spared the work. False
+ * at once where there is no canvas to measure with. */
 export async function diagramFontsReady(
   weights: Weight[] = [400, 500, 700]
-): Promise<void> {
+): Promise<boolean> {
   const fonts = typeof document !== "undefined" ? document.fonts : undefined
-  if (!context() || !fonts) return
+  if (!context() || !fonts) return false
   await Promise.all(
     weights.map((w) =>
       fonts.load(fontSpec(12, w)).then(
         () => {
-          ready.add(w)
+          if (fonts.check(fontSpec(12, w))) ready.add(w)
         },
         () => undefined
       )
     )
   )
+  const changed = estimated
+  estimated = false
+  return changed
 }
 
 /**

@@ -1,4 +1,5 @@
 import { NUB } from "./card-layout"
+import type { Obstacles } from "./lanes"
 import type {
   Anchor,
   DiagramMode,
@@ -77,6 +78,8 @@ export function chooseSides(a: Rect, b: Rect): [Side, Side] {
  * side's normal - `NUB.OUT` starts the line at a Detailed nub's tip.
  */
 export function anchorPoint(box: Rect, a: Anchor, out = 0): End {
+  if (a.k === "junction")
+    return { x: box.x + box.w / 2, y: box.y + box.h / 2, dir: a.dir }
   if (a.k === "point") {
     return {
       x: box.x + a.fx * box.w,
@@ -106,6 +109,9 @@ export interface AnchorLink {
   /** Meet at the side midpoints even in Detailed mode - for links that
    * are not cables (LLDP neighbours, BGP sessions). */
   simple?: boolean
+  /** An end on a breakout's junction: no nub, it leaves the junction's
+   * centre along this direction. */
+  junction?: { a?: Dir; b?: Dir }
 }
 
 /** A Detailed-mode nub on a card. */
@@ -136,6 +142,90 @@ export interface Anchors {
 
 export interface AnchorOptions {
   sides?: ReadonlyMap<string, readonly [Side, Side]>
+  /** The cards a line should not have to leave straight into: a side
+   * with a third card right outside it gives way to the next best. */
+  blockers?: Obstacles
+  /** The gap two facing sides should leave between them (Detailed: a port
+   * name at each end). A pair of sides closer than this gives way to the
+   * other axis's pair when that one has the room. */
+  roomy?: number
+}
+
+/** How far out from a side a third card makes it a poor exit: a stub and
+ * a port name's worth. */
+const EXIT_ZONE = 40
+
+/** Is a third card right outside `side` of `box`? */
+function exitBlocked(
+  box: Rect,
+  side: Side,
+  own: readonly string[],
+  blockers: Obstacles
+): boolean {
+  const zone: Rect =
+    side === "T"
+      ? { x: box.x, y: box.y - EXIT_ZONE, w: box.w, h: EXIT_ZONE }
+      : side === "B"
+        ? { x: box.x, y: box.y + box.h, w: box.w, h: EXIT_ZONE }
+        : side === "L"
+          ? { x: box.x - EXIT_ZONE, y: box.y, w: EXIT_ZONE, h: box.h }
+          : { x: box.x + box.w, y: box.y, w: EXIT_ZONE, h: box.h }
+  for (const { id, r } of blockers.near(zone)) {
+    if (own.includes(id)) continue
+    if (
+      r.x < zone.x + zone.w &&
+      zone.x < r.x + r.w &&
+      r.y < zone.y + zone.h &&
+      zone.y < r.y + r.h
+    )
+      return true
+  }
+  return false
+}
+
+/**
+ * `chooseSides`, steered off a side that runs straight into a third card:
+ * when either preferred side is blocked and the other axis's pair is not,
+ * that pair is taken instead.
+ */
+export function chooseClearSides(
+  a: Rect,
+  b: Rect,
+  own: readonly string[],
+  blockers?: Obstacles,
+  roomy = 0
+): [Side, Side] {
+  const best = chooseSides(a, b)
+  if (!blockers && !roomy) return best
+  const blocked = ([sa, sb]: [Side, Side]) =>
+    !!blockers &&
+    (exitBlocked(a, sa, own, blockers) || exitBlocked(b, sb, own, blockers))
+  /** The open gap between two facing sides. */
+  const gap = ([sa]: [Side, Side]) =>
+    sa === "R"
+      ? b.x - (a.x + a.w)
+      : sa === "L"
+        ? a.x - (b.x + b.w)
+        : sa === "B"
+          ? b.y - (a.y + a.h)
+          : a.y - (b.y + b.h)
+  const cramped = (s: [Side, Side]) => roomy > 0 && gap(s) < roomy
+  if (!blocked(best) && !cramped(best)) return best
+  const dx = b.x + b.w / 2 - (a.x + a.w / 2)
+  const dy = b.y + b.h / 2 - (a.y + a.h / 2)
+  const alt: [Side, Side] =
+    best[0] === "T" || best[0] === "B"
+      ? dx >= 0
+        ? ["R", "L"]
+        : ["L", "R"]
+      : dy >= 0
+        ? ["B", "T"]
+        : ["T", "B"]
+  if (blocked(alt)) return best
+  if (blocked(best)) return alt
+  // Only cramped: the other pair must have the room, and face the right
+  // way (a positive gap).
+  return !cramped(alt) ? alt : best
 }
 
 interface EndEntry {
@@ -199,7 +289,13 @@ export function anchorLinks(
       const auto: [Side, Side] =
         l.source === l.target
           ? ["R", "R"]
-          : chooseSides(boxes.get(l.source)!, boxes.get(l.target)!)
+          : chooseClearSides(
+              boxes.get(l.source)!,
+              boxes.get(l.target)!,
+              [l.source, l.target],
+              opts.blockers,
+              l.simple ? 0 : opts.roomy
+            )
       sides = [l.force?.a ?? auto[0], l.force?.b ?? auto[1]]
     }
     out.sides.set(l.id, sides)
@@ -222,8 +318,16 @@ export function anchorLinks(
     const [sa, sb] = out.sides.get(l.id)!
     const first = l.cables?.[0]
     out.links.set(l.id, {
-      a: [midAnchor(l.source, sa, first?.a)],
-      b: [midAnchor(l.target, sb, first?.b)],
+      a: [
+        l.junction?.a
+          ? { k: "junction", dir: l.junction.a }
+          : midAnchor(l.source, sa, first?.a),
+      ],
+      b: [
+        l.junction?.b
+          ? { k: "junction", dir: l.junction.b }
+          : midAnchor(l.target, sb, first?.b),
+      ],
     })
   }
   if (!detailed.length) return out
@@ -253,14 +357,25 @@ export function anchorLinks(
     list.forEach((c, r) => rank.set(`${c.l.id}#${c.i}`, r))
   }
 
-  // Each end, keyed for its side.
+  // Each end, keyed for its side. Junction ends get no nub.
   const perSide = new Map<string, EndEntry[]>()
+  const junctionEnds: {
+    link: string
+    cable: number
+    end: "a" | "b"
+    dir: Dir
+  }[] = []
   for (const l of detailed) {
     const [sa, sb] = out.sides.get(l.id)!
     const cables = l.cables?.length ? l.cables : [{}]
     cables.forEach((c, i) => {
       const r = rank.get(`${l.id}#${i}`) ?? i
       for (const end of ["a", "b"] as const) {
+        const jdir = l.junction?.[end]
+        if (jdir) {
+          junctionEnds.push({ link: l.id, cable: i, end, dir: jdir })
+          continue
+        }
         const node = end === "a" ? l.source : l.target
         const partner = end === "a" ? l.target : l.source
         const side = end === "a" ? sa : sb
@@ -379,36 +494,111 @@ export function anchorLinks(
     out.demand.set(node, demand)
     out.nubs.set(node, nubs)
   }
+  for (const j of junctionEnds)
+    anchorsOf.get(j.link)![j.end][j.cable] = { k: "junction", dir: j.dir }
   for (const [id, a] of anchorsOf) out.links.set(id, a)
   return out
 }
 
 /**
  * A link's ends per cable, as drawn: side midpoints re-chosen from the two
- * boxes for a `simple` link (or one with no anchors yet), else each
- * cable's anchors, starting at the Detailed nub's tip.
+ * boxes for a `simple` link while it follows a drag (`live`), or one with
+ * no anchors yet; else each cable's anchors - a Simple link's side
+ * midpoints, a Detailed cable's nub tip. A junction end leaves its
+ * junction's centre either way.
  */
 export function linkEnds(
   link: { a: readonly Anchor[]; b: readonly Anchor[]; simple?: boolean },
   s: Rect,
-  t: Rect
+  t: Rect,
+  live = true
 ): [End, End][] {
-  if (link.simple || !link.a.length || !link.b.length) {
+  if ((link.simple && live) || !link.a.length || !link.b.length) {
     const [ss, ts] = chooseSides(s, t)
+    const ja = link.a[0]?.k === "junction" ? link.a[0] : null
+    const jb = link.b[0]?.k === "junction" ? link.b[0] : null
     return [
       [
-        anchorPoint(s, { k: "side", side: ss, off: sideLength(s, ss) / 2 }),
-        anchorPoint(t, { k: "side", side: ts, off: sideLength(t, ts) / 2 }),
+        ja
+          ? anchorPoint(s, ja)
+          : anchorPoint(s, { k: "side", side: ss, off: sideLength(s, ss) / 2 }),
+        jb
+          ? anchorPoint(t, jb)
+          : anchorPoint(t, { k: "side", side: ts, off: sideLength(t, ts) / 2 }),
       ],
     ]
   }
   const out: [End, End][] = []
   const n = Math.min(link.a.length, link.b.length)
+  const tip = link.simple ? 0 : NUB.OUT
   for (let i = 0; i < n; i++) {
     const a = link.a[i] as Anchor | undefined
     const b = link.b[i] as Anchor | undefined
-    if (a && b)
-      out.push([anchorPoint(s, a, NUB.OUT), anchorPoint(t, b, NUB.OUT)])
+    if (a && b) out.push([anchorPoint(s, a, tip), anchorPoint(t, b, tip)])
   }
   return out
+}
+
+/** How an elbow end leaves its side (`lanes.ts` endTurn), keyed like a
+ * nub: `${link}#${cable}${end}`. */
+export type EndTurns = ReadonlyMap<
+  string,
+  { turn: -1 | 0 | 1; depth: number; extent: number }
+>
+
+export const nubKey = (n: Pick<Nub, "link" | "cable" | "end">) =>
+  `${n.link}#${n.cable}${n.end}`
+
+/** Depths closer than this count as one corridor. */
+const SAME_DEPTH = 6
+
+/**
+ * Re-order the elbow nubs on each side by how their routes turn, so the
+ * routes nest instead of crossing right outside the card: those turning
+ * towards the side's start first (shallowest nearest that corner), then
+ * those running straight out, then those turning towards its end
+ * (shallowest nearest that corner). In one corridor, the route that runs
+ * further round goes outside. Only the elbow nubs move, among the places
+ * they held. In place; true when anything moved.
+ */
+export function reorderNubs(anchors: Anchors, turns: EndTurns): boolean {
+  let changed = false
+  const cmp = (x: Nub, y: Nub) => {
+    const tx = turns.get(nubKey(x))!
+    const ty = turns.get(nubKey(y))!
+    if (tx.turn !== ty.turn) return tx.turn - ty.turn
+    const dd =
+      Math.abs(tx.depth - ty.depth) < SAME_DEPTH ? 0 : tx.depth - ty.depth
+    if (tx.turn < 0) return dd || tx.extent - ty.extent
+    if (tx.turn > 0) return -dd || tx.extent - ty.extent
+    return tx.extent - ty.extent
+  }
+  for (const [node, nubs] of anchors.nubs) {
+    let moved = false
+    for (const side of SIDES) {
+      const mine = nubs.filter((n) => n.side === side && turns.has(nubKey(n)))
+      if (mine.length < 2) continue
+      const slots = mine.map((n) => n.off).sort((a, b) => a - b)
+      const sorted = [...mine].sort((x, y) => x.off - y.off).sort(cmp)
+      for (const [i, n] of sorted.entries()) {
+        if (n.off === slots[i]) continue
+        n.off = slots[i]
+        const ends = anchors.links.get(n.link)
+        const a = ends
+          ? (ends[n.end][n.cable] as Anchor | undefined)
+          : undefined
+        if (a && a.k === "side") a.off = slots[i]
+        moved = true
+      }
+    }
+    if (!moved) continue
+    changed = true
+    anchors.nubs.set(
+      node,
+      [...nubs].sort(
+        (x, y) => SIDES.indexOf(x.side) - SIDES.indexOf(y.side) || x.off - y.off
+      )
+    )
+  }
+  return changed
 }

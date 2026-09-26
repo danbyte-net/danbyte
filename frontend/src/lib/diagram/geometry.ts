@@ -191,6 +191,114 @@ export interface LabelBlock {
   chip: boolean
 }
 
+/** A Detailed port name's box height: the 9px text and a hairline. */
+export const PORT_H = LABEL.END_SIZE + 1
+
+/** Where a port name sits along its cable: the centre of its box and its
+ * turn in degrees (`uprightAngle`). */
+export interface PortPlace {
+  x: number
+  y: number
+  rotate: number
+}
+
+/** A direction in degrees turned to read upright: [-100, 80). A run within
+ * 10° of vertical, either way, reads bottom to top - on the canvas, in the
+ * SVG and in draw.io alike. */
+export function uprightAngle(angle: number): number {
+  const r = ((((angle + 100) % 360) + 360) % 360) - 100
+  return r >= 80 ? r - 180 : r
+}
+
+/**
+ * A port name `w` px wide laid along the run leaving `start` at `angle`
+ * degrees (the direction of travel away from the card): `out` px out,
+ * beside the line on `side` (+1 = the right hand of travel, -1 = the left)
+ * with `LABEL.PORT_OFFSET` px clear of it. The canvas, the SVG and the
+ * draw.io file all place port names through this one rule.
+ */
+export function portPlace(
+  start: Pt,
+  angle: number,
+  w: number,
+  side: 1 | -1,
+  out: number = LABEL.PORT_DIST
+): PortPlace {
+  const r = (angle * Math.PI) / 180
+  const [ux, uy] = [Math.cos(r), Math.sin(r)]
+  const d = out + w / 2
+  const o = side * (LABEL.PORT_OFFSET + PORT_H / 2)
+  return {
+    x: start.x + ux * d - uy * o,
+    y: start.y + uy * d + ux * o,
+    rotate: uprightAngle(angle),
+  }
+}
+
+/** The side of the line a port name goes on by default: outside the
+ * cable's first bend (`next` is the direction after it), so the cable
+ * turns away from the text; on a run with no bend, above the text as it
+ * reads. */
+export function portSide(u: Pt, next?: Pt | null): 1 | -1 {
+  if (next) {
+    const cross = u.x * next.y - u.y * next.x
+    if (Math.abs(cross) > 1e-9) return cross > 0 ? -1 : 1
+  }
+  // Above the reading line: against the text frame's down vector.
+  const r =
+    (uprightAngle((Math.atan2(u.y, u.x) * 180) / Math.PI) * Math.PI) / 180
+  const down = { x: -Math.sin(r), y: Math.cos(r) }
+  const n = { x: -u.y, y: u.x }
+  return n.x * down.x + n.y * down.y > 0 ? -1 : 1
+}
+
+/** A port name's label block, centred on its place and turned about it. */
+export function portBlock(
+  role: "a" | "b",
+  text: string,
+  tw: number,
+  place: PortPlace
+): LabelBlock {
+  const size = LABEL.END_SIZE
+  const w = tw + 3
+  return {
+    role,
+    lines: [{ text, weight: 400, italic: false }],
+    size,
+    lh: PORT_H,
+    anchor: "middle",
+    tx: place.x,
+    ty: baselineAt(place.y - PORT_H / 2, size, PORT_H),
+    box: { x: place.x - w / 2, y: place.y - PORT_H / 2, w, h: PORT_H },
+    rotate: place.rotate,
+    ox: place.x,
+    oy: place.y,
+    chip: false,
+  }
+}
+
+/** A port name placed from the route alone (a polyline or a curve's
+ * control points): just past the terminal,
+ * outside the first bend. */
+export function routePortPlace(
+  poly: Pt[],
+  fromEnd: boolean,
+  tw: number
+): PortPlace {
+  const pts = fromEnd ? [...poly].reverse() : poly
+  const p = along(pts, 0)
+  const r = (p.angle * Math.PI) / 180
+  const u = { x: Math.cos(r), y: Math.sin(r) }
+  let next: Pt | null = null
+  for (let i = 1; i < pts.length - 1 && !next; i++) {
+    const v = { x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y }
+    const len = Math.hypot(v.x, v.y)
+    if (len > 1e-6 && Math.abs(u.x * v.y - u.y * v.x) / len > 1e-3)
+      next = { x: v.x / len, y: v.y / len }
+  }
+  return portPlace(pts[0], p.angle, tw, portSide(u, next))
+}
+
 /** Where a link's labels go. */
 export function linkLabels(
   link: DiagramLink,
@@ -213,7 +321,12 @@ export function linkLabels(
       Math.max(...lines.map((l) => measure(l.text, size, l.weight))) +
       2 * LABEL.PAD_X
     const h = lines.length * lh + 3
-    const p = along(poly, len / 2)
+    const on = along(poly, len * (link.labels.midAt ?? 0.5))
+    const off = link.labels.midOff ?? 0
+    const r = (on.angle * Math.PI) / 180
+    const p = off
+      ? { x: on.x - Math.sin(r) * off, y: on.y + Math.cos(r) * off }
+      : on
     const box = { x: p.x - w / 2, y: p.y - h / 2, w, h }
     out.push({
       role: "mid",
@@ -235,61 +348,34 @@ export function linkLabels(
     const label = link.labels[role]
     if (!label?.text) continue
     const fromEnd = role === "b"
+    const tw = measure(label.text, LABEL.END_SIZE, 400)
+    if (label.rotate) {
+      // Along the cable, beside its first straight run: where the builder
+      // placed it, or by the same rule from the route alone.
+      const place = label.at ?? routePortPlace(poly, fromEnd, tw)
+      out.push(portBlock(role, label.text, tw, place))
+      continue
+    }
     const size = LABEL.END_SIZE
     const lh = size + 3
     const line: LabelLine = { text: label.text, weight: 400, italic: false }
-    const tw = measure(label.text, size, 400)
-    if (label.rotate) {
-      // Along the line, starting just outside the nub. The direction of
-      // travel away from the terminal decides the reading direction: text
-      // always runs outward from the card and never upside down, and steep
-      // runs (within 10° of vertical) read bottom to top.
-      const p = along(poly, LABEL.PORT_DIST, fromEnd)
-      let outward = p.angle >= -90 && p.angle < 90
-      let rotate = outward
-        ? p.angle
-        : p.angle >= 90
-          ? p.angle - 180
-          : p.angle + 180
-      if (rotate > 80) {
-        rotate -= 180
-        outward = !outward
-      }
-      const ty = p.y - LABEL.PORT_OFFSET
-      const x0 = outward ? p.x : p.x - tw
-      out.push({
-        role,
-        lines: [line],
-        size,
-        lh,
-        anchor: outward ? "start" : "end",
-        tx: p.x,
-        ty,
-        box: { x: x0 - 1.5, y: ty - size * 0.8, w: tw + 3, h: size + 1 },
-        rotate,
-        ox: p.x,
-        oy: p.y,
-        chip: false,
-      })
-    } else {
-      const p = along(poly, Math.min(LABEL.END_DIST, 0.35 * len), fromEnd)
-      const w = tw + 2 * LABEL.PAD_X
-      const box = { x: p.x - w / 2, y: p.y - lh / 2, w, h: lh }
-      out.push({
-        role,
-        lines: [line],
-        size,
-        lh,
-        anchor: "middle",
-        tx: p.x,
-        ty: baselineAt(box.y, size, lh),
-        box,
-        rotate: 0,
-        ox: p.x,
-        oy: p.y,
-        chip: false,
-      })
-    }
+    const p = along(poly, Math.min(LABEL.END_DIST, 0.35 * len), fromEnd)
+    const w = tw + 2 * LABEL.PAD_X
+    const box = { x: p.x - w / 2, y: p.y - lh / 2, w, h: lh }
+    out.push({
+      role,
+      lines: [line],
+      size,
+      lh,
+      anchor: "middle",
+      tx: p.x,
+      ty: baselineAt(box.y, size, lh),
+      box,
+      rotate: 0,
+      ox: p.x,
+      oy: p.y,
+      chip: false,
+    })
   }
   return out
 }
@@ -456,7 +542,8 @@ export function noteLayout(
 /** The tight box around everything a document draws: bands, cards with
  * their nubs, routes, labels and notes. Builders store it as `bounds`. */
 export function documentBounds(
-  doc: Pick<DiagramDocument, "bands" | "nodes" | "links" | "notes">,
+  doc: Pick<DiagramDocument, "bands" | "nodes" | "links" | "notes"> &
+    Pick<Partial<DiagramDocument>, "junctions">,
   measure: Measure = measureText
 ): Rect {
   let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
@@ -481,6 +568,8 @@ export function documentBounds(
     for (const b of linkLabels(l, measure))
       labelCorners(b).forEach((p) => add(p.x, p.y))
   }
+  for (const j of doc.junctions ?? [])
+    addRect({ x: j.x - j.r, y: j.y - j.r, w: 2 * j.r, h: 2 * j.r })
   for (const n of doc.notes) addRect(noteLayout(n, measure).box)
   if (x0 > x1) return { x: 0, y: 0, w: 0, h: 0 }
   const [fx, fy] = [Math.floor(x0), Math.floor(y0)]

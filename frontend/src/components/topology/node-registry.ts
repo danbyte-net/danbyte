@@ -9,6 +9,8 @@ import { PortNode, StencilNode, stencilSize } from "./stencil-node"
 import type { StencilData } from "./stencil-node"
 import { ZoneNode } from "./zone-node"
 import { CardNode } from "./diagram/card-node"
+import { JUNCTION } from "./diagram/card-layout"
+import { JunctionNode } from "./diagram/junction-node"
 import type { DiagramCardData } from "./diagram/types"
 
 // Every node kind the topology canvas renders: its component and the box it
@@ -58,6 +60,11 @@ export const NODE_KINDS = {
       const box = (n.data as Partial<DiagramCardData>).diagram?.box
       return box ? { width: box.w, height: box.h } : stencilBox(n)
     },
+  },
+  // Where a breakout cable splits (diagram/fanout.ts).
+  junction: {
+    component: JunctionNode,
+    size: () => ({ width: JUNCTION.w, height: JUNCTION.h }),
   },
   interface: { component: PortNode },
   front_port: { component: PortNode },

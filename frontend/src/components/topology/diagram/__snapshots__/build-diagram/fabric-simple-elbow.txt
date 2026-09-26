@@ -46,6 +46,7 @@ ghost:@leaf-02:@fw-01  link ghost straight simple mid ["LLDP"]
   style {"strokeWidth":1.5,"stroke":"var(--muted-foreground)","strokeDasharray":"6 4","opacity":0.8}
   a B91
   b T86
+  mid at 0.5 crowded
   path M 518.5,232 L 518.5,322
 bgp:@fw-01:@spine-01:  overlay bgp straight
   style {"strokeWidth":1.25,"stroke":"var(--primary)","strokeDasharray":"3 5","opacity":0.45}
@@ -55,37 +56,38 @@ f:dev:@leaf-01>dev:@spine-01  link bundle elbow simple mid ["2x"]
   style {"strokeWidth":1.75}
   a B95:Ethernet1/1
   b T90:Ethernet1/49
-  path M 737.5,71 L 737.5,110 Q 737.5,116 732.5,116 L 732.5,116 Q 727.5,116 727.5,122 L 727.5,161
+  mid at 0.5
+  path M 737.5,71 L 737.5,109 Q 737.5,115 741,115 L 741,115 Q 744.5,115 744.5,121 L 744.5,147 Q 744.5,153 738.5,153 L 733.5,153 Q 727.5,153 727.5,157 L 727.5,161
 f:dev:@leaf-02>dev:@spine-01  link cable elbow simple
   style {"strokeWidth":1.25}
   a B95:Ethernet1/3
   b T91:Ethernet1/49
-  path M 737.5,71 L 737.5,110 Q 737.5,116 731.5,116 L 524.5,116 Q 518.5,116 518.5,122 L 518.5,161
+  path M 737.5,71 L 737.5,97 Q 737.5,103 731.5,103 L 634,103 Q 628,103 628,109 L 628,121.4 Q 628,127.4 622,127.4 L 524.5,127.4 Q 518.5,127.4 518.5,133.4 L 518.5,161
 f:dev:@spine-01>dev:@leaf-03  link cable elbow simple
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
-  a L35.5:Ethernet1/4
-  b R35.5:Ethernet1/49
-  path M 642.5,35.5 L 525.75,35.5 Q 519.75,35.5 519.75,41.5 L 519.75,190.5 Q 519.75,196.5 513.75,196.5 L 397,196.5
+  a B95:Ethernet1/4
+  b T91:Ethernet1/49
+  path M 737.5,71 L 737.5,85 Q 737.5,91 731.5,91 L 527.75,91 Q 521.75,91 521.75,97 L 521.75,113.4 Q 521.75,119.4 515.75,119.4 L 312,119.4 Q 306,119.4 306,125.4 L 306,161
 f:dev:@spine-01>dev:@leaf-04  link cable elbow simple
   style {"strokeWidth":1.25}
-  a L35.5:Ethernet1/5
-  b R35.5:Ethernet1/49
-  path M 642.5,35.5 L 420.75,35.5 Q 414.75,35.5 414.75,41.5 L 414.75,190.5 Q 414.75,196.5 408.75,196.5 L 187,196.5
+  a B95:Ethernet1/5
+  b T91:Ethernet1/49
+  path M 737.5,71 L 737.5,75.2 Q 737.5,79.4 731.5,79.4 L 414.25,79.4 Q 408.25,79.4 408.25,85.4 L 408.25,105.4 Q 408.25,111.4 402.25,111.4 L 102,111.4 Q 96,111.4 96,117.4 L 96,161
 f:dev:@leaf-01>dev:@spine-02  link cable elbow simple
   style {"strokeWidth":1.25}
-  a R35.5:Ethernet1/1
-  b L35.5:Ethernet1/51
-  path M 192,35.5 L 408.75,35.5 Q 414.75,35.5 414.75,41.5 L 414.75,190.5 Q 414.75,196.5 420.75,196.5 L 637.5,196.5
+  a B96:Ethernet1/1
+  b T90:Ethernet1/51
+  path M 96,71 L 96,81.4 Q 96,87.4 102,87.4 L 414.25,87.4 Q 420.25,87.4 420.25,93.4 L 420.25,129.4 Q 420.25,135.4 426.25,135.4 L 721.5,135.4 Q 727.5,135.4 727.5,141.4 L 727.5,161
 f:dev:@leaf-02>dev:@spine-02  link cable elbow simple
   style {"strokeWidth":1.25}
   a B96:Ethernet1/2
   b T91:Ethernet1/51
-  path M 96,71 L 96,110 Q 96,116 102,116 L 512.5,116 Q 518.5,116 518.5,122 L 518.5,161
+  path M 96,71 L 96,89.4 Q 96,95.4 102,95.4 L 313.25,95.4 Q 319.25,95.4 319.25,101.4 L 319.25,137.4 Q 319.25,143.4 325.25,143.4 L 512.5,143.4 Q 518.5,143.4 518.5,149.4 L 518.5,161
 f:dev:@spine-02>dev:@leaf-03  link cable elbow simple
   style {"strokeWidth":1.25,"stroke":"#f59e0b"}
   a B96:Ethernet1/3
   b T91:Ethernet1/51
-  path M 96,71 L 96,110 Q 96,116 102,116 L 300,116 Q 306,116 306,122 L 306,161
+  path M 96,71 L 96,97.4 Q 96,103.4 102,103.4 L 195,103.4 Q 201,103.4 201,109.4 L 201,145.4 Q 201,151.4 207,151.4 L 300,151.4 Q 306,151.4 306,156.2 L 306,161
 f:dev:@spine-02>dev:@leaf-04  link cable elbow simple
   style {"strokeWidth":1.25}
   a B96:Ethernet1/4
@@ -95,16 +97,18 @@ f:dev:@leaf-01>dev:@leaf-02  link bundle elbow simple mid ["Po10 ⇄ Po10 · 2x"
   style {"strokeWidth":1.75}
   a R35.5:Ethernet1/53
   b L35.5:Ethernet1/53
+  mid at 0.5 crowded
   path M 609.5,196.5 L 637.5,196.5
-f:dev:@fw-01>dev:@leaf-04  link cable elbow simple mid ["2x"]
-  style {"strokeWidth":1.75,"stroke":"#3b82f6"}
-  a R35.5:Ethernet1/1
-  b L35.5:ethernet1/1
-  path M 187,196.5 L 303.75,196.5 Q 309.75,196.5 309.75,202.5 L 309.75,351.5 Q 309.75,357.5 315.75,357.5 L 432.5,357.5
+f:dev:@fw-01>dev:@leaf-04  link cable elbow simple
+  style {"strokeWidth":1.25,"stroke":"#3b82f6"}
+  a B91:Ethernet1/1
+  b T86:ethernet1/1
+  path M 96,232 L 96,236 Q 96,240 102,240 L 512.5,240 Q 518.5,240 518.5,246 L 518.5,322
 f:dev:@leaf-03>dev:@srv-db-01  link bundle elbow simple mid ["2x"]
   style {"strokeWidth":1.75}
   a B91:Ethernet1/48
   b T98.5:eno1
+  mid at 0.5
   path M 306,232 L 306,329
 f:dev:@pp-c01>dev:@leaf-04  link cable elbow simple
   style {"strokeWidth":1.25}

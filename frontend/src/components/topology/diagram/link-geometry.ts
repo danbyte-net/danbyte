@@ -1,4 +1,5 @@
 import type {
+  CablePlan,
   DiagramEdgeData,
   Dir,
   End,
@@ -150,13 +151,51 @@ export function curvedPath(pts: Pt[]): string {
   return d
 }
 
-/** A bendy line's two control points, out along each end's normal. */
-export function bendyControls(a: End, b: End): [Pt, Pt] {
+/** A bendy line's control-point reach for two ends. */
+export function bendyReach(a: Pt, b: Pt): number {
   const dist = Math.hypot(b.x - a.x, b.y - a.y)
-  const k = Math.min(BENDY.MAX, Math.max(BENDY.MIN, BENDY.K * dist))
+  return Math.min(BENDY.MAX, Math.max(BENDY.MIN, BENDY.K * dist))
+}
+
+/** A bendy line's two control points, out along each end's normal - `ka`
+ * and `kb` px out (both `bendyReach` by default). */
+export function bendyControls(
+  a: End,
+  b: End,
+  ka = bendyReach(a, b),
+  kb = ka
+): [Pt, Pt] {
   return [
-    { x: a.x + a.dir[0] * k, y: a.y + a.dir[1] * k },
-    { x: b.x + b.dir[0] * k, y: b.y + b.dir[1] * k },
+    { x: a.x + a.dir[0] * ka, y: a.y + a.dir[1] * ka },
+    { x: b.x + b.dir[0] * kb, y: b.y + b.dir[1] * kb },
+  ]
+}
+
+/** How far along its trunk's axis a breakout leg bends, as on the cable
+ * page's fan-out. */
+export const FAN_BEND = 0.55
+
+/**
+ * A breakout leg's curve from the junction `j` (leaving along the trunk)
+ * to a far port facing back at it: both control points `bend` of the way
+ * along the trunk's axis (`FAN_BEND`), one level with each end - the cable
+ * page's `C c y0, c y1` fan in draw.io's curved rule. Null when the far
+ * port does not face back along the axis.
+ */
+export function fanControls(
+  j: End,
+  b: End,
+  bend: number = FAN_BEND
+): [Pt, Pt] | null {
+  const [ux, uy] = j.dir
+  if (Math.abs(b.dir[0] + ux) > 1e-6 || Math.abs(b.dir[1] + uy) > 1e-6)
+    return null
+  const along = (b.x - j.x) * ux + (b.y - j.y) * uy
+  if (along <= 0) return null
+  const k = along * bend
+  return [
+    { x: j.x + ux * k, y: j.y + uy * k },
+    { x: b.x - ux * (along - k), y: b.y - uy * (along - k) },
   ]
 }
 
@@ -256,22 +295,31 @@ function sampler(f: Flat, dir: Dir): Pick<Route, "length" | "at"> {
 }
 
 /**
- * An elbow link's node-avoiding channel, while both cards are still where
- * it was routed for; undefined once either has moved (the plain elbow is
- * drawn until the drop re-routes it) and for other line types. `s` and `t`
- * are the source and target boxes.
+ * A link's planned cables, while both its ends are where they were
+ * planned for; undefined once either has moved (the unplanned line is
+ * drawn until the drop plans it again). `s` and `t` are the source and
+ * target boxes.
  */
-export function elbowChannel(
-  d: Pick<DiagramEdgeData, "line" | "wp" | "wpAt">,
+export function planOf(
+  d: Pick<DiagramEdgeData, "plan" | "planAt">,
   s: Rect,
   t: Rect
-): Pt[] | undefined {
-  if (d.line !== "elbow" || !d.wp || !d.wpAt) return undefined
-  const [sx, sy, tx, ty] = d.wpAt
+): CablePlan[] | undefined {
+  if (!d.plan || !d.planAt) return undefined
+  const [sx, sy, tx, ty] = d.planAt
   const near = (a: number, b: number) => Math.abs(a - b) < 0.5
   return near(s.x, sx) && near(s.y, sy) && near(t.x, tx) && near(t.y, ty)
-    ? d.wp
+    ? d.plan
     : undefined
+}
+
+/** The direction a route through `pts` leaves in (for one with no
+ * length). */
+export function leaves(pts: readonly Pt[]): Dir {
+  if (pts.length < 2) return [1, 0]
+  const [p, q] = pts
+  const l = Math.hypot(q.x - p.x, q.y - p.y) || 1
+  return [(q.x - p.x) / l, (q.y - p.y) / l]
 }
 
 export interface RouteOptions {
@@ -284,7 +332,53 @@ export interface RouteOptions {
 }
 
 /**
- * A link's route between two ends (exit points with outward normals).
+ * A route through given points, terminals included, drawn as `kind`:
+ * `elbow` rounds each corner, `bendy` and `cyclical` follow draw.io's
+ * curved rule through them as control points, `straight` joins them.
+ * `dir` is the direction of a route with no length.
+ */
+export function routeThrough(kind: LineType, pts: Pt[], dir: Dir): Route {
+  const A = pts[0]
+  if (kind === "elbow") {
+    const tup = simplify(pts.map((p): Tuple => [p.x, p.y]))
+    const flat: Flat = { pts: [{ x: tup[0][0], y: tup[0][1] }], tans: [] }
+    for (const { p1, c, p2 } of corners(tup, ELBOW_RADIUS)) {
+      lineTo(flat, { x: p1[0], y: p1[1] })
+      quadTo(flat, { x: c[0], y: c[1] }, { x: p2[0], y: p2[1] })
+    }
+    const last = tup[tup.length - 1]
+    lineTo(flat, { x: last[0], y: last[1] })
+    return {
+      kind,
+      pts: tup.map(([x, y]) => ({ x, y })),
+      d: roundedPath(tup, ELBOW_RADIUS),
+      ...sampler(flat, dir),
+    }
+  }
+  if ((kind === "bendy" || kind === "cyclical") && pts.length > 2) {
+    const flat: Flat = { pts: [A], tans: [] }
+    for (const { c, to } of curvedSegs(pts)) quadTo(flat, c, to)
+    return { kind, pts, d: curvedPath(pts), ...sampler(flat, dir) }
+  }
+  const flat: Flat = { pts: [A], tans: [] }
+  for (const p of pts.slice(1)) lineTo(flat, p)
+  return {
+    kind,
+    pts,
+    d:
+      `M ${num(A.x)},${num(A.y)}` +
+      pts
+        .slice(1)
+        .map((p) => ` L ${num(p.x)},${num(p.y)}`)
+        .join(""),
+    ...sampler(flat, dir),
+  }
+}
+
+/**
+ * A link's route between two ends (exit points with outward normals),
+ * unplanned - what a line draws while a card is dragged, and what the
+ * legacy tabs' export draws.
  * - `straight`: `[A, B]`.
  * - `elbow`: leaves and enters along the ends' normals (a `STUB` each),
  *   crosses a channel, corners rounded to `ELBOW_RADIUS`.
@@ -303,7 +397,6 @@ export function linkRoute(
 ): Route {
   const A: Pt = { x: a.x, y: a.y }
   const B: Pt = { x: b.x, y: b.y }
-
   if (kind === "elbow") {
     const wp = opts.wp ?? []
     const raw =
@@ -319,34 +412,13 @@ export function linkRoute(
             [wp[1].x, wp[1].y]
           )
         : stubbedPts(a.x, a.y, a.dir, b.x, b.y, b.dir, opts.lane ?? 0)
-    const pts = simplify(raw)
-    const flat: Flat = { pts: [A], tans: [] }
-    for (const { p1, c, p2 } of corners(pts, ELBOW_RADIUS)) {
-      lineTo(flat, { x: p1[0], y: p1[1] })
-      quadTo(flat, { x: c[0], y: c[1] }, { x: p2[0], y: p2[1] })
-    }
-    lineTo(flat, B)
-    return {
+    return routeThrough(
       kind,
-      pts: pts.map(([x, y]) => ({ x, y })),
-      d: roundedPath(pts, ELBOW_RADIUS),
-      ...sampler(flat, a.dir),
-    }
+      raw.map(([x, y]) => ({ x, y })),
+      a.dir
+    )
   }
-
-  if (kind === "bendy" || kind === "cyclical") {
-    const pts = [A, ...bendyControls(a, b), B]
-    const flat: Flat = { pts: [A], tans: [] }
-    for (const { c, to } of curvedSegs(pts)) quadTo(flat, c, to)
-    return { kind, pts, d: curvedPath(pts), ...sampler(flat, a.dir) }
-  }
-
-  const flat: Flat = { pts: [A], tans: [] }
-  lineTo(flat, B)
-  return {
-    kind,
-    pts: [A, B],
-    d: `M ${num(A.x)},${num(A.y)} L ${num(B.x)},${num(B.y)}`,
-    ...sampler(flat, a.dir),
-  }
+  if (kind === "bendy" || kind === "cyclical")
+    return routeThrough(kind, [A, ...bendyControls(a, b), B], a.dir)
+  return routeThrough(kind, [A, B], a.dir)
 }

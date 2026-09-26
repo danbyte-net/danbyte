@@ -97,6 +97,10 @@ export interface DiagramEndLabel {
   /** Run the text along the line, turned to stay upright (Detailed port
    * names). Absent = horizontal, a little way along the route (Simple). */
   rotate?: boolean
+  /** A rotated label's box centre and turn, as the builder placed it clear
+   * of other cables and labels (`portPlace`). Absent = placed by the same
+   * rule from the route alone. */
+  at?: { x: number; y: number; rotate: number }
 }
 
 export interface DiagramLink {
@@ -117,11 +121,31 @@ export interface DiagramLink {
   labels: {
     /** Stacked at the middle of the route, e.g. `["2x Po1", "10.1.0.0/31"]`. */
     mid?: string[]
+    /** Where the middle label sits along the route, 0..1 (0.5 when
+     * absent): moved off the middle when a card or label is in the way… */
+    midAt?: number
+    /** …and how far beside the line, px, to the right hand of travel
+     * (absent = on it). */
+    midOff?: number
     /** The source end. */
     a?: DiagramEndLabel
     /** The target end. */
     b?: DiagramEndLabel
   }
+  link?: string
+  /** The cable this line is part of - a breakout's trunk and legs share
+   * it. */
+  cable?: string
+}
+
+/** Where a breakout cable splits: its trunk ends here and each leg leaves
+ * from here. A dot in the cable's colour, not a status. */
+export interface DiagramJunction extends Pt {
+  /** Stable and unique in the document, e.g. `fan:<cable uuid>`. */
+  id: string
+  r: number
+  fill: string
+  cable?: string
   link?: string
 }
 
@@ -179,5 +203,7 @@ export interface DiagramDocument {
   bands: DiagramBand[]
   nodes: DiagramNode[]
   links: DiagramLink[]
+  /** Breakout split points; links end on them by id. */
+  junctions?: DiagramJunction[]
   notes: DiagramNote[]
 }

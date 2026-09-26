@@ -65,7 +65,11 @@ import type { EdgeColorMode } from "./edge-style"
 import { ROUTABLE, classifyEdges, orientHubToLeaf } from "./edge-semantics"
 import type { BundleMember, EdgeClass } from "./edge-semantics"
 import { nodeTypes, sizeOf } from "./node-registry"
-import { buildDiagram, relinkDiagram } from "./diagram/build-diagram"
+import {
+  buildDiagram,
+  relinkDiagram,
+  remeasureDiagram,
+} from "./diagram/build-diagram"
 import type { DiagramModel } from "./diagram/build-diagram"
 import { LinkEdge } from "./diagram/link-edge"
 import { toDocument } from "./diagram/to-document"
@@ -949,23 +953,34 @@ function nodeCentre(n: Node): { x: number; y: number } {
   return n.origin ? n.position : { x: n.position.x + 110, y: n.position.y + 40 }
 }
 
-/** Nodes carrying the Diagram cards' new boxes and nubs (relinkDiagram). */
+/** Nodes carrying the Diagram cards' new boxes and nubs, and the
+ * breakout junctions where they now sit (relinkDiagram). */
 function withCards(
   nodes: Node[],
-  cards: Map<string, DiagramCardData["diagram"]>
+  cards: Map<string, DiagramCardData["diagram"]>,
+  junctions?: Map<string, { x: number; y: number }>
 ): Node[] {
-  if (!cards.size) return nodes
+  if (!cards.size && !junctions?.size) return nodes
   return nodes.map((n) => {
     const next = cards.get(n.id)
-    return next
-      ? {
-          ...n,
-          width: next.box.w,
-          height: next.box.h,
-          data: { ...n.data, diagram: next },
-        }
+    if (next)
+      return {
+        ...n,
+        width: next.box.w,
+        height: next.box.h,
+        data: { ...n.data, diagram: next },
+      }
+    const j = junctions?.get(n.id)
+    return j && (j.x !== n.position.x || j.y !== n.position.y)
+      ? { ...n, position: { x: j.x, y: j.y }, hidden: false }
       : n
   })
+}
+
+/** The cable a Diagram link draws, when it is one part of a breakout -
+ * its trunk and legs hover and select together. */
+function cableOfEdge(e: Edge | undefined): string | undefined {
+  return (e?.data as { cableId?: string } | undefined)?.cableId
 }
 
 /** The minimap paints a diagram card in its role colour. */
@@ -1042,13 +1057,15 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   )
 
   // Diagram cards are sized from measured text. Until Inter has loaded the
-  // widths are estimates, so lay out once more when it has.
+  // widths are estimates: once it has - and only if a card was measured
+  // without it - the cards are measured again where they stand (no new
+  // layout).
   const [fontTick, setFontTick] = useState(0)
   useEffect(() => {
     if (!diagram) return
     let live = true
-    void diagramFontsReady().then(() => {
-      if (live) setFontTick((t) => t + 1)
+    void diagramFontsReady().then((changed) => {
+      if (live && changed) setFontTick((t) => t + 1)
     })
     return () => {
       live = false
@@ -1100,7 +1117,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             }),
             model: null,
           },
-    // layoutTick discards saved positions on purpose; fontTick re-measures.
+    // layoutTick discards saved positions on purpose.
     [
       graph,
       focusNodeId,
@@ -1121,7 +1138,6 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       diagramLine,
       linkOverrides,
       checkLabels,
-      fontTick,
     ]
   )
   /** The Diagram's anchoring state, as the last build or drag left it. */
@@ -1204,13 +1220,25 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       if (e.source === spotId) keep.add(e.target)
       if (e.target === spotId) keep.add(e.source)
     }
+    // A breakout's junction passes the spotlight on to its far cards.
+    for (const e of edges)
+      if (keep.has(e.source) && e.source !== spotId && cableOfEdge(e))
+        keep.add(e.target)
     return keep
   }, [edges, spotId])
   const shownEdges = useMemo(() => {
     if (!hotEdge && !selectedEdgeId && !spotSet) return edges
+    // A breakout's trunk and legs light up together.
+    const hotCable = hotEdge
+      ? cableOfEdge(edges.find((e) => e.id === hotEdge))
+      : undefined
+    const selCable = selectedEdgeId
+      ? cableOfEdge(edges.find((e) => e.id === selectedEdgeId))
+      : undefined
     return edges.map((e) => {
-      const isHot = e.id === hotEdge
-      const isSel = e.id === selectedEdgeId
+      const cable = cableOfEdge(e)
+      const isHot = e.id === hotEdge || (!!cable && cable === hotCable)
+      const isSel = e.id === selectedEdgeId || (!!cable && cable === selCable)
       if (isHot || isSel)
         return {
           ...e,
@@ -1227,7 +1255,11 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           },
           ...(e.type === "link" ? { data: { ...e.data, hot: true } } : {}),
         }
-      const offSpot = spotSet && e.source !== spotId && e.target !== spotId
+      const offSpot =
+        spotSet &&
+        e.source !== spotId &&
+        e.target !== spotId &&
+        !(cable && spotSet.has(e.source) && spotSet.has(e.target))
       return hotEdge || offSpot
         ? {
             ...e,
@@ -1321,7 +1353,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       const re = relinkDiagram(built.model, nextNodes)
       modelRef.current = re.model
       diagramEdges = re.edges
-      nextNodes = withCards(nextNodes, re.cards)
+      nextNodes = withCards(nextNodes, re.cards, re.junctions)
     }
     // Zones are not part of the built graph, so a rebuild would drop them.
     setNodes([...zoneNodes.current, ...nextNodes])
@@ -1373,6 +1405,17 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   useEffect(() => {
     prevNodes.current = nodes
   }, [nodes])
+
+  // Inter loaded after the cards were measured with the estimate: measure
+  // them again where they stand and re-plan the lines, without a layout.
+  useEffect(() => {
+    const model = modelRef.current
+    if (!fontTick || !diagram || !model) return
+    const re = remeasureDiagram(model, flow.getNodes())
+    modelRef.current = re.model
+    setNodes((cur) => withCards(cur, re.cards, re.junctions))
+    setEdges(re.edges)
+  }, [fontTick, diagram, flow, setNodes, setEdges])
 
   // Zone nodes live alongside the built graph: replaced whole whenever the
   // parent's list changes (added, deleted, renamed, or restored with a saved
@@ -1603,6 +1646,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node) => {
+      // A breakout's junction is part of its cable.
+      if (node.type === "junction") {
+        const raw = (node.data as { raw?: TopoEdge["data"] }).raw
+        if (raw) onSelectEdge?.(raw, `${node.id}:t`)
+        return
+      }
       if (node.type === "sitegroup")
         onSelectGroup?.(node.data as unknown as TopoGroupData)
       else {
@@ -1610,7 +1659,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         onSelectNode?.(node.data as TopologyGraph["nodes"][number]["data"])
       }
     },
-    [onSelectNode, onSelectGroup]
+    [onSelectNode, onSelectGroup, onSelectEdge]
   )
   const onNodeDoubleClick = useCallback(
     (_: unknown, node: Node) => {
@@ -1679,7 +1728,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       modelRef.current = re.model
       // Into the real state, not the rendered nodes (those carry the
       // spotlight's dimming and the monitoring pill).
-      setNodes((cur) => withCards(cur, re.cards))
+      setNodes((cur) => withCards(cur, re.cards, re.junctions))
       setEdges(re.edges)
       onDragEnd?.()
       return
@@ -1837,7 +1886,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         zoomOnDoubleClick={!onOpenDevice}
         onNodeContextMenu={(ev, node) => {
           ev.preventDefault()
-          onNodeContext?.(node, ev.clientX, ev.clientY)
+          if (node.type !== "junction")
+            onNodeContext?.(node, ev.clientX, ev.clientY)
         }}
         onPaneContextMenu={(ev) => {
           ev.preventDefault()

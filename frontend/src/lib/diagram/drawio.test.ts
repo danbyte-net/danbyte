@@ -177,6 +177,27 @@ describe("toDrawio", () => {
       }
   })
 
+  it("writes the lines under the cards, as the canvas and the SVG draw them", () => {
+    for (const xml of [SIMPLE(), DETAILED()]) {
+      const page = pages(xml)[0]
+      const order = [...page.values()]
+      const top = order.filter((c) => c.parent === "1")
+      const edges = top.filter((c) => c.cell.getAttribute("edge") === "1")
+      const cards = top.filter(
+        (c) =>
+          c.cell.getAttribute("vertex") === "1" &&
+          c.holder.getAttribute("danbyte_id")?.startsWith("dev:")
+      )
+      expect(edges.length).toBeGreaterThan(0)
+      expect(cards.length).toBeGreaterThan(0)
+      const last = Math.max(...edges.map((e) => order.indexOf(e)))
+      const firstCard = Math.min(...cards.map((c) => order.indexOf(c)))
+      expect(last).toBeLessThan(firstCard)
+    }
+    // Still the same file every time.
+    expect(DETAILED()).toBe(DETAILED())
+  })
+
   it("puts every card where the document has it, nested in its band", () => {
     for (const [xml, doc] of [
       [SIMPLE(), fabricSimple],

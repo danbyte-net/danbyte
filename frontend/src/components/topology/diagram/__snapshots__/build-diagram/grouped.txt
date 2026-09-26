@@ -11,14 +11,17 @@ ge:@dc1:@dc2  link groupedge straight simple mid ["2x"]
   style {"strokeWidth":1.9509775004326935}
   a R38
   b L38
+  mid at 0.5
   path M 212,38 L 302,142
 ge:@dc1:@dc3  link groupedge straight simple mid ["3x"]
   style {"strokeWidth":2.2}
   a R38
   b L38
+  mid at 0.5
   path M 212,38 L 302,38
 ge:@dc2:none  link groupedge straight simple mid ["1x"]
   style {"strokeWidth":1.6}
   a R38
   b L38
+  mid at 0.5
   path M 514,142 L 604,142

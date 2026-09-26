@@ -63,28 +63,67 @@ something.
   resizes it or moves its lines.
 - **Simple | Detailed** (beside the tabs):
     - **Simple** - compact cards. Every line leaving one side of a card
-      starts at that side's midpoint and fans out from there, and all the
-      cables between two devices draw as one line with a count chip (`2x`,
-      or the aggregates' names when they are one bundle).
+      starts at that side's midpoint, and the lines part right after it:
+      each elbow turns off at its own depth, a lane apart. All the cables
+      between two devices draw as one line with a count chip (`2x`, or the
+      aggregates' names when they are one bundle).
     - **Detailed** - each cabled interface gets a small grey **nub** on the
       edge facing its far end, and each cable leaves its own nub - a LAG's
       members too, with the bundle's chip on the lines between. The
-      interface name runs along the line just past its nub, turned so it
-      reads upright. Cards grow to fit their nubs; past 48 on one side they
-      continue round the corner.
-- **Lines** (Display popover) - **Straight**, **Elbow** (right angles with
-  rounded corners, steered around cards in the way) or **Bendy** (a smooth
-  curve that leaves each card square to its edge). LLDP ghosts stay
-  straight and dashed; BGP sessions stay the faint dotted overlay from card
-  centre to card centre.
+      interface name runs along its own cable's first straight run, just
+      past the nub, turned so it reads upright (a line within 10° of
+      vertical reads bottom to top). It sits on the outside of the cable's
+      first bend, so the cable turns away from it; when that spot is taken
+      by another cable or name it moves to the other side of the line, then
+      further out along it, and when nothing fits it is left off - the nub's
+      tooltip still names the port. Cards grow to fit their nubs; past 48 on
+      one side they continue round the corner. The nubs on a side are
+      ordered by where their cables turn, so the cables leaving one side
+      nest instead of crossing on their way out.
+- **Lines** (Display popover) - **Straight**, **Elbow** or **Bendy**. LLDP
+  ghosts stay straight and dashed; BGP sessions stay the faint dotted
+  overlay from card centre to card centre.
+    - **Elbow** - right angles with rounded corners. Each cable runs
+      straight out of its port far enough for its port name before its
+      first bend, and keeps clear of the cards it does not connect: a
+      corridor with a card in it moves to the middle of the clear gap, and
+      when no corridor between two cards is clear the cable steps round
+      through a clear street. Cables sharing a corridor each get a **lane**
+      of their own, 12 px apart, in the order that keeps them from crossing.
+      In a tight gap the port names give way first (a cable keeps its lane
+      and loses the name), and only then do the lanes close up.
+    - **Bendy** - a smooth curve that leaves each card square to its edge,
+      reined in where it would sweep through a card and never overshooting
+      the middle of the gap between two facing cards.
+    - **Straight** - the direct line; a card's side is still chosen so the
+      line does not leave it straight into a neighbour.
+- **Breakout cables** - one cable whose one end is a single port and whose
+  other end lands on several (a fan-out, as the cable's own page draws it)
+  is drawn as **one cable**: a single nub for the shared port, one trunk out
+  of it to a small dot where the cable splits, then one leg to each far
+  port - its own nub and port name on the far card, legs to one card in
+  lanes side by side. The trunk carries the cable's label and type
+  (`TEST · cat5e`; on a trunk too short for it, the longest leg carries
+  it). Hovering or clicking any part lights up and opens the whole cable.
+  In Simple the legs to one card fold into one. A `2x` count only ever
+  counts separate cables between two devices (and a LAG's members) - never
+  the legs of one cable. A cable with several ports at both ends stays one
+  line per port pair.
+- **Middle chips** (a bundle's count, a trunk's name) sit at the middle of
+  their line, or the nearest spot along it (or just beside it) clear of the
+  cards, the port names and the other lines; a chip with no free spot
+  shows while its line is hovered.
 
 Simple and Detailed share one arrangement: a card is placed by its centre,
 so it stays put when Detailed grows it. The automatic layout follows the
 cables only - BGP sessions never move a card - and two devices of one role
 that share a neighbour (a leaf pair on the same spines, an HA pair) sit on
-one tier with their peer link between them. For clean role rows, set the
-[Levels](#levels-role-tiers). Drag a card and its lines re-anchor where it
-lands. Zoomed out, the port names go first, then the chips and the card
+one tier with their peer link between them. In Detailed it leaves the tiers
+far enough apart for a port name at both ends of a cable and a few lanes
+between. For clean role rows, set the [Levels](#levels-role-tiers). Drag a
+card and its lines follow it straight away; when you drop it they are
+routed, laned and labelled again (a breakout's split point moves with its
+trunk). Zoomed out, the port names go first, then the chips and the card
 lines; hovering a line still names it at any zoom.
 
 The cards fetch their lines with the map (`include=card`), and the
@@ -171,7 +210,9 @@ cable draws it emphasized in the accent color while its panel is open.
 - **Edges** - solid lines are cables; a **long-dashed** line is a collapsed
   end-to-end run (labelled `via <panel>…`); a short-dashed *italic* line is an
   **LLDP ghost** - SNMP saw the adjacency but no cable exists (click it to
-  materialise one). `×N` marks a breakout/trunk carrying N pairs.
+  materialise one). On these tabs `×N` marks a breakout/trunk carrying N
+  pairs; the Diagram tab draws a breakout as one trunk splitting into legs
+  (see [Diagram view](#diagram-view)).
 - **Hover** an edge and it thickens while every other edge fades - the only
   way crossings stay readable in a dense mesh.
 - **Click** a card or an edge for a detail panel - device summary with *Open
@@ -584,13 +625,15 @@ pills, cable colours.
   not load is drawn as the device's card. A very large map is scaled down to
   stay under about 16.7 million pixels - Safari draws nothing above that.
 
-Both show what the canvas shows: role-coloured cards with the name, card
-lines and pill; in Detailed, the interface nubs with each port name running
-along its line; the same line types (curves follow draw.io's curved rule,
-so the draw.io file matches); the count chips on bundles; zones. The
-monitoring pill is the one on screen when the file is made. Selection,
-hover, search dimming and hidden devices or link families never reach a
-file.
+Both show what the canvas shows, from the same plan: role-coloured cards
+with the name, card lines and pill; in Detailed, the interface nubs with
+each port name where the map put it along its cable (a name the map left
+off is left off); every elbow in its lane; the same line types (curves
+follow draw.io's curved rule, so the draw.io file matches); a breakout's
+split point; the count chips on bundles where the map shows them (a chip
+the map only shows on hover is left out); zones. The monitoring pill is
+the one on screen when the file is made. Selection, hover, search dimming
+and hidden devices or link families never reach a file.
 
 #### draw.io
 
@@ -610,7 +653,12 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
   Bendy lines are draw.io curves through the same points the map uses. A
-  single cable links back to it in Danbyte.
+  single cable links back to it in Danbyte. Lines are written before the
+  cards, so they pass under a card as they do on the screen.
+- **Breakouts:** the split point is a small ellipse; the trunk ends on it
+  and each leg leaves from it, so dragging it in draw.io moves the split.
+  The trunk, the legs and the ellipse carry the cable's id
+  (`danbyte_cable`, under *Edit Data*) and link back to the cable.
 - **Bands:** a row band becomes a swimlane that holds its cards (the ones
   whose centre is inside it) and carries them when you drag it. Zones hold
   their cards the same way. A side band is a shape behind the rows, as a

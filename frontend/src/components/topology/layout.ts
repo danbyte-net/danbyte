@@ -34,6 +34,9 @@ export interface NodeSizing {
    * Off for views whose cables run straight: a line from the hub would
    * cross every card in front of the one it serves. */
   leafGrids?: boolean
+  /** The least gap between ranks (px): room for what a view draws at both
+   * ends of a cable crossing it - the Diagram's port names. */
+  rankGap?: number
 }
 
 export interface LayoutResult {
@@ -182,7 +185,8 @@ function respaceBands(
   edges: Edge[],
   sizeOf: (id: string) => { width: number; height: number },
   tb: boolean,
-  pinned?: Set<string>
+  pinned?: Set<string>,
+  headroom = GAP_HEADROOM
 ): Node[] {
   const rect = new Map<string, Rect>()
   for (const n of laid) {
@@ -216,7 +220,7 @@ function respaceBands(
   const shift = new Array(list.length).fill(0)
   for (let g = 0; g < list.length - 1; g++) {
     const current = list[g + 1].lo + shift[g + 1] - (list[g].hi + shift[g])
-    const required = GAP_HEADROOM + lanes[g] * LANE_PITCH
+    const required = headroom + lanes[g] * LANE_PITCH
     const extra = Math.max(0, required - current)
     for (let b = g + 1; b < list.length; b++) shift[b] += extra
   }
@@ -1377,7 +1381,7 @@ export function layoutNodes(
    * absent, tiers use a uniform gap. */
   mainOffsets?: number[]
 ): LayoutResult {
-  const { sizeOf: sizer, compact, leafGrids = true } = sizing
+  const { sizeOf: sizer, compact, leafGrids = true, rankGap = 0 } = sizing
   const tbDir = direction === "TB"
   const pinnedIds = positions
     ? new Set(Object.keys(positions))
@@ -1534,7 +1538,7 @@ export function layoutNodes(
     // route under a neighbouring card.
     nodesep: compact ? 28 : Math.min(56 + Math.max(0, maxFan - 8) * 3, 240),
     edgesep: compact ? 10 : 18,
-    ranksep: compact ? 90 : 130,
+    ranksep: compact ? 90 : Math.max(130, rankGap),
     ranker: "network-simplex",
     align: "UL",
   })
@@ -1773,7 +1777,14 @@ export function layoutNodes(
       }
     })
     const pinnedIds = positions ? new Set(Object.keys(positions)) : undefined
-    const spaced = respaceBands(laid, edges, sizeOf, tb, pinnedIds)
+    const spaced = respaceBands(
+      laid,
+      edges,
+      sizeOf,
+      tb,
+      pinnedIds,
+      Math.max(GAP_HEADROOM, rankGap)
+    )
     // Tiers fix the main axis; the cross axis is free, so a card sitting on
     // another pair's cable run slides off it.
     const clear = nudgeOffEdges(spaced, edges, (n) => sizeOf(n.id), tb, pinnedIds)
@@ -1795,7 +1806,14 @@ export function layoutNodes(
     ...(pinnedIds ?? []),
     ...clusters.leafSet,
   ])
-  const spaced = respaceBands(laid, mainEdges, sizeOf, tb, exempt)
+  const spaced = respaceBands(
+    laid,
+    mainEdges,
+    sizeOf,
+    tb,
+    exempt,
+    Math.max(GAP_HEADROOM, rankGap)
+  )
   // Pack disconnected islands into a viewport-shaped arrangement; grid
   // leaves ride with their hub (its inflated box covers them, and they are
   // placed relative to it afterwards).

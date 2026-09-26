@@ -29,6 +29,7 @@ import type {
   DiagramBand,
   DiagramDocument,
   DiagramEnd,
+  DiagramJunction,
   DiagramLink,
   DiagramNode,
   DiagramNote,
@@ -56,6 +57,11 @@ import type {
 // - The middle label is the line's own label; end labels are child label
 //   cells at x = 2t-1 along the line, with an offset that lands them where
 //   the screen puts them. Port names are turned along their line.
+// - A breakout cable's junction is a small ellipse its trunk ends on and
+//   its legs leave from; trunk, legs and junction all carry the cable's
+//   id (`danbyte_cable`).
+// - Lines are written before the cards on the page's layer, so they pass
+//   under cards as on the screen.
 // - Row bands are swimlanes holding the cards whose centre they contain, and
 //   zones are containers too. Side bands are background shapes (a card has
 //   one parent). LLDP neighbours and BGP sessions get layers of their own.
@@ -155,6 +161,8 @@ function dashPattern(d?: string): string | undefined {
  * its nubs), at a fixed point given as fractions of that box. */
 interface Attach {
   node?: DiagramNode
+  /** A breakout junction the end attaches to (at its centre). */
+  junction?: DiagramJunction
   /** The nub index when the end attaches to a nub cell. */
   nub?: number
   fx: number
@@ -216,14 +224,26 @@ function nodesById(nodes: DiagramNode[]): Map<string, DiagramNode> {
   return byId
 }
 
+/** An end on a breakout junction: its centre, perimeter off. */
+function attachJunction(j: DiagramJunction): Attach {
+  return { junction: j, fx: 0.5, fy: 0.5, pt: { x: j.x, y: j.y } }
+}
+
 /** A link with its ends moved to where the file attaches them. */
 function drawnLink(
   l: DiagramLink,
   nodes: Map<string, DiagramNode>,
-  mode: DrawioMode
+  mode: DrawioMode,
+  junctions: Map<string, DiagramJunction> = new Map()
 ): { link: DiagramLink; a: Attach; b: Attach } {
-  const a = attachEnd(l.source, nodes.get(l.source.node), mode)
-  const b = attachEnd(l.target, nodes.get(l.target.node), mode)
+  const ja = junctions.get(l.source.node)
+  const jb = junctions.get(l.target.node)
+  const a = ja
+    ? attachJunction(ja)
+    : attachEnd(l.source, nodes.get(l.source.node), mode)
+  const b = jb
+    ? attachJunction(jb)
+    : attachEnd(l.target, nodes.get(l.target.node), mode)
   return {
     link: {
       ...l,
@@ -395,9 +415,18 @@ function page(
   for (const l of doc.links) linkIds.set(l, take(l.id))
   const noteIds = new Map<DiagramNote, string>()
   for (const n of doc.notes) noteIds.set(n, take(n.id))
+  const junctionIds = new Map<DiagramJunction, string>()
+  for (const j of doc.junctions ?? []) junctionIds.set(j, take(j.id))
   const byId = nodesById(doc.nodes)
+  const junctionsById = new Map((doc.junctions ?? []).map((j) => [j.id, j]))
+  // Nub cells get their ids up front: lines refer to them and are written
+  // before the cards that hold them.
   const nubIds = new Map<string, string>()
   const nubKey = (n: DiagramNode, i: number) => `${nodeIds.get(n)}\u0000${i}`
+  if (mode === "detailed")
+    for (const n of doc.nodes)
+      for (let i = 0; i < (n.nubs ?? []).length; i++)
+        nubIds.set(nubKey(n, i), take(`${nodeIds.get(n) ?? ""}-nub-${i}`))
 
   /** A box in its parent's frame: relative to the parent container's
    * corner, or shifted into the page at the top level. */
@@ -568,8 +597,7 @@ function page(
     }
     if (mode !== "detailed") return
     for (const [i, nub] of (n.nubs ?? []).entries()) {
-      const nid = take(`${id}-nub-${i}`)
-      nubIds.set(nubKey(n, i), nid)
+      const nid = nubIds.get(nubKey(n, i)) ?? take(`${id}-nub-${i}`)
       out.push(
         `<object${attrs({ label: "", tooltip: nub.label, id: nid })}>` +
           `<mxCell${attrs({
@@ -601,15 +629,17 @@ function page(
 
   // ── Links ──
   const endCell = (a: Attach) =>
-    a.node
-      ? a.nub !== undefined
-        ? nubIds.get(nubKey(a.node, a.nub))
-        : nodeIds.get(a.node)
-      : undefined
+    a.junction
+      ? junctionIds.get(a.junction)
+      : a.node
+        ? a.nub !== undefined
+          ? nubIds.get(nubKey(a.node, a.nub))
+          : nodeIds.get(a.node)
+        : undefined
 
   function link(l: DiagramLink, layer: string) {
     const id = linkIds.get(l) ?? ""
-    const { link: d, a, b } = drawnLink(l, byId, mode)
+    const { link: d, a, b } = drawnLink(l, byId, mode, junctionsById)
     let kind: Record<string, Val> = { edgeStyle: "none" }
     let points = d.points
     if (d.kind === "elbow") {
@@ -678,7 +708,13 @@ function page(
       ? `<mxGeometry relative="1" as="geometry">${inner}</mxGeometry>`
       : `<mxGeometry relative="1" as="geometry"/>`
     out.push(
-      `<object${attrs({ label: mid, danbyte_id: l.id, link: safeLink(l.link), id })}>` +
+      `<object${attrs({
+        label: mid,
+        danbyte_id: l.id,
+        danbyte_cable: l.cable,
+        link: safeLink(l.link),
+        id,
+      })}>` +
         `<mxCell${attrs({
           style: st,
           edge: "1",
@@ -773,14 +809,45 @@ function page(
     if (n.icon) out.push(icon(n.x - tx, 0, take(`${id}-icon`), id))
   }
 
+  // ── Junctions ──
+  function junction(j: DiagramJunction) {
+    const fill = hex6(j.fill) ?? PRINT.subtle
+    out.push(
+      `<object${attrs({
+        label: "",
+        danbyte_id: j.id,
+        danbyte_cable: j.cable,
+        link: safeLink(j.link),
+        id: junctionIds.get(j),
+      })}><mxCell${attrs({
+        style: style(["ellipse"], {
+          aspect: "fixed",
+          html: 1,
+          fillColor: fill,
+          strokeColor: "none",
+          resizable: 0,
+          rotatable: 0,
+          editable: 0,
+        }),
+        vertex: "1",
+        parent: "1",
+      })}>${geometry(
+        rel({ x: j.x - j.r, y: j.y - j.r, w: 2 * j.r, h: 2 * j.r }, null)
+      )}</mxCell></object>`
+    )
+  }
+
   // ── The page, back to front ──
+  // Bands, then the cards they hold; then the lines, so they pass under
+  // the cards on the layer; then the rest of the cards.
   out.push(`<mxCell id="0"/>`, `<mxCell id="1" value="Topology" parent="0"/>`)
   for (const b of doc.bands) if (!isContainer(b)) band(b, null, "1")
   for (const c of conts) if (!contParent.get(c)) container(c, null, "1")
-  for (const n of doc.nodes) if (!nodeParent.get(n)) node(n, null, "1")
   const onLayer = (sem: DiagramLink["sem"]) =>
     sem === "ghost" ? LAYER_LLDP : sem === "bgp" ? LAYER_BGP : "1"
   for (const l of doc.links) if (onLayer(l.sem) === "1") link(l, "1")
+  for (const j of doc.junctions ?? []) junction(j)
+  for (const n of doc.nodes) if (!nodeParent.get(n)) node(n, null, "1")
   for (const n of doc.notes) note(n)
   for (const [layer, name] of [
     [LAYER_LLDP, "Discovered (LLDP)"],
@@ -857,8 +924,15 @@ function drawnDocument(
     place: n.kind === "card" ? n.place : undefined,
     nubs: mode === "detailed" ? n.nubs : undefined,
   }))
-  const links = doc.links.map((l) => drawnLink(l, byId, mode).link)
-  const body = { bands: doc.bands, nodes, links, notes: doc.notes }
+  const junctions = new Map((doc.junctions ?? []).map((j) => [j.id, j]))
+  const links = doc.links.map((l) => drawnLink(l, byId, mode, junctions).link)
+  const body = {
+    bands: doc.bands,
+    nodes,
+    links,
+    ...(doc.junctions?.length ? { junctions: doc.junctions } : {}),
+    notes: doc.notes,
+  }
   return {
     meta: { ...doc.meta, mode },
     bounds: documentBounds(body, measure),

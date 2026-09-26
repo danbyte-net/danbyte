@@ -69,6 +69,9 @@ export const NUB = {
 
 export const NO_NUBS: SideCount = { T: 0, R: 0, B: 0, L: 0 }
 
+/** A breakout's junction node: the dot where its trunk splits. */
+export const JUNCTION = { w: 6, h: 6 } as const
+
 export interface CardLayoutInput {
   name: string
   /** The role colour, `#rrggbb` or bare; none paints a neutral card. */

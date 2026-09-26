@@ -720,6 +720,19 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
   for (const band of doc.bands) out.push(bandSvg(band, measure))
   out.push(`</g><g id="links">`)
   for (const l of doc.links) out.push(linked(l.link, linkSvg(l)))
+  // Breakout split points sit on their lines.
+  for (const j of doc.junctions ?? [])
+    out.push(
+      linked(
+        j.link,
+        el("circle", {
+          cx: j.x,
+          cy: j.y,
+          r: j.r,
+          fill: col(j.fill, PRINT.subtle),
+        })
+      )
+    )
   out.push(`</g><g id="nodes">`)
   for (const n of doc.nodes)
     out.push(linked(n.link, nodeSvg(n, measure, photoId)))

@@ -669,8 +669,9 @@
    halo in the canvas colour so a crossing line never strikes through it; it
    goes first as the map zooms out (data-ports="off", below 0.55). The
    mid-line chip (a bundle's count) is portalled out of the edge, so it
-   carries its own hover flag. Far out, the card lines hide too - the card
-   keeps its size, so nothing moves. */
+   carries its own hover flag; one with no free spot on its line (crowded)
+   shows on hover only. Far out, the card lines hide too - the card keeps
+   its size, so nothing moves. */
 .topo-endlabel {
   font-size: 9px;
   fill: var(--muted-foreground);
@@ -683,7 +684,8 @@
 [data-ports="off"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
 [data-lod="1"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
 [data-lod="2"] .react-flow__edge:not(.topo-hot) .topo-endlabel,
-[data-lod="2"] .topo-midlabel:not([data-hot]) {
+[data-lod="2"] .topo-midlabel:not([data-hot]),
+.topo-midlabel[data-crowded]:not([data-hot]) {
   display: none;
 }
 [data-lod="2"] .topo-cardline {

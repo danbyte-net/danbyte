@@ -3,6 +3,7 @@ import type { Edge, Node } from "@xyflow/react"
 import type { TopologyGraph, TopologyLinkOverride } from "@/lib/api"
 import { measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
+import { LABEL } from "@/lib/diagram/theme"
 import { classifyEdges, orientHubToLeaf } from "../edge-semantics"
 import type { BundleMember, EdgeClass } from "../edge-semantics"
 import {
@@ -14,23 +15,37 @@ import {
 import type { EdgeColorMode, EdgeSem } from "../edge-style"
 import { sharedLag } from "../lag-bundles"
 import type { EdgeLag } from "../lag-bundles"
-import { edgeWaypoints, layoutNodes } from "../layout"
+import { layoutNodes } from "../layout"
 import { resolveLevels } from "../level-organiser"
 import { graphLevels } from "../levels-param"
 import { sizeOf } from "../node-registry"
-import { anchorLinks } from "./anchors"
+import {
+  anchorLinks,
+  anchorPoint,
+  chooseSides,
+  reorderNubs,
+  sideLength,
+} from "./anchors"
 import type { AnchorLink, Anchors } from "./anchors"
 import { cardContent } from "./card-fields"
-import { cardLayout } from "./card-layout"
+import { cardLayout, JUNCTION, NUB } from "./card-layout"
 import type { CardBox, CardLayoutInput } from "./card-layout"
+import { detectFanouts, fanChip } from "./fanout"
+import type { Fan } from "./fanout"
+import { CLEAR, LANE, obstacles, SHARED_STUB } from "./lanes"
+import type { Obstacles } from "./lanes"
+import { planEdges, portStub } from "./plan"
 import { pairKey } from "./types"
 import type {
   DiagramCardData,
   DiagramEdgeData,
   DiagramMode,
+  Dir,
+  End,
   LineType,
   Pt,
   Rect,
+  Side,
 } from "./types"
 
 // The Diagram tab's pipeline: payload graph → React Flow cards and links.
@@ -40,7 +55,11 @@ import type {
 //   3. lay out (dagre, or the saved arrangement);
 //   4. Detailed: count each card's nubs per side, grow the cards to fit,
 //      lay out again with the real boxes, and anchor every cable end;
-//   5. hand the elbow lines their node-avoiding channel.
+//   5. plan every line (plan.ts): elbows in their own lanes clear of the
+//      cards, port names along their cables, middle chips off the cards.
+//
+// A breakout cable (fanout.ts) is drawn as one trunk from its shared port
+// to a junction node, then one leg to each far port.
 //
 // Diagram nodes are positioned by their CENTRE (React Flow `origin`
 // [0.5, 0.5]), so a card that grows to fit its nubs - or shrinks back in
@@ -89,7 +108,31 @@ export interface DiagramModel {
   links: AnchorLink[]
   /** Every edge as built, before anchoring. */
   edges: Edge<DiagramEdgeData>[]
+  /** Breakout cables: where their junctions go. */
+  fans: FanModel[]
+  /** Detailed: the gap two facing sides should leave for a port name at
+   * each end of a cable. */
+  roomy: number
   measure: Measure
+}
+
+/** A breakout cable as the anchoring sees it. */
+export interface FanModel {
+  /** The junction node. */
+  id: string
+  /** The card its trunk leaves. */
+  trunk: string
+  /** The cards its legs land on. */
+  far: string[]
+  /** How far out along the trunk the junction sits at least, per mode:
+   * room for the trunk's port name and its chip. */
+  reach: Record<DiagramMode, number>
+  /** What the legs need between the junction and the far cards, per
+   * mode: their lanes and far port names. */
+  legRoom: Record<DiagramMode, number>
+  /** The trunk's own port name, per mode: what the junction keeps room
+   * for before the legs' room. */
+  trunkRoom: Record<DiagramMode, number>
 }
 
 export interface DiagramBuild {
@@ -101,6 +144,19 @@ export interface DiagramBuild {
 /** The device uuid behind a node id (`dev:<uuid>`), for link keys. */
 function deviceKey(id: string, deviceId?: string): string {
   return deviceId ?? (id.startsWith("dev:") ? id.slice(4) : id)
+}
+
+/** How many distinct cables a bundle's members are: a breakout cable
+ * reaches a pair as one member with several pairs, and is still one. */
+export function distinctCables(
+  cables: readonly { cable_id?: string }[]
+): number {
+  const ids = new Set<string>()
+  let anon = 0
+  for (const c of cables)
+    if (c.cable_id) ids.add(c.cable_id)
+    else anon += 1
+  return ids.size + anon
 }
 
 /** A bundle's chip: "2x", with the aggregates' names when they share one.
@@ -193,21 +249,16 @@ function diagramEdge(
         ...flowEdgeStyle(edgeLook(c.sem)),
       }
     case "cable": {
+      // One cable, however many port pairs it carries: never a count.
       const r = c.raw
-      const n = r?.pairs?.length ?? 1
       return {
         ...ends,
         type: "link",
         animated: r?.marked,
-        data: {
-          ...base("cable", lineOf()),
-          raw: r,
-          ...(n > 1 ? { labels: { mid: [`${n}x`] } } : {}),
-        },
+        data: { ...base("cable", lineOf()), raw: r },
         ...flowEdgeStyle(
           edgeLook("cable", {
             stroke: edgeStroke(r, opts.colorMode),
-            count: n,
             via: !!r?.via?.length,
             marked: r?.marked,
           })
@@ -224,7 +275,7 @@ function diagramEdge(
           ...base("lagbundle", lineOf()),
           cables: c.cables,
           lag: c.lag,
-          labels: { mid: bundleLabel(c.cables.length, c.lag) },
+          labels: { mid: bundleLabel(distinctCables(c.cables), c.lag) },
         },
         ...flowEdgeStyle(
           edgeLook("lagbundle", {
@@ -243,7 +294,7 @@ function diagramEdge(
           ...base("bundle", lineOf()),
           cables: c.cables,
           ...(lag ? { lag } : {}),
-          labels: { mid: bundleLabel(c.cables.length, lag) },
+          labels: { mid: bundleLabel(distinctCables(c.cables), lag) },
         },
         ...flowEdgeStyle(
           edgeLook("bundle", {
@@ -269,7 +320,7 @@ function orientData(e: Edge<DiagramEdgeData>): Edge<DiagramEdgeData> {
         ? {
             labels: {
               ...d.labels,
-              mid: bundleLabel(d.cables?.length ?? 1, lag),
+              mid: bundleLabel(distinctCables(d.cables ?? []), lag),
             },
           }
         : {}),
@@ -298,6 +349,149 @@ function anchorLink(
   }
 }
 
+// ── Breakouts ────────────────────────────────────────────────────────────
+
+/** A breakout's junction node, trunk and legs, and how they anchor. In
+ * Simple the legs to one far card fold into one. `layout` stands in for
+ * the fan in the layout: a plain link from the trunk's card to each far
+ * card. */
+function fanParts(
+  f: Fan,
+  keyOf: (id: string) => string,
+  mode: DiagramMode,
+  opts: DiagramOptions,
+  measure: Measure
+): {
+  node: Node
+  edges: Edge<DiagramEdgeData>[]
+  links: AnchorLink[]
+  layout: Edge[]
+  model: FanModel
+} {
+  const raw = f.raw
+  const stroke = edgeStroke(raw, opts.colorMode)
+  const look = flowEdgeStyle(
+    edgeLook("cable", {
+      stroke,
+      via: !!raw.via?.length,
+      marked: raw.marked,
+    })
+  )
+  const far = [...new Set(f.legs.map((l) => l.node))]
+  const lineTo = (node: string): LineType =>
+    opts.links?.[pairKey(keyOf(f.trunk.node), keyOf(node))]?.line ?? opts.line
+  const chip = fanChip(raw)
+  const common = (pk: string, line: LineType) => ({
+    sem: "cable" as const,
+    raw,
+    pairKey: pk,
+    line,
+    a: [],
+    b: [],
+    cableId: f.cable,
+  })
+  const trunk: Edge<DiagramEdgeData> = {
+    id: `${f.id}:t`,
+    source: f.trunk.node,
+    target: f.id,
+    type: "link",
+    animated: raw.marked,
+    data: {
+      ...common(pairKey(keyOf(f.trunk.node), keyOf(far[0])), "straight"),
+      fan: { role: "trunk", junction: f.id },
+      labels: { ...(chip.length ? { mid: chip } : {}) },
+    },
+    ...look,
+  }
+  const legs =
+    mode === "simple"
+      ? far.map((node) => ({
+          node,
+          ports: f.legs.filter((l) => l.node === node).map((l) => l.port),
+        }))
+      : f.legs.map((l) => ({ node: l.node, ports: [l.port] }))
+  const legEdges = legs.map(
+    (l, i): Edge<DiagramEdgeData> => ({
+      id: `${f.id}:l${i}`,
+      source: f.id,
+      target: l.node,
+      type: "link",
+      animated: raw.marked,
+      data: {
+        ...common(pairKey(keyOf(f.trunk.node), keyOf(l.node)), lineTo(l.node)),
+        fan: { role: "leg", junction: f.id },
+        labels: {},
+      },
+      ...look,
+    })
+  )
+  const links: AnchorLink[] = [
+    {
+      id: trunk.id,
+      source: trunk.source,
+      target: trunk.target,
+      cables: [{ a: f.trunk.port }],
+      ...(mode === "simple" ? { simple: true } : {}),
+      junction: { b: [0, 0] },
+    },
+    ...legEdges.map(
+      (e, i): AnchorLink => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        cables: [{ b: legs[i].ports.join(", ") }],
+        ...(mode === "simple" ? { simple: true } : {}),
+        junction: { a: [0, 0] },
+      })
+    ),
+  ]
+  const chipW = chip.length
+    ? measure(chip[0], LABEL.MID_SIZE, 600) + 2 * LABEL.PAD_X
+    : 0
+  const portW = measure(f.trunk.port, LABEL.END_SIZE, 400)
+  const legW = Math.max(
+    0,
+    ...f.legs.map((l) => measure(l.port, LABEL.END_SIZE, 400))
+  )
+  return {
+    node: {
+      id: f.id,
+      type: "junction",
+      position: { x: 0, y: 0 },
+      origin: CENTRE,
+      width: JUNCTION.w,
+      height: JUNCTION.h,
+      draggable: false,
+      selectable: false,
+      focusable: false,
+      data: { cable: f.cable, stroke, raw },
+    },
+    edges: [trunk, ...legEdges],
+    links,
+    layout: far.map((node, i) => ({
+      id: `${f.id}:p${i}`,
+      source: f.trunk.node,
+      target: node,
+    })),
+    model: {
+      id: f.id,
+      trunk: f.trunk.node,
+      far,
+      reach: {
+        simple: Math.max(24, chipW + 16),
+        detailed: Math.max(24, portStub(portW) + (chipW ? chipW + 8 : 0)),
+      },
+      // Legs turn off both ways, so half of them stack up on one side.
+      legRoom: {
+        simple: SHARED_STUB + LANE * Math.ceil(far.length / 2) + 16,
+        detailed:
+          SHARED_STUB + LANE * Math.ceil(f.legs.length / 2) + portStub(legW),
+      },
+      trunkRoom: { simple: 24, detailed: portStub(portW) },
+    },
+  }
+}
+
 const rectAt = (c: Pt, s: { w: number; h: number }): Rect => ({
   x: c.x - s.w / 2,
   y: c.y - s.h / 2,
@@ -305,9 +499,145 @@ const rectAt = (c: Pt, s: { w: number; h: number }): Rect => ({
   h: s.h,
 })
 
+/** Where each breakout's junction goes: straight out from its trunk's
+ * port (`trunkEnds`, else the side facing the far cards' midpoint), a
+ * third of the way to the far cards but far enough for the trunk's port
+ * name and chip, and clear of every card. */
+function placeJunctions(
+  model: DiagramModel,
+  rects: ReadonlyMap<string, Rect>,
+  solid: Obstacles,
+  ends?: ReadonlyMap<string, End>
+): Map<string, { c: Pt; dir: Dir }> {
+  const out = new Map<string, { c: Pt; dir: Dir }>()
+  for (const f of model.fans) {
+    const tb = rects.get(f.trunk)
+    const farR = f.far.map((id) => rects.get(id)).filter((r): r is Rect => !!r)
+    if (!tb || !farR.length) continue
+    const x0 = Math.min(...farR.map((r) => r.x))
+    const y0 = Math.min(...farR.map((r) => r.y))
+    const box = {
+      x: x0,
+      y: y0,
+      w: Math.max(...farR.map((r) => r.x + r.w)) - x0,
+      h: Math.max(...farR.map((r) => r.y + r.h)) - y0,
+    }
+    let start = ends?.get(f.id)
+    if (!start) {
+      const [side] = chooseSides(tb, box)
+      start = anchorPoint(
+        tb,
+        { k: "side", side, off: sideLength(tb, side) / 2 },
+        model.mode === "detailed" ? NUB.OUT : 0
+      )
+    }
+    const [nx, ny] = start.dir
+    const proj =
+      nx > 0.5
+        ? box.x - start.x
+        : nx < -0.5
+          ? start.x - (box.x + box.w)
+          : ny > 0.5
+            ? box.y - start.y
+            : start.y - (box.y + box.h)
+    // A third of the way, far enough for the trunk's name and chip, and
+    // short of the room the legs need. Short of room, the chip gives way
+    // first, then the legs' lanes; the trunk's name last.
+    const want = f.reach[model.mode]
+    const room = proj - f.legRoom[model.mode]
+    const least = Math.min(f.trunkRoom[model.mode], Math.max(12, proj / 2))
+    let d = Math.max(Math.min(Math.max(proj / 3, want), room), least)
+    if (proj <= 0) d = want
+    const at = () => ({ x: start.x + nx * d, y: start.y + ny * d })
+    for (let k = 0; k < 40; k++) {
+      const p = at()
+      const inCard = solid
+        .near({ x: p.x - 1, y: p.y - 1, w: 2, h: 2 })
+        .some(
+          ({ r }) =>
+            p.x > r.x - CLEAR &&
+            p.x < r.x + r.w + CLEAR &&
+            p.y > r.y - CLEAR &&
+            p.y < r.y + r.h + CLEAR
+        )
+      if (!inCard) break
+      d += 12
+    }
+    out.set(f.id, { c: at(), dir: start.dir })
+  }
+  return out
+}
+
+/** The side a leg lands on when its card lies ahead along the trunk: the
+ * one facing back at the junction. */
+const FACING: Partial<Record<string, Side>> = {
+  "1,0": "L",
+  "-1,0": "R",
+  "0,1": "T",
+  "0,-1": "B",
+}
+
+/** The model's links with each junction end's direction filled in: legs
+ * leave along the trunk, the trunk arrives back from its card. A leg to a
+ * card ahead along the trunk lands on the side facing back at it, as on
+ * the cable page. */
+function withJunctionDirs(
+  links: readonly AnchorLink[],
+  junctions: ReadonlyMap<string, { c: Pt; dir: Dir }>,
+  rects: ReadonlyMap<string, Rect>
+): AnchorLink[] {
+  return links.map((l) => {
+    if (!l.junction) return l
+    const jb = l.junction.b ? junctions.get(l.target) : undefined
+    const ja = l.junction.a ? junctions.get(l.source) : undefined
+    let force: AnchorLink["force"] = l.force
+    const far = ja ? rects.get(l.target) : undefined
+    if (ja && far) {
+      const [dx, dy] = ja.dir
+      const near =
+        dx > 0.5
+          ? far.x - ja.c.x
+          : dx < -0.5
+            ? ja.c.x - (far.x + far.w)
+            : dy > 0.5
+              ? far.y - ja.c.y
+              : ja.c.y - (far.y + far.h)
+      const side = FACING[`${Math.round(dx)},${Math.round(dy)}`]
+      if (side && near >= 2 * LANE) force = { ...force, b: side }
+    }
+    return {
+      ...l,
+      ...(force ? { force } : {}),
+      junction: {
+        ...(l.junction.a ? { a: ja?.dir ?? ([1, 0] as Dir) } : {}),
+        ...(l.junction.b
+          ? {
+              b: jb ? ([-jb.dir[0], -jb.dir[1]] as Dir) : ([-1, 0] as Dir),
+            }
+          : {}),
+      },
+    }
+  })
+}
+
+/** Each trunk's end at its card, as anchored. */
+function trunkEnds(
+  model: DiagramModel,
+  anchors: Anchors,
+  rects: ReadonlyMap<string, Rect>
+): Map<string, End> {
+  const out = new Map<string, End>()
+  for (const f of model.fans) {
+    const a = anchors.links.get(`${f.id}:t`)?.a[0]
+    const r = rects.get(f.trunk)
+    if (!a || !r) continue
+    out.set(f.id, anchorPoint(r, a, model.mode === "detailed" ? NUB.OUT : 0))
+  }
+  return out
+}
+
 interface Laid {
   centres: Map<string, Pt>
-  waypoints: Map<string, [number, number][]>
 }
 
 /**
@@ -332,13 +662,22 @@ function nextShown(
   return { box: keep ? prev.box : box, nubs, mode }
 }
 
+interface Anchored {
+  anchors: Anchors
+  boxes: Map<string, CardBox>
+  /** Every node's box, junctions included. */
+  rects: Map<string, Rect>
+  junctions: Map<string, { c: Pt; dir: Dir }>
+}
+
 /** Anchor every link at the cards' centres. Detailed grows each card to
- * its nubs; `sides` pins the sides an earlier pass chose. */
+ * its nubs; `sides` pins the sides an earlier pass chose. Junctions are
+ * placed off their trunk's port. */
 function anchorAll(
   model: DiagramModel,
   centres: ReadonlyMap<string, Pt>,
   sides?: Anchors["sides"]
-): { anchors: Anchors; boxes: Map<string, CardBox> } {
+): Anchored {
   const boxOf = (id: string) => model.base.get(id) ?? model.fixed.get(id)
   const rects = new Map<string, Rect>()
   for (const [id, c] of centres) {
@@ -346,11 +685,38 @@ function anchorAll(
     if (s) rects.set(id, rectAt(c, s))
   }
   const boxes = new Map(model.base)
-  if (model.mode === "simple")
-    return { anchors: anchorLinks(rects, model.links, "simple"), boxes }
-  const first = anchorLinks(rects, model.links, "detailed", {
-    ...(sides ? { sides } : {}),
-  })
+  const withJ = (j: Map<string, { c: Pt }>) => {
+    const all = new Map(rects)
+    for (const [id, { c }] of j) all.set(id, rectAt(c, JUNCTION))
+    return all
+  }
+  let solid = obstacles(rects)
+  let junctions = placeJunctions(model, rects, solid)
+  const pass = (mode: DiagramMode, pinned?: Anchors["sides"]) =>
+    anchorLinks(
+      withJ(junctions),
+      withJunctionDirs(model.links, junctions, rects),
+      mode,
+      {
+        ...(pinned ? { sides: pinned } : {}),
+        blockers: solid,
+        ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
+      }
+    )
+  if (model.mode === "simple") {
+    let anchors = pass("simple")
+    if (model.fans.length) {
+      junctions = placeJunctions(
+        model,
+        rects,
+        solid,
+        trunkEnds(model, anchors, rects)
+      )
+      anchors = pass("simple")
+    }
+    return { anchors, boxes, rects: withJ(junctions), junctions }
+  }
+  const first = pass("detailed", sides)
   for (const [id, input] of model.cards) {
     const demand = first.demand.get(id)
     if (!demand) continue
@@ -359,28 +725,35 @@ function anchorAll(
     const c = centres.get(id)
     if (c) rects.set(id, rectAt(c, box))
   }
-  return {
-    anchors: anchorLinks(rects, model.links, "detailed", {
-      sides: first.sides,
-    }),
-    boxes,
-  }
+  solid = obstacles(rects)
+  let anchors = first
+  if (model.fans.length)
+    junctions = placeJunctions(
+      model,
+      rects,
+      solid,
+      trunkEnds(model, first, rects)
+    )
+  anchors = pass("detailed", first.sides)
+  if (model.fans.length)
+    junctions = placeJunctions(
+      model,
+      rects,
+      solid,
+      trunkEnds(model, anchors, rects)
+    )
+  return { anchors, boxes, rects: withJ(junctions), junctions }
 }
 
-/** The edges with their anchors and elbow channels filled in. */
-function anchoredEdges(
+/** The edges with their anchors filled in. */
+function withAnchors(
   model: DiagramModel,
-  anchors: Anchors,
-  topLeft: ReadonlyMap<string, Pt>,
-  waypoints: ReadonlyMap<string, [number, number][]>
-): Edge[] {
+  anchors: Anchors
+): Edge<DiagramEdgeData>[] {
   return model.edges.map((e) => {
     const d = e.data!
     const ends = anchors.links.get(e.id)
     if (e.type !== "link" || !ends) return e
-    const wp = d.line === "elbow" ? waypoints.get(e.id) : undefined
-    const s = topLeft.get(e.source)
-    const t = topLeft.get(e.target)
     return {
       ...e,
       data: {
@@ -388,12 +761,55 @@ function anchoredEdges(
         a: ends.a,
         b: ends.b,
         ...(model.mode === "simple" ? { simple: true } : {}),
-        ...(wp && wp.length >= 2 && s && t
-          ? {
-              wp: wp.slice(0, 2).map(([x, y]) => ({ x, y })),
-              wpAt: [s.x, s.y, t.x, t.y] as [number, number, number, number],
-            }
-          : {}),
+      },
+    }
+  })
+}
+
+/**
+ * The edges anchored and planned: Detailed nubs re-ordered so elbow
+ * routes nest (twice - a side's order moves the far sides' routes), then
+ * every line routed, laned and labelled. Mutates `a.anchors` (the nub
+ * order).
+ */
+function plannedEdges(model: DiagramModel, a: Anchored): Edge[] {
+  const solid = (id: string) => model.base.has(id) || model.fixed.has(id)
+  const input = (edges: Edge<DiagramEdgeData>[]) => ({
+    edges,
+    rects: a.rects,
+    solid,
+    mode: model.mode,
+    measure: model.measure,
+  })
+  let edges = withAnchors(model, a.anchors)
+  const elbows = edges.filter(
+    (e) => e.type === "link" && e.data?.line === "elbow"
+  ).length
+  // A second pass settles the order a side's reorder moved on the far
+  // sides; a big map makes do with one.
+  if (model.mode === "detailed" && elbows)
+    for (let round = 0; round < (elbows > 400 ? 1 : 2); round++) {
+      const { turns } = planEdges(input(edges), { turnsOnly: true })
+      if (!reorderNubs(a.anchors, turns)) break
+      edges = withAnchors(model, a.anchors)
+    }
+  const { plans } = planEdges(input(edges))
+  return edges.map((e) => {
+    const plan = plans.get(e.id)
+    const s = a.rects.get(e.source)
+    const t = a.rects.get(e.target)
+    if (!plan || !s || !t) return e
+    const d = e.data!
+    return {
+      ...e,
+      data: {
+        ...d,
+        plan: plan.cables,
+        planAt: [s.x, s.y, t.x, t.y] as [number, number, number, number],
+        ...(plan.mid ? { labels: { ...d.labels, mid: plan.mid } } : {}),
+        ...(plan.midT !== undefined ? { midT: plan.midT } : {}),
+        ...(plan.midOff ? { midOff: plan.midOff } : {}),
+        ...(plan.crowded ? { crowded: true } : {}),
       },
     }
   })
@@ -407,6 +823,10 @@ function sizer(boxes: ReadonlyMap<string, { w: number; h: number }>) {
     return b ? { width: b.w, height: b.h } : sizeOf(n)
   }
 }
+
+/** Detailed cards that grew for their nubs by more than this re-run the
+ * layout; smaller growth keeps the first one. */
+const REGROW = 4
 
 /** Graph payload → Diagram cards and links, laid out. */
 export function buildDiagram(
@@ -451,16 +871,26 @@ export function buildDiagram(
   })
   const key = (id: string) => keyOf.get(id) ?? deviceKey(id)
 
+  // Breakout cables come out of the payload whole, as trunk and legs.
+  const fans = grouped ? [] : detectFanouts(graph.edges, (id) => cards.has(id))
+  const consumed = new Set(fans.flatMap((f) => f.edges))
+  const parts = fans.map((f) => fanParts(f, key, mode, opts, measure))
+
   const { edges: oriented, flipped } = orientHubToLeaf(
-    classifyEdges(graph, {
-      fold: grouped
-        ? "none"
-        : mode === "simple"
-          ? "pair"
-          : opts.bundleLags !== false
-            ? "lag"
-            : "none",
-    }).map((c) => diagramEdge(c, key, opts))
+    classifyEdges(
+      consumed.size
+        ? { ...graph, edges: graph.edges.filter((e) => !consumed.has(e.id)) }
+        : graph,
+      {
+        fold: grouped
+          ? "none"
+          : mode === "simple"
+            ? "pair"
+            : opts.bundleLags !== false
+              ? "lag"
+              : "none",
+      }
+    ).map((c) => diagramEdge(c, key, opts))
   )
   // Twins - two devices of one role with a neighbour in common, like a
   // leaf pair on the same spines - are joined by a peer link (vPC, HA). It
@@ -486,15 +916,21 @@ export function buildDiagram(
     for (const x of na) if (x !== b && nb.has(x)) return true
     return false
   }
-  const edges = oriented.map((e0) => {
-    const e = flipped.has(e0.id) ? orientData(e0) : e0
-    return e.type === "link" && twins(e.source, e.target)
-      ? { ...e, data: { ...e.data!, peer: true } }
-      : e
-  })
-  const links = edges
-    .map((e) => anchorLink(e, flipped.has(e.id)))
-    .filter((l): l is AnchorLink => !!l)
+  const edges = [
+    ...oriented.map((e0) => {
+      const e = flipped.has(e0.id) ? orientData(e0) : e0
+      return e.type === "link" && twins(e.source, e.target)
+        ? { ...e, data: { ...e.data!, peer: true } }
+        : e
+    }),
+    ...parts.flatMap((p) => p.edges),
+  ]
+  const links = [
+    ...oriented
+      .map((e) => anchorLink(e, flipped.has(e.id)))
+      .filter((l): l is AnchorLink => !!l),
+    ...parts.flatMap((p) => p.links),
+  ]
 
   let levels: Map<string, number> | undefined
   let mainOffsets: number[] | undefined
@@ -507,8 +943,26 @@ export function buildDiagram(
     ))
 
   // The cards follow the wiring: a BGP session is an overlay on it, and
-  // ranking by sessions put a spine a tier below its twin.
-  const wiring = edges.filter((e) => e.type !== "overlay")
+  // ranking by sessions put a spine a tier below its twin. A breakout
+  // counts as a link from its trunk's card to each far card.
+  const wiring = [
+    ...edges.filter((e) => e.type !== "overlay" && !e.data?.fan),
+    ...parts.flatMap((p) => p.layout),
+  ]
+  // Detailed: ranks far enough apart for a port name at both ends of a
+  // cable, and a few lanes between them.
+  let widest = 0
+  const degree = new Map<string, number>()
+  if (mode === "detailed")
+    for (const l of links)
+      for (const c of l.cables?.length ? l.cables : [{}]) {
+        for (const p of [c.a, c.b])
+          if (p) widest = Math.max(widest, measure(p, LABEL.END_SIZE, 400))
+        for (const n of [l.source, l.target])
+          degree.set(n, (degree.get(n) ?? 0) + 1)
+      }
+  const lanes = Math.min(8, Math.max(2, ...degree.values()))
+  const rankGap = widest ? 2 * portStub(widest) + LANE * lanes : 0
   const all = new Map<string, { w: number; h: number }>([...fixed, ...base])
   const layout = (boxes: Map<string, { w: number; h: number }>): Laid => {
     // Saved positions are centres; the layout pins top-left corners.
@@ -529,21 +983,19 @@ export function buildDiagram(
         const [x, y] = opts.positions![n.id]
         centres.set(n.id, { x, y })
       }
-      const placed = rfNodes.map((n) => {
-        const [x, y] = pins[n.id]
-        return { ...n, position: { x, y } }
-      })
-      return {
-        centres,
-        waypoints: edgeWaypoints(placed, wiring, sizer(boxes), direction),
-      }
+      return { centres }
     }
     const res = layoutNodes(
       rfNodes,
       wiring,
       // No leaf grids: a straight line from the hub would cross every
       // card stacked in front of the one it serves.
-      { sizeOf: sizer(boxes), compact: mode === "simple", leafGrids: false },
+      {
+        sizeOf: sizer(boxes),
+        compact: mode === "simple",
+        leafGrids: false,
+        ...(rankGap ? { rankGap } : {}),
+      },
       pins,
       direction,
       levels,
@@ -558,7 +1010,7 @@ export function buildDiagram(
           y: n.position.y + b.h / 2,
         })
     }
-    return { centres, waypoints: res.waypoints }
+    return { centres }
   }
 
   const model: DiagramModel = {
@@ -570,27 +1022,36 @@ export function buildDiagram(
     fixed,
     links,
     edges,
+    fans: parts.map((p) => p.model),
+    roomy: widest ? 2 * portStub(widest) : 0,
     measure,
   }
 
   let laid = layout(all)
-  let { anchors, boxes } = anchorAll(model, laid.centres)
+  let anchored = anchorAll(model, laid.centres)
   if (mode === "detailed") {
     // The cards grew to fit their nubs: lay out again with the real
-    // boxes, keeping the sides the nubs were counted for.
-    const sized = new Map<string, { w: number; h: number }>([
-      ...fixed,
-      ...boxes,
-    ])
-    laid = layout(sized)
-    ;({ anchors, boxes } = anchorAll(model, laid.centres, anchors.sides))
+    // boxes, keeping the sides the nubs were counted for - unless nothing
+    // grew enough to matter.
+    const grew = [...anchored.boxes].some(([id, b]) => {
+      const was = base.get(id)
+      return !!was && (b.w - was.w > REGROW || b.h - was.h > REGROW)
+    })
+    if (grew) {
+      const sized = new Map<string, { w: number; h: number }>([
+        ...fixed,
+        ...anchored.boxes,
+      ])
+      laid = layout(sized)
+      anchored = anchorAll(model, laid.centres, anchored.anchors.sides)
+    }
   }
 
-  const topLeft = new Map<string, Pt>()
-  const nodes = rfNodes.map((n) => {
+  const planned = plannedEdges(model, anchored)
+  const { anchors, boxes, junctions } = anchored
+  const nodes: Node[] = rfNodes.map((n) => {
     const c = laid.centres.get(n.id) ?? { x: 0, y: 0 }
     const box = boxes.get(n.id) ?? fixed.get(n.id)!
-    topLeft.set(n.id, { x: c.x - box.w / 2, y: c.y - box.h / 2 })
     const common = {
       ...n,
       position: c,
@@ -613,54 +1074,38 @@ export function buildDiagram(
       data: { ...n.data, dimmed, diagram: shown } as DiagramCardData,
     }
   })
-
-  return {
-    nodes,
-    edges: anchoredEdges(model, anchors, topLeft, laid.waypoints),
-    model,
+  for (const p of parts) {
+    const j = junctions.get(p.node.id)
+    nodes.push(j ? { ...p.node, position: j.c } : { ...p.node, hidden: true })
   }
+
+  return { nodes, edges: planned, model }
 }
 
 export interface Relinked {
   edges: Edge[]
   /** Cards whose box or nubs changed, by id. */
   cards: Map<string, DiagramCardData["diagram"]>
+  /** Where each breakout's junction now sits (its centre). */
+  junctions: Map<string, Pt>
   model: DiagramModel
 }
 
 /**
  * Re-anchor every link for the nodes where they now are (after a drag):
  * sides re-chosen, Detailed nubs re-counted and cards re-sized around
- * their centres, elbow channels re-routed. No layout runs; `live` nodes are
- * positioned by their centres, as `buildDiagram` made them.
+ * their centres, junctions re-placed, every line planned again. No layout
+ * runs; `live` nodes are positioned by their centres, as `buildDiagram`
+ * made them.
  */
 export function relinkDiagram(model: DiagramModel, live: Node[]): Relinked {
   const centres = new Map<string, Pt>()
   for (const n of live)
     if (model.base.has(n.id) || model.fixed.has(n.id))
       centres.set(n.id, { x: n.position.x, y: n.position.y })
-  const { anchors, boxes } = anchorAll(model, centres)
-
-  const topLeft = new Map<string, Pt>()
-  const sizes = new Map<string, { w: number; h: number }>()
-  for (const [id, c] of centres) {
-    const b = boxes.get(id) ?? model.fixed.get(id)!
-    sizes.set(id, b)
-    topLeft.set(id, { x: c.x - b.w / 2, y: c.y - b.h / 2 })
-  }
-  const elbows = model.edges.filter(
-    (e) => e.type === "link" && e.data!.line === "elbow"
-  )
-  const waypoints = elbows.length
-    ? edgeWaypoints(
-        live
-          .filter((n) => topLeft.has(n.id))
-          .map((n) => ({ ...n, position: topLeft.get(n.id)! })),
-        elbows,
-        sizer(sizes),
-        model.direction
-      )
-    : new Map<string, [number, number][]>()
+  const anchored = anchorAll(model, centres)
+  const edges = plannedEdges(model, anchored)
+  const { anchors, boxes } = anchored
 
   const cards = new Map<string, DiagramCardData["diagram"]>()
   const shown = new Map(model.shown)
@@ -673,10 +1118,19 @@ export function relinkDiagram(model: DiagramModel, live: Node[]): Relinked {
       shown.set(id, next)
     }
   }
+  const junctions = new Map<string, Pt>()
+  for (const [id, j] of anchored.junctions) junctions.set(id, j.c)
   const next: DiagramModel = { ...model, shown }
-  return {
-    edges: anchoredEdges(next, anchors, topLeft, waypoints),
-    cards,
-    model: next,
-  }
+  return { edges, cards, junctions, model: next }
+}
+
+/**
+ * The cards measured again - Inter has loaded since they were sized -
+ * and every link re-anchored where the cards are. No layout runs.
+ */
+export function remeasureDiagram(model: DiagramModel, live: Node[]): Relinked {
+  const base = new Map(model.base)
+  for (const [id, input] of model.cards)
+    base.set(id, cardLayout(input, null, model.measure))
+  return relinkDiagram({ ...model, base, shown: new Map() }, live)
 }

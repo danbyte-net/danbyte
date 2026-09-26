@@ -14,7 +14,8 @@ import { linkEnds } from "./anchors"
 import { buildDiagram, relinkDiagram } from "./build-diagram"
 import type { DiagramOptions } from "./build-diagram"
 import { NUB } from "./card-layout"
-import { linkRoute } from "./link-geometry"
+import { leaves, linkRoute, planOf, routeThrough } from "./link-geometry"
+import type { PortPlace } from "@/lib/diagram/geometry"
 import type {
   DiagramCardData,
   DiagramEdgeData,
@@ -110,18 +111,32 @@ function edgeLines(e: Edge, byId: Map<string, Node>): string {
       .map((a) =>
         a.k === "side"
           ? `${a.side}${r1(a.off)}${a.port ? `:${a.port}` : ""}`
-          : a.port
+          : a.k === "junction"
+            ? `junction(${a.dir.join(",")})`
+            : a.port
       )
       .join(" ")
-  const routes = linkEnds(d, s, t).map(
-    ([a, b]) => `  path ${linkRoute(d.line, a, b, { wp: d.wp }).d}`
-  )
+  const plan = planOf(d, s, t)
+  const place = (p: PortPlace | null | undefined) =>
+    p === null ? "off" : p ? `${r1(p.x)},${r1(p.y)}@${r1(p.rotate)}` : ""
+  const routes = plan
+    ? plan.map((p) =>
+        [
+          `  path ${routeThrough(d.line, p.pts, leaves(p.pts)).d}`,
+          ...(p.a !== undefined || p.b !== undefined
+            ? [`    ports a ${place(p.a)} b ${place(p.b)}`]
+            : []),
+        ].join("\n")
+      )
+    : linkEnds(d, s, t).map(
+        ([a, b]) => `  path ${linkRoute(d.line, a, b).d} (unplanned)`
+      )
   return [
     head,
     style,
     ...(d.a.length ? [`  a ${anchors(d.a)}`, `  b ${anchors(d.b)}`] : []),
-    ...(d.wp
-      ? [`  wp ${d.wp.map((p) => `${r1(p.x)},${r1(p.y)}`).join(" ")}`]
+    ...(d.midT !== undefined
+      ? [`  mid at ${d.midT}${d.crowded ? " crowded" : ""}`]
       : []),
     ...routes,
   ].join("\n")

@@ -5,6 +5,7 @@ import type {
   TopologyDiagramDisplay,
   TopologyLineType,
 } from "@/lib/api"
+import type { PortPlace } from "@/lib/diagram/geometry"
 import type { Weight } from "@/lib/diagram/measure"
 import type { EdgeSem } from "../edge-style"
 import type { BundleMember } from "../edge-semantics"
@@ -53,10 +54,14 @@ export type SideCount = Record<Side, number>
  *   the top end of L/R). `port` names the interface; `id` its handle id.
  * - `point`: a photo marker centre as fractions of the image, leaving
  *   through the top or bottom edge.
+ * - `junction`: a breakout's split point (the centre of its junction
+ *   node), leaving along `dir` - the trunk's direction for the legs, back
+ *   towards the trunk's card for the trunk.
  */
 export type Anchor =
   | { k: "side"; side: Side; off: number; port?: string; id?: string }
   | { k: "point"; fx: number; fy: number; exit: "T" | "B"; port: string }
+  | { k: "junction"; dir: Dir }
 
 /** A link end resolved to flow coordinates: the point the line starts
  * from and the direction it leaves in. */
@@ -107,6 +112,25 @@ export interface LinkLabels {
   b?: { port?: string; ip?: string }
 }
 
+/** One cable's planned drawing (`plan.ts`): its route and where its port
+ * names went. */
+export interface CablePlan {
+  /** Terminals included: an elbow's corners, a curve's control points, a
+   * straight line's ends. */
+  pts: Pt[]
+  /** Port names along the cable (Detailed); null = no room, left off. */
+  a?: PortPlace | null
+  b?: PortPlace | null
+}
+
+/** Which part of a breakout cable an edge draws: the trunk from the
+ * shared port to the junction, or one leg on to a far port. */
+export interface FanPart {
+  role: "trunk" | "leg"
+  /** The junction node the part ends (trunk) or starts (leg) at. */
+  junction: string
+}
+
 /**
  * A Diagram link edge's data. `a`/`b` are oriented after the hub→leaf
  * flip. They hold one anchor per cable end: exactly one in Simple, and in
@@ -126,13 +150,20 @@ export type LinkData = {
   b: Anchor[]
   /** Cyclical: the side the arc bulges to and its height. */
   arc?: { flip: 1 | -1; h: number }
-  /** Elbow: the node-avoiding channel from the layout. */
-  wp?: Pt[]
   labels: LinkLabels
-  /** Where the middle label sits along the route, 0..1. */
+  /** Where the middle label sits along the route, 0..1… */
   midT?: number
+  /** …and how far beside the line, px (0 or absent = on it). */
+  midOff?: number
   /** No free spot for the middle label: shown on hover only. */
   crowded?: boolean
+  /** The cable a breakout part belongs to: its trunk and legs hover and
+   * select together. */
+  cableId?: string
+  fan?: FanPart
+  /** Each cable's planned route and port names, for the boxes in
+   * `planAt`. */
+  plan?: CablePlan[]
 }
 
 /** A Diagram edge's data as the canvas holds it: the link plus what the
@@ -141,10 +172,10 @@ export type DiagramEdgeData = LinkData & {
   /** Anchors are side midpoints, recomputed from the live boxes while a
    * card is dragged: Simple mode, LLDP ghosts and grouped-map links. */
   simple?: boolean
-  /** The top-left of the source and target boxes `wp` was routed for. A
-   * card dragged away from there draws the plain elbow until the drop
-   * re-routes it. */
-  wpAt?: [number, number, number, number]
+  /** The top-left of the source and target boxes `plan` was made for. A
+   * card dragged away from there draws the unplanned line until the drop
+   * plans it again. */
+  planAt?: [number, number, number, number]
   /** LLDP ghost: the adjacency, for the materialise dialog. */
   ghost?: TopoEdge["data"]
   /** BGP overlay: the sessions between the pair. */
