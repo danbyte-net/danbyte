@@ -516,6 +516,37 @@ the ends; bands, zones and notes. Selection, search dimming and hidden
 devices never reach a file. An export can add a title block (view name,
 tenant, filters, date and a link back) and the legend under the drawing.
 
+#### draw.io
+
+**draw.io** (`.drawio`) is the same diagram as a file you keep editing, in
+draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
+
+- **Cards** are rounded boxes in the role colour, with the name in bold and
+  the card lines under it; the pill is a small box in the top-left corner.
+  Each card links back: click it in draw.io to open the device in Danbyte,
+  and its Danbyte id is under *Edit Data*. A name cut to fit its card keeps
+  the full name as the hover text.
+- **Simple is the default**: every line meets its card at the midpoint of
+  that side. **Detailed** adds the interface nubs; each line leaves its own
+  nub, with the port name turned along the line.
+- **Lines keep their route.** Elbows go through draw.io's orthogonal router
+  with each corner as a waypoint, so they stay square when you move a card.
+  Bendy and Cyclical lines are draw.io curves through the same points the
+  map uses. The subnet is the line's own label; the addresses at the ends
+  are labels that ride along the line.
+- **Bands:** a row band becomes a swimlane that holds its cards (the ones
+  whose centre is inside it) and carries them when you drag it. Zones hold
+  their cards the same way. A side band is a shape behind the rows, as a
+  card can sit in only one container.
+- **Layers:** LLDP neighbours and BGP sessions are on their own layers,
+  *Discovered (LLDP)* and *BGP sessions*, so you can hide them in one click.
+- Text is Helvetica, as few machines have Inter installed. Device photos
+  are drawn as their cards.
+
+**draw.io SVG** (`.drawio.svg`) is that drawing as an SVG image with the
+draw.io file inside it: it shows anywhere an image does (a wiki page, a Git
+repository), and draw.io opens it for editing.
+
 ## API
 
 `GET /api/topology/` - parameters: `site`, `location`, `role`, `status`,
