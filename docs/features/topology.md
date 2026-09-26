@@ -538,37 +538,59 @@ layout run.
 
 ## Export
 
-**PNG** renders the entire graph (not just the visible viewport) to an image
-sized to the diagram - ready for a wiki page or a change ticket. Cards and
-cables scrolled off screen are included: the map mounts everything for the
-capture, so a big map can take a moment. **Alt-click** exports just the
-visible area instead, for pasting one detail rather than the whole estate.
+**Export** in the second bar downloads the map as a file. It is drawn from
+the map's data, not captured from the screen, so every card is in the file
+however far off screen it sits.
+
+| Format | What you get | Good for |
+|---|---|---|
+| **PNG** | An image at twice screen resolution | A wiki page, a change ticket, a chat message |
+| **SVG** | A vector drawing: cards, lines and text, each card and cable a link back to Danbyte | Printing at any size, Inkscape or Illustrator, documentation |
+| **draw.io** | An editable `.drawio` file (see [draw.io](#drawio) below) | A diagram you keep editing in draw.io |
+
+The menu's choices are remembered per browser:
+
+- **Area** - **Whole map**, or **Visible area**: only the cards on screen
+  and the lines between them.
+- **draw.io** (Diagram tab) - **Simple** (the default) or **Detailed**,
+  whichever mode the map is in on screen.
+- **Title and legend** - a strip under a PNG or SVG: the view name, the
+  tenant, the filters, the date and a link back to this map, beside the
+  legend (role colours, the monitoring pill, line styles).
+
+A file is named after the saved view (else the site, else `topology`) and
+the day: `arhus-dc-2026-09-26.drawio`.
+
+**Wiring, Hierarchy and Flat** export their SVG and draw.io in the Diagram's
+Simple look: a compact role-coloured card with the device's IP, centred
+where its card sits on the tab, and one straight line per device pair with
+a count chip (`2x`) when it stands for several cables. Their port rows and
+routed cables are how those tabs draw rather than what the map says. Their
+PNG is still a picture of the canvas as you see it, in the app's theme. The
+Logical tab has no export.
 
 ### How Diagram exports are drawn
 
-The Diagram tab's SVG and PNG are drawn from the map's data rather than
-captured from the screen, so every card is in the file however far off
-screen it sits, and the file looks the same whatever theme the app is in:
-white paper, zinc greys, and colour only where it means something - role
-fills, status pills, cable colours.
+Every export is light-themed whatever theme the app is in: white paper,
+zinc greys, and colour only where it means something - role fills, status
+pills, cable colours.
 
 - **SVG** is plain vector drawing: shapes, lines and text, no embedded HTML.
   It opens in a browser, Inkscape or Illustrator and stays editable. Text is
   set in Inter, falling back to the usual sans-serif fonts where Inter is not
   installed.
-- **PNG** is that SVG rasterised (2x by default), with Inter embedded so
-  names never reflow in another font. Device photos are embedded too; a photo
-  that will not load is drawn as the device's card. A very large map is
-  scaled down to stay under about 16.7 million pixels - Safari draws nothing
-  above that.
+- **PNG** is that SVG rasterised (2x), with Inter embedded so names never
+  reflow in another font. Device photos are embedded too; a photo that will
+  not load is drawn as the device's card. A very large map is scaled down to
+  stay under about 16.7 million pixels - Safari draws nothing above that.
 
 Both show what the canvas shows: role-coloured cards with the name, card
 lines and pill; in Detailed, the interface nubs with each port name running
-along its line; the same four line types (curves follow draw.io's curved
-rule, so the draw.io file matches); subnet chips mid-line and addresses at
-the ends; bands, zones and notes. Selection, search dimming and hidden
-devices never reach a file. An export can add a title block (view name,
-tenant, filters, date and a link back) and the legend under the drawing.
+along its line; the same line types (curves follow draw.io's curved rule,
+so the draw.io file matches); the count chips on bundles; zones. The
+monitoring pill is the one on screen when the file is made. Selection,
+hover, search dimming and hidden devices or link families never reach a
+file.
 
 #### draw.io
 
@@ -578,28 +600,26 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
 - **Cards** are rounded boxes in the role colour, with the name in bold and
   the card lines under it; the pill is a small box in the top-left corner.
   Each card links back: click it in draw.io to open the device in Danbyte,
-  and its Danbyte id is under *Edit Data*. A name cut to fit its card keeps
-  the full name as the hover text.
+  and its Danbyte id is under *Edit Data* (Ctrl+M). A name cut to fit its
+  card keeps the full name as the hover text.
 - **Simple is the default**: every line meets its card at the midpoint of
-  that side. **Detailed** adds the interface nubs; each line leaves its own
-  nub, with the port name turned along the line.
+  that side, and a pair's cables are one line with a count - the shape a
+  hand-drawn diagram has, even when the map is in Detailed. **Detailed**
+  adds the interface nubs; each line leaves its own nub, with the port name
+  turned along the line.
 - **Lines keep their route.** Elbows go through draw.io's orthogonal router
   with each corner as a waypoint, so they stay square when you move a card.
-  Bendy and Cyclical lines are draw.io curves through the same points the
-  map uses. The subnet is the line's own label; the addresses at the ends
-  are labels that ride along the line.
+  Bendy lines are draw.io curves through the same points the map uses. A
+  single cable links back to it in Danbyte.
 - **Bands:** a row band becomes a swimlane that holds its cards (the ones
   whose centre is inside it) and carries them when you drag it. Zones hold
   their cards the same way. A side band is a shape behind the rows, as a
   card can sit in only one container.
 - **Layers:** LLDP neighbours and BGP sessions are on their own layers,
-  *Discovered (LLDP)* and *BGP sessions*, so you can hide them in one click.
+  *Discovered (LLDP)* and *BGP sessions*, so you can hide them in one click
+  (*View ▸ Layers*, Ctrl+Shift+L).
 - Text is Helvetica, as few machines have Inter installed. Device photos
   are drawn as their cards.
-
-**draw.io SVG** (`.drawio.svg`) is that drawing as an SVG image with the
-draw.io file inside it: it shows anywhere an image does (a wiki page, a Git
-repository), and draw.io opens it for editing.
 
 ## API
 

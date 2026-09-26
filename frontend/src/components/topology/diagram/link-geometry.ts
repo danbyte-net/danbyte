@@ -1,4 +1,12 @@
-import type { Dir, End, LineType, Pt, Route } from "./types"
+import type {
+  DiagramEdgeData,
+  Dir,
+  End,
+  LineType,
+  Pt,
+  Rect,
+  Route,
+} from "./types"
 
 // The one place a link's path is computed. The Diagram canvas, the SVG and
 // PDF exports and the draw.io writer all draw from these points, so every
@@ -245,6 +253,25 @@ function sampler(f: Flat, dir: Dir): Pick<Route, "length" | "at"> {
     }
   }
   return { length, at }
+}
+
+/**
+ * An elbow link's node-avoiding channel, while both cards are still where
+ * it was routed for; undefined once either has moved (the plain elbow is
+ * drawn until the drop re-routes it) and for other line types. `s` and `t`
+ * are the source and target boxes.
+ */
+export function elbowChannel(
+  d: Pick<DiagramEdgeData, "line" | "wp" | "wpAt">,
+  s: Rect,
+  t: Rect
+): Pt[] | undefined {
+  if (d.line !== "elbow" || !d.wp || !d.wpAt) return undefined
+  const [sx, sy, tx, ty] = d.wpAt
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.5
+  return near(s.x, sx) && near(s.y, sy) && near(t.x, tx) && near(t.y, ty)
+    ? d.wp
+    : undefined
 }
 
 export interface RouteOptions {

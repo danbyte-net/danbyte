@@ -4,7 +4,7 @@ import type { Edge, EdgeProps, InternalNode } from "@xyflow/react"
 
 import { LABEL } from "@/lib/diagram/theme"
 import { linkEnds } from "./anchors"
-import { linkRoute } from "./link-geometry"
+import { elbowChannel, linkRoute } from "./link-geometry"
 import type { DiagramEdgeData, End, Rect, Route } from "./types"
 
 // A Diagram link: one line per cable between two cards, drawn from the
@@ -29,16 +29,6 @@ function boxOf(n: InternalNode | undefined): Rect | null {
     w: n.width ?? n.measured.width ?? 0,
     h: n.height ?? n.measured.height ?? 0,
   }
-}
-
-/** The elbow channel, while both cards are still where it was routed. */
-function channel(d: DiagramEdgeData, s: Rect, t: Rect) {
-  if (d.line !== "elbow" || !d.wp || !d.wpAt) return undefined
-  const [sx, sy, tx, ty] = d.wpAt
-  const near = (a: number, b: number) => Math.abs(a - b) < 0.5
-  return near(s.x, sx) && near(s.y, sy) && near(t.x, tx) && near(t.y, ty)
-    ? d.wp
-    : undefined
 }
 
 const r1 = (v: number) => Math.round(v * 10) / 10
@@ -88,7 +78,7 @@ export const LinkEdge = memo(function LinkEdge({
   const s = boxOf(useInternalNode(source))
   const t = boxOf(useInternalNode(target))
   if (!s || !t || !data) return null
-  const wp = channel(data, s, t)
+  const wp = elbowChannel(data, s, t)
   const routes: Route[] = linkEnds(data, s, t).map(([a, b]) =>
     linkRoute(data.line, a, b, { wp })
   )

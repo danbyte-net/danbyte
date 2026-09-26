@@ -34,6 +34,7 @@ import type {
 import { useTheme } from "@/components/theme-provider"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { diagramFontsReady } from "@/lib/diagram/measure"
+import type { DiagramDocument } from "@/lib/diagram/types"
 import { CanvasTip } from "./canvas-tip"
 import type { CanvasTipHandle } from "./canvas-tip"
 import { ABOVE, BELOW, RIGHT, handleId } from "./stencil-node"
@@ -67,7 +68,15 @@ import { nodeTypes, sizeOf } from "./node-registry"
 import { buildDiagram, relinkDiagram } from "./diagram/build-diagram"
 import type { DiagramModel } from "./diagram/build-diagram"
 import { LinkEdge } from "./diagram/link-edge"
-import type { DiagramCardData, DiagramMode, LineType } from "./diagram/types"
+import { toDocument } from "./diagram/to-document"
+import type { DocumentOptions } from "./diagram/to-document"
+import type {
+  DiagramCardData,
+  DiagramMode,
+  LineType,
+  Rect,
+} from "./diagram/types"
+import { fromFlow } from "./export/from-flow"
 
 export { speedColor, typeColor } from "./edge-style"
 export type { EdgeColorMode } from "./edge-style"
@@ -168,6 +177,18 @@ export interface CanvasHandle {
   /** Render the graph to a PNG data URL - the whole diagram, or just the
    * visible viewport. */
   exportPng: (viewportOnly?: boolean) => Promise<string | null>
+  /** The map as an export document (lib/diagram): the Diagram from its
+   * model, the other tabs in the Diagram's Simple look. Built from the
+   * canvas's data - every card, on screen or not - never the DOM. */
+  document: (opts: CanvasDocumentOptions) => DiagramDocument
+}
+
+export interface CanvasDocumentOptions extends Omit<
+  DocumentOptions,
+  "area" | "monitor" | "checkLabels" | "measure"
+> {
+  /** "visible": only the cards on screen and the lines between them. */
+  area?: "all" | "visible"
 }
 
 /** The full name a cable edge announces on hover - label/number, media,
@@ -1373,6 +1394,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     })
   }, [zoneSig, zoneCb, setNodes])
 
+  // What an export reads, through a ref so the handle keeps one identity:
+  // the canvas's own state (not the rendered nodes and edges, which carry
+  // the spotlight, hover emphasis and search dimming).
+  const exportRef = useRef({ nodes, edges, monitor, statusLabels, diagram })
+  exportRef.current = { nodes, edges, monitor, statusLabels, diagram }
+
   useImperativeHandle(
     ref,
     () => ({
@@ -1537,6 +1564,38 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           undo()
           if (!viewportOnly) setCapturing(false)
         }
+      },
+      document: ({ area = "all", ...opts }) => {
+        const live = exportRef.current
+        let box: Rect | null = null
+        const el = wrapper.current
+        if (area === "visible" && el) {
+          const vp = flow.getViewport()
+          box = {
+            x: -vp.x / vp.zoom,
+            y: -vp.y / vp.zoom,
+            w: el.clientWidth / vp.zoom,
+            h: el.clientHeight / vp.zoom,
+          }
+        }
+        const cards = live.nodes.filter((n) => n.type !== "zone")
+        const model = modelRef.current
+        if (live.diagram && model)
+          return toDocument(
+            model,
+            { nodes: cards, edges: live.edges },
+            zonesRef.current,
+            {
+              ...opts,
+              area: box,
+              monitor: live.monitor,
+              checkLabels: live.statusLabels,
+            }
+          )
+        return fromFlow(cards, live.edges, zonesRef.current, {
+          ...opts,
+          area: box,
+        })
       },
     }),
     [flow, theme]

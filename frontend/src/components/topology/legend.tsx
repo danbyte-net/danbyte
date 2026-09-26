@@ -74,15 +74,34 @@ const SPEED_TIERS: [string, string][] = [
 
 /** The most role fills the Diagram legend lists; the rest are on the map. */
 const MAX_ROLES = 12
+/** The most media types the legend swatches. */
+const MAX_TYPES = 8
 
-export function CanvasLegend({
-  viewStyle,
-  grouped,
-  colorMode,
-  types = [],
-  roles = [],
-  monitorPill = false,
-}: {
+/** One legend entry. The canvas legend draws these, and the exports turn
+ * them into their own legend rows (to-document.ts `printLegend`). */
+export type LegendItem =
+  /** A Diagram card fill: the role's colour. */
+  | { kind: "role"; label: string; color?: string }
+  /** The monitoring pill a card shows while down. */
+  | { kind: "pill"; label: string }
+  /** A line style. `sem` names the edge kind when the look is that kind's
+   * own (the exports draw it with their print colours). */
+  | {
+      kind: "line"
+      label: string
+      width?: number
+      dash?: string
+      color?: string
+      sem?: "cable" | "bundle" | "ghost" | "bgp"
+    }
+  /** A box: a site/location card, or a patch panel's dashed outline. */
+  | { kind: "box"; label: string; dashed?: boolean }
+  /** A colour-mode swatch: a media type or a speed tier. */
+  | { kind: "tone"; label: string; color: string; mono?: boolean }
+  /** A colour-mode note. */
+  | { kind: "note"; label: string }
+
+export interface LegendOptions {
   viewStyle: NodeStyle
   grouped: boolean
   colorMode: EdgeColorMode
@@ -93,7 +112,97 @@ export function CanvasLegend({
   roles?: { name: string; color?: string }[]
   /** Diagram: some card shows the monitoring pill. */
   monitorPill?: boolean
-}) {
+}
+
+/** The legend's entries for a view, in order: only what is on screen. */
+export function legendRows({
+  viewStyle,
+  grouped,
+  colorMode,
+  types = [],
+  roles = [],
+  monitorPill = false,
+}: LegendOptions): LegendItem[] {
+  const out: LegendItem[] = []
+  if (grouped)
+    out.push(
+      { kind: "line", label: "Cables between groups", sem: "cable" },
+      { kind: "box", label: "Site / location" }
+    )
+  else if (viewStyle === "diagram") {
+    for (const r of roles)
+      out.push({ kind: "role", label: r.name, color: r.color || undefined })
+    if (monitorPill) out.push({ kind: "pill", label: "Monitoring" })
+    out.push(
+      { kind: "line", label: "Cable", sem: "cable" },
+      { kind: "line", label: "Bundle (2x)", width: 2.5, sem: "bundle" },
+      { kind: "line", label: "Via patch panels", dash: "10 4" },
+      {
+        kind: "line",
+        label: "LLDP, no cable",
+        dash: "6 4",
+        width: 1.5,
+        sem: "ghost",
+      },
+      {
+        kind: "line",
+        label: "BGP session",
+        dash: "3 5",
+        width: 1.25,
+        color: "var(--primary)",
+        sem: "bgp",
+      }
+    )
+  } else if (viewStyle === "flat")
+    out.push(
+      { kind: "line", label: "Cable bundle (×N)", sem: "cable" },
+      {
+        kind: "line",
+        label: "LLDP, no cable",
+        dash: "6 4",
+        width: 1.5,
+        sem: "ghost",
+      }
+    )
+  else
+    out.push(
+      { kind: "line", label: "Cable", sem: "cable" },
+      {
+        kind: "line",
+        label: "LAG bundle (Po1 ⇄ Po10 ×N)",
+        width: 2.5,
+        sem: "bundle",
+      },
+      { kind: "line", label: "Via patch panels", dash: "10 4" },
+      {
+        kind: "line",
+        label: "LLDP, no cable",
+        dash: "6 4",
+        width: 1.5,
+        sem: "ghost",
+      },
+      {
+        kind: "line",
+        label: "BGP session",
+        dash: "3 5",
+        width: 1.25,
+        color: "var(--primary)",
+        sem: "bgp",
+      },
+      { kind: "box", label: "Patch panel", dashed: true }
+    )
+  if (colorMode === "type" && types.length > 0)
+    for (const t of types.slice(0, MAX_TYPES))
+      out.push({ kind: "tone", label: t, color: typeColor(t), mono: true })
+  else if (colorMode === "speed")
+    for (const [color, label] of SPEED_TIERS)
+      out.push({ kind: "tone", label, color })
+  else if (COLOR_MODE_NOTE[colorMode])
+    out.push({ kind: "note", label: COLOR_MODE_NOTE[colorMode] })
+  return out
+}
+
+export function CanvasLegend(props: LegendOptions) {
   const [open, setOpen] = useState(() => localStorage.getItem(KEY) !== "closed")
   const toggle = (v: boolean) => {
     setOpen(v)
@@ -111,6 +220,10 @@ export function CanvasLegend({
       </button>
     )
 
+  const items = legendRows(props)
+  const roles = items.filter((i) => i.kind === "role").slice(0, MAX_ROLES)
+  const tones = items.filter((i) => i.kind === "tone")
+  const note = items.find((i) => i.kind === "note")
   return (
     <div className="w-60 rounded-md border border-border bg-card/95 p-2.5 text-[11px] shadow-sm backdrop-blur">
       <div className="mb-1.5 flex items-center justify-between">
@@ -127,113 +240,78 @@ export function CanvasLegend({
         </button>
       </div>
       <div className="space-y-1">
-        {grouped ? (
-          <>
-            <RowItem swatch={<Line />} label="Cables between groups" />
-            <RowItem
-              swatch={
-                <span className="h-3 w-6 shrink-0 rounded-sm border-2 border-border bg-card" />
-              }
-              label="Site / location"
-            />
-          </>
-        ) : viewStyle === "diagram" ? (
-          <>
-            {roles.length > 0 && (
-              <div className="flex flex-wrap gap-1 pb-1">
-                {roles.slice(0, MAX_ROLES).map((r) => (
-                  <ColorBadge
-                    key={r.name}
-                    name={r.name}
-                    color={r.color || undefined}
-                    className="h-4 px-1.5 text-[10px]"
-                  />
-                ))}
-              </div>
-            )}
-            {monitorPill && (
-              <RowItem
-                swatch={
-                  <CheckStatusBadge
-                    status="down"
-                    className="h-4 px-[7px] text-[9px]"
-                  />
-                }
-                label="Monitoring"
+        {roles.length > 0 && (
+          <div className="flex flex-wrap gap-1 pb-1">
+            {roles.map((r) => (
+              <ColorBadge
+                key={r.label}
+                name={r.label}
+                color={r.color}
+                className="h-4 px-1.5 text-[10px]"
               />
-            )}
-            <RowItem swatch={<Line />} label="Cable" />
-            <RowItem swatch={<Line width={2.5} />} label="Bundle (2x)" />
-            <RowItem swatch={<Line dash="10 4" />} label="Via patch panels" />
-            <RowItem
-              swatch={<Line dash="6 4" width={1.5} />}
-              label="LLDP, no cable"
-            />
-            <RowItem
-              swatch={<Line dash="3 5" width={1.25} color="var(--primary)" />}
-              label="BGP session"
-            />
-          </>
-        ) : viewStyle === "flat" ? (
-          <>
-            <RowItem swatch={<Line />} label="Cable bundle (×N)" />
-            <RowItem
-              swatch={<Line dash="6 4" width={1.5} />}
-              label="LLDP, no cable"
-            />
-          </>
-        ) : (
-          <>
-            <RowItem swatch={<Line />} label="Cable" />
-            <RowItem
-              swatch={<Line width={2.5} />}
-              label="LAG bundle (Po1 ⇄ Po10 ×N)"
-            />
-            <RowItem swatch={<Line dash="10 4" />} label="Via patch panels" />
-            <RowItem
-              swatch={<Line dash="6 4" width={1.5} />}
-              label="LLDP, no cable"
-            />
-            <RowItem
-              swatch={<Line dash="3 5" width={1.25} color="var(--primary)" />}
-              label="BGP session"
-            />
-            <RowItem
-              swatch={
-                <span className="h-3 w-6 shrink-0 rounded-sm border border-dashed border-muted-foreground/60 bg-card" />
-              }
-              label="Patch panel"
-            />
-          </>
+            ))}
+          </div>
         )}
-        {colorMode === "type" && types.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1">
-            {types.slice(0, 8).map((t) => (
-              <span key={t} className="flex items-center gap-1">
+        {items.map((r, i) =>
+          r.kind === "pill" ? (
+            <RowItem
+              key={i}
+              swatch={
+                <CheckStatusBadge
+                  status="down"
+                  className="h-4 px-[7px] text-[9px]"
+                />
+              }
+              label={r.label}
+            />
+          ) : r.kind === "line" ? (
+            <RowItem
+              key={i}
+              swatch={<Line dash={r.dash} width={r.width} color={r.color} />}
+              label={r.label}
+            />
+          ) : r.kind === "box" ? (
+            <RowItem
+              key={i}
+              swatch={
+                r.dashed ? (
+                  <span className="h-3 w-6 shrink-0 rounded-sm border border-dashed border-muted-foreground/60 bg-card" />
+                ) : (
+                  <span className="h-3 w-6 shrink-0 rounded-sm border-2 border-border bg-card" />
+                )
+              }
+              label={r.label}
+            />
+          ) : null
+        )}
+        {tones.length > 0 ? (
+          <div
+            className={
+              props.colorMode === "speed"
+                ? "flex items-center gap-2 pt-1"
+                : "flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1"
+            }
+          >
+            {tones.map((t) => (
+              <span key={t.label} className="flex items-center gap-1">
                 <span
                   className="h-2 w-2 rounded-full"
-                  style={{ background: typeColor(t) }}
+                  style={{ background: t.color }}
                 />
-                <span className="font-mono text-muted-foreground">{t}</span>
+                <span
+                  className={
+                    t.mono
+                      ? "font-mono text-muted-foreground"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {t.label}
+                </span>
               </span>
             ))}
           </div>
-        ) : colorMode === "speed" ? (
-          <div className="flex items-center gap-2 pt-1">
-            {SPEED_TIERS.map(([c, l]) => (
-              <span key={l} className="flex items-center gap-1">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ background: c }}
-                />
-                <span className="text-muted-foreground">{l}</span>
-              </span>
-            ))}
-          </div>
-        ) : COLOR_MODE_NOTE[colorMode] ? (
-          <p className="pt-1 text-muted-foreground">
-            {COLOR_MODE_NOTE[colorMode]}
-          </p>
+        ) : note ? (
+          <p className="pt-1 text-muted-foreground">{note.label}</p>
         ) : null}
       </div>
     </div>

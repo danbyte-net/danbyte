@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Camera,
   Crosshair,
   Filter,
   LayoutGrid,
@@ -73,7 +72,8 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Combobox } from "@/components/ui/combobox"
 import { FormCheckbox } from "@/components/forms"
 import { LevelOrganiser } from "@/components/topology/level-organiser"
-import { CanvasLegend } from "@/components/topology/legend"
+import { CanvasLegend, legendRows } from "@/components/topology/legend"
+import { ExportMenu } from "@/components/topology/export/export-menu"
 import { LogicalTopologyView } from "@/components/topology/logical-view"
 import { TopologyObjectsSidebar } from "@/components/topology/map-sidebar"
 import {
@@ -538,7 +538,7 @@ function TopologyPage() {
   const urlSearch = Route.useSearch()
   const nav = useNavigate()
   const patch = useUrlPatch()
-  const { canDo } = useMe()
+  const { me, canDo } = useMe()
   const qc = useQueryClient()
   const canvas = useRef<CanvasHandle>(null)
 
@@ -1430,13 +1430,36 @@ function TopologyPage() {
     else toast.error("Couldn't copy - clipboard blocked by the browser")
   }
 
-  const exportPng = async (viewportOnly = false) => {
-    const url = await canvas.current?.exportPng(viewportOnly)
-    if (!url) return
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "topology.png"
-    a.click()
+  // What an export says about this map: its name, the tenant, the filters
+  // in words, and a link back.
+  const named = (
+    list: { id: string; name: string }[] | undefined,
+    id: string
+  ) => (id === "all" ? undefined : list?.find((x) => x.id === id)?.name)
+  const siteName = named(sites.data?.results, siteF)
+  const exportName = appliedView?.name ?? drill?.name ?? siteName ?? "Topology"
+  const exportMeta = () => {
+    const tag =
+      tagF === "all"
+        ? undefined
+        : tags.data?.results.find((t) => t.slug === tagF)?.name
+    const summary = [
+      siteName && `Site ${siteName}`,
+      named(roles.data?.results, roleF) &&
+        `Role ${named(roles.data?.results, roleF)}`,
+      named(statuses.data?.results, statusF) &&
+        `Status ${named(statuses.data?.results, statusF)}`,
+      tag && `Tag ${tag}`,
+    ]
+      .filter(Boolean)
+      .join(" · ")
+    return {
+      title: exportName,
+      ...(me.active_tenant ? { tenant: me.active_tenant.name } : {}),
+      generated_at: new Date().toISOString(),
+      ...(summary ? { filters: summary } : {}),
+      danbyte_url: window.location.href,
+    }
   }
 
   // Roles present on the map, for the Level organiser.
@@ -1908,16 +1931,36 @@ function TopologyPage() {
               <LinkIcon className="h-3 w-3" /> Link
             </Button>
           </BarTip>
-          <BarTip tip="Whole map · Alt-click: visible area">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={(e) => exportPng(e.altKey)}
-            >
-              <Camera className="h-3 w-3" /> PNG
-            </Button>
-          </BarTip>
+          <ExportMenu
+            name={exportName}
+            modes={isDiagram}
+            disabled={!graph}
+            // Every file is drawn in the Diagram's look, whatever the tab.
+            legend={legendRows({
+              viewStyle: "diagram",
+              grouped,
+              colorMode,
+              types: presentTypes,
+              roles: rolesInGraph,
+              monitorPill: cardMonitor,
+            })}
+            // The Diagram's PNG is its SVG rasterised; the other tabs keep
+            // the canvas capture.
+            capturePng={
+              isDiagram
+                ? undefined
+                : async (visible) =>
+                    (await canvas.current?.exportPng(visible)) ?? null
+            }
+            document={(req) =>
+              canvas.current?.document({
+                ...req,
+                meta: exportMeta(),
+                notes: doc.doc.notes,
+                origin: window.location.origin,
+              }) ?? null
+            }
+          />
         </div>
       </div>
 
