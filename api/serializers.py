@@ -5,11 +5,13 @@ matching list / detail page actually renders, no kitchen-sink output.
 from __future__ import annotations
 
 import ipaddress
+import math
 import os
 import re
 
 from django.db import transaction
 from django.utils.text import slugify
+from rest_framework.exceptions import APIException
 from rest_framework.fields import empty
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
@@ -3760,13 +3762,61 @@ class ModuleBayTemplateSerializer(_ComponentTemplateSerializer):
 
 # ─── Modules (pluggable line cards) ──────────────────────────────────────────
 
+class StaleTopologyViewError(APIException):
+    """A save based on a copy of the view that is no longer the latest."""
+
+    status_code = 409
+    default_detail = "This view was saved by someone else since you opened it."
+    default_code = "stale_view"
+
+
+_UUID_TEXT = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_UUID_RE = re.compile(rf"^{_UUID_TEXT}$")
+_DEVICE_PAIR_RE = re.compile(rf"^({_UUID_TEXT})\|({_UUID_TEXT})$")
+
+
 class TopologyViewSerializer(NumIdModelSerializer):
     state = serializers.JSONField(required=False)
+    #: The ``updated_at`` of the copy these edits started from. When given,
+    #: a save over a view somebody saved since is refused with 409 instead of
+    #: silently dropping their work.
+    base_updated_at = serializers.DateTimeField(
+        write_only=True, required=False, allow_null=True
+    )
 
     # The map's cards are sized differently in each view style, so a view
     # keeps one arrangement per style. Each is bounded like the single map
     # this grew out of.
-    POSITION_STYLES = ("stencil", "hierarchy", "flat")
+    POSITION_STYLES = ("stencil", "hierarchy", "flat", "diagram")
+
+    # ── Diagram-tab keys ─────────────────────────────────────────────────
+    # Only these (added in 0.17) are checked in depth; the older keys keep
+    # the lenient checks views have always been saved under.
+
+    #: The zone swatches - mirrors ZONE_COLORS in
+    #: frontend/src/components/topology/view-positions.ts.
+    ZONE_COLORS = (
+        "#64748b", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6",
+    )
+    REGION_KINDS = ("zone", "band")
+    #: A band is a row (``h``) or a side band (``v``).
+    BAND_ORIENTS = ("h", "v")
+    BAND_RULE_BY = ("role", "device_type")
+    MAX_BAND_RULE_IDS = 100
+    DIAGRAM_MODES = ("simple", "detailed")
+    DIAGRAM_FACES = ("card", "photo")
+    LINE_TYPES = ("straight", "elbow", "bendy", "cyclical")
+    LINK_LABELS = ("subnet", "ip", "port")
+    #: Per-link overrides, keyed by the sorted device pair.
+    MAX_LINKS = 20_000
+    #: Per-card overrides, keyed by device id.
+    MAX_NODE_OVERRIDES = 10_000
+    MAX_NOTES = 500
+    MAX_NOTE_TEXT = 200
+    NOTE_KINDS = ("text", "icon")
+    NOTE_ICONS = ("cloud", "globe", "building")
+    #: A coordinate further out than this is a bug, not a layout.
+    MAX_COORD = 10_000_000
 
     #: Nodes one arrangement or one hidden group may hold. The real bound is
     #: MAX_STATE_BYTES; this only keeps a single list sane. It used to be
@@ -3848,12 +3898,205 @@ class TopologyViewSerializer(NumIdModelSerializer):
                 self._ids(names, f"hidden.{group}")
         else:
             self._ids(hidden, "hidden")
+        # The Diagram tab's keys.
+        if "diagram" in zones:
+            self._diagram_regions(zones["diagram"])
+        filters = v.get("filters")
+        if isinstance(filters, dict) and "diagram" in filters:
+            self._diagram_display(filters["diagram"])
+        if "links" in v:
+            self._link_overrides(v["links"])
+        if "nodes" in v:
+            self._node_overrides(v["nodes"])
+        if "notes" in v:
+            self._notes(v["notes"])
         return v
+
+    @staticmethod
+    def _choice(value, allowed, label):
+        """``value`` is absent (None) or one of ``allowed``."""
+        if value is not None and value not in allowed:
+            raise serializers.ValidationError(
+                f"{label} must be one of {', '.join(allowed)}"
+            )
+
+    def _coord(self, value, label):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or abs(value) > self.MAX_COORD
+        ):
+            raise serializers.ValidationError(f"{label} must be a number")
+
+    def _diagram_regions(self, regions):
+        """Zones and bands on the Diagram tab. The list itself is bounded by
+        the per-style check above."""
+        for i, region in enumerate(regions):
+            where = f"zones_by_style.diagram[{i}]"
+            if not isinstance(region, dict):
+                raise serializers.ValidationError(f"{where} must be an object")
+            self._choice(region.get("kind"), self.REGION_KINDS, f"{where}.kind")
+            self._choice(
+                region.get("orient"), self.BAND_ORIENTS, f"{where}.orient"
+            )
+            color = region.get("color")
+            if color not in (None, ""):
+                if not isinstance(color, str) or color.lower() not in self.ZONE_COLORS:
+                    raise serializers.ValidationError(
+                        f"{where}.color must be one of "
+                        f"{', '.join(self.ZONE_COLORS)} or null"
+                    )
+                region["color"] = color.lower()
+            rule = region.get("rule")
+            if rule is None:
+                continue
+            if not isinstance(rule, dict):
+                raise serializers.ValidationError(f"{where}.rule must be an object")
+            if rule.get("by") not in self.BAND_RULE_BY:
+                raise serializers.ValidationError(
+                    f"{where}.rule.by must be one of {', '.join(self.BAND_RULE_BY)}"
+                )
+            ids = rule.get("ids")
+            if (
+                not isinstance(ids, list)
+                or len(ids) > self.MAX_BAND_RULE_IDS
+                or not all(isinstance(x, str) and _UUID_RE.match(x) for x in ids)
+            ):
+                raise serializers.ValidationError(
+                    f"{where}.rule.ids must be a list of at most "
+                    f"{self.MAX_BAND_RULE_IDS} ids"
+                )
+
+    def _diagram_display(self, display):
+        """``filters.diagram``: the Diagram tab's display settings."""
+        from core.deployment import validate_topology_card_list
+
+        if not isinstance(display, dict):
+            raise serializers.ValidationError("filters.diagram must be an object")
+        self._choice(display.get("mode"), self.DIAGRAM_MODES, "filters.diagram.mode")
+        self._choice(display.get("face"), self.DIAGRAM_FACES, "filters.diagram.face")
+        self._choice(display.get("line"), self.LINE_TYPES, "filters.diagram.line")
+        if "labels" in display:
+            labels = display["labels"]
+            if not isinstance(labels, list) or not all(
+                x in self.LINK_LABELS for x in labels
+            ):
+                raise serializers.ValidationError(
+                    "filters.diagram.labels must be a list of "
+                    f"{', '.join(self.LINK_LABELS)}"
+                )
+            display["labels"] = list(dict.fromkeys(labels))
+        # The view's own card lines: absent (or null) inherits, [] = name only.
+        if display.get("fields") is not None:
+            try:
+                display["fields"] = validate_topology_card_list(display["fields"])
+            except serializers.ValidationError as exc:
+                raise serializers.ValidationError(
+                    f"filters.diagram.fields: {' '.join(map(str, exc.detail))}"
+                ) from None
+
+    def _link_overrides(self, links):
+        if not isinstance(links, dict) or len(links) > self.MAX_LINKS:
+            raise serializers.ValidationError(
+                f"links must be an object (at most {self.MAX_LINKS:,} links)"
+            )
+        for key, override in links.items():
+            m = _DEVICE_PAIR_RE.match(key)
+            if not m or m.group(1) >= m.group(2):
+                raise serializers.ValidationError(
+                    f"links: '{key[:100]}' is not a sorted "
+                    "'<device id>|<device id>' pair"
+                )
+            if not isinstance(override, dict):
+                raise serializers.ValidationError(f"links.{key} must be an object")
+            self._choice(override.get("line"), self.LINE_TYPES, f"links.{key}.line")
+            flip = override.get("flip")
+            if flip is not None and (type(flip) is not int or flip not in (1, -1)):
+                raise serializers.ValidationError(
+                    f"links.{key}.flip must be 1 or -1"
+                )
+
+    def _node_overrides(self, nodes):
+        if not isinstance(nodes, dict) or len(nodes) > self.MAX_NODE_OVERRIDES:
+            raise serializers.ValidationError(
+                f"nodes must be an object (at most {self.MAX_NODE_OVERRIDES:,} "
+                "devices)"
+            )
+        for key, override in nodes.items():
+            if not _UUID_RE.match(key):
+                raise serializers.ValidationError(
+                    f"nodes: '{key[:100]}' is not a device id"
+                )
+            if not isinstance(override, dict):
+                raise serializers.ValidationError(f"nodes.{key} must be an object")
+            self._choice(
+                override.get("face"), self.DIAGRAM_FACES, f"nodes.{key}.face"
+            )
+
+    def _notes(self, notes):
+        if not isinstance(notes, list) or len(notes) > self.MAX_NOTES:
+            raise serializers.ValidationError(
+                f"notes must be a list (at most {self.MAX_NOTES} notes)"
+            )
+        seen = set()
+        for i, note in enumerate(notes):
+            where = f"notes[{i}]"
+            if not isinstance(note, dict):
+                raise serializers.ValidationError(f"{where} must be an object")
+            nid = note.get("id")
+            if not isinstance(nid, str) or not 0 < len(nid) <= 64 or nid in seen:
+                raise serializers.ValidationError(
+                    f"{where}.id must be a unique name of at most 64 characters"
+                )
+            seen.add(nid)
+            self._coord(note.get("x"), f"{where}.x")
+            self._coord(note.get("y"), f"{where}.y")
+            text = note.get("text")
+            if text is not None and (
+                not isinstance(text, str) or len(text) > self.MAX_NOTE_TEXT
+            ):
+                raise serializers.ValidationError(
+                    f"{where}.text must be at most {self.MAX_NOTE_TEXT} characters"
+                )
+            self._choice(note.get("kind"), self.NOTE_KINDS, f"{where}.kind")
+            self._choice(note.get("icon"), self.NOTE_ICONS, f"{where}.icon")
+
+    def create(self, validated_data):
+        validated_data.pop("base_updated_at", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        base = validated_data.pop("base_updated_at", None)
+        if base is None:
+            return super().update(instance, validated_data)
+        # Lock the row so two saves from the same copy can't both pass.
+        with transaction.atomic():
+            current = (
+                TopologyView.objects.select_for_update()
+                .filter(pk=instance.pk)
+                .values_list("updated_at", flat=True)
+                .first()
+            )
+            if current != base:
+                raise StaleTopologyViewError()
+            return super().update(instance, validated_data)
 
     class Meta:
         model = TopologyView
-        fields = ["id", "numid", "name", "state", "created_at", "updated_at"]
+        fields = ["id", "numid", "name", "state", "base_updated_at",
+                  "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
+
+
+class TopologyViewSummarySerializer(NumIdModelSerializer):
+    """A saved view without its ``state`` (``?picker=1``): the views select
+    needs names, and one view's state can run to megabytes."""
+
+    class Meta:
+        model = TopologyView
+        fields = ["id", "numid", "name", "updated_at"]
+        read_only_fields = fields
 
 
 class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):

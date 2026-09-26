@@ -390,7 +390,9 @@ its keys. `bytes` is measured the way the 8 MB cap is.
 
 A view can hold up to 50,000 positioned or hidden cards per list and 8 MB in
 all. A map that outgrows that is refused with its size; **Re-layout** a style
-you do not use to drop its arrangement and save again.
+you do not use to drop its arrangement and save again. What a view's `state`
+holds, and how a save from an outdated copy is refused, is in
+[Saved views API](#saved-views-api).
 
 Arrangements are kept **per view** - Wiring, Hierarchy and Flat each remember
 their own. The cards are different sizes in each, so one shared set of
@@ -566,6 +568,39 @@ to point an AI assistant at when it needs to answer "what connects to
 what" questions.
 
 All three are RBAC-scoped to the caller's `device.view` grant.
+
+### Saved views API
+
+`/api/topology-views/` is a plain CRUD endpoint, gated by the `topologyview`
+view, add, change and delete permissions. `GET /api/topology-views/?picker=1`
+lists `{id, numid, name, updated_at}` only, without `state`, for the views
+select; one view's state can run to megabytes.
+
+**Stale saves.** A `PATCH` or `PUT` may carry `base_updated_at`: the
+`updated_at` of the copy the edits started from. If the view has been saved
+since, the write is refused with
+`409 {"detail": "This view was saved by someone else since you opened it."}`
+and nothing changes. Without it (or with `null`) a save goes through as
+before. The field is write-only.
+
+**State.** `state` is a JSON object of at most 8 MB, and keys the server does
+not know are kept as sent. The keys the Diagram tab adds are checked; the
+older ones (`filters`, `positions`, `positions_by_style` and `zones_by_style`
+for the older styles, `hidden`) keep their lenient checks, so views saved by
+earlier versions load and save unchanged.
+
+| Key | Shape |
+|---|---|
+| `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
+| `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band) and `rule` `{by: role\|device_type, ids}` (at most 100 ids, what the band was generated from). `color` is one of the six zone swatches, or `null` or `""` for a neutral band. |
+| `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines](#card-lines). |
+| `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000 |
+| `nodes` | per-card overrides keyed by device id: `{face: card\|photo}`, at most 10,000 |
+| `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building}`; `id` is unique, `text` at most 200 characters |
+
+A value outside those shapes is a 400 naming the key. Keys are device ids, so
+a shared view's `links`, `nodes` and positions can name devices a viewer may
+not see; the map shows only the ones they can.
 
 ### Card lines
 

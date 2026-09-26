@@ -116,6 +116,7 @@ from .serializers import (
     ModuleSerializer,
     ModuleTypeMiniSerializer,
     TopologyViewSerializer,
+    TopologyViewSummarySerializer,
     ModuleTypeSerializer,
     ConsolePortSerializer,
     ConsoleServerPortSerializer,
@@ -5206,6 +5207,22 @@ class TopologyViewViewSet(TenantScopedViewSet):
     queryset = TopologyView.objects.all().order_by(NATURAL_NAME)
     serializer_class = TopologyViewSerializer
     pagination_class = StandardPagination
+
+    def _picker(self) -> bool:
+        """``?picker=1`` on the list: names only, never the (large) state."""
+        return (
+            self.action == "list" and self.request is not None
+            and self.request.query_params.get("picker") == "1"
+        )
+
+    def get_serializer_class(self):
+        if self._picker():
+            return TopologyViewSummarySerializer
+        return TopologyViewSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.defer("state") if self._picker() else qs
 
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())

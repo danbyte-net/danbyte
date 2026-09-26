@@ -435,6 +435,285 @@ class SavedViewTests(_Base):
         self.assertIn("Re-layout", str(resp.json()))
 
 
+class DiagramViewStateTests(_Base):
+    """The Diagram tab's saved-view keys (0.17): checked in depth, while the
+    older keys keep the lenient checks views were always saved under."""
+
+    A = "0a0a0a0a-0000-4000-8000-000000000001"
+    B = "0b0b0b0b-0000-4000-8000-000000000002"
+
+    def _save(self, state, name="v"):
+        return self.client.post(
+            "/api/topology-views/", {"name": name, "state": state}, format="json"
+        )
+
+    def _full_state(self):
+        return {
+            "filters": {
+                "viewStyle": "diagram",
+                "diagram": {
+                    "mode": "detailed", "face": "photo", "line": "cyclical",
+                    "labels": ["subnet", "ip", "port", "ip"],
+                    "fields": ["primary_ip", "loopback", "cf_owner", "loopback"],
+                },
+            },
+            "positions_by_style": {"diagram": {f"dev:{self.A}": [10, 20]}},
+            "zones_by_style": {"diagram": [
+                {"id": "z1", "label": "DMZ", "x": 0, "y": 0, "w": 400, "h": 200,
+                 "color": "#0EA5E9"},
+                {"id": "b1", "label": "Spine", "x": 0, "y": 300, "w": 900,
+                 "h": 180, "color": None, "kind": "band", "orient": "h",
+                 "rule": {"by": "role", "ids": [self.A]}},
+                {"id": "b2", "label": "OOB", "x": 950, "y": 0, "w": 200,
+                 "h": 900, "color": "", "kind": "band", "orient": "v"},
+            ]},
+            "links": {
+                f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1},
+            },
+            "nodes": {self.A: {"face": "card"}, self.B: {}},
+            "notes": [
+                {"id": "n1", "kind": "text", "x": 5, "y": -5.5, "text": "WAN"},
+                {"id": "n2", "kind": "icon", "x": 100, "y": 0, "icon": "cloud"},
+            ],
+        }
+
+    def test_the_diagram_keys_round_trip(self):
+        resp = self._save(self._full_state())
+        self.assertEqual(resp.status_code, 201, resp.content)
+        state = self.client.get(
+            f"/api/topology-views/{resp.json()['id']}/"
+        ).json()["state"]
+        diagram = state["filters"]["diagram"]
+        # Duplicates collapse; order is kept.
+        self.assertEqual(diagram["labels"], ["subnet", "ip", "port"])
+        self.assertEqual(diagram["fields"], ["primary_ip", "loopback", "cf_owner"])
+        zones = state["zones_by_style"]["diagram"]
+        self.assertEqual(zones[0]["color"], "#0ea5e9")
+        self.assertEqual(zones[1]["rule"], {"by": "role", "ids": [self.A]})
+        self.assertEqual(state["positions_by_style"]["diagram"], {f"dev:{self.A}": [10, 20]})
+        self.assertEqual(state["links"], {f"{self.A}|{self.B}": {"line": "cyclical", "flip": -1}})
+        self.assertEqual(state["nodes"][self.A], {"face": "card"})
+        self.assertEqual([n["id"] for n in state["notes"]], ["n1", "n2"])
+
+    def test_view_card_lines_may_be_empty_or_absent(self):
+        for fields in ([], None):
+            state = {"filters": {"diagram": {"mode": "simple", "fields": fields}}}
+            resp = self._save(state, name=f"f {fields}")
+            self.assertEqual(resp.status_code, 201, resp.content)
+        resp = self._save({"filters": {"diagram": {"mode": "simple"}}}, name="none")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_bad_diagram_keys_rejected(self):
+        a, b = self.A, self.B
+        zone = {"id": "z", "label": "", "x": 0, "y": 0, "w": 1, "h": 1}
+        bad = (
+            {"zones_by_style": {"diagram": ["nope"]}},
+            {"zones_by_style": {"diagram": [{**zone, "kind": "lane"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "orient": "x"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "color": "#123456"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "color": 7}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": "role"}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "site", "ids": []}}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": ["x"]}}]}},
+            {"zones_by_style": {"diagram": [{**zone, "rule": {"by": "role", "ids": [a] * 101}}]}},
+            {"filters": {"diagram": "detailed"}},
+            {"filters": {"diagram": {"mode": "photo"}}},
+            {"filters": {"diagram": {"face": "rear"}}},
+            {"filters": {"diagram": {"line": "curved"}}},
+            {"filters": {"diagram": {"labels": "subnet"}}},
+            {"filters": {"diagram": {"labels": ["short"]}}},
+            {"filters": {"diagram": {"fields": ["bogus"]}}},
+            {"filters": {"diagram": {"fields": [
+                "serial", "primary_ip", "secondary_ip", "oob_ip", "loopback",
+                "asset_tag", "platform", "rack", "site"]}}},
+            {"links": []},
+            {"links": {f"{b}|{a}": {}}},
+            {"links": {f"{a}|{a}": {}}},
+            {"links": {a: {}}},
+            {"links": {f"{a.upper()}|{b.upper()}": {}}},
+            {"links": {f"{a}|{b}": "elbow"}},
+            {"links": {f"{a}|{b}": {"line": "curved"}}},
+            {"links": {f"{a}|{b}": {"flip": 2}}},
+            {"links": {f"{a}|{b}": {"flip": True}}},
+            {"nodes": []},
+            {"nodes": {f"dev:{a}": {}}},
+            {"nodes": {a: "photo"}},
+            {"nodes": {a: {"face": "rear"}}},
+            {"notes": {}},
+            {"notes": ["x"]},
+            {"notes": [{"x": 0, "y": 0}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0}, {"id": "n", "x": 1, "y": 1}]},
+            {"notes": [{"id": "n", "x": "0", "y": 0}]},
+            {"notes": [{"id": "n", "x": True, "y": 0}]},
+            {"notes": [{"id": "n", "x": 1e12, "y": 0}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "text": "x" * 201}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "icon": "rocket"}]},
+            {"notes": [{"id": "n", "x": 0, "y": 0, "kind": "line"}]},
+        )
+        for i, state in enumerate(bad):
+            with self.subTest(state=state):
+                resp = self._save(state, name=f"bad {i}")
+                self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_the_caps(self):
+        from unittest import mock
+
+        from api.serializers import TopologyViewSerializer as S
+
+        a, b = self.A, self.B
+        c = "0c0c0c0c-0000-4000-8000-000000000003"
+        cases = (
+            ("MAX_LINKS", {"links": {f"{a}|{b}": {}, f"{a}|{c}": {}}}),
+            ("MAX_NODE_OVERRIDES", {"nodes": {a: {}, b: {}}}),
+            ("MAX_NOTES", {"notes": [{"id": "1", "x": 0, "y": 0},
+                                     {"id": "2", "x": 0, "y": 0}]}),
+        )
+        for attr, state in cases:
+            with self.subTest(attr):
+                with mock.patch.object(S, attr, 1):
+                    self.assertEqual(self._save(state, name=attr).status_code, 400)
+                with mock.patch.object(S, attr, 2):
+                    self.assertEqual(self._save(state, name=attr).status_code, 201)
+
+    def test_older_keys_stay_lenient(self):
+        """Views saved before the Diagram tab load and save unchanged: only
+        the new keys are checked in depth."""
+        state = {
+            "filters": {"viewStyle": "stencil", "diagram": {"mode": "simple"},
+                        "devices": "whatever", "color": 3},
+            "zones_by_style": {"stencil": [
+                {"id": "z1", "color": "#123456", "kind": "lane", "rule": "x"},
+                "not even an object",
+            ]},
+            "positions": {"dev:abc": [1, 2]},
+            "hidden": {"devices": ["dev:abc"]},
+            "some_future_key": {"anything": True},
+        }
+        resp = self._save(state)
+        self.assertEqual(resp.status_code, 201, resp.content)
+        got = self.client.get(f"/api/topology-views/{resp.json()['id']}/").json()
+        self.assertEqual(got["state"], state)
+        # A view with a non-object filters value still saves.
+        self.assertEqual(self._save({"filters": []}, name="odd").status_code, 201)
+
+    def test_zone_colors_mirror_the_frontend(self):
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        from api.serializers import TopologyViewSerializer
+
+        src = Path(settings.BASE_DIR) / (
+            "frontend/src/components/topology/view-positions.ts"
+        )
+        if not src.exists():
+            self.skipTest("frontend source not present")
+        block = re.search(
+            r"ZONE_COLORS = \[(.*?)\]", src.read_text(), re.S
+        ).group(1)
+        self.assertEqual(
+            tuple(re.findall(r'"(#[0-9a-f]{6})"', block)),
+            TopologyViewSerializer.ZONE_COLORS,
+        )
+
+
+class StaleSaveTests(_Base):
+    """``base_updated_at`` names the copy a save started from; a view saved
+    by somebody else since is refused with 409, never overwritten."""
+
+    def setUp(self):
+        super().setUp()
+        resp = self.client.post(
+            "/api/topology-views/",
+            {"name": "shared", "state": {"filters": {}}, "base_updated_at": None},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.view = resp.json()
+        self.url = f"/api/topology-views/{self.view['id']}/"
+
+    def _patch(self, body):
+        return self.client.patch(self.url, body, format="json")
+
+    def test_a_save_from_the_latest_copy_goes_through(self):
+        self.assertNotIn("base_updated_at", self.view)
+        resp = self._patch({
+            "state": {"filters": {"a": 1}},
+            "base_updated_at": self.view["updated_at"],
+        })
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertNotIn("base_updated_at", resp.json())
+        # The next save chains off the answer's updated_at.
+        resp = self._patch({
+            "state": {"filters": {"a": 2}},
+            "base_updated_at": resp.json()["updated_at"],
+        })
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_a_save_from_an_older_copy_is_refused(self):
+        theirs = self._patch({"state": {"filters": {"theirs": True}}})
+        self.assertEqual(theirs.status_code, 200, theirs.content)
+        resp = self._patch({
+            "state": {"filters": {"mine": True}},
+            "base_updated_at": self.view["updated_at"],
+        })
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json(), {
+            "detail": "This view was saved by someone else since you opened it."
+        })
+        state = self.client.get(self.url).json()["state"]
+        self.assertEqual(state["filters"], {"theirs": True})
+
+    def test_without_a_base_the_save_goes_through(self):
+        self._patch({"state": {"filters": {"theirs": True}}})
+        for body in ({"state": {"filters": {}}},
+                     {"state": {"filters": {}}, "base_updated_at": None}):
+            resp = self._patch(body)
+            self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_a_junk_base_is_a_400(self):
+        resp = self._patch({"state": {}, "base_updated_at": "yesterday"})
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+
+class ViewPickerTests(_Base):
+    """``?picker=1`` lists saved views without their state."""
+
+    def test_picker_rows_carry_no_state(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from .models import TopologyView
+
+        other_org = Organization.objects.create(name="Other", slug="other")
+        other = Tenant.objects.create(org=other_org, name="Other", slug="other")
+        TopologyView.objects.create(tenant=other, name="theirs")
+        for name in ("b view", "a view"):
+            self.client.post(
+                "/api/topology-views/",
+                {"name": name, "state": {"positions": {"dev:x": [1, 2]}}},
+                format="json",
+            )
+        with CaptureQueriesContext(connection) as ctx:
+            resp = self.client.get("/api/topology-views/?picker=1")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rows = resp.json()["results"]
+        self.assertEqual([r["name"] for r in rows], ["a view", "b view"])
+        for row in rows:
+            self.assertEqual(set(row), {"id", "numid", "name", "updated_at"})
+        selects = [
+            q["sql"] for q in ctx.captured_queries
+            if 'FROM "api_topologyview"' in q["sql"] and q["sql"].startswith("SELECT")
+        ]
+        self.assertTrue(selects)
+        for sql in selects:
+            self.assertNotIn('"api_topologyview"."state"', sql)
+        # Without the flag the list still carries the state.
+        full = self.client.get("/api/topology-views/").json()["results"]
+        self.assertEqual(full[0]["state"], {"positions": {"dev:x": [1, 2]}})
+
+
 class PassThroughAndCrashTests(_Base):
     """Feature A: trace no longer crashes on console/power/aux terminations,
     and PDU outlet→inlet is a walkable pass-through (inlet→outlet is not)."""
