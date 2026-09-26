@@ -194,3 +194,145 @@ class SecretRedactionTests(TestCase):
         )
         self.assertEqual(upd.changes["name"]["new"], "hook2-renamed")
         self.assertEqual(upd.post_change["payload_url"], "https://example.com/y")
+
+
+class SummarisedJsonFieldTests(APITestCase):
+    """A saved topology view's ``state`` (up to 8 MB) is logged as a summary -
+    changed top-level keys plus sizes - never verbatim, in the diff or the
+    snapshots. Its other fields, and every other model's JSON, log as usual."""
+
+    def setUp(self):
+        from api.models import TopologyView
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.state = {
+            "filters": {"site": "hq"},
+            "positions": {"dev:a": [10, 20], "dev:b": [30, 40]},
+            "zones": [],
+        }
+        self.view = TopologyView.objects.create(
+            tenant=self.tenant, name="core", state=self.state
+        )
+
+    def _size(self, value) -> int:
+        import json
+
+        return len(json.dumps(value, separators=(",", ":")))
+
+    def _update(self):
+        return ChangeLogEntry.objects.get(
+            object_id=str(self.view.id), action="update"
+        )
+
+    def test_state_change_is_summarised(self):
+        new = {
+            "filters": {"site": "hq"},
+            "positions": {"dev:a": [11, 21], "dev:b": [30, 40]},
+            "hidden": {"roles": ["patch"]},
+        }
+        self.view.state = new
+        self.view.save()
+        e = self._update()
+        self.assertEqual(
+            e.changes["state"],
+            {
+                "changed_keys": ["hidden", "positions", "zones"],
+                "old": {"keys": ["positions", "zones"], "bytes": self._size(self.state)},
+                "new": {"keys": ["hidden", "positions"], "bytes": self._size(new)},
+            },
+        )
+        self.assertEqual(
+            e.pre_change["state"],
+            {"keys": ["filters", "positions", "zones"], "bytes": self._size(self.state)},
+        )
+        self.assertEqual(
+            e.post_change["state"],
+            {"keys": ["filters", "hidden", "positions"], "bytes": self._size(new)},
+        )
+        self.assertNotIn("dev:a", str([e.changes, e.pre_change, e.post_change]))
+
+    def test_same_size_move_is_still_logged(self):
+        """Detection compares the raw state, not the summary: swapping two
+        cards keeps every key and byte count yet is a change."""
+        self.view.state = {
+            **self.state,
+            "positions": {"dev:a": [30, 40], "dev:b": [10, 20]},
+        }
+        self.view.save()
+        diff = self._update().changes["state"]
+        self.assertEqual(diff["changed_keys"], ["positions"])
+        self.assertEqual(diff["old"]["bytes"], diff["new"]["bytes"])
+
+    def test_rename_diffs_name_verbatim(self):
+        self.view.name = "core row"
+        self.view.save()
+        e = self._update()
+        self.assertEqual(e.changes, {"name": {"old": "core", "new": "core row"}})
+        self.assertEqual(e.pre_change["name"], "core")
+        self.assertEqual(e.post_change["state"]["bytes"], self._size(self.state))
+
+    def test_unchanged_state_logs_nothing(self):
+        self.view.state = dict(self.state)
+        self.view.save()
+        self.assertFalse(
+            ChangeLogEntry.objects.filter(
+                object_id=str(self.view.id), action="update"
+            ).exists()
+        )
+
+    def test_create_and_delete_snapshots_are_summarised(self):
+        vid = str(self.view.id)
+        created = ChangeLogEntry.objects.get(object_id=vid, action="create")
+        self.assertEqual(
+            created.post_change["state"],
+            {"keys": ["filters", "positions", "zones"], "bytes": self._size(self.state)},
+        )
+        self.view.delete()
+        deleted = ChangeLogEntry.objects.get(object_id=vid, action="delete")
+        self.assertEqual(deleted.pre_change["state"], created.post_change["state"])
+
+    def test_bulk_update_is_summarised(self):
+        from .bulk import log_bulk_update
+
+        new = {"filters": {}}
+        log_bulk_update([self.view], {"state": new})
+        diff = self._update().changes["state"]
+        self.assertEqual(diff["changed_keys"], ["filters", "positions", "zones"])
+        self.assertEqual(diff["new"], {"keys": ["filters"], "bytes": self._size(new)})
+
+    def test_detail_endpoint_serves_the_summary(self):
+        admin = User.objects.create_superuser("admin", "admin@example.com", "x")
+        self.client.force_login(admin)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        self.view.state = {"filters": {"site": "dc"}}
+        self.view.save()
+        resp = self.client.get(f"/api/changelog/{self._update().id}/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(
+            data["changes"]["state"]["changed_keys"],
+            ["filters", "positions", "zones"],
+        )
+        self.assertEqual(data["post_change"]["state"]["keys"], ["filters"])
+
+    def test_other_models_json_still_diffs_verbatim(self):
+        from api.models import ConfigContext
+
+        ctx = ConfigContext.objects.create(
+            tenant=self.tenant, name="ntp", data={"ntp": ["10.0.0.1"]}
+        )
+        ctx.data = {"ntp": ["10.0.0.2"], "dns": ["10.0.0.53"]}
+        ctx.save()
+        e = ChangeLogEntry.objects.get(object_id=str(ctx.id), action="update")
+        self.assertEqual(
+            e.changes["data"],
+            {
+                "old": {"ntp": ["10.0.0.1"]},
+                "new": {"ntp": ["10.0.0.2"], "dns": ["10.0.0.53"]},
+            },
+        )
+        self.assertEqual(e.pre_change["data"], {"ntp": ["10.0.0.1"]})
+        self.assertEqual(e.post_change["data"]["dns"], ["10.0.0.53"])

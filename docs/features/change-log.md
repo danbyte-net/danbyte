@@ -56,6 +56,11 @@ The change log covers the things people edit:
 Bulk edits (changing many rows at once) are recorded too - one entry per affected
 object, each with its own diff.
 
+A saved topology view's layout can run to megabytes, so its entries summarise
+it - the top-level parts that changed and the size before and after - rather
+than copying the whole layout. Its name still diffs as usual. See
+[saved views](topology.md#saved-views).
+
 Not every writer is a person. An [Outpost](../monitoring/outposts.md) writes as
 itself, and is named that way - `outpost:probe-1` - with no linked user account,
 because there is no user to link. The name is the whole record of who, which is

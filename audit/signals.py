@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import json
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -47,7 +48,64 @@ def _ser(v):
     return v
 
 
-def _field_dict(instance) -> dict:
+# JSON columns logged as a summary instead of verbatim, per model
+# (``label_lower`` -> field names). A saved topology view's ``state`` holds
+# every node position of every style, up to 8 MB; logged whole, one save
+# stored it four times (the diff's old and new plus both snapshots). The
+# summary keeps what a reader needs - which top-level keys changed and how
+# big the value is. Change detection still compares the raw values.
+_SUMMARISED_JSON_FIELDS: dict[str, frozenset[str]] = {
+    "api.topologyview": frozenset({"state"}),
+}
+
+
+def _summarised(instance) -> frozenset[str]:
+    return _SUMMARISED_JSON_FIELDS.get(instance._meta.label_lower, frozenset())
+
+
+def _json_summary(value, keys=None) -> dict | None:
+    """``{"keys": [...], "bytes": n}`` for a summarised value: its top-level
+    keys (only those in ``keys`` when given) and its serialised size, measured
+    as TopologyViewSerializer measures its cap."""
+    if value is None:
+        return None
+    present = sorted(value) if isinstance(value, dict) else []
+    if keys is not None:
+        present = [k for k in present if k in keys]
+    size = len(json.dumps(value, separators=(",", ":"), default=str))
+    return {"keys": present, "bytes": size}
+
+
+def _diff(instance, field, old, new) -> dict:
+    """One field's entry in ``changes``: ``{"old", "new"}`` verbatim, or for a
+    summarised JSON field the changed top-level keys plus each side's summary
+    restricted to them - still ``old``/``new``, so every renderer copes."""
+    if field not in _summarised(instance):
+        return {"old": old, "new": new}
+    a = old if isinstance(old, dict) else {}
+    b = new if isinstance(new, dict) else {}
+    missing = object()
+    changed = sorted(
+        k for k in a.keys() | b.keys() if a.get(k, missing) != b.get(k, missing)
+    )
+    return {
+        "changed_keys": changed,
+        "old": _json_summary(old, changed),
+        "new": _json_summary(new, changed),
+    }
+
+
+def _summarise(instance, row: dict) -> dict:
+    """``row`` with its summarised JSON fields replaced by their summary."""
+    fields = _summarised(instance)
+    if not fields:
+        return row
+    return {k: _json_summary(v) if k in fields else v for k, v in row.items()}
+
+
+def _field_dict(instance, *, raw=False) -> dict:
+    """The row as the log stores it. ``raw`` keeps summarised JSON fields
+    verbatim - the pre_save snapshot needs them to detect a change."""
     out = {}
     for f in instance._meta.concrete_fields:
         if f.name in _SKIP_FIELDS:
@@ -56,7 +114,7 @@ def _field_dict(instance) -> dict:
             out[f.name] = "•••" if getattr(instance, f.attname) else None
             continue
         out[f.name] = _ser(getattr(instance, f.attname))
-    return out
+    return out if raw else _summarise(instance, out)
 
 
 def _safe_repr(instance) -> str:
@@ -116,7 +174,7 @@ def _record(instance, action, changes, pre=None, post=None):
 def _snapshot(sender, instance, **kwargs):
     if instance.pk:
         old = sender.objects.filter(pk=instance.pk).first()
-        instance._audit_old = _field_dict(old) if old else None
+        instance._audit_old = _field_dict(old, raw=True) if old else None
     else:
         instance._audit_old = None
 
@@ -126,17 +184,20 @@ def _on_save(sender, instance, created, **kwargs):
         _record(instance, ChangeAction.CREATE, {}, post=_field_dict(instance))
         return
     old = getattr(instance, "_audit_old", None)
-    new = _field_dict(instance)
+    new = _field_dict(instance, raw=True)
     if old is None:
         return
     changes = {
-        k: {"old": old.get(k), "new": v}
+        k: _diff(instance, k, old.get(k), v)
         for k, v in new.items()
         if old.get(k) != v
     }
     if not changes:
         return
-    _record(instance, ChangeAction.UPDATE, changes, pre=old, post=new)
+    _record(
+        instance, ChangeAction.UPDATE, changes,
+        pre=_summarise(instance, old), post=_summarise(instance, new),
+    )
 
 
 def _on_delete(sender, instance, **kwargs):

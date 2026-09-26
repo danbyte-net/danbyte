@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from .context import current_request_id, current_user
 from .models import ChangeAction, ChangeLogEntry
-from .signals import _ser
+from .signals import _diff, _ser
 
 
 def _entry(instance, action, changes, user, rid):
@@ -51,7 +51,7 @@ def log_bulk_update(rows, updates: dict) -> None:
             old = _ser(getattr(r, k, None))
             new = _ser(v)
             if old != new:
-                changes[k] = {"old": old, "new": new}
+                changes[k] = _diff(r, k, old, new)
         if changes:
             entries.append(_entry(r, ChangeAction.UPDATE, changes, user, rid))
     if entries:

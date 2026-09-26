@@ -372,7 +372,13 @@ Drag cards where you want them, then **Save as…** - a saved view stores the
 the views select; **Save** updates it in place after you rearrange;
 **Re-layout** discards hand positions and re-runs the automatic
 left-to-right layout. Views are plain API objects
-(`/api/topology-views/`), change-logged like everything else.
+(`/api/topology-views/`), change-logged like everything else - except that
+the change log keeps a summary of a view's `state`, not the arrangement
+itself: which top-level keys changed and the size before and after. In a
+change-log entry, `changes.state` holds `changed_keys` plus `old` and `new`,
+each `{"keys": [...], "bytes": n}` listing the changed keys that side holds.
+The pre- and post-change snapshots carry `state` in the same form over all
+its keys. `bytes` is measured the way the 8 MB cap is.
 
 A view can hold up to 50,000 positioned or hidden cards per list and 8 MB in
 all. A map that outgrows that is refused with its size; **Re-layout** a style
