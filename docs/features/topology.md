@@ -4,9 +4,12 @@ icon: lucide/network
 
 # Topology map
 
-**DCIM → Topology** draws your network four ways, switched by the
-**Wiring / Hierarchy / Flat / Logical** tabs in the header:
+**DCIM → Topology** draws your network five ways, switched by the
+**Diagram / Wiring / Hierarchy / Flat / Logical** tabs in the header:
 
+- **Diagram** - a clean, printable network diagram: one solid card per
+  device in its role's colour, with **Simple** and **Detailed** modes and a
+  choice of line. See [Diagram view](#diagram-view).
 - **Wiring** (default) - the port-accurate diagram described below: stencil
   cards with one row per cabled port, cables drawn port-to-port.
 - **Hierarchy** - tall rounded cards with the identity on a header row and
@@ -40,6 +43,54 @@ spine, status pill, type and primary IP, and one row per **cabled port** -
 and every cable connects **port-to-port** on the cards, so you can follow
 `asw1:Gi1/0/48 → core:Te1/1/1` visually instead of guessing which line is
 which.
+
+## Diagram view
+
+The **Diagram** tab draws the map the way you would sketch it for a wiki
+page or a change ticket: plain cards and lines, colour only where it means
+something.
+
+- **Cards** - each device is a solid rounded card filled with its **role's
+  colour**, the name bold and centred at the top and a few quieter lines
+  under it (by default its IP, loopback and serial - see
+  [Card lines](#card-lines)). The text is black or white, whichever reads on
+  that colour. A device whose role has no colour gets a plain grey card.
+  Patch panels keep a dashed edge.
+- **The pill** - at most one, inside the card's top-left corner: the
+  monitoring pill (your tenant's name for *down* or *degraded*) while the
+  device is down or degraded, else the lifecycle status pill when the card
+  lists it. A card keeps room for its pill, so a device going down never
+  resizes it or moves its lines.
+- **Simple | Detailed** (beside the tabs):
+    - **Simple** - compact cards. Every line leaving one side of a card
+      starts at that side's midpoint and fans out from there, and all the
+      cables between two devices draw as one line with a count chip (`2x`,
+      or the aggregates' names when they are one bundle).
+    - **Detailed** - each cabled interface gets a small grey **nub** on the
+      edge facing its far end, and each cable leaves its own nub - a LAG's
+      members too, with the bundle's chip on the lines between. The
+      interface name runs along the line just past its nub, turned so it
+      reads upright. Cards grow to fit their nubs; past 48 on one side they
+      continue round the corner.
+- **Lines** (Display popover) - **Straight**, **Elbow** (right angles with
+  rounded corners, steered around cards in the way) or **Bendy** (a smooth
+  curve that leaves each card square to its edge). LLDP ghosts stay
+  straight and dashed; BGP sessions stay the faint dotted overlay from card
+  centre to card centre.
+
+Simple and Detailed share one arrangement: a card is placed by its centre,
+so it stays put when Detailed grows it. The automatic layout follows the
+cables only - BGP sessions never move a card - and two devices of one role
+that share a neighbour (a leaf pair on the same spines, an HA pair) sit on
+one tier with their peer link between them. For clean role rows, set the
+[Levels](#levels-role-tiers). Drag a card and its lines re-anchor where it
+lands. Zoomed out, the port names go first, then the chips and the card
+lines; hovering a line still names it at any zoom.
+
+The cards fetch their lines with the map (`include=card`), and the
+monitoring states load whenever a card lists the monitoring pill - not only
+with the sidebar open. The legend lists the roles on the map in their card
+colours, and the monitoring pill when a card can show it.
 
 ## Big graphs
 
@@ -371,8 +422,9 @@ counts.
 
 Drag cards where you want them, then **Save as…** - a saved view stores,
 per tenant, the **filter set** (or a custom map's device set), the **display
-settings** (colour mode, layout direction, cables, Levels, grouping and
-aggregate bundling), **every node position** per view style, the **zones**
+settings** (colour mode, layout direction, cables, Levels, grouping,
+aggregate bundling, and the Diagram's Simple/Detailed mode and line type),
+**every node position** per view style, the **zones**
 and the **hidden objects**. Load it from the views select; **Save** (or
 ++ctrl+s++, ++cmd+s++ on a Mac) updates it in place after you rearrange;
 **Re-layout** discards hand positions and re-runs the automatic
@@ -394,8 +446,8 @@ you do not use to drop its arrangement and save again. What a view's `state`
 holds, and how a save from an outdated copy is refused, is in
 [Saved views API](#saved-views-api).
 
-Arrangements are kept **per view** - Wiring, Hierarchy and Flat each remember
-their own. The cards are different sizes in each, so one shared set of
+Arrangements are kept **per view** - Diagram, Wiring, Hierarchy and Flat each
+remember their own (the Diagram's one arrangement serves Simple and Detailed). The cards are different sizes in each, so one shared set of
 coordinates would hand Hierarchy the spacing you tuned for Flat. Arrange a view,
 switch away, come back: it's as you left it.
 
@@ -451,7 +503,9 @@ back button and a reload all keep it.
 
 | Parameter | Values |
 |---|---|
-| `tab` | `wiring` (default), `hierarchy`, `flat`, `logical` |
+| `tab` | `wiring` (default), `diagram`, `hierarchy`, `flat`, `logical` |
+| `mode` | Diagram: `simple` (default), `detailed` |
+| `line` | Diagram: `straight` (default), `elbow`, `bendy` |
 | `view` | a saved view's id |
 | `site` `location` `role` `status` | an id, or `all` |
 | `tag` | a tag slug, or `all` |

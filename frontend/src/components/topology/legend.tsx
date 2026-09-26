@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { Info, X } from "lucide-react"
 
+import { ColorBadge } from "@/components/cells/color-badge"
+import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import {
   typeColor,
   type EdgeColorMode,
@@ -70,17 +72,27 @@ const SPEED_TIERS: [string, string][] = [
   ["#e11d48", "100G"],
 ]
 
+/** The most role fills the Diagram legend lists; the rest are on the map. */
+const MAX_ROLES = 12
+
 export function CanvasLegend({
   viewStyle,
   grouped,
   colorMode,
   types = [],
+  roles = [],
+  monitorPill = false,
 }: {
   viewStyle: NodeStyle
   grouped: boolean
   colorMode: EdgeColorMode
   /** Media types present on the map - swatched when coloring by type. */
   types?: string[]
+  /** Diagram: the roles on the map - each card is filled with its role's
+   * colour. */
+  roles?: { name: string; color?: string }[]
+  /** Diagram: some card shows the monitoring pill. */
+  monitorPill?: boolean
 }) {
   const [open, setOpen] = useState(() => localStorage.getItem(KEY) !== "closed")
   const toggle = (v: boolean) => {
@@ -123,6 +135,43 @@ export function CanvasLegend({
                 <span className="h-3 w-6 shrink-0 rounded-sm border-2 border-border bg-card" />
               }
               label="Site / location"
+            />
+          </>
+        ) : viewStyle === "diagram" ? (
+          <>
+            {roles.length > 0 && (
+              <div className="flex flex-wrap gap-1 pb-1">
+                {roles.slice(0, MAX_ROLES).map((r) => (
+                  <ColorBadge
+                    key={r.name}
+                    name={r.name}
+                    color={r.color || undefined}
+                    className="h-4 px-1.5 text-[10px]"
+                  />
+                ))}
+              </div>
+            )}
+            {monitorPill && (
+              <RowItem
+                swatch={
+                  <CheckStatusBadge
+                    status="down"
+                    className="h-4 px-[7px] text-[9px]"
+                  />
+                }
+                label="Monitoring"
+              />
+            )}
+            <RowItem swatch={<Line />} label="Cable" />
+            <RowItem swatch={<Line width={2.5} />} label="Bundle (2x)" />
+            <RowItem swatch={<Line dash="10 4" />} label="Via patch panels" />
+            <RowItem
+              swatch={<Line dash="6 4" width={1.5} />}
+              label="LLDP, no cable"
+            />
+            <RowItem
+              swatch={<Line dash="3 5" width={1.25} color="var(--primary)" />}
+              label="BGP session"
             />
           </>
         ) : viewStyle === "flat" ? (

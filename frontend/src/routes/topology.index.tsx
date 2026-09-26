@@ -27,6 +27,7 @@ import type {
   TopoEdge,
   TopoNode,
   TopologyGraph,
+  TopologyDiagramDisplay,
   TopologyQuery,
   TopologyViewSaved,
   TopologyViewState,
@@ -176,6 +177,10 @@ export interface TopologySearch {
   dir?: "lr" | "tb"
   color?: EdgeColorMode
   cables?: "routed" | "straight" | "curved"
+  /** Diagram tab: Simple or Detailed cards. */
+  mode?: DiagramModeParam
+  /** Diagram tab: the line type. */
+  line?: LineParam
   /** Fold link-aggregation member cables into one edge ("on" by default). */
   lag?: "on" | "off"
   /** Levels organiser, encoded by `levels-param.ts`. */
@@ -230,6 +235,10 @@ export const Route = createFileRoute("/topology/")({
     if (lag) out.lag = lag
     const cables = oneOf(s.cables, ROUTINGS)
     if (cables) out.cables = cables
+    const mode = oneOf(s.mode, DIAGRAM_MODES)
+    if (mode) out.mode = mode
+    const line = oneOf(s.line, LINE_TYPES)
+    if (line) out.line = line
     const depth = Number(s.depth)
     if (Number.isFinite(depth) && depth > 0)
       out.depth = Math.min(6, Math.round(depth))
@@ -245,8 +254,8 @@ export const Route = createFileRoute("/topology/")({
  * the user has edited the view. */
 const OVERRIDE_KEYS = [
   "tab", "site", "location", "role", "status", "tag", "panels", "group",
-  "dir", "color", "cables", "lag", "levels", "device", "depth", "devices",
-  "q", "vlangroup", "vms",
+  "dir", "color", "cables", "mode", "line", "lag", "levels", "device",
+  "depth", "devices", "q", "vlangroup", "vms",
 ] as const
 
 const Skeleton = () => (
@@ -410,20 +419,38 @@ interface StoredDisplay {
 type GroupBy = "none" | "site" | "location"
 /** The page's views: the canvas styles + the VLAN-rail diagram. */
 type ViewStyle = NodeStyle | "logical"
-const VIEW_STYLES: ViewStyle[] = ["stencil", "hierarchy", "flat", "logical"]
+const VIEW_STYLES: ViewStyle[] = [
+  "diagram",
+  "stencil",
+  "hierarchy",
+  "flat",
+  "logical",
+]
 /** Stored values may name a removed view (e.g. the scrapped Faceplates). */
 function sanitizeViewStyle(v: unknown): ViewStyle {
   return VIEW_STYLES.includes(v as ViewStyle) ? (v as ViewStyle) : "stencil"
 }
 /** The URL says what the tab strip says. "stencil" is an internal name for
  * the renderer; the tab - and the link - call it Wiring. */
-type TabStyle = "wiring" | "hierarchy" | "flat" | "logical"
-const TAB_STYLES = ["wiring", "hierarchy", "flat", "logical"] as const
+type TabStyle = "diagram" | "wiring" | "hierarchy" | "flat" | "logical"
+const TAB_STYLES = [
+  "diagram",
+  "wiring",
+  "hierarchy",
+  "flat",
+  "logical",
+] as const
 const COLOR_MODES = ["cable", "type", "status", "speed", "none"] as const
 const DIRS = ["lr", "tb"] as const
 const ROUTINGS = ["routed", "straight", "curved"] as const
 const LAG_MODES = ["on", "off"] as const
 const GROUPS = ["none", "site", "location"] as const
+/** The Diagram tab's two switches. Cyclical joins the line types with the
+ * arcs; a saved view holding it reads as the default until then. */
+const DIAGRAM_MODES = ["simple", "detailed"] as const
+const LINE_TYPES = ["straight", "elbow", "bendy"] as const
+type DiagramModeParam = (typeof DIAGRAM_MODES)[number]
+type LineParam = (typeof LINE_TYPES)[number]
 const styleOfTab = (t: TabStyle): ViewStyle => (t === "wiring" ? "stencil" : t)
 const tabOfStyle = (v: ViewStyle): TabStyle => (v === "stencil" ? "wiring" : v)
 
@@ -443,6 +470,7 @@ type ViewFilters = Partial<
     groupBy: GroupBy
     lag: "on" | "off"
     devices: string[]
+    diagram: Partial<TopologyDiagramDisplay>
   }
 >
 function readStoredDisplay(): StoredDisplay {
@@ -533,6 +561,9 @@ function TopologyPage() {
   // Personal defaults from the last unsaved session (this read is unchanged
   // from before the URL work - same hydration behaviour).
   const stored = useRef(readStoredDisplay()).current
+  // The default map's Diagram display, as this browser last saved it with
+  // the map (read once - the stored map can be large).
+  const [storedDiagram] = useState(() => readStoredMap()?.filters.diagram)
 
   // Value resolution for every control below:
   //   URL param → applied saved view → stored personal default → hard default.
@@ -558,6 +589,14 @@ function TopologyPage() {
       distance: vf.roleDistance ?? stored.roleDistance ?? {},
     }),
     devices: vf.devices ?? null,
+    mode:
+      oneOf(vf.diagram?.mode, DIAGRAM_MODES) ??
+      oneOf(storedDiagram?.mode, DIAGRAM_MODES) ??
+      "simple",
+    line:
+      oneOf(vf.diagram?.line, LINE_TYPES) ??
+      oneOf(storedDiagram?.line, LINE_TYPES) ??
+      "straight",
   } as const
 
   const [tab, setTab] = useUrlEnum<TabStyle>("tab", dflt.tab, TAB_STYLES)
@@ -583,6 +622,17 @@ function TopologyPage() {
     oneOf(vf.lag, LAG_MODES) ?? "on",
     LAG_MODES
   )
+  const [diagramMode, setDiagramMode] = useUrlEnum<DiagramModeParam>(
+    "mode",
+    dflt.mode,
+    DIAGRAM_MODES
+  )
+  const [diagramLine, setDiagramLine] = useUrlEnum<LineParam>(
+    "line",
+    dflt.line,
+    LINE_TYPES
+  )
+  const isDiagram = viewStyle === "diagram"
   const logical = viewStyle === "logical"
   // Aggregate the graph to one card per site/location; double-click a card
   // (or its panel's button) drills into that group's device view.
@@ -669,6 +719,28 @@ function TopologyPage() {
     return { doc: defaultDocument(styleOfTab(dflt.tab)), key: mapKey }
   })
   const { dispatch: send, dirtyRef } = doc
+
+  /** The Diagram display a view saves: the URL's switches over what else
+   * the view keeps (card face, labels, its own card lines). */
+  const savedDiagram = doc.doc.filters.diagram
+  const diagramDisplay = useMemo<TopologyDiagramDisplay>(
+    () => ({
+      face: savedDiagram?.face ?? "card",
+      labels: savedDiagram?.labels ?? ["subnet", "ip", "port"],
+      ...(savedDiagram?.fields !== undefined
+        ? { fields: savedDiagram.fields }
+        : {}),
+      mode: diagramMode,
+      // A line type this page cannot pick yet is kept, not reset.
+      line:
+        !urlSearch.line && savedDiagram?.line === "cyclical"
+          ? savedDiagram.line
+          : diagramLine,
+    }),
+    [savedDiagram, diagramMode, diagramLine, urlSearch.line]
+  )
+  /** A view gains the Diagram display once the Diagram tab is used on it. */
+  const withDiagram = isDiagram || !!savedDiagram
   /** One user action = one undo step, however many edits it makes (a zone
    * drag also snapshots the cards). */
   const edit = (action: Parameters<typeof send>[0]) =>
@@ -784,8 +856,16 @@ function TopologyPage() {
   }, [ownDefault, hidden])
   const docNow = doc.doc
   useEffect(() => {
-    if (ownDefault) writeStoredMap(docNow)
-  }, [ownDefault, docNow])
+    if (!ownDefault) return
+    writeStoredMap(
+      withDiagram
+        ? {
+            ...docNow,
+            filters: { ...docNow.filters, diagram: diagramDisplay },
+          }
+        : docNow
+    )
+  }, [ownDefault, docNow, withDiagram, diagramDisplay])
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [ghost, setGhost] = useState<GhostEdgeData | null>(null)
   const [selNode, setSelNode] = useState<TopoNode["data"] | null>(null)
@@ -970,13 +1050,26 @@ function TopologyPage() {
   // ── Graph ──
   // A device set is POSTed (fetchTopology): a builder map of a few hundred
   // ids would overflow the server's request line as a query string.
+  // The Diagram's cards ask for their lines (`include=card`), under the
+  // view's own list when it has one.
+  const cardFields = savedDiagram?.fields
+  const cardFieldsKey = cardFields ? cardFields.join(",") : null
   const graphQuery = useMemo<TopologyQuery>(() => {
     const collapse_panels = filters.collapse
+    const cards: Partial<TopologyQuery> =
+      isDiagram && !grouped
+        ? {
+            include: ["card"],
+            ...(cardFieldsKey !== null
+              ? { card_fields: cardFieldsKey ? cardFieldsKey.split(",") : [] }
+              : {}),
+          }
+        : {}
     // Builder mode: exactly this set, nothing else.
-    if (custom !== null) return { devices: custom, collapse_panels }
+    if (custom !== null) return { devices: custom, collapse_panels, ...cards }
     if (focus && !grouped)
-      return { device: focus.id, depth: focus.depth, collapse_panels }
-    const g: TopologyQuery = { collapse_panels }
+      return { device: focus.id, depth: focus.depth, collapse_panels, ...cards }
+    const g: TopologyQuery = { collapse_panels, ...cards }
     if (filters.site !== "all") g.site = filters.site
     if (filters.role !== "all") g.role = filters.role
     if (filters.status !== "all") g.status = filters.status
@@ -986,7 +1079,16 @@ function TopologyPage() {
     // id is already on the matching filter param, so nothing extra here.
     if (drill && drill.kind === "location") g.location = drill.id
     return g
-  }, [filters, focus, grouped, groupBy, drill, custom])
+  }, [
+    filters,
+    focus,
+    grouped,
+    groupBy,
+    drill,
+    custom,
+    isDiagram,
+    cardFieldsKey,
+  ])
   /** Changes exactly when the query does - the canvas refits on a new one. */
   const graphKey = useMemo(() => JSON.stringify(graphQuery), [graphQuery])
 
@@ -1114,6 +1216,7 @@ function TopologyPage() {
         .sort(),
     [graph]
   )
+  const cardMonitor = !!q.data?.meta?.card?.uses_monitor
   const monQuery = useQuery({
     queryKey: ["device-mon-status", deviceIds],
     queryFn: () =>
@@ -1121,7 +1224,12 @@ function TopologyPage() {
         method: "POST",
         body: JSON.stringify({ devices: deviceIds }),
       }),
-    enabled: showObjects && !logical && deviceIds.length > 0,
+    // The sidebar's chips, and the Diagram cards' pill when some card
+    // lists `monitor`.
+    enabled:
+      !logical &&
+      deviceIds.length > 0 &&
+      (showObjects || (isDiagram && cardMonitor)),
     staleTime: 30_000,
   })
   const checks = monQuery.data?.statuses ?? EMPTY_MON
@@ -1174,6 +1282,7 @@ function TopologyPage() {
         viewStyle,
         groupBy,
         lag: lagMode,
+        ...(withDiagram ? { diagram: diagramDisplay } : {}),
       },
       devices: custom,
       style: viewStyle,
@@ -1406,12 +1515,26 @@ function TopologyPage() {
             setViewStyle(v)
           }}
           items={[
+            { value: "diagram", label: "Diagram" },
             { value: "stencil", label: "Wiring" },
             { value: "hierarchy", label: "Hierarchy" },
             { value: "flat", label: "Flat" },
             { value: "logical", label: "Logical" },
           ]}
         />
+        {isDiagram && (
+          <>
+            <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
+            <SegmentedTabs<DiagramModeParam>
+              value={diagramMode}
+              onValueChange={setDiagramMode}
+              items={[
+                { value: "simple", label: "Simple" },
+                { value: "detailed", label: "Detailed" },
+              ]}
+            />
+          </>
+        )}
         {focus && (
           <Badge variant="default" className="shrink-0 gap-1">
             <Crosshair className="h-3 w-3" />
@@ -1599,6 +1722,19 @@ function TopologyPage() {
                   ]}
                 />
               </PopoverField>
+              {isDiagram && (
+                <PopoverField label="Lines">
+                  <SegmentedTabs<LineParam>
+                    value={diagramLine}
+                    onValueChange={setDiagramLine}
+                    items={[
+                      { value: "straight", label: "Straight" },
+                      { value: "elbow", label: "Elbow" },
+                      { value: "bendy", label: "Bendy" },
+                    ]}
+                  />
+                </PopoverField>
+              )}
               {viewStyle === "stencil" && (
                 <PopoverField label="Cables">
                   <SegmentedTabs<"routed" | "straight" | "curved">
@@ -1810,6 +1946,10 @@ function TopologyPage() {
               roleDistance={roleDistance}
               edgeRouting={edgeRouting}
               nodeStyle={viewStyle}
+              diagramMode={diagramMode}
+              diagramLine={diagramLine}
+              linkOverrides={doc.doc.links}
+              monitor={isDiagram ? checks : undefined}
               bundleLags={lagMode === "on"}
               positions={positions}
               layoutTick={layoutTick}
@@ -1855,7 +1995,11 @@ function TopologyPage() {
                   setMenu({ x, y, zoneId: node.id.slice(5) })
                 else if (node.type === "sitegroup")
                   setMenu({ x, y, group: node.data as unknown as TopoGroupData })
-                else if (node.type === "device" || node.type === "flat")
+                else if (
+                  node.type === "device" ||
+                  node.type === "flat" ||
+                  node.type === "card"
+                )
                   setMenu({
                     x,
                     y,
@@ -1936,6 +2080,8 @@ function TopologyPage() {
               grouped={grouped}
               colorMode={colorMode}
               types={presentTypes}
+              roles={rolesInGraph}
+              monitorPill={cardMonitor}
             />
           </div>
         )}

@@ -16,7 +16,12 @@ export type PosByStyle = Partial<Record<NodeStyle, PosMap>>
 
 /** The styles that own an arrangement (Logical is a rail diagram, not a
  * canvas, so it has none). Mirrors the backend's validation list. */
-export const POSITION_STYLES: NodeStyle[] = ["stencil", "hierarchy", "flat"]
+export const POSITION_STYLES: NodeStyle[] = [
+  "stencil",
+  "hierarchy",
+  "flat",
+  "diagram",
+]
 
 /** Old stores held one flat map for every style; read it as the style it was
  * most likely arranged in, so nobody loses an arrangement to the split. */

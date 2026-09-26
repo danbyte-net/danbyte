@@ -24,8 +24,16 @@ import {
 import type { Edge, Node } from "@xyflow/react"
 import { toPng } from "html-to-image"
 
-import type { GhostEdgeData, TopoEdge, TopologyGraph } from "@/lib/api"
+import type {
+  BulkStatusEntry,
+  GhostEdgeData,
+  TopoEdge,
+  TopologyGraph,
+  TopologyLinkOverride,
+} from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
+import { useStatusLabels } from "@/components/monitoring/status-palette"
+import { diagramFontsReady } from "@/lib/diagram/measure"
 import { CanvasTip } from "./canvas-tip"
 import type { CanvasTipHandle } from "./canvas-tip"
 import { ABOVE, BELOW, RIGHT, handleId } from "./stencil-node"
@@ -44,7 +52,7 @@ import {
 } from "./layout"
 import type { NodeSizing } from "./layout"
 import { resolveLevels } from "./level-organiser"
-import { roleTiers } from "./levels-param"
+import { graphLevels } from "./levels-param"
 import { OverlayEdge } from "./overlay-edge"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
@@ -56,12 +64,16 @@ import type { EdgeColorMode } from "./edge-style"
 import { ROUTABLE, classifyEdges, orientHubToLeaf } from "./edge-semantics"
 import type { BundleMember, EdgeClass } from "./edge-semantics"
 import { nodeTypes, sizeOf } from "./node-registry"
+import { buildDiagram, relinkDiagram } from "./diagram/build-diagram"
+import type { DiagramModel } from "./diagram/build-diagram"
+import { LinkEdge } from "./diagram/link-edge"
+import type { DiagramCardData, DiagramMode, LineType } from "./diagram/types"
 
 export { speedColor, typeColor } from "./edge-style"
 export type { EdgeColorMode } from "./edge-style"
 export type { BundleMember } from "./edge-semantics"
 
-const edgeTypes = { routed: RoutedEdge, overlay: OverlayEdge }
+const edgeTypes = { routed: RoutedEdge, overlay: OverlayEdge, link: LinkEdge }
 
 /**
  * Zones paint under the cards - they are prepended to the node array, and
@@ -126,8 +138,9 @@ function nodesToZones(nodes: Node[], previous: Zone[]): Zone[] {
 
 /** "stencil" = wiring cards with port rows; "hierarchy" = tall cards with
  * peer-aligned port chips (near-straight cables); "flat" = barebones fixed
- * chips with parallel cables bundled into one ×N edge. */
-export type NodeStyle = "stencil" | "hierarchy" | "flat"
+ * chips with parallel cables bundled into one ×N edge; "diagram" = the
+ * role-coloured cards of the Diagram tab (diagram/build-diagram.ts). */
+export type NodeStyle = "stencil" | "hierarchy" | "flat" | "diagram"
 
 const flatSize = (n: Node) => ({
   width: flatW(n.data as { name?: string }),
@@ -599,29 +612,12 @@ export function build(
   if (opts.roleOrder && opts.roleOrder.length) {
     // Bonded roles share one level, so a level can hold several roles - rank by
     // LEVEL index, not by position in the order.
-    const groups = resolveLevels(opts.roleOrder, opts.roleBonds ?? [])
-    const { rank, fallback: last } = roleTiers(
-      graph.nodes
-        .filter((n) => n.data.role && !n.data.role.is_patch_panel)
-        .map((n) => n.data.role!.name),
-      groups
-    )
-    levels = new Map()
-    for (const n of graph.nodes) {
-      // Patch panels aren't a device tier - leave them at their structural
-      // position so they sit between the cables they join.
-      if (n.data.role?.is_patch_panel) continue
-      levels.set(n.id, rank.get(n.data.role?.name ?? "") ?? last)
-    }
-    // Cumulative main-axis offset per LEVEL. A level's gap comes from the
-    // distance step of its FIRST role (bonded roles share the level, so they
-    // share its gap - their own dots are hidden in the organiser to match).
-    const base = opts.direction === "TB" ? 200 : 360
-    const mult = [0.6, 0.8, 1, 1.4, 2] // 5 distance steps
-    const gapOf = (role: string) => base * mult[opts.roleDistance?.[role] ?? 2]
-    mainOffsets = [0]
-    for (let i = 1; i <= last; i++)
-      mainOffsets[i] = mainOffsets[i - 1] + gapOf(groups[i]?.[0] ?? "")
+    ;({ levels, mainOffsets } = graphLevels(
+      graph.nodes,
+      resolveLevels(opts.roleOrder, opts.roleBonds ?? []),
+      opts.direction,
+      opts.roleDistance
+    ))
   }
 
   // Flat + grouped views: compact dagre passes with fixed card sizes and no
@@ -914,6 +910,47 @@ export interface TopologyCanvasProps {
   onCanvasClick?: () => void
   /** Fired after a node drag settles - the parent can persist positions(). */
   onDragEnd?: () => void
+  /** Diagram: Simple (lines meet at side midpoints) or Detailed (a nub per
+   * cabled interface). */
+  diagramMode?: DiagramMode
+  /** Diagram: the view's line type. */
+  diagramLine?: LineType
+  /** Diagram: per device-pair line overrides from the saved view. */
+  linkOverrides?: Record<string, TopologyLinkOverride>
+  /** Diagram: monitoring state per device id, for the cards' pills. Kept
+   * out of the build so a refresh never re-lays the map out. */
+  monitor?: Record<string, BulkStatusEntry | undefined>
+}
+
+/** Where to aim the camera for a node: diagram nodes are placed by their
+ * centre, the older cards by their corner. */
+function nodeCentre(n: Node): { x: number; y: number } {
+  return n.origin ? n.position : { x: n.position.x + 110, y: n.position.y + 40 }
+}
+
+/** Nodes carrying the Diagram cards' new boxes and nubs (relinkDiagram). */
+function withCards(
+  nodes: Node[],
+  cards: Map<string, DiagramCardData["diagram"]>
+): Node[] {
+  if (!cards.size) return nodes
+  return nodes.map((n) => {
+    const next = cards.get(n.id)
+    return next
+      ? {
+          ...n,
+          width: next.box.w,
+          height: next.box.h,
+          data: { ...n.data, diagram: next },
+        }
+      : n
+  })
+}
+
+/** The minimap paints a diagram card in its role colour. */
+function miniColor(n: Node): string {
+  const role = (n.data as { role?: { color?: string } | null }).role
+  return role?.color ? `#${role.color.replace(/^#/, "")}` : "var(--muted)"
 }
 
 const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
@@ -950,6 +987,10 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onBgpEdge,
     onCanvasClick,
     onDragEnd,
+    diagramMode = "simple",
+    diagramLine = "straight",
+    linkOverrides,
+    monitor,
   },
   ref
 ) {
@@ -960,34 +1001,85 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   useEffect(() => setMounted(true), [])
 
   // Aligned hierarchy cables are already near-straight; flat draws floating
-  // point-to-point beziers - neither re-routes orthogonally.
+  // point-to-point beziers - neither re-routes orthogonally. The Diagram
+  // re-anchors its own links (relinkDiagram).
+  const diagram = nodeStyle === "diagram"
   const routingActive =
     edgeRouting === "routed" &&
     nodeStyle !== "hierarchy" &&
-    nodeStyle !== "flat"
+    nodeStyle !== "flat" &&
+    !diagram
 
-  const built = useMemo(
+  // The tenant's names for "down" and "degraded": a card keeps room for its
+  // pill as it will actually read.
+  const statusLabels = useStatusLabels()
+  const downLabel = statusLabels.down?.name
+  const degradedLabel = statusLabels.degraded?.name
+  const checkLabels = useMemo(
+    () => ({ down: downLabel, degraded: degradedLabel }),
+    [downLabel, degradedLabel]
+  )
+
+  // Diagram cards are sized from measured text. Until Inter has loaded the
+  // widths are estimates, so lay out once more when it has.
+  const [fontTick, setFontTick] = useState(0)
+  useEffect(() => {
+    if (!diagram) return
+    let live = true
+    void diagramFontsReady().then(() => {
+      if (live) setFontTick((t) => t + 1)
+    })
+    return () => {
+      live = false
+    }
+  }, [diagram])
+
+  const built = useMemo<{
+    nodes: Node[]
+    edges: Edge[]
+    model: DiagramModel | null
+  }>(
     () =>
-      build(graph, {
-        focusNodeId,
-        direction,
-        roleOrder,
-        roleBonds,
-        roleDistance,
-        edgeRouting,
-        colorMode,
-        nodeStyle,
-        bundleLags,
-        // Positions pin whenever the parent supplies them. A deliberate
-        // relayout CLEARS them at the source (the page sets positions to
-        // undefined before bumping layoutTick) - gating on the tick here
-        // instead made every drag AFTER a relayout snap straight back.
-        positions,
-        matched: matchedIds,
-        hiddenPorts,
-        originId,
-      }),
-    // layoutTick discards saved positions on purpose.
+      diagram
+        ? buildDiagram(graph, {
+            mode: diagramMode,
+            line: diagramLine,
+            links: linkOverrides,
+            colorMode,
+            direction,
+            roleOrder,
+            roleBonds,
+            roleDistance,
+            bundleLags,
+            positions,
+            matched: matchedIds,
+            focusNodeId,
+            checkLabels,
+          })
+        : {
+            ...build(graph, {
+              focusNodeId,
+              direction,
+              roleOrder,
+              roleBonds,
+              roleDistance,
+              edgeRouting,
+              colorMode,
+              nodeStyle,
+              bundleLags,
+              // Positions pin whenever the parent supplies them. A
+              // deliberate relayout CLEARS them at the source (the page sets
+              // positions to undefined before bumping layoutTick) - gating
+              // on the tick here instead made every drag AFTER a relayout
+              // snap straight back.
+              positions,
+              matched: matchedIds,
+              hiddenPorts,
+              originId,
+            }),
+            model: null,
+          },
+    // layoutTick discards saved positions on purpose; fontTick re-measures.
     [
       graph,
       focusNodeId,
@@ -1003,8 +1095,16 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       matchedIds,
       hiddenPorts,
       originId,
+      diagram,
+      diagramMode,
+      diagramLine,
+      linkOverrides,
+      checkLabels,
+      fontTick,
     ]
   )
+  /** The Diagram's anchoring state, as the last build or drag left it. */
+  const modelRef = useRef<DiagramModel | null>(null)
 
   // ── zones ──────────────────────────────────────────────────────────
   // Held outside `built`, because a zone drag must not rebuild the graph -
@@ -1049,12 +1149,16 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // hide via CSS keyed on the wrapper's data-lod - pure paint, no re-layout,
   // so a big graph reads as clean boxes-and-lines until you zoom in.
   const [lod, setLod] = useState(0)
+  // Diagram port names are 9px along the line: unreadable well before the
+  // cable labels are, so they go first.
+  const [portText, setPortText] = useState(true)
   const onMove = useCallback((_: unknown, vp: { zoom: number }) => {
     // Cable labels are the map's most useful text - they stay until the
     // graph is genuinely too small to read, not at the zoom a fitted
     // fabric happens to land on.
     const next = vp.zoom < 0.2 ? 2 : vp.zoom < 0.32 ? 1 : 0
     setLod((cur) => (cur === next ? cur : next))
+    setPortText(vp.zoom >= 0.55)
   }, [])
   // Hover/select emphasis: the active edge thickens, rises, and always
   // carries a full label (synthesized when the resting edge has none - a
@@ -1089,7 +1193,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       if (isHot || isSel)
         return {
           ...e,
-          // The hot edge keeps its label at any LOD (CSS exempts .topo-hot).
+          // The hot edge keeps its label at any LOD (CSS exempts .topo-hot;
+          // a diagram link's mid-line chip lives outside the edge, so it
+          // is told through its data).
           className: isHot ? "topo-hot" : e.className,
           zIndex: 1000,
           style: {
@@ -1098,6 +1204,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
             opacity: 1,
             ...(isSel ? { stroke: "var(--primary)" } : {}),
           },
+          ...(e.type === "link" ? { data: { ...e.data, hot: true } } : {}),
         }
       const offSpot = spotSet && e.source !== spotId && e.target !== spotId
       return hotEdge || offSpot
@@ -1109,14 +1216,31 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         : e
     })
   }, [edges, hotEdge, selectedEdgeId, spotSet, spotId])
+  // A card's monitoring pill, merged per node and remembered, so a drag
+  // (a new nodes array every frame) re-renders only the card that moved.
+  const monMemo = useRef(
+    new Map<string, { src: Node; status: string | null; out: Node }>()
+  )
   const shownNodes = useMemo(() => {
-    if (!spotSet) return nodes
-    return nodes.map((n) =>
-      spotSet.has(n.id) || n.type === "sitegroup"
-        ? n
-        : { ...n, data: { ...n.data, dimmed: true } }
-    )
-  }, [nodes, spotSet])
+    if (!spotSet && !monitor) return nodes
+    const memo = monMemo.current
+    return nodes.map((n) => {
+      let out = n
+      if (monitor && n.type === "card") {
+        const dev = (n.data as DiagramCardData).device_id
+        const status = (dev && monitor[dev]?.status) || null
+        const hit = memo.get(n.id)
+        if (hit && hit.src === n && hit.status === status) out = hit.out
+        else {
+          out = status ? { ...n, data: { ...n.data, monitor: status } } : n
+          memo.set(n.id, { src: n, status, out })
+        }
+      }
+      return !spotSet || spotSet.has(n.id) || n.type === "sitegroup"
+        ? out
+        : { ...out, data: { ...out.data, dimmed: true } }
+    })
+  }, [nodes, spotSet, monitor])
   // Re-sync when the built graph changes, but keep user-dragged positions
   // for nodes that are still present (so a color-mode flip doesn't shuffle).
   const prevNodes = useRef<Node[]>([])
@@ -1124,6 +1248,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   const prevStyle = useRef(nodeStyle)
   const prevDirection = useRef(direction)
   const prevFitKey = useRef(fitKey)
+  const prevMode = useRef(diagramMode)
   useEffect(() => {
     const prev = new Map(prevNodes.current.map((n) => [n.id, n.position]))
     // Keep the user's dragged positions only across INCIDENTAL rebuilds
@@ -1150,21 +1275,41 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     const relaidOut =
       layoutTick !== prevTick.current || restyled || requeried || redirected
     prevTick.current = layoutTick
+    // Simple and Detailed cards differ in size: an auto layout from one
+    // mode is not kept for the other (a saved arrangement is - it pins the
+    // centres both modes share). No re-fit, though: same map, same place.
+    const remoded = diagramMode !== prevMode.current
+    prevMode.current = diagramMode
     // A new layout is a new map - a stale spotlight would dim everything
     // with no visible cause.
     if (relaidOut) setSpotId(null)
     const keepingDrags =
-      !relaidOut && !positions && prevNodes.current.length > 0
-    const nextNodes = built.nodes.map((n) => {
+      !relaidOut &&
+      !(diagram && remoded) &&
+      !positions &&
+      prevNodes.current.length > 0
+    let nextNodes = built.nodes.map((n) => {
       const kept = prev.get(n.id)
       return kept && keepingDrags ? { ...n, position: kept } : n
     })
+    modelRef.current = built.model
+    // Diagram: the kept positions are not the ones the links were anchored
+    // for - re-anchor (and re-size the Detailed cards) where they are.
+    let diagramEdges: Edge[] | null = null
+    if (built.model && keepingDrags) {
+      const re = relinkDiagram(built.model, nextNodes)
+      modelRef.current = re.model
+      diagramEdges = re.edges
+      nextNodes = withCards(nextNodes, re.cards)
+    }
     // Zones are not part of the built graph, so a rebuild would drop them.
     setNodes([...zoneNodes.current, ...nextNodes])
-    // When we kept dragged positions, `built.edges` were routed for the
-    // layout's positions, not the kept ones - re-route from the actual
-    // rendered positions so cables always match their cards.
-    if (routingActive && keepingDrags) {
+    if (diagramEdges) {
+      setEdges(diagramEdges)
+    } else if (routingActive && keepingDrags) {
+      // When we kept dragged positions, `built.edges` were routed for the
+      // layout's positions, not the kept ones - re-route from the actual
+      // rendered positions so cables always match their cards.
       const wp = edgeWaypoints(nextNodes, built.edges, sizeOf, direction)
       setEdges(
         built.edges.map((e) => {
@@ -1201,6 +1346,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     flow,
     fitKey,
     nodeStyle,
+    diagram,
+    diagramMode,
   ])
   useEffect(() => {
     prevNodes.current = nodes
@@ -1252,11 +1399,9 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       },
       focusNode: (id: string) => {
         const n = flow.getNode(id)
-        if (n)
-          flow.setCenter(n.position.x + 110, n.position.y + 40, {
-            zoom: 1.1,
-            duration: 500,
-          })
+        if (!n) return
+        const c = nodeCentre(n)
+        flow.setCenter(c.x, c.y, { zoom: 1.1, duration: 500 })
       },
       selectNode: (id: string) => {
         setSpotId(id)
@@ -1271,11 +1416,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         const a = e && flow.getNode(e.source)
         const b = e && flow.getNode(e.target)
         if (!a || !b) return
-        flow.setCenter(
-          (a.position.x + b.position.x) / 2 + 110,
-          (a.position.y + b.position.y) / 2 + 40,
-          { zoom: 1, duration: 500 }
-        )
+        const ca = nodeCentre(a)
+        const cb = nodeCentre(b)
+        flow.setCenter((ca.x + cb.x) / 2, (ca.y + cb.y) / 2, {
+          zoom: 1,
+          duration: 500,
+        })
       },
       focusZone: (box) => {
         void flow.fitBounds(
@@ -1466,6 +1612,19 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
 
   const onNodeDragStop = useCallback(() => {
     emitZones()
+    const model = modelRef.current
+    if (diagram && model) {
+      // Re-anchor from where the cards are now: sides re-chosen, Detailed
+      // cards re-sized around their centres, elbow channels re-routed.
+      const re = relinkDiagram(model, flow.getNodes())
+      modelRef.current = re.model
+      // Into the real state, not the rendered nodes (those carry the
+      // spotlight's dimming and the monitoring pill).
+      setNodes((cur) => withCards(cur, re.cards))
+      setEdges(re.edges)
+      onDragEnd?.()
+      return
+    }
     if (nodeStyle === "hierarchy") {
       // Both ends of every moved cable re-align: chips re-stack toward
       // their peers' current positions, handles follow, blocked cables
@@ -1584,6 +1743,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onDragEnd,
     nodeStyle,
     emitZones,
+    diagram,
   ])
 
   if (!mounted)
@@ -1596,7 +1756,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     )
 
   return (
-    <div ref={wrapper} className="h-full w-full" data-lod={lod}>
+    <div
+      ref={wrapper}
+      className="h-full w-full"
+      data-lod={lod}
+      data-ports={portText ? undefined : "off"}
+    >
       <ReactFlow
         nodes={shownNodes}
         edges={shownEdges}
@@ -1653,6 +1818,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         <MiniMap
           pannable
           zoomable
+          nodeColor={diagram ? miniColor : undefined}
           className="rounded-md border !border-border !bg-card"
         />
       </ReactFlow>
