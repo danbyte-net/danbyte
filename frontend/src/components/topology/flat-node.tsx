@@ -1,7 +1,8 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
-import { NodeStatusPill, statusPillReserve } from "./node-status-pill"
-import type { HasStatusPill } from "./node-status-pill"
+import { statusPillReserve } from "./card-metrics"
+import type { HasStatusPill } from "./card-metrics"
+import { NodeStatusPill } from "./node-status-pill"
 import { handleId, type StencilData } from "./stencil-node"
 
 // The Flat view's barebones device chip: fixed size, no port rows, whole-node

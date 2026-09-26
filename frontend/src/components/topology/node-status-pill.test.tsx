@@ -7,8 +7,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import type { StatusMini } from "@/lib/api"
 import { FlatNode, flatW } from "./flat-node"
 import { HierarchyNode } from "./hierarchy-node"
+import { statusPillReserve } from "./card-metrics"
 import { hierarchyWidth } from "./layout"
-import { NodeStatusPill, statusPillReserve } from "./node-status-pill"
+import { NodeStatusPill } from "./node-status-pill"
 import { StencilNode, stencilSize } from "./stencil-node"
 
 // A card's lifecycle status is the shared StatusBadge pill, coloured from the

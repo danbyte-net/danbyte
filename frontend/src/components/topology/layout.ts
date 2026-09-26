@@ -1,8 +1,8 @@
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node } from "@xyflow/react"
 
-import { statusPillReserve } from "./node-status-pill"
-import type { HasStatusPill } from "./node-status-pill"
+import { statusPillReserve } from "./card-metrics"
+import type { HasStatusPill } from "./card-metrics"
 
 // Lay nodes out left-to-right with dagre and write positions back. Node
 // sizes come from the caller (a stencil card is a header + one row per

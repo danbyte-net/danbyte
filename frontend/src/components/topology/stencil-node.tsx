@@ -1,7 +1,8 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react"
 
 import type { TopoNode, TopoPortKind } from "@/lib/api"
-import { NodeStatusPill, statusPillReserve } from "./node-status-pill"
+import { statusPillReserve } from "./card-metrics"
+import { NodeStatusPill } from "./node-status-pill"
 
 // ── Handle-id side suffixes ──────────────────────────────────────────────────
 // A port renders on exactly one side of its card (the side facing its
