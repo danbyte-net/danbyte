@@ -30,6 +30,12 @@ from core.models import Organization, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
 from .filters import apply_tag_filter
 from .cf_search import cf_text_q
+from .face_ports import (
+    FACE_PORT_KINDS,
+    ComponentIndex,
+    effective_image_ports,
+    render_marker_name,
+)
 from .models import (
     _TEMPLATE_MARKER_KIND,
     Antenna,
@@ -3438,24 +3444,9 @@ class DeviceViewSet(
         rows.sort(key=lambda r: (-r["pct"], r["name"]))
         return Response({"results": rows})
 
-    # Photo-port marker kind (hyphenated, as saved in DeviceType.image_ports) →
-    # (device component relation, CableTermination kind). Drives face-ports.
-    # Inventory items (disk bays…) and module bays (line-card slots) are
-    # placeable but not cable-able, hence the None termination kind: a part
-    # answers "what health", a bay answers "occupied or free".
-    _FACE_PORT_KINDS = {
-        "interface": ("interfaces", "interface"),
-        "console-port": ("console_ports", "console_port"),
-        "console-server-port": ("console_server_ports", "console_server_port"),
-        "power-port": ("power_ports", "power_port"),
-        "power-outlet": ("power_outlets", "power_outlet"),
-        "front-port": ("front_ports", "front_port"),
-        "rear-port": ("rear_ports", "rear_port"),
-        "aux-port": ("aux_ports", "aux_port"),
-        "antenna": ("antennas", None),
-        "inventory-item": ("inventory_items", None),
-        "module-bay": ("module_bays", None),
-    }
+    # Marker kind → (component relation, CableTermination kind); kept as an
+    # alias of the shared table in ``face_ports``.
+    _FACE_PORT_KINDS = FACE_PORT_KINDS
 
     # Observed-vs-intent difference → the one-line label a marker wears. Keeps
     # the phrasing in one place so 2D hovercards and the 3D HUD agree.
@@ -3531,26 +3522,16 @@ class DeviceViewSet(
 
     def _face_ports_payload(self, device) -> dict:
         """The resolved markers of one device - see ``face_ports``."""
-        from .models import render_component_name
-
-        dt = device.device_type
-        # A device-level override (special devices) replaces the type's
-        # layout wholesale; null inherits.
-        image_ports = (
-            device.image_ports
-            if device.image_ports is not None
-            else (dt.image_ports if dt else None)
-        ) or {}
+        image_ports = effective_image_ports(device) or {}
         pos = device.vc_position
         drift = self._face_drift(device)
 
-        # Load each component relation we actually need exactly once, keyed by
-        # rendered name, with terminations prefetched for the cabled check.
-        name_maps: dict[str, dict[str, object]] = {}
-        norm_maps: dict[str, dict[str, object]] = {}
+        # Load each component relation we actually need exactly once, indexed
+        # by name, with terminations prefetched for the cabled check.
+        indexes: dict[str, ComponentIndex] = {}
 
-        def name_map(relation, cabled: bool):
-            if relation not in name_maps:
+        def index_for(relation, cabled: bool) -> ComponentIndex:
+            if relation not in indexes:
                 comps = getattr(device, relation)
                 # Only cable-able kinds have terminations; inventory items
                 # carry a status instead, and a module bay's occupancy is the
@@ -3563,46 +3544,15 @@ class DeviceViewSet(
                     comps = comps.select_related("module__module_type")
                 else:
                     comps = comps.select_related("status")
-                comps = list(comps)
-                # marker_key first: the frozen marker identity survives a
-                # rename of the visible name (Interface/Front/RearPort carry
-                # one; other kinds fall through to name matching).
-                by_key = {}
-                for c in comps:
-                    mk = getattr(c, "marker_key", "") or ""
-                    if mk:
-                        by_key.setdefault(mk, c)
-                for c in comps:
-                    by_key.setdefault(c.name, c)
-                name_maps[relation] = by_key
-                # Case/whitespace-insensitive twin (first name wins) - the
-                # same normalization the frontend's normalizePortName applies.
-                norm = {}
-                for c in comps:
-                    mk = getattr(c, "marker_key", "") or ""
-                    if mk:
-                        norm.setdefault(mk.strip().lower(), c)
-                for c in comps:
-                    norm.setdefault(c.name.strip().lower(), c)
-                norm_maps[relation] = norm
-            return name_maps[relation]
-
-        def find_component(relation, cabled: bool, name: str):
-            """Exact rendered-name match first, then tolerant: imported photo
-            markers routinely disagree with the live component names by case
-            alone ("Psu 1" vs "PSU 1"), and an exact-only match silently left
-            those markers unresolved - grey, unclickable, uncable-able."""
-            comp = name_map(relation, cabled=cabled).get(name)
-            if comp is None:
-                comp = norm_maps[relation].get(name.strip().lower())
-            return comp
+                indexes[relation] = ComponentIndex(comps)
+            return indexes[relation]
 
         def resolve(markers):
             out = []
             for m in markers if isinstance(markers, list) else []:
                 raw = m.get("name", "") if isinstance(m, dict) else ""
                 kind = m.get("kind", "interface") if isinstance(m, dict) else ""
-                name = render_component_name(raw, pos)
+                name = render_marker_name(raw, pos)
                 entry = {
                     "marker": raw, "name": name, "kind": None, "id": None,
                     "connected": False, "cable_id": None,
@@ -3621,10 +3571,10 @@ class DeviceViewSet(
                     # drift is drawn beside intent, never over it.
                     "drift": None,
                 }
-                mapping = self._FACE_PORT_KINDS.get(kind)
+                mapping = FACE_PORT_KINDS.get(kind)
                 if mapping:
                     relation, term_kind = mapping
-                    comp = find_component(relation, term_kind is not None, name)
+                    comp = index_for(relation, term_kind is not None).match(name)
                     if comp is not None:
                         entry["drift"] = drift.get(str(comp.id))
                     if comp is not None and kind == "module-bay":
@@ -3695,8 +3645,8 @@ class DeviceViewSet(
         # (exact or tolerant) are skipped, so nothing resolves twice.
         claimed = {e["id"] for e in front + rear if e["id"]}
         for marker_kind in ("power-port", "power-outlet"):
-            relation, term_kind = self._FACE_PORT_KINDS[marker_kind]
-            for comp in name_map(relation, cabled=True).values():
+            relation, term_kind = FACE_PORT_KINDS[marker_kind]
+            for comp in index_for(relation, cabled=True).components:
                 if str(comp.id) in claimed:
                     continue
                 term = next(iter(comp.terminations.all()), None)
@@ -8732,11 +8682,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "has_faceplate": bool(dt and dt.faceplate),
                 # Photo-anchored port markers (per device type; denormalized
                 # here like front_image so the 3D face can overlay them).
-                "image_ports": (
-                    d.image_ports
-                    if d.image_ports is not None
-                    else (dt.image_ports if dt else None)
-                ) or None,
+                "image_ports": effective_image_ports(d),
                 # The device's REAL power component names - the room lays out
                 # deterministic clickable quads (and cable anchors) for any of
                 # these that no photo marker covers, incl. PDU strip outlets.

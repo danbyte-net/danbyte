@@ -1271,7 +1271,7 @@ def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
 
 # NOTE: no "front-port" entry on purpose - a bare front port can't be
 # stamped (it needs a rear-port mapping), so front-port markers are excluded
-# from the create/diff paths. They still RESOLVE (viewsets._FACE_PORT_KINDS)
+# from the create/diff paths. They still RESOLVE (face_ports.FACE_PORT_KINDS)
 # and template renames still follow (_TEMPLATE_MARKER_KIND).
 _MARKER_KIND_RELS = {
     "interface": "interfaces",
