@@ -271,9 +271,167 @@ _CARD_VALUE = {
 }
 
 
+#: At most this many addresses per pair end, and shared subnets per pair.
+LINK_IPS_MAX = 8
+
+
 def enrich_link_ips(ctx: EnrichContext) -> None:
     """``include=link_ips``: each cable pair's addresses and the subnets both
-    ends share. Not built yet."""
+    ends share.
+
+    Every pair gets ``a_ips`` / ``b_ips`` (``address/length`` strings, at
+    most 8 per end), ``subnets`` - ``[{cidr, family, a, b, a_via, b_via}]``,
+    at most 8, IPv4 first - and ``subnets_truncated``. Every cable edge gets
+    ``data.subnets``, the union of its pairs' subnet cidrs.
+
+    An end's addresses are those on its interface, then on its LAG, then on
+    its own sub-interfaces, then on the LAG's (``a_via`` / ``b_via`` names
+    the interface when it isn't the cabled port). Two ends share a subnet
+    when ``address/length`` gives the same network on both, the length
+    being the address's own mask length, else its prefix's: a /31 inside an
+    aggregate stays a /31. VRFs are not compared - a cable joins its ends
+    whatever their routing tables. Host routes (/32, /128) and virtual
+    addresses (an IP role with ``is_virtual``) are left out.
+
+    Addresses pass the caller's ``ipaddress.view`` scope, so an end whose
+    address is hidden shares nothing. Without the grant nothing is added
+    and nothing is queried; with it, two queries whatever the map's size -
+    the sub-interfaces, then the addresses.
+    """
+    from auth_api import rbac
+
+    from .models import IPAddress
+
+    pairs_by_edge = ctx.collect.get("pairs") or {}
+    visible = rbac.restrict_queryset(
+        IPAddress.objects.filter(tenant=ctx.tenant),
+        ctx.user, ctx.tenant, "ipaddress", "view",
+    )
+    if not pairs_by_edge or visible.query.is_empty():
+        return
+
+    ports = {}  # interface id → the cabled Interface
+    for rows in pairs_by_edge.values():
+        for _pair, a_obj, a_kind, b_obj, b_kind in rows:
+            for obj, kind in ((a_obj, a_kind), (b_obj, b_kind)):
+                if kind == "interface":
+                    ports[obj.id] = obj
+    children = _link_children(ctx.tenant, ports)
+    addrs = _link_addresses(visible, ports, children)
+
+    # interface id → [(via, address, network, address string, cidr)]
+    cands = {}
+
+    def end(obj, kind):
+        if kind != "interface":
+            return ()
+        if obj.id not in cands:
+            steps = [(None, obj.id)]
+            if obj.lag_id:
+                steps.append((obj.lag.name, obj.lag_id))
+            steps += children.get(obj.id, [])
+            if obj.lag_id:
+                steps += children.get(obj.lag_id, [])
+            cands[obj.id] = [
+                (via, *row) for via, iid in steps for row in addrs.get(iid, ())
+            ]
+        return cands[obj.id]
+
+    edges = {e["id"]: e for e in ctx.graph.get("edges", ())}
+    for edge_id, rows in pairs_by_edge.items():
+        union = {}
+        for pair, a_obj, a_kind, b_obj, b_kind in rows:
+            a_end, b_end = end(a_obj, a_kind), end(b_obj, b_kind)
+            pair["a_ips"] = list(dict.fromkeys(c[4] for c in a_end))[:LINK_IPS_MAX]
+            pair["b_ips"] = list(dict.fromkeys(c[4] for c in b_end))[:LINK_IPS_MAX]
+            subnets = _shared_subnets(a_end, b_end)
+            pair["subnets"] = subnets[:LINK_IPS_MAX]
+            pair["subnets_truncated"] = len(subnets) > LINK_IPS_MAX
+            for s in subnets:
+                union.setdefault(s["cidr"], s["family"])
+        edge = edges.get(edge_id)
+        if edge is not None:
+            edge["data"]["subnets"] = sorted(union, key=union.get)
+
+
+def _link_children(tenant, ports) -> dict:
+    """``{parent id: [(name, id)]}``: the sub-interfaces of the cabled
+    ports and of their LAGs, by name - one query, none without ports."""
+    from .models import Interface
+
+    parents = set(ports) | {p.lag_id for p in ports.values() if p.lag_id}
+    children = {}
+    if not parents:
+        return children
+    rows = (
+        Interface.objects.filter(device__tenant=tenant, parent_id__in=parents)
+        .order_by("name", "id")
+        .values_list("id", "parent_id", "name")
+    )
+    for cid, pid, name in rows:
+        children.setdefault(pid, []).append((name, cid))
+    return children
+
+
+def _link_addresses(visible, ports, children) -> dict:
+    """``{interface id: [(address, network, address string, cidr)]}`` for the
+    link addresses on the cabled ports, their LAGs and their sub-interfaces,
+    lowest first - one query through the caller's IP scope. Host routes and
+    virtual addresses are dropped."""
+    import ipaddress
+
+    ids = set(ports) | {p.lag_id for p in ports.values() if p.lag_id}
+    ids |= {cid for kids in children.values() for _name, cid in kids}
+    if not ids:
+        return {}
+    rows = (
+        visible.filter(assigned_interface_id__in=ids)
+        .exclude(role__is_virtual=True)
+        .select_related("prefix")
+        .only("id", "ip_address", "mask_length", "assigned_interface_id", "prefix__cidr")
+    )
+    out = {}
+    for ip in rows:
+        cidr = ip.cidr
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            addr = ipaddress.ip_address(ip.ip_address)
+        except (TypeError, ValueError):
+            continue  # no length, or one that doesn't fit the family
+        if net.prefixlen == net.max_prefixlen:
+            continue  # a host route, not a link address
+        out.setdefault(ip.assigned_interface_id, []).append(
+            (addr, net, ip.ip_address, cidr)
+        )
+    for found in out.values():
+        found.sort(key=lambda row: (row[0].version, int(row[0])))
+    return out
+
+
+def _shared_subnets(a_end, b_end) -> list:
+    """The networks both ends hold an address in, IPv4 first, then in the
+    A end's order; each pairs the first address on either side."""
+    b_by_net = {}
+    for via, addr, net, text, _cidr in b_end:
+        b_by_net.setdefault(net, []).append((via, addr, text))
+    found = {}
+    for rank, (a_via, a_addr, net, a_text, _cidr) in enumerate(a_end):
+        if net in found:
+            continue
+        b = next(
+            (row for row in b_by_net.get(net, ()) if row[1] != a_addr), None
+        )
+        if b is None:
+            continue
+        found[net] = (net.version, rank, {
+            "cidr": str(net),
+            "family": net.version,
+            "a": a_text,
+            "b": b[2],
+            "a_via": a_via,
+            "b_via": b[0],
+        })
+    return [s for _v, _r, s in sorted(found.values(), key=lambda t: t[:2])]
 
 
 def enrich_photo(ctx: EnrichContext) -> None:

@@ -581,6 +581,50 @@ mini-graph - returns its nodes in a reduced shape: name, site, `status` and
 The cost doesn't grow with the map: at most ten queries, each run only when
 some card shows a line that needs it.
 
+**`include=link_ips`** adds each cable pair's addresses and the subnets its
+two ends share, and `subnets` to every cable edge:
+
+```json
+"pairs": [{
+  "a_port": "eth0", "b_port": "eth1", "…": "…",
+  "a_ips": ["10.1.0.0/31", "2001:db8:1::1/64"],
+  "b_ips": ["10.1.0.1/31", "2001:db8:1::2/64"],
+  "subnets": [
+    {"cidr": "10.1.0.0/31", "family": 4, "a": "10.1.0.0", "b": "10.1.0.1",
+     "a_via": null, "b_via": null},
+    {"cidr": "2001:db8:1::/64", "family": 6, "a": "2001:db8:1::1",
+     "b": "2001:db8:1::2", "a_via": null, "b_via": null}
+  ],
+  "subnets_truncated": false
+}],
+"subnets": ["10.1.0.0/31", "2001:db8:1::/64"]
+```
+
+- An end's addresses are those on its interface, then on the interface's
+  LAG, then on its sub-interfaces, then on the LAG's sub-interfaces.
+  `a_via`/`b_via` name the interface an address sits on when it isn't the
+  cabled port (`ae1`, `Gi0/0.100`), so every member of a bundle reports the
+  bundle's subnet.
+- Two ends share a subnet when `address/length` gives the same network on
+  both. The length is the address's own mask length, else its prefix's, so
+  a /31 carved from an aggregate stays a /31. VRFs aren't compared: a cable
+  joins its ends whatever their routing tables. The same address on both
+  ends shares nothing.
+- Host routes (/32, /128) and virtual addresses (an IP role marked virtual,
+  such as an HSRP/VRRP VIP) are left out.
+- `a_ips`/`b_ips` are `address/length` strings, at most 8 per end.
+  `subnets` lists IPv4 first, then follows the A end's order, at most 8;
+  `subnets_truncated` says there were more. The edge's `subnets` is the
+  union of its pairs' subnets. Ends follow the pair's orientation, and a
+  collapsed run's ends are the real ports beyond the panels. Only interface
+  ends have addresses; other ends get empty lists.
+- Addresses pass the caller's `ipaddress.view` scope, so an end whose
+  address is hidden shares no subnet. Without `ipaddress.view` none of these
+  fields are added.
+
+It costs at most two queries (the sub-interfaces, then the addresses),
+whatever the size of the map, and none without `ipaddress.view`.
+
 A malformed id in `device`, `devices`, `site`, `location`, `role` or `status`
 returns `400 {"detail": "<param>: not a valid id"}`, even in a mode that
 ignores the parameter. `devices` takes at most 10,000 ids; more is a 400. An
