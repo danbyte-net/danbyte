@@ -119,6 +119,19 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
 
         return clean_display_timezone(value)
 
+    def to_representation(self, instance):
+        # Card lines read the way the topology-card endpoints read them: keys
+        # the vocabulary lost are dropped, so a GET written straight back is
+        # never refused by the strict write validation above.
+        from core.deployment import clean_topology_card_overrides, topology_card_list
+
+        data = super().to_representation(instance)
+        data["topology_card_fields"] = topology_card_list(instance.topology_card_fields)
+        data["topology_card_role_overrides"] = clean_topology_card_overrides(
+            instance.topology_card_role_overrides
+        )
+        return data
+
     def update(self, instance, validated_data):
         pw = validated_data.pop("smtp_password", None)
         if pw:

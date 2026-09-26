@@ -396,6 +396,37 @@ class TenantEndpointTests(_Fixture):
             effective_topology_card(self.tenant)["role_overrides"], {"role:core_sw": []}
         )
 
+    def test_generic_endpoint_reads_cleaned_lists_that_write_back(self):
+        """A key that left the vocabulary is dropped on read, so a client
+        that PUTs back what it GETs is not refused by the strict write."""
+        ts = TenantSettings.for_tenant(self.tenant)
+        ts.topology_card_fields = ["serial", "was_removed"]
+        ts.topology_card_role_overrides = {
+            "role:core_sw": ["gone"], "role:edge": [], "role:leaf": ["platform", "gone"],
+        }
+        ts.save()
+        self._login(self._tenant_admin())
+        body = self.client.get("/api/tenant-settings/").json()
+        self.assertEqual(body["topology_card_fields"], ["serial"])
+        self.assertEqual(
+            body["topology_card_role_overrides"],
+            {"role:edge": [], "role:leaf": ["platform"]},
+        )
+        r = self.client.put("/api/tenant-settings/", body, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        # Nothing stored inherits (null), and a list whose every key left
+        # the vocabulary inherits too rather than reading as name only.
+        ts.topology_card_fields = None
+        ts.save()
+        self.assertIsNone(self.client.get("/api/tenant-settings/").json()[
+            "topology_card_fields"
+        ])
+        ts.topology_card_fields = ["was_removed"]
+        ts.save()
+        self.assertIsNone(self.client.get("/api/tenant-settings/").json()[
+            "topology_card_fields"
+        ])
+
 
 class EffectiveEndpointTests(_Fixture):
     URL = "/api/topology-card/"

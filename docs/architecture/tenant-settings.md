@@ -50,6 +50,9 @@ Null (or an absent role key) inherits the next level; `[]` means **name
 only** and is allowed at every level. Writes refuse unknown keys and lists
 over 8 with a field error; reads drop keys the vocabulary no longer knows,
 and a list that loses every key inherits rather than turning into name only.
+That holds on every endpoint that carries the lists, the generic
+`/api/tenant-settings/` included, so a payload read and written straight
+back is never refused.
 
 **Date & time has a third, per-user layer.** `auth_api.user_prefs` carries
 `date_format` / `time_style` / `timezone` prefs whose default is `"auto"` =
