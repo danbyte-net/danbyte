@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react"
 
-import type { StatusMini, TopoEdge } from "@/lib/api"
+import type { TopoEdge } from "@/lib/api"
+import { cssColor } from "@/lib/utils"
 
 // How each kind of topology edge is drawn - stroke width, colour, dash and
 // label emphasis - kept apart from the layout so the wiring views, the
@@ -25,8 +26,8 @@ export type EdgeSem =
  * status record; payloads that predate it carry only the slug. */
 export type CableLook = Pick<
   NonNullable<TopoEdge["data"]>,
-  "cable_type" | "color" | "status" | "speed"
-> & { status_mini?: Pick<StatusMini, "color"> | null }
+  "cable_type" | "color" | "status" | "status_mini" | "speed"
+>
 
 // Deterministic palette per cable type - informational hue, not state.
 const TYPE_PALETTE = [
@@ -76,7 +77,7 @@ export function speedColor(s?: string | null): string | undefined {
 /** A cable's status hue: the status record's own colour, or - for a
  * payload without one - a guess from the slug. */
 export function statusColor(data?: CableLook | null): string | undefined {
-  const own = data?.status_mini?.color
+  const own = cssColor(data?.status_mini?.color)
   if (own) return own
   const slug = data?.status
   if (!slug) return undefined
@@ -95,7 +96,7 @@ export function edgeStroke(
   if (mode === "type" && data?.cable_type) return typeColor(data.cable_type)
   if (mode === "status") return statusColor(data)
   if (mode === "speed") return speedColor(data?.speed)
-  if (mode === "cable" && data?.color) return data.color
+  if (mode === "cable" && data?.color) return cssColor(data.color)
   return undefined
 }
 

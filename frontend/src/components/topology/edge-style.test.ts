@@ -10,6 +10,14 @@ import {
   typeColor,
 } from "./edge-style"
 
+/** A cable status row with only its colour mattering. */
+const mini = (color: string) => ({
+  id: "s1",
+  name: "Status",
+  color,
+  text_color: "",
+})
+
 const LABEL = { fontSize: 9 }
 const LABEL_BG = { fill: "var(--card)" }
 
@@ -89,14 +97,18 @@ describe("edge style table", () => {
 describe("edge colours", () => {
   it("prefers the status record's own colour over the slug", () => {
     expect(
-      statusColor({ status: "connected", status_mini: { color: "#123abc" } })
+      statusColor({ status: "connected", status_mini: mini("#123abc") })
     ).toBe("#123abc")
     expect(
-      edgeStroke(
-        { status: "planned", status_mini: { color: "#654321" } },
-        "status"
-      )
+      edgeStroke({ status: "planned", status_mini: mini("#654321") }, "status")
     ).toBe("#654321")
+  })
+
+  it("normalises a bare-hex stored colour into valid CSS", () => {
+    expect(
+      statusColor({ status: "planned", status_mini: mini("2f6f9f") })
+    ).toBe("#2f6f9f")
+    expect(edgeStroke({ color: "ff00ff" }, "cable")).toBe("#ff00ff")
   })
 
   it("falls back to the slug for payloads without a status record", () => {
@@ -106,7 +118,7 @@ describe("edge colours", () => {
     )
     expect(statusColor({ status: "decommissioning" })).toBe("#ef4444")
     expect(statusColor({ status: "something-else" })).toBe("#71717a")
-    expect(statusColor({ status: "active", status_mini: { color: "" } })).toBe(
+    expect(statusColor({ status: "active", status_mini: mini("") })).toBe(
       "#10b981"
     )
     expect(statusColor({})).toBeUndefined()

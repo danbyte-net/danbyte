@@ -2807,10 +2807,19 @@ export interface TopoNode {
     status?: string
     status_display?: string
     /** Device nodes: the lifecycle status row (`is_default` = the status a
-     * new device gets). Absent on trace and LLDP-neighbour nodes. */
+     * new device gets). Absent on trace nodes. */
     status_mini?: (StatusMini & { is_default?: boolean }) | null
     device_type?: string | null
-    role?: { name: string; color: string; is_patch_panel?: boolean } | null
+    device_type_id?: string | null
+    /** Trace and LLDP-neighbour nodes carry no role or device_type_id. */
+    role?: {
+      id?: string
+      name: string
+      slug?: string
+      color: string
+      icon?: string
+      is_patch_panel?: boolean
+    } | null
     site?: string | null
     location?: string | null
     primary_ip?: string | null
@@ -2833,7 +2842,21 @@ export interface TopoEdge {
     cable_type?: string
     color?: string
     status?: string
-    pairs?: { a: string; b: string; a_port?: string; b_port?: string }[]
+    /** Cable edges: the cable's status row (`is_default` = the status a new
+     * cable gets). */
+    status_mini?: (StatusMini & { is_default?: boolean }) | null
+    /** `a_id`/`a_kind` (and b): the component at each end - its termination
+     * kind (interface, front_port, circuit_termination, ...). */
+    pairs?: {
+      a: string
+      b: string
+      a_port?: string
+      b_port?: string
+      a_id?: string
+      a_kind?: string
+      b_id?: string
+      b_kind?: string
+    }[]
     cable_numid?: number | null
     cable_label?: string
     length?: string | null
