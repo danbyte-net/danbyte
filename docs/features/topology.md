@@ -490,6 +490,32 @@ cables scrolled off screen are included: the map mounts everything for the
 capture, so a big map can take a moment. **Alt-click** exports just the
 visible area instead, for pasting one detail rather than the whole estate.
 
+### How Diagram exports are drawn
+
+The Diagram tab's SVG and PNG are drawn from the map's data rather than
+captured from the screen, so every card is in the file however far off
+screen it sits, and the file looks the same whatever theme the app is in:
+white paper, zinc greys, and colour only where it means something - role
+fills, status pills, cable colours.
+
+- **SVG** is plain vector drawing: shapes, lines and text, no embedded HTML.
+  It opens in a browser, Inkscape or Illustrator and stays editable. Text is
+  set in Inter, falling back to the usual sans-serif fonts where Inter is not
+  installed.
+- **PNG** is that SVG rasterised (2x by default), with Inter embedded so
+  names never reflow in another font. Device photos are embedded too; a photo
+  that will not load is drawn as the device's card. A very large map is
+  scaled down to stay under about 16.7 million pixels - Safari draws nothing
+  above that.
+
+Both show what the canvas shows: role-coloured cards with the name, card
+lines and pill; in Detailed, the interface nubs with each port name running
+along its line; the same four line types (curves follow draw.io's curved
+rule, so the draw.io file matches); subnet chips mid-line and addresses at
+the ends; bands, zones and notes. Selection, search dimming and hidden
+devices never reach a file. An export can add a title block (view name,
+tenant, filters, date and a link back) and the legend under the drawing.
+
 ## API
 
 `GET /api/topology/` - parameters: `site`, `location`, `role`, `status`,
