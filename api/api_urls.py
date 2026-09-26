@@ -631,6 +631,10 @@ urlpatterns = [
     # tenant-settings/, like device fields).
     path("deployment/floorplan-popover/", deployment.floorplan_popover,
          name="deployment-floorplan-popover"),
+    # Topology Diagram card lines - deployment default (the tenant override
+    # rides tenant-settings/topology-card/).
+    path("deployment/topology-card/", deployment.topology_card,
+         name="deployment-topology-card"),
     path("deployment/component-popover/", deployment.component_popover,
          name="deployment-component-popover"),
     path("component-popover/", deployment.component_popover_effective,
@@ -653,6 +657,10 @@ urlpatterns = [
     path("tenant-settings/floorplan-popover/",
          tenant_settings_mod.tenant_floorplan_popover,
          name="tenant-floorplan-popover"),
+    # This tenant's topology card lines (tenant admin).
+    path("tenant-settings/topology-card/",
+         tenant_settings_mod.tenant_topology_card,
+         name="tenant-topology-card"),
     # Effective device-field visibility - readable by any member.
     path("device-fields/", tenant_settings_mod.device_fields_view,
          name="device-fields"),
@@ -660,6 +668,10 @@ urlpatterns = [
     # needs it to render a popover at all).
     path("floorplan-popover/", tenant_settings_mod.floorplan_popover_view,
          name="floorplan-popover"),
+    # Effective topology card lines - readable by any member (the Diagram
+    # and the device form's inherit preview).
+    path("topology-card/", tenant_settings_mod.topology_card_view,
+         name="topology-card"),
     # The default prefix for the caller's own site, if they have exactly one.
     path("my-default-prefix/", tenant_settings_mod.my_default_prefix,
          name="my-default-prefix"),

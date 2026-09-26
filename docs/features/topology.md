@@ -510,3 +510,27 @@ to point an AI assistant at when it needs to answer "what connects to
 what" questions.
 
 All three are RBAC-scoped to the caller's `device.view` grant.
+
+### Card lines
+
+What a Diagram card shows under the device name is configured at four
+levels, most specific first: the device, the saved view, the device role,
+then the tenant or deployment global list, else the built-in default
+(monitoring pill, IP, Loopback, Serial). An empty list means name only.
+
+- `GET /api/topology-card/` - the effective config for the active tenant,
+  readable by any member: `{fields, role_overrides, source, available, pills,
+  defaults, max_fields}`. `role_overrides` is keyed `role:<slug>`.
+- `GET/PUT /api/deployment/topology-card/` (deployment admins) and
+  `GET/PUT /api/tenant-settings/topology-card/` (tenant admins, with
+  `override` and `deployment_defaults`) edit `card_fields` and
+  `role_overrides`.
+- `PATCH /api/devices/<id>/` with `{"topology_card": [...]}` sets one
+  device's lines (`device.change`); `null` inherits again.
+
+Keys come from `status`, `monitor`, `primary_ip`, `secondary_ip`, `oob_ip`,
+`loopback`, `serial`, `asset_tag`, `device_type`, `manufacturer`, `platform`,
+`role`, `site`, `location`, `rack`, `tags` and `cf_<key>`, at most 8 per
+list; an unknown key is a 400. See
+[Tenant settings](../architecture/tenant-settings.md) for the resolution
+rules.

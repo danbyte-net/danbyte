@@ -2418,8 +2418,29 @@ class DocumentSerializer(serializers.ModelSerializer):
         return attrs
 
 
+@extend_schema_field(
+    serializers.ListField(child=serializers.CharField(), allow_null=True)
+)
+class TopologyCardField(serializers.JSONField):
+    """``Device.topology_card``: null inherits, a list of card-line keys
+    replaces the inherited lines, ``[]`` shows the name only. Writes refuse
+    unknown keys and lists over the cap (a field error); reads drop keys the
+    vocabulary no longer knows, so a round-trip never trips over them."""
+
+    def to_internal_value(self, data):
+        from core.deployment import validate_topology_card_list
+
+        return validate_topology_card_list(super().to_internal_value(data))
+
+    def to_representation(self, value):
+        from core.deployment import topology_card_list
+
+        return topology_card_list(value)
+
+
 class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "device"
+    topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
     site = SiteMiniSerializer(read_only=True)
     primary_ip = serializers.SerializerMethodField()
@@ -2866,7 +2887,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
                   "description", "comments", "airflow", "effective_airflow",
-                  "port_labels",
+                  "port_labels", "topology_card",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",

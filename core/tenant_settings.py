@@ -58,6 +58,10 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "override_floorplan_popover",
             "floorplan_popover_fields",
             "floorplan_popover_tile_overrides",
+            # topology card lines (its own override group)
+            "override_topology_card",
+            "topology_card_fields",
+            "topology_card_role_overrides",
             # site separation (its own override group)
             "override_separation",
             "enhanced_site_separation",
@@ -99,6 +103,16 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
         from core.deployment import clean_popover_overrides
 
         return clean_popover_overrides(value)
+
+    def validate_topology_card_fields(self, value):
+        from core.deployment import validate_topology_card_list
+
+        return None if value is None else validate_topology_card_list(value)
+
+    def validate_topology_card_role_overrides(self, value):
+        from core.deployment import validate_topology_card_overrides
+
+        return validate_topology_card_overrides(value)
 
     def validate_display_timezone(self, value):
         from core.deployment import clean_display_timezone
@@ -482,6 +496,115 @@ def tenant_floorplan_popover(request):
                 "tile_overrides": clean_popover_overrides(
                     dep.floorplan_popover_tile_overrides
                 ),
+            },
+        }
+    )
+
+
+@extend_schema(
+    summary="Get the effective topology card lines for the active tenant",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{fields, role_overrides, source, available, pills, defaults, "
+            "max_fields}` - the card lines devices inherit in this tenant."
+        ),
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def topology_card_view(request):
+    """The EFFECTIVE topology card lines for the active tenant - readable by
+    any member: the Diagram and the device form's "inherit" preview need it."""
+    from api.views import _get_active_tenant
+    from core.deployment import topology_card_vocabulary
+    from core.effective_settings import effective_topology_card
+
+    tenant = _get_active_tenant(request)
+    return Response({**effective_topology_card(tenant), **topology_card_vocabulary()})
+
+
+@extend_schema(
+    methods=["GET"],
+    summary="Get this tenant's topology card lines (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=None,
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description=(
+            "`{override, card_fields, is_default, role_overrides, available, "
+            "pills, defaults, max_fields, deployment_defaults}`."
+        ),
+    ),
+)
+@extend_schema(
+    methods=["PUT"],
+    summary="Update this tenant's topology card lines (tenant-admin only)",
+    tags=["tenant-settings"],
+    request=inline_serializer(
+        name="TenantTopologyCardUpdateRequest",
+        fields={
+            "override": serializers.BooleanField(
+                required=False,
+                help_text="This tenant's own card-lines override switch.",
+            ),
+            "card_fields": serializers.ListField(
+                child=serializers.CharField(),
+                required=False,
+                allow_null=True,
+                help_text="Global list; null = built-in default, [] = name only.",
+            ),
+            "role_overrides": serializers.DictField(
+                required=False,
+                help_text='{"role:<slug>": [...]}; absent inherits, [] = name only.',
+            ),
+        },
+    ),
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="Updated card-line config (same shape as GET).",
+    ),
+)
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def tenant_topology_card(request):
+    """THIS TENANT's topology card lines - tenant-admin gated.
+
+    The deployment editor's payload plus `override` (this tenant's own
+    switch) and the read-only `deployment_defaults` the tenant inherits
+    while the switch is off.
+    """
+    from core.deployment import TopologyCardSerializer
+
+    tenant, err = _tenant_or_403(request)
+    if err:
+        return err
+    obj = TenantSettings.for_tenant(tenant)
+
+    if request.method == "PUT":
+        ser = TopologyCardSerializer(obj, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        extra = {}
+        if "override" in request.data:
+            try:
+                extra["override"] = serializers.BooleanField().to_internal_value(
+                    request.data["override"]
+                )
+            except serializers.ValidationError as exc:
+                return Response({"override": exc.detail}, status=400)
+        ser.save(**extra)
+
+    dep = TopologyCardSerializer(DeploymentSettings.load()).data
+    return Response(
+        {
+            "override": obj.override_topology_card,
+            **TopologyCardSerializer(obj).data,
+            "deployment_defaults": {
+                "card_fields": dep["card_fields"],
+                "is_default": dep["is_default"],
+                "role_overrides": dep["role_overrides"],
             },
         }
     )

@@ -3362,7 +3362,7 @@ class DeviceViewSet(
     # clone doesn't fight for the source's rack unit. Carry type/role/site/etc.
     clone_fields = (
         "device_type", "role", "platform", "status", "site", "location",
-        "cluster", "airflow", "description", "comments",
+        "cluster", "airflow", "description", "comments", "topology_card",
     )
 
     @action(detail=True, methods=["get"], url_path="spec-sheet")

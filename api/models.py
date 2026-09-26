@@ -1834,6 +1834,14 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="Port labels on faceplate renders: inherit the deployment "
                   "setting, or force them shown or hidden on this device.",
     )
+    # The lines this device's topology Diagram card shows under its name
+    # (core.deployment.TOPOLOGY_CARD_FIELDS). Null inherits the saved view,
+    # role, tenant or deployment list; a list replaces it; [] = name only.
+    topology_card = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text="Topology card lines for this device. Null inherits; an "
+                  "empty list shows the name only.",
+    )
     # ── Geolocation ──────────────────────────────────────────────────────
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True,

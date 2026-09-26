@@ -461,6 +461,21 @@ class DeploymentSettings(TimestampedModel):
         "list for types that genuinely differ.",
     )
 
+    # ─── topology card lines ──────────────────────────────────────────────
+    topology_card_fields = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Ordered field keys a topology Diagram card shows under the "
+        "device name. Null = the built-in default; an empty list = name only.",
+    )
+    topology_card_role_overrides = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Per-role card-line lists keyed role:<slug>. A role that is "
+        "ABSENT inherits topology_card_fields; an empty list = name only.",
+    )
+
     # ─── outbound-connection allowlist (SSRF guard exceptions) ────────────
     # CIDRs/hosts the SSRF guard permits despite resolving to private space -
     # e.g. an internal NetBox for the importer, or an internal SMTP relay.
@@ -1086,6 +1101,12 @@ class TenantSettings(TimestampedModel):
     override_floorplan_popover = models.BooleanField(default=False)
     floorplan_popover_fields = models.JSONField(default=list, blank=True)
     floorplan_popover_tile_overrides = models.JSONField(default=dict, blank=True)
+
+    # ─── topology card lines (its OWN override group) ──────────────────────
+    # Same reasoning as the popover group. Null fields = the built-in default.
+    override_topology_card = models.BooleanField(default=False)
+    topology_card_fields = models.JSONField(null=True, blank=True, default=None)
+    topology_card_role_overrides = models.JSONField(default=dict, blank=True)
 
     # ─── site separation (its OWN override group, mirrors DeploymentSettings)
     # Same reasoning as the popover group: a tenant flipping separation must

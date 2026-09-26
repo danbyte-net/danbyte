@@ -184,6 +184,75 @@ def effective_floorplan_popover(tenant) -> dict:
     }
 
 
+def effective_topology_card_row(tenant):
+    """The object whose topology card-line config applies - its own override
+    group, like the floor-plan popover."""
+    ts = _tenant_row(tenant)
+    if ts is not None and ts.override_topology_card:
+        return ts
+    return _deployment()
+
+
+def effective_topology_card(tenant) -> dict:
+    """The topology card-line config for this tenant.
+
+    ``{"fields": [...], "role_overrides": {"role:<slug>": [...]},
+    "source": "tenant"|"deployment"|"default"}``. ``source`` names where
+    ``fields`` came from: ``default`` when the effective row stores no list.
+    A tenant override replaces the deployment's global AND per-role lists
+    wholesale (the floor-plan precedent). ``[]`` means name only at every
+    level; unknown keys are dropped on read.
+    """
+    from core.deployment import (
+        TOPOLOGY_CARD_FIELD_DEFAULTS,
+        clean_topology_card_overrides,
+        topology_card_list,
+    )
+    from core.models import TenantSettings
+
+    row = effective_topology_card_row(tenant)
+    fields = topology_card_list(row.topology_card_fields)
+    if fields is None:
+        fields, source = list(TOPOLOGY_CARD_FIELD_DEFAULTS), "default"
+    else:
+        source = "tenant" if isinstance(row, TenantSettings) else "deployment"
+    return {
+        "fields": fields,
+        "role_overrides": clean_topology_card_overrides(
+            row.topology_card_role_overrides
+        ),
+        "source": source,
+    }
+
+
+def resolve_card_fields(device, eff, view_fields=None) -> tuple[list, str]:
+    """The card lines one device shows, and the level that chose them.
+
+    First hit wins: the device's own ``topology_card`` → the saved view's
+    ``view_fields`` → the device role's list in ``eff["role_overrides"]`` →
+    ``eff["fields"]`` (tenant or deployment global, else the built-in
+    default). A list replaces rather than merges, and ``[]`` (name only) is a
+    hit. ``eff`` is :func:`effective_topology_card`, computed once per request;
+    load ``device.role`` with the device to keep this query-free.
+
+    Returns ``(fields, source)`` with ``source`` one of ``device``, ``view``,
+    ``role``, ``tenant``, ``deployment`` or ``default``.
+    """
+    from core.deployment import topology_card_list
+
+    own = topology_card_list(getattr(device, "topology_card", None))
+    if own is not None:
+        return own, "device"
+    view = topology_card_list(view_fields)
+    if view is not None:
+        return view, "view"
+    if getattr(device, "role_id", None) is not None:
+        scoped = eff["role_overrides"].get(f"role:{device.role.slug}")
+        if scoped is not None:
+            return list(scoped), "role"
+    return list(eff["fields"]), eff["source"]
+
+
 # ─── LDAP directory selection (login-time; no active tenant yet) ────────────
 def ldap_directory_chain(username: str):
     """Ordered login candidates: ``[(config, owner_tenant, search_username)]``.

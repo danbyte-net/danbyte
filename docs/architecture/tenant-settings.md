@@ -10,7 +10,7 @@ Two settings stores:
 | Store | Scope | Holds |
 |---|---|---|
 | `DeploymentSettings` (`core/models.py`, singleton `pk=1`) | whole install | SMTP defaults (Settings → Email), deployment LDAP (Settings → Directory), updates/release repo, `public_base_url`, proxy/timeouts (Settings → Security → Outbound delivery), drift scheduler, retention, deployment name, branding (`favicon`, `login_logo`) - plus the **defaults** for every overridable group |
-| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle) |
+| `TenantSettings` (`core/models.py`, OneToOne per tenant) | one tenant | overrides for **Email/SMTP**, **LDAP/AD**, **UI policy** (device-field visibility, human-IDs), **Delegation** (site-editor delegation), **Site separation** (`enhanced_site_separation`, `allow_site_settings` - its own `override_separation` toggle, like the floor-plan popover group), **Date & time** (`date_format`, `time_style`, `display_timezone` - its own `override_datetime` toggle), **Topology card lines** (`topology_card_fields`, `topology_card_role_overrides` - its own `override_topology_card` toggle) |
 | `SiteSettings` (`core/models.py`, OneToOne per site) | one site | **Email/SMTP only (v1)** - site-local relay + From address, for orgs whose sites run their own IT. Gated by `allow_site_settings` + site-admin qualification (`core/site_settings.py`) |
 
 Each group on `TenantSettings` carries an `override_*` toggle. **Off (and no
@@ -25,6 +25,31 @@ Resolution lives in `core/effective_settings.py`:
 else `DeploymentSettings.load()`.
 (`separation_enabled(tenant)` is the bool shortcut the RBAC fencing reads -
 see [Enhanced site separation](../access/site-separation.md).)
+
+**Topology card lines have two more layers below the tenant.** What a device
+card on the topology Diagram shows under its name is an ordered list of keys
+from `core.deployment.TOPOLOGY_CARD_FIELDS` (`status`, `monitor`,
+`primary_ip`, `secondary_ip`, `oob_ip`, `loopback`, `serial`, `asset_tag`,
+`device_type`, `manufacturer`, `platform`, `role`, `site`, `location`, `rack`,
+`tags`, plus `cf_<key>` for device custom fields), at most 8. `status` and
+`monitor` draw the pill in the card's corner rather than a line.
+`effective_topology_card(tenant)` returns `{fields, role_overrides, source}`
+from the tenant row when `override_topology_card` is on, else the deployment
+row; a tenant override replaces the global and per-role lists wholesale.
+`resolve_card_fields(device, eff, view_fields=None)` then picks, first hit
+wins:
+
+1. the device's own `Device.topology_card`;
+2. the saved view's list;
+3. the device role's list, keyed `role:<slug>` in `role_overrides`;
+4. the effective global list (`source` `tenant` or `deployment`);
+5. the built-in default: monitoring pill, IP, Loopback, Serial (`source`
+   `default`).
+
+Null (or an absent role key) inherits the next level; `[]` means **name
+only** and is allowed at every level. Writes refuse unknown keys and lists
+over 8 with a field error; reads drop keys the vocabulary no longer knows,
+and a list that loses every key inherits rather than turning into name only.
 
 **Date & time has a third, per-user layer.** `auth_api.user_prefs` carries
 `date_format` / `time_style` / `timezone` prefs whose default is `"auto"` =
@@ -162,6 +187,14 @@ ordered **directory chain** (`ldap_directory_chain(username)`):
   `deployment_defaults` for the UI's inherit summaries (tenant admin).
 - `POST /api/tenant-settings/email/test/` - test through the *effective* SMTP.
 - `GET /api/device-fields/` - effective device-field visibility (any member).
+- `GET/PUT /api/deployment/topology-card/` - deployment card lines
+  (`can_manage_deployment`); `GET/PUT /api/tenant-settings/topology-card/` -
+  this tenant's, with `override` and `deployment_defaults` (tenant admin);
+  `GET /api/topology-card/` - the effective config (any member). Payload keys:
+  `card_fields` (null on PUT resets to the built-in default), `is_default`,
+  `role_overrides`, and the vocabulary `available`, `pills`, `defaults`,
+  `max_fields`. The per-device list is `topology_card` on
+  `PATCH /api/devices/<id>/` (`device.change`); a device clone carries it.
 - `GET/PUT /api/tenant-settings/ldap/` + `test/`, `test-login/`, `groups/`,
   and `/api/tenant-ldap-group-mappings/` (tenant admin).
 - Deployment endpoints unchanged in shape but now require
