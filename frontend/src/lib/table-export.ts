@@ -5,6 +5,8 @@
 // accessor, with a `meta.export` escape hatch for rich cells.
 import { type Table } from "@tanstack/react-table"
 
+import { htmlEscape, xmlEscape } from "@/lib/xml"
+
 export type ExportFormat = "csv" | "xlsx" | "html" | "print"
 
 interface ExportColumn {
@@ -90,14 +92,6 @@ export function toCsv(columns: ExportColumn[], rows: string[][]): string {
   const lines = [columns.map((c) => csvEscape(c.header)).join(",")]
   for (const r of rows) lines.push(r.map(csvEscape).join(","))
   return lines.join("\r\n")
-}
-
-function htmlEscape(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
 }
 
 // Self-contained document - inline CSS only, so it can be saved and shared as a
@@ -265,19 +259,6 @@ function colLetter(i: number): string {
     n = Math.floor((n - 1) / 26)
   }
   return s
-}
-
-function xmlEscape(s: string): string {
-  return (
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;")
-      // strip control chars Excel rejects (keep tab/newline/return)
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
-  )
 }
 
 function sheetName(title: string): string {
