@@ -2954,8 +2954,8 @@ export interface TopoEdge {
       b_ips?: string[]
       /** Subnets shared by both ends, v4 first (at most 8). */
       subnets?: TopoLinkSubnet[]
-      /** How many shared subnets the cap left out. */
-      subnets_truncated?: number
+      /** More than 8 shared subnets; the rest were left out. */
+      subnets_truncated?: boolean
     }[]
     /** `include=link_ips`: every pair's shared subnets, de-duplicated. */
     subnets?: string[]
@@ -3142,8 +3142,9 @@ export interface TopologyViewSummary {
 }
 
 export interface TopologyGraphMeta {
-  /** `include=card`: the effective lines before per-device overrides.
-   * `uses_monitor` = some node lists `monitor` (fetch check states). */
+  /** `include=card`: the tenant/deployment global list (before role, view
+   * and device lists). `uses_monitor` = some node lists `monitor` (fetch
+   * check states). */
   card?: { fields: string[]; source: TopoCardSource; uses_monitor: boolean }
 }
 
@@ -3239,7 +3240,7 @@ export interface TopologyCardVocabulary {
 
 /** The effective card lines for the active tenant (GET /api/topology-card/).
  * A `role:<slug>` absent from `role_overrides` inherits `fields`. */
-export interface TopologyCardConfig extends Partial<TopologyCardVocabulary> {
+export interface TopologyCardConfig extends TopologyCardVocabulary {
   fields: string[]
   role_overrides: Record<string, string[]>
   source: "tenant" | "deployment" | "default"
@@ -3258,6 +3259,8 @@ export interface TopologyCardSettings extends TopologyCardVocabulary {
   /** Tenant layer only: what it inherits when `override` is false. */
   deployment_defaults?: {
     card_fields: string[]
+    /** The deployment stores no list: `card_fields` is the default. */
+    is_default: boolean
     role_overrides: Record<string, string[]>
   }
 }
@@ -3278,7 +3281,8 @@ export interface DevicePaletteRow {
   device_type: {
     id: string
     name: string
-    manufacturer: string | null
+    model: string
+    manufacturer: { id: string; name: string } | null
   } | null
   site: { id: string; name: string } | null
   location: { id: string; name: string } | null
