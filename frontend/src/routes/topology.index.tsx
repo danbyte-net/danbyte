@@ -50,6 +50,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Combobox } from "@/components/ui/combobox"
 import { FormCheckbox } from "@/components/forms"
@@ -271,6 +276,24 @@ function PopoverField({
       </span>
       {children}
     </div>
+  )
+}
+
+/** A toolbar button's hover hint, on the shared tooltip. */
+function BarTip({
+  tip,
+  children,
+}: {
+  tip: string
+  children: React.ReactElement
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom" variant="panel">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1498,66 +1521,72 @@ function TopologyPage() {
           </>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              "h-7 text-xs",
-              !showObjects && "text-muted-foreground"
-            )}
-            onClick={toggleObjects}
-            title="List everything on this map"
-          >
-            <PanelRight className="h-3 w-3" /> Objects
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setAddOpen(true)}
-            title="Add a device to the map - starts a custom map you grow by right-clicking nodes"
-          >
-            <Plus className="h-3 w-3" /> Add device
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={addZoneCentered}
-            title="Draw a labelled box behind the map to group cards by eye"
-          >
-            <Square className="h-3 w-3" /> Zone
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => {
-              setPositions(undefined)
-              setLayoutTick((t) => t + 1)
-            }}
-            title="Discard this view's dragged positions, re-run the auto layout"
-          >
-            <LayoutGrid className="h-3 w-3" /> Re-layout
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={copyLink}
-            title="Copy a link to this map - views, filters and display settings included"
-          >
-            <LinkIcon className="h-3 w-3" /> Link
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={(e) => exportPng(e.altKey)}
-            title="Export the whole diagram - Alt-click: just the visible area"
-          >
-            <Camera className="h-3 w-3" /> PNG
-          </Button>
+          <BarTip tip="Everything on this map">
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-7 text-xs",
+                !showObjects && "text-muted-foreground"
+              )}
+              onClick={toggleObjects}
+            >
+              <PanelRight className="h-3 w-3" /> Objects
+            </Button>
+          </BarTip>
+          <BarTip tip="Start a custom map">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="h-3 w-3" /> Add device
+            </Button>
+          </BarTip>
+          <BarTip tip="Labelled box behind the cards">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={addZoneCentered}
+            >
+              <Square className="h-3 w-3" /> Zone
+            </Button>
+          </BarTip>
+          <BarTip tip="Discard dragged positions">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setPositions(undefined)
+                setLayoutTick((t) => t + 1)
+              }}
+            >
+              <LayoutGrid className="h-3 w-3" /> Re-layout
+            </Button>
+          </BarTip>
+          <BarTip tip="Copy a link to this map">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={copyLink}
+            >
+              <LinkIcon className="h-3 w-3" /> Link
+            </Button>
+          </BarTip>
+          <BarTip tip="Whole map · Alt-click: visible area">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={(e) => exportPng(e.altKey)}
+            >
+              <Camera className="h-3 w-3" /> PNG
+            </Button>
+          </BarTip>
         </div>
       </div>
 

@@ -220,7 +220,8 @@ labelled box behind the map. Use them to say what a cluster of cards *is*:
 - **Rename** it by double-clicking the label.
 - **Resize** it by selecting it and dragging a corner.
 - **Recolour or delete** it from the small toolbar above a selected zone, or
-  by right-clicking it.
+  by right-clicking it. The Delete and Backspace keys never remove a zone or
+  a card - that always takes one of these explicit actions.
 
 A zone is an **annotation, not a container** - it owns nothing inside it, so
 dragging one moves the box and leaves every card exactly where it was. That
@@ -437,9 +438,10 @@ layout run.
 ## Export
 
 **PNG** renders the entire graph (not just the visible viewport) to an image
-sized to the diagram - ready for a wiki page or a change ticket.
-**Alt-click** exports just the visible area instead, for pasting one detail
-rather than the whole estate.
+sized to the diagram - ready for a wiki page or a change ticket. Cards and
+cables scrolled off screen are included: the map mounts everything for the
+capture, so a big map can take a moment. **Alt-click** exports just the
+visible area instead, for pasting one detail rather than the whole estate.
 
 ## API
 

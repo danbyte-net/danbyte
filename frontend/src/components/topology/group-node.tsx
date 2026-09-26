@@ -40,7 +40,7 @@ export function GroupNode({ data, selected }: NodeProps) {
         selected ? "border-primary ring-2 ring-primary/30" : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
       style={{ width: GROUP_W, height: GROUP_H }}
-      title="Double-click to open this group"
+      data-tip="Double-click to open this group"
     >
       {SIDES.map(({ side, pos }) => (
         <span key={side}>
@@ -71,7 +71,7 @@ export function GroupNode({ data, selected }: NodeProps) {
           <span
             key={r.name}
             className="flex items-center gap-1 text-[10px] text-muted-foreground"
-            title={r.name}
+            data-tip={r.name}
           >
             <span
               className="h-2 w-2 shrink-0 rounded-full"

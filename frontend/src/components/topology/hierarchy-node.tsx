@@ -55,12 +55,12 @@ export function HierarchyNode({ data, selected }: NodeProps) {
         style={{ height: HIER_HEADER }}
         // The header truncates on narrow cards - hovering reveals the full
         // identity.
-        title={[d.name, d.primary_ip, d.site].filter(Boolean).join(" · ")}
+        data-tip={[d.name, d.primary_ip, d.site].filter(Boolean).join(" · ")}
       >
         <span
           className="h-3.5 w-1 shrink-0 rounded-full"
           style={{ background: d.role?.color || "var(--border)" }}
-          title={d.role?.name}
+          data-tip={d.role?.name}
         />
         <span className="min-w-0 truncate font-mono text-[11px] font-medium">
           {d.name}
@@ -83,7 +83,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
               top: pos.off - 8,
               ...(pos.side === "L" ? { left: 5 } : { right: 5 }),
             }}
-            title={name}
+            data-tip={name}
           >
             <Handle
               type="target"

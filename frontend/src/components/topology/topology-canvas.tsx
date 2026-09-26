@@ -26,6 +26,8 @@ import { toPng } from "html-to-image"
 
 import type { GhostEdgeData, TopoEdge, TopologyGraph } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
+import { CanvasTip } from "./canvas-tip"
+import type { CanvasTipHandle } from "./canvas-tip"
 import { ABOVE, BELOW, RIGHT, handleId } from "./stencil-node"
 import type { PortSide } from "./stencil-node"
 import { FLAT_H, flatHeight, flatW, flatWidth } from "./flat-node"
@@ -1063,17 +1065,12 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // it fades, so "what does this switch touch" reads instantly on a dense
   // map. Cleared by clicking empty canvas.
   const [spotId, setSpotId] = useState<string | null>(null)
-  // Cursor tooltip naming the hovered cable - follows the mouse, so on a
-  // long cable it can never sit off-screen the way a midpoint label does.
-  // Position updates go straight to the DOM (no re-render per mousemove).
-  const [tip, setTip] = useState<string | null>(null)
-  const tipRef = useRef<HTMLDivElement>(null)
-  const moveTip = useCallback((ev: { clientX: number; clientY: number }) => {
-    const el = tipRef.current
-    if (!el) return
-    el.style.left = `${ev.clientX + 14}px`
-    el.style.top = `${ev.clientY + 14}px`
-  }, [])
+  // Cursor tooltip naming the hovered cable (and any card element carrying
+  // a data-tip) - see canvas-tip.tsx.
+  const tipApi = useRef<CanvasTipHandle>(null)
+  // A whole-map PNG needs every card in the DOM, but React Flow only mounts
+  // what is on screen. Set for the length of that capture.
+  const [capturing, setCapturing] = useState(false)
   // The spotlight card's direct neighbours - everything else fades.
   const spotSet = useMemo(() => {
     if (!spotId) return null
@@ -1291,6 +1288,25 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           ".react-flow__viewport"
         )
         if (!el) return null
+        // The whole map: onlyRenderVisibleElements keeps offscreen cards
+        // and cables out of the DOM, so the snapshot would silently drop
+        // them. Mount everything, wait until React Flow has, then capture.
+        if (!viewportOnly) {
+          setCapturing(true)
+          const want = flow.getNodes().filter((n) => !n.hidden).length
+          const frame = () =>
+            new Promise<void>((r) => requestAnimationFrame(() => r()))
+          // At least two frames (commit, then React Flow placing the new
+          // nodes and their edges), bounded so a stray count can't hang it.
+          for (let i = 0; i < 60; i++) {
+            await frame()
+            if (
+              i >= 1 &&
+              el.querySelectorAll(".react-flow__node").length >= want
+            )
+              break
+          }
+        }
         // React Flow v12 draws each edge in an <svg> with NO width/height -
         // live it renders through `overflow: visible`, but the PNG rasterizer
         // clips every svg to its 0×0 box, exporting a map with no cables.
@@ -1373,6 +1389,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           })
         } finally {
           undo()
+          if (!viewportOnly) setCapturing(false)
         }
       },
     }),
@@ -1610,33 +1627,28 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         onEdgeClick={onEdgeClick}
         onEdgeMouseEnter={(ev, e) => {
           setHotEdge(e.id)
-          setTip(
-            hoverLabel(e) ?? (typeof e.label === "string" ? e.label : null)
+          tipApi.current?.show(
+            hoverLabel(e) ?? (typeof e.label === "string" ? e.label : null),
+            ev
           )
-          moveTip(ev)
         }}
-        onEdgeMouseMove={(ev) => moveTip(ev)}
+        onEdgeMouseMove={(ev) => tipApi.current?.move(ev)}
         onEdgeMouseLeave={() => {
           setHotEdge(null)
-          setTip(null)
+          tipApi.current?.hide()
         }}
         onPaneClick={() => {
           setSpotId(null)
           onCanvasClick?.()
         }}
         onMove={onMove}
-        onlyRenderVisibleElements
+        onlyRenderVisibleElements={!capturing}
+        // Cards and zones leave the map through explicit actions (the
+        // context menu, the zone toolbar) - never a stray Backspace.
+        deleteKeyCode={null}
         minZoom={0.05}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-        {tip && (
-          <div
-            ref={tipRef}
-            className="pointer-events-none fixed z-[1100] max-w-96 rounded-md border border-border bg-popover px-2 py-1 font-mono text-[11px] text-popover-foreground shadow-md"
-          >
-            {tip}
-          </div>
-        )}
         <Controls showInteractive={false} />
         <MiniMap
           pannable
@@ -1644,6 +1656,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
           className="rounded-md border !border-border !bg-card"
         />
       </ReactFlow>
+      <CanvasTip ref={tipApi} root={wrapper} />
     </div>
   )
 })

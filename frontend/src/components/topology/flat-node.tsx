@@ -129,7 +129,7 @@ export function FlatNode({ data, selected }: NodeProps) {
       <span
         className="h-7 w-1 shrink-0 rounded-full"
         style={{ background: d.role?.color || "var(--border)" }}
-        title={d.role?.name}
+        data-tip={d.role?.name}
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -142,7 +142,7 @@ export function FlatNode({ data, selected }: NodeProps) {
           {(d.ports?.length ?? 0) > 0 && (
             <span
               className="num shrink-0 text-[9px] text-muted-foreground"
-              title={`${d.ports!.length} cabled port${
+              data-tip={`${d.ports!.length} cabled port${
                 d.ports!.length === 1 ? "" : "s"
               }`}
             >

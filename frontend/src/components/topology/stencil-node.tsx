@@ -206,7 +206,7 @@ function DensePort({ port, side }: { port: FlatPort; side: PortSide }) {
         (side === "L" ? "justify-end" : "justify-start")
       }
       style={{ height: DENSE_PITCH, width: DENSE_BAND }}
-      title={port.name}
+      data-tip={port.name}
     >
       <Handle type="target" id={id} position={POS[side]} className={HANDLE} />
       <Handle type="source" id={id} position={POS[side]} className={HANDLE} />
@@ -303,7 +303,7 @@ export function StencilNode({ data, selected }: NodeProps) {
         <span
           className="h-6 w-1 shrink-0 rounded-full"
           style={{ background: d.role?.color || "var(--border)" }}
-          title={d.role?.name}
+          data-tip={d.role?.name}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
