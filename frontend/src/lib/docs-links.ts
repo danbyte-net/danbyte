@@ -154,6 +154,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/settings/tenant-ldap": "features/permissions/",
   "/settings/sites": "access/site-separation/",
   "/settings/floorplan": "features/floor-plans/",
+  "/settings/topology": "features/topology/",
   "/settings/components": "dcim/device-catalog/",
   "/settings/monitoring": "features/monitoring/",
   "/settings/monitoring-defaults": "features/monitoring/",

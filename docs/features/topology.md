@@ -131,6 +131,46 @@ monitoring states load whenever a card lists the monitoring pill - not only
 with the sidebar open. The legend lists the roles on the map in their card
 colours, and the monitoring pill when a card can show it.
 
+### Card lines
+
+What a card says under the device name is a short list of **card lines**,
+top to bottom - by default the monitoring pill, **IP**, **Loopback** and
+**Serial**. Admins choose them under **Settings → Topology → Card lines**:
+
+- **All devices** - the list every device starts from.
+- **A device role** - pick the role on the left (each is drawn as its
+  colour badge) and **Override** to give it lines of its own; the role is
+  then marked **Custom**. **Inherit** drops its list again.
+- **This tenant / Deployment default** - a tenant uses the deployment's
+  lines, shown read-only, until its switch is on; turning it on starts
+  from the deployment's lists. The deployment tier needs a deployment
+  admin.
+
+The most specific list wins, and it replaces the ones below it rather
+than adding to them:
+
+1. the device's own list;
+2. the saved view's list;
+3. the device role's list;
+4. All devices - the tenant's, or the deployment's while the tenant
+   inherits;
+5. the built-in default.
+
+**Name only** is a real choice at every level, not "inherit": switch it on
+and the card shows just the name, whatever the levels below say. Turning
+it off puts back the list you had.
+
+A list holds up to 8 entries. **Monitoring** and **Status** are the card's
+pill rather than lines (at most one shows, monitoring first), so a card has
+at most six lines, and a line with no value for a device is skipped. Device
+custom fields can be lines too; hidden ones are not offered. **Restore
+defaults** puts All devices back on the built-in list, which then follows
+future releases. What each line prints is under
+[Card lines API](#card-lines-api).
+
+The page opens on one role with `?role=<slug>`, and on the deployment tier
+with `?scope=deployment`.
+
 ## Big graphs
 
 Three mechanisms keep a large fabric legible:
@@ -696,7 +736,7 @@ and photo fronts. Unknown tokens are ignored, and `include` is ignored with
 `group_by`. When anything is included the response gains a `meta` object;
 without `include` the payload and its cost are unchanged. `card_fields`
 passes a saved view's own card lines for `include=card` (keys as in
-[Card lines](#card-lines); an empty value means name only).
+[Card lines API](#card-lines-api); an empty value means name only).
 
 Always present, at no extra query cost:
 
@@ -742,7 +782,7 @@ mini-graph - returns its nodes in a reduced shape: name, site, `status` and
 }
 ```
 
-- `fields` are the device's resolved [card lines](#card-lines) and `source`
+- `fields` are the device's resolved [card lines](#card-lines-api) and `source`
   the level that chose them: `device`, `view` (the query's `card_fields`),
   `role`, `tenant`, `deployment` or `default`.
 - `values` holds only that node's own keys. `status`, `monitor`,
@@ -928,7 +968,7 @@ earlier versions load and save unchanged.
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles' |
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band) and `rule` `{by: role\|device_type, ids}` (at most 100 ids, what the band was generated from). `color` is one of the six zone swatches, or `null` or `""` for a neutral band; any other colour string saves as `null`. |
-| `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines](#card-lines). |
+| `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000 |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo}`, at most 10,000 |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building}`; `id` is unique, `text` at most 200 characters |
@@ -937,12 +977,14 @@ A value outside those shapes is a 400 naming the key. Keys are device ids, so
 a shared view's `links`, `nodes` and positions can name devices a viewer may
 not see; the map shows only the ones they can.
 
-### Card lines
+### Card lines API
 
 What a Diagram card shows under the device name is configured at four
 levels, most specific first: the device, the saved view, the device role,
 then the tenant or deployment global list, else the built-in default
 (monitoring pill, IP, Loopback, Serial). An empty list means name only.
+The global and per-role lists are edited in
+[Settings → Topology](#card-lines).
 
 - `GET /api/topology-card/` - the effective config for the active tenant,
   readable by any member: `{fields, role_overrides, source, available, pills,

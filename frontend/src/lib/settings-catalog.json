@@ -154,6 +154,16 @@
       "keywords": ["floor", "plan", "tile", "rack", "popover"]
     },
     {
+      "key": "topology",
+      "label": "Topology",
+      "description": "What a diagram card shows",
+      "to": "/settings/topology",
+      "group": "data",
+      "scopes": ["tenant", "deployment"],
+      "defaultScope": "tenant",
+      "keywords": ["topology", "diagram", "card", "lines", "map", "role"]
+    },
+    {
       "key": "maps",
       "label": "Maps",
       "description": "Tile servers behind the site map",
@@ -644,6 +654,22 @@
       "description": "Fields shown when you hover a floor-plan tile",
       "page": "floorplans",
       "keywords": ["popover", "tile", "hover", "fields", "floor plan"]
+    },
+    {
+      "key": "data.topology-card-lines",
+      "label": "Card lines",
+      "description": "What a Diagram card shows under the device name",
+      "page": "topology",
+      "keywords": [
+        "card",
+        "lines",
+        "ip",
+        "loopback",
+        "serial",
+        "pill",
+        "name only",
+        "role"
+      ]
     },
     {
       "key": "integrations.proxmox",

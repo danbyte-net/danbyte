@@ -245,6 +245,7 @@ import { Route as SitesBulkEditRouteImport } from './routes/sites.bulk-edit'
 import { Route as SitesIdRouteImport } from './routes/sites.$id'
 import { Route as SilencesNewRouteImport } from './routes/silences.new'
 import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
+import { Route as SettingsTopologyRouteImport } from './routes/settings.topology'
 import { Route as SettingsTenantLdapRouteImport } from './routes/settings.tenant-ldap'
 import { Route as SettingsTenantEmailRouteImport } from './routes/settings.tenant-email'
 import { Route as SettingsTenantRouteImport } from './routes/settings.tenant'
@@ -1683,6 +1684,11 @@ const SilencesNewRoute = SilencesNewRouteImport.update({
 const SettingsUpdatesRoute = SettingsUpdatesRouteImport.update({
   id: '/updates',
   path: '/updates',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsTopologyRoute = SettingsTopologyRouteImport.update({
+  id: '/topology',
+  path: '/topology',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsTenantLdapRoute = SettingsTenantLdapRouteImport.update({
@@ -3231,6 +3237,7 @@ export interface FileRoutesByFullPath {
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
+  '/settings/topology': typeof SettingsTopologyRoute
   '/settings/updates': typeof SettingsUpdatesRoute
   '/silences/new': typeof SilencesNewRoute
   '/sites/$id': typeof SitesIdRoute
@@ -3657,6 +3664,7 @@ export interface FileRoutesByTo {
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
+  '/settings/topology': typeof SettingsTopologyRoute
   '/settings/updates': typeof SettingsUpdatesRoute
   '/silences/new': typeof SilencesNewRoute
   '/sites/$id': typeof SitesIdRoute
@@ -4153,6 +4161,7 @@ export interface FileRoutesById {
   '/settings/tenant': typeof SettingsTenantRoute
   '/settings/tenant-email': typeof SettingsTenantEmailRoute
   '/settings/tenant-ldap': typeof SettingsTenantLdapRoute
+  '/settings/topology': typeof SettingsTopologyRoute
   '/settings/updates': typeof SettingsUpdatesRoute
   '/silences/new': typeof SilencesNewRoute
   '/sites/$id': typeof SitesIdRoute
@@ -4650,6 +4659,7 @@ export interface FileRouteTypes {
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
+    | '/settings/topology'
     | '/settings/updates'
     | '/silences/new'
     | '/sites/$id'
@@ -5076,6 +5086,7 @@ export interface FileRouteTypes {
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
+    | '/settings/topology'
     | '/settings/updates'
     | '/silences/new'
     | '/sites/$id'
@@ -5571,6 +5582,7 @@ export interface FileRouteTypes {
     | '/settings/tenant'
     | '/settings/tenant-email'
     | '/settings/tenant-ldap'
+    | '/settings/topology'
     | '/settings/updates'
     | '/silences/new'
     | '/sites/$id'
@@ -7663,6 +7675,13 @@ declare module '@tanstack/react-router' {
       path: '/updates'
       fullPath: '/settings/updates'
       preLoaderRoute: typeof SettingsUpdatesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/topology': {
+      id: '/settings/topology'
+      path: '/topology'
+      fullPath: '/settings/topology'
+      preLoaderRoute: typeof SettingsTopologyRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/tenant-ldap': {
@@ -10388,6 +10407,7 @@ interface SettingsRouteChildren {
   SettingsTenantRoute: typeof SettingsTenantRoute
   SettingsTenantEmailRoute: typeof SettingsTenantEmailRoute
   SettingsTenantLdapRoute: typeof SettingsTenantLdapRoute
+  SettingsTopologyRoute: typeof SettingsTopologyRoute
   SettingsUpdatesRoute: typeof SettingsUpdatesRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -10419,6 +10439,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsTenantRoute: SettingsTenantRoute,
   SettingsTenantEmailRoute: SettingsTenantEmailRoute,
   SettingsTenantLdapRoute: SettingsTenantLdapRoute,
+  SettingsTopologyRoute: SettingsTopologyRoute,
   SettingsUpdatesRoute: SettingsUpdatesRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
