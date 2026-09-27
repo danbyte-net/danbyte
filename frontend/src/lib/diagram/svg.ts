@@ -27,10 +27,13 @@ import {
 import type {
   DiagramBand,
   DiagramDocument,
+  DiagramEnd,
   DiagramLink,
   DiagramNode,
   DiagramNote,
   LegendRow,
+  Pt,
+  Rect,
 } from "./types"
 
 // The SVG writer: a DiagramDocument as clean vector markup that opens in a
@@ -40,7 +43,9 @@ import type {
 // explicit baselines (no `dominant-baseline`, which WeasyPrint only
 // approximates), and an end label breaks its line with a box of the page's
 // colour rather than a `paint-order` stroke. The output is deterministic:
-// the same document gives the same string, byte for byte.
+// the same document gives the same string, byte for byte. Lines pass under
+// the nodes; a cable on a photo port has its lead - port to photo edge -
+// drawn again over the photo.
 
 /** A font face to embed as a `data:` URI - the PNG path needs it, because an
  * SVG drawn as an image cannot reach the page's web fonts. */
@@ -224,6 +229,47 @@ function linkSvg(l: DiagramLink): string {
     "stroke-linecap": dash ? undefined : "round",
     "stroke-linejoin": "round",
   })
+}
+
+/** Where the run from `p` (inside `r`) towards `q` leaves `r`. */
+function leaving(p: Pt, q: Pt, r: Rect): Pt {
+  let t = 1
+  const dx = q.x - p.x
+  const dy = q.y - p.y
+  if (dx > 0) t = Math.min(t, (r.x + r.w - p.x) / dx)
+  if (dx < 0) t = Math.min(t, (r.x - p.x) / dx)
+  if (dy > 0) t = Math.min(t, (r.y + r.h - p.y) / dy)
+  if (dy < 0) t = Math.min(t, (r.y - p.y) / dy)
+  t = Math.max(0, t)
+  return { x: p.x + dx * t, y: p.y + dy * t }
+}
+
+/** The leads of a link's photo ports: the run from the port to the
+ * photo node's edge, drawn again over the photo (the line itself is
+ * drawn under the nodes). */
+function leadSvg(l: DiagramLink, boxes: ReadonlyMap<string, Rect>): string[] {
+  const pts = [l.source, ...l.points, l.target]
+  const n = pts.length
+  const runs: [Pt, Pt][] = []
+  const lead = (end: DiagramEnd, next: Pt) => {
+    const r = boxes.get(end.node)
+    if (!end.marker || !r) return
+    const to = leaving(end, next, r)
+    if (to.x !== end.x || to.y !== end.y) runs.push([end, to])
+  }
+  lead(l.source, pts[1])
+  lead(l.target, pts[n - 2])
+  const dash = dashOk(l.dash)
+  return runs.map(([p, q]) =>
+    el("path", {
+      d: `M ${fmt(p.x)},${fmt(p.y)} L ${fmt(q.x)},${fmt(q.y)}`,
+      fill: "none",
+      stroke: col(l.stroke, PRINT.subtle),
+      "stroke-width": Math.max(0.25, l.width || 1),
+      "stroke-dasharray": dash,
+      "stroke-linecap": dash ? undefined : "round",
+    })
+  )
 }
 
 /** A link label. A middle chip is a box with a hairline edge; an end
@@ -741,6 +787,16 @@ export function toSvg(doc: DiagramDocument, opts: SvgOptions = {}): string {
   out.push(`</g><g id="nodes">`)
   for (const n of doc.nodes)
     out.push(linked(n.link, nodeSvg(n, measure, photoId)))
+  // Photo ports: each cable's lead over its photo.
+  const photoBoxes = new Map<string, Rect>(
+    doc.nodes
+      .filter((n) => n.kind === "photo" && n.photo && photoId(n.photo.href))
+      .map((n) => [n.id, n])
+  )
+  const leads = photoBoxes.size
+    ? doc.links.flatMap((l) => leadSvg(l, photoBoxes))
+    : []
+  if (leads.length) out.push(`</g><g id="leads">`, ...leads)
   out.push(`</g><g id="labels">`)
   for (const l of doc.links)
     for (const block of linkLabels(l, measure))

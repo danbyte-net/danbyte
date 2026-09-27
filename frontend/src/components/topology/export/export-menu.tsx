@@ -32,10 +32,12 @@ import type { LegendItem } from "../legend"
 
 // One Export menu for the topology map: PNG, SVG and draw.io, with the few
 // choices that change the file - whole map or what is on screen, Simple or
-// Detailed for draw.io, and the title block with the legend. The files are
+// Detailed for draw.io (and its photos, off by default: a card is what a
+// draw.io user edits), and the title block with the legend. The files are
 // drawn from the map's data (to-document.ts / from-flow.ts), never from the
-// screen, so they are light-themed and carry every card. The writers load
-// on first use.
+// screen, so they are light-themed and carry every card. Photos go into
+// the PNG and SVG as downscaled `data:` images, so the files stand alone.
+// The writers load on first use.
 
 export type ExportArea = "all" | "visible"
 export type ExportFormat = "png" | "svg" | "drawio"
@@ -49,12 +51,19 @@ export interface ExportRequest {
 interface Prefs {
   area: ExportArea
   drawio: "simple" | "detailed"
+  /** draw.io: photo nodes as their photos, not cards. */
+  photos: boolean
   /** Title block and legend under PNG and SVG drawings. */
   extras: boolean
 }
 
 const KEY = "topology:export"
-const DEFAULTS: Prefs = { area: "all", drawio: "simple", extras: true }
+const DEFAULTS: Prefs = {
+  area: "all",
+  drawio: "simple",
+  photos: false,
+  extras: true,
+}
 
 function readPrefs(): Prefs {
   try {
@@ -62,6 +71,7 @@ function readPrefs(): Prefs {
     return {
       area: raw.area === "visible" ? "visible" : "all",
       drawio: raw.drawio === "detailed" ? "detailed" : "simple",
+      photos: raw.photos === true,
       extras: raw.extras !== false,
     }
   } catch {
@@ -163,18 +173,27 @@ export function ExportMenu({
         const blob = await diagramToPng(doc, { ...extras, scale: 2 })
         downloadBlob(exportFileName(name, "png"), "image/png", blob)
       } else if (format === "svg") {
-        const { toSvg } = await import("@/lib/diagram/svg")
+        const [{ toSvg }, { inlinePhotos }] = await Promise.all([
+          import("@/lib/diagram/svg"),
+          import("@/lib/diagram/png"),
+        ])
         downloadBlob(
           exportFileName(name, "svg"),
           "image/svg+xml",
-          toSvg(doc, { ...extras, links: true })
+          toSvg(await inlinePhotos(doc), { ...extras, links: true })
         )
       } else {
-        const { DRAWIO_MIME, toDrawio } = await import("@/lib/diagram/drawio")
+        const [{ DRAWIO_MIME, toDrawio }, { inlinePhotos }] = await Promise.all(
+          [import("@/lib/diagram/drawio"), import("@/lib/diagram/png")]
+        )
+        const photos = modes && prefs.photos
         downloadBlob(
           exportFileName(name, "drawio"),
           DRAWIO_MIME,
-          toDrawio([doc], { mode: doc.meta.mode ?? "simple" })
+          toDrawio([photos ? await inlinePhotos(doc, { scale: 1.25 }) : doc], {
+            mode: doc.meta.mode ?? "simple",
+            photos,
+          })
         )
       }
     } catch {
@@ -247,6 +266,13 @@ export function ExportMenu({
                 Detailed
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
+            <DropdownMenuCheckboxItem
+              checked={prefs.photos}
+              onCheckedChange={(v) => set({ photos: v })}
+              onSelect={keepOpen}
+            >
+              Photos
+            </DropdownMenuCheckboxItem>
           </>
         )}
         <DropdownMenuSeparator />

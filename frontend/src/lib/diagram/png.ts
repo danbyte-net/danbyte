@@ -106,19 +106,75 @@ export function interFonts(): Promise<EmbeddedFont[]> {
   return interPromise
 }
 
-/** The document with every photo inlined as a `data:` URI. A photo that
- * will not load is drawn as its card instead - never an empty frame. */
+/** An image no wider than `maxW` px, redrawn smaller in a canvas; null
+ * when it is already small enough or the browser cannot (no canvas). */
+async function downscale(blob: Blob, maxW: number): Promise<Blob | null> {
+  if (
+    typeof createImageBitmap !== "function" ||
+    typeof document === "undefined"
+  )
+    return null
+  const bmp = await createImageBitmap(blob)
+  try {
+    if (!(bmp.width > maxW)) return null
+    const w = Math.max(1, Math.round(maxW))
+    const h = Math.max(1, Math.round((bmp.height * w) / bmp.width))
+    const canvas = document.createElement("canvas")
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return null
+    ctx.imageSmoothingQuality = "high"
+    ctx.drawImage(bmp, 0, 0, w, h)
+    // A JPEG photo stays JPEG; anything else keeps its transparency.
+    const type = blob.type === "image/jpeg" ? "image/jpeg" : "image/png"
+    return await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), type, 0.9)
+    )
+  } finally {
+    bmp.close()
+  }
+}
+
+/** A photo as a `data:` URI at most `maxW` px wide: an upload can be
+ * 2000 px across and is drawn at 480. */
+export async function photoDataUri(url: string, maxW: number): Promise<string> {
+  const res = await fetch(url, { credentials: "same-origin" })
+  if (!res.ok) throw new Error(`${res.status} fetching ${url}`)
+  const blob = await res.blob()
+  const out = (await downscale(blob, maxW).catch(() => null)) ?? blob
+  const bytes = new Uint8Array(await out.arrayBuffer())
+  return `data:${out.type || blob.type || "application/octet-stream"};base64,${base64(bytes)}`
+}
+
+export interface InlineOptions {
+  /** Pixels kept per px the photo is drawn at (2: sharp in a 2x PNG). */
+  scale?: number
+}
+
+/** The document with every photo inlined as a `data:` URI, downscaled to
+ * the size it is drawn at. A photo that will not load is drawn as its
+ * card instead - never an empty frame. */
 export async function inlinePhotos(
-  doc: DiagramDocument
+  doc: DiagramDocument,
+  opts: InlineOptions = {}
 ): Promise<DiagramDocument> {
-  const hrefs = new Set<string>()
+  const widest = new Map<string, number>()
   for (const n of doc.nodes)
-    if (n.photo && !n.photo.href.startsWith("data:")) hrefs.add(n.photo.href)
-  if (!hrefs.size) return doc
+    if (n.photo && !n.photo.href.startsWith("data:"))
+      widest.set(
+        n.photo.href,
+        Math.max(widest.get(n.photo.href) ?? 0, n.photo.w)
+      )
+  if (!widest.size) return doc
+  const scale = opts.scale ?? 2
   const inlined = new Map<string, string | null>()
   await Promise.all(
-    [...hrefs].map(async (href) => {
-      inlined.set(href, await fetchDataUri(href).catch(() => null))
+    [...widest].map(async ([href, w]) => {
+      inlined.set(
+        href,
+        await photoDataUri(href, Math.ceil(w * scale)).catch(() => null)
+      )
     })
   )
   return {
@@ -180,7 +236,7 @@ export async function diagramToPng(
   opts: Omit<SvgOptions, "embedFont"> & PngOptions = {}
 ): Promise<Blob> {
   const [withPhotos, fonts] = await Promise.all([
-    inlinePhotos(doc),
+    inlinePhotos(doc, { scale: opts.scale ?? 2 }),
     interFonts().catch(() => [] as EmbeddedFont[]),
   ])
   return svgToPng(toSvg(withPhotos, { ...opts, embedFont: fonts }), opts)

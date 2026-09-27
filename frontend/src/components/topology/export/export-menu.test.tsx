@@ -82,6 +82,66 @@ describe("ExportMenu", () => {
     })
   })
 
+  it("draws photos into draw.io only when asked, inlined", async () => {
+    const photo: typeof fabric = {
+      ...fabric,
+      nodes: fabric.nodes.map((n, i) =>
+        i === 0
+          ? {
+              ...n,
+              kind: "photo" as const,
+              photo: {
+                href: "/media/device-type-images/a.png",
+                x: n.x,
+                y: n.y,
+                w: n.w,
+                h: n.h / 2,
+                markers: [],
+              },
+            }
+          : n
+      ),
+    }
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          new Blob([new Uint8Array([137, 80, 78, 71])], {
+            type: "image/png",
+          })
+        )
+      )
+    )
+    try {
+      const doc = vi.fn(() => photo)
+      render(<ExportMenu document={doc} name="Map" modes />)
+      open()
+      const box = await screen.findByRole("menuitemcheckbox", {
+        name: "Photos",
+      })
+      expect(box.getAttribute("aria-checked")).toBe("false")
+      fireEvent.click(await screen.findByRole("menuitem", { name: "draw.io" }))
+      await waitFor(() => expect(download).toHaveBeenCalledTimes(1))
+      expect(String(download.mock.calls[0][2])).not.toContain(
+        "image=data:image/png,"
+      )
+      expect(fetch).not.toHaveBeenCalled()
+      open()
+      fireEvent.click(
+        await screen.findByRole("menuitemcheckbox", { name: "Photos" })
+      )
+      fireEvent.click(await screen.findByRole("menuitem", { name: "draw.io" }))
+      await waitFor(() => expect(download).toHaveBeenCalledTimes(2))
+      expect(String(download.mock.calls[1][2])).toContain(
+        "image=data:image/png,iVBORw"
+      )
+      expect(
+        JSON.parse(localStorage.getItem("topology:export")!)
+      ).toMatchObject({ photos: true })
+    } finally {
+      fetch.mockRestore()
+    }
+  })
+
   it("keeps the canvas capture for a legacy tab's PNG, and draw.io Simple", async () => {
     const capture = vi.fn(() => Promise.resolve(null))
     const doc = vi.fn(() => fabric)

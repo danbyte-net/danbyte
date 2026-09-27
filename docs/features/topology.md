@@ -881,7 +881,9 @@ The menu's choices are remembered per browser:
 - **Area** - **Whole map**, or **Visible area**: only the cards on screen
   and the lines between them.
 - **draw.io** (Diagram tab) - **Simple** (the default) or **Detailed**,
-  whichever mode the map is in on screen.
+  whichever mode the map is in on screen, and **Photos**: off by default,
+  so a photo is drawn as the device's card - the shape you edit in draw.io;
+  on, it is the photo (see [draw.io](#drawio)).
 - **Title and legend** - a strip under a PNG or SVG: the view name, the
   tenant, the filters, the date and a link back to this map, beside the
   legend (role colours, the monitoring pill, line styles).
@@ -908,9 +910,13 @@ pills, cable colours.
   set in Inter, falling back to the usual sans-serif fonts where Inter is not
   installed.
 - **PNG** is that SVG rasterised (2x), with Inter embedded so names never
-  reflow in another font. Device photos are embedded too; a photo that will
-  not load is drawn as the device's card. A very large map is scaled down to
-  stay under about 16.7 million pixels - Safari draws nothing above that.
+  reflow in another font. A very large map is scaled down to stay under
+  about 16.7 million pixels - Safari draws nothing above that.
+- **Photos** ([photo nodes](#photo-nodes)) are embedded in the SVG and the
+  PNG, scaled down in your browser to twice the size they are drawn at, so
+  the file stands alone. Each cable's lead is drawn over its photo into the
+  port, and the ports it lands on are outlined. A photo that will not load
+  is drawn as the device's card; a faceplate, which has no image, is too.
 
 Both show what the canvas shows, from the same plan: role-coloured cards
 with the name, card lines and pill; in Detailed, the interface nubs; the
@@ -959,8 +965,13 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
 - **Layers:** LLDP neighbours and BGP sessions are on their own layers,
   *Discovered (LLDP)* and *BGP sessions*, so you can hide them in one click
   (*View ▸ Layers*, Ctrl+Shift+L).
-- Text is Helvetica, as few machines have Inter installed. Device photos
-  are drawn as their cards.
+- Text is Helvetica, as few machines have Inter installed.
+- **Photos:** by default a photo node is drawn as the device's card, at the
+  photo's size, its cables meeting the card's edge where their ports are.
+  With **Photos** ticked it is the photo itself, embedded (scaled down to
+  600 px wide), with the name as its label underneath: each cable is
+  attached at its port, each marked port is a connection point, and the
+  photo sits behind the lines so their leads show over it.
 
 ## API
 

@@ -66,6 +66,10 @@ import type {
 // - Row bands are swimlanes holding the cards whose centre they contain, and
 //   zones are containers too. Side bands are background shapes (a card has
 //   one parent). LLDP neighbours and BGP sessions get layers of their own.
+// - Photo nodes are cards by default. With `photos`, a photo inlined as a
+//   `data:` URI is an image cell with its name as a label underneath, a
+//   connection point on each marked port, and its cables attached at their
+//   ports; it is written before the lines, so a cable's lead shows over it.
 // - Text is Helvetica: Inter is rarely installed, and names cut to fit Inter,
 //   which runs wider, still fit.
 
@@ -83,6 +87,10 @@ export interface DrawioOptions {
   margin?: number
   /** Text widths for fitting names: `measureText` by default. */
   measure?: Measure
+  /** Draw photo nodes as their photos (inlined `data:` images only; any
+   * other is drawn as its card). Off by default: the card is the shape
+   * draw.io users edit. */
+  photos?: boolean
 }
 
 const FONT = "Helvetica"
@@ -148,6 +156,13 @@ const SAFE_LINK = /^(?:https?:\/\/|\/(?!\/))/i
 const safeLink = (href?: string) =>
   href && SAFE_LINK.test(href) ? href : undefined
 
+/** An inlined photo draw.io can embed. */
+const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)$/
+
+/** A node drawn as its photo in this file. */
+const drawsImage = (n: DiagramNode | undefined, photos?: boolean) =>
+  !!photos && n?.kind === "photo" && !!n.photo && DATA_IMAGE.test(n.photo.href)
+
 /** An SVG dash array as a draw.io `dashPattern`, or undefined. */
 function dashPattern(d?: string): string | undefined {
   const t = d?.trim()
@@ -185,13 +200,26 @@ function nearestSide(r: Rect, p: Pt): Side {
 /** An end placed on the side of its box it leaves from, keeping its
  * position along that side: a nub's outer edge in Detailed; in Simple, the
  * card side (at the nub's place, or the midpoint a Simple document gives);
- * a photo marker moves out to the card edge, as photos draw as cards. */
+ * a photo port moves out to the card edge where photos draw as cards, and
+ * stays on its port on a photo drawn as its image. */
 function attachEnd(
   end: DiagramEnd,
   node: DiagramNode | undefined,
-  mode: DrawioMode
+  mode: DrawioMode,
+  photos?: boolean
 ): Attach {
   if (!node) return { fx: 0, fy: 0, pt: { x: end.x, y: end.y } }
+  if (drawsImage(node, photos) && end.marker) {
+    const img = node.photo!
+    const fx = round4(img.w ? clamp01((end.x - img.x) / img.w) : 0.5)
+    const fy = round4(img.h ? clamp01((end.y - img.y) / img.h) : 0.5)
+    return {
+      node,
+      fx,
+      fy,
+      pt: { x: img.x + fx * img.w, y: img.y + fy * img.h },
+    }
+  }
   const nub = end.nub !== undefined ? node.nubs?.[end.nub] : undefined
   const onNub = mode === "detailed" && !!nub
   const box: Rect = onNub ? nub : node
@@ -235,16 +263,17 @@ function drawnLink(
   l: DiagramLink,
   nodes: Map<string, DiagramNode>,
   mode: DrawioMode,
-  junctions: Map<string, DiagramJunction> = new Map()
+  junctions: Map<string, DiagramJunction> = new Map(),
+  photos?: boolean
 ): { link: DiagramLink; a: Attach; b: Attach } {
   const ja = junctions.get(l.source.node)
   const jb = junctions.get(l.target.node)
   const a = ja
     ? attachJunction(ja)
-    : attachEnd(l.source, nodes.get(l.source.node), mode)
+    : attachEnd(l.source, nodes.get(l.source.node), mode, photos)
   const b = jb
     ? attachJunction(jb)
-    : attachEnd(l.target, nodes.get(l.target.node), mode)
+    : attachEnd(l.target, nodes.get(l.target.node), mode, photos)
   return {
     link: {
       ...l,
@@ -520,8 +549,150 @@ function page(
     )
   }
 
+  // ── Photos ──
+  /** A photo as an image cell (the image box), its name a bold label
+   * under it where the canvas put the caption, a connection point and an
+   * outline on each marked port, the pill a child under it too. */
+  function photo(n: DiagramNode, parent: DiagramBand | null, pid: string) {
+    const id = nodeIds.get(n) ?? ""
+    const img = n.photo!
+    const [, type, data] = DATA_IMAGE.exec(img.href)!
+    const t = cardText(n, measure)
+    const capW = measure(t.title.text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT)
+    const capTop = t.title.y - baselineAt(0, CARD.TITLE_SIZE, CARD.TITLE_LH)
+    const at = (v: number, from: number, len: number) =>
+      frac(len ? clamp01((v - from) / len) : 0.5)
+    const ports = img.markers.map(
+      (m) =>
+        `[${at(m.x + m.w / 2, img.x, img.w)},${at(m.y + m.h / 2, img.y, img.h)},0]`
+    )
+    const st = style(["shape=image"], {
+      html: 1,
+      imageAspect: 0,
+      aspect: "fixed",
+      // draw.io's own form: `;base64` is left out, as `;` separates styles.
+      image: `data:image/${type},${data}`,
+      points: ports.length ? `[${ports.join(",")}]` : undefined,
+      verticalLabelPosition: "bottom",
+      verticalAlign: "top",
+      labelPosition: "center",
+      align: "left",
+      spacing: 0,
+      spacingLeft: Math.max(0, t.title.x - capW / 2 - img.x),
+      spacingTop: Math.max(0, capTop - (img.y + img.h)),
+      whiteSpace: "nowrap",
+      fontFamily: FONT,
+      fontSize: CARD.TITLE_SIZE,
+      fontStyle: 1,
+      fontColor: PRINT.text,
+    })
+    out.push(
+      `<object${attrs({
+        label: h(t.title.text),
+        danbyte_id: n.id,
+        link: safeLink(n.link),
+        tooltip: t.title.text !== n.title ? n.title : undefined,
+        id,
+      })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
+        `${geometry(rel(img, parent))}</mxCell></object>`
+    )
+    img.markers.forEach((m, i) =>
+      out.push(
+        `<mxCell${attrs({
+          id: take(`${id}-port-${i}`),
+          value: "",
+          style: style([], {
+            rounded: 1,
+            absoluteArcSize: 1,
+            arcSize: 2,
+            html: 1,
+            fillColor: "none",
+            strokeColor: PRINT.primary,
+            strokeWidth: 1.25,
+            movable: 0,
+            resizable: 0,
+            rotatable: 0,
+            editable: 0,
+          }),
+          vertex: "1",
+          connectable: "0",
+          parent: id,
+        })}>${geometry(rel(m, img))}</mxCell>`
+      )
+    )
+    if (t.pill && n.pill) pillCell(n, t.pill, id, img)
+    if (mode !== "detailed") return
+    for (const [i, nub] of (n.nubs ?? []).entries()) nubCell(n, i, nub, id, img)
+  }
+
+  /** A node's pill: a child cell, placed in its parent's frame. */
+  function pillCell(
+    n: DiagramNode,
+    r: Rect & { text: string },
+    id: string,
+    frame: Rect
+  ) {
+    const pf = hex6(n.pill!.fill) ?? PRINT.subtle
+    out.push(
+      `<mxCell${attrs({
+        id: take(`${id}-pill`),
+        value: h(r.text),
+        style: style([], {
+          rounded: 1,
+          absoluteArcSize: 1,
+          arcSize: 2 * PILL.RADIUS,
+          html: 1,
+          whiteSpace: "nowrap",
+          fillColor: pf,
+          strokeColor: PRINT.paper,
+          fontColor: hex6(n.pill!.ink) ?? PRINT.paper,
+          fontFamily: FONT,
+          fontSize: PILL.SIZE,
+          spacing: 0,
+          movable: 0,
+          resizable: 0,
+          rotatable: 0,
+        }),
+        vertex: "1",
+        connectable: "0",
+        parent: id,
+      })}>${geometry(rel(r, frame))}</mxCell>`
+    )
+  }
+
+  /** A Detailed nub: a child cell lines attach to. */
+  function nubCell(
+    n: DiagramNode,
+    i: number,
+    nub: Rect & { label?: string },
+    id: string,
+    frame: Rect
+  ) {
+    const nid = nubIds.get(nubKey(n, i)) ?? take(`${id}-nub-${i}`)
+    out.push(
+      `<object${attrs({ label: "", tooltip: nub.label, id: nid })}>` +
+        `<mxCell${attrs({
+          style: style([], {
+            rounded: 1,
+            absoluteArcSize: 1,
+            arcSize: 2 * NUB.RADIUS,
+            html: 1,
+            fillColor: PRINT.faint,
+            strokeColor: "none",
+            movable: 0,
+            resizable: 0,
+            rotatable: 0,
+            editable: 0,
+          }),
+          vertex: "1",
+          parent: id,
+        })}>${geometry(rel(nub, frame))}</mxCell></object>`
+    )
+  }
+
   // ── Nodes ──
   function node(n: DiagramNode, parent: DiagramBand | null, pid: string) {
+    if (drawsImage(n, opts.photos)) return photo(n, parent, pid)
     const id = nodeIds.get(n) ?? ""
     // Photos draw as their card; the image variant is a later option.
     const card: DiagramNode =
@@ -568,57 +739,9 @@ function page(
       })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
         `${geometry(rel(n, parent))}</mxCell></object>`
     )
-    if (t.pill && n.pill) {
-      const pf = hex6(n.pill.fill) ?? PRINT.subtle
-      out.push(
-        `<mxCell${attrs({
-          id: take(`${id}-pill`),
-          value: h(t.pill.text),
-          style: style([], {
-            rounded: 1,
-            absoluteArcSize: 1,
-            arcSize: 2 * PILL.RADIUS,
-            html: 1,
-            whiteSpace: "nowrap",
-            fillColor: pf,
-            strokeColor: PRINT.paper,
-            fontColor: hex6(n.pill.ink) ?? PRINT.paper,
-            fontFamily: FONT,
-            fontSize: PILL.SIZE,
-            spacing: 0,
-            movable: 0,
-            resizable: 0,
-            rotatable: 0,
-          }),
-          vertex: "1",
-          connectable: "0",
-          parent: id,
-        })}>${geometry(rel(t.pill, n))}</mxCell>`
-      )
-    }
+    if (t.pill && n.pill) pillCell(n, t.pill, id, n)
     if (mode !== "detailed") return
-    for (const [i, nub] of (n.nubs ?? []).entries()) {
-      const nid = nubIds.get(nubKey(n, i)) ?? take(`${id}-nub-${i}`)
-      out.push(
-        `<object${attrs({ label: "", tooltip: nub.label, id: nid })}>` +
-          `<mxCell${attrs({
-            style: style([], {
-              rounded: 1,
-              absoluteArcSize: 1,
-              arcSize: 2 * NUB.RADIUS,
-              html: 1,
-              fillColor: PRINT.faint,
-              strokeColor: "none",
-              movable: 0,
-              resizable: 0,
-              rotatable: 0,
-              editable: 0,
-            }),
-            vertex: "1",
-            parent: id,
-          })}>${geometry(rel(nub, n))}</mxCell></object>`
-      )
-    }
+    for (const [i, nub] of (n.nubs ?? []).entries()) nubCell(n, i, nub, id, n)
   }
 
   function container(c: Cont, parent: DiagramBand | null, pid: string) {
@@ -640,7 +763,11 @@ function page(
 
   function link(l: DiagramLink, layer: string) {
     const id = linkIds.get(l) ?? ""
-    const { link: d, a, b } = drawnLink(l, byId, mode, junctionsById)
+    const {
+      link: d,
+      a,
+      b,
+    } = drawnLink(l, byId, mode, junctionsById, opts.photos)
     let kind: Record<string, Val> = { edgeStyle: "none" }
     let points = d.points
     if (d.kind === "elbow") {
@@ -842,16 +969,21 @@ function page(
   }
 
   // ── The page, back to front ──
-  // Bands, then the cards they hold; then the lines, so they pass under
-  // the cards on the layer; then the rest of the cards.
+  // Bands, then the cards they hold; photos drawn as images; then the
+  // lines, so they pass under the cards on the layer and a cable's lead
+  // shows over its photo; then the rest of the cards.
   out.push(`<mxCell id="0"/>`, `<mxCell id="1" value="Topology" parent="0"/>`)
   for (const b of doc.bands) if (!isContainer(b)) band(b, null, "1")
   for (const c of conts) if (!contParent.get(c)) container(c, null, "1")
+  const early = (n: DiagramNode) => drawsImage(n, opts.photos)
+  for (const n of doc.nodes)
+    if (!nodeParent.get(n) && early(n)) node(n, null, "1")
   const onLayer = (sem: DiagramLink["sem"]) =>
     sem === "ghost" ? LAYER_LLDP : sem === "bgp" ? LAYER_BGP : "1"
   for (const l of doc.links) if (onLayer(l.sem) === "1") link(l, "1")
   for (const j of doc.junctions ?? []) junction(j)
-  for (const n of doc.nodes) if (!nodeParent.get(n)) node(n, null, "1")
+  for (const n of doc.nodes)
+    if (!nodeParent.get(n) && !early(n)) node(n, null, "1")
   for (const n of doc.notes) note(n)
   for (const [layer, name] of [
     [LAYER_LLDP, "Discovered (LLDP)"],
