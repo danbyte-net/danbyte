@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { Grid, segBox, segHitsRect, spansMeet } from "./spatial"
+import {
+  Grid,
+  inflate,
+  segBox,
+  segHitsGrown,
+  segHitsRect,
+  spansMeet,
+} from "./spatial"
 import type { Pt, Rect } from "./types"
 
 // The grid's quick answers must find everything the slow ones would.
@@ -89,5 +96,26 @@ describe("Grid.addSegment", () => {
     g2.addSegment({ x: 0, y: 0 }, { x: 3000, y: 3000 }, 1, "d")
     expect(g2.near({ x: 2800, y: 100, w: 20, h: 20 })).toEqual([])
     expect(g2.near({ x: 1490, y: 1490, w: 20, h: 20 })).toEqual(["d"])
+  })
+})
+
+describe("segHitsGrown", () => {
+  it("answers as segHitsRect does against the grown box", () => {
+    const rand = rng(3)
+    for (let k = 0; k < 2000; k++) {
+      const r = {
+        x: rand() * 400,
+        y: rand() * 400,
+        w: rand() * 200,
+        h: rand() * 120,
+      }
+      const p = { x: rand() * 600 - 50, y: rand() * 600 - 50 }
+      const q =
+        k % 3
+          ? { x: rand() * 600 - 50, y: rand() * 600 - 50 }
+          : { x: p.x, y: rand() * 600 - 50 }
+      for (const d of [-0.5, 1, 8])
+        expect(segHitsGrown(p, q, r, d)).toBe(segHitsRect(p, q, inflate(r, d)))
+    }
   })
 })

@@ -1224,16 +1224,19 @@ export function nudgeOffEdges(
     }
     return n
   }
+  // Every other card, without making a box for each (this runs for every
+  // card that might move).
   const overlaps = (id: string, r: NRect) => {
     for (const o of out) {
       if (o.id === id) continue
-      const or = rectOf(o)
-      if (!or) continue
+      const s = sizeOf(o)
+      if (!s) continue
+      const { x, y } = o.position
       if (
-        r.x < or.x + or.w + NUDGE_GAP &&
-        r.x + r.w + NUDGE_GAP > or.x &&
-        r.y < or.y + or.h + NUDGE_GAP &&
-        r.y + r.h + NUDGE_GAP > or.y
+        r.x < x + s.width + NUDGE_GAP &&
+        r.x + r.w + NUDGE_GAP > x &&
+        r.y < y + s.height + NUDGE_GAP &&
+        r.y + r.h + NUDGE_GAP > y
       )
         return true
     }

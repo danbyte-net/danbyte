@@ -1,4 +1,4 @@
-import { Grid, inflate, segBox, segHitsRect, spansMeet } from "./spatial"
+import { Grid, inflate, segBox, segHitsGrown, spansMeet } from "./spatial"
 import type { CellSpan } from "./spatial"
 import type { Dir, End, Pt, Rect } from "./types"
 
@@ -113,10 +113,16 @@ function segClear(
   own: readonly string[],
   terminal: boolean
 ): boolean {
-  for (const { id, r } of o.touching(segBox(p, q, 1))) {
-    const mine = own.includes(id)
-    const box = mine ? inflate(r, terminal ? -0.5 : 1) : inflate(r, CLEAR)
-    if (segHitsRect(p, q, box)) return false
+  // The run's box, 1px round it (`segBox`), without making it.
+  const near = o.touchingBox(
+    Math.min(p.x, q.x) - 1,
+    Math.min(p.y, q.y) - 1,
+    Math.abs(p.x - q.x) + 2,
+    Math.abs(p.y - q.y) + 2
+  )
+  for (const { id, r } of near) {
+    const grow = own.includes(id) ? (terminal ? -0.5 : 1) : CLEAR
+    if (segHitsGrown(p, q, r, grow)) return false
   }
   return true
 }

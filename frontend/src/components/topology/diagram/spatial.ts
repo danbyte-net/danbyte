@@ -14,6 +14,15 @@ export const spansMeet = (a: CellSpan, b: CellSpan): boolean =>
 /** A uniform grid of buckets over the plane. Items are filed under every
  * cell their box touches; `near` returns each item once. */
 export class Grid<T> {
+  /**
+   * Every `{ x, y, w, h }` box shares one hidden class in V8. Made first
+   * with whole numbers, its fields are kept as small integers, and code
+   * optimised for that falls back over and over once fractional boxes
+   * turn up - the planner ran two to three times slower. One fractional
+   * box made as this module loads keeps the fields general from the start.
+   */
+  static readonly fractional: Rect = { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }
+
   private cells = new Map<number, number[]>()
   private items: T[] = []
   /** Each item's box, as filed. */
@@ -166,51 +175,69 @@ export class Grid<T> {
    * cells instead of every cell it crosses.
    */
   touching(r: Rect): T[] {
+    return this.touchingBox(r.x, r.y, r.w, r.h)
+  }
+
+  /** `touching` for the box at `x`, `y`, `w` wide and `h` high, without
+   * making one - the planner asks for every run it tries. */
+  touchingBox(x: number, y: number, w: number, h: number): T[] {
     const s = this.size
-    const vertical = r.w <= s
     const out: T[] = []
     const q = ++this.query
-    this.watcher?.(this.span(r))
-    const meets = (b: Rect) =>
-      b.x <= r.x + r.w &&
-      b.x + b.w >= r.x &&
-      b.y <= r.y + r.h &&
-      b.y + b.h >= r.y
-    if (!vertical && r.h > s) {
-      const [x0, y0, x1, y1] = this.span(r)
-      for (let x = x0; x <= x1; x++)
-        for (let y = y0; y <= y1; y++)
-          for (const id of this.cells.get(this.key(x, y)) ?? []) {
+    const boxes = this.boxes
+    const x1 = x + w
+    const y1 = y + h
+    this.watcher?.([
+      Math.floor(x / s),
+      Math.floor(y / s),
+      Math.floor(x1 / s),
+      Math.floor(y1 / s),
+    ])
+    if (w > s && h > s) {
+      for (let cx = Math.floor(x / s); cx <= Math.floor(x1 / s); cx++)
+        for (let cy = Math.floor(y / s); cy <= Math.floor(y1 / s); cy++) {
+          const list = this.cells.get(this.key(cx, cy))
+          if (!list) continue
+          for (const id of list) {
             if (this.stamp[id] === q) continue
             this.stamp[id] = q
-            if (meets(this.boxes[id])) out.push(this.items[id])
+            const b = boxes[id]
+            if (b.x <= x1 && b.x + b.w >= x && b.y <= y1 && b.y + b.h >= y)
+              out.push(this.items[id])
           }
+        }
       return out
     }
+    // Thin: along its column of cells (or its row), by where the boxes
+    // start along it.
+    const vertical = w <= s
     const { cols, rows, maxW, maxH } = this.stripsNow()
-    const [lo, hi] = vertical ? [r.x, r.x + r.w] : [r.y, r.y + r.h]
-    const [from, to] = vertical ? [r.y, r.y + r.h] : [r.x, r.x + r.w]
-    const reach = vertical ? maxH : maxW
+    const lo = vertical ? x : y
+    const hi = vertical ? x1 : y1
+    const from = (vertical ? y : x) - (vertical ? maxH : maxW)
+    const to = vertical ? y1 : x1
+    const strips = vertical ? cols : rows
     for (let c = Math.floor(lo / s); c <= Math.floor(hi / s); c++) {
-      const list = (vertical ? cols : rows).get(c)
+      const list = strips.get(c)
       if (!list) continue
-      // The first box that could reach `from`, by bisection.
-      const start = (id: number) =>
-        vertical ? this.boxes[id].y : this.boxes[id].x
+      // The first box that could reach the query, by bisection.
       let a = 0
       let z = list.length
       while (a < z) {
         const m = (a + z) >> 1
-        if (start(list[m]) < from - reach) a = m + 1
+        const b = boxes[list[m]]
+        if ((vertical ? b.y : b.x) < from) a = m + 1
         else z = m
       }
       for (let i = a; i < list.length; i++) {
         const id = list[i]
-        const b = this.boxes[id]
-        if (start(id) > to) break
-        if (this.stamp[id] === q || !meets(b)) continue
-        this.stamp[id] = q
-        out.push(this.items[id])
+        const b = boxes[id]
+        if ((vertical ? b.y : b.x) > to) break
+        if (this.stamp[id] === q) continue
+        if (b.x <= x1 && b.x + b.w >= x && b.y <= y1 && b.y + b.h >= y) {
+          this.stamp[id] = q
+          out.push(this.items[id])
+        }
       }
     }
     return out
@@ -239,18 +266,40 @@ export const inflate = (r: Rect, d: number): Rect => ({
 /** Does the segment p→q pass through the open box `r`? (Touching an edge
  * or running along it is no hit.) Liang-Barsky clipping. */
 export function segHitsRect(p: Pt, q: Pt, r: Rect): boolean {
-  if (r.w <= 0 || r.h <= 0) return false
+  return segHitsBoxAt(p, q, r.x, r.y, r.w, r.h)
+}
+
+/** `segHitsRect` against the box `r` grown by `d` on every side (shrunk
+ * when negative), without making the box - the planner asks this for
+ * every card near every run it tries. */
+export function segHitsGrown(p: Pt, q: Pt, r: Rect, d: number): boolean {
+  return segHitsBoxAt(p, q, r.x - d, r.y - d, r.w + 2 * d, r.h + 2 * d)
+}
+
+function segHitsBoxAt(
+  p: Pt,
+  q: Pt,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): boolean {
+  if (w <= 0 || h <= 0) return false
   const dx = q.x - p.x
   const dy = q.y - p.y
   let t0 = 0
   let t1 = 1
-  const edges: [number, number][] = [
-    [-dx, p.x - r.x],
-    [dx, r.x + r.w - p.x],
-    [-dy, p.y - r.y],
-    [dy, r.y + r.h - p.y],
-  ]
-  for (const [pp, qq] of edges) {
+  // The four sides in turn, left, right, top, bottom.
+  for (let i = 0; i < 4; i++) {
+    const pp = i === 0 ? -dx : i === 1 ? dx : i === 2 ? -dy : dy
+    const qq =
+      i === 0
+        ? p.x - x
+        : i === 1
+          ? x + w - p.x
+          : i === 2
+            ? p.y - y
+            : y + h - p.y
     if (Math.abs(pp) < 1e-12) {
       if (qq <= 0) return false
       continue
