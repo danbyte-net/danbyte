@@ -396,6 +396,9 @@ Three mechanisms keep a large fabric legible:
   layout library's own network-simplex method, run on flat arrays: it makes
   the same choices, so every card lands exactly where it did, but a
   2,400-device site ranks in a fraction of a second instead of seconds.
+- **A big minimap is one picture** - above 500 cards the minimap paints its
+  cards on a single canvas instead of drawing each one as a shape; it
+  looks, pans and zooms the same.
 - **The Flat view** - see above.
 
 A cable's or interface's **Trace** tab shows the run two ways: the flat

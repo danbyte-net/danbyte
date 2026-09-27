@@ -65,6 +65,11 @@ import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { ZONE_H, ZONE_W } from "./view-positions"
 import type { Zone } from "./view-positions"
 import { lagBundleLabel, sharedLag } from "./lag-bundles"
+import {
+  CANVAS_MINIMAP_AT,
+  MiniMapCanvas,
+  NoMiniMapNode,
+} from "./minimap-canvas"
 import { bundleStroke, edgeLook, edgeStroke, flowEdgeStyle } from "./edge-style"
 import type { EdgeColorMode } from "./edge-style"
 import { ROUTABLE, classifyEdges, orientHubToLeaf } from "./edge-semantics"
@@ -2285,6 +2290,8 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // A map built by hand stays a live canvas while empty: it is where the
   // first devices get dropped.
   const empty = graph.nodes.length === 0
+  // Too many cards for an SVG rect each in the minimap.
+  const bigMap = nodes.length > CANVAS_MINIMAP_AT
   if (empty && !takesDrops)
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -2357,11 +2364,22 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Controls showInteractive={false} />
+        {bigMap && (
+          <MiniMapCanvas
+            nodeColor={diagram ? miniColor : undefined}
+            theme={theme}
+          />
+        )}
         <MiniMap
           pannable
           zoomable
           nodeColor={diagram ? miniColor : undefined}
-          className="rounded-md border !border-border !bg-card"
+          // A big map's cards are painted underneath, on one canvas.
+          nodeComponent={bigMap ? NoMiniMapNode : undefined}
+          className={cn(
+            "rounded-md border !border-border",
+            bigMap ? "!bg-transparent" : "!bg-card"
+          )}
         />
         {!!pending?.length && (
           <ViewportPortal>
