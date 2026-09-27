@@ -203,6 +203,34 @@ future releases. What each line prints is under
 The page opens on one role with `?role=<slug>`, and on the deployment tier
 with `?scope=deployment`.
 
+**For one saved view** - the Diagram's **Display** popover has a **Card
+lines** section, open to anyone who can see the map:
+
+- **Inherit** previews the All devices list (and says how many roles have
+  their own); each device still gets its role's lines.
+- **Custom** gives the view one list for every card on it, over the role
+  and All devices lists. **Add line** opens the picker; **Name only** works
+  as above.
+
+It is part of the map's document: every change is one undo step
+(++ctrl+z++ / ++cmd+z++), marks the view **edited**, redraws the cards at
+once, and is kept by **Save** like the rest of the view. On the default map
+it stays in this browser.
+
+**For one device** - its own list wins over everything else, on every map:
+
+- On the Diagram, right-click a card for **Card lines…** (shown when you
+  can change devices). **Inherit** shows what the device gets without a
+  list of its own - this view's lines, else its role's, else All devices -
+  and where they come from; **Custom** and **Name only** set its own.
+  **Save** stores it on the device.
+- The device's edit form has the same control under **Topology card**.
+  There the preview shows the role's or All devices lines, since a saved
+  view is not known on the form.
+
+Admins also get **Role card lines** in the card's menu, which opens
+**Settings → Topology** on that device's role.
+
 ## Big graphs
 
 Three mechanisms keep a large fabric legible:
@@ -536,7 +564,8 @@ counts.
 Drag cards where you want them, then **Save as…** - a saved view stores,
 per tenant, the **filter set** (or a custom map's device set), the **display
 settings** (colour mode, layout direction, cables, Levels, grouping,
-aggregate bundling, and the Diagram's Simple/Detailed mode and line type),
+aggregate bundling, and the Diagram's Simple/Detailed mode, line type and
+its own [card lines](#card-lines)),
 **every node position** per view style, the **zones**
 and the **hidden objects**. Load it from the views select; **Save** (or
 ++ctrl+s++, ++cmd+s++ on a Mac) updates it in place after you rearrange;

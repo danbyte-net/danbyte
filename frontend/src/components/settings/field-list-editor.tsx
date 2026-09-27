@@ -127,6 +127,7 @@ export function FieldListEditor({
             {editable && (
               <span className="flex shrink-0 items-center">
                 <Button
+                  type="button"
                   variant="ghost"
                   size="sm"
                   className="h-6 w-6 p-0"
@@ -137,6 +138,7 @@ export function FieldListEditor({
                   <ChevronUp className="h-3.5 w-3.5" />
                 </Button>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="sm"
                   className="h-6 w-6 p-0"
@@ -147,6 +149,7 @@ export function FieldListEditor({
                   <ChevronDown className="h-3.5 w-3.5" />
                 </Button>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="sm"
                   className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"

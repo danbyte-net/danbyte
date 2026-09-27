@@ -19,15 +19,12 @@ import {
   FieldScopeRow,
   useCustomFieldMeta,
 } from "@/components/settings/field-list-editor"
-import type {
-  FieldGroup,
-  FieldMeta,
-} from "@/components/settings/field-list-editor"
+import type { FieldMeta } from "@/components/settings/field-list-editor"
 import {
   SettingsCard,
   SettingsHeader,
 } from "@/components/settings/settings-card"
-import { cardFieldLabel } from "@/components/topology/diagram/card-fields"
+import { cardLineOptions } from "@/components/topology/diagram/card-lines"
 import { Button } from "@/components/ui/button"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Switch } from "@/components/ui/switch"
@@ -52,43 +49,6 @@ type Tier = (typeof TIERS)[number]
 const GLOBAL = ""
 
 const CF_MODELS = ["device"] as const
-
-/** One line of help per built-in key. Labels come from the card itself
- * (`cardFieldLabel`), so the settings and the card never name a line
- * differently. */
-const HINTS: Partial<Record<string, string>> = {
-  monitor: "Pill while down or degraded",
-  status: "Lifecycle status pill",
-  primary_ip: "Primary address",
-  secondary_ip: "Secondary address",
-  oob_ip: "Out-of-band address",
-  loopback: "Addresses with the loopback role",
-  serial: "Serial number",
-  asset_tag: "Inventory tag",
-  device_type: "Model",
-  manufacturer: "The type's manufacturer",
-  platform: "Or the type's platform",
-  role: "Device role",
-  site: "Site name",
-  location: "Location in the site",
-  rack: "Rack and position",
-  tags: "Tag names",
-}
-
-/** The add picker. A key the server adds later lands in "Other". */
-const GROUPS: FieldGroup[] = [
-  { title: "Pill", keys: ["monitor", "status"] },
-  {
-    title: "Addresses",
-    keys: ["primary_ip", "secondary_ip", "oob_ip", "loopback"],
-  },
-  {
-    title: "Hardware",
-    keys: ["serial", "asset_tag", "device_type", "manufacturer", "platform"],
-  },
-  { title: "Placement", keys: ["role", "site", "location", "rack"] },
-  { title: "Other", keys: ["tags"] },
-]
 
 function TopologySettingsPage() {
   const { canManage, canManageDeployment, isLoading } = useMe()
@@ -244,26 +204,8 @@ function CardLines({ tier }: { tier: Tier }) {
   const scope = known && role ? `role:${role}` : GLOBAL
   const isGlobal = scope === GLOBAL
 
-  const cfKeys = Object.keys(cfMeta)
-  const cfLabels = Object.fromEntries(
-    cfKeys.map((k) => [k.slice(3), cfMeta[k]?.label ?? k])
-  )
-  const meta = (key: string): FieldMeta => ({
-    label: cardFieldLabel(key, cfLabels),
-    hint:
-      HINTS[key] ??
-      cfMeta[key]?.hint ??
-      (key.startsWith("cf_") ? "Custom field" : ""),
-  })
-  const grouped = new Set(GROUPS.flatMap((g) => g.keys))
-  const extra = data.available.filter((k) => !grouped.has(k))
-  const groups: FieldGroup[] = [
-    ...GROUPS.map((g) =>
-      g.title === "Other" ? { ...g, keys: [...g.keys, ...extra] } : g
-    ),
-    ...(cfKeys.length ? [{ title: "Custom fields", keys: cfKeys }] : []),
-  ]
-  const available = [...data.available, ...cfKeys]
+  // The picker the device form and the map's editors share.
+  const { meta, groups, available } = cardLineOptions(data.available, cfMeta)
 
   // While this tenant inherits, the card shows what it inherits instead.
   const inheriting = editingTenant && !cur.override

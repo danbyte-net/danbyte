@@ -106,6 +106,11 @@ import { QueryError } from "@/components/query-error"
 import { DevicePicker } from "@/components/device-picker"
 import { MaterializeCableDialog } from "@/components/topology/materialize-cable-dialog"
 import {
+  CardLinesDialog,
+  ViewCardLinesEditor,
+} from "@/components/topology/diagram/card-lines-dialog"
+import type { CardLinesTarget } from "@/components/topology/diagram/card-lines-dialog"
+import {
   typeColor,
   type BundleMember,
   type CanvasHandle,
@@ -538,7 +543,7 @@ function TopologyPage() {
   const urlSearch = Route.useSearch()
   const nav = useNavigate()
   const patch = useUrlPatch()
-  const { me, canDo } = useMe()
+  const { me, canDo, canManage } = useMe()
   const qc = useQueryClient()
   const canvas = useRef<CanvasHandle>(null)
 
@@ -693,6 +698,8 @@ function TopologyPage() {
     zoneId?: string
   } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  // The device whose own card lines the "Card lines…" dialog edits.
+  const [cardLinesFor, setCardLinesFor] = useState<CardLinesTarget | null>(null)
   const [search, setSearch] = useUrlText("q", "", { replace: true })
   const [focusId] = useUrlText("device")
   const [focusDepth, setFocusDepth] = useUrlInt("depth", 1, { min: 1, max: 6 })
@@ -745,6 +752,14 @@ function TopologyPage() {
    * drag also snapshots the cards). */
   const edit = (action: Parameters<typeof send>[0]) =>
     send(action, { coalesce: "gesture" })
+  /** The view's own card lines (Display popover); null inherits. An undo
+   * step like any other edit, and the cards refetch with the new list. */
+  const setViewCardLines = (fields: string[] | null) => {
+    const next: TopologyDiagramDisplay = { ...diagramDisplay }
+    delete next.fields
+    if (fields) next.fields = fields
+    edit({ type: "setDisplay", patch: { diagram: next } })
+  }
 
   // One arrangement per view style - see PosByStyle. The canvas only ever
   // sees the style it is currently drawing.
@@ -1705,7 +1720,10 @@ function TopologyPage() {
                 Display
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 space-y-3 p-3">
+            <PopoverContent
+              align="end"
+              className="max-h-(--radix-popover-content-available-height) w-64 space-y-3 overflow-y-auto p-3"
+            >
               {viewStyle !== "hierarchy" && (
               <PopoverField label="Layout">
                 <SegmentedTabs<"LR" | "TB">
@@ -1800,6 +1818,16 @@ function TopologyPage() {
                 onChange={(v) => set({ collapse: !v })}
                 className="items-center pt-1"
               />
+              {isDiagram && !grouped && (
+                <div className="border-t border-border pt-3">
+                  <PopoverField label="Card lines">
+                    <ViewCardLinesEditor
+                      value={savedDiagram?.fields ?? null}
+                      onChange={setViewCardLines}
+                    />
+                  </PopoverField>
+                </div>
+              )}
             </PopoverContent>
           </Popover>
           </>
@@ -2294,6 +2322,33 @@ function TopologyPage() {
                     Remove from view
                   </MenuItem>
                 )}
+                {isDiagram &&
+                  menu.node.device_id &&
+                  canDo("device", "change") && (
+                    <MenuItem
+                      onClick={() => {
+                        const n = menu.node!
+                        setMenu(null)
+                        setCardLinesFor({
+                          id: n.device_id!,
+                          name: n.name,
+                          role: n.role,
+                        })
+                      }}
+                    >
+                      Card lines…
+                    </MenuItem>
+                  )}
+                {isDiagram && canManage && menu.node.role?.slug && (
+                  <Link
+                    to="/settings/topology"
+                    search={{ role: menu.node.role.slug }}
+                    onClick={() => setMenu(null)}
+                    className={MENU_ROW}
+                  >
+                    Role card lines
+                  </Link>
+                )}
               </>
             )}
             {menu.zoneId && (
@@ -2378,6 +2433,11 @@ function TopologyPage() {
         onPick={(id) => addToCustom([id])}
       />
       <MaterializeCableDialog ghost={ghost} onClose={() => setGhost(null)} />
+      <CardLinesDialog
+        target={cardLinesFor}
+        viewFields={savedDiagram?.fields}
+        onClose={() => setCardLinesFor(null)}
+      />
       <SaveAsDialog
         key={saveAsSeed.n}
         defaultName={saveAsSeed.name}
@@ -2622,7 +2682,11 @@ function EdgePanel({
   )
 }
 
-/** One row of the right-click context menu. */
+/** One row of the right-click context menu; a row that navigates is a
+ * router `<Link>` with the same classes. */
+const MENU_ROW =
+  "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+
 function MenuItem({
   onClick,
   children,
@@ -2631,11 +2695,7 @@ function MenuItem({
   children: React.ReactNode
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
-    >
+    <button type="button" onClick={onClick} className={MENU_ROW}>
       {children}
     </button>
   )

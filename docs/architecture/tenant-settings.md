@@ -41,8 +41,10 @@ row; a tenant override replaces the global and per-role lists wholesale.
 `resolve_card_fields(device, eff, view_fields=None)` then picks, first hit
 wins:
 
-1. the device's own `Device.topology_card`;
-2. the saved view's list;
+1. the device's own `Device.topology_card` (the device form's **Topology
+   card** section, or **Card lines…** on a Diagram card);
+2. the saved view's list, `state.filters.diagram.fields` (the Diagram's
+   **Display** popover), sent to `/api/topology/` as `card_fields`;
 3. the device role's list, keyed `role:<slug>` in `role_overrides`;
 4. the effective global list (`source` `tenant` or `deployment`);
 5. the built-in default: monitoring pill, IP, Loopback, Serial (`source`

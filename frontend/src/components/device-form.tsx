@@ -42,6 +42,12 @@ import { RackPicker } from "@/components/rack-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
+import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  CardLinesEditor,
+  useCardLineConfig,
+} from "@/components/topology/diagram/card-lines-dialog"
+import { inheritedCardLines } from "@/components/topology/diagram/card-lines"
 import { useMe } from "@/lib/use-me"
 
 const PORT_LABEL_OPTIONS = [
@@ -185,6 +191,11 @@ export function DeviceForm({
   const [vcPriority, setVcPriority] = useState(
     device?.vc_priority != null ? String(device.vc_priority) : ""
   )
+  // The device's own topology card lines; null inherits (view, role, All
+  // devices), [] is name only.
+  const [topologyCard, setTopologyCard] = useState<string[] | null>(
+    seed?.topology_card ?? null
+  )
 
   useEffect(() => {
     if (!device) return
@@ -219,6 +230,7 @@ export function DeviceForm({
     setVcId(device.virtual_chassis?.id ?? null)
     setVcPosition(device.vc_position != null ? String(device.vc_position) : "")
     setVcPriority(device.vc_priority != null ? String(device.vc_priority) : "")
+    setTopologyCard(device.topology_card ?? null)
     reset()
   }, [device, reset])
 
@@ -303,6 +315,13 @@ export function DeviceForm({
     retry: false,
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
+  // What the topology card shows while this device inherits: its role's
+  // lines, else All devices. A saved view's own lines come first on its map.
+  const cardConfig = useCardLineConfig()
+  const role = (roles.data?.results ?? []).find((r) => r.id === roleId)
+  const cardInherited = cardConfig.data
+    ? inheritedCardLines(cardConfig.data, role?.slug)
+    : null
 
   // ─── Rack placement derived state ────────────────────────────────────────
   const selectedRack = (racks.data?.results ?? []).find((r) => r.id === rackId)
@@ -444,6 +463,7 @@ export function DeviceForm({
           vcId && vcPosition.trim() !== "" ? Number(vcPosition) : null,
         vc_priority:
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
+        topology_card: topologyCard,
       }
       return saveObject<Device>({
         objectType: "api.device",
@@ -618,6 +638,27 @@ export function DeviceForm({
                 error={fieldErrors.comments}
               />
             )}
+          </FormSection>
+          <FormSection title="Topology card" card>
+            <Field
+              label="Card lines"
+              info="The lines under the device's name on the topology Diagram. Inherit follows the map's saved view, then the role, then All devices."
+              error={fieldErrors.topology_card}
+            >
+              <CardLinesEditor
+                value={topologyCard}
+                onChange={setTopologyCard}
+                config={cardConfig.data}
+                inherited={cardInherited?.fields ?? []}
+                from={
+                  cardInherited?.from.level === "role" && role ? (
+                    <ColorBadge name={role.name} color={role.color} />
+                  ) : (
+                    "All devices"
+                  )
+                }
+              />
+            </Field>
           </FormSection>
         </FormColumn>
 

@@ -40,6 +40,13 @@ served as `effective_airflow` and drives the 3D room's airflow cones),
     [custom field](../features/tags-and-custom-fields.md), in line with the
     zero-pre-filled-data philosophy.
 
+The form's **Topology card** section sets which lines this device's card
+shows on the topology Diagram. **Inherit** (the default) takes them from
+the map's saved view, the device role or All devices, and previews the
+role's or All devices list; **Custom** gives the device its own list, and
+**Name only** shows just its name. See
+[Card lines](../features/topology.md#card-lines).
+
 You can also add devices in bulk from a spreadsheet - see
 [Import & export](../features/import-export.md).
 
